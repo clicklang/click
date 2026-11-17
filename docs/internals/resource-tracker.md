@@ -1845,10 +1845,23 @@ The automatic call-return inventory now distinguishes these boundaries:
 | `EvaluatedReturnResources::admit_clause` | Carries checked entry-borrow and consumed-input selections from the checked call plan, including individually consumed finite input-frontier pieces, and checks them only against newly described outputs. Other outputs use bounded indexed admission. Unsupported geometry refuses; no discovery fallback. |
 | `construct_composite_resource_body` | Selected returned heads retain their certified internal body partition and child identities. Bounded admission detects supported internal conflicts; only boundaries with other returned groups need new separation checks. The unselected expansion path remains a generic full-composition consumer. |
 | `PreparedReturnComposition::finish` | Consumes an opaque `ReturnedOwnershipPartition`. The producer's partition, including restored borrowed/consumed/fresh outputs, is retained; only pending outputs versus the original retained frame are checked. Returned pieces are not compared with each other again. |
-| `produced_composite_frontier_conflict` | Constructed frontiers use bounded cross-boundary checks. Proven conflicts retain the selected held fact; unsupported geometry refuses. Legacy family expansion remains separate, but its exposed frontier also uses bounded boundary checks. |
+| `produced_composite_frontier_conflict` | Constructed frontiers use bounded cross-boundary checks. Proven conflicts retain the selected held fact; unsupported geometry refuses. Family dispatch supplies every finite body; this consumer never expands a head. |
 | `recover_candidate_stable_view_resources` | Consumes checked escrow restoration receipts carrying selected occurrences and holds. Restores the entry partition directly; checks only new return ownership against protected escrows and newly released inherited roots. No legacy ownership admission. |
 | Worker completion and loop-frame exchange | Checked output groups and occurrence identities survive composition. Their generic boundary adapters remain separate compatibility consumers. |
-| `project_return_resource_cores` and legacy-family expansion | Unconstructed families are expanded from descriptions again. Each classifier outcome eventually needs a reusable body/frontier, deliberately opaque ownership, or a bounded refusal. Unsupported language shapes do not all need implementation. |
+| Family dispatch and `project_return_resource_cores` | Every returned composite or instance carries one constructed finite body or deliberately opaque head with its source occurrence. Unsupported family shapes refuse at dispatch. Boundary checks and projection consume this evidence without definition or memory arguments; neither reconstructs a body. |
+
+Family dispatch has no legacy set or downstream expansion route. Supported
+ordinary, existential, recursive, instance and authority families retain their
+producer's children. Sealed heads and instances outside the specialized constructor fragment remain
+deliberately opaque, retaining their exact occurrence and instance bindings
+without exposing child ownership. Generic expansion previously left these
+instances folded too; dispatch now records that outcome directly. Missing definitions and shapes
+outside these finite constructors refuse before publishing a return. Counted
+bodies without exclusive leaves keep their count semantics; a nonunit body that
+exposes exclusive ownership refuses even when its leaves carry input custody.
+Returned views always retain the identities of the children that produced them;
+there is no description-only view receipt. Source guards forbid body production
+inside projection and boundary consumers.
 
 The producer separates selected input ownership from newly described outputs.
 The checked entry projection issues a finite input frontier for read-only tactics

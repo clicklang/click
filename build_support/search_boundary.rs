@@ -150,6 +150,23 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: {} must consume selected return evidence without ownership rediscovery ({name})", self.path, self.function));
         }
+        if ((self.path == "src/kernel/functions/mixed_return_resources.rs"
+            && self.function == "project_return_resource_cores")
+            || (self.path == "src/kernel/functions.rs"
+                && self.function == "produced_composite_frontier_conflict"))
+            && matches!(
+                name,
+                "expand_composite_resource_fact_with_children"
+                    | "expand_all_composite_resource_facts_at_state"
+                    | "construct_composite_resource_body"
+                    | "try_construct"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {} must consume carried family evidence without reconstructing a returned body ({name})",
+                self.path, self.function
+            ));
+        }
         if self.path == "src/kernel/functions/mixed_return_resources.rs"
             && self.function == "project_return_resource_cores"
             && matches!(name, "owned_occurrences_for_fact" | "occurrences_for_fact")

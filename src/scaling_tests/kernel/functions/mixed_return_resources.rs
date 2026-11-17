@@ -388,7 +388,6 @@ fn projecting_equal_return_descriptions_uses_selected_occurrences() {
             .unwrap()
             .finish(&facts)
             .unwrap();
-        let state = ExecutionState::new();
         let ((projected, work), maps) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 let _operation = crate::kernel::search::FastOperationScope::enter(
@@ -398,11 +397,8 @@ fn projecting_equal_return_descriptions_uses_selected_occurrences() {
                     &evaluated.resources,
                     &transfers,
                     &ConstructedReturnBodies::default(),
-                    &[],
-                    &state,
                     &facts,
-                    &destination,
-                )
+                    &destination)
                 .unwrap()
             })
         });
@@ -1143,11 +1139,8 @@ fn flat_return_body_consumers_scale_with_output_and_ignore_ambient_state() {
                     &evaluated.resources,
                     &transfers,
                     &bodies,
-                    &[],
-                    &state,
                     &facts,
-                    &destination,
-                )
+                    &destination)
                 .unwrap()
             });
             assert_eq!(
@@ -1243,10 +1236,7 @@ fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_
                                     .unwrap(),
                                 Some(body),
                             )),
-                            &[],
-                            &Memory::new(),
-                            &facts,
-                        );
+                            &facts);
                         assert_eq!(error.is_some(), overlap);
                     }
                 });
@@ -1620,10 +1610,7 @@ fn bounded_body_boundary_does_not_revalidate_the_retained_frame() {
                                 .unwrap(),
                             Some(body),
                         )),
-                        &[],
-                        &Memory::new(),
-                        &facts,
-                    );
+                        &facts);
                     if axis != "cold related" && !overlap {
                         assert!(
                             matches!(error, Some(RuntimeError::FunctionContract(ref message)) if message.contains("indexed checking fragment"))
@@ -1717,7 +1704,7 @@ fn existential_return_construction_scales_with_its_body_and_ignores_ambient_stat
                 );
                 ConstructedReturnBodies::construct(&evaluated, &definitions, &state, &facts)
             });
-            assert!(bodies.1.is_empty());
+            assert!(!bodies.0.is_empty());
             assert_eq!(
                 bodies.0.len(),
                 if axis == "returns" { count as usize } else { 1 }
@@ -1824,7 +1811,7 @@ fn recursive_return_frontiers_ignore_depth_aliases_and_retained_state() {
                         &state,
                         &facts,
                     );
-                    assert!(bodies.1.is_empty());
+                    assert!(!bodies.0.is_empty());
                     let body = bodies.get(source).unwrap();
                     assert_eq!(body.expansion.len(), 2);
                     assert_eq!(body.folded.len(), 1);
@@ -1838,10 +1825,7 @@ fn recursive_return_frontiers_ignore_depth_aliases_and_retained_state() {
                                 .unwrap(),
                             Some(body),
                         )),
-                        &[],
-                        state.memory(),
-                        &facts,
-                    );
+                        &facts);
                     assert_eq!(error.is_some(), overlap);
                 });
                 samples.push(work);
@@ -2003,23 +1987,23 @@ fn specialized_return_producers_ignore_retained_state_and_scale_with_their_bodie
                         let _fast = crate::kernel::search::FastOperationScope::enter(
                             "selected specialized return construction",
                         );
-                        let bodies = ConstructedReturnBodies::construct(
+                        let bodies = ConstructedReturnBodies::try_construct(
                             &outputs,
                             &definitions,
                             &state,
+                            ReturnResourceComposition::ValidateDescriptions,
                             &facts,
                         );
-                        if bodies.1.contains(&source) {
+                        let Some(bodies) = bodies else {
                             assert!(
                                 external
                                     || (family == "control" && axis == "body")
                                     || (family == "matched" && axis == "aliases"),
                                 "unexpected geometry miss: {family}, {axis}, {count}"
                             );
-                            assert!(bodies.get(source).is_none());
                             return;
-                        }
-                        assert!(bodies.1.is_empty());
+                        };
+                        assert!(!bodies.0.is_empty());
                         let body = bodies.get(source).unwrap();
                         assert!(body.specialized.is_some());
                         assert_eq!(
@@ -2751,5 +2735,60 @@ fn selected_input_frontier_queries_do_not_scan_related_or_unrelated_pieces() {
             samples[2] <= samples[0] * 3 + 100,
             "related={related}: {samples:?}"
         );
+    }
+}
+
+#[test]
+fn opaque_and_refused_family_dispatch_ignore_ambient_owners_and_aliases() {
+    use super::tests::flat_body_definition;
+    for sealed in [false, true] {
+        for axis in ["owners", "aliases", "definitions", "body"] {
+            let mut samples = Vec::new();
+            for count in [4_u32, 16, 64] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let p = Pointer::symbolic(Variable(8_916_000));
+                let mut facts = PureFactContext::new();
+                let mut resources = ResourceContext::new();
+                let mut definitions = Vec::new();
+                for index in 0..count {
+                    let q = Pointer::symbolic(Variable(8_917_000 + index as u64));
+                    match axis {
+                        "owners" => resources = resources.unchecked_with_fact(
+                            ResourceFact::own_memory(MemoryRange::new(q, 0u32.into(), 1u32.into()))),
+                        "aliases" => facts = facts.assume_condition(
+                            ConditionTerm::pointer_equal(p.clone(), q), true),
+                        "definitions" => definitions.push(CompositeResourceDefinition::new(
+                            format!("unused_{index:04}"), vec![], None, false, vec![], vec![])),
+                        _ => {}
+                    }
+                }
+                let mut selected = flat_body_definition("selected", &p, if axis == "body" { count } else { 1 });
+                selected.sealed = sealed;
+                if !sealed {
+                    selected.witnesses.push(program_parameter("unsupported", ProgramType::Int32));
+                }
+                definitions.push(selected);
+                definitions.sort_by(|a,b| a.name().cmp(b.name()));
+                let outputs = EvaluatedReturnResources::new(&facts)
+                    .admit(ResourceFact::own_composite("selected".into(), vec![]), ReturnOwnershipOrigin::Description, &facts).unwrap();
+                let state = ExecutionState::new().with_resource_context(resources);
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    let _fast = crate::kernel::search::FastOperationScope::enter("bounded family dispatch");
+                    ConstructedReturnBodies::try_construct(&outputs, &definitions, &state,
+                        ReturnResourceComposition::ValidateDescriptions, &facts)
+                });
+                if sealed {
+                    let bodies = result.unwrap();
+                    let source = outputs.occurrences[0].source;
+                    let body = bodies.get(source).unwrap();
+                    assert!(body.frontier.is_empty());
+                    assert_eq!(body.folded[0].1, source);
+                } else {
+                    assert!(result.is_none());
+                }
+                samples.push(work);
+            }
+            assert!(samples.iter().all(|work| *work <= samples[0] + 128), "sealed={sealed}, {axis}: {samples:?}");
+        }
     }
 }

@@ -38,7 +38,6 @@ src/kernel/functions.rs	legacy-caller	::prepare_contract_resource_transfer_unexp
 src/kernel/functions.rs	legacy-caller	::prepare_contract_resource_transfer_unexplained	try_compose_with_fact	4
 src/kernel/functions.rs	legacy-caller	::prepare_contract_resource_transfer_unexplained	try_compose_with_facts_delaying_normalization	3
 src/kernel/functions.rs	legacy-caller	::prepare_verified_function_call	expand_all_composite_resource_facts_at_state	1
-src/kernel/functions.rs	legacy-caller	::produced_composite_frontier_conflict	expand_composite_resource_fact_with_children	1
 src/kernel/functions.rs	legacy-caller	::resource_clause_supply_with_fact	expand_composite_resource_fact_with_children	1
 src/kernel/functions.rs	legacy-caller	::resource_context_contains_exact_owned_fact	validity_error	1
 src/kernel/functions.rs	legacy-caller	::rewrite_resource_instance_selecting_children_unspelled	try_compose_into_valid_context_delaying_normalization	3
@@ -52,8 +51,6 @@ src/kernel/functions/composite_expansion.rs	legacy-caller	::evaluate_resource_po
 src/kernel/functions/composite_expansion.rs	legacy-caller	::expand_all_composite_resource_facts_and_propositions_with_state	try_compose_with_facts	1
 src/kernel/functions/composite_expansion.rs	legacy-caller	::expand_composite_resource_tree	expand_composite_resource_fact_with_children	1
 src/kernel/functions/contract_refinement.rs	legacy-caller	::framed_resource_transition_refines	try_compose_with_facts_delaying_normalization	1
-src/kernel/functions/mixed_return_resources.rs	legacy-caller	::project_return_resource_cores	expand_all_composite_resource_facts_at_state	1
-src/kernel/functions/mixed_return_resources.rs	legacy-caller	::project_return_resource_cores	expand_composite_resource_fact_with_children	1
 src/kernel/functions/named_contract_refinement.rs	legacy-caller	::state_with_refinement_instances	try_compose_into_valid_context_delaying_normalization	1
 src/kernel/loans.rs	legacy-caller	::lend_owned_view_to_suspended_worker	try_compose_with_fact_with_occurrence	1
 src/kernel/loans.rs	legacy-caller	::plan_stable_view_transfer_with_protocol_effect	try_compose_with_fact	3

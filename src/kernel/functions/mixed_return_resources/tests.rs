@@ -147,8 +147,6 @@ fn equal_return_descriptions_keep_distinct_transfers_and_projection_lifetimes() 
                 &evaluated.resources,
                 &transfers,
                 &ConstructedReturnBodies::default(),
-                &[],
-                &state,
                 &facts,
                 &destination,
             )
@@ -1226,9 +1224,7 @@ fn flat_composite_return_carries_its_body_through_frontier_and_projection() {
                 prepared
                     .frontier_sources(&evaluated.resources, borrowed)
                     .map(|(source, fact)| (fact, bodies.get(source))),
-                &[],
-                state.memory(),
-                &facts,
+                &facts
             ),
             Some(RuntimeError::ProducedCompositeOverlapsHeldResource { .. })
         ));
@@ -1238,8 +1234,6 @@ fn flat_composite_return_carries_its_body_through_frontier_and_projection() {
         &evaluated.resources,
         &transfers,
         &bodies,
-        &[],
-        &state,
         &facts,
         &destination,
     )
@@ -1285,8 +1279,7 @@ fn flat_composite_return_carries_its_body_through_frontier_and_projection() {
 }
 
 #[test]
-fn nested_and_nonunit_return_bodies_keep_legacy_expansion() {
-    use crate::kernel::program_expression::int32_literal;
+fn unsupported_return_families_refuse_in_dispatch() {
     let facts = PureFactContext::new();
     let pointer = Pointer::symbolic(Variable(8_819_002));
     let mut nested = flat_body_definition("nested", &pointer, 1);
@@ -1294,7 +1287,7 @@ fn nested_and_nonunit_return_bodies_keep_legacy_expansion() {
         ResourceSpec::declared(
             ResourceFamily::Composite,
             ResourceAccessMode::Own,
-            "child".into(),
+            "missing-child".into(),
             vec![],
             vec![],
             ResourceTransferRole::Produce,
@@ -1302,48 +1295,103 @@ fn nested_and_nonunit_return_bodies_keep_legacy_expansion() {
         )
         .unwrap(),
     );
-    let mut conditional = flat_body_definition("conditional", &pointer, 1);
-    conditional.condition = Some(SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(int32_literal(0)),
-        operator: ComparisonOperator::Equal,
-        right: SpecExpression::ProgramExpression(int32_literal(0)),
-    });
-    let mut evaluated = EvaluatedReturnResources::new(&facts);
-    for name in ["nested", "conditional", "missing"] {
-        evaluated = evaluated
+    for (name, definitions) in [("nested", vec![nested]), ("missing", vec![])] {
+        let evaluated = EvaluatedReturnResources::new(&facts)
             .admit(
                 ResourceFact::own_composite(name.into(), vec![]),
                 ReturnOwnershipOrigin::Description,
                 &facts,
             )
             .unwrap();
+        let _fast = crate::kernel::search::FastOperationScope::enter("unsupported return family");
+        assert!(
+            ConstructedReturnBodies::try_construct(
+                &evaluated,
+                &definitions,
+                &ExecutionState::new(),
+                ReturnResourceComposition::ValidateDescriptions,
+                &facts,
+            )
+            .is_none()
+        );
+        assert_eq!(evaluated.resources.facts().len(), 1);
     }
-    evaluated = evaluated
-        .admit(
-            ResourceFact::Own(
-                Resource::Composite {
-                    name: "many".into(),
-                    arguments: vec![].into(),
-                },
-                Box::new(MachineTerm::constant(2)),
-            ),
-            ReturnOwnershipOrigin::Description,
+}
+
+#[test]
+fn nonunit_memory_returns_refuse_but_token_counts_keep_their_constructed_body() {
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_819_003));
+    for memory in [false, true] {
+        let definition = if memory {
+            flat_body_definition("many", &pointer, 1)
+        } else {
+            CompositeResourceDefinition::new("many", vec![], None, false, vec![], vec![])
+        };
+        let head = ResourceFact::Own(
+            Resource::Composite {
+                name: "many".into(),
+                arguments: vec![].into(),
+            },
+            Box::new(MachineTerm::constant(2)),
+        );
+        let evaluated = EvaluatedReturnResources::new(&facts)
+            .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
+            .unwrap();
+        let _fast = crate::kernel::search::FastOperationScope::enter("nonunit return family");
+        let bodies = ConstructedReturnBodies::construct(
+            &evaluated,
+            &[definition],
+            &ExecutionState::new(),
+            &facts,
+        );
+        let body = bodies.for_return(evaluated.occurrences[0].source, &head);
+        let error = produced_composite_frontier_conflict(
+            &ResourceContext::new_with_equalities(&facts),
+            std::iter::once((&head, body)),
+            &facts,
+        );
+        assert_eq!(error.is_some(), memory);
+    }
+}
+
+#[test]
+fn sealed_return_dispatch_retains_opaque_identity_and_projection_needs_no_definition() {
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_819_004));
+    let mut definition = flat_body_definition("sealed", &pointer, 1);
+    definition.sealed = true;
+    let head = ResourceFact::own_composite("sealed".into(), vec![]);
+    let evaluated = EvaluatedReturnResources::new(&facts)
+        .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
+        .unwrap();
+    let source = evaluated.occurrences[0].source;
+    let _fast = crate::kernel::search::FastOperationScope::enter("opaque return family");
+    let state = ExecutionState::new();
+    let bodies = ConstructedReturnBodies::construct(&evaluated, &[definition], &state, &facts);
+    let body = bodies.get(source).unwrap();
+    assert_eq!(body.folded, vec![(head.clone(), source)]);
+    assert!(body.frontier.is_empty());
+    let (destination, transfers) = evaluated
+        .restore_entry_borrows(
+            ResourceContext::new_with_equalities(&facts),
+            ReturnResourceComposition::ValidateDescriptions,
             &facts,
         )
+        .unwrap()
+        .finish(&facts)
         .unwrap();
-    let mut definitions = vec![
-        nested,
-        conditional,
-        flat_body_definition("many", &pointer, 1),
-    ];
-    definitions.sort_by(|a, b| a.name().cmp(b.name()));
-    let bodies = ConstructedReturnBodies::construct(
-        &evaluated,
-        &definitions,
-        &ExecutionState::new(),
+    let projected = project_return_resource_cores(
+        &evaluated.resources,
+        &transfers,
+        &bodies,
         &facts,
-    );
-    assert_eq!(bodies.0.len(), 1); // The decided conditional body now migrates.
+        &destination,
+    )
+    .unwrap();
+    assert_eq!(projected[0].expansion, vec![head]);
+    assert!(projected[0].frontier.is_empty());
+    assert!(projected[0].viewed_children.as_slice().is_empty());
 }
 
 pub(super) fn constructed_flat_return(
@@ -1426,8 +1474,6 @@ fn flat_body_admission_uses_cold_coordinates_but_refuses_general_geometry() {
                     .unwrap(),
                 Some(body)
             )),
-            &[],
-            &Memory::new(),
             &facts
         ),
         Some(RuntimeError::ProducedCompositeOverlapsHeldResource { .. })
@@ -1648,8 +1694,6 @@ fn decided_conditional_bodies_and_opaque_guards_are_constructed_once() {
             &evaluated.resources,
             &transfers,
             &bodies,
-            &[],
-            &ExecutionState::new(),
             &facts,
             &destination,
         )
@@ -1717,9 +1761,7 @@ fn nested_body_normalization_keeps_distinct_child_identities_and_checks_internal
 }
 
 #[test]
-#[should_panic(
-    expected = "returned composite must carry its construction or an explicit legacy route"
-)]
+#[should_panic(expected = "returned composite must carry its constructed or opaque body")]
 fn composite_consumers_refuse_missing_construction_metadata() {
     let facts = PureFactContext::new();
     let head = ResourceFact::own_composite("omitted_body".into(), vec![]);
@@ -1823,10 +1865,7 @@ fn viewed_children_keep_ownership_incremental_without_acquiring_ownership_origin
                 &facts,
             )
             .unwrap();
-            assert!(
-                bodies.1.is_empty(),
-                "a viewed child must not select legacy ownership admission"
-            );
+            assert!(!bodies.0.is_empty());
             let body = bodies.get(evaluated.occurrences[0].source).unwrap();
             assert_eq!(body.expansion.len(), 2);
             assert!(body.expansion.contains(&owner(own.clone(), 0, 1)));
@@ -1873,14 +1912,12 @@ fn viewed_children_keep_ownership_incremental_without_acquiring_ownership_origin
                 &evaluated.resources,
                 &transfers,
                 &bodies,
-                &[],
-                &post,
                 &facts,
                 &destination,
             )
             .unwrap();
             assert_eq!(
-                projected[0].viewed_children.as_ref().unwrap(),
+                projected[0].viewed_children.as_slice(),
                 &body.viewed_children
             );
             assert_eq!(projected[0].destination, transfers[0].destination);
@@ -2157,20 +2194,18 @@ fn packaged_views_keep_normalized_descriptions_and_the_raw_source_group() {
         &evaluated.resources,
         &transfers,
         &bodies,
-        &[],
-        &state,
         &facts,
         &destination,
     )
     .unwrap();
-    let pieces = projected[0].constructed_borrowing_pieces().unwrap();
+    let pieces = projected[0].constructed_borrowing_pieces();
     assert_eq!(pieces.len(), 1);
     assert_eq!(
         pieces[0].piece,
         ResourceFact::view_memory(MemoryRange::new(pointer, 0u32.into(), 2u32.into()))
     );
     assert_eq!(
-        pieces[0].sources.as_ref().unwrap().as_ref(),
+        pieces[0].sources.as_ref(),
         &body
             .viewed_children
             .iter()

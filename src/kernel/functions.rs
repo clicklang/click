@@ -13467,8 +13467,6 @@ fn evaluate_contract_return_resources(
                     prepared
                         .frontier_sources(ensured_resources, true)
                         .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
-                    interface.composite_resource_definitions(),
-                    post_state.memory(),
                     assumptions,
                 ) {
                     return Some(error);
@@ -13486,8 +13484,6 @@ fn evaluate_contract_return_resources(
                 prepared
                     .frontier_sources(ensured_resources, false)
                     .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
-                interface.composite_resource_definitions(),
-                post_state.memory(),
                 assumptions,
             )
         },
@@ -13528,8 +13524,6 @@ fn evaluate_contract_return_resources(
                 ensured_resources,
                 &inserted_ensured_occurrences,
                 &return_bodies,
-                interface.composite_resource_definitions(),
-                post_state,
                 assumptions,
                 &return_resources,
             )
@@ -13561,7 +13555,7 @@ fn evaluate_contract_return_resources(
             destination: support_occurrence,
             expansion,
             projected,
-            frontier,
+            frontier: _,
             viewed_children: _,
         } = resource;
         if support.is_own() {
@@ -13577,11 +13571,6 @@ fn evaluate_contract_return_resources(
             };
             let body = if let Some(body) = return_bodies.for_return(source, &support) {
                 body.escrow_boundary()
-            } else if matches!(
-                support.resource(),
-                Resource::Composite { .. } | Resource::Instance(_)
-            ) {
-                frontier.clone()
             } else {
                 Vec::new()
             };
@@ -13601,24 +13590,7 @@ fn evaluate_contract_return_resources(
             _ => false,
         };
         if !is_population {
-            let support = super::loans::EscapingComposite {
-                head: support.clone(),
-                occurrence: support_occurrence,
-            };
-            if let Some(pieces) = constructed_borrowing_pieces {
-                produced_borrowing_pieces.extend(pieces);
-            } else {
-                produced_borrowing_pieces.extend(
-                    frontier
-                        .into_iter()
-                        .filter(|piece| piece.is_view())
-                        .map(|piece| ProducedBorrowingPiece {
-                            support: support.clone(),
-                            piece,
-                            sources: None,
-                        }),
-                );
-            }
+            produced_borrowing_pieces.extend(constructed_borrowing_pieces);
         }
         return_resources = return_resources
             .unchecked_with_supported_facts_from_occurrence_with_memory(
@@ -13674,59 +13646,23 @@ fn produced_composite_frontier_conflict<'a>(
             Option<&'a mixed_return_resources::ConstructedReturnBody>,
         ),
     >,
-    definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
     for (produced, body) in ensured {
         let name = match produced.resource() {
             Resource::Composite { name, .. } => name.as_str(),
-            Resource::Instance(instance) if body.is_some() => instance.name(),
+            Resource::Instance(instance) => instance.name(),
             _ => continue,
         };
         if !produced.is_own() {
             continue;
         }
-        if let Some(body) = body {
-            match destination.admit_returned_flat_body(body, assumptions) {
-                FlatBodyAdmission::Admitted => continue,
-                FlatBodyAdmission::Conflict { piece, held } => {
-                    return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
-                        produced: Box::new(produced.clone()),
-                        piece,
-                        held,
-                    });
-                }
-                FlatBodyAdmission::Unsupported => {
-                    return Some(resource_context_runtime_error(
-                        ResourceContextValidityError::UnsupportedOwnershipBoundary,
-                    ));
-                }
-            }
-        }
-        let legacy_frontier;
-        let frontier = if let Some(body) = body {
-            body.boundary()
-        } else {
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(produced.clone());
-            // Opaque and unmigrated heads retain their legacy expansion.
-            let Some((_, children, _)) = expand_composite_resource_fact_with_children(
-                &singleton,
-                produced,
-                definitions,
-                &crate::kernel::ProgramPoint::of_memory(memory),
-                assumptions,
-            ) else {
-                continue;
-            };
-            legacy_frontier = children;
-            legacy_frontier.as_slice()
-        };
+        let body = body.expect("returned family dispatch must carry a finite body");
+        let frontier = body.boundary();
         // A token-only body holds no memory, instance, or nested composite a
         // destination fact could overlap: token units are a count, and counts
         // add rather than collide.
-        if !frontier.iter().any(|piece| {
+        if !body.frontier.iter().any(|piece| {
             piece.is_own()
                 && matches!(
                     piece.resource(),
