@@ -1018,9 +1018,9 @@ pub fn loop_preservation_contexts(
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
 ) -> Result<Vec<LoopPreservationContext>, LoopHeadRefusal> {
-    loop_preservation_contexts_with_mode(
+    loop_phase_preservation_contexts(
         loop_entry_state,
-        condition,
+        Some(condition),
         invariant_checks,
         effect_checks,
         resource_specs,
@@ -1028,7 +1028,6 @@ pub fn loop_preservation_contexts(
         body,
         assumptions,
         next_kernel_variable,
-        false,
     )
 }
 
@@ -1046,24 +1045,25 @@ pub fn program_do_while_preservation_contexts(
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
 ) -> Result<Vec<LoopPreservationContext>, LoopHeadRefusal> {
-    loop_preservation_contexts_with_mode(
+    let test = LoopTestRegion::expression(condition.clone(), LoopTestPosition::AfterBody);
+    let pass = program_loop_pass(body, None, Some(&test));
+    loop_phase_preservation_contexts(
         loop_entry_state,
-        condition,
+        None,
         invariant_checks,
         effect_checks,
         resource_specs,
         definitions,
-        body,
+        &pass,
         assumptions,
         next_kernel_variable,
-        true,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn loop_preservation_contexts_with_mode(
+pub(crate) fn loop_phase_preservation_contexts(
     loop_entry_state: &ExecutionState,
-    condition: &ProgramExpression,
+    condition: Option<&ProgramExpression>,
     invariant_checks: &[LoopInvariantCheck],
     effect_checks: &[LoopEffectCheck],
     resource_specs: &[ResourceSpec],
@@ -1071,7 +1071,6 @@ fn loop_preservation_contexts_with_mode(
     body: &ProgramStatement,
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
-    direct_post_test: bool,
 ) -> Result<Vec<LoopPreservationContext>, LoopHeadRefusal> {
     // The head inherits the execution's counter instead of restarting at the
     // base of the identity range. Restarting it in the middle of an execution
@@ -1081,7 +1080,9 @@ fn loop_preservation_contexts_with_mode(
     let mut budget = ExecutionBudget::continuing_from(next_kernel_variable);
     let mut existing_variables = BTreeSet::new();
     collect_execution_state_bitvector_variables(loop_entry_state, &mut existing_variables);
-    collect_program_expression_bitvector_variables(condition, &mut existing_variables);
+    if let Some(condition) = condition {
+        collect_program_expression_bitvector_variables(condition, &mut existing_variables);
+    }
     for check in invariant_checks {
         collect_spec_proposition_bitvector_variables(check.proposition(), &mut existing_variables);
     }
@@ -1168,30 +1169,17 @@ fn loop_preservation_contexts_with_mode(
             error,
         )
     })? {
-        let condition_contexts = if direct_post_test {
-            vec![ConditionAssumption {
-                branch: ConditionBranch::Decided(true),
-                facts: invariant_facts.clone(),
-                obligations: invariant_obligations.clone(),
-            }]
-        } else {
-            assume_condition_truthiness(
-                &top_state,
-                condition,
-                definitions,
-                assumptions,
-                &invariant_facts,
-                &invariant_obligations,
-                true,
-                &mut budget,
-            )
-            .map_err(|error| {
-                format!(
-                    "could not assume the loop condition: it stopped at {}",
-                    error.describe()
-                )
-            })?
-        };
+        let condition_contexts = crate::kernel::loops::assume_loop_entry_truthiness(
+            &top_state,
+            condition,
+            definitions,
+            assumptions,
+            &invariant_facts,
+            &invariant_obligations,
+            true,
+            &mut budget,
+        )
+        .map_err(|error| format!("could not assume the loop test: {}", error.describe()))?;
         // A disjunctive guard such as `while (a || b)` has one way *in* per
         // disjunct, and the body runs on each of them with only that path's
         // own guard facts. The mirror of the exit join: export the
@@ -2812,39 +2800,46 @@ impl LoopTestRegion {
         }
     }
 
-    /// The direct post-test's first body has already run. Subsequent entries
-    /// use its guard directly; a prepared test keeps its own phase placement.
-    pub(crate) fn for_repeated_iteration(&self) -> Self {
-        let position = if self.execution_parts().1 {
-            LoopTestPosition::BeforeBody
-        } else {
-            self.position
-        };
-        Self {
-            statement: self.statement.clone(),
-            position,
+    pub(crate) fn entry_phase(&self) -> crate::kernel::LoopEntryPhase {
+        match self.position {
+            LoopTestPosition::BeforeBody => crate::kernel::LoopEntryPhase::Test,
+            LoopTestPosition::AfterBody => crate::kernel::LoopEntryPhase::Body,
         }
     }
 
-    /// Borrow the executable entry guard without storing another condition or
-    /// placement on the loop. A preparation-free test can be decided directly;
-    /// an explicit test region is entered before its decision is available.
-    pub(crate) fn execution_parts(&self) -> (&ProgramExpression, bool, Option<&Self>) {
-        if let ProgramStatement::LoopTest {
-            condition,
-            aggregate_steps,
-        } = self.statement.as_ref()
-            && aggregate_steps.is_empty()
-        {
-            return (
-                condition,
-                self.position == LoopTestPosition::AfterBody,
-                None,
-            );
+    /// The checked entry guard has already selected a pure pre-test's body.
+    pub(crate) fn preservation_phase(&self) -> crate::kernel::LoopEntryPhase {
+        if self.entry_condition().is_some() {
+            crate::kernel::LoopEntryPhase::Body
+        } else {
+            self.entry_phase()
         }
-        static REGION_ENTRY: std::sync::LazyLock<ProgramExpression> =
-            std::sync::LazyLock::new(|| crate::kernel::program_expression::int32_literal(1));
-        (&REGION_ENTRY, false, Some(self))
+    }
+
+    /// A decision with no source preparation or temporary cleanup. This is
+    /// source-layout metadata, not a different executable loop form.
+    pub(crate) fn source_condition(&self) -> Option<&ProgramExpression> {
+        match self.statement.as_ref() {
+            ProgramStatement::LoopTest {
+                condition,
+                aggregate_steps,
+            } if aggregate_steps.is_empty() => Some(condition),
+            _ => None,
+        }
+    }
+
+    /// Code that owns source statement numbers. A pure decision is named by
+    /// its loop's test position and never renumbers the body.
+    pub(crate) fn source_region(&self) -> Option<&Self> {
+        self.source_condition().is_none().then_some(self)
+    }
+
+    /// A preparation-free pre-test can seed a preservation proof with its
+    /// checked entry guard. Every executable pass still owns its test region.
+    pub(crate) fn entry_condition(&self) -> Option<&ProgramExpression> {
+        (self.position == LoopTestPosition::BeforeBody)
+            .then(|| self.source_condition())
+            .flatten()
     }
 }
 
@@ -2894,6 +2889,21 @@ pub(crate) fn program_loop_continuation(
         (Some(update), None) => Some(std::sync::Arc::new(update.clone())),
         (None, Some(test)) => Some(test.statement.clone()),
         (None, None) => None,
+    }
+}
+
+pub(crate) fn program_loop_preservation_pass(
+    body: &ProgramStatement,
+    update: Option<&ProgramStatement>,
+    test: &LoopTestRegion,
+) -> ProgramStatement {
+    let body = match test.preservation_phase() {
+        crate::kernel::LoopEntryPhase::Test => program_loop_body_region(body, Some(test)),
+        crate::kernel::LoopEntryPhase::Body => body.clone(),
+    };
+    match program_loop_continuation(update, Some(test)) {
+        Some(tail) => ProgramStatement::seq(std::sync::Arc::new(body), tail),
+        None => body,
     }
 }
 
@@ -5726,7 +5736,8 @@ pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
         | CheckedExecutionEvent::Context(_)
         | CheckedExecutionEvent::CompletedContext(_)
         | CheckedExecutionEvent::StatementEffects(_)
-        | CheckedExecutionEvent::Call(_) => None,
+        | CheckedExecutionEvent::Call(_)
+        | CheckedExecutionEvent::LoopEntry { .. } => None,
         CheckedExecutionEvent::AutomaticLifetimeEnd(end) => Some(end.before_state()),
         CheckedExecutionEvent::ResourceObservation(observation) => Some(observation.before_state()),
         CheckedExecutionEvent::ResourceRewrite(rewrite) => Some(rewrite.before_state()),
@@ -5796,6 +5807,7 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
                     }
                 }
                 CheckedExecutionEvent::Statement(_)
+                | CheckedExecutionEvent::LoopEntry { .. }
                 | CheckedExecutionEvent::Call(_)
                 | CheckedExecutionEvent::Condition(_)
                 | CheckedExecutionEvent::ReturnProposition(_)

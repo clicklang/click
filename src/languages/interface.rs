@@ -1796,7 +1796,7 @@ pub(super) fn declared_pointer_locals(
                 body,
                 ..
             } => {
-                let (_, _, test) = loop_test.execution_parts();
+                let test = loop_test.source_region();
                 pending.push(body);
                 if let Some(test) = test {
                     pending.push(&test.statement);

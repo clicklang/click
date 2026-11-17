@@ -1311,13 +1311,14 @@ x == r2                                  memory and resources: bar's effects, th
 
 A loop is a cycle through named points: its head (`loop(i).entry` before the
 first pass), the statements of its own that run before its test, its test, its
-body, its back edge and its exit (`loop(i).exit`). A pure condition such as
-`k > 0` is tested at the head, so the body starts with it as a fact and the
-exit with its negation. A condition that calls a function makes those calls
-its loop's own regions (`loop(i).call(f, j)`), followed by a test region
-(`loop(i).test()`, the kernel's `ProgramStatement::LoopTest`): a pass steps the calls
-and then the test, whose true side continues the pass and whose false side
-leaves the loop there, marked `LoopControlExit::TestFalse` on the frontier.
+body, its back edge and its exit (`loop(i).exit`). Every condition has a test
+region (`loop(i).test()`, the kernel's `ProgramStatement::LoopTest`). A pure
+pre-test can share its loop-head step; its body starts with the checked guard
+as a fact. A condition that calls a function makes those calls its loop's own
+regions (`loop(i).call(f, j)`), before the same decision. The test's true side
+continues the pass and its false side leaves the loop there, marked
+`LoopControlExit::TestFalse` on the frontier. A test's exit is distinct from
+the whole loop's exit.
 The other loop forms place statements differently around the same points: a
 `do ... while` runs its body before the test, and a `for` its step at the back
 edge. After a loop that left on one path, the points of that path's last pass

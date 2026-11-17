@@ -1689,31 +1689,54 @@ fn check_loop_guard_custody(
     Ok(())
 }
 
-/// Whether a post-body loop condition still has a feasible true path.
-///
-/// This is deliberately conservative for non-value condition outcomes: an
-/// unresolved condition is treated as potentially continuing, so callers do
-/// not export a state-changing body path as a final exit accidentally.
-pub(crate) fn loop_condition_may_continue(
+/// Feasible decisions at a loop head, independent of its ownership join.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LoopConditionFeasibility {
+    Unreachable,
+    TrueOnly,
+    FalseOnly,
+    Both,
+}
+
+impl LoopConditionFeasibility {
+    fn from_possible_outcomes(may_continue: bool, may_exit: bool) -> Self {
+        match (may_continue, may_exit) {
+            (false, false) => Self::Unreachable,
+            (true, false) => Self::TrueOnly,
+            (false, true) => Self::FalseOnly,
+            (true, true) => Self::Both,
+        }
+    }
+
+    pub(crate) fn may_continue(self) -> bool {
+        matches!(self, Self::TrueOnly | Self::Both)
+    }
+
+    pub(crate) fn may_exit(self) -> bool {
+        matches!(self, Self::FalseOnly | Self::Both)
+    }
+}
+
+/// Classify the selected condition once; an unresolved evaluation remains
+/// conservative and cannot itself certify an exit.
+pub(crate) fn classify_loop_condition(
     state: &ExecutionState,
     condition: &ProgramExpression,
     assumptions: &PureFactContext,
-) -> Result<bool, String> {
-    loop_condition_feasibility(state, condition, assumptions)
-        .map(|(may_continue, _)| may_continue)
-        .map_err(|limit| {
-            format!(
-                "could not classify the loop condition: it stopped at {}",
-                limit.describe()
-            )
-        })
+) -> Result<LoopConditionFeasibility, String> {
+    loop_condition_feasibility(state, condition, assumptions).map_err(|limit| {
+        format!(
+            "could not classify the loop condition: it stopped at {}",
+            limit.describe()
+        )
+    })
 }
 
 fn loop_condition_feasibility(
     state: &ExecutionState,
     condition: &ProgramExpression,
     assumptions: &PureFactContext,
-) -> ExecutionResult<(bool, bool)> {
+) -> ExecutionResult<LoopConditionFeasibility> {
     let mut budget = ExecutionBudget::beside_live_state().with_program_expression_cost(condition);
     let expression_paths =
         evaluate_program_condition_paths(state, condition, assumptions, &mut budget)?;
@@ -1741,7 +1764,10 @@ fn loop_condition_feasibility(
             }
         }
     }
-    Ok((may_continue, may_exit))
+    Ok(LoopConditionFeasibility::from_possible_outcomes(
+        may_continue,
+        may_exit,
+    ))
 }
 
 fn condition_path_is_ruled_out(
@@ -1972,7 +1998,7 @@ fn loop_state_components_match_at_back_edge_inner(
 /// The parts of one program loop the loop rule reads, borrowed from it.
 #[derive(Clone, Copy)]
 pub(super) struct LoopExecutionView<'a> {
-    pub(super) condition: &'a ProgramExpression,
+    pub(super) entry_guard: Option<&'a ProgramExpression>,
     pub(super) invariant: &'a [Proposition],
     pub(super) invariant_checks: &'a [LoopInvariantCheck],
     pub(super) effect_checks: &'a [LoopEffectCheck],
@@ -1981,8 +2007,7 @@ pub(super) struct LoopExecutionView<'a> {
     pub(super) structural_measure: Option<&'a str>,
     pub(super) body: &'a ProgramStatement,
     pub(super) update: Option<&'a ProgramStatement>,
-    pub(super) test: Option<&'a LoopTestRegion>,
-    pub(super) direct_post_test: bool,
+    pub(super) test: &'a LoopTestRegion,
     pub(super) backedge_target: Option<ControlTargetId>,
     pub(super) natural_exit_target: Option<ControlTargetId>,
 }
@@ -2006,11 +2031,12 @@ impl<'a> LoopExecutionView<'a> {
         else {
             return None;
         };
-        let (condition, direct_post_test, test) = loop_test.execution_parts();
+        let condition = loop_test.entry_condition();
+        let test = loop_test;
         Some(Self {
             test,
             update: update.as_deref(),
-            condition,
+            entry_guard: condition,
             invariant,
             invariant_checks,
             effect_checks,
@@ -2018,7 +2044,6 @@ impl<'a> LoopExecutionView<'a> {
             ranking_measures,
             structural_measure: structural_measure.as_deref(),
             body,
-            direct_post_test,
             backedge_target: *backedge_target,
             natural_exit_target: *natural_exit_target,
         })
@@ -4213,7 +4238,7 @@ fn execute_program_loop_exit_paths(
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let LoopExecutionView {
-        condition,
+        entry_guard: condition,
         invariant,
         invariant_checks,
         effect_checks,
@@ -4221,12 +4246,11 @@ fn execute_program_loop_exit_paths(
         body,
         update,
         test,
-        direct_post_test,
         backedge_target,
         natural_exit_target,
         ..
     } = program_loop;
-    let pass_body = program_loop_pass(body, update, test);
+    let pass_body = program_loop_pass(body, update, Some(test));
     let body = &pass_body;
     let mut base_obligations = Vec::new();
     for proposition in invariant {
@@ -4324,13 +4348,13 @@ fn execute_program_loop_exit_paths(
         .map(ExecutionPureFact::new)
         .collect::<Vec<_>>();
 
-    let (initial_may_continue, initial_may_exit) = if direct_post_test {
-        (!final_exit_candidates.is_empty(), false)
-    } else if final_exit_candidates.is_empty() {
-        (true, true)
-    } else {
-        loop_condition_feasibility(state, condition, assumptions)?
+    let initial_test = match condition {
+        None => LoopConditionFeasibility::TrueOnly,
+        Some(_) if final_exit_candidates.is_empty() => LoopConditionFeasibility::Both,
+        Some(condition) => loop_condition_feasibility(state, condition, assumptions)?,
     };
+    let initial_may_continue = initial_test.may_continue();
+    let initial_may_exit = initial_test.may_exit();
     let mut paths = Vec::new();
     paths.append(&mut final_exit_paths);
     // Every `return` a checked preservation proof reached is one more way
@@ -4379,7 +4403,7 @@ fn execute_program_loop_exit_paths(
             }
             let candidate_assumptions = candidate.pure_facts().context_with(assumptions);
             let mut exits = Vec::new();
-            for assumption in assume_condition_truthiness(
+            for assumption in assume_loop_entry_truthiness(
                 candidate.state(),
                 condition,
                 &composite_resource_definitions,
@@ -4447,18 +4471,17 @@ fn execute_program_loop_exit_paths(
     )?;
     let mut has_live_iteration = false;
     for (invariant_facts, invariant_obligations, _) in &invariant_contexts {
-        if direct_post_test
-            || !assume_condition_truthiness(
-                &guard_state,
-                condition,
-                &composite_resource_definitions,
-                assumptions,
-                invariant_facts,
-                invariant_obligations,
-                true,
-                budget,
-            )?
-            .is_empty()
+        if !assume_loop_entry_truthiness(
+            &guard_state,
+            condition,
+            &composite_resource_definitions,
+            assumptions,
+            invariant_facts,
+            invariant_obligations,
+            true,
+            budget,
+        )?
+        .is_empty()
         {
             has_live_iteration = true;
             break;
@@ -4485,7 +4508,7 @@ fn execute_program_loop_exit_paths(
         .collect::<Vec<_>>();
     if initial_may_exit {
         for (invariant_facts, invariant_obligations, invariant_propositions) in invariant_contexts {
-            let condition_contexts = assume_condition_truthiness(
+            let condition_contexts = assume_loop_entry_truthiness(
                 &guard_state,
                 condition,
                 &composite_resource_definitions,
@@ -5117,7 +5140,7 @@ pub(super) fn collect_loop_preservation_summary(
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<LoopPreservationSummary> {
     let LoopExecutionView {
-        condition,
+        entry_guard: condition,
         invariant_checks,
         effect_checks,
         resource_specs,
@@ -5126,22 +5149,16 @@ pub(super) fn collect_loop_preservation_summary(
         body,
         update,
         test,
-        direct_post_test,
         backedge_target,
         natural_exit_target,
         ..
     } = program_loop;
-    let body_region = program_loop_body_region(body, test);
-    let body = &body_region;
-    let continuation = program_loop_continuation(update, test);
-    let update = continuation.as_deref();
     let mut obligations = Vec::new();
     let mut final_exit_paths = Vec::new();
     let mut early_exits = Vec::new();
     // The body executes from the loop's own resource context; everything the
     // enclosing frame withheld is returned on the way out.
     let top_state = &head.body;
-    let body_declared = scope_declared_names(body);
     let binders = loop_binders(resource_specs);
     let whole_loop_effect_facts = whole_loop_effect_summaries
         .iter()
@@ -5158,24 +5175,16 @@ pub(super) fn collect_loop_preservation_summary(
         &[],
         budget,
     )? {
-        let condition_contexts = if direct_post_test {
-            vec![ConditionAssumption {
-                branch: ConditionBranch::Decided(true),
-                facts: invariant_facts.clone(),
-                obligations: invariant_obligations.clone(),
-            }]
-        } else {
-            assume_condition_truthiness(
-                top_state,
-                condition,
-                composite_resource_definitions,
-                assumptions,
-                &invariant_facts,
-                &invariant_obligations,
-                true,
-                budget,
-            )?
-        };
+        let condition_contexts = assume_loop_entry_truthiness(
+            top_state,
+            condition,
+            composite_resource_definitions,
+            assumptions,
+            &invariant_facts,
+            &invariant_obligations,
+            true,
+            budget,
+        )?;
         for assumption in condition_contexts {
             // The body cannot run from a guard that produced no value: this
             // iteration is not entered, it is unproven. Refuse it here rather
@@ -5192,27 +5201,16 @@ pub(super) fn collect_loop_preservation_summary(
                 obligations: condition_obligations,
                 ..
             } = assumption;
-            // The body is a scope: the objects the summarized iteration
-            // declares stop existing at the back edge and at every exit.
-            let body_paths = paths_after_scope_exit(
-                super::eval::execute_statement_paths_with_prefix(
-                    top_state,
-                    body,
-                    assumptions,
-                    execution_context,
-                    &condition_facts,
-                    &condition_obligations,
-                    &empty_checked_loan_evidence_sequence(),
-                    budget,
-                    &mut super::eval::StatementJudgment::Verifies(variables),
-                )?,
-                &body_declared,
-            );
-            for body_path in super::eval::paths_after_loop_update(
-                body_paths,
+            for body_path in super::eval::execute_loop_iteration_paths(
+                top_state,
+                test.preservation_phase(),
+                body,
                 update,
+                test,
                 assumptions,
                 execution_context,
+                &condition_facts,
+                &condition_obligations,
                 budget,
                 &mut super::eval::StatementJudgment::Verifies(variables),
             )? {
@@ -5255,7 +5253,7 @@ pub(super) fn collect_loop_preservation_summary(
                     // Both back-edge directions come from one evaluation
                     // of the guard, so a path the guard did not decide is
                     // reported once instead of twice.
-                    let condition_contexts = assume_condition_branches(
+                    let condition_contexts = assume_loop_entry_branches(
                         &next_state,
                         condition,
                         composite_resource_definitions,
@@ -5297,9 +5295,7 @@ pub(super) fn collect_loop_preservation_summary(
                             assumptions,
                             budget,
                         )?;
-                        let mut path_obligations = if direct_post_test && !may_continue {
-                            Vec::new()
-                        } else {
+                        let mut path_obligations = {
                             collect_invariant_check_obligations(
                                 &next_state,
                                 loop_entry_state,
@@ -8561,12 +8557,38 @@ fn assume_condition_branches_at_state(
     Ok(contexts)
 }
 
-/// The guard paths that select `desired_truthiness`, together with every path
-/// the guard did not decide. An undecided path belongs to both requests: it
-/// rules out neither the iteration nor the exit.
-pub(super) fn assume_condition_truthiness(
+/// A checked entry guard can preselect a preservation context. Otherwise
+/// execution starts in the test/body phase itself, without a synthetic guard.
+pub(super) fn assume_loop_entry_branches(
     state: &ExecutionState,
-    condition: &ProgramExpression,
+    condition: Option<&ProgramExpression>,
+    definitions: &[CompositeResourceDefinition],
+    assumptions: &PureFactContext,
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
+    prefix_obligations: &[ProofObligation],
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<ConditionAssumption>> {
+    match condition {
+        Some(condition) => assume_condition_branches(
+            state,
+            condition,
+            definitions,
+            assumptions,
+            prefix_facts,
+            prefix_obligations,
+            budget,
+        ),
+        None => Ok(vec![ConditionAssumption {
+            branch: ConditionBranch::Decided(true),
+            facts: prefix_facts.persistent_facts(),
+            obligations: prefix_obligations.to_vec(),
+        }]),
+    }
+}
+
+pub(super) fn assume_loop_entry_truthiness(
+    state: &ExecutionState,
+    condition: Option<&ProgramExpression>,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
@@ -8574,18 +8596,8 @@ pub(super) fn assume_condition_truthiness(
     desired_truthiness: bool,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ConditionAssumption>> {
-    Ok(assume_condition_branches(
-        state,
-        condition,
-        definitions,
-        assumptions,
-        prefix_facts,
-        prefix_obligations,
-        budget,
-    )?
-    .into_iter()
-    .filter(|assumption| !matches!(assumption.branch, ConditionBranch::Decided(is_true) if is_true != desired_truthiness))
-    .collect())
+    Ok(assume_loop_entry_branches(state, condition, definitions, assumptions, prefix_facts, prefix_obligations, budget)?
+        .into_iter().filter(|entry| !matches!(entry.branch, ConditionBranch::Decided(value) if value != desired_truthiness)).collect())
 }
 
 /// Names an undecided loop guard for a refusal context, without dumping the
@@ -8772,7 +8784,7 @@ pub(super) fn statement_may_write_memory(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_may_write_memory(state, body)
                 || test
                     .as_ref()
@@ -8873,7 +8885,7 @@ pub(super) fn collect_loop_modified_locals(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             collect_loop_modified_locals(body, names);
             if let Some(test) = test {
                 collect_loop_modified_locals(&test.statement, names);
@@ -9131,8 +9143,11 @@ fn for_each_statement_expression<'a>(
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            visit(condition);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                visit(condition);
+            }
             for_each_statement_expression(body, visit);
             if let Some(test) = test {
                 for_each_statement_expression(&test.statement, visit);
@@ -9246,8 +9261,11 @@ pub(crate) fn collect_address_taken_locals(
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            collect_address_taken_in_expression(condition, names);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                collect_address_taken_in_expression(condition, names);
+            }
             collect_address_taken_locals(body, names);
             if let Some(test) = test {
                 collect_address_taken_locals(&test.statement, names);

@@ -1036,8 +1036,11 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            collect_program_expression_bitvector_variables(condition, variables);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                collect_program_expression_bitvector_variables(condition, variables);
+            }
             for proposition in invariant {
                 collect_proposition_bitvector_variables(proposition, variables);
             }
