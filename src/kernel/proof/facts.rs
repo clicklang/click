@@ -1507,6 +1507,17 @@ impl PureFactStore {
     }
 
     pub(in crate::kernel) fn with_fact(&self, fact: Proposition) -> Self {
+        // A closed comparison that holds, which lowering retains as written
+        // (`3 == 3`), states only `true`: file it as that one fact rather
+        // than index each literal pair. Exact lookups of the written form
+        // reach it through its comparison form.
+        if let Proposition::ConditionIs(condition, value) = &fact
+            && !matches!(condition, ConditionTerm::Constant(_))
+            && crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+                == Some(*value)
+        {
+            return self.with_fact(Proposition::ConditionIs(ConditionTerm::Constant(true), true));
+        }
         if self.top_level_exact.contains(&fact) {
             return self.clone();
         }
