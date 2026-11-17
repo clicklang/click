@@ -3455,9 +3455,6 @@ fn expand_declared_resource_expression_children(
     let recurse =
         |expression| expand_declared_resource_expression(expression, resource_definitions);
     Ok(match expression {
-        ContractExpression::IntegerContext(value) => {
-            ContractExpression::IntegerContext(Box::new(recurse(*value)?))
-        }
         ContractExpression::Proposition(proposition) => ContractExpression::Proposition(Box::new(
             expand_declared_resource_proposition(*proposition, resource_definitions)?,
         )),
@@ -3493,6 +3490,9 @@ fn expand_declared_resource_expression_children(
                 .collect::<Result<_, _>>()?,
         },
 
+        ContractExpression::IntegerContext(value) => {
+            ContractExpression::IntegerContext(Box::new(recurse(*value)?))
+        }
         ContractExpression::AlgebraicConstructor {
             algebraic_type,
             variant,
