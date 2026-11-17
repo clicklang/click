@@ -400,7 +400,6 @@ fn projecting_equal_return_descriptions_uses_selected_occurrences() {
                     &facts,
                     &destination,
                 )
-                .unwrap()
             })
         });
         assert_eq!(projected.len(), count);
@@ -1143,7 +1142,6 @@ fn flat_return_body_consumers_scale_with_output_and_ignore_ambient_state() {
                     &facts,
                     &destination,
                 )
-                .unwrap()
             });
             assert_eq!(
                 projected[0].expansion.len(),
@@ -1221,7 +1219,7 @@ fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_
                     let _fast = crate::kernel::search::FastOperationScope::enter(
                         "indexed flat composite frontier",
                     );
-                    let result = frame.admit_returned_flat_body(body, &facts);
+                    let result = frame.admit_returned_frontier(body.boundary(), &facts);
                     if (axis == "cold" || axis == "general") && !overlap {
                         assert!(matches!(result, FlatBodyAdmission::Unsupported));
                     } else {
@@ -1271,7 +1269,7 @@ fn flat_body_admission_scales_with_the_constructed_frontier() {
         let (evaluated, bodies) = super::tests::constructed_flat_return(&pointer, count, &facts);
         let body = bodies.get(evaluated.occurrences[0].source).unwrap();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            frame.admit_returned_flat_body(body, &facts)
+            frame.admit_returned_frontier(body.boundary(), &facts)
         });
         assert!(matches!(result, FlatBodyAdmission::Admitted));
         samples.push(work);
@@ -1374,7 +1372,7 @@ fn composite_transfer_consumers_ignore_unrelated_inputs_aliases_and_creation_his
                     "explicit composite child transfers",
                 );
                 assert!(matches!(
-                    frame.admit_returned_flat_body(body, &facts),
+                    frame.admit_returned_frontier(body.boundary(), &facts),
                     FlatBodyAdmission::Admitted
                 ));
             });
@@ -1594,7 +1592,7 @@ fn bounded_body_boundary_does_not_revalidate_the_retained_frame() {
                     super::tests::constructed_flat_return(&pointer, 1, &facts);
                 let source = evaluated.occurrences[0].source;
                 let body = bodies.get(source).unwrap();
-                let admission = frame.admit_returned_flat_body(body, &facts);
+                let admission = frame.admit_returned_frontier(body.boundary(), &facts);
                 if axis == "cold related" || overlap {
                     assert_eq!(
                         matches!(admission, FlatBodyAdmission::Conflict { .. }),
@@ -2019,7 +2017,7 @@ fn specialized_return_producers_ignore_retained_state_and_scale_with_their_bodie
                         // General external-address frames remain an explicit
                         // geometry miss. This producer test must not invoke their
                         // legacy discovery or call a miss established separation.
-                        match frame.admit_returned_flat_body(body, &facts) {
+                        match frame.admit_returned_frontier(body.boundary(), &facts) {
                             FlatBodyAdmission::Admitted | FlatBodyAdmission::Unsupported => {}
                             FlatBodyAdmission::Conflict { .. } => {
                                 panic!("fixture has no stated overlap")

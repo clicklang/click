@@ -1,6 +1,6 @@
-# `sizeof` of a struct-valued expression is rejected
+# `sizeof` of a struct-valued expression uses its aggregate layout
 
-Only scalar and pointer operands are modeled; use `sizeof(struct node)`.
+The operand is unevaluated: obtaining the record size does not load through `parent`.
 
 ```c filename=c_sizeof_struct_expression_rejected.c
 struct node {
@@ -15,8 +15,10 @@ int32 size(struct node *parent) {
 ```click
 verifying "c_sizeof_struct_expression_rejected.c";
 
+int32 size(struct node* parent) { ensures result == 8; }
+
 ```
 
 ```expect
-fail:c_sizeof_struct_expression_rejected.c:6: `sizeof` of an expression requires a modeled scalar or pointer operand
+pass
 ```

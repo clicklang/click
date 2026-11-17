@@ -95,8 +95,7 @@ fn existential_returns_carry_the_producers_witness_and_independent_child_ids() {
         &bodies,
         &facts,
         &destination,
-    )
-    .unwrap();
+    );
     for (projection, occurrence) in projected.iter().zip(&evaluated.occurrences) {
         assert_eq!(
             projection.expansion,
