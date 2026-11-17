@@ -1,6 +1,6 @@
 # A `witness` without its semicolon is refused
 
-`witness { ... }` is a statement and ends with `;`, like every other proof
+`witness(...)` is a statement and ends with `;`, like every other proof
 step.
 
 ```c filename=a_witness_without_its_semicolon_is_refused.c
@@ -14,12 +14,12 @@ int32 zero(int32 n) {
     requires 0 < n;
     ensures (0..n).any(|k| { k == result }) by {
         step_until(function.exit);
-        witness { k: 0 }
+        witness(0)
         solve();
     }
 }
 ```
 
 ```expect
-fail: expected `;` after `witness { ... }`
+fail: expected `;`
 ```

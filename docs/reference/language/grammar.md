@@ -715,7 +715,7 @@ theorem existential_range_lambda(lo: int32, hi: int32) {
     let same = |x: int32| -> Prop { x == lo };
     requires lo < hi;
     ensures (lo..hi).any(same) by {
-        witness { item: lo };
+        witness(lo);
         solve();
     }
 }

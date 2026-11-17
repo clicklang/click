@@ -18,7 +18,7 @@ int32 pointer_existential_witness(int32* p) {
     ensures preserves_pointer: exists (r: int32*) { r == p } by {
         step_until(function.exit);
         obtain (q: int32*) { q == p }
-        witness { r: q };
+        witness(q);
         solve();
     }
 }

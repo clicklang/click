@@ -912,7 +912,7 @@ function reaches its return frontier:
 ```click
 step_until(function.exit);
 have exists (k: int32) { k == result } by {
-    witness { k: result };
+    witness(result);
     solve();
 }
 solve();
@@ -3678,7 +3678,8 @@ such as `exists (k: int32) { lo <= k and k < hi and p[k] == x }` does not let
 the earlier conjunct guard the later memory read during lowering.
 
 Existential goals are proved explicitly in proof scripts with `witness`.
-The witness name must match the existential binder. Pure theorem scripts also
+Values follow the outermost existential binders in declaration order, and
+may supply one binder or several with `witness(value, ...)`. Pure theorem scripts also
 support `int32` and pointer witnesses, alongside `Integer` and algebraic
 witnesses. The value must have the binder's type, and the instantiated body
 still needs a proof. A declaration-level `let` alias can be a witness value;
@@ -3690,7 +3691,7 @@ For a symbolic `.any`, the range item name is the existential binder:
 ```click
 ensures found: (lo..hi).any(|k| { p[k] == result }) by {
     step_until(function.exit);
-    witness { k: lo };
+    witness(lo);
     solve();
 }
 ```
@@ -4273,7 +4274,7 @@ let k: int32 where k == x;
 
 ensures result_matches_witness: result == k by {
     step_until(function.exit);
-    witness { k: x };
+    witness(x);
 }
 ```
 

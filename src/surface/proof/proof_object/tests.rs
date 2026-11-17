@@ -3331,10 +3331,9 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         sort: Sort::ProgramInt32,
         body: Box::new(expected),
     };
-    let witness = ProofWitness::single(
-        "chosen".to_string(),
-        ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
-    );
+    let witness = ProofWitness::single(ContractExpression::ProgramExpression(
+        ProgramExpression::Value(int32(7)),
+    ));
     let expected_surface = ClickProposition::Comparison {
         left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
             ("chosen".to_string()).into(),
@@ -3354,6 +3353,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
     };
 
+    let mut work_samples = Vec::new();
     for size in [16_u32, 64, 256, 1024, 4096] {
         let facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         let root = Proof::for_fixed_state_surface_goal(
@@ -3372,33 +3372,32 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
             &[],
         );
         let retained_root = root.clone();
-        let wrong_name = ProofStep::Witness(ProofWitness::single(
-            "other".to_string(),
-            ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
-        ));
+        let wrong_type =
+            ProofStep::Witness(ProofWitness::single(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::constant(7))),
+            )));
         let error = root
             .driver()
-            .apply_step(wrong_name)
+            .apply_step(wrong_type)
             .err()
-            .expect("a mismatched witness must reject the candidate");
-        assert!(error.message().contains("binds `chosen`"), "{error:?}");
+            .expect("an ill-typed witness must reject the candidate");
+        assert!(error.message().contains("wrong type"), "{error:?}");
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
 
-        let before = fact_node_allocations();
-        let refined = root
-            .driver()
-            .apply_step(ProofStep::Witness(witness.clone()))
-            .expect("the named int32 witness should refine the existential");
-        let allocations = fact_node_allocations() - before;
-        // The one permitted node rewrites the sole entry of the goal
-        // collection; the bound must stay independent of `size` because
-        // the witness never touches the persistent fact index.
-        assert!(
-            allocations <= 1,
-            "size {size} witness should not alter the persistent fact index \
-             ({allocations} persistent nodes allocated)"
-        );
+        // The global persistent-node counter also counts certificate and
+        // temporary-state nodes. Check the actual fact-store roots instead,
+        // and measure work as the unrelated fact context grows.
+        let (refined, work) = crate::instrumentation::measure_deterministic_work(|| {
+            root.driver()
+                .apply_step(ProofStep::Witness(witness.clone()))
+        });
+        let refined = refined.expect("the positional int32 witness should refine the existential");
+        work_samples.push(work);
+        assert!(refined.facts().shares_exact_index_with(root.facts()));
+        assert!(refined.facts().shares_assumptions_with(root.facts()));
+        assert!(refined.facts().shares_ordered_tail_with(root.facts()));
+        assert!(refined.facts().shares_predicate_index_with(root.facts()));
         assert_eq!(
             refined.certificate().steps(),
             &[ProofStep::Witness(witness.clone())]
@@ -3417,6 +3416,10 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         );
         assert!(root.certificate().steps().is_empty());
     }
+    assert!(
+        work_samples.iter().all(|work| *work <= work_samples[0] * 2),
+        "witness work must stay bounded as unrelated facts grow: {work_samples:?}"
+    );
 }
 
 #[test]
@@ -3620,7 +3623,6 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         let completed = chosen
             .driver()
             .apply_step(ProofStep::Witness(ProofWitness::single(
-                "witness".to_string(),
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     ("candidate".to_string()).into(),
                 )),

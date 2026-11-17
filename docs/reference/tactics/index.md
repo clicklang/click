@@ -1127,7 +1127,7 @@ step is still checked.
 | `cases { A => { ... } B => { ... } }` | control | Specialized | Prove a written collection of cases. | [Reference](#explicit-cases) |
 | `open(resource) { ... }` | control | Specialized | Unfold a resource for a nested proof. | [Reference](#scoped-resource-opening) |
 | `open(...) { ... } by { ... }` | control | Expansion output | Supply the proof that restores an opened resource. | [Reference](#scoped-resource-opening-with-restoration) |
-| `witness { name: value, ... };` | simple | Specialized | Supply values for existential binders. | [Reference](#existential-witnesses) |
+| `witness(value, ...);` | simple | Specialized | Supply values for existential binders. | [Reference](#existential-witnesses) |
 | `obtain (name: Type, ...) { P }` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
 
 `sorry()` is a dev-only proof hole, not a tactic for committed proofs: it
@@ -1383,7 +1383,7 @@ An argument nothing fixes stays folded
 
 An existential `exists v { x == C(.., v, ..) }` whose `x` a fact fixes to a
 constructor of the same variant, `x == C(.., t, ..)`, takes `t` as its witness:
-`solve` writes `witness { v: t }` and closes the instance. A constant payload is
+`solve` writes `witness(t)` and closes the instance. A constant payload is
 written as itself and any other value by the local, parameter or binder that
 holds it; a value of another variant gives no witness
 ([`solve_takes_a_known_constructor_payload_as_the_witness.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_takes_a_known_constructor_payload_as_the_witness.md),
@@ -3202,19 +3202,20 @@ prints the body's checked steps; a smart tactic written in the `by` expands with
 
 ### Existential witnesses
 
-**Form:** `witness { name: value, ... };`
+**Form:** `witness(value, ...);`
 
-**Specialized.** Write it for an existential goal, naming the value that
-satisfies it. On an existential goal, instantiate each named binder with its
-value, in the order written, and continue with the instantiated body. One
-`witness` can supply every binder of `exists (x: T, y: U) { ... }`.
+**Specialized.** Write it for an existential goal, supplying values for its
+outermost binders in declaration order. Continue with the instantiated body.
+One `witness` can supply every binder of `exists (x: T, y: U) { ... }` or
+just a nonempty prefix, leaving the remaining existential goal open.
 
 **Accepts** a goal whose outermost form is `exists (name: T) { B }` or
 `(lo..hi).any(|name| { B })`, in a pure theorem or a C proof, when:
 
-- Each written name is the goal's outermost binder at that point:
-  `witness { x: 3, y: 4 }` on `exists (x: int32, y: int32) { ... }` takes `x`,
-  then `y`. Several `witness` steps may supply the binders one at a time.
+- Values follow the outermost binders: `witness(3, 4)` on
+  `exists (x: int32, y: int32) { ... }` takes `x`, then `y`.
+  `witness(3); witness(4);` has the same effect. Intermediate proof steps
+  may appear between them. Binder names do not appear in the tactic.
 - Each value has its binder's type: a C integer of exactly that type (`3u64`
   for `uint64`), a pointer, an `Integer` expression such as `0` or
   `to_integer(n)` for `Integer`, or an algebraic value of that datatype.
@@ -3227,19 +3228,19 @@ checked; prove it next.
 
 - An existential below the top of the goal, such as `A and exists ...`: split
   it with `both` first.
-- Binders named out of their declared order: name them in order.
 - A value of another type, such as an `int32` variable for a `uint64` or
   `Integer` binder: convert it (`to_integer(n)`) or write the suffixed literal.
 
 **Failure, checking, and tools:**
 
-A wrong binder, ill-typed value, or nonexistential goal fails. On a
+An empty argument list, ill-typed value, or nonexistential goal fails.
+Extra arguments fail when no existential binder remains. On a
 nonexistential pure goal the message reads "pure `witness` currently requires
 an Integer existential proposition" even though C integer and algebraic
-binders are accepted. Click records the exact witness; expansion is unchanged,
-and profiling charges one instantiation.
+binders are accepted. Click records the exact witness; expansion prints `witness(value)` steps,
+and profiling charges one instantiation per value.
 
-**Checked examples:** [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_names_binders_in_their_order.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_names_binders_in_their_order.md)
+**Checked examples:** [`witness_values_follow_the_goal_binders.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_values_follow_the_goal_binders.md), [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_reversed_values_leave_a_false_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_reversed_values_leave_a_false_goal.md)
 
 ### Obtaining witnesses
 

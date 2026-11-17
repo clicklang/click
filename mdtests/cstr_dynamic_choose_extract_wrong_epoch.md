@@ -31,7 +31,7 @@ uint64 read_terminator(uint8 bytes[]) {
                     bytes[found_len] == '\0' and
                     forall (k: uint64) { to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k]) })
             }
-            witness { len: found_len };
+            witness(found_len);
             both { solve(); } and {
                 both {
                     both {

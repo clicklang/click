@@ -677,8 +677,8 @@ fn concise_error_context_preserves_click_binder_colons() {
         ["foo", "exists (path: Path) { x: y }", "qux"]
     );
     assert_eq!(
-        concise_error_segments("foo: `witness { path: value }`: bar"),
-        ["foo", "`witness { path: value }`", "bar"]
+        concise_error_segments("foo: `witness(value)`: bar"),
+        ["foo", "`witness(value)`", "bar"]
     );
     assert_eq!(
         concise_error_segments("can't close: current goal is exists (path: Path)"),

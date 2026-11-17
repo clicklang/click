@@ -264,7 +264,7 @@ and the report's memory legend. Up to twelve allowed facts are displayed;
 any further entries are explicitly counted. This comparison is diagnostic
 only and does not turn the rejected proposition into an assumption.
 An `known()` failure on an existential goal suggests the
-`witness { name: value }` tactic. A trace reports facts introduced into the
+`witness(value)` tactic. A trace reports facts introduced into the
 focused proof context and changes to exact resource representations, using
 Click spelling where it represents the checked fact. It follows only the
 branch relevant to the selected tactic and does not print whole memory

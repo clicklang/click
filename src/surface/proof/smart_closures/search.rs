@@ -2314,27 +2314,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_zero_witness_closure");
         let Some(ClickProposition::Exists {
             click_type: ClickType::Program(crate::languages::interface::InterfaceType::Int32),
-            name,
-            written_name,
             ..
         }) = search_input.surface_goal()
         else {
             return Ok(None);
         };
-        let Some(witnessed) = attempt::candidate_outcome(
-            search_input
-                .driver()
-                .apply_step(ProofStep::Witness(ProofWitness::single(
-                    written_name
-                        .as_deref()
-                        .or_else(|| name.written())
-                        .unwrap_or("value")
-                        .to_owned(),
-                    ContractExpression::ProgramExpression(ProgramExpression::Value(
-                        ProgramValue::Int32(MachineTerm::constant(0)),
-                    )),
-                ))),
-        )?
+        let Some(witnessed) = attempt::candidate_outcome(search_input.driver().apply_step(
+            ProofStep::Witness(ProofWitness::single(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+            ))),
+        ))?
         else {
             return Ok(None);
         };
@@ -2507,24 +2496,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .iter()
             .map(|leaf| leaf.surface.clone())
             .collect::<Vec<_>>();
-        let Some(ClickProposition::Exists {
-            name, written_name, ..
-        }) = chosen.surface_goal()
-        else {
+        let Some(ClickProposition::Exists { .. }) = chosen.surface_goal() else {
             return Ok(None);
         };
-        let witness_name = written_name
-            .as_deref()
-            .or_else(|| name.written())
-            .unwrap_or("value")
-            .to_owned();
         let Some(witnessed) = attempt::candidate_outcome(chosen.driver().apply_step(
-            ProofStep::Witness(ProofWitness::single(
-                witness_name,
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    (choice_name).into(),
-                )),
-            )),
+            ProofStep::Witness(ProofWitness::single(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable((choice_name).into()),
+            ))),
         ))?
         else {
             return Ok(None);
@@ -6332,12 +6310,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 introduced_surfaces,
             );
         }
-        if let (ClickProposition::Exists { name, .. }, Proposition::Exists { var, body, .. }) =
+        if let (ClickProposition::Exists { .. }, Proposition::Exists { var, body, .. }) =
             (surface_goal, goal)
             && let Some(closed) =
                 crate::kernel::search::ProofSearch::try_constructor_witness_exists_closure(
                     search_input,
-                    name,
                     *var,
                     body,
                     introduced_surfaces,
@@ -6346,12 +6323,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(closed));
         }
         match (surface_goal, goal) {
-            (ClickProposition::Exists { name, .. }, goal @ Proposition::Exists { .. })
+            (ClickProposition::Exists { .. }, goal @ Proposition::Exists { .. })
                 if quantified_external_range_goal(goal) =>
             {
                 crate::kernel::search::ProofSearch::try_structural_exists_solve_closure(
                     search_input,
-                    name,
                     introduced_surfaces,
                 )
             }
@@ -6386,7 +6362,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     #[inline(never)]
     pub(in crate::surface::proof) fn try_constructor_witness_exists_closure(
         search_input: &Proof<'a>,
-        name: &SurfaceBinder,
         var: Variable,
         body: &Proposition,
         introduced_surfaces: &[ClickProposition],
@@ -6520,7 +6495,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         check_verification_deadline()?;
-        let witness = ProofWitness::single(name.to_string(), spelled);
+        let witness = ProofWitness::single(spelled);
         let Some(introduced) = attempt::candidate_outcome(
             search_input
                 .driver()
@@ -6540,7 +6515,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     #[inline(never)]
     pub(in crate::surface::proof) fn try_structural_exists_solve_closure(
         search_input: &Proof<'a>,
-        name: &SurfaceBinder,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
@@ -6564,7 +6538,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         ));
         for value in candidates {
             check_verification_deadline()?;
-            let witness = ProofWitness::single(name.to_string(), value);
+            let witness = ProofWitness::single(value);
             let Some(introduced) = attempt::candidate_outcome(
                 search_input
                     .driver()

@@ -9,7 +9,7 @@ theorem typed_witness() {
         exists (k: int32) { to_uint8(to_integer(k)) == to_uint8(to_integer(k)) }
     } by {
         intro();
-        witness { k: 0 };
+        witness(0);
         solve();
     }
 }
@@ -20,7 +20,7 @@ theorem typed_witness_under_implication() {
     } by {
         intro();
         intro();
-        witness { k: 0 };
+        witness(0);
         solve();
     }
 }

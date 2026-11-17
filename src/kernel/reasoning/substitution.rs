@@ -321,7 +321,7 @@ pub(crate) fn substitute_pointer_value_in_proposition(
     let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_typed_variables(
         &c, &integers, &algebraic,
     );
-    let result = rewrite.proposition(proposition);
+    let result = rewrite.substitute_proposition(proposition);
     match rewrite.refusal() {
         None => Ok(result),
         Some(reason) => Err(format!("pointer witness substitution refused: {reason:?}")),
@@ -9676,6 +9676,67 @@ mod resource_reference_substitution_tests {
 mod checked_singleton_substitution_tests {
     use super::*;
     use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
+
+    fn pointer_value(variable: Variable) -> PointerValue {
+        PointerValue::new(Pointer::symbolic(variable), ProgramType::Int32Pointer)
+    }
+
+    fn pointer_term(variable: Variable) -> Term {
+        Term::ProgramValue(ProgramValue::Pointer(pointer_value(variable)))
+    }
+
+    #[test]
+    fn pointer_witness_substitution_preserves_connectives_and_binder_scopes() {
+        let from = Variable(70_110);
+        let captured = Variable(70_111);
+        let leaf = Proposition::Equal(pointer_term(from), pointer_term(captured));
+        let atom = Proposition::Equal(
+            Term::Integer(IntegerTerm::var(from)),
+            Term::Integer(IntegerTerm::var(from)),
+        );
+        let compound = Proposition::And(Box::new(atom.clone()), Box::new(leaf.clone()));
+        assert_eq!(
+            substitute_pointer_value_in_proposition(&compound, from, &pointer_value(captured))
+                .unwrap(),
+            Proposition::And(
+                Box::new(atom),
+                Box::new(Proposition::Equal(
+                    pointer_term(captured),
+                    pointer_term(captured)
+                ))
+            )
+        );
+
+        let source = Proposition::ForAll {
+            name: Default::default(),
+            var: captured,
+            sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
+            body: Box::new(leaf.clone()),
+        };
+        let Proposition::ForAll { var, body, .. } =
+            substitute_pointer_value_in_proposition(&source, from, &pointer_value(captured))
+                .unwrap()
+        else {
+            panic!("the quantifier must survive");
+        };
+        assert_ne!(var, captured);
+        assert_eq!(
+            *body,
+            Proposition::Equal(pointer_term(captured), pointer_term(var))
+        );
+
+        let shadowed = Proposition::Exists {
+            name: "shadowed".into(),
+            var: from,
+            sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
+            body: Box::new(leaf),
+        };
+        assert_eq!(
+            substitute_pointer_value_in_proposition(&shadowed, from, &pointer_value(captured))
+                .unwrap(),
+            shadowed
+        );
+    }
 
     fn observed(variable: Variable) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(

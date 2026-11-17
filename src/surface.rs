@@ -6247,7 +6247,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "witness",
-        syntax: "witness {",
+        syntax: "witness(",
         class: "simple",
     },
     PublicTacticForm {
@@ -7350,86 +7350,51 @@ pub enum ProgramPointKind {
     Parameters,
 }
 
-/// `witness { k: value, ... }`: a value for each named binder of the
-/// existential goal, instantiated in the order written.
+/// `witness(value, ...)`: instantiate the outermost existential binders
+/// with the supplied values, in order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofWitness {
-    bindings: Vec<WitnessBinding>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WitnessBinding {
-    name: String,
-    value: ContractExpression,
+    values: Vec<ContractExpression>,
 }
 
 impl ProofWitness {
-    pub(crate) fn single(name: String, value: ContractExpression) -> Self {
+    pub(crate) fn single(value: ContractExpression) -> Self {
         Self {
-            bindings: vec![WitnessBinding { name, value }],
+            values: vec![value],
         }
     }
 
-    pub(crate) fn new(bindings: Vec<(String, ContractExpression)>) -> Self {
-        Self {
-            bindings: bindings
-                .into_iter()
-                .map(|(name, value)| WitnessBinding { name, value })
-                .collect(),
-        }
+    pub(crate) fn new(values: Vec<ContractExpression>) -> Self {
+        Self { values }
     }
 
-    pub(crate) fn bindings(&self) -> impl Iterator<Item = (&str, &ContractExpression)> {
-        self.bindings
-            .iter()
-            .map(|binding| (binding.name.as_str(), &binding.value))
+    pub(crate) fn values(&self) -> impl Iterator<Item = &ContractExpression> {
+        self.values.iter()
     }
 
-    /// One single-binder witness per binding, in order; a step with several
-    /// bindings is applied as these.
+    /// One single-binder witness per value, in order.
     pub(crate) fn singles(&self) -> impl Iterator<Item = Self> + '_ {
-        self.bindings.iter().map(|binding| Self {
-            bindings: vec![binding.clone()],
-        })
+        self.values.iter().cloned().map(Self::single)
     }
 
     pub(crate) fn is_single(&self) -> bool {
-        self.bindings.len() == 1
+        self.values.len() == 1
     }
 
-    /// The binder of a single-binder witness.
-    pub(crate) fn name(&self) -> &str {
-        debug_assert!(
-            self.is_single(),
-            "a multi-binder witness is applied binding by binding"
-        );
-        &self.bindings[0].name
-    }
-
-    /// The value of a single-binder witness.
     pub(crate) fn value(&self) -> &ContractExpression {
         debug_assert!(
             self.is_single(),
-            "a multi-binder witness is applied binding by binding"
+            "a multi-binder witness is applied value by value"
         );
-        &self.bindings[0].value
+        &self.values[0]
     }
 
     pub(crate) fn try_map_values<E>(
         &self,
-        mut map: impl FnMut(&ContractExpression) -> Result<ContractExpression, E>,
+        map: impl FnMut(&ContractExpression) -> Result<ContractExpression, E>,
     ) -> Result<Self, E> {
         Ok(Self {
-            bindings: self
-                .bindings
-                .iter()
-                .map(|binding| {
-                    Ok(WitnessBinding {
-                        name: binding.name.clone(),
-                        value: map(&binding.value)?,
-                    })
-                })
-                .collect::<Result<_, E>>()?,
+            values: self.values.iter().map(map).collect::<Result<_, E>>()?,
         })
     }
 }
@@ -10701,12 +10666,12 @@ impl ClickError {
                 }
             }
             if self.failed_tactic == Some("known()")
-                && let Some(Proposition::Exists { name, .. }) = state.kernel_goal()
+                && let Some(Proposition::Exists { .. }) = state.kernel_goal()
             {
-                let binder = if name.is_empty() { "name" } else { name };
-                context.push(format!(
-                    "help: choose a witness with `witness {{ {binder}: <value> }};`, then prove its body"
-                ));
+                context.push(
+                    "help: choose a witness with `witness(<value>);`, then prove its body"
+                        .to_string(),
+                );
             }
         }
         // A refused step's goal is the requirement it could not establish,
