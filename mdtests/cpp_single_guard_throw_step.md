@@ -1,9 +1,9 @@
 # A single guarded throwing call must expose its cleanup as a step
 
 This keeps one RAII object and one potentially throwing call. The proof does
-not involve two-object ordering or cross-cell framing; it checks that the
-call's normal and exceptional outcomes can each take one ordinary step for the
-synthesized destructor before finishing.
+not involve two-object ordering or cross-cell framing. Both edges run the
+synthesized destructor. The thrown payload is named at the call and at the
+function exit after the handler returns.
 
 ```cpp filename=single_guard_step.cpp function=single_guard_step profile=scalar_int32
 struct Restore {
@@ -75,14 +75,16 @@ int32 single_guard_step(int32& value, bool should_throw) {
     step();
     step();
     outcomes {
-        returned => {
-            step();
+        returned => { step_until(function.exit); }
+        threw(error) => {
+            have error == 7 by known();
             step_until(function.exit);
-            solve();
         }
-        threw => {
-            step();
-            step_until(function.exit);
+    }
+    outcomes {
+        returned => { solve(); }
+        threw(saved_error) => {
+            have saved_error == 7 by known();
             solve();
         }
     }

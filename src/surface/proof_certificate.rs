@@ -154,6 +154,7 @@ pub enum ProofStep {
         else_proof: Box<ProofCertificate>,
     },
     CallOutcomes {
+        payload_bindings: [Option<String>; 2],
         returned_proof: Box<ProofCertificate>,
         threw_proof: Box<ProofCertificate>,
     },
@@ -442,6 +443,7 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                 | ProofStep::CallOutcomes {
                     returned_proof: left_proof,
                     threw_proof: right_proof,
+                    ..
                 } => {
                     pending.extend(left_proof.steps.iter());
                     pending.extend(right_proof.steps.iter());
@@ -614,6 +616,7 @@ impl ProofStep {
                 )),
             },
             ProofTactic::CallOutcomes(proof_outcomes) => Self::CallOutcomes {
+                payload_bindings: proof_outcomes.payload_bindings.clone(),
                 returned_proof: Box::new(ProofCertificate::from_validated_steps(
                     proof_outcomes
                         .returned_tactics
@@ -938,9 +941,11 @@ impl ProofStep {
                 else_tactics: else_proof.to_proof_tactics(),
             }),
             Self::CallOutcomes {
+                payload_bindings,
                 returned_proof,
                 threw_proof,
             } => ProofTactic::CallOutcomes(ProofCallOutcomes {
+                payload_bindings: payload_bindings.clone(),
                 returned_tactics: returned_proof.to_proof_tactics(),
                 threw_tactics: threw_proof.to_proof_tactics(),
             }),

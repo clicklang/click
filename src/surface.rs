@@ -6788,6 +6788,8 @@ pub struct ProofBranch {
 /// Explicit proof arms for the checked edge of one potentially throwing call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofCallOutcomes {
+    /// Optional proof names for the returned and thrown payloads, in that order.
+    pub payload_bindings: [Option<String>; 2],
     pub returned_tactics: Vec<ProofTactic>,
     pub threw_tactics: Vec<ProofTactic>,
 }
