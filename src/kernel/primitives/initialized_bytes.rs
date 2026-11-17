@@ -565,9 +565,9 @@ mod tests {
 
     #[test]
     fn ordinary_memory_store_and_lifetime_use_the_same_initialization_record() {
-        use crate::kernel::{Memory, uint8};
+        use crate::kernel::{SymbolicMemory, uint8};
         let address = at("local:flags", 0);
-        let mut partial = Memory::new().with_uninitialized_block(address.base.clone(), 1);
+        let mut partial = SymbolicMemory::new().with_uninitialized_block(address.base.clone(), 1);
         std::sync::Arc::make_mut(&mut partial.heap)
             .initialized
             .record_mask(&address, 1);

@@ -2581,7 +2581,9 @@ the array before its type is complete are rejected. Inferred automatic struct
 arrays, string initializers, and designated initializers are not supported.
 
 Scalar local arrays may have multiple fixed dimensions, such as
-`int32 matrix[3][4]`. Click lowers their storage in row-major order while
+`int32 matrix[3][4]`. A fixed dimension may also use `sizeof` of a supported
+type or object, as in the bit-field representation-copy example. Click
+lowers their storage in row-major order while
 retaining the declared element width and each declared dimension. An access
 such as `matrix[i][j]` therefore carries separate obligations for
 `0 <= i < 3` and `0 <= j < 4` before its flattened offset is formed; the
