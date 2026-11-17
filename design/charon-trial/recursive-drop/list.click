@@ -98,119 +98,169 @@ impl recursive_drop::Stack {
                 // Each certificate names one executed operation; skips need no link.
                 mark before_pop;
                 step_until(function.exit);
-                have at(before_pop, separate(region(1).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(before_pop, separate(region(1).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
                 have at(region(1).exit, old(self.head).next) == at(region(1).entry, old(self.head).next) by {
                     preserve(at(before_pop, separate(region(1).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(2).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(before_pop, separate(region(2).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
                 have at(region(2).exit, old(self.head).next) == at(region(2).entry, old(self.head).next) by {
                     preserve(at(before_pop, separate(region(2).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(3).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(before_pop, separate(region(3).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
                 have at(region(3).exit, old(self.head).next) == at(region(3).entry, old(self.head).next) by {
                     preserve(at(before_pop, separate(region(3).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(4).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(before_pop, separate(region(4).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
                 have at(region(4).exit, old(self.head).next) == at(region(4).entry, old(self.head).next) by {
                     preserve(at(before_pop, separate(region(4).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(6).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(before_pop, separate(region(6).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
                 have at(region(6).exit, old(self.head).next) == at(region(6).entry, old(self.head).next) by {
                     preserve(at(before_pop, separate(region(6).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(9).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(before_pop, separate(region(9).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
                 have at(region(9).exit, old(self.head).next) == at(region(9).entry, old(self.head).next) by {
                     preserve(at(before_pop, separate(region(9).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(10).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(before_pop, separate(region(10).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
                 have at(region(10).exit, old(self.head).next) == at(region(10).entry, old(self.head).next) by {
                     preserve(at(before_pop, separate(region(10).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(11).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(before_pop, separate(region(11).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
                 have at(region(11).exit, old(self.head).next) == at(region(11).entry, old(self.head).next) by {
                     preserve(at(before_pop, separate(region(11).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(14).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(before_pop, separate(region(14).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
                 have at(region(14).exit, old(self.head).next) == at(region(14).entry, old(self.head).next) by {
                     preserve(at(before_pop, separate(region(14).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(15).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(before_pop, separate(region(15).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
                 have at(region(15).exit, old(self.head).next) == at(region(15).entry, old(self.head).next) by {
                     preserve(at(before_pop, separate(region(15).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(21).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(21).exit, old(self.head).next) == at(region(21).entry, old(self.head).next) by {
-                    preserve(at(before_pop, separate(region(21).footprint, memory(self.head.next))));
+                have at(before_pop, separate(region(20).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(20).exit, old(self.head).next) == at(region(20).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(20).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(24).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(24).exit, old(self.head).next) == at(region(24).entry, old(self.head).next) by {
-                    preserve(at(before_pop, separate(region(24).footprint, memory(self.head.next))));
+                have at(before_pop, separate(region(22).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(22).exit, old(self.head).next) == at(region(22).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(22).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(28).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(28).exit, old(self.head).next) == at(region(28).entry, old(self.head).next) by {
-                    preserve(at(before_pop, separate(region(28).footprint, memory(self.head.next))));
+                have at(before_pop, separate(region(25).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(25).exit, old(self.head).next) == at(region(25).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(25).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(34).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(34).exit, old(self.head).next) == at(region(34).entry, old(self.head).next) by {
-                    preserve(at(before_pop, separate(region(34).footprint, memory(self.head.next))));
+                have at(before_pop, separate(region(30).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(30).exit, old(self.head).next) == at(region(30).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(30).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(42).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(42).exit, old(self.head).next) == at(region(42).entry, old(self.head).next) by {
-                    preserve(at(before_pop, separate(region(42).footprint, memory(self.head.next))));
+                have at(before_pop, separate(region(36).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(36).exit, old(self.head).next) == at(region(36).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(36).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(43).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(43).exit, old(self.head).next) == at(region(43).entry, old(self.head).next) by {
-                    preserve(at(before_pop, separate(region(43).footprint, memory(self.head.next))));
+                have at(before_pop, separate(region(37).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(37).exit, old(self.head).next) == at(region(37).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(37).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(45).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(45).exit, old(self.head).next) == at(region(45).entry, old(self.head).next) by {
-                    preserve(at(before_pop, separate(region(45).footprint, memory(self.head.next))));
+                have at(before_pop, separate(region(39).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(39).exit, old(self.head).next) == at(region(39).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(39).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(46).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(46).exit, old(self.head).next) == at(region(46).entry, old(self.head).next) by {
-                    preserve(at(before_pop, separate(region(46).footprint, memory(self.head.next))));
+                have at(before_pop, separate(region(40).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(40).exit, old(self.head).next) == at(region(40).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(40).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(47).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(47).exit, old(self.head).next) == at(region(47).entry, old(self.head).next) by {
-                    preserve(at(before_pop, separate(region(47).footprint, memory(self.head.next))));
+                have at(before_pop, separate(region(41).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(41).exit, old(self.head).next) == at(region(41).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(41).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(55).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(55).exit, old(self.head).next) == at(region(55).entry, old(self.head).next) by {
-                    preserve(at(before_pop, separate(region(55).footprint, memory(self.head.next))));
+                have at(before_pop, separate(region(48).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(48).exit, old(self.head).next) == at(region(48).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(48).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(58).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(before_pop, separate(region(50).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(50).exit, old(self.head).next) == at(region(50).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(50).footprint, memory(self.head.next))));
+                }
+                have at(before_pop, separate(region(52).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(52).exit, old(self.head).next) == at(region(52).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(52).footprint, memory(self.head.next))));
+                }
+                have at(before_pop, separate(region(56).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(56).exit, old(self.head).next) == at(region(56).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(56).footprint, memory(self.head.next))));
+                }
+                have at(before_pop, separate(region(58).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
                 have at(region(58).exit, old(self.head).next) == at(region(58).entry, old(self.head).next) by {
                     preserve(at(before_pop, separate(region(58).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(61).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(61).exit, old(self.head).next) == at(region(61).entry, old(self.head).next) by {
-                    preserve(at(before_pop, separate(region(61).footprint, memory(self.head.next))));
+                have at(before_pop, separate(region(60).footprint, memory(self.head.next))) by { normalize() using {
+                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
+                }; }
+                have at(region(60).exit, old(self.head).next) == at(region(60).entry, old(self.head).next) by {
+                    preserve(at(before_pop, separate(region(60).footprint, memory(self.head.next))));
                 }
-                have at(before_pop, separate(region(68).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(68).exit, old(self.head).next) == at(region(68).entry, old(self.head).next) by {
-                    preserve(at(before_pop, separate(region(68).footprint, memory(self.head.next))));
+                have separate(region(74).footprint, memory(self.head)) by { normalize() using {
+                    at(before_pop, separate(memory(*self.head), memory(self.head)));
+                }; }
+                have at(region(74).exit, self.head) == at(region(74).entry, self.head) by {
+                    preserve(separate(region(74).footprint, memory(self.head)));
                 }
-                have separate(region(89).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
-                have at(region(89).exit, self.head) == at(region(89).entry, self.head) by {
-                    preserve(separate(region(89).footprint, memory(self.head)));
+                have separate(region(75).footprint, memory(self.head)) by { normalize() using {
+                    at(before_pop, separate(memory(*self.head), memory(self.head)));
+                }; }
+                have at(region(75).exit, self.head) == at(region(75).entry, self.head) by {
+                    preserve(separate(region(75).footprint, memory(self.head)));
                 }
-                have separate(region(92).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
-                have at(region(92).exit, self.head) == at(region(92).entry, self.head) by {
-                    preserve(separate(region(92).footprint, memory(self.head)));
-                }
-                have separate(region(93).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
-                have at(region(93).exit, self.head) == at(region(93).entry, self.head) by {
-                    preserve(separate(region(93).footprint, memory(self.head)));
-                }
-                have separate(region(98).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
-                have at(region(98).exit, self.head) == at(region(98).entry, self.head) by {
-                    preserve(separate(region(98).footprint, memory(self.head)));
-                }
-                have separate(region(101).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
-                have at(region(101).exit, self.head) == at(region(101).entry, self.head) by {
-                    preserve(separate(region(101).footprint, memory(self.head)));
-                }
-                have at(region(84).exit, self.head) == old(self.head.next) by { known(); }
+                have at(region(69).exit, self.head) == old(self.head.next) by { known(); }
                 have self.head == old(self.head.next) by { known(); }
                 unfold(first(List::Cons(v, tail_values)));
                 unfold(rest(List::Cons(v, tail_values)));
@@ -221,8 +271,8 @@ impl recursive_drop::Stack {
                     }
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
-                        have old(self.head.next).next == at(region(93).exit, old(self.head.next).next) by {
-                            transport(at(region(93).exit, old(self.head.next).next) == at(region(93).exit, old(self.head.next).next), old(self.head.next).next == at(region(93).exit, old(self.head.next).next));
+                        have old(self.head.next).next == at(region(75).exit, old(self.head.next).next) by {
+                            transport(at(region(75).exit, old(self.head.next).next) == at(region(75).exit, old(self.head.next).next), old(self.head.next).next == at(region(75).exit, old(self.head.next).next));
                         }
                         have self.head.next == old(self.head.next).next by {
                             rewrite(self.head, old(self.head.next));
@@ -288,19 +338,7 @@ fn recursive_drop::pushed(x: u32) -> u32 {
 fn recursive_drop::round_trip(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
 } by {
-    step_until(region(52));
-    have separate(region(45).footprint, memory(stack.head)) by { normalize() using {}; }
-    have at(region(45).exit, stack.head) == at(region(45).entry, stack.head) by {
-        preserve(separate(region(45).footprint, memory(stack.head)));
-    }
-    have separate(region(49).footprint, memory(stack.head)) by { normalize() using {}; }
-    have at(region(49).exit, stack.head) == at(region(49).entry, stack.head) by {
-        preserve(separate(region(49).footprint, memory(stack.head)));
-    }
-    have separate(region(50).footprint, memory(stack.head)) by { normalize() using {}; }
-    have at(region(50).exit, stack.head) == at(region(50).entry, stack.head) by {
-        preserve(separate(region(50).footprint, memory(stack.head)));
-    }
+    step_until(statement(2).call(0));
     step_until(function.exit);
     unfold(first(List::Cons(x, List<u32>::Nil)));
 }

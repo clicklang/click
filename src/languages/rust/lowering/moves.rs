@@ -1,6 +1,7 @@
-//! Compiler drop CFGs emit shared joins and supported natural while loops once. Checked live flags consume
-//! a whole value on move/drop and reject duplicate cleanup even when scalar
-//! field bits remain in old storage.
+//! Compiler drop CFGs emit shared joins and supported natural while loops once.
+//! The MIR is drop-elaborated: rustc has already decided every move and drop,
+//! so a move copies the fields and a drop runs the destructor, with no state
+//! of the lowering's own recording which values are live.
 use super::*;
 mod flow;
 use crate::languages::rust::schema::{MirBody, MirStatement as S, MirTerminator as T};
@@ -130,7 +131,6 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         })
         .collect();
     let mut records = BTreeMap::new();
-    let mut live = BTreeMap::new();
     let mut declarations = program_skip();
     let owned_parameter_count = f
         .parameters
@@ -196,47 +196,25 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
             Type::Reference { .. } if iterator_reference(&local.value_type) => program_skip(),
             Type::Record { name } => {
                 cx.owned_locals.insert(local.name.clone());
-                let flag = format!("__rust_owned_live_{index}");
-                if !cx.locals.insert(flag.clone()) {
-                    return Err("MIR live flag collides with a source name".into());
-                }
                 records.insert(local.name.as_str(), name.as_str());
-                live.insert(local.name.as_str(), flag.clone());
-                // Construction grants authority over fresh stack bytes. The
-                // live flag stays false until every typed field is overwritten;
-                // source reads cannot observe the kernel's fresh placeholders.
                 if parameter {
-                    declarations = program_seq(
-                        declarations,
-                        program_seq(
-                            program_declare(flag.clone(), ProgramType::Int32),
-                            program_assign(
-                                flag,
-                                crate::kernel::program_expression::int32_literal(1),
-                            ),
-                        ),
-                    );
                     continue;
                 }
-                program_seq(
-                    program_declare(flag.clone(), ProgramType::Int32),
-                    program_seq(
-                        program_assign(flag, crate::kernel::program_expression::int32_literal(0)),
-                        if storage_starts.contains(local.name.as_str())
-                            && check_copyable(cx, name).is_ok()
-                        {
-                            program_skip()
-                        } else {
-                            program_begin_aggregate_construction(
-                                local.name.clone(),
-                                cx.layouts
-                                    .get(name.as_str())
-                                    .ok_or("missing owned record layout")?
-                                    .to_kernel_aggregate_layout(),
-                            )
-                        },
-                    ),
-                )
+                // Construction grants authority over fresh stack bytes;
+                // source reads cannot observe the kernel's fresh placeholders,
+                // since rustc reads no field before it is written.
+                if storage_starts.contains(local.name.as_str()) && check_copyable(cx, name).is_ok()
+                {
+                    program_skip()
+                } else {
+                    program_begin_aggregate_construction(
+                        local.name.clone(),
+                        cx.layouts
+                            .get(name.as_str())
+                            .ok_or("missing owned record layout")?
+                            .to_kernel_aggregate_layout(),
+                    )
+                }
             }
             Type::ScalarSlice { element, mutable } => {
                 let element_type = scalar_type(element)?.to_kernel_type();
@@ -381,68 +359,26 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         flow.loops.is_empty().then_some(flow.joins.as_slice()),
     );
     let mut nodes = vec![None; mir.blocks.len()];
-    let check = |local: &str, record: &str| -> Result<&str, String> {
+    let check = |local: &str, record: &str| -> Result<(), String> {
         if records.get(local).copied() != Some(record) {
             return Err("owned MIR place disagrees with record type".into());
         }
-        live.get(local)
-            .map(String::as_str)
-            .ok_or("unknown owned MIR place".into())
-    };
-    let assertion = |flag: &str, is_live: bool| {
-        program_assert(crate::kernel::program_expression::equal(
-            crate::kernel::program_expression::variable(flag),
-            crate::kernel::program_expression::int32_literal(u32::from(is_live)),
-        ))
+        Ok(())
     };
     for &block in &flow.order {
         cx.mir_point = None;
         cx.mir_nodes.clear();
         let terminal = match &mir.blocks[block].terminator {
-            T::Goto { .. } => program_skip(),
-            T::If { condition, .. } => accesses(&[condition], &live),
-            T::Switch { scrutinee, .. } => accesses(&[scrutinee], &live),
+            T::Goto { .. } | T::If { .. } | T::Switch { .. } => program_skip(),
             T::Return => {
-                let mut end = if f.return_type == Type::Unit {
+                if f.return_type == Type::Unit {
                     program_return(program_void_value())
-                } else if let Type::Record { name } = &f.return_type {
-                    let flag = check("__rust_mir_0", name)?;
-                    program_seq(
-                        assertion(flag, true),
-                        program_seq(
-                            program_assign(
-                                flag,
-                                crate::kernel::program_expression::int32_literal(0),
-                            ),
-                            program_return(crate::kernel::program_expression::variable(
-                                "__rust_mir_0",
-                            )),
-                        ),
-                    )
                 } else {
+                    if let Type::Record { name } = &f.return_type {
+                        check("__rust_mir_0", name)?;
+                    }
                     program_return(crate::kernel::program_expression::variable("__rust_mir_0"))
-                };
-                // Plain values without a destructor can die at Return; any
-                // destructor-bearing value must already have been consumed.
-                for (local, record) in &records {
-                    if *local == "__rust_mir_0"
-                        && matches!(&f.return_type, Type::Record { name } if name == record)
-                    {
-                        // The return sequence itself consumes this slot;
-                        // its destructor belongs to the receiving caller.
-                        continue;
-                    }
-                    if cx
-                        .records
-                        .get(record)
-                        .ok_or("missing record")?
-                        .destructor
-                        .is_some()
-                    {
-                        end = program_seq(assertion(&live[*local], false), end);
-                    }
                 }
-                end
             }
             T::Unreachable => program_assert(crate::kernel::program_expression::int32_literal(0)),
             T::Panic { message } => program_labeled_assert(
@@ -457,7 +393,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                 destination,
                 ..
             } => {
-                let flag = check(source, record)?;
+                check(source, record)?;
                 let layout = cx
                     .layouts
                     .get(record.as_str())
@@ -470,31 +406,22 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     )
                 });
                 program_seq(
-                    assertion(flag, true),
-                    program_seq(
-                        ProgramStatement::HeapAllocate {
-                            target: (destination.clone()).into(),
-                            bytes: crate::kernel::program_expression::int32_literal(
-                                layout.size_bytes(),
-                            ),
-                            zeroed: false,
-                            object_type: class,
-                            ends_program_on_failure: true,
-                        },
-                        program_seq(
-                            crate::kernel::program_copy_aggregate(
-                                crate::kernel::program_expression::variable(destination),
-                                crate::kernel::program_expression::cast(
-                                    crate::kernel::program_expression::variable(source),
-                                    ProgramType::Int32Pointer,
-                                ),
-                                layout.to_kernel_aggregate_layout(),
-                            ),
-                            program_assign(
-                                flag,
-                                crate::kernel::program_expression::int32_literal(0),
-                            ),
+                    ProgramStatement::HeapAllocate {
+                        target: (destination.clone()).into(),
+                        bytes: crate::kernel::program_expression::int32_literal(
+                            layout.size_bytes(),
                         ),
+                        zeroed: false,
+                        object_type: class,
+                        ends_program_on_failure: true,
+                    },
+                    crate::kernel::program_copy_aggregate(
+                        crate::kernel::program_expression::variable(destination),
+                        crate::kernel::program_expression::cast(
+                            crate::kernel::program_expression::variable(source),
+                            ProgramType::Int32Pointer,
+                        ),
+                        layout.to_kernel_aggregate_layout(),
                     ),
                 )
             }
@@ -521,7 +448,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                 }
             }
             T::Drop { local, record, .. } => {
-                let flag = check(local, record)?;
+                check(local, record)?;
                 let r = cx.records.get(record.as_str()).ok_or("unknown drop type")?;
                 let cleanup = match &r.destructor {
                     Some(dtor) if cx.functions.contains_key(dtor.as_str()) => program_call(
@@ -536,13 +463,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     }
                     None => program_skip(),
                 };
-                program_seq(
-                    assertion(flag, true),
-                    program_seq(
-                        cleanup,
-                        program_assign(flag, crate::kernel::program_expression::int32_literal(0)),
-                    ),
-                )
+                cleanup
             }
             T::Call {
                 function,
@@ -571,10 +492,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                 } else {
                     cx.call_then_assign(destination, function, arguments_values)
                 };
-                program_seq(
-                    accesses(&arguments.iter().collect::<Vec<_>>(), &live),
-                    program_seq(prefix, call),
-                )
+                program_seq(prefix, call)
             }
             T::Call {
                 function,
@@ -589,7 +507,6 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     .get(function.as_str())
                     .ok_or("missing MIR call definition")?;
                 let (prefix, arguments_values) = cx.prepared_arguments(function, arguments)?;
-                let mut transfer = program_skip();
                 let mut indices = BTreeSet::new();
                 let mut previous_index = None;
                 for argument in owned_arguments {
@@ -604,19 +521,9 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         return Err("owned call metadata disagrees with callee and operands".into());
                     }
                     previous_index = Some(argument.index);
-                    let flag = check(&argument.local, &argument.record)?;
+                    check(&argument.local, &argument.record)?;
                     if !argument.moved {
                         check_copyable(cx, &argument.record)?;
-                    }
-                    transfer = program_seq(transfer, assertion(flag, true));
-                    if argument.moved {
-                        transfer = program_seq(
-                            transfer,
-                            program_assign(
-                                flag,
-                                crate::kernel::program_expression::int32_literal(0),
-                            ),
-                        );
                     }
                 }
                 if callee.parameters.iter().enumerate().any(|(index, p)| {
@@ -640,7 +547,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         callee: None,
                     }
                 } else if let Type::Record { name } = &callee.return_type {
-                    let flag = check(destination, name)?;
+                    check(destination, name)?;
                     let layout = cx
                         .layouts
                         .get(name.as_str())
@@ -652,16 +559,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         result,
                         layout,
                     );
-                    program_seq(
-                        assertion(flag, false),
-                        program_seq(
-                            program_seq(call, copy),
-                            program_assign(
-                                flag,
-                                crate::kernel::program_expression::int32_literal(1),
-                            ),
-                        ),
-                    )
+                    program_seq(call, copy)
                 } else if callee.return_type == Type::Unit {
                     program_call(function, arguments_values)
                 } else if let Some(&value_type) = cx.memory_values.get(destination.as_str()) {
@@ -686,10 +584,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                 } else {
                     cx.call_then_assign(destination, function, arguments_values)
                 };
-                program_seq(
-                    accesses(&arguments.iter().collect::<Vec<_>>(), &live),
-                    program_seq(prefix, program_seq(transfer, call)),
-                )
+                program_seq(prefix, call)
             }
         };
         // The source statement the block's statements come from, as its
@@ -903,7 +798,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     record,
                     fields,
                 } => {
-                    let flag = check(target, record)?;
+                    check(target, record)?;
                     let r = cx
                         .records
                         .get(record.as_str())
@@ -911,7 +806,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     if fields.len() != r.fields.len() {
                         return Err("partial record initialization".into());
                     }
-                    let mut initialize = assertion(flag, false);
+                    let mut initialize = program_skip();
                     let record_fields = r.fields.clone();
                     for (value, field) in fields.iter().zip(&record_fields) {
                         let address = crate::kernel::program_expression::pointer_offset_bytes(
@@ -938,10 +833,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         };
                         initialize = program_seq(initialize, write);
                     }
-                    program_seq(
-                        initialize,
-                        program_assign(flag, crate::kernel::program_expression::int32_literal(1)),
-                    )
+                    initialize
                 }
                 S::Move {
                     target,
@@ -960,10 +852,9 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     if target == source {
                         return Err("self move is invalid".into());
                     }
-                    let source_flag = check(source, record)?;
-                    let target_flag = check(target, record)?;
-                    let mut copy =
-                        program_seq(assertion(source_flag, true), assertion(target_flag, false));
+                    check(source, record)?;
+                    check(target, record)?;
+                    let mut copy = program_skip();
                     let record_fields = cx
                         .records
                         .get(record.as_str())
@@ -1008,23 +899,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         };
                         copy = program_seq(copy, write);
                     }
-                    program_seq(
-                        copy,
-                        program_seq(
-                            if moving {
-                                program_assign(
-                                    source_flag,
-                                    crate::kernel::program_expression::int32_literal(0),
-                                )
-                            } else {
-                                program_skip()
-                            },
-                            program_assign(
-                                target_flag,
-                                crate::kernel::program_expression::int32_literal(1),
-                            ),
-                        ),
-                    )
+                    copy
                 }
                 S::BeginStorage { local } if cx.local_arrays.contains(local) => {
                     let (length, element, _) = cx.arrays[local];
@@ -1044,61 +919,23 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     let record = records
                         .get(local.as_str())
                         .ok_or("unknown record storage start")?;
-                    let flag = check(local, record)?;
-                    // Plain values carry no destructor or borrowed authority.
-                    // StorageLive starts a fresh lifetime even when a loop
-                    // summary has abstracted the previous lifetime's flag.
-                    // Drop/reference-bearing records retain their checked
-                    // move/drop protocol; starting storage cannot erase it.
+                    // Plain values carry no destructor or borrowed authority,
+                    // so StorageLive starts a fresh lifetime, also in each
+                    // pass of a loop. Drop/reference-bearing records keep the
+                    // storage they were declared with.
                     if check_copyable(cx, record).is_ok() {
-                        program_seq(
-                            program_begin_aggregate_construction(
-                                local.clone(),
-                                cx.layouts
-                                    .get(*record)
-                                    .ok_or("missing record storage layout")?
-                                    .to_kernel_aggregate_layout(),
-                            ),
-                            program_assign(
-                                flag,
-                                crate::kernel::program_expression::int32_literal(0),
-                            ),
+                        program_begin_aggregate_construction(
+                            local.clone(),
+                            cx.layouts
+                                .get(*record)
+                                .ok_or("missing record storage layout")?
+                                .to_kernel_aggregate_layout(),
                         )
                     } else {
                         program_skip()
                     }
                 }
-                S::EndStorage { local } => match records.get(local.as_str()) {
-                    Some(record) => {
-                        let flag = check(local, record)?;
-                        if cx
-                            .records
-                            .get(record)
-                            .ok_or("missing record")?
-                            .destructor
-                            .is_some()
-                        {
-                            assertion(flag, false)
-                        } else {
-                            program_assign(
-                                flag,
-                                crate::kernel::program_expression::int32_literal(0),
-                            )
-                        }
-                    }
-                    None => program_skip(),
-                },
-            };
-            let inputs: Vec<&E> = match s {
-                S::SliceSplit {
-                    slice, midpoint, ..
-                } => vec![slice, midpoint],
-                S::SharedArrayInitialize { source, .. } => vec![source],
-                S::Assert { condition, .. } => vec![condition],
-                S::RangeInitialize { start, end, .. } => vec![start, end],
-                S::Assign { target, value } => vec![target, value],
-                S::Initialize { fields, .. } => fields.iter().collect(),
-                _ => Vec::new(),
+                S::EndStorage { .. } => program_skip(),
             };
             if let Some(forest) = &leases {
                 super::scalar_leases::decorate(
@@ -1110,10 +947,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     &mut statement,
                 )?;
             }
-            statements = statements.then(Sited::at(
-                site,
-                program_seq(accesses(&inputs, &live), statement),
-            ));
+            statements = statements.then(Sited::at(site, statement));
         }
         let prefix = leases.as_ref().map_or_else(program_skip, |forest| {
             super::scalar_leases::endings(
@@ -1697,50 +1531,6 @@ fn switch(
     Ok(match bound_field {
         Some(bound) => bound.then(chain),
         None => chain,
-    })
-}
-
-fn accesses(expressions: &[&E], live: &BTreeMap<&str, String>) -> ProgramStatement {
-    let mut roots = BTreeSet::new();
-    let mut pending = expressions.to_vec();
-    while let Some(expression) = pending.pop() {
-        match expression {
-            E::Local { name } => {
-                if let Some(flag) = live.get(name.as_str()) {
-                    roots.insert(flag.as_str());
-                }
-            }
-            E::Binary { left, right, .. } => {
-                pending.push(left);
-                pending.push(right);
-            }
-            E::Index { slice, index } => {
-                pending.push(slice);
-                pending.push(index);
-            }
-            E::Array { elements } => pending.extend(elements),
-            E::Repeat { value, .. } => pending.push(value),
-            E::Not { value }
-            | E::BitwiseNot { value, .. }
-            | E::Cast { value, .. }
-            | E::IntegerFrom { value, .. } => pending.push(value),
-            E::Borrow { place, .. } => pending.push(place),
-            E::SliceLength { slice } => pending.push(slice),
-            E::ArrayToSlice { array, .. } => pending.push(array),
-            E::Deref { reference, .. } => pending.push(reference),
-            E::Field { base, .. } => pending.push(base),
-            E::Call { arguments, .. } => pending.extend(arguments),
-            _ => {}
-        }
-    }
-    roots.into_iter().fold(program_skip(), |s, flag| {
-        program_seq(
-            s,
-            program_assert(crate::kernel::program_expression::equal(
-                crate::kernel::program_expression::variable(flag),
-                crate::kernel::program_expression::int32_literal(1),
-            )),
-        )
     })
 }
 

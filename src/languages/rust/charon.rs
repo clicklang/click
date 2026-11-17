@@ -4032,44 +4032,15 @@ mod tests {
     }
 
     #[test]
-    fn charon_plain_record_loop_needs_storage_lifetime_restarts() {
+    fn charon_plain_record_loop_starts_each_pass_with_fresh_storage() {
         let artifact = include_bytes!(
             "../../../design/charon-trial/plain-record-loop/.click/loop/loop.rs.ullbc"
         );
         let source = include_bytes!("../../../design/charon-trial/plain-record-loop/loop.rs");
         let claim = include_str!("../../../design/charon-trial/plain-record-loop/loop.click");
         let export = decode(artifact, "loop.rs", source).unwrap();
-        let prepared = super::super::import::prepared_for_test(export.clone()).unwrap();
+        let prepared = super::super::import::prepared_for_test(export).unwrap();
         ProgramVerificationSession::new_program_prepared(claim, &prepared).unwrap();
-        let mut missing = export;
-        let mut removed = 0;
-        for f in &mut missing.functions {
-            if let Some(mir) = &mut f.mir {
-                for block in &mut mir.blocks {
-                    block.statements.retain(|s| {
-                        if matches!(s, S::BeginStorage { .. }) {
-                            removed += 1;
-                            false
-                        } else {
-                            true
-                        }
-                    });
-                }
-            }
-        }
-        assert!(removed > 0);
-        let prepared = super::super::import::prepared_for_test(missing).unwrap();
-        let error = ProgramVerificationSession::new_program_prepared(claim, &prepared)
-            .err()
-            .expect("loop lost its storage-lifetime prerequisite");
-        assert!(
-            error
-                .message()
-                .contains("requires an explicit prerequisite proof")
-                && error.message().contains("== 0"),
-            "{}",
-            error.message()
-        );
     }
 
     fn loop_array_copy_export() -> out::RustExport {
@@ -4664,30 +4635,6 @@ mod tests {
     );
     const OWNED_ARRAY_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/owned-array-fields/owned.rs");
-    #[test]
-    fn charon_owned_array_move_cannot_reuse_consumed_record() {
-        let mut export = decode(OWNED_ARRAY_ARTIFACT, "owned.rs", OWNED_ARRAY_SOURCE).unwrap();
-        export.functions.retain(|f| f.name == "moved");
-        let block = export.functions[0]
-            .mir
-            .as_mut()
-            .unwrap()
-            .blocks
-            .iter_mut()
-            .find(|b| b.statements.iter().any(|s| matches!(s, S::Move { .. })))
-            .unwrap();
-        let index = block
-            .statements
-            .iter()
-            .position(|s| matches!(s, S::Move { .. }))
-            .unwrap();
-        block
-            .statements
-            .insert(index + 1, block.statements[index].clone());
-        let prepared = super::super::import::prepared_for_test(export).unwrap();
-        assert!(ProgramVerificationSession::new_program_prepared("verifying \"owned.rs\"; fn moved(value: u32, index: usize) -> u32 { requires index < 4u64; ensures result == value; }", &prepared).is_err());
-    }
-
     const FIELDS_ARTIFACT: &[u8] =
         include_bytes!("../../../design/charon-trial/array-fields/.click/fields/fields.rs.ullbc");
     const FIELDS_SOURCE: &[u8] =
@@ -5677,98 +5624,6 @@ mod tests {
             let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
             mutation(&mut artifact);
             assert!(decode(&serde_json::to_vec(&artifact).unwrap(), "trial.rs", SOURCE).is_err());
-        }
-    }
-
-    #[test]
-    #[ignore = "nightly: 2.1s in the parallel gate"]
-    fn charon_trial_checked_authority_rejects_duplicate_move_drop_and_missing_cleanup() {
-        let original = decode(ARTIFACT, "trial.rs", SOURCE).unwrap();
-        for corruption in 0..4 {
-            let mut export = original.clone();
-            let mir = export
-                .functions
-                .iter_mut()
-                .find(|f| f.name == "guarded_increment")
-                .unwrap()
-                .mir
-                .as_mut()
-                .unwrap();
-            if corruption == 0 || corruption == 3 {
-                let block = mir
-                    .blocks
-                    .iter_mut()
-                    .find(|b| b.statements.iter().any(|s| matches!(s, S::Move { .. })))
-                    .unwrap();
-                let index = block
-                    .statements
-                    .iter()
-                    .position(|s| matches!(s, S::Move { .. }))
-                    .unwrap();
-                let extra = if corruption == 0 {
-                    block.statements[index].clone()
-                } else {
-                    let S::Move { source, record, .. } = &block.statements[index] else {
-                        unreachable!()
-                    };
-                    S::Assign {
-                        target: E::Local {
-                            name: "__rust_mir_0".into(),
-                        },
-                        value: E::Cast {
-                            value: Box::new(E::Field {
-                                base: Box::new(E::Local {
-                                    name: source.clone(),
-                                }),
-                                record: record.clone(),
-                                field: "saved".into(),
-                            }),
-                            value_type: Type::U16,
-                        },
-                    }
-                };
-                block.statements.insert(index + 1, extra);
-            } else {
-                let index = mir
-                    .blocks
-                    .iter()
-                    .position(|b| matches!(b.terminator, T::Drop { .. }))
-                    .unwrap();
-                let T::Drop {
-                    local,
-                    record,
-                    target,
-                } = mir.blocks[index].terminator.clone()
-                else {
-                    unreachable!()
-                };
-                if corruption == 1 {
-                    let duplicate = mir.blocks.len();
-                    mir.blocks.push(out::MirBlock {
-                        terminator_site: None,
-                        statements: vec![],
-                        terminator: T::Drop {
-                            local: local.clone(),
-                            record: record.clone(),
-                            target,
-                        },
-                    });
-                    mir.blocks[index].terminator = T::Drop {
-                        local,
-                        record,
-                        target: duplicate,
-                    };
-                } else {
-                    mir.blocks[index].terminator = T::Goto { target };
-                }
-            }
-            // Corrupt the compiler correspondence deliberately, then test the actual
-            // shared checker rather than rustc's rejection of invalid safe source.
-            let prepared = super::super::import::prepared_for_test(export).unwrap();
-            assert!(
-                ProgramVerificationSession::new_program_prepared(CLAIM, &prepared).is_err(),
-                "corruption {corruption}"
-            );
         }
     }
 
