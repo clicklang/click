@@ -3363,7 +3363,7 @@ fn read_retained_lvalue_paths_without_ranges(
                 {
                     facts.push(volatile_access_fact(
                         budget,
-                        false,
+                        VolatileAccessKind::Read,
                         pointer,
                         lvalue.value_type,
                         value.clone().into_native(),
@@ -3553,7 +3553,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         let value = value.native().into_owned();
                         path.facts.push(volatile_access_fact(
                             budget,
-                            false,
+                            VolatileAccessKind::Read,
                             pointer.clone(),
                             lvalue.value_type,
                             value,

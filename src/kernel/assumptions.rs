@@ -10414,19 +10414,14 @@ impl ProofObligation {
 impl ExecutionPureFact {
     /// The value observed by this producer's completed volatile read.
     pub(crate) fn volatile_read_result(&self) -> Option<&ProgramValue> {
+        crate::instrumentation::record_deterministic_work(1);
         if !self.is_certified() {
             return None;
         }
-        let Proposition::Predicate { name, arguments } = self.proposition() else {
+        let Proposition::VolatileAccess(event) = self.proposition() else {
             return None;
         };
-        if !name.starts_with("__click_volatile_read_") {
-            return None;
-        }
-        let [Term::ProgramValue(_), Term::ProgramValue(value)] = arguments.as_slice() else {
-            return None;
-        };
-        Some(value)
+        (event.kind == VolatileAccessKind::Read).then_some(&event.value)
     }
 
     /// Retain the exact typed producer's definition and checked cached value.

@@ -675,7 +675,7 @@ fn write_program_lvalue_paths_for_initialization(
             if let Some(pointer) = volatile_pointer {
                 facts.push(volatile_access_fact(
                     budget,
-                    true,
+                    VolatileAccessKind::Write,
                     pointer,
                     value_type,
                     value.clone().into_native(),
@@ -1043,7 +1043,11 @@ fn write_program_lvalue_paths_for_initialization(
             );
             if is_volatile {
                 facts.push(volatile_access_fact(
-                    budget, true, pointer, value_type, value,
+                    budget,
+                    VolatileAccessKind::Write,
+                    pointer,
+                    value_type,
+                    value,
                 )?);
             }
             Ok(vec![StatementExecutionPath::new(

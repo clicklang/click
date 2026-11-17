@@ -1569,8 +1569,11 @@ pointer. `int32 * volatile slot;` instead qualifies the pointer object itself,
 and `int32 * volatile *slot_cell;` qualifies the pointer-valued cell reached
 through `slot_cell`. These qualifiers are tracked independently. Each direct
 or pointer-derived read or write emits a distinct, ordered kernel-certified
-execution fact, so the verifier cannot silently cache the access or erase it
-while checking the surrounding expression or statement. The value still comes
+execution fact. Each fact carries a typed read/write kind, nominal event identity,
+address, access type, and observed value; no generated predicate name encodes
+those fields. The verifier cannot silently cache the access or erase it while
+checking the surrounding expression or statement. Completed read values retain
+the public `R.read_event(i).result` spelling. The value still comes
 from the current symbolic memory state; Click does not model external
 agents changing memory between accesses.
 

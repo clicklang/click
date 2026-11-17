@@ -47,12 +47,13 @@ pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
 
 impl Proposition {
     /// Whether this is kernel authority rather than a proof-state fact: a
-    /// resource composition, or a predicate with no Click spelling. The
+    /// resource composition, a completed volatile access record, or a
+    /// predicate with no Click spelling. The
     /// kernel holds and checks it like any fact; no surface view presents or
     /// cites it (`docs/internals/raise-lower-principle.md`).
     pub(crate) fn is_kernel_authority(&self) -> bool {
         match self {
-            Self::ResourceComposition(_) => true,
+            Self::ResourceComposition(_) | Self::VolatileAccess(_) => true,
             Self::Predicate { name, .. } => predicate_source_name(name).is_none(),
             _ => false,
         }
@@ -13229,8 +13230,32 @@ impl Hash for BinderName {
     fn hash<H: Hasher>(&self, _: &mut H) {}
 }
 
+/// The nominal identity of one completed sequential volatile access.
+/// This is not a binder, a C value, or permission to access memory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct VolatileEventId(pub(crate) u64);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum VolatileAccessKind {
+    Read,
+    Write,
+}
+
+/// Kernel-produced evidence of one access. Equal addresses and values do
+/// not identify distinct events. Read results are exposed by source region
+/// through `read_event(i).result`, independently of this nominal identity.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct VolatileAccess {
+    pub(crate) id: VolatileEventId,
+    pub(crate) kind: VolatileAccessKind,
+    pub(crate) pointer: Pointer,
+    pub(crate) value_type: ProgramType,
+    pub(crate) value: ProgramValue,
+}
+
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Proposition {
+    VolatileAccess(Arc<VolatileAccess>),
     Equal(Term, Term),
     ConditionIs(ConditionTerm, bool),
     Predicate {
@@ -13452,6 +13477,7 @@ impl Hash for Proposition {
 fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
     std::mem::discriminant(atomic).hash(state);
     match atomic {
+        Proposition::VolatileAccess(event) => event.hash(state),
         Proposition::Equal(left, right) => {
             left.hash(state);
             right.hash(state);
@@ -13736,6 +13762,7 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
 
 fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
     match proposition {
+        Proposition::VolatileAccess(event) => Proposition::VolatileAccess(event.clone()),
         Proposition::Equal(left, right) => Proposition::Equal(left.clone(), right.clone()),
         Proposition::ConditionIs(condition, value) => {
             Proposition::ConditionIs(condition.clone(), *value)
