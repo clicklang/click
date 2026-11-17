@@ -3,7 +3,8 @@
 `snprintf(buf, 2, "%u", 123u)` writes `1` and a terminator, and returns 3,
 the number of characters the format produces (C11 7.21.6.5p3). When the
 output does not fit, the contract places the terminator in the buffer's last
-byte.
+byte. The proof states the nonzero size premise explicitly before using the
+contract's guarded terminator guarantee.
 
 ```c filename=clipped.c
 int snprintf(char *buf, unsigned long size, const char *fmt, ...);
@@ -39,6 +40,7 @@ int32 clipped(char buf[]) {
         have format::decimal_length(123u64) >= 2u64 by {
             solve() using { format::decimal_length(123u64) == 3u64; };
         }
+        have 2u64 != 0u64 by { normalize(); }
         solve();
     }
 }

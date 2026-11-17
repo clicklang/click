@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn order_conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
+fn comparison_conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, ProgramType};
     let mut baseline = None;
     for size in [16, 64, 256, 1024] {
@@ -31,22 +31,35 @@ fn order_conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
         let cases = guard_operands
             .into_iter()
             .enumerate()
-            .map(|(index, operands)| {
-                let guard = KernelTerm::boolean_comparison_raw(format, R::LessThan, operands);
+            .flat_map(|(index, operands)| {
+                [R::LessThan, R::Equal]
+                    .into_iter()
+                    .map(move |relation| (index, operands.clone(), relation))
+            })
+            .map(|(index, operands, relation)| {
+                let guard = KernelTerm::boolean_comparison_raw(format, relation, operands);
                 let hit = KernelTerm::machine_if_shared(
                     format,
                     [guard.clone(), variable.clone(), literal(3)],
                 );
                 let miss =
                     KernelTerm::machine_if_shared(format, [guard, arithmetic.clone(), literal(3)]);
-                (hit, miss, index < 4)
+                (
+                    hit,
+                    miss,
+                    if relation == R::Equal {
+                        index == 0
+                    } else {
+                        index < 4
+                    },
+                )
             })
             .collect::<Vec<_>>();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for (hit, miss, expected) in &cases {
-                assert_eq!(order_conditional_atom(hit).is_some(), *expected);
-                assert!(order_conditional_atom(miss).is_none());
+                assert_eq!(comparison_conditional_atom(hit).is_some(), *expected);
+                assert!(comparison_conditional_atom(miss).is_none());
             }
         });
         assert_eq!(KernelTermExport::machine_export_count(), exports);

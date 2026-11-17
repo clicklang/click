@@ -91,39 +91,56 @@ fn identical_conditional_arms_normalize_without_revisiting_shared_suffixes() {
 }
 
 #[test]
-fn closed_order_conditionals_ignore_unrelated_facts() {
-    let mut baseline = None;
-    for size in [0, 16, 64, 256] {
-        let _session = VerificationSession::enter();
-        let mut facts = PureFactContext::new();
-        for index in 0..size {
-            facts = facts.assume_condition(ConditionTerm::Variable(Variable(999720 + index)), true);
+fn closed_comparison_conditionals_ignore_unrelated_facts() {
+    for (operator, truth) in [
+        (ComparisonOperator::LessThan, false),
+        (ComparisonOperator::Equal, false),
+        (ComparisonOperator::Equal, true),
+        (ComparisonOperator::NotEqual, false),
+        (ComparisonOperator::NotEqual, true),
+    ] {
+        let mut baseline = None;
+        for size in [0, 16, 64, 256] {
+            let _session = VerificationSession::enter();
+            let mut facts = PureFactContext::new();
+            for index in 0..size {
+                facts =
+                    facts.assume_condition(ConditionTerm::Variable(Variable(999720 + index)), true);
+            }
+            let expression = closed_comparison_if(
+                SpecExpression::Value(ProgramValue::UInt64(MachineTerm::Variable(Variable(
+                    999710,
+                )))),
+                SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(3))),
+                operator,
+                truth,
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let (path, work) = crate::instrumentation::measure_deterministic_work(|| {
+                lower_closed_order_if(&expression, &facts)
+            });
+            let expected = lower_closed_order_if(&expression, &PureFactContext::new());
+            assert_eq!(path.value, expected.value);
+            let first = *baseline.get_or_insert(work);
+            assert!(
+                work <= first + 64,
+                "{size} unrelated facts: {work}, baseline={first}"
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
-        let expression = closed_order_if(
-            SpecExpression::Value(ProgramValue::UInt64(MachineTerm::Variable(Variable(
-                999710,
-            )))),
-            SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(3))),
-            false,
-        );
-        let exports = KernelTermExport::machine_export_count();
-        let (path, work) = crate::instrumentation::measure_deterministic_work(|| {
-            lower_closed_order_if(&expression, &facts)
-        });
-        let expected = lower_closed_order_if(&expression, &PureFactContext::new());
-        assert_eq!(path.value, expected.value);
-        let first = *baseline.get_or_insert(work);
-        assert!(
-            work <= first + 64,
-            "{size} unrelated facts: {work}, baseline={first}"
-        );
-        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
 
 #[test]
-fn nested_closed_order_conditionals_lower_with_linear_work() {
-    for truth in [true, false] {
+fn nested_closed_comparison_conditionals_lower_with_linear_work() {
+    for (operator, truth) in [
+        (ComparisonOperator::LessThan, false),
+        (ComparisonOperator::LessThan, true),
+        (ComparisonOperator::Equal, false),
+        (ComparisonOperator::Equal, true),
+        (ComparisonOperator::NotEqual, false),
+        (ComparisonOperator::NotEqual, true),
+    ] {
         let mut samples = Vec::new();
         for size in [8, 32, 128, 512] {
             let _session = VerificationSession::enter();
@@ -138,7 +155,9 @@ fn nested_closed_order_conditionals_lower_with_linear_work() {
             while layer.len() > 1 {
                 layer = layer
                     .chunks_exact(2)
-                    .map(|pair| closed_order_if(pair[0].clone(), pair[1].clone(), truth))
+                    .map(|pair| {
+                        closed_comparison_if(pair[0].clone(), pair[1].clone(), operator, truth)
+                    })
                     .collect();
             }
             let expression = layer.pop().unwrap();
