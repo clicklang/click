@@ -2412,7 +2412,8 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
          \n\
          theorem chain_len_is_nonnegative(m: Chain) {\n\
          \x20   ensures 0 <= chain_len(m) by {\n\
-         \x20       induct(m) as ih {\n\
+         \x20       let ih = induct(m);\n\
+         \x20       match m {\n\
          \x20           Chain::Nil => {\n\
          \x20               unfold(chain_len(Chain::Nil));\n\
          \x20               normalize();\n\

@@ -9,7 +9,8 @@ function copy(xs: List<int32>) -> List<int32>
 }
 theorem copy_identity(xs: List<int32>, choice: Choice) {
     ensures copy(xs) == xs by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => { unfold(copy(List<int32>::Nil)); normalize(); },
             List::Cons(head, tail) => {
                 match choice {

@@ -1634,12 +1634,6 @@ fn source_tactic_width(tactic: &ProofTactic) -> usize {
                 .map(|arm| source_tactic_count(arm.tactics()))
                 .sum::<usize>()
         }
-        ProofTactic::StructuralInduct { arms, .. } => {
-            1 + arms
-                .iter()
-                .map(|arm| source_tactic_count(&arm.tactics))
-                .sum::<usize>()
-        }
         ProofTactic::Branch(proof_branch) => {
             1 + source_tactic_count(&proof_branch.then_tactics)
                 + source_tactic_count(&proof_branch.else_tactics)

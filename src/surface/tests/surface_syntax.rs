@@ -1101,7 +1101,8 @@ fn parses_and_prints_structural_induction_arms() {
 
         theorem induction_shape(xs: TestList<int32>) {
             ensures xs == xs by {
-                induct(xs) as ih {
+                let ih = induct(xs);
+                match xs {
                     TestList::Nil => {
                         known();
                     }
@@ -1117,16 +1118,19 @@ fn parses_and_prints_structural_induction_arms() {
     let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
         panic!("expected an explicit theorem proof");
     };
-    let ProofTactic::StructuralInduct {
-        parameter,
-        hypothesis,
-        arms,
-    } = &tactics[0]
+    let [
+        ProofTactic::Induct {
+            parameter,
+            hypothesis,
+        },
+        ProofTactic::Match(proof_match),
+    ] = tactics.as_slice()
     else {
-        panic!("expected constructor-branching induction");
+        panic!("expected an induction declaration followed by a match");
     };
     assert_eq!(parameter, "xs");
     assert_eq!(hypothesis, "ih");
+    let arms = &proof_match.arms;
     assert_eq!(arms.len(), 2);
     assert_eq!(arms[0].type_name, "TestList");
     assert_eq!(arms[0].variant, "Nil");

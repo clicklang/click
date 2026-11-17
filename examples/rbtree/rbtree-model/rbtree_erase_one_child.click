@@ -62,7 +62,8 @@ theorem rb_swap_children_valid(node: struct rb_node*, parent: struct rb_node*, c
     left: RbTree, right: RbTree) {
     requires is_rb(RbTree::Node(node, parent, color, left, right)) == 1;
     ensures is_rb(RbTree::Node(node, parent, color, right, left)) == 1 by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Red => {
                 apply(is_rb_node_left(node, parent, Color::Red, left, right));
                 apply(is_rb_node_right(node, parent, Color::Red, left, right));

@@ -1,6 +1,6 @@
 # An induction hypothesis's range premise is cited with its extent halves
 
-The hypothesis `induct(hi) as ih` gives is the theorem's own statement at the
+The hypothesis `let ih = induct(hi)` gives is the theorem's own statement at the
 smaller argument, and that statement includes the extent halves of every range
 it names: the theorem's proof assumed them, so a use of the theorem, including
 a use by its own induction, owes them.

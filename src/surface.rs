@@ -5850,11 +5850,6 @@ pub enum ProofTactic {
         parameter: String,
         hypothesis: String,
     },
-    StructuralInduct {
-        parameter: String,
-        hypothesis: String,
-        arms: Vec<ProofInductionArm>,
-    },
     ApplyInduction {
         hypothesis: String,
         arguments: Vec<ContractExpression>,
@@ -6085,7 +6080,6 @@ pub enum ControlTactic {
     Open,
     If,
     Cases,
-    StructuralInduct,
     Branch,
     CallOutcomes,
     Loop,
@@ -6221,13 +6215,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "induct",
-        syntax: "let ih = induct(n)",
+        syntax: "let ih = induct(value)",
         class: "simple",
-    },
-    PublicTacticForm {
-        id: "structural-induct",
-        syntax: "induct(xs) as ih { Type::Variant(fields)",
-        class: "control",
     },
     PublicTacticForm {
         id: "proof-match",
@@ -6461,10 +6450,6 @@ impl ProofTactic {
                     .map(|entry| Obligation(Source(&entry.have.proof)))
                     .collect(),
             },
-            Self::StructuralInduct { arms, .. } => arms
-                .iter()
-                .map(|arm| Continuing(Script(&arm.tactics)))
-                .collect(),
             Self::Have(have) => vec![Obligation(Source(&have.proof))],
             Self::Open(open) => {
                 let mut children = vec![Continuing(Script(&open.tactics))];
@@ -6529,7 +6514,6 @@ impl ProofTactic {
             }
             Self::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
             Self::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
-            Self::StructuralInduct { .. } => TacticClass::Control(ControlTactic::StructuralInduct),
             Self::ApplyInduction { .. } => {
                 TacticClass::Smart(SmartSite::Elided(ElidedArgument::InductionPremises))
             }
@@ -10244,7 +10228,7 @@ impl VerifiedPureTheorem {
         if let Some(TheoremProofCompletion::StructuralInduction(completions)) =
             &self.checked_completion
             && !matches!(self.proof.as_ref().map(ProofCertificate::steps),
-                Some([ProofStep::StructuralInduct { arms, .. }]) if arms.len() == completions.len())
+                Some([ProofStep::Induct { .. }, ProofStep::Match { arms, .. }]) if arms.len() == completions.len())
         {
             return Err(ClickError::new(
                 "structural induction presentation lost its checked arms",

@@ -45,7 +45,8 @@ function rb_member(tree: RbTree, target: struct rb_node*) -> Bool
 
 theorem rb_member_is_inorder_membership(tree: RbTree, target: struct rb_node*) {
     ensures rb_member(tree, target) == list::contains(rb_inorder(tree), target) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_member(RbTree::Empty, target));
                 unfold(rb_inorder(RbTree::Empty));
@@ -166,7 +167,8 @@ function rb_reparent(tree: RbTree, new_parent: struct rb_node*) -> RbTree {
 
 theorem rb_reparent_preserves_inorder(tree: RbTree, new_parent: struct rb_node*) {
     ensures rb_inorder(rb_reparent(tree, new_parent)) == rb_inorder(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_reparent(RbTree::Empty, new_parent));
                 normalize();
@@ -183,7 +185,8 @@ theorem rb_reparent_preserves_inorder(tree: RbTree, new_parent: struct rb_node*)
 
 theorem rb_reparent_preserves_is_rb(tree: RbTree, new_parent: struct rb_node*) {
     ensures is_rb(rb_reparent(tree, new_parent)) == is_rb(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_reparent(RbTree::Empty, new_parent));
                 normalize();
@@ -200,7 +203,8 @@ theorem rb_reparent_preserves_is_rb(tree: RbTree, new_parent: struct rb_node*) {
 
 theorem rb_reparent_preserves_black_height(tree: RbTree, new_parent: struct rb_node*) {
     ensures black_height(rb_reparent(tree, new_parent)) == black_height(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_reparent(RbTree::Empty, new_parent));
                 normalize();
@@ -217,7 +221,8 @@ theorem rb_reparent_preserves_black_height(tree: RbTree, new_parent: struct rb_n
 
 theorem rb_reparent_preserves_rb_root_black(tree: RbTree, new_parent: struct rb_node*) {
     ensures rb_root_black(rb_reparent(tree, new_parent)) == rb_root_black(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_reparent(RbTree::Empty, new_parent));
                 normalize();
@@ -261,7 +266,8 @@ theorem rb_rotate_left_node_preserves_inorder(node: struct rb_node*, parent: str
                                               color: Color, left: RbTree, right: RbTree) {
     ensures rb_inorder(rb_rotate_left(RbTree::Node(node, parent, color, left, right)))
         == rb_inorder(RbTree::Node(node, parent, color, left, right)) by {
-        induct(right) as ih {
+        let ih = induct(right);
+        match right {
             RbTree::Empty => {
                 unfold(rb_rotate_left(RbTree::Node(node, parent, color, left, RbTree::Empty)));
                 normalize();
@@ -298,7 +304,8 @@ theorem rb_rotate_left_node_preserves_inorder(node: struct rb_node*, parent: str
 
 theorem rb_rotate_left_preserves_inorder(tree: RbTree) {
     ensures rb_inorder(rb_rotate_left(tree)) == rb_inorder(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_rotate_left(RbTree::Empty));
                 normalize();
@@ -315,7 +322,8 @@ theorem rb_rotate_right_node_preserves_inorder(node: struct rb_node*, parent: st
                                                color: Color, left: RbTree, right: RbTree) {
     ensures rb_inorder(rb_rotate_right(RbTree::Node(node, parent, color, left, right)))
         == rb_inorder(RbTree::Node(node, parent, color, left, right)) by {
-        induct(left) as ih {
+        let ih = induct(left);
+        match left {
             RbTree::Empty => {
                 unfold(rb_rotate_right(RbTree::Node(node, parent, color, RbTree::Empty, right)));
                 normalize();
@@ -351,7 +359,8 @@ theorem rb_rotate_right_node_preserves_inorder(node: struct rb_node*, parent: st
 
 theorem rb_rotate_right_preserves_inorder(tree: RbTree) {
     ensures rb_inorder(rb_rotate_right(tree)) == rb_inorder(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_rotate_right(RbTree::Empty));
                 normalize();
@@ -406,7 +415,8 @@ function rb_rotate_right_at_right(tree: RbTree) -> RbTree {
 
 theorem rb_recolor_preserves_inorder(tree: RbTree, color: Color) {
     ensures rb_inorder(rb_recolor(tree, color)) == rb_inorder(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_recolor(RbTree::Empty, color));
                 normalize();
@@ -423,7 +433,8 @@ theorem rb_recolor_preserves_inorder(tree: RbTree, color: Color) {
 
 theorem rb_recolor_left_preserves_inorder(tree: RbTree, color: Color) {
     ensures rb_inorder(rb_recolor_left(tree, color)) == rb_inorder(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_recolor_left(RbTree::Empty, color));
                 normalize();
@@ -443,7 +454,8 @@ theorem rb_recolor_left_preserves_inorder(tree: RbTree, color: Color) {
 
 theorem rb_recolor_right_preserves_inorder(tree: RbTree, color: Color) {
     ensures rb_inorder(rb_recolor_right(tree, color)) == rb_inorder(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_recolor_right(RbTree::Empty, color));
                 normalize();
@@ -464,7 +476,8 @@ theorem rb_recolor_right_preserves_inorder(tree: RbTree, color: Color) {
 
 theorem rb_rotate_left_at_left_preserves_inorder(tree: RbTree) {
     ensures rb_inorder(rb_rotate_left_at_left(tree)) == rb_inorder(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_rotate_left_at_left(RbTree::Empty));
                 normalize();
@@ -483,7 +496,8 @@ theorem rb_rotate_left_at_left_preserves_inorder(tree: RbTree) {
 
 theorem rb_rotate_right_at_right_preserves_inorder(tree: RbTree) {
     ensures rb_inorder(rb_rotate_right_at_right(tree)) == rb_inorder(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_rotate_right_at_right(RbTree::Empty));
                 normalize();
@@ -680,7 +694,8 @@ theorem is_rb_is_almost_rb_insert(tree: RbTree) {
     requires is_rb(tree) == 1;
 
     ensures almost_rb_insert(tree) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(almost_rb_insert(RbTree::Empty));
                 normalize();
@@ -713,7 +728,8 @@ theorem rb_blacken_root_restores_rb(tree: RbTree) {
     requires almost_rb_insert(tree) == 1;
 
     ensures is_rb_root(rb_recolor(tree, Color::Black)) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_recolor(RbTree::Empty, Color::Black));
                 unfold(is_rb_root(RbTree::Empty));
@@ -1262,7 +1278,8 @@ theorem rb_min_list_splits_node(node: struct rb_node*, parent: struct rb_node*, 
     ensures rb_inorder(RbTree::Node(node, parent, color, left, right))
         == list::append(rb_min_list(RbTree::Node(node, parent, color, left, right)),
             rb_inorder(rb_remove_min(RbTree::Node(node, parent, color, left, right)))) by {
-        induct(left) as ih {
+        let ih = induct(left);
+        match left {
             RbTree::Empty => {
                 unfold(rb_min_list(RbTree::Node(node, parent, color, RbTree::Empty, right)));
                 unfold(rb_remove_min(RbTree::Node(node, parent, color, RbTree::Empty, right)));
@@ -1314,7 +1331,8 @@ theorem rb_min_list_splits_node(node: struct rb_node*, parent: struct rb_node*, 
 theorem rb_min_list_splits_inorder(tree: RbTree) {
     ensures rb_inorder(tree)
         == list::append(rb_min_list(tree), rb_inorder(rb_remove_min(tree))) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_min_list(RbTree::Empty));
                 unfold(rb_remove_min(RbTree::Empty));
@@ -1457,7 +1475,8 @@ theorem rb_parent_is_node_is(node: struct rb_node*, parent: struct rb_node*, col
 
 theorem rb_reparent_parent_is(tree: RbTree, p: struct rb_node*) {
     ensures rb_parent_is(rb_reparent(tree, p), p) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_reparent(RbTree::Empty, p));
                 unfold(rb_parent_is(RbTree::Empty, p));
@@ -1527,7 +1546,8 @@ theorem rb_reparent_parent_consistent_at(tree: RbTree, p: struct rb_node*,
     requires rb_node_is(new_parent, q) == 1;
 
     ensures rb_parent_consistent(rb_reparent(tree, new_parent), q) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_reparent(RbTree::Empty, new_parent));
                 apply(rb_parent_consistent_empty(q));
@@ -1562,7 +1582,8 @@ theorem rb_rotate_left_node_parent_consistent(node: struct rb_node*, parent: str
 
     ensures rb_parent_consistent(
         rb_rotate_left(RbTree::Node(node, parent, color, left, right)), p) == 1 by {
-        induct(right) as ih {
+        let ih = induct(right);
+        match right {
             RbTree::Empty => {
                 unfold(rb_rotate_left(RbTree::Node(node, parent, color, left, RbTree::Empty)));
                 known();
@@ -1597,7 +1618,8 @@ theorem rb_rotate_left_parent_consistent(tree: RbTree, p: struct rb_node*) {
     requires rb_parent_consistent(tree, p) == 1;
 
     ensures rb_parent_consistent(rb_rotate_left(tree), p) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_rotate_left(RbTree::Empty));
                 known();
@@ -1617,7 +1639,8 @@ theorem rb_rotate_right_node_parent_consistent(node: struct rb_node*, parent: st
 
     ensures rb_parent_consistent(
         rb_rotate_right(RbTree::Node(node, parent, color, left, right)), p) == 1 by {
-        induct(left) as ih {
+        let ih = induct(left);
+        match left {
             RbTree::Empty => {
                 unfold(rb_rotate_right(RbTree::Node(node, parent, color, RbTree::Empty, right)));
                 known();
@@ -1651,7 +1674,8 @@ theorem rb_rotate_right_parent_consistent(tree: RbTree, p: struct rb_node*) {
     requires rb_parent_consistent(tree, p) == 1;
 
     ensures rb_parent_consistent(rb_rotate_right(tree), p) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_rotate_right(RbTree::Empty));
                 known();
@@ -1668,7 +1692,8 @@ theorem rb_recolor_parent_consistent(tree: RbTree, color: Color, p: struct rb_no
     requires rb_parent_consistent(tree, p) == 1;
 
     ensures rb_parent_consistent(rb_recolor(tree, color), p) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_recolor(RbTree::Empty, color));
                 known();
@@ -1736,7 +1761,8 @@ theorem rb_remove_min_node_parent_consistent(node: struct rb_node*, parent: stru
 
     ensures rb_parent_consistent(
         rb_remove_min(RbTree::Node(node, parent, color, left, right)), p) == 1 by {
-        induct(left) as ih {
+        let ih = induct(left);
+        match left {
             RbTree::Empty => {
                 apply(rb_parent_consistent_node_right(node, parent, color, RbTree::Empty,
                     right, p));
@@ -1770,7 +1796,8 @@ theorem rb_remove_min_parent_consistent(tree: RbTree, p: struct rb_node*) {
     requires rb_parent_consistent(tree, p) == 1;
 
     ensures rb_parent_consistent(rb_remove_min(tree), p) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_remove_min(RbTree::Empty));
                 known();
@@ -1835,7 +1862,8 @@ function ctx_concat(inner: Context, outer: Context) -> Context
 
 theorem plug_ctx_concat(inner: Context, outer: Context, sub: RbTree) {
     ensures plug(ctx_concat(inner, outer), sub) == plug(outer, plug(inner, sub)) by {
-        induct(inner) as ih {
+        let ih = induct(inner);
+        match inner {
             Context::Top => {
                 unfold(ctx_concat(Context::Top, outer));
                 unfold(plug(Context::Top, sub));
@@ -1903,7 +1931,8 @@ theorem plug_inorder_transport(ctx: Context, a: RbTree, b: RbTree) {
     requires rb_inorder(a) == rb_inorder(b);
 
     ensures rb_inorder(plug(ctx, a)) == rb_inorder(plug(ctx, b)) by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 unfold(plug(Context::Top, a));
                 unfold(plug(Context::Top, b));
@@ -2137,7 +2166,8 @@ theorem plug_parent_consistent_transport(ctx: Context, sub: RbTree,
     requires ctx_consistent(ctx, sub, root_parent) == 1;
 
     ensures rb_parent_consistent(plug(ctx, sub), root_parent) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(ctx_consistent_top(sub, root_parent));
                 unfold(plug(Context::Top, sub));
@@ -2175,7 +2205,8 @@ theorem ctx_consistent_node_children(ctx: Context, node: struct rb_node*,
         root_parent) == 1;
 
     ensures rb_parent_consistent(left, node) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(ctx_consistent_top(RbTree::Node(node, parent, color, left, right),
                     root_parent));
@@ -2201,7 +2232,8 @@ theorem ctx_consistent_node_children(ctx: Context, node: struct rb_node*,
     }
 
     ensures rb_parent_consistent(right, node) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(ctx_consistent_top(RbTree::Node(node, parent, color, left, right),
                     root_parent));
@@ -2231,7 +2263,8 @@ theorem plug_parent_consistent_ctx(ctx: Context, sub: RbTree, root_parent: struc
     requires rb_parent_consistent(plug(ctx, sub), root_parent) == 1;
 
     ensures ctx_consistent(ctx, sub, root_parent) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 unfold(plug(Context::Top, sub));
                 have rb_parent_consistent(sub, root_parent) == 1;
@@ -2283,7 +2316,8 @@ theorem rb_parent_consistent_same(t: RbTree, a: struct rb_node*, b: struct rb_no
     requires a == b;
 
     ensures rb_parent_consistent(t, b) == 1 by {
-        induct(t) as ih {
+        let ih = induct(t);
+        match t {
             RbTree::Empty => {
                 apply(rb_parent_consistent_empty(b));
                 known();
@@ -2310,7 +2344,8 @@ theorem ctx_consistent_swap(ctx: Context, node: struct rb_node*, parent: struct 
     requires rb_parent_consistent(other, parent) == 1;
 
     ensures ctx_consistent(ctx, other, root_parent) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(ctx_consistent_top(RbTree::Node(node, parent, color, left, right),
                     root_parent));
@@ -2426,7 +2461,8 @@ theorem frame_black_height_black(bh: Nat) {
 
 theorem rb_root_black_is_color_black(tree: RbTree) {
     ensures rb_root_black(tree) == color_black(rb_color(tree)) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_root_black(RbTree::Empty));
                 unfold(rb_color(RbTree::Empty));
@@ -2445,7 +2481,8 @@ theorem rb_root_black_is_color_black(tree: RbTree) {
 
 theorem color_black_of_rb_color(tree: RbTree) {
     ensures color_black(rb_color(tree)) == rb_root_black(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_root_black(RbTree::Empty));
                 unfold(rb_color(RbTree::Empty));
@@ -2554,7 +2591,8 @@ theorem is_rb_node_from_parts(node: struct rb_node*, parent: struct rb_node*, co
     requires node_color_ok(color, rb_color(left), rb_color(right)) == 1;
 
     ensures is_rb(RbTree::Node(node, parent, color, left, right)) == 1 by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Black => {
                 apply(is_rb_black_node(node, parent, left, right));
                 known();
@@ -2578,7 +2616,8 @@ theorem is_rb_node_colors(node: struct rb_node*, parent: struct rb_node*, color:
     requires is_rb(RbTree::Node(node, parent, color, left, right)) == 1;
 
     ensures node_color_ok(color, rb_color(left), rb_color(right)) == 1 by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Black => {
                 apply(node_color_ok_black(rb_color(left), rb_color(right)));
                 known();
@@ -2927,7 +2966,8 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
     requires ctx_rb(outer, boundary_bh, boundary_color) == 1;
 
     ensures ctx_rb(ctx_concat(inner, outer), bh, focus_color) == 1 by {
-        induct(inner) as ih {
+        let ih = induct(inner);
+        match inner {
             Context::Top => {
                 if bh == boundary_bh {
                     if focus_color == boundary_color {
@@ -3107,7 +3147,8 @@ theorem plug_rb_from_ctx_rb(ctx: Context, sub: RbTree) {
     requires ctx_rb(ctx, black_height(sub), rb_color(sub)) == 1;
 
     ensures is_rb_root(plug(ctx, sub)) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(ctx_rb_top(black_height(sub), rb_color(sub)));
                 apply(rb_root_black_is_color_black(sub));
@@ -3209,7 +3250,8 @@ theorem node_color_ok_weaken_left(color: Color, left_color: Color, right_color: 
     requires node_color_ok(color, left_color, right_color) == 1;
 
     ensures node_color_ok(color, Color::Black, right_color) == 1 by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Black => {
                 apply(node_color_ok_black(Color::Black, right_color));
                 known();
@@ -3228,7 +3270,8 @@ theorem node_color_ok_weaken_right(color: Color, left_color: Color, right_color:
     requires node_color_ok(color, left_color, right_color) == 1;
 
     ensures node_color_ok(color, left_color, Color::Black) == 1 by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Black => {
                 apply(node_color_ok_black(left_color, Color::Black));
                 known();
@@ -3285,7 +3328,8 @@ theorem ctx_rb_weaken_to_almost(ctx: Context, bh: Nat, focus_color: Color) {
     requires ctx_rb(ctx, bh, focus_color) == 1;
 
     ensures ctx_almost_rb_insert(ctx, bh) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(color_black_black());
                 apply(ctx_rb_top_frame(bh, Color::Black));
@@ -3529,7 +3573,8 @@ theorem node_color_ok_red_focus_is_black(color: Color, right_color: Color) {
     requires node_color_ok(color, Color::Red, right_color) == 1;
 
     ensures color == Color::Black by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Black => {
                 normalize();
             }
@@ -4844,7 +4889,8 @@ function links_consistent(links: Links, p: struct rb_node*) -> int32
 
 theorem rb_parent_consistent_is_links_consistent(tree: RbTree, p: struct rb_node*) {
     ensures rb_parent_consistent(tree, p) == links_consistent(rb_links(tree), p) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_parent_consistent(RbTree::Empty, p));
                 unfold(rb_links(RbTree::Empty));
@@ -4868,7 +4914,8 @@ theorem rb_parent_consistent_is_links_consistent(tree: RbTree, p: struct rb_node
 
 theorem rb_links_recolor(tree: RbTree, color: Color) {
     ensures rb_links(rb_recolor(tree, color)) == rb_links(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_recolor(RbTree::Empty, color));
                 normalize();
@@ -4885,7 +4932,8 @@ theorem rb_links_recolor(tree: RbTree, color: Color) {
 
 theorem rb_links_recolor_left(tree: RbTree, color: Color) {
     ensures rb_links(rb_recolor_left(tree, color)) == rb_links(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_recolor_left(RbTree::Empty, color));
                 normalize();
@@ -4905,7 +4953,8 @@ theorem rb_links_recolor_left(tree: RbTree, color: Color) {
 
 theorem rb_links_recolor_right(tree: RbTree, color: Color) {
     ensures rb_links(rb_recolor_right(tree, color)) == rb_links(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_recolor_right(RbTree::Empty, color));
                 normalize();
@@ -4942,7 +4991,8 @@ theorem plug_links_transport(ctx: Context, a: RbTree, b: RbTree) {
     requires rb_links(a) == rb_links(b);
 
     ensures rb_links(plug(ctx, a)) == rb_links(plug(ctx, b)) by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 unfold(plug(Context::Top, a));
                 unfold(plug(Context::Top, b));
@@ -5029,7 +5079,8 @@ theorem node_color_ok_red_right_focus_is_black(color: Color, left_color: Color) 
     requires node_color_ok(color, left_color, Color::Red) == 1;
 
     ensures color == Color::Black by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Black => {
                 normalize();
             }
@@ -5599,7 +5650,8 @@ theorem ctx_rb_black_focus(ctx: Context, bh: Nat, focus_color: Color) {
     requires ctx_rb(ctx, bh, focus_color) == 1;
 
     ensures ctx_rb(ctx, bh, Color::Black) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(color_black_black());
                 apply(ctx_rb_top_frame(bh, Color::Black));
@@ -5911,7 +5963,8 @@ theorem ctx_erase_case1_left_parent_black(above: struct rb_node*, parent: struct
     requires ctx_rb(Context::Left(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Red, sl, sr), up), bh, Color::Black) == 1;
 
     ensures pcolor == Color::Black by {
-        induct(pcolor) as ih {
+        let ih = induct(pcolor);
+        match pcolor {
             Color::Red => {
                 apply(ctx_rb_left_colors(parent, above, Color::Red, RbTree::Node(sibling, parent, Color::Red, sl, sr), up, bh, Color::Black));
                 apply(rb_color_node(sibling, parent, Color::Red, sl, sr));
@@ -6025,7 +6078,8 @@ theorem ctx_erase_case1_right_parent_black(above: struct rb_node*, parent: struc
     requires ctx_rb(Context::Right(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Red, sl, sr), up), bh, Color::Black) == 1;
 
     ensures pcolor == Color::Black by {
-        induct(pcolor) as ih {
+        let ih = induct(pcolor);
+        match pcolor {
             Color::Red => {
                 apply(ctx_rb_right_colors(parent, above, Color::Red, RbTree::Node(sibling, parent, Color::Red, sl, sr), up, bh, Color::Black));
                 apply(rb_color_node(sibling, parent, Color::Red, sl, sr));
@@ -6137,7 +6191,8 @@ theorem ctx_erase_case1_right_step(above: struct rb_node*, parent: struct rb_nod
 
 theorem node_color_ok_black_children(color: Color) {
     ensures node_color_ok(color, Color::Black, Color::Black) == 1 by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Red => {
                 apply(color_black_black());
                 apply(node_color_ok_red(Color::Black, Color::Black));
@@ -6503,7 +6558,8 @@ theorem ctx_erase_left_sibling_is_node(above: struct rb_node*, parent: struct rb
         focus_color) == 1;
 
     ensures sibling_model != RbTree::Empty by {
-        induct(sibling_model) as ih {
+        let ih = induct(sibling_model);
+        match sibling_model {
             RbTree::Empty => {
                 apply(ctx_rb_left_height(parent, above, pcolor, RbTree::Empty, up, Nat::Succ(bh), focus_color));
                 have black_height(RbTree::Empty) == Nat::Zero;
@@ -6524,7 +6580,8 @@ theorem ctx_erase_right_sibling_is_node(above: struct rb_node*, parent: struct r
         focus_color) == 1;
 
     ensures sibling_model != RbTree::Empty by {
-        induct(sibling_model) as ih {
+        let ih = induct(sibling_model);
+        match sibling_model {
             RbTree::Empty => {
                 apply(ctx_rb_right_height(parent, above, pcolor, RbTree::Empty, up, Nat::Succ(bh), focus_color));
                 have black_height(RbTree::Empty) == Nat::Zero;
@@ -6607,7 +6664,8 @@ function ctx_identity(ctx: Context) -> struct rb_node* {
 theorem ctx_node_is_identity(ctx: Context, p: struct rb_node*) {
     requires ctx_node_is(ctx, p) == 1;
     ensures ctx_identity(ctx) == p by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => { unfold(ctx_identity(Context::Top)); have p == 0; known(); },
             Context::Left(identity, grandparent, color, sibling, up) => {
                 unfold(ctx_identity(Context::Left(identity, grandparent, color, sibling, up)));

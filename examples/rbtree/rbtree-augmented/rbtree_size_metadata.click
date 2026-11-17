@@ -102,7 +102,8 @@ function rb_identity(tree: RbTree) -> struct rb_node* {
 
 theorem sized_identity_shape(tree: SizedTree) {
     ensures sized_identity(tree) == rb_identity(sized_shape(tree)) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             SizedTree::Empty => {
                 unfold(sized_shape(SizedTree::Empty));
                 unfold(sized_identity(SizedTree::Empty));
