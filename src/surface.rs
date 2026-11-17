@@ -2534,6 +2534,8 @@ pub(crate) fn proposition_bool_value(
             operator: ComparisonOperator::Equal,
             right,
         } if bool_literal_value(&right) == Some(true) => Ok(left),
+        // A written `true` or `false` is that literal value.
+        ClickProposition::Value(literal) if bool_literal_value(&literal).is_some() => Ok(literal),
         proposition => branch(proposition, bool_literal(true), bool_literal(false), &mut 0),
     }
 }

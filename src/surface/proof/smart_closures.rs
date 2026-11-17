@@ -3960,15 +3960,14 @@ fn literal_requirement_spelling(
     if requirement.assertion_condition.is_some() {
         return None;
     }
+    // The `bool` literal lowers to exactly this constant condition; a closed
+    // comparison such as `0 == 1` is retained by lowering instead.
+    let literal = ClickProposition::Value(crate::surface::bool_literal(*value));
     Some(RequirementSpelling {
-        surface: ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Value(
-                crate::kernel::int32(0),
-            )),
-            operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
-                crate::kernel::int32(u32::from(value != polarity)),
-            )),
+        surface: if *polarity {
+            literal
+        } else {
+            ClickProposition::Not(Box::new(literal))
         },
     })
 }
@@ -4076,11 +4075,15 @@ pub(super) fn propositions_match_after_canonical_loads(
             (Proposition::Not(body), Proposition::Not(other_body)) => {
                 work.push((body, other_body));
             }
-            (
-                Proposition::ConditionIs(ConditionTerm::Constant(value), expected),
-                Proposition::ConditionIs(ConditionTerm::Constant(other), other_expected),
-            ) => {
-                if (value == expected) != (other == other_expected) {
+            // A constant condition and a closed literal comparison, which
+            // lowering retains as written, match by the truth they state.
+            (Proposition::ConditionIs(left, expected), Proposition::ConditionIs(right, other))
+                if closed_condition_value(left).is_some()
+                    && closed_condition_value(right).is_some() =>
+            {
+                if (closed_condition_value(left) == Some(*expected))
+                    != (closed_condition_value(right) == Some(*other))
+                {
                     return false;
                 }
             }
@@ -4126,6 +4129,8 @@ pub(super) fn propositions_match_after_canonical_loads(
     }
     true
 }
+
+use crate::kernel::machine_integer::comparison::closed_condition_value;
 
 #[test]
 fn literal_requirement_matching_respects_both_truth_and_polarity() {

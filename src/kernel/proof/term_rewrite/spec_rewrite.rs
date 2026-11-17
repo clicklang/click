@@ -78,6 +78,7 @@ fn collect_spec_proposition_carriers(
         | SpecProposition::Defined(expression) => {
             collect_spec_expression_carriers(expression, variables, integer_seen);
         }
+        SpecProposition::Truth(_) => {}
         SpecProposition::And(left, right)
         | SpecProposition::Or(left, right)
         | SpecProposition::Implies(left, right) => {
@@ -822,6 +823,7 @@ impl<'a> TermRewrite<'a> {
     ) -> Result<SpecProposition, SpecRewriteError> {
         self.spec_visit()?;
         let result = match proposition {
+            SpecProposition::Truth(value) => SpecProposition::Truth(*value),
             SpecProposition::IntegerComparison {
                 left,
                 operator,

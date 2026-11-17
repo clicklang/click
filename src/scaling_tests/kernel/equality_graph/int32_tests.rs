@@ -651,3 +651,57 @@ fn constant_queries_ignore_other_state_candidates() {
         );
     }
 }
+
+#[test]
+fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
+    use crate::kernel::{MemoryRange, ResourceContext, ResourceFact};
+    let mut samples = Vec::new();
+    for size in [4u64, 16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let write = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(var(990_000), 4),
+        };
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new(write.clone(), 0u32.into(), 1u32.into()),
+        ));
+        let memory = intern_memory(Memory::new());
+        let mut context =
+            PureFactContext::new().assume_proposition(Proposition::ResourceComposition(resources));
+        for i in 0..size {
+            let read = MachineTerm::MemoryLoad(
+                ProgramPoint::at(&memory),
+                Box::new(Pointer::symbolic(Variable(920_000 + i))),
+                LoadKind::Int32,
+            );
+            context = context.assume_condition(eq(&read, &var(930_000 + i)), true);
+        }
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.parameter_store_partition(&write, 4).is_some()
+        });
+        samples.push((size, found, work));
+        // The selected coordinate must still be rejected when a read equality
+        // explicitly mentions it, even though unrelated reads are harmless.
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(Pointer::symbolic(Variable(940_000))),
+            LoadKind::Int32,
+        );
+        let relevant = context
+            .clone()
+            .assume_condition(eq(&read, &var(990_000)), true);
+        assert!(relevant.parameter_store_partition(&write, 4).is_none());
+        assert!(context.parameter_store_partition(&write, 4).is_some());
+        assert!(
+            context
+                .equality_graph
+                .offset_has_source_dependencies(&PointerOffsetTerm::scale_int32(read, 4))
+        );
+    }
+    eprintln!("read-fact count, shortcut available, query work: {samples:?}");
+    assert!(samples.iter().all(|(_, found, _)| *found), "{samples:?}");
+    assert!(
+        samples.iter().all(|(_, _, work)| *work == samples[0].2),
+        "{samples:?}"
+    );
+}

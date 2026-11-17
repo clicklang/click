@@ -9365,6 +9365,7 @@ impl Parser {
                 _ => false,
             };
             if proposition_binding
+                || crate::surface::bool_literal_value(&left).is_some()
                 || matches!(&left, ContractExpression::Call { name, .. } if self.proposition_function_names.contains(name))
                 || matches!(
                     left,
