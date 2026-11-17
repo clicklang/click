@@ -1509,10 +1509,28 @@ impl PureFactStore {
 
     pub(in crate::kernel) fn with_fact(&self, fact: Proposition) -> Self {
         // A closed comparison that holds, which lowering retains as written
-        // (`3 == 3`), carries no information: it is available without being
-        // filed (`available_as_written`), so each literal pair is not indexed.
+        // (`3 == 3`), carries no information the context can use: checking
+        // decides it from its literals (`available_as_written`). It is still
+        // a held fact with its own spelling, so membership and the ordered
+        // delta record it, but it needs no search index, mentions no
+        // variable, and adds nothing to the reasoning context.
         if closed_condition_holds(&fact) {
-            return self.clone();
+            if self.top_level_exact.contains(&fact) {
+                return self.clone();
+            }
+            let fact = Arc::new(fact);
+            let mut ordered = self.ordered.clone();
+            ordered.push(Arc::clone(&fact));
+            return Self {
+                ordered,
+                top_level_exact: self.top_level_exact.with_value(Arc::clone(&fact)),
+                stated_conjuncts: self
+                    .stated_conjuncts
+                    .as_ref()
+                    .map(|index| index_stated_conjuncts(index.clone(), &fact)),
+                exact: self.exact.with_value(fact),
+                ..self.clone()
+            };
         }
         if self.top_level_exact.contains(&fact) {
             return self.clone();

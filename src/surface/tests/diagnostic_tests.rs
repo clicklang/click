@@ -3741,7 +3741,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
                 "{trace}"
             );
             assert!(
-                trace.contains("have true == true (from `implicit tail`)"),
+                trace.contains("have true (from `implicit tail`)"),
                 "{trace}"
             );
             // Bare transport expands to an ordinary have; explicit legacy
