@@ -2821,7 +2821,7 @@ fn constant_representation_copy_count(bytes: &ProgramValue) -> Option<i64> {
 /// keep old destination initialization, or the transition replaces it using
 /// the exact copied span. Unknown placement cannot establish either rule.
 fn representation_copy_initialization(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     values: &[ProgramValue],
     effect: RepresentationCopyEffect,
     inputs: &[CheckedResourceFact],

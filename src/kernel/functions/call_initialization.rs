@@ -106,7 +106,7 @@ pub(crate) fn memory_range_is_initialized(
 /// using the ordinary all-initialized call rule, check for unwritten-object
 /// markers anywhere the copied span can reach, not just at its opening byte.
 pub(super) fn representation_copy_source_is_initialized(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -114,7 +114,7 @@ pub(super) fn representation_copy_source_is_initialized(
 }
 
 fn check_range_initialization(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     range: &MemoryRange,
     value_runs: Option<&[(u32, u32)]>,
     assumptions: &PureFactContext,

@@ -67,7 +67,7 @@ fn replacing_copy_initialization_visits_only_the_copied_runs() {
     for count in [4u32, 16, 64] {
         let mut samples = Vec::new();
         for unrelated in [0u32, 64, 256] {
-            let mut entry = Memory::new();
+            let mut entry = SymbolicMemory::new();
             for index in 0..unrelated {
                 entry =
                     entry.with_initialized_object(&heap_pointer(&format!("unrelated-{index}")), 1);

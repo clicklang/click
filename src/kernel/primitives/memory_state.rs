@@ -5437,7 +5437,7 @@ impl SymbolicMemory {
     /// publish this metadata as part of that edge.
     fn replace_initialization_for_representation_copy(
         &mut self,
-        source_memory: &Memory,
+        source_memory: &SymbolicMemory,
         copy: &RepresentationCopyRange,
     ) {
         let source_start = copy.source.offset.as_const().expect("exact source");
