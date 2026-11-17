@@ -796,23 +796,62 @@ fn memory_value_hash_stream_should_scale_with_shared_float_dags() {
         let cell = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
         let mut memory_hash = ByteCount::default();
         cell.hash(&mut memory_hash);
-        let mut native_hash = ByteCount::default();
-        cell.native().hash(&mut native_hash);
-        assert_eq!(
-            memory_hash.0, native_hash.0,
-            "existing native hash-stream contract"
+        assert!(!root.has_cached_native_argument());
+        assert!(
+            memory_hash.0 <= 32,
+            "cached memory key writes only its fingerprint and family tag"
         );
-        eprintln!(
-            "depth={depth} shared_nodes={} local_hash_bytes={} memory_hash_bytes={} native_cache={}",
-            depth + 1,
-            local_hash.0,
-            memory_hash.0,
-            root.has_cached_native_argument()
-        );
+        eprintln!("depth={depth}: memory hash bytes={}", memory_hash.0);
         counts.push(memory_hash.0);
     }
     assert!(
         counts.windows(2).all(|pair| pair[1] <= 5 * pair[0]),
         "memory hash input grows faster than the shared DAG: {counts:?}"
     );
+}
+
+#[test]
+fn memory_float_key_work_is_shared_cached_and_session_scoped() {
+    use std::hash::Hash;
+    let mut previous = None;
+    for size in [4, 16, 64, 256] {
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Float64), Variable(998796));
+        for _ in 0..size {
+            root = KernelTerm::float_binary(
+                KernelFloatType::Float64,
+                FloatBinaryOperator::Add,
+                [root.clone(), root],
+            )
+            .unwrap();
+        }
+        let mut cold = Vec::new();
+        for _ in 0..2 {
+            let _session = crate::kernel::VerificationSession::enter();
+            let cell = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
+            let exports = KernelTermExport::float_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                cell.hash(&mut std::collections::hash_map::DefaultHasher::new())
+            });
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+            assert!(!root.has_cached_native_argument());
+            cold.push(work);
+            let _nested = crate::kernel::VerificationSession::enter();
+            let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..32 {
+                    cell.clone()
+                        .hash(&mut std::collections::hash_map::DefaultHasher::new());
+                }
+                StoredMemoryValue::from(ExecutionValue::Shared(root.clone()))
+                    .hash(&mut std::collections::hash_map::DefaultHasher::new());
+            });
+            assert_eq!(warm, 0);
+        }
+        assert!(cold[0] > 0);
+        assert_eq!(cold[0], cold[1]);
+        if let Some(previous) = previous {
+            assert!(cold[0] <= previous * 5, "{previous} -> {}", cold[0]);
+        }
+        previous = Some(cold[0]);
+    }
 }
