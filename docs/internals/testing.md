@@ -772,6 +772,14 @@ proofs and 4.979s to formatting proofs across 206 theorem completions. Inspect
 those individual proof scripts before changing the library check's gate
 coverage; the remaining modules together took about half a second.
 
+The complete signed/unsigned order-chain scaling audit (8/16/24/32 edges)
+and proof-if context audit (1/2/4/8 earlier facts, with and without a split)
+also run nightly. Compact order-chain positive and negative fixtures and
+proof-if expansion regressions remain in the gate. The split fixture proves
+its shared nonnegative bound once and uses explicit transitivity for each
+original earlier fact, preserving the symbolic loop variable, C program,
+contract, size range, and context-growth assertion.
+
 ### Sharing setup in expansion API tests
 
 The batch runner and inventory macro are visible within the test-only Surface
@@ -800,8 +808,8 @@ or CI timings:
 | Batching and duplicate input-proof removal | 73 | 124 plus batch inventory | 63.729 | 16.959s |
 
 The first run immediately after linking took 27.933s; use unchanged reruns for
-this execution-floor comparison. No compiler flags, work budgets, timeouts,
-or gate/nightly coverage changed in this cleanup.
+this execution-floor comparison. The expansion API cleanup preserved gate/nightly coverage; compiler flags,
+work budgets, and timeouts stayed unchanged.
 
 For the two wide-integer cases, retained before/after binaries were run in
 interleaved order, three runs of each with one test worker. Median per-case
