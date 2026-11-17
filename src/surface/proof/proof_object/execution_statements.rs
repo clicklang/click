@@ -1576,10 +1576,32 @@ impl<'a> Proof<'a> {
             &assumptions,
         )
         .map_err(|message| self.step_error(format!("loop state join: {message}")))?;
-        // D6: a structural `decreases` is decided here, against the instance
-        // the binder held at the loop head. It is not a bundle member, so a
-        // back edge that does not descend is named at the join.
-        if let Some(measure) = structural_measure
+        let invariant_obligations = crate::kernel::loop_invariant_obligations_at_back_edge(
+            &boundary_state,
+            loop_entry_state,
+            invariant_checks,
+            head_iterations,
+            &assumptions,
+        )
+        .map_err(|message| self.step_error(format!("loop invariant classification: {message}")))?;
+        let guard_assumptions = invariant_obligations
+            .into_iter()
+            .map(|obligation| obligation.proposition().clone())
+            .fold(assumptions.clone(), PureFactContext::assume_proposition);
+        let guard = match condition {
+            Some(condition) => crate::kernel::classify_loop_condition(
+                &boundary_state,
+                condition,
+                &guard_assumptions,
+            )
+            .map_err(|message| {
+                self.step_error(format!("loop condition classification: {message}"))
+            })?,
+            None => crate::kernel::LoopConditionFeasibility::TrueOnly,
+        };
+        // Structural descent is owed only if another iteration can start.
+        if guard.may_continue()
+            && let Some(measure) = structural_measure
             && let Some(failure) = crate::kernel::loop_structural_descent_failure(
                 loop_head_state,
                 &boundary_state,
@@ -1591,27 +1613,6 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!("loop state join: {failure}")));
         }
-        let invariant_obligations = crate::kernel::loop_invariant_obligations_at_back_edge(
-            &boundary_state,
-            loop_entry_state,
-            invariant_checks,
-            head_iterations,
-            &assumptions,
-        )
-        .map_err(|message| self.step_error(format!("loop invariant classification: {message}")))?;
-        let assumptions = invariant_obligations
-            .into_iter()
-            .map(|obligation| obligation.proposition().clone())
-            .fold(assumptions, PureFactContext::assume_proposition);
-        let guard = match condition {
-            Some(condition) => {
-                crate::kernel::classify_loop_condition(&boundary_state, condition, &assumptions)
-                    .map_err(|message| {
-                        self.step_error(format!("loop condition classification: {message}"))
-                    })?
-            }
-            None => crate::kernel::LoopConditionFeasibility::TrueOnly,
-        };
         // Heap lifetime and resource ownership are compared against the head
         // the body actually started from. That is the loop entry context for
         // an ordinary loop, and the loop's own narrower resource context when
@@ -1622,7 +1623,7 @@ impl<'a> Proof<'a> {
             loop_head_state,
             &boundary_state,
             binders,
-            &assumptions,
+            &guard_assumptions,
             composite_resource_definitions,
         );
         let head_compatible = match head_join {
