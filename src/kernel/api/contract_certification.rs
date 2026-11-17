@@ -2840,7 +2840,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
             crate::kernel::functions::expand_all_composite_resource_facts_with_composites(
                 left,
                 composite_resource_definitions,
-                left_memory,
+                &crate::kernel::ProgramPoint::of_memory(left_memory),
                 assumptions,
             )
         },
@@ -2853,7 +2853,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
             crate::kernel::functions::expand_all_composite_resource_facts_with_composites(
                 right,
                 composite_resource_definitions,
-                right_memory,
+                &crate::kernel::ProgramPoint::of_memory(right_memory),
                 assumptions,
             )
         },
