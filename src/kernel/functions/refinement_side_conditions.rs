@@ -353,7 +353,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecExpression::Subobject { .. }
             | SpecExpression::PointerOffset { .. }
             | SpecExpression::MemoryLoad {
-                memory: SpecPoint::Current | SpecPoint::FunctionEntry,
+                point: SpecPoint::Current | SpecPoint::FunctionEntry,
                 ..
             }
             | SpecExpression::AlgebraicMatch { .. } => Visit::Descend,
@@ -629,11 +629,11 @@ pub(super) fn spec_reads_current_parameter(
         {
             Visit::Stop(())
         }
-        SpecNode::Expression(SpecExpression::MemoryLoad { memory, .. })
-        | SpecNode::Proposition(SpecProposition::MemoryLoadable { memory, .. })
-        | SpecNode::Proposition(SpecProposition::ResourceViewable { memory, .. })
-        | SpecNode::PredicateArgument(SpecPredicateArgument::ArrayRef { memory, .. })
-        | SpecNode::Argument(SpecPureFunctionArgument::ArrayRef { memory, .. })
+        SpecNode::Expression(SpecExpression::MemoryLoad { point: memory, .. })
+        | SpecNode::Proposition(SpecProposition::MemoryLoadable { point: memory, .. })
+        | SpecNode::Proposition(SpecProposition::ResourceViewable { point: memory, .. })
+        | SpecNode::PredicateArgument(SpecPredicateArgument::ArrayRef { point: memory, .. })
+        | SpecNode::Argument(SpecPureFunctionArgument::ArrayRef { point: memory, .. })
             if matches!(memory, SpecPoint::FunctionEntry | SpecPoint::At(_)) =>
         {
             Visit::Skip
@@ -1107,7 +1107,7 @@ pub(super) fn spec_proposition_current_parameter_accesses(
                     ..
                 }
                 | SpecExpression::MemoryLoad {
-                    memory: SpecPoint::Current,
+                    point: SpecPoint::Current,
                     pointer,
                     value_type,
                 },

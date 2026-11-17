@@ -450,7 +450,7 @@ pub(super) fn selected_instance_resource_load_values(
                 .into_iter()
                 .find_map(|(load, value)| {
                     let SpecExpression::MemoryLoad {
-                        memory: SpecPoint::Current,
+                        point: SpecPoint::Current,
                         pointer,
                         value_type,
                     } = load

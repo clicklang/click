@@ -336,6 +336,71 @@ fn heap_free_loan_obligation_ignores_unrelated_aliases_and_loans() {
 }
 
 #[test]
+fn realloc_loan_requirement_work_is_bounded_by_the_pending_result() {
+    let _session = VerificationSession::enter();
+    let state =
+        successful_heap_allocation_state().with_local("q", ProgramValue::pointer(Address::null()));
+    let loan_base = Address::symbolic(Variable(954_000));
+    for grow_aliases in [true, false] {
+        let mut samples = Vec::new();
+        for count in [4, 16, 64] {
+            let mut assumptions = PureFactContext::new();
+            if grow_aliases {
+                for i in 0..count {
+                    assumptions = assumptions.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            loan_base.clone(),
+                            Address::symbolic(Variable(955_000 + i)),
+                        ),
+                        true,
+                    );
+                }
+            }
+            let mut ledger = LoanLedger::new();
+            let lender = ledger.fresh_participant().unwrap();
+            let borrower = ledger.fresh_participant().unwrap();
+            for i in 0..if grow_aliases { 1 } else { count } {
+                let backing = ResourceFact::own_memory(MemoryRange::new(
+                    Address::symbolic(Variable(954_000 + i)),
+                    0.into(),
+                    1.into(),
+                ));
+                let occurrence = ResourceContext::new()
+                    .unchecked_with_fact(backing.clone())
+                    .unique_owned_occurrence_for_fact(&backing)
+                    .unwrap()
+                    .0;
+                let opening = ledger.lend(lender, borrower, occurrence, backing).unwrap();
+                ledger = ledger.apply(&opening.transition).unwrap();
+            }
+            let state = state.clone().with_loan_ledger(Some(ledger));
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let pending = start_test_realloc(&state, &assumptions);
+                resolve_test_realloc(&pending)
+            });
+            assert_eq!(paths.len(), 2);
+            assert!(
+                paths
+                    .iter()
+                    .all(|path| matches!(path.outcome, StatementOutcome::Normal(_)))
+            );
+            assert_eq!(
+                paths
+                    .iter()
+                    .map(|path| path.obligations.len())
+                    .sum::<usize>(),
+                1
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "{grow_aliases}: {samples:?}"
+        );
+    }
+}
+
+#[test]
 fn realloc_reference_check_ignores_unrelated_resource_tokens() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut samples = Vec::new();

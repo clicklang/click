@@ -124,11 +124,14 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
         .unwrap()
         .with_pending_heap_reallocation(
             pending,
-            base.clone(),
-            AllocationSize::int32(4),
-            None,
-            vec![],
-            vec![],
+            PendingReallocation {
+                old_pointer: base.clone(),
+                old_bytes: AllocationSize::int32(4),
+                retirement_separation: None,
+                zeroed_prefix: None,
+                copied_cells: vec![],
+                initialized_prefix: vec![],
+            },
         );
     let state = ExecutionState::new()
         .with_memory(memory)
