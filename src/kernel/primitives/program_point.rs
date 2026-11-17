@@ -242,6 +242,34 @@ pub struct ProgramPoint {
     path: PathLink,
 }
 
+thread_local! {
+    /// The point made for each pending step log, so a state asked for its
+    /// point twice gets one point. Keyed by the log object, not by memory
+    /// contents: two routes to equal memory are two logs and two points.
+    /// The entry holds the log, so its address is not reused while keyed.
+    static PENDING_POINTS: std::cell::RefCell<
+        std::collections::HashMap<(Option<ProgramPointId>, usize), (Arc<StepLog>, PathLink)>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// The point after `path` that the steps in `steps` reach, with `memory`.
+fn pending_point(path: &PathLink, steps: &Arc<StepLog>, memory: &SharedMemory) -> PathLink {
+    let key = (path.id(), Arc::as_ptr(steps) as usize);
+    PENDING_POINTS.with(|points| {
+        points
+            .borrow_mut()
+            .entry(key)
+            .or_insert_with(|| {
+                (
+                    steps.clone(),
+                    path.after(memory.clone(), Some(steps.clone())),
+                )
+            })
+            .1
+            .clone()
+    })
+}
+
 impl PartialEq for ProgramPoint {
     fn eq(&self, other: &Self) -> bool {
         self.memory == other.memory
@@ -285,10 +313,19 @@ impl ProgramPoint {
 
     /// The point a state stands at on its path.
     #[cfg_attr(not(test), allow(dead_code))]
+    /// The point a state with `memory` stands at, `path` being the last
+    /// point it reached. Steps the state has taken since, still in the
+    /// memory's log, are a point of their own after that one, so the point
+    /// handed out holds the memory it names.
     pub(super) fn of_state(memory: &Memory, path: &PathLink) -> Self {
+        let shared = intern_memory_ref(memory);
+        let path = match &memory.pending_steps {
+            Some(steps) if path.memory() != Some(&shared) => pending_point(path, steps, &shared),
+            _ => path.clone(),
+        };
         Self {
-            memory: intern_memory_ref(memory),
-            path: path.clone(),
+            memory: shared,
+            path,
         }
     }
 
@@ -420,6 +457,31 @@ mod tests {
             .store(slot(), ProgramValue::Int32(MachineTerm::constant(5)));
         assert!(memory.pending_steps.is_some());
         assert!(intern_memory_ref(&memory).memory().pending_steps.is_none());
+    }
+
+    /// A state that has taken steps since its last point stands at a point
+    /// after them, holding its current memory; a frame built from the state
+    /// stands there too, with the state's own memory value.
+    #[test]
+    fn a_state_with_pending_steps_stands_after_them() {
+        let start = ExecutionState::default().with_memory(memory_holding(0));
+        let moved = start.clone().with_materialized_memory(
+            start
+                .memory()
+                .clone()
+                .store(slot(), ProgramValue::Int32(MachineTerm::constant(7))),
+        );
+        let point = moved.program_point();
+        assert_ne!(point.id(), start.program_point().id());
+        assert_eq!(
+            point.predecessor_ids(),
+            vec![start.program_point().id().unwrap()]
+        );
+        assert_eq!(point.path_link().memory(), Some(point.shared_memory()));
+
+        let frame = ExecutionState::at_state(&moved);
+        assert_eq!(frame.program_point().id(), point.id());
+        assert!(frame.memory().same_storage_roots(moved.memory()));
     }
 
     /// A path is a chain of points; dropping a long one must not recurse

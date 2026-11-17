@@ -846,8 +846,9 @@ fn bind_program_function_arguments_impl(
         .parameters()
         .iter()
         .any(|parameter| parameter.aggregate_layout().is_some());
-    let mut callee_state = ExecutionState::new()
-        .with_memory(caller_state.memory.clone())
+    // The frame is the caller's state at the call, seen through the callee's
+    // parameter names: it stands at the caller's point.
+    let mut callee_state = ExecutionState::at_state(caller_state)
         .with_resource_context(caller_state.resources.clone())
         .with_next_local_frame(
             if address_taken_parameters.is_empty() && !has_aggregate_parameters {
@@ -1031,8 +1032,9 @@ pub(super) fn bind_contract_arguments(
         .parameters()
         .iter()
         .any(|parameter| parameter.aggregate_layout().is_some());
-    let mut callee_state = ExecutionState::new()
-        .with_memory(caller_state.memory.clone())
+    // The frame is the caller's state at the call, seen through the callee's
+    // parameter names: it stands at the caller's point.
+    let mut callee_state = ExecutionState::at_state(caller_state)
         .with_resource_context(caller_state.resources.clone())
         .with_next_local_frame(if has_aggregate_parameters {
             frame.saturating_add(1)
