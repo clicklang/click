@@ -1216,7 +1216,9 @@ impl<'a> Proof<'a> {
                         !callee.exceptional_signature().is_empty()
                     }));
             }
-            let ProgramStatement::TryCatchInt32 { try_body, .. } = statement else {
+            let (ProgramStatement::TryCatchInt32 { try_body, .. }
+            | ProgramStatement::UnwindCleanup { body: try_body, .. }) = statement
+            else {
                 return Ok(false);
             };
             let SourceStatementKind::Try {

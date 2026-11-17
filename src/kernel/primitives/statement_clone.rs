@@ -41,6 +41,16 @@ impl Clone for ProgramStatement {
                     pending.push((handler, handler_target));
                     pending.push((try_body, try_target));
                 }
+                (
+                    Self::UnwindCleanup { body, cleanup },
+                    Self::UnwindCleanup {
+                        body: body_target,
+                        cleanup: cleanup_target,
+                    },
+                ) => {
+                    pending.push((cleanup, cleanup_target));
+                    pending.push((body, body_target));
+                }
                 (Self::Switch { cases, .. }, Self::Switch { cases: targets, .. }) => {
                     for (case, target) in cases.iter().zip(targets) {
                         pending.push((&case.body, &mut target.body));
@@ -219,12 +229,14 @@ impl ProgramStatement {
                 try_body: _,
                 binding,
                 handler: _,
-                cleanup_unwind,
             } => Self::TryCatchInt32 {
                 try_body: Box::new(Self::Skip),
                 binding: binding.clone(),
                 handler: Box::new(Self::Skip),
-                cleanup_unwind: *cleanup_unwind,
+            },
+            Self::UnwindCleanup { .. } => Self::UnwindCleanup {
+                body: Box::new(Self::Skip),
+                cleanup: Box::new(Self::Skip),
             },
             Self::Store { pointer, value } => Self::Store {
                 pointer: pointer.clone(),

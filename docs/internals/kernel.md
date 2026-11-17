@@ -1720,9 +1720,11 @@ of `f.local(N)` and `f.parameter(N)`. Exact storage uses the existing
 `.storage(implicit)`, `.storage(lifetime, N)`, or `.storage(frame, N)` selectors;
 aggregate temporaries materialize distinct objects with ordinary automatic
 lifetimes. The parser indexes their declarations in the prelowered body once.
-Return capture, intermediate call values, and cleanup exception payloads all
-use these identities, and `TryCatchInt32` carries a `BindingName` through
-execution and evidence checking. No generated variable spelling or collision
+Return capture, intermediate call values, and `catch (int)` payloads all use
+these identities, and `TryCatchInt32` carries a `BindingName` through
+execution and evidence checking. Unwinding through a destructible local binds
+no payload: see the C++ cleanup model in
+[Architecture](architecture.md#selected-control-flow-and-c-cleanup-model). No generated variable spelling or collision
 probe participates in identity or lookup.
 
 A contract's return value is `BindingName::ContractResult`, with Surface spelling

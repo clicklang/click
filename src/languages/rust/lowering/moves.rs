@@ -90,6 +90,10 @@ pub(super) fn region_count(statement: &ProgramStatement) -> usize {
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => 1 + region_count(try_body) + region_count(handler),
+        // Its cleanup, then the point where the exception continues.
+        ProgramStatement::UnwindCleanup { body, cleanup } => {
+            1 + region_count(body) + region_count(cleanup) + 1
+        }
         _ => 1,
     }
 }

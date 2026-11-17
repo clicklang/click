@@ -1596,18 +1596,23 @@ pub(super) fn route_throw_to_handler(
         return Ok(false);
     };
     let transition_label = format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
-    // Bind the payload exactly as the kernel's own `try` execution does:
-    // declare the handler binding, then assign the thrown value. The
-    // handler binding is always `int32` by `TryCatchInt32` semantics.
+    // A `try` binds the payload exactly as the kernel's own `try` execution
+    // does: declare the handler binding, then assign the thrown value, which
+    // is always `int32` by `TryCatchInt32` semantics. An unwind cleanup binds
+    // nothing: its cleanup runs and then the same exception continues.
     let mut state = thrown_state.clone();
     let mut facts = throw_facts.clone();
-    for statement in [
-        program_declare(handler.binding.clone(), crate::kernel::ProgramType::Int32),
-        program_assign(
-            handler.binding.clone(),
-            ProgramExpression::Value(throw_value.clone()),
-        ),
-    ] {
+    let binding_steps = match &handler.entry {
+        ExceptionalEntry::Catch(binding) => vec![
+            program_declare(binding.clone(), crate::kernel::ProgramType::Int32),
+            program_assign(
+                binding.clone(),
+                ProgramExpression::Value(throw_value.clone()),
+            ),
+        ],
+        ExceptionalEntry::Unwind(_) => Vec::new(),
+    };
+    for statement in binding_steps {
         let mut kernel_variable = execution.core.kernel_variable_mark();
         let (transitions, _) = certified_statement_transitions(
             &state,
@@ -1666,7 +1671,13 @@ pub(super) fn route_throw_to_handler(
     }
     *available_pure_facts = facts;
     execution.core.state = state.clone().into();
-    let mut handler_source = handler.handler.clone();
+    let mut handler_source = match &handler.entry {
+        ExceptionalEntry::Catch(_) => handler.handler.clone(),
+        ExceptionalEntry::Unwind(cleanup) => Arc::new(crate::kernel::program_unwind_continuation(
+            cleanup,
+            ProgramExpression::Value(throw_value.clone()),
+        )),
+    };
     loop {
         let (head, tail) = split_next_source_operation(&handler_source).map_err(|message| {
             ClickError::new(format!(
@@ -1823,13 +1834,7 @@ pub(super) fn prepare_call_outcome_split(
             tactic_name,
         )?;
 
-    while let ProgramStatement::TryCatchInt32 {
-        try_body,
-        binding,
-        handler,
-        cleanup_unwind,
-    } = &statement
-    {
+    while let Some((try_body, entry, handler)) = exceptional_region(&statement) {
         let SourceStatementKind::Try {
             try_statement_index,
             handler_statement_index,
@@ -1848,13 +1853,12 @@ pub(super) fn prepare_call_outcome_split(
                 remaining: remaining.map(Arc::new),
                 next_statement_index: after_try_statement_index,
                 exceptional: Some(ExceptionalContinuation {
-                    binding: binding.clone(),
-                    handler: Arc::new((**handler).clone()),
+                    entry,
+                    handler,
                     handler_first_index: handler_statement_index,
-                    cleanup_unwind: *cleanup_unwind,
                 }),
             });
-        remaining = Some((**try_body).clone());
+        remaining = Some(try_body.clone());
         statement_index = try_statement_index;
         source_region = proof_context
             .constants
@@ -2320,13 +2324,7 @@ fn execute_step_from_frontier_position_selecting_path(
     // path; normal completion pops it with the tail like any other
     // continuation.
     let mut descended_try = false;
-    while let ProgramStatement::TryCatchInt32 {
-        try_body,
-        binding,
-        handler,
-        cleanup_unwind,
-    } = &source_statement
-    {
+    while let Some((try_body, entry, handler)) = exceptional_region(&source_statement) {
         let (try_first, handler_first, after_try) = match source_region.kind {
             SourceStatementKind::Try {
                 try_statement_index,
@@ -2350,13 +2348,12 @@ fn execute_step_from_frontier_position_selecting_path(
                 remaining: remaining.map(Arc::new),
                 next_statement_index: after_try,
                 exceptional: Some(ExceptionalContinuation {
-                    binding: binding.clone(),
-                    handler: Arc::new((**handler).clone()),
+                    entry,
+                    handler,
                     handler_first_index: handler_first,
-                    cleanup_unwind: *cleanup_unwind,
                 }),
             });
-        remaining = Some((**try_body).clone());
+        remaining = Some(try_body.clone());
         statement_index = try_first;
         source_region = proof_context
             .constants
@@ -4435,6 +4432,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
             format!("throw {}", describe_program_expression(expression))
         }
         ProgramStatement::TryCatchInt32 { binding, .. } => format!("try ... catch (int {binding})"),
+        ProgramStatement::UnwindCleanup { body, .. } => describe_statement_head(body),
         ProgramStatement::Store { pointer, value }
         | ProgramStatement::TypedStore { pointer, value, .. } => {
             format!(

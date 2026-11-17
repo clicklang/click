@@ -1811,6 +1811,10 @@ pub(super) fn declared_pointer_locals(
 
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
+            }
+            | ProgramStatement::UnwindCleanup {
+                body: try_body,
+                cleanup: handler,
             } => {
                 pending.push(try_body);
                 pending.push(handler);

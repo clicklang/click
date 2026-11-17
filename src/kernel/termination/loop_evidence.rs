@@ -21,7 +21,8 @@ enum ShapeHead {
         natural_exit_target: Option<ControlTargetId>,
     },
     Switch(ProgramExpression, Vec<Option<u32>>),
-    Try(BindingName, bool),
+    Try(BindingName),
+    UnwindCleanup,
     Leaf(ProgramStatement),
 }
 
@@ -47,11 +48,8 @@ impl ShapeHead {
                 expression.clone(),
                 cases.iter().map(|case| case.value).collect(),
             ),
-            ProgramStatement::TryCatchInt32 {
-                binding,
-                cleanup_unwind,
-                ..
-            } => Self::Try(binding.clone(), *cleanup_unwind),
+            ProgramStatement::TryCatchInt32 { binding, .. } => Self::Try(binding.clone()),
+            ProgramStatement::UnwindCleanup { .. } => Self::UnwindCleanup,
 
             _ => Self::Leaf(statement.clone()),
         }
@@ -79,6 +77,10 @@ fn children_all(
         ProgramStatement::Switch { cases, .. } => cases.iter().all(|case| visit(&case.body)),
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => visit(try_body) && visit(handler),
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip

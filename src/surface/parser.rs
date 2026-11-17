@@ -1409,6 +1409,9 @@ impl ProgramLayouts {
                         record(binding, None, false);
                         pending.extend([try_body.as_ref(), handler.as_ref()]);
                     }
+                    ProgramStatement::UnwindCleanup { body, cleanup } => {
+                        pending.extend([body.as_ref(), cleanup.as_ref()]);
+                    }
                     ProgramStatement::Seq(sequence) => {
                         pending.extend(sequence.iter().map(|s| s.as_ref()))
                     }

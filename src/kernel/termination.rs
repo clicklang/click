@@ -1432,6 +1432,10 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             collect_address_taken_locals(try_body, names);
             collect_address_taken_locals(handler, names);
@@ -1776,6 +1780,10 @@ fn statement_calls_visiting(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             statement_calls_visiting(try_body, calls, visit);
             statement_calls_visiting(handler, calls, visit);
@@ -1869,6 +1877,10 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
                 names.insert(name.to_owned());
             }
             statement_declared_variables(handler, names);
+        }
+        ProgramStatement::UnwindCleanup { body, cleanup } => {
+            statement_declared_variables(body, names);
+            statement_declared_variables(cleanup, names);
         }
         ProgramStatement::If {
             then_branch,
@@ -2066,6 +2078,20 @@ fn walk_termination_paths<W: TerminationWalk>(
             let handler_paths = walk.unbind(binding, paths.clone());
             let try_body = descend(try_body, paths)?;
             let handler = descend(handler, handler_paths)?;
+            let mut continuing = try_body.continuing;
+            continuing.extend(handler.continuing);
+            let mut broken = try_body.broken;
+            broken.extend(handler.broken);
+            Ok(WalkPaths {
+                continuing: walk.join(continuing),
+                broken: walk.join(broken),
+            })
+        }
+        // The cleanup starts where the body may throw; it binds nothing.
+        ProgramStatement::UnwindCleanup { body, cleanup } => {
+            let cleanup_paths = paths.clone();
+            let try_body = descend(body, paths)?;
+            let handler = descend(cleanup, cleanup_paths)?;
             let mut continuing = try_body.continuing;
             continuing.extend(handler.continuing);
             let mut broken = try_body.broken;
@@ -3584,6 +3610,10 @@ fn collect_loops_in_order<'a>(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             collect_loops_in_order(try_body, loops);
             collect_loops_in_order(handler, loops);
@@ -3850,6 +3880,10 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             collect_loops(try_body, loops);
             collect_loops(handler, loops);
@@ -4027,6 +4061,10 @@ fn contains_natural_control_loop(statement: &ProgramStatement) -> bool {
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => contains_natural_control_loop(try_body) || contains_natural_control_loop(handler),
         ProgramStatement::Switch { cases, .. } => cases
             .iter()
@@ -4083,6 +4121,10 @@ fn visit_loop_obligations(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             visit_loop_obligations(try_body, next_index, visit)?;
             visit_loop_obligations(handler, next_index, visit)
@@ -4449,6 +4491,10 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             statement_function_addresses(try_body, taken);
             statement_function_addresses(handler, taken);
@@ -4755,6 +4801,10 @@ fn self_call_loop_indices(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             descend(try_body, next_index);
             descend(handler, next_index);
@@ -6115,7 +6165,6 @@ mod local_descent_tests {
                 try_body: Box::new(spin(1)),
                 binding: "code".into(),
                 handler: Box::new(spin(2)),
-                cleanup_unwind: false,
             }),
             Arc::new(spin(3)),
         );
