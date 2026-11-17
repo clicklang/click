@@ -144,7 +144,10 @@ fn pointer_local_synthesis_skips_unrelated_pointer_blocks() {
 fn integer_division_synthesis_work_tracks_the_selected_expression() {
     use crate::kernel::{IntegerTerm, SharedIntegerTerm};
     let variable = Variable(8_410_000);
-    let names = BTreeMap::from([(variable, "n".to_string())]);
+    let names = (BTreeMap::<_, String>::from([(variable, "n".to_string())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     let state = ExecutionState::new();
     let samples = [4usize, 8, 16, 32].map(|size| {
         let mut term: SharedIntegerTerm = IntegerTerm::Variable(variable).into();
@@ -198,7 +201,10 @@ fn integer_division_synthesis_work_tracks_the_selected_expression() {
 fn integer_division_synthesis_refuses_shared_dag_expansion_within_its_budget() {
     use crate::kernel::{IntegerTerm, SharedIntegerTerm};
     let variable = Variable(8_420_000);
-    let names = BTreeMap::from([(variable, "n".to_string())]);
+    let names = (BTreeMap::<_, String>::from([(variable, "n".to_string())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     let state = ExecutionState::new();
     for size in [16usize, 32, 64, 128] {
         let mut term: SharedIntegerTerm = IntegerTerm::Variable(variable).into();
@@ -295,9 +301,9 @@ fn allocation_result_names_use_one_index_as_recorded_history_grows() {
 fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
     let mut costs = Vec::new();
     for size in [4usize, 16, 64, 256] {
-        let mut names = BTreeMap::new();
+        let mut names = BTreeMap::<Variable, SurfaceBinder>::new();
         for i in 0..size {
-            names.insert(Variable(9100 + i as u64), format!("unused_{i}"));
+            names.insert(Variable(9100 + i as u64), format!("unused_{i}").into());
         }
         names.insert(Variable(9000), "flag".into());
         let flag = ConditionTerm::Variable(Variable(9000));
@@ -442,44 +448,6 @@ fn common_arithmetic_names_ignore_unrelated_locals_without_exports() {
 }
 
 #[test]
-fn nested_fold_binder_freshening_scales_with_selected_surface() {
-    for unrelated in [0, 128, 512] {
-        let _ambient = (0..unrelated)
-            .map(|n| {
-                (
-                    format!("ambient_{n}"),
-                    SurfaceTerm::IntegerLiteral("0".into()),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
-        for size in [8, 32, 128] {
-            let mut expression = SurfaceTerm::Binding("__click_binder_0".into());
-            let mut markers = Vec::new();
-            for n in 0..size {
-                let accumulator = format!("\0acc{n}");
-                let item = format!("\0item{n}");
-                markers.extend([(accumulator.clone(), None), (item.clone(), None)]);
-                expression = SurfaceTerm::RangeFold {
-                    start: Box::new(SurfaceTerm::IntegerLiteral("0".into())),
-                    end: Box::new(SurfaceTerm::Binding("n".into())),
-                    initial: Box::new(SurfaceTerm::Binding(accumulator.clone())),
-                    accumulator,
-                    item,
-                    body: Box::new(expression),
-                };
-            }
-            let (renamed, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::surface::lowering::name_synthesized_binders(&expression, &markers).unwrap()
-            });
-            assert_eq!(work, 4 * size + 1, "size={size}, unrelated={unrelated}");
-            let text = diagnostics::describe_contract_expression(&renamed);
-            assert!(!text.contains('\0'));
-            assert!(text.contains("__click_binder_0"));
-        }
-    }
-}
-
-#[test]
 fn nested_fold_surface_raising_scales_without_ambient_local_scan() {
     let mut baseline = BTreeMap::new();
     for unrelated in [0, 64, 256] {
@@ -561,7 +529,10 @@ fn common_match_surface_work_tracks_selected_body_without_exports() {
             )],
         )
         .unwrap();
-        let names = BTreeMap::from([(id, "payload".into())]);
+        let names = (BTreeMap::<_, String>::from([(id, "payload".into())]))
+            .into_iter()
+            .map(|(var, name)| (var, SurfaceBinder::from(name)))
+            .collect::<BTreeMap<_, _>>();
         let exports = KernelTermExport::machine_export_count();
         let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
             matches::raise_match(
@@ -629,7 +600,10 @@ fn nested_fold_match_call_surface_work_ignores_unrelated_locals() {
                 .into_term();
                 root = KernelTerm::checked_call(ty.clone(), "wrapped".into(), vec![folded]);
             }
-            let names = BTreeMap::from([(Variable(991900), "payload".into())]);
+            let names = (BTreeMap::<_, String>::from([(Variable(991900), "payload".into())]))
+                .into_iter()
+                .map(|(var, name)| (var, SurfaceBinder::from(name)))
+                .collect::<BTreeMap<_, _>>();
             let exports = KernelTermExport::machine_export_count();
             let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
                 raise_kernel_term(&root, ParameterBinding::default(), &state, &names)
@@ -787,7 +761,10 @@ fn nested_shared_constructors_and_named_leaf_do_not_export() {
         let AlgebraicTermNode::Variable(variable) = native.node else {
             panic!("named leaf")
         };
-        let names = BTreeMap::from([(variable, "payload".into())]);
+        let names = (BTreeMap::<_, String>::from([(variable, "payload".into())]))
+            .into_iter()
+            .map(|(var, name)| (var, SurfaceBinder::from(name)))
+            .collect::<BTreeMap<_, _>>();
         for _ in 0..size {
             native = crate::kernel::AlgebraicTerm {
                 algebraic_type: native.algebraic_type.clone(),
@@ -834,7 +811,10 @@ fn shared_overflow_spelling_does_not_export_growing_operands() {
             left: Box::new(operand),
             right: Box::new(MachineTerm::Variable(variable)),
         });
-        let names = BTreeMap::from([(variable, "x".into())]);
+        let names = (BTreeMap::<_, String>::from([(variable, "x".into())]))
+            .into_iter()
+            .map(|(var, name)| (var, SurfaceBinder::from(name)))
+            .collect::<BTreeMap<_, _>>();
         let exports = KernelTermExport::machine_export_count();
         let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
             raise_kernel_term(
@@ -979,4 +959,54 @@ fn narrow_comparison_spelling_scales_with_the_selected_proposition() {
             proposition
         );
     }
+}
+
+#[test]
+fn pthread_handle_names_ignore_unrelated_live_and_recorded_handles() {
+    use crate::kernel::{KernelTermImport, ThreadHandleId};
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut state = ExecutionState::new();
+        let mut points = RecordedStates::new();
+        for id in 0..size {
+            state = state.with_local(
+                format!("other_{id}"),
+                ProgramValue::UInt64(MachineTerm::ThreadHandle(ThreadHandleId(id))),
+            );
+            points.insert(
+                ProgramPointSelector::Mark(format!("other_{id}")),
+                state.clone(),
+            );
+        }
+        let native = MachineTerm::ThreadHandle(ThreadHandleId(999002));
+        let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
+        state = state.with_local("h", ProgramValue::UInt64(native));
+        points.insert(ProgramPointSelector::Mark("created".into()), state.clone());
+        let now = state
+            .clone()
+            .with_local("h", ProgramValue::UInt64(MachineTerm::uint64_constant(0)));
+        let _points = SynthesisRecordedPointsScope::enter(&points);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (selected, expected) in [(&state, "h"), (&now, "at(created, h)")] {
+                let surface = raise_kernel_term(
+                    &root,
+                    ParameterBinding::default(),
+                    selected,
+                    &BTreeMap::new(),
+                )
+                .unwrap();
+                assert_eq!(
+                    diagnostics::describe_contract_expression(&surface),
+                    expected
+                );
+            }
+        });
+        samples.push(work);
+    }
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
 }

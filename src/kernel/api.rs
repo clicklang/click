@@ -2730,7 +2730,7 @@ pub fn program_if(
 /// the caught path. Normal and other terminal outcomes bypass the handler.
 pub fn program_try_catch_int32(
     try_body: ProgramStatement,
-    binding: impl Into<String>,
+    binding: impl Into<BindingName>,
     handler: ProgramStatement,
 ) -> ProgramStatement {
     program_try_catch_int32_with_cleanup(try_body, binding, handler, false)
@@ -2738,7 +2738,7 @@ pub fn program_try_catch_int32(
 
 pub fn program_try_catch_int32_with_cleanup(
     try_body: ProgramStatement,
-    binding: impl Into<String>,
+    binding: impl Into<BindingName>,
     handler: ProgramStatement,
     cleanup_unwind: bool,
 ) -> ProgramStatement {
@@ -6412,6 +6412,7 @@ pub fn checked_owned_resource_count_lower_bound(
         Resource::Memory(_)
         | Resource::PopulationAuthority(_)
         | Resource::Instance(_)
+        | Resource::ConditionalMutexGuard(_)
         | Resource::MutexGuard(_)
         | Resource::MutexLive(_)
         | Resource::MutexUse(_)
@@ -8837,6 +8838,7 @@ fn rewrite_int32_term_by_exact_equality(
         )
     };
     match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             ..

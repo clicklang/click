@@ -63,7 +63,7 @@ pub(super) fn specialize_call(
                 .iter()
                 .map(|parameter| {
                     (
-                        parameter.name().to_string(),
+                        parameter.name().into(),
                         parameter.click_type_with_object_class(),
                     )
                 })
@@ -75,7 +75,10 @@ pub(super) fn specialize_call(
     })
 }
 
-pub(super) fn signature(parameters: &[(String, ClickType)], result: &ClickType) -> ClickType {
+pub(super) fn signature(
+    parameters: &[(SurfaceBinder, ClickType)],
+    result: &ClickType,
+) -> ClickType {
     ClickType::Function {
         parameters: parameters.iter().map(|(_, ty)| ty.clone()).collect(),
         result: Box::new(result.clone()),
@@ -96,7 +99,7 @@ pub(super) fn is_proposition_value(expression: &ContractExpression) -> bool {
             value,
             body,
         } => {
-            if matches!(body.as_ref(), ContractExpression::Binding(binding) if binding == name) {
+            if body.as_ref() == &name.reference() {
                 match click_type {
                     Some(ClickType::Proposition) => true,
                     Some(_) => false,
@@ -120,20 +123,10 @@ pub(super) fn range_proposition(
     predicate: ContractExpression,
     all: bool,
 ) -> ClickProposition {
-    let mut names = BTreeSet::new();
-    lowering::collect_contract_expression_referenced_names(&predicate, &mut names);
-    lowering::collect_contract_expression_binding_names(&predicate, &mut names);
-    let mut index = 0;
-    let item = loop {
-        let name = format!("__click_range_{index}");
-        index += 1;
-        if !names.contains(&name) {
-            break name;
-        }
-    };
+    let item = SurfaceBinder::fresh();
     let body = Box::new(ClickProposition::Value(ContractExpression::Apply {
         function: Box::new(predicate),
-        arguments: vec![ContractExpression::Binding(item.clone())],
+        arguments: vec![item.reference()],
     }));
     if all {
         ClickProposition::RangeAll {
@@ -167,15 +160,14 @@ pub(super) fn range_predicate(proposition: &ClickProposition) -> Option<&Contrac
     else {
         return None;
     };
-    let [ContractExpression::Binding(argument)] = arguments.as_slice() else {
+    let [argument] = arguments.as_slice() else {
         return None;
     };
-    if item != argument {
+    if argument != &item.reference() {
         return None;
     }
-    let mut captures = BTreeSet::new();
-    lowering::collect_contract_expression_referenced_names(function, &mut captures);
-    (!captures.contains(item)).then_some(function)
+    (!lowering::contract_expression_referenced_bindings(function).contains(&item.kernel_name()))
+        .then_some(function)
 }
 
 /// A value-based fold applies its step to the primitive fold's two bound
@@ -187,25 +179,11 @@ pub(super) fn range_fold(
     initial: ContractExpression,
     step: ContractExpression,
 ) -> ContractExpression {
-    let mut names = BTreeSet::new();
-    lowering::collect_contract_expression_referenced_names(&step, &mut names);
-    lowering::collect_contract_expression_binding_names(&step, &mut names);
-    let mut next = 0;
-    let mut fresh = || loop {
-        let name = format!("__click_fold_{next}");
-        next += 1;
-        if names.insert(name.clone()) {
-            break name;
-        }
-    };
-    let accumulator = fresh();
-    let item = fresh();
+    let accumulator = SurfaceBinder::fresh();
+    let item = SurfaceBinder::fresh();
     let body = ContractExpression::Apply {
         function: Box::new(step),
-        arguments: vec![
-            ContractExpression::Binding(accumulator.clone()),
-            ContractExpression::Binding(item.clone()),
-        ],
+        arguments: vec![accumulator.reference(), item.reference()],
     };
     ContractExpression::RangeFold {
         start: Box::new(start),
@@ -237,19 +215,15 @@ pub(super) fn range_fold_step(expression: &ContractExpression) -> Option<&Contra
     else {
         return None;
     };
-    let [
-        ContractExpression::Binding(acc),
-        ContractExpression::Binding(index),
-    ] = arguments.as_slice()
-    else {
+    let [acc, index] = arguments.as_slice() else {
         return None;
     };
-    if acc != accumulator || index != item {
+    if acc != &accumulator.reference() || index != &item.reference() {
         return None;
     }
-    let mut names = BTreeSet::new();
-    lowering::collect_contract_expression_referenced_names(function, &mut names);
-    (!names.contains(accumulator) && !names.contains(item)).then_some(function)
+    let names = lowering::contract_expression_referenced_bindings(function);
+    (!names.contains(&accumulator.kernel_name()) && !names.contains(&item.kernel_name()))
+        .then_some(function)
 }
 
 /// Read the explicit result carrier without erasing the caller's Integer
@@ -349,19 +323,20 @@ pub(super) fn reduce_head(
                     arguments.len()
                 ));
             }
-            let mut used = BTreeSet::new();
-            lowering::collect_contract_expression_referenced_names(body, &mut used);
-            lowering::collect_contract_expression_binding_names(body, &mut used);
+            // These are lexical slots, not generative authority. Re-elaborating
+            // the same application must preserve its contract identity. Exclude
+            // all referenced slots, including nested binders, to avoid capture.
+            let mut used = BTreeSet::<lowering::LexicalBinding>::new();
+            lowering::collect_contract_expression_referenced_bindings(body, &mut used);
             for argument in arguments {
-                lowering::collect_contract_expression_referenced_names(argument, &mut used);
-                lowering::collect_contract_expression_binding_names(argument, &mut used);
+                lowering::collect_contract_expression_referenced_bindings(argument, &mut used);
             }
             let mut next = 0;
             let mut fresh = || loop {
-                let name = format!("__lambda_{next}");
+                let id = crate::kernel::GeneratedBinderId::from_spelling(next);
                 next += 1;
-                if used.insert(name.clone()) {
-                    break name;
+                if used.insert(lowering::LexicalBinding(id.binding_name())) {
+                    break SurfaceBinder::Generated(id);
                 }
             };
             let bindings = parameters
@@ -371,14 +346,14 @@ pub(super) fn reduce_head(
             let result_name = fresh();
             let replacements = bindings
                 .iter()
-                .map(|(old, new, _)| (old.clone(), ContractExpression::Binding(new.clone())))
+                .map(|(old, new, _)| (old.clone(), new.reference()))
                 .collect::<BTreeMap<_, _>>();
             let body = lowering::substitute_contract_expression(body, &replacements)?;
             let mut applied = ContractExpression::Let {
                 name: result_name.clone(),
                 click_type: Some(result.clone()),
                 value: Box::new(body),
-                body: Box::new(ContractExpression::Binding(result_name)),
+                body: Box::new(result_name.reference()),
             };
             for ((_, name, ty), argument) in bindings.into_iter().zip(arguments).rev() {
                 applied = ContractExpression::Let {
@@ -666,9 +641,13 @@ mod tests {
             "function total(lo: int32, hi: int32, offset: Integer) -> Integer {{ {body} }}"
         ))
         .unwrap();
+        // Value-based fold syntax deliberately elides its primitive binder
+        // identities; reparsing allocates alpha-equivalent fresh binders.
         assert_eq!(
-            Some(original),
-            reparsed.click_function_definitions()[0].body()
+            body,
+            diagnostics::describe_contract_expression(
+                reparsed.click_function_definitions()[0].body().unwrap()
+            )
         );
     }
 
@@ -916,4 +895,9 @@ mod tests {
             reparsed.click_function_definitions()[0].body()
         );
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../scaling_tests/surface/lambdas.rs");
 }

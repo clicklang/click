@@ -720,6 +720,8 @@ pub(super) fn syntactic_expression_type(
         return Some(cast_type);
     }
     match expression {
+        ContractExpression::IntegerContext(_) => Some(ClickType::Integer),
+
         ContractExpression::Lambda {
             parameters, result, ..
         } => Some(lambdas::signature(parameters, result)),
@@ -889,7 +891,7 @@ fn instantiate_theorem_with_proof(
             Some((
                 parameter.name().to_string(),
                 ContractExpression::AlgebraicVariable {
-                    name: parameter.name().to_string(),
+                    name: parameter.name().into(),
                     algebraic_type: algebraic_type.clone(),
                     binder_index,
                 },

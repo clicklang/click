@@ -12,7 +12,7 @@ use std::sync::Arc;
 /// map the clause re-annotation uses.
 fn phase_proof_scope(
     environment: &ExecutionProofEnvironment<'_>,
-) -> PersistentMap<String, ContractExpression> {
+) -> PersistentBinderMap<ContractExpression> {
     environment
         .proof_locals
         .iter()
@@ -1041,7 +1041,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 // The head's pass count is spelled `iterations`.
                 let mut names = written_invariant_binder_names(invariant_checks);
                 if let crate::kernel::IntegerTerm::Variable(count) = preservation.iterations() {
-                    names.insert(*count, crate::surface::LOOP_ITERATIONS_NAME.to_string());
+                    names.insert(
+                        *count,
+                        SurfaceBinder::from(crate::surface::LOOP_ITERATIONS_NAME),
+                    );
                 }
                 names
             }),

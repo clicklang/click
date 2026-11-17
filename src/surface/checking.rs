@@ -383,7 +383,9 @@ pub(super) fn apply_witness_tactic(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: goal is not an existential proposition"
         )));
     };
-    if name != witness.name() {
+    // An unnamed logical binder uses the supplied proof label only for
+    // presentation; the quantified kernel variable carries its identity.
+    if !name.is_empty() && name != witness.name() {
         return Err(ClickError::new(format!(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: goal binds `{name}`, but proof provided witness `{}`",
             witness.name()

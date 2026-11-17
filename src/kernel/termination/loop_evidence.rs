@@ -21,7 +21,7 @@ enum ShapeHead {
         natural_exit_target: Option<ControlTargetId>,
     },
     Switch(ProgramExpression, Vec<Option<u32>>),
-    Try(String, bool),
+    Try(BindingName, bool),
     Leaf(ProgramStatement),
 }
 

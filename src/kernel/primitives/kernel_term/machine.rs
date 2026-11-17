@@ -46,6 +46,13 @@ impl KernelTerm {
     /// mathematical integer conversion. The surrounding machine DAG is never
     /// exported; conversion Integer payloads stay shared.
     pub(crate) fn machine_conversion_leaf(&self) -> Option<&MachineTerm> {
+        if let KernelTermNode::ThreadHandle(id) = self.node() {
+            return Some(
+                self.0
+                    .machine_leaf
+                    .get_or_init(|| MachineTerm::ThreadHandle(*id)),
+            );
+        }
         if let KernelTermNode::PointerAddress {
             address,
             object_class,
@@ -569,6 +576,7 @@ impl KernelTermImport {
                     operand: self.machine_arithmetic(source, operand)?,
                 }
             }
+            Old::ThreadHandle(id) => KernelTermNode::ThreadHandle(*id),
             Old::Variable(value) => KernelTermNode::Variable(*value),
             int32_constant!(value) => {
                 KernelTermNode::MachineLiteral(Literal::Word32(constant_u32(*value)))
@@ -666,6 +674,7 @@ impl KernelTermImport {
             return conversion;
         }
         let node = match term {
+            Old::ThreadHandle(id) => Node::ThreadHandle(*id),
             Old::AlgebraicMatch { .. } => {
                 return KernelMatch::import_machine(self, result, term)
                     .expect("machine match")
@@ -809,6 +818,7 @@ impl KernelTermExport {
                 Box::new(address.export()?),
                 AddressObjectClass::new(object_class.clone()),
             ),
+            Node::ThreadHandle(id) => Old::ThreadHandle(*id),
             Node::MachineLiteral(value) => value.legacy_term(),
             Node::Variable(variable) => Old::Variable(*variable),
             Node::MemoryLoad {

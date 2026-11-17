@@ -767,6 +767,20 @@ exists (x: int32) { x == value }
 Binder scope is the body between braces. Renaming a bound variable doesn't
 change the proposition or expression it denotes.
 
+Expansion spells generated specification binders as `binder(N)`. This is a
+structured binder identity in a namespace separate from source identifiers;
+it is not a C object and has no address. Quantifiers, specification lambdas,
+lexical lets, match patterns, and range operations accept this binder form.
+`intro() as binder(N)` names an introduced universal value. References use the
+same `binder(N)` form within the binder's scope. An introduction uses an
+identity not already introduced in the active proof scope. Numeric spellings survive
+printing and reparsing; the elaborator allocates fresh identities without
+probing source names.
+
+`(expression : Integer)` supplies mathematical integer context without a
+binding. It is also used by expansion when an integer result has lost the
+operand that originally supplied its type context.
+
 ## Proof syntax
 
 Binary proof splits follow one rule: `then` appears exactly when there is an

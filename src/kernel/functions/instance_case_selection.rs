@@ -116,7 +116,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
                 }
             }
             (AlgebraicValueType::Algebraic { .. }, None, AlgebraicValue::Algebraic(value)) => {
-                algebraic_bindings.insert(name.clone(), value.clone());
+                algebraic_bindings.insert(name.clone().into(), value.clone());
             }
             _ => return (Vec::new(), Vec::new()),
         }

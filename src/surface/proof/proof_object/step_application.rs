@@ -1012,7 +1012,10 @@ impl<'a> Proof<'a> {
 
     /// The focused universal goal with its binder respelled `name`, for
     /// `intro() as name`. The name must be new here: nothing is shadowed.
-    fn universal_goal_renamed_for_intro(&self, name: &str) -> Result<ClickProposition, ClickError> {
+    fn universal_goal_renamed_for_intro(
+        &self,
+        name: &SurfaceBinder,
+    ) -> Result<ClickProposition, ClickError> {
         if !matches!(self.goal(), Some(Proposition::ForAll { .. })) {
             return Err(self.step_error(format!(
                 "`intro() as {name}` names the variable of a `forall` goal; this goal introduces a fact, which has no name, so write `intro();`"
@@ -1034,11 +1037,30 @@ impl<'a> Proof<'a> {
                 )));
             }
         };
+        // Generated identities denote one introduction, rather than a source
+        // spelling that can shadow another value under an `outer.` alias.
+        if matches!(name, SurfaceBinder::Generated(_)) {
+            let locals = self.state.locals();
+            let bound = locals.values.get(name).is_some()
+                || locals.integer_values.get(name).is_some()
+                || locals.algebraic_values.get(name).is_some()
+                || self
+                    .proposition_obligation()
+                    .is_some_and(|goal| goal.surface_bindings.get(name).is_some());
+            if bound {
+                return Err(self.step_error(format!(
+                    "`{name}` is already introduced here; use `intro() as binder(N)` with a fresh identity"
+                )));
+            }
+        }
         if binder == name {
             return Ok(self.surface_goal().expect("matched above").clone());
         }
-        let mut referenced = BTreeSet::new();
-        crate::surface::lowering::collect_click_proposition_referenced_names(body, &mut referenced);
+        let mut referenced = BinderSet::new();
+        crate::surface::lowering::collect_click_proposition_referenced_binders(
+            body,
+            &mut referenced,
+        );
         let (names, _) = self.diagnostic_naming_tables();
         let locals = self.state.locals();
         let in_scope = referenced.contains(name)
@@ -1056,10 +1078,9 @@ impl<'a> Proof<'a> {
                 "`intro() as {name}`: `{name}` is already in scope here; choose a name that is not"
             )));
         }
-        let replacement = if c_typed {
-            ContractExpression::CBinding(name.to_string())
-        } else {
-            ContractExpression::Binding(name.to_string())
+        let replacement = match (c_typed, name.written()) {
+            (true, Some(name)) => ContractExpression::CBinding(name.into()),
+            _ => name.reference(),
         };
         let renaming = BTreeMap::from([(binder.clone(), replacement)]);
         let body = crate::surface::lowering::substitute_click_proposition(body, &renaming)
@@ -1068,13 +1089,13 @@ impl<'a> Proof<'a> {
             Some(ClickProposition::RangeAll { start, end, .. }) => ClickProposition::RangeAll {
                 start: start.clone(),
                 end: end.clone(),
-                item: name.to_string(),
+                item: name.clone(),
                 written_item: None,
                 body: Box::new(body),
             },
             Some(ClickProposition::ForAll { click_type, .. }) => ClickProposition::ForAll {
                 click_type: click_type.clone(),
-                name: name.to_string(),
+                name: name.clone(),
                 written_name: None,
                 body: Box::new(body),
             },
@@ -1087,12 +1108,13 @@ impl<'a> Proof<'a> {
     #[inline(never)]
     pub(super) fn apply_intro(
         &self,
-        rename: Option<&str>,
+        rename: Option<SurfaceBinder>,
     ) -> Result<KernelProofHandle, ClickError> {
         // `intro() as name` respells the universal goal's binder before the
         // ordinary introduction runs, so every binding below is made under
         // the chosen name and the remaining goal is written in terms of it.
         let renamed_surface = rename
+            .as_ref()
             .map(|name| self.universal_goal_renamed_for_intro(name))
             .transpose()?;
         let mut integer_binding = None;
@@ -1105,7 +1127,7 @@ impl<'a> Proof<'a> {
             .apply_intro_opening(|current, introduction, introduced| {
                 let mut surface_bindings = current.surface_bindings.clone();
                 let mut introduced_antecedents = current.introduced_antecedents.clone();
-                let renamed_recorded = match (rename, current.introductions.head()) {
+                let renamed_recorded = match (rename.as_ref(), current.introductions.head()) {
                     (
                         Some(name),
                         Some(LoweringIntroduction::WrittenUniversal {
@@ -1115,7 +1137,7 @@ impl<'a> Proof<'a> {
                             ..
                         }),
                     ) => Some(LoweringIntroduction::WrittenUniversal {
-                        name: name.to_string(),
+                        name: name.into(),
                         variable: *variable,
                         pointer: *pointer,
                         integer: *integer,
@@ -1133,17 +1155,17 @@ impl<'a> Proof<'a> {
                         PropositionIntroduction::Universal { .. },
                         Some(LoweringIntroduction::WrittenUniversal { name, .. }),
                         _,
-                    ) => Some(name),
+                    ) => Some(SurfaceBinder::from(name)),
                     (
                         PropositionIntroduction::Universal { .. },
                         _,
                         Some(ClickProposition::ForAll { name, .. }),
-                    ) => Some(name),
+                    ) => Some(SurfaceBinder::from(name)),
                     (
                         PropositionIntroduction::Universal { .. },
                         None,
                         Some(ClickProposition::RangeAll { item, .. }),
-                    ) => Some(item),
+                    ) => Some(item.clone()),
                     _ => None,
                 };
                 if let Some(name) = introduced_name {
@@ -1156,10 +1178,10 @@ impl<'a> Proof<'a> {
                             machine_binding = Some((name.clone(), *variable, value));
                         }
                     }
-                    let previous = current.surface_bindings.get(name).cloned().or_else(|| {
+                    let previous = current.surface_bindings.get(&name).cloned().or_else(|| {
                         let value = match self.context.as_ref() {
                             ProofContext::Pure(context) => {
-                                context.theorem_context.values.get(name).cloned().map(ProgramExpression::Value)
+                                name.written().and_then(|name|context.theorem_context.values.get(name)).cloned().map(ProgramExpression::Value)
                             }
                             ProofContext::FixedState(context) => context
                                 .parameter_binding.parameters
@@ -1257,7 +1279,7 @@ impl<'a> Proof<'a> {
                             integer_binding = Some((name.clone(), variable));
                         } else if let Some(ref algebraic_type) = algebraic {
                             algebraic_binding =
-                                Some((name.clone(), variable, algebraic_type.clone()));
+                                Some((SurfaceBinder::from(name), variable, algebraic_type.clone()));
                         }
                         // The binding names the exact variable the kernel
                         // bound the body to, not the one lowering first
@@ -1275,7 +1297,7 @@ impl<'a> Proof<'a> {
                         if algebraic.is_some() {
                             surface_bindings = surface_bindings.with_inserted(
                                 name.clone(),
-                                ContractExpression::Binding(name.clone()),
+                                SurfaceBinder::from(name).reference(),
                             );
                         } else if !*integer {
                             surface_bindings = surface_bindings.with_inserted(
@@ -1303,10 +1325,10 @@ impl<'a> Proof<'a> {
                     ) => {
                         if let Some(algebraic_type) = algebraic {
                             algebraic_binding =
-                                Some((name.clone(), variable, algebraic_type.clone()));
+                                Some((SurfaceBinder::from(name), variable, algebraic_type.clone()));
                             surface_bindings = surface_bindings.with_inserted(
                                 name.clone(),
-                                ContractExpression::Binding(name.clone()),
+                                SurfaceBinder::from(name).reference(),
                             );
                         } else {
                             surface_bindings = surface_bindings.with_inserted(
@@ -1351,7 +1373,7 @@ impl<'a> Proof<'a> {
                                 },
                             )),
                         );
-                        let bound = ContractExpression::Binding(item.clone());
+                        let bound = item.reference();
                         let guard = ClickProposition::And(
                             Box::new(ClickProposition::Comparison {
                                 left: start.clone(),
@@ -1430,8 +1452,16 @@ impl<'a> Proof<'a> {
         // their spellings with this bounded delta, without searching ambient
         // facts or asking individual premise consumers to recover the name.
         if let Some((name, variable, value)) = machine_binding {
-            let names = BTreeMap::from([(variable, name.clone())]);
-            let source_state = ExecutionState::new().with_local(name, value);
+            let _name_scope = super::super::surface_synthesis::folds::Binding::enter(
+                (
+                    super::super::surface_synthesis::folds::BinderCarrier::Program,
+                    variable,
+                ),
+                name.clone(),
+            );
+            let names = BTreeMap::new();
+            let source_state = ExecutionState::new();
+            let _ = value;
             for fact in state.state().added_facts() {
                 let surface = super::super::surface_synthesis::synthesize_surface_proposition_with_bound_variable_names(
                     fact, ParameterBinding::default(), &source_state, &names,

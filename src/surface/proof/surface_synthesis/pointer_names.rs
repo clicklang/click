@@ -5,14 +5,14 @@ use crate::kernel::SharedPointerValue;
 
 pub(super) struct NamedValue {
     value: Value,
-    name: String,
+    name: SurfaceBinder,
 }
 enum Value {
     Pointer(SharedPointerValue),
     Other(ProgramValue),
 }
 impl NamedValue {
-    pub(super) fn new((value, name): (ProgramValue, String)) -> Self {
+    pub(super) fn new((value, name): (ProgramValue, SurfaceBinder)) -> Self {
         let value = match value {
             ProgramValue::Pointer(pointer) => Value::Pointer(SharedPointerValue::import(&pointer)),
             value => Value::Other(value),
@@ -23,7 +23,7 @@ impl NamedValue {
 
 /// The shared producer path needs neither an exported address nor a native
 /// complete value. Scope ordering and lifetime are unchanged.
-pub(super) fn shared_name(value: &SharedPointerValue) -> Option<String> {
+pub(super) fn shared_name(value: &SharedPointerValue) -> Option<SurfaceBinder> {
     PROOF_LOCAL_VALUE_NAMES.with(|names| {
         names.borrow().iter().find_map(|named| match &named.value {
             Value::Pointer(held) if held.same_source_payload(value) => Some(named.name.clone()),
@@ -32,7 +32,7 @@ pub(super) fn shared_name(value: &SharedPointerValue) -> Option<String> {
     })
 }
 
-pub(super) fn native_name(value: &ProgramValue) -> Option<String> {
+pub(super) fn native_name(value: &ProgramValue) -> Option<SurfaceBinder> {
     if let ProgramValue::Pointer(pointer) = value {
         return shared_name(&SharedPointerValue::import(pointer));
     }
@@ -57,7 +57,7 @@ mod tests {
             .collect();
         let names = bindings
             .iter()
-            .map(|(name, value)| (value.clone(), name.clone()))
+            .map(|(name, value)| (value.clone(), SurfaceBinder::from(name)))
             .collect();
         with_proof_local_value_names(names, || {
             for (name, pointer) in values {
@@ -69,7 +69,12 @@ mod tests {
                     )),
                 );
                 let exports = KernelTermExport::machine_export_count();
-                assert_eq!(shared_name(&retained).as_deref(), Some(name));
+                assert_eq!(
+                    shared_name(&retained)
+                        .as_ref()
+                        .and_then(SurfaceBinder::written),
+                    Some(name)
+                );
                 assert_eq!(
                     synthesize_pointer_equality_operand(
                         &pointer,
@@ -292,11 +297,26 @@ mod tests {
         let value = ProgramValue::Pointer(pointer);
         assert!(shared_name(&shared).is_none());
         with_proof_local_value_names(vec![(value.clone(), "outer".into())], || {
-            assert_eq!(shared_name(&shared).as_deref(), Some("outer"));
+            assert_eq!(
+                shared_name(&shared)
+                    .as_ref()
+                    .and_then(SurfaceBinder::written),
+                Some("outer")
+            );
             with_proof_local_value_names(vec![(value, "inner".into())], || {
-                assert_eq!(shared_name(&shared).as_deref(), Some("inner"));
+                assert_eq!(
+                    shared_name(&shared)
+                        .as_ref()
+                        .and_then(SurfaceBinder::written),
+                    Some("inner")
+                );
             });
-            assert_eq!(shared_name(&shared).as_deref(), Some("outer"));
+            assert_eq!(
+                shared_name(&shared)
+                    .as_ref()
+                    .and_then(SurfaceBinder::written),
+                Some("outer")
+            );
         });
         assert!(shared_name(&shared).is_none());
     }

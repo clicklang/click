@@ -32,12 +32,12 @@ fn deep_literal_add_type(expression: &ContractExpression) -> Option<InterfaceTyp
 pub(super) fn function_signature_type_environment(
     signature: &FunctionSignature,
     include_result: bool,
-) -> BTreeMap<String, InterfaceType> {
+) -> BinderMap<InterfaceType> {
     let mut variables = signature
         .parameters()
         .iter()
         .map(|parameter| (parameter.name().to_string(), parameter.interface_type()))
-        .collect::<BTreeMap<_, _>>();
+        .collect::<BinderMap<_>>();
     if include_result && signature.return_type() != InterfaceType::Void {
         variables.insert("result".to_string(), signature.return_type());
     }
@@ -47,9 +47,7 @@ pub(super) fn function_signature_type_environment(
     variables
 }
 
-pub(super) fn theorem_type_environment(
-    theorem: &TheoremDefinition,
-) -> BTreeMap<String, InterfaceType> {
+pub(super) fn theorem_type_environment(theorem: &TheoremDefinition) -> BinderMap<InterfaceType> {
     theorem
         .parameters()
         .iter()
@@ -64,8 +62,8 @@ pub(super) fn theorem_type_environment(
 
 pub(super) fn validate_proposition_expression_types(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     let mut pending = vec![proposition];
@@ -90,8 +88,8 @@ pub(super) fn validate_proposition_expression_types(
 
 fn validate_proposition_expression_types_one(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
@@ -173,7 +171,7 @@ fn validate_proposition_expression_types_one(
         } => validate_theorem_proposition_expression_types(
             proposition,
             variables,
-            &BTreeSet::new(),
+            &BinderSet::new(),
             click_functions,
             context,
         ),
@@ -294,9 +292,9 @@ fn validate_proposition_expression_types_one(
 /// place for every proposition that is still entirely C-valued.
 pub(super) fn validate_theorem_proposition_expression_types(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, InterfaceType>,
-    integer_bindings: &BTreeSet<String>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    integer_bindings: &BinderSet,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     validate_scoped_proposition_expression_types(
@@ -311,16 +309,16 @@ pub(super) fn validate_theorem_proposition_expression_types(
 
 fn validate_scoped_proposition_expression_types(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, InterfaceType>,
-    integer_bindings: &BTreeSet<String>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    integer_bindings: &BinderSet,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
     check_operands: bool,
 ) -> Result<(), ClickError> {
-    let mut names = BTreeSet::new();
-    collect_click_proposition_referenced_names(proposition, &mut names);
-    let mut selected_variables = BTreeMap::new();
-    let mut selected_integers = BTreeSet::new();
+    let mut names = BinderSet::new();
+    collect_click_proposition_referenced_binders(proposition, &mut names);
+    let mut selected_variables = BinderMap::new();
+    let mut selected_integers = BinderSet::new();
     for name in names {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(ty) = variables.get(&name) {
@@ -344,9 +342,9 @@ fn validate_scoped_proposition_expression_types(
 
 fn validate_scoped_integer_proposition(
     proposition: &ClickProposition,
-    variables: &mut BTreeMap<String, InterfaceType>,
-    integer_bindings: &mut BTreeSet<String>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &mut BinderMap<InterfaceType>,
+    integer_bindings: &mut BinderSet,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
     check_operands: bool,
 ) -> Result<(), ClickError> {
@@ -375,9 +373,9 @@ fn validate_scoped_integer_proposition(
 
 fn validate_scoped_integer_proposition_one(
     proposition: &ClickProposition,
-    variables: &mut BTreeMap<String, InterfaceType>,
-    integer_bindings: &mut BTreeSet<String>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &mut BinderMap<InterfaceType>,
+    integer_bindings: &mut BinderSet,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
     check_operands: bool,
 ) -> Result<(), ClickError> {
@@ -414,7 +412,7 @@ fn validate_scoped_integer_proposition_one(
             operator,
             right,
         } => {
-            let mut locals = BTreeSet::new();
+            let mut locals = BinderSet::new();
             let left_kind =
                 integer_expression_kind(left, integer_bindings, click_functions, &mut locals);
             let right_kind =
@@ -650,14 +648,20 @@ fn validate_scoped_integer_proposition_one(
 // of an otherwise machine-valued comparison. None is outside this fragment.
 fn integer_expression_kind(
     expression: &ContractExpression,
-    integer_bindings: &BTreeSet<String>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
-    locals: &mut BTreeSet<String>,
+    integer_bindings: &BinderSet,
+    click_functions: &BinderMap<ClickFunctionType>,
+    locals: &mut BinderSet,
 ) -> Option<bool> {
+    if let Some(id) = expression.generated_binder() {
+        return Some(integer_bindings.contains(&id) || locals.contains(&id));
+    }
+
     if deep_literal_add_type(expression).is_some() {
         return Some(false);
     }
     match expression {
+        ContractExpression::IntegerContext(_) => Some(true),
+
         ContractExpression::Apply { function, .. } => {
             if let ContractExpression::Binding(name) = function.as_ref()
                 && let Some(ClickType::Function { result, .. }) =
@@ -877,6 +881,8 @@ fn contains_scoped_expression_shape(
         return false;
     }
     match expression {
+        ContractExpression::IntegerContext(value) => contains_scoped_expression_shape(value, shape),
+
         ContractExpression::Proposition(_) => false,
         ContractExpression::Resource(_) => false,
         ContractExpression::RegionResult(_)
@@ -985,11 +991,17 @@ fn contains_scoped_expression_shape(
 
 fn contains_integer_expression_signal(
     expression: &ContractExpression,
-    integer_bindings: &BTreeSet<String>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
-    locals: &BTreeSet<String>,
+    integer_bindings: &BinderSet,
+    click_functions: &BinderMap<ClickFunctionType>,
+    locals: &BinderSet,
 ) -> bool {
+    if let Some(id) = expression.generated_binder() {
+        return integer_bindings.contains(&id) || locals.contains(&id);
+    }
+
     match expression {
+        ContractExpression::IntegerContext(_) => true,
+
         ContractExpression::Apply { function, .. } => {
             lambdas::application_result_type(function) == Ok(ClickType::Integer)
         }
@@ -1268,8 +1280,8 @@ pub(super) fn describe_spec_value_type(value_type: &SpecValueType) -> String {
 /// Bind callback signatures by name without copying the declaration environment.
 pub(super) fn with_function_parameter_types<T>(
     parameters: &[FunctionParameter],
-    functions: &mut BTreeMap<String, ClickFunctionType>,
-    check: impl FnOnce(&BTreeMap<String, ClickFunctionType>) -> Result<T, ClickError>,
+    functions: &mut BinderMap<ClickFunctionType>,
+    check: impl FnOnce(&BinderMap<ClickFunctionType>) -> Result<T, ClickError>,
 ) -> Result<T, ClickError> {
     let mut shadowed = Vec::new();
     for parameter in parameters {
@@ -1323,8 +1335,8 @@ pub(super) fn with_function_parameter_types<T>(
 }
 
 pub(super) fn callback_binding_type(
-    name: &str,
-    functions: &BTreeMap<String, ClickFunctionType>,
+    name: &(impl binders::BinderKey + ?Sized),
+    functions: &BinderMap<ClickFunctionType>,
 ) -> Option<ClickType> {
     let function = functions
         .get(name)
@@ -1341,13 +1353,40 @@ pub(super) fn callback_binding_type(
 
 pub(super) fn infer_scoped_spec_value_type(
     expression: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    integer_bindings: &BTreeSet<String>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    integer_bindings: &BinderSet,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
     expected_integer: bool,
 ) -> Result<SpecValueType, ClickError> {
+    if let Some(id) = expression.generated_binder() {
+        if integer_bindings.contains(&id) {
+            return Ok(SpecValueType::Integer);
+        }
+        if let Some(ty) = callback_binding_type(&id, click_functions) {
+            return Ok(SpecValueType::Function(ty));
+        }
+        return Ok(SpecValueType::Scalar(variables.get(&id).copied()));
+    }
+
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            let actual = infer_scoped_spec_value_type(
+                value,
+                variables,
+                integer_bindings,
+                click_functions,
+                context,
+                true,
+            )?;
+            if actual != SpecValueType::Integer {
+                return Err(ClickError::new(
+                    "Integer context requires an Integer expression",
+                ));
+            }
+            Ok(SpecValueType::Integer)
+        }
+
         ContractExpression::Binding(name)
             if !variables.contains_key(name)
                 && !integer_bindings.contains(name)
@@ -1778,10 +1817,10 @@ pub(super) fn infer_scoped_spec_value_type(
                     expected_integer,
                 );
             }
-            let mut names = BTreeSet::new();
-            collect_contract_expression_referenced_names(body, &mut names);
-            let mut body_variables = BTreeMap::new();
-            let mut body_integer_bindings = BTreeSet::new();
+            let mut names = BinderSet::new();
+            collect_contract_expression_referenced_binders(body, &mut names);
+            let mut body_variables = BinderMap::new();
+            let mut body_integer_bindings = BinderSet::new();
             for name in names {
                 crate::instrumentation::record_deterministic_work(1);
                 if let Some(ty) = variables.get(&name) {
@@ -1986,9 +2025,9 @@ pub(super) fn infer_scoped_spec_value_type(
 fn infer_scoped_arithmetic_operands(
     left: &ContractExpression,
     right: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    integer_bindings: &BTreeSet<String>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    integer_bindings: &BinderSet,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
     expected_integer: bool,
 ) -> Result<(SpecValueType, SpecValueType), ClickError> {
@@ -2075,9 +2114,9 @@ fn range_item_type(start: Option<InterfaceType>, end: Option<InterfaceType>) -> 
 
 pub(super) fn infer_scoped_range_fold_bindings(
     expression: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    integer_bindings: &BTreeSet<String>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    integer_bindings: &BinderSet,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
     expected_integer: bool,
 ) -> Result<(ClickType, ClickType), ClickError> {
@@ -2160,7 +2199,7 @@ pub(super) fn infer_scoped_range_fold_bindings(
     // binders that are already known to be mathematical so an expression
     // such as `acc + to_integer(k)` can establish an Integer accumulator
     // even when its initial value is the untyped literal `0`.
-    let mut body_signal_locals = BTreeSet::new();
+    let mut body_signal_locals = BinderSet::new();
     if integer_index || matches!(&initial_type, SpecValueType::Integer) || expected_integer {
         body_signal_locals.insert(accumulator.clone());
     }
@@ -2241,9 +2280,9 @@ pub(super) fn infer_scoped_range_fold_bindings(
 
 fn infer_scoped_range_fold_type(
     expression: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    integer_bindings: &BTreeSet<String>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    integer_bindings: &BinderSet,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
     expected_integer: bool,
 ) -> Result<SpecValueType, ClickError> {
@@ -2264,10 +2303,10 @@ fn infer_scoped_range_fold_type(
         context,
         expected_integer,
     )?;
-    let mut referenced = BTreeSet::new();
-    collect_contract_expression_referenced_names(body, &mut referenced);
-    let mut body_variables = BTreeMap::new();
-    let mut body_integer_bindings = BTreeSet::new();
+    let mut referenced = BinderSet::new();
+    collect_contract_expression_referenced_binders(body, &mut referenced);
+    let mut body_variables = BinderMap::new();
+    let mut body_integer_bindings = BinderSet::new();
     for name in referenced {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(ty) = variables.get(&name) {
@@ -2326,8 +2365,8 @@ fn validate_comparison_expression_types(
     left: &ContractExpression,
     operator: ComparisonOperator,
     right: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     if contains_scoped_expression_shape(left, ScopedExpressionShape::Lambda)
@@ -2341,7 +2380,7 @@ fn validate_comparison_expression_types(
         return validate_theorem_proposition_expression_types(
             &proposition,
             variables,
-            &BTreeSet::new(),
+            &BinderSet::new(),
             click_functions,
             context,
         );
@@ -2360,16 +2399,20 @@ fn validate_comparison_expression_types_without_lambda(
     left: &ContractExpression,
     operator: ComparisonOperator,
     right: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
-    let mut locals = BTreeSet::new();
-    let no_integer_parameters = BTreeSet::new();
+    let mut locals = BinderSet::new();
+    let no_integer_parameters = BinderSet::new();
     let left_kind =
-        integer_expression_kind(left, &no_integer_parameters, &BTreeMap::new(), &mut locals);
-    let right_kind =
-        integer_expression_kind(right, &no_integer_parameters, &BTreeMap::new(), &mut locals);
+        integer_expression_kind(left, &no_integer_parameters, &BinderMap::new(), &mut locals);
+    let right_kind = integer_expression_kind(
+        right,
+        &no_integer_parameters,
+        &BinderMap::new(),
+        &mut locals,
+    );
     if left_kind == Some(true) || right_kind == Some(true) {
         if left_kind.is_none() || right_kind.is_none() {
             return Err(ClickError::new(format!(
@@ -2502,11 +2545,11 @@ fn validate_comparison_expression_types_without_lambda(
 /// left to lowering.
 pub(super) fn refuse_bool_literal_comparisons(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
-    let mut pending = vec![(proposition, None::<BTreeMap<String, InterfaceType>>)];
+    let mut pending = vec![(proposition, None::<BinderMap<InterfaceType>>)];
     while let Some((proposition, scoped)) = pending.pop() {
         let scope = scoped.as_ref().unwrap_or(variables);
         match proposition {
@@ -2685,8 +2728,8 @@ fn refuse_bool_literal_comparison(
 
 pub(super) fn validate_to_nat_argument_type(
     argument: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     // C variables are present in this environment; Integer bindings are
@@ -2743,11 +2786,20 @@ fn return_type_needs_instantiation(click_type: &ClickType) -> bool {
 
 fn infer_spec_value_type(
     expression: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<SpecValueType, ClickError> {
     match expression {
+        ContractExpression::IntegerContext(value) => infer_scoped_spec_value_type(
+            value,
+            variables,
+            &BinderSet::new(),
+            click_functions,
+            context,
+            true,
+        ),
+
         ContractExpression::Binding(name)
             if !variables.contains_key(name)
                 && callback_binding_type(name, click_functions).is_some() =>
@@ -2881,7 +2933,7 @@ fn infer_spec_value_type(
         expression @ ContractExpression::RangeFold { .. } => infer_scoped_spec_value_type(
             expression,
             variables,
-            &BTreeSet::new(),
+            &BinderSet::new(),
             click_functions,
             context,
             false,
@@ -2934,7 +2986,7 @@ fn infer_spec_value_type(
             infer_scoped_spec_value_type(
                 expression,
                 variables,
-                &BTreeSet::new(),
+                &BinderSet::new(),
                 click_functions,
                 context,
                 true,
@@ -3095,8 +3147,8 @@ fn sequence_element_type_supported(interface_type: InterfaceType) -> bool {
 
 fn validate_resource_subject_expression_types(
     resource: &ResourceSubject,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     match resource {
@@ -3187,6 +3239,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::ArithmeticUsing(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
+            | ProofTactic::IntroBinder(_)
             | ProofTactic::Enumerate
             | ProofTactic::Contradiction(_)
             | ProofTactic::Preserve(_)
@@ -3318,7 +3371,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Normalize => "normalize",
         ProofTactic::NormalizeUsing(_) => "normalize",
         ProofTactic::ArithmeticUsing(_) => "arithmetic",
-        ProofTactic::Intro | ProofTactic::IntroAs(_) => "intro",
+        ProofTactic::Intro | ProofTactic::IntroAs(_) | ProofTactic::IntroBinder(_) => "intro",
         ProofTactic::Enumerate => "enumerate",
         ProofTactic::Contradiction(_) => "contradiction",
         ProofTactic::CloseInvariants => "close_invariants",
@@ -3806,14 +3859,18 @@ fn resource_types_compatible(
 
 pub(super) fn infer_contract_expression_type(
     expression: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<Option<InterfaceType>, ClickError> {
     if let Some(value_type) = deep_literal_add_type(expression) {
         return Ok(Some(value_type));
     }
     match expression {
+        ContractExpression::IntegerContext(_) => Err(ClickError::new(
+            "an Integer context is not a C scalar value",
+        )),
+
         ContractExpression::Proposition(_) => {
             Err(ClickError::new("a Prop is not a C scalar value"))
         }
@@ -4162,7 +4219,7 @@ pub(super) fn infer_contract_expression_type(
 /// allocation identity, permissions, or initialized storage.
 pub(in crate::surface) fn validate_void_pointer_cast_source(
     operand: &ProgramExpression,
-    variables: &BTreeMap<String, InterfaceType>,
+    variables: &BinderMap<InterfaceType>,
     context: &str,
 ) -> Result<(), ClickError> {
     let actual = infer_program_expression_type(operand, variables);
@@ -4179,7 +4236,7 @@ pub(in crate::surface) fn validate_void_pointer_cast_source(
 
 fn validate_pointer_cast_operands(
     expression: &ProgramExpression,
-    variables: &BTreeMap<String, InterfaceType>,
+    variables: &BinderMap<InterfaceType>,
     context: &str,
 ) -> Result<(), ClickError> {
     match expression {
@@ -4336,7 +4393,7 @@ fn interface_type_from_program_type(target_type: &ProgramType) -> Option<Interfa
 
 pub(in crate::surface) fn infer_program_expression_type(
     expression: &ProgramExpression,
-    variables: &BTreeMap<String, InterfaceType>,
+    variables: &BinderMap<InterfaceType>,
 ) -> Option<InterfaceType> {
     match expression {
         ProgramExpression::Value(ProgramValue::PointerInteger(_)) => infer_program_expression_type(
@@ -4370,7 +4427,9 @@ pub(in crate::surface) fn infer_program_expression_type(
         )),
         ProgramExpression::Value(ProgramValue::Pointer(_)) => None,
         ProgramExpression::Variable(name) => match name {
-            crate::kernel::BindingName::Named(name) => variables.get(name).copied(),
+            crate::kernel::BindingName::Named(_) | crate::kernel::BindingName::Generated(_) => {
+                variables.get(name).copied()
+            }
             crate::kernel::BindingName::ContractResult => variables.get("result").copied(),
             crate::kernel::BindingName::ContractException => variables.get("exception").copied(),
             crate::kernel::BindingName::Local(_) | crate::kernel::BindingName::Static(_) => name
@@ -4562,8 +4621,8 @@ pub(in crate::surface) fn infer_program_expression_type(
 fn infer_add_expression_type(
     left: &ContractExpression,
     right: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<Option<InterfaceType>, ClickError> {
     let (left_expression, right_expression) = (left, right);
@@ -4579,8 +4638,8 @@ fn infer_add_expression_type(
 fn infer_subtract_expression_type(
     left: &ContractExpression,
     right: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<Option<InterfaceType>, ClickError> {
     let (left_expression, right_expression) = (left, right);
@@ -4601,7 +4660,7 @@ fn infer_subtract_expression_type(
 fn infer_c_add_type(
     left: &ProgramExpression,
     right: &ProgramExpression,
-    variables: &BTreeMap<String, InterfaceType>,
+    variables: &BinderMap<InterfaceType>,
 ) -> Option<InterfaceType> {
     let left = infer_program_expression_type(left, variables);
     let right = infer_program_expression_type(right, variables);
@@ -4611,7 +4670,7 @@ fn infer_c_add_type(
 fn infer_c_subtract_type(
     left: &ProgramExpression,
     right: &ProgramExpression,
-    variables: &BTreeMap<String, InterfaceType>,
+    variables: &BinderMap<InterfaceType>,
 ) -> Option<InterfaceType> {
     let left = infer_program_expression_type(left, variables);
     let right = infer_program_expression_type(right, variables);
@@ -4668,7 +4727,7 @@ fn arithmetic_result_type(
 fn infer_c_shift_type(
     left: &ProgramExpression,
     right: &ProgramExpression,
-    variables: &BTreeMap<String, InterfaceType>,
+    variables: &BinderMap<InterfaceType>,
 ) -> Option<InterfaceType> {
     let left_type = infer_program_expression_type(left, variables)?;
     let right_type = infer_program_expression_type(right, variables)?;
@@ -4686,8 +4745,8 @@ fn infer_c_shift_type(
 fn infer_contract_shift_type(
     left: &ContractExpression,
     right: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
     retain_operand_width: bool,
 ) -> Result<Option<InterfaceType>, ClickError> {
@@ -4798,8 +4857,8 @@ fn pointer_element_type(interface_type: InterfaceType) -> Option<InterfaceType> 
 
 fn validate_contract_segment_expression_types(
     segment: &ContractSegment,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     let _ = infer_contract_expression_type(
@@ -4828,8 +4887,8 @@ pub(super) fn validate_resource_clause(
     resources: &BTreeMap<String, usize>,
     recursive_resources: &BTreeSet<String>,
     click_functions: &BTreeMap<String, usize>,
-    click_function_types: &BTreeMap<String, ClickFunctionType>,
-    variables: &BTreeMap<String, InterfaceType>,
+    click_function_types: &BinderMap<ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
     context: &str,
 ) -> Result<(), ClickError> {
     match resource {
@@ -5110,7 +5169,7 @@ fn validate_predicate_calls_in_proposition_one(
 
 pub(super) fn validate_program_valued_function_folds(
     definition: &ClickFunctionDefinition,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    click_functions: &BinderMap<ClickFunctionType>,
 ) -> Result<(), ClickError> {
     let Some(body) = definition.body() else {
         return Ok(());
@@ -5213,6 +5272,10 @@ fn validate_contract_expression_calls(
         return validate_contract_expression_calls(&reduced, click_functions, context);
     }
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            validate_contract_expression_calls(value, click_functions, context)
+        }
+
         ContractExpression::Proposition(proposition) => {
             validate_value_proposition_calls(proposition, click_functions, context, true)
         }
@@ -5469,9 +5532,9 @@ fn validate_value_proposition_calls(
 /// Check their lexical value expression once, rather than once per clause.
 pub(super) fn validate_declaration_lambda_bindings(
     ensures: &[EnsureClause],
-    variables: &BTreeMap<String, InterfaceType>,
-    integer_bindings: &BTreeSet<String>,
-    functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    integer_bindings: &BinderSet,
+    functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     let Some(last) = ensures.last() else {
@@ -5489,7 +5552,7 @@ pub(super) fn validate_declaration_lambda_bindings(
     let mut expression = ContractExpression::IntegerLiteral("0".into());
     for (name, click_type, value) in last.proof_bindings.iter().rev() {
         expression = ContractExpression::Let {
-            name: name.clone(),
+            name: name.clone().into(),
             click_type: click_type.clone(),
             value: Box::new(value.clone()),
             body: Box::new(expression),
@@ -5510,12 +5573,12 @@ pub(super) fn validate_declaration_lambda_bindings(
 /// unrelated ambient typing environment. Reads are typed here; application
 /// lowering checks their guards in the selected program state.
 fn validate_lambda_value(
-    parameters: &[(String, ClickType)],
+    parameters: &[(SurfaceBinder, ClickType)],
     result: &ClickType,
     body: &ContractExpression,
-    variables: &BTreeMap<String, InterfaceType>,
-    integer_bindings: &BTreeSet<String>,
-    functions: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    integer_bindings: &BinderSet,
+    functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     let supported = |ty: &ClickType| {
@@ -5532,10 +5595,10 @@ fn validate_lambda_value(
         ));
     }
     lambdas::validate_body_state(body)?;
-    let mut names = BTreeSet::new();
-    collect_contract_expression_referenced_names(body, &mut names);
-    let mut local_variables = BTreeMap::new();
-    let mut local_integers = BTreeSet::new();
+    let mut names = BinderSet::new();
+    collect_contract_expression_referenced_binders(body, &mut names);
+    let mut local_variables = BinderMap::new();
+    let mut local_integers = BinderSet::new();
     for name in names {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(ty) = variables.get(&name) {

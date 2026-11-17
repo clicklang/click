@@ -164,7 +164,7 @@ impl Proof<'_> {
         predicates: &PredicateEnvironment,
         names: &[String],
         scopes: &mut Vec<ProgramPointSelector>,
-        bound: &mut BTreeSet<String>,
+        bound: &mut BTreeSet<crate::kernel::BindingName>,
         changed: &mut bool,
         root: bool,
     ) -> Result<(), ClickError> {
@@ -175,7 +175,10 @@ impl Proof<'_> {
         if root || application {
             let mut referenced = BTreeSet::new();
             if !bound.is_empty() {
-                collect_click_proposition_referenced_names(proposition, &mut referenced);
+                crate::surface::lowering::collect_click_proposition_referenced_bindings(
+                    proposition,
+                    &mut referenced,
+                );
             }
             if referenced.is_disjoint(bound) {
                 let mut scoped = proposition.clone();
@@ -251,22 +254,22 @@ impl Proof<'_> {
             }
             ClickProposition::ForAll { name, body, .. }
             | ClickProposition::Exists { name, body, .. } => {
-                let inserted = bound.insert(name.clone());
+                let inserted = bound.insert(name.kernel_name());
                 self.unfold_selected_surface_goal(
                     body, selected, predicates, names, scopes, bound, changed, false,
                 )?;
                 if inserted {
-                    bound.remove(name);
+                    bound.remove(&name.kernel_name());
                 }
             }
             ClickProposition::RangeAll { item, body, .. }
             | ClickProposition::RangeAny { item, body, .. } => {
-                let inserted = bound.insert(item.clone());
+                let inserted = bound.insert(item.kernel_name());
                 self.unfold_selected_surface_goal(
                     body, selected, predicates, names, scopes, bound, changed, false,
                 )?;
                 if inserted {
-                    bound.remove(item);
+                    bound.remove(&item.kernel_name());
                 }
             }
             _ => {}

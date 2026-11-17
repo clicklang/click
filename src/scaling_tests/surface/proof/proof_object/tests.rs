@@ -1046,7 +1046,7 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
         let context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: Memory::new(),
             array_refs: BTreeMap::new(),
             requires: vec![equality.clone()],
@@ -1394,7 +1394,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: Memory::new(),
             values: BTreeMap::from([
                 ("x".into(), ProgramValue::UInt64(x.clone())),
@@ -2431,7 +2431,7 @@ fn deferred_terminal_tactics_share_ambient_bindings_without_map_work() {
     use crate::persistent::{measure_persistent_work, persistent_node_allocations};
     let mut baseline_work = None;
     for size in [4, 16, 64, 256] {
-        let bindings = (0..size).fold(PersistentMap::default(), |bindings, i| {
+        let bindings = (0..size).fold(PersistentBinderMap::default(), |bindings, i| {
             bindings.with_inserted(
                 format!("local_{i}"),
                 ContractExpression::IntegerLiteral(i.to_string()),
@@ -2512,7 +2512,7 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
             &theorems,
         );
         let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
-            root.apply_intro(Some("bound")).unwrap()
+            root.apply_intro(Some("bound".into())).unwrap()
         });
         // A `uint8` binder is a value of its own format: its range is the
         // format's, so intro adds no bound fact to spell.
@@ -3020,23 +3020,49 @@ fn proof_binding_name_production_and_queries_follow_only_changed_bindings() {
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 assert_eq!(
-                    locals.value_names.name(Variable(9_810_000)),
+                    locals
+                        .value_names
+                        .name(Variable(9_810_000))
+                        .and_then(SurfaceBinder::written),
                     Some("binder00000")
                 );
                 assert_eq!(
-                    locals.value_names.name(Variable(9_820_000)),
+                    locals
+                        .value_names
+                        .name(Variable(9_820_000))
+                        .and_then(SurfaceBinder::written),
                     Some("alias00000")
                 );
-                assert_eq!(locals.value_names.name(Variable(9_830_000)), None);
-                locals.set_values(
+                assert_eq!(
                     locals
-                        .values
-                        .with_inserted("new".into(), binding(9_830_000)),
+                        .value_names
+                        .name(Variable(9_830_000))
+                        .and_then(SurfaceBinder::written),
+                    None
                 );
-                assert_eq!(locals.value_names.name(Variable(9_830_000)), Some("new"));
+                locals.set_values(locals.values.with_inserted("new", binding(9_830_000)));
+                assert_eq!(
+                    locals
+                        .value_names
+                        .name(Variable(9_830_000))
+                        .and_then(SurfaceBinder::written),
+                    Some("new")
+                );
                 locals.set_values(parent.values.clone());
-                assert_eq!(locals.value_names.name(Variable(9_830_000)), None);
-                assert_eq!(parent.value_names.name(Variable(9_830_000)), None);
+                assert_eq!(
+                    locals
+                        .value_names
+                        .name(Variable(9_830_000))
+                        .and_then(SurfaceBinder::written),
+                    None
+                );
+                assert_eq!(
+                    parent
+                        .value_names
+                        .name(Variable(9_830_000))
+                        .and_then(SurfaceBinder::written),
+                    None
+                );
             })
         });
         assert_eq!(work, 8);

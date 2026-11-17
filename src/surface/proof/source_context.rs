@@ -57,6 +57,7 @@ impl SourceContext {
                     | ProofTactic::NormalizeUsing(_)
                     | ProofTactic::Intro
                     | ProofTactic::IntroAs(_)
+                    | ProofTactic::IntroBinder(_)
                     | ProofTactic::Enumerate
                     | ProofTactic::Contradiction(_)
                     | ProofTactic::Rewrite(_)
@@ -96,6 +97,7 @@ impl SourceContext {
                     | ProofTactic::Witness(_)
                     | ProofTactic::Intro
                     | ProofTactic::IntroAs(_)
+                    | ProofTactic::IntroBinder(_)
                     | ProofTactic::Known
                     | ProofTactic::Normalize
                     | ProofTactic::NormalizeUsing(_)

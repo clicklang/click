@@ -787,10 +787,20 @@ fn quantifier_binder_name(surface: &ClickProposition) -> Option<String> {
         ClickProposition::At { proposition, .. } => quantifier_binder_name(proposition),
         ClickProposition::ForAll {
             name, written_name, ..
-        } => Some(written_name.clone().unwrap_or_else(|| name.clone())),
+        } => Some(
+            written_name
+                .clone()
+                .or_else(|| name.written().map(str::to_owned))
+                .unwrap_or_else(|| "value".into()),
+        ),
         ClickProposition::RangeAll {
             item, written_item, ..
-        } => Some(written_item.clone().unwrap_or_else(|| item.clone())),
+        } => Some(
+            written_item
+                .clone()
+                .or_else(|| item.written().map(str::to_owned))
+                .unwrap_or_else(|| "item".into()),
+        ),
         _ => None,
     }
 }

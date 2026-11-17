@@ -320,7 +320,11 @@ impl<'a> Proof<'a> {
                 claim_label,
                 theorem_context,
                 source_state,
-                source_names: theorem_context.diagnostic_names.iter().cloned().collect(),
+                source_names: theorem_context
+                    .diagnostic_names
+                    .iter()
+                    .map(|(var, name)| (*var, name.into()))
+                    .collect(),
                 spec_definitions,
                 theorem_environment,
                 induction_setup,

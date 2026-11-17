@@ -72,8 +72,7 @@ pub(in crate::surface::proof) struct StatedSite<'a> {
     values: &'a BTreeMap<String, ProgramValue>,
     /// The `Integer` bindings in scope where the statement is written, which
     /// name a theorem's `Integer` binders.
-    integer_values:
-        Option<&'a crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>>,
+    integer_values: Option<&'a PersistentBinderMap<crate::kernel::SpecIntegerExpression>>,
     // Built only when a message is spelled: most lowerings raise nothing,
     // and one per resource clause must not cost every value in scope.
     naming: std::cell::OnceCell<(
@@ -102,10 +101,7 @@ impl<'a> StatedSite<'a> {
     /// under.
     pub(in crate::surface::proof) fn with_integer_values(
         mut self,
-        integer_values: &'a crate::persistent::PersistentMap<
-            String,
-            crate::kernel::SpecIntegerExpression,
-        >,
+        integer_values: &'a PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     ) -> Self {
         self.integer_values = Some(integer_values);
         self
@@ -126,9 +122,11 @@ impl<'a> StatedSite<'a> {
             if let crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::Variable(
                 variable,
             )) = value
-                && !self.values.contains_key(name)
+                && !name
+                    .written()
+                    .is_some_and(|name| self.values.contains_key(name))
             {
-                labels.integer_source_name(*variable, name.clone());
+                labels.integer_source_name(*variable, name.to_string());
             }
         }
         labels
@@ -804,7 +802,7 @@ pub(in crate::surface::proof) fn describe_dropped_fold_body(
 /// One written range fold, in the spelling of its source.
 struct WrittenRangeFold {
     /// The fold's item binder name.
-    item: String,
+    item: SurfaceBinder,
     /// The fold's body, as written.
     body: String,
     /// The whole fold, as written.
@@ -864,6 +862,8 @@ pub(in crate::surface) fn walk_written_expressions(
     visit(expression);
     let mut children: Vec<&ContractExpression> = Vec::new();
     match expression {
+        ContractExpression::IntegerContext(value) => children.push(value),
+
         ContractExpression::Proposition(proposition) => {
             walk_written_expressions_in_proposition(proposition, visit)
         }

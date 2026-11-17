@@ -117,6 +117,7 @@ pub enum ProofStep {
 
     Intro,
     IntroAs(String),
+    IntroBinder(SurfaceBinder),
     Enumerate,
     Contradiction(ClickProposition),
     Rewrite(ClickProposition),
@@ -777,6 +778,7 @@ impl ProofStep {
 
             ProofTactic::Intro => Self::Intro,
             ProofTactic::IntroAs(name) => Self::IntroAs(name.clone()),
+            ProofTactic::IntroBinder(name) => Self::IntroBinder(name.clone()),
             ProofTactic::Enumerate => Self::Enumerate,
             ProofTactic::Contradiction(proposition) => Self::Contradiction(proposition.clone()),
             ProofTactic::Preserve(proposition) => Self::Preserve(proposition.clone()),
@@ -934,6 +936,7 @@ impl ProofStep {
 
             Self::Intro => ProofTactic::Intro,
             Self::IntroAs(name) => ProofTactic::IntroAs(name.clone()),
+            Self::IntroBinder(name) => ProofTactic::IntroBinder(name.clone()),
             Self::Enumerate => ProofTactic::Enumerate,
             Self::Contradiction(proposition) => ProofTactic::Contradiction(proposition.clone()),
             Self::Preserve(proposition) => ProofTactic::Preserve(proposition.clone()),
@@ -1025,7 +1028,7 @@ impl ProofStep {
                     .preserve_proof
                     .as_ref()
                     .map(|proof| proof.to_source_proof()),
-                scope: BTreeMap::new(),
+                scope: BinderMap::new(),
             })),
         }
     }
@@ -1155,7 +1158,9 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
 
         ProofStep::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),
-        ProofStep::Intro | ProofStep::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
+        ProofStep::Intro | ProofStep::IntroAs(_) | ProofStep::IntroBinder(_) => {
+            TacticClass::Simple(SimpleTactic::Intro)
+        }
         ProofStep::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
         ProofStep::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
         ProofStep::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),

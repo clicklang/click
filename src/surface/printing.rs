@@ -1199,6 +1199,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         }
         ProofTactic::Intro => line(output, &prefix, "intro();"),
         ProofTactic::IntroAs(name) => line(output, &prefix, &format!("intro() as {name};")),
+        ProofTactic::IntroBinder(name) => line(output, &prefix, &format!("intro() as {name};")),
         ProofTactic::Enumerate => line(output, &prefix, "enumerate();"),
         ProofTactic::Contradiction(fact) => line(
             output,

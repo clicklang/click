@@ -5,14 +5,24 @@ use std::collections::BTreeSet;
 
 pub(in crate::surface) fn program_expression_uses_variable(
     expression: &ProgramExpression,
-    variable: &str,
+    variable: &(impl binders::BinderKey + ?Sized),
 ) -> bool {
     match expression {
         ProgramExpression::StringLiteral(_)
         | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => false,
-        ProgramExpression::Variable(name) => name.is_named(variable),
+        ProgramExpression::Variable(name) => match (name, variable.binder_key()) {
+            (
+                crate::kernel::BindingName::Named(name),
+                Some(binders::BinderKeyRef::Written(variable)),
+            ) => name == variable,
+            (
+                crate::kernel::BindingName::Generated(id),
+                Some(binders::BinderKeyRef::Generated(variable)),
+            ) => id == variable,
+            _ => false,
+        },
         ProgramExpression::Cast { expression, .. } => {
             program_expression_uses_variable(expression, variable)
         }
@@ -63,6 +73,8 @@ pub(in crate::surface) fn program_expression_uses_variable(
 
 pub(in crate::surface) fn contains_old_expression(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::IntegerContext(value) => contains_old_expression(value),
+
         ContractExpression::Proposition(proposition) => {
             proposition_contains_old_expression(proposition)
         }
@@ -149,6 +161,8 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
 
 pub(in crate::surface) fn contains_resource_count(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::IntegerContext(value) => contains_resource_count(value),
+
         ContractExpression::Proposition(proposition) => {
             proposition_contains_resource_count(proposition)
         }
@@ -365,6 +379,8 @@ pub(in crate::surface) fn collect_resource_count_families(
 ) {
     fn collect_expression(expression: &ContractExpression, families: &mut BTreeSet<String>) {
         match expression {
+            ContractExpression::IntegerContext(value) => collect_expression(value, families),
+
             ContractExpression::Proposition(proposition) => {
                 collect_resource_count_families(proposition, families)
             }
@@ -658,6 +674,8 @@ pub(in crate::surface) fn proposition_contains_old_expression(
 
 pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::IntegerContext(value) => contains_at_expression(value),
+
         ContractExpression::Proposition(proposition) => {
             proposition_contains_at_expression(proposition)
         }
@@ -857,6 +875,8 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
         return;
     }
     match expression {
+        ContractExpression::IntegerContext(value) => collect_click_function_calls(value, calls),
+
         ContractExpression::Proposition(proposition) => {
             collect_click_function_calls_in_proposition(proposition, calls)
         }
@@ -1159,8 +1179,8 @@ pub(super) fn validate_well_founded_click_recursion(
             definitions[caller]
                 .body()
                 .expect("a recursive function has a body"),
-            &BTreeMap::new(),
-            &BTreeMap::new(),
+            &BinderMap::new(),
+            &BinderMap::new(),
             &definitions,
             function_calls,
             &measures,
@@ -1242,14 +1262,17 @@ fn click_function_decreases_parameter(
     }
 }
 
-fn contract_expression_variable(expression: &ContractExpression) -> Option<&str> {
+fn contract_expression_variable(expression: &ContractExpression) -> Option<SurfaceBinder> {
     match expression {
         ContractExpression::Binding(name)
-        | ContractExpression::AlgebraicVariable { name, .. }
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | ContractExpression::CBinding(name) => Some(name),
+        | ContractExpression::CBinding(name) => Some(name.into()),
+        ContractExpression::AlgebraicVariable { name, .. } => Some(name.clone()),
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Generated(id),
+        )) => Some((*id).into()),
         _ => None,
     }
 }
@@ -1275,8 +1298,8 @@ fn validate_recursive_call_edge(
     caller: &str,
     callee: &str,
     arguments: &[ContractExpression],
-    lower_bounds: &BTreeMap<String, i64>,
-    structural_subterms: &BTreeMap<String, ClickType>,
+    lower_bounds: &BinderMap<i64>,
+    structural_subterms: &BinderMap<ClickType>,
     definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     function_calls: &BTreeMap<String, BTreeSet<String>>,
     measures: &BTreeMap<String, ClickRecursionMeasure>,
@@ -1323,7 +1346,7 @@ fn validate_recursive_call_edge(
             match next {
                 ContractExpression::Subtract(left, right)
                     if contract_expression_variable(left)
-                        .is_some_and(|name| name == caller_parameter) =>
+                        .is_some_and(|name| name == *caller_parameter) =>
                 {
                     let step = contract_expression_int32_constant(right);
                     step.is_some_and(|step| {
@@ -1342,7 +1365,7 @@ fn validate_recursive_call_edge(
                 ..
             },
         ) => contract_expression_variable(next)
-            .and_then(|name| structural_subterms.get(name))
+            .and_then(|name| structural_subterms.get(&name))
             .is_some_and(|subterm_type| subterm_type == &ClickType::Algebraic(callee_type.clone())),
         _ => false,
     };
@@ -1365,16 +1388,16 @@ fn validate_recursive_call_edge(
 fn validate_recursive_calls_in_expression(
     caller: &str,
     expression: &ContractExpression,
-    lower_bounds: &BTreeMap<String, i64>,
-    structural_subterms: &BTreeMap<String, ClickType>,
+    lower_bounds: &BinderMap<i64>,
+    structural_subterms: &BinderMap<ClickType>,
     definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     function_calls: &BTreeMap<String, BTreeSet<String>>,
     measures: &BTreeMap<String, ClickRecursionMeasure>,
     algebraic_definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
 ) -> Result<(), ClickError> {
     let recurse = |expression: &ContractExpression,
-                   bounds: &BTreeMap<String, i64>,
-                   subterms: &BTreeMap<String, ClickType>| {
+                   bounds: &BinderMap<i64>,
+                   subterms: &BinderMap<ClickType>| {
         validate_recursive_calls_in_expression(
             caller,
             expression,
@@ -1387,6 +1410,10 @@ fn validate_recursive_calls_in_expression(
         )
     };
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            recurse(value, lower_bounds, structural_subterms)
+        }
+
         ContractExpression::Proposition(proposition) => validate_recursive_calls_in_proposition(
             caller,
             proposition,
@@ -1447,7 +1474,7 @@ fn validate_recursive_calls_in_expression(
                     Some(ClickType::Algebraic(algebraic_type.clone()))
                 }
                 _ => contract_expression_variable(scrutinee)
-                    .and_then(|name| structural_subterms.get(name).cloned()),
+                    .and_then(|name| structural_subterms.get(&name).cloned()),
             };
             for arm in arms {
                 let mut arm_subterms = structural_subterms.clone();
@@ -1559,9 +1586,13 @@ fn validate_recursive_calls_in_expression(
         } => {
             recurse(value, lower_bounds, structural_subterms)?;
             let mut body_bounds = lower_bounds.clone();
-            body_bounds.remove(name);
+            if let Some(name) = name.written() {
+                body_bounds.remove(name);
+            }
             let mut body_subterms = structural_subterms.clone();
-            body_subterms.remove(name);
+            if let Some(name) = name.written() {
+                body_subterms.remove(name);
+            }
             recurse(body, &body_bounds, &body_subterms)
         }
         ContractExpression::ArrayIndex { base, .. } => {
@@ -1599,8 +1630,8 @@ fn validate_recursive_calls_in_expression(
 fn validate_recursive_calls_in_proposition(
     caller: &str,
     proposition: &ClickProposition,
-    lower_bounds: &BTreeMap<String, i64>,
-    structural_subterms: &BTreeMap<String, ClickType>,
+    lower_bounds: &BinderMap<i64>,
+    structural_subterms: &BinderMap<ClickType>,
     definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     function_calls: &BTreeMap<String, BTreeSet<String>>,
     measures: &BTreeMap<String, ClickRecursionMeasure>,
@@ -1732,8 +1763,8 @@ fn validate_recursive_calls_in_proposition(
 fn validate_recursive_calls_in_resource_subject(
     caller: &str,
     subject: &ResourceSubject,
-    lower_bounds: &BTreeMap<String, i64>,
-    structural_subterms: &BTreeMap<String, ClickType>,
+    lower_bounds: &BinderMap<i64>,
+    structural_subterms: &BinderMap<ClickType>,
     definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     function_calls: &BTreeMap<String, BTreeSet<String>>,
     measures: &BTreeMap<String, ClickRecursionMeasure>,
@@ -1823,8 +1854,8 @@ fn validate_recursive_calls_in_resource_subject(
 fn validate_recursive_calls_in_segment(
     caller: &str,
     segment: &ContractSegment,
-    lower_bounds: &BTreeMap<String, i64>,
-    structural_subterms: &BTreeMap<String, ClickType>,
+    lower_bounds: &BinderMap<i64>,
+    structural_subterms: &BinderMap<ClickType>,
     definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     function_calls: &BTreeMap<String, BTreeSet<String>>,
     measures: &BTreeMap<String, ClickRecursionMeasure>,
@@ -1857,7 +1888,7 @@ fn validate_recursive_calls_in_segment(
 fn add_condition_lower_bounds(
     proposition: &ClickProposition,
     truth: bool,
-    lower_bounds: &mut BTreeMap<String, i64>,
+    lower_bounds: &mut BinderMap<i64>,
 ) {
     match proposition {
         ClickProposition::Not(body) => add_condition_lower_bounds(body, !truth, lower_bounds),
@@ -1905,10 +1936,8 @@ fn add_condition_lower_bounds(
                 _ => None,
             };
             if let Some(bound) = bound {
-                lower_bounds
-                    .entry(name.to_string())
-                    .and_modify(|current| *current = (*current).max(bound))
-                    .or_insert(bound);
+                let bound = lower_bounds.get(&name).copied().unwrap_or(bound).max(bound);
+                lower_bounds.insert(name, bound);
             }
         }
         _ => {}

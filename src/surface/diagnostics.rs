@@ -7123,6 +7123,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         return describe_add_contract_expression(expression);
     }
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            format!("({} : Integer)", describe_contract_expression(value))
+        }
         ContractExpression::Proposition(proposition) => {
             format!(
                 "prop {{ {} }}",
@@ -7231,9 +7234,8 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 arguments.join(", ")
             )
         }
-        ContractExpression::AlgebraicVariable { name, .. } | ContractExpression::Binding(name) => {
-            name.clone()
-        }
+        ContractExpression::AlgebraicVariable { name, .. } => name.to_string(),
+        ContractExpression::Binding(name) => name.clone(),
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
             let scrutinee = describe_contract_expression(scrutinee);
             let arms = arms
@@ -7243,7 +7245,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                         "{}::{}({}) => {}",
                         arm.type_name,
                         arm.variant,
-                        arm.bindings.join(", "),
+                        arm.bindings
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", "),
                         describe_contract_expression(&arm.body)
                     )
                 })
@@ -7907,6 +7913,7 @@ pub(super) fn describe_bitvector_with_context(
         return name;
     }
     match term {
+        MachineTerm::ThreadHandle(_) => format!("{term:?}"),
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,

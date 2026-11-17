@@ -482,7 +482,7 @@ fn pure_identity_fixture() -> PureTheoremContext {
     PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        integer_values: crate::persistent::PersistentMap::default(),
+        integer_values: PersistentBinderMap::default(),
         memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
@@ -1484,7 +1484,7 @@ fn proof_failure_preserves_ancestor_and_selected_provenance() {
     let theorem_context = PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        integer_values: crate::persistent::PersistentMap::default(),
+        integer_values: PersistentBinderMap::default(),
         memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
@@ -1530,7 +1530,7 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
     let theorem_context = PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        integer_values: crate::persistent::PersistentMap::default(),
+        integer_values: PersistentBinderMap::default(),
         memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
@@ -1596,7 +1596,7 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
     let theorem_context = PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        integer_values: crate::persistent::PersistentMap::default(),
+        integer_values: PersistentBinderMap::default(),
         memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
@@ -1671,7 +1671,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
     let theorem_context = PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        integer_values: crate::persistent::PersistentMap::default(),
+        integer_values: PersistentBinderMap::default(),
         memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
@@ -1769,7 +1769,7 @@ fn pure_have_presentation_root(surface: ClickProposition) -> Proof<'static> {
     let theorem_context = Box::leak(Box::new(PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        integer_values: crate::persistent::PersistentMap::default(),
+        integer_values: PersistentBinderMap::default(),
         memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
@@ -1805,7 +1805,7 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
     let binder = "written".to_string();
     let surface = ClickProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: binder.clone(),
+        name: binder.clone().into(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
@@ -1825,7 +1825,7 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
         .expect("have body should have a lowered goal")
         .clone();
     let introductions = vec![LoweringIntroduction::WrittenUniversal {
-        name: binder,
+        name: binder.into(),
         variable: Variable(7_654_321),
         pointer: false,
         integer: false,
@@ -1849,7 +1849,7 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
             variable,
             pointer: false,
             integer: false,
-        }) if name == "written" && *variable == actual_variable
+        }) if name.is_named("written") && *variable == actual_variable
     ));
     assert!(adapted.body().certificate().steps().is_empty());
     assert_eq!(
@@ -1986,7 +1986,7 @@ fn have_scope_rejects_inconsistent_universal_binder_flags() {
     let binder = "written".to_string();
     let surface = ClickProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: binder.clone(),
+        name: binder.clone().into(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
@@ -2004,7 +2004,7 @@ fn have_scope_rejects_inconsistent_universal_binder_flags() {
     let error = match scope.with_reported_goal_introductions(
         &reported,
         Some(vec![LoweringIntroduction::WrittenUniversal {
-            name: "written".to_string(),
+            name: "written".to_string().into(),
             variable: Variable(9_876_543),
             pointer: true,
             integer: false,
@@ -2024,7 +2024,7 @@ fn have_scope_rejects_inconsistent_universal_binder_flags() {
 fn have_scope_matches_renamed_existential_display_name_and_binder() {
     let surface = ClickProposition::Exists {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: "chosen".to_string(),
+        name: "chosen".to_string().into(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
@@ -2059,7 +2059,7 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
 fn have_scope_rejects_unreachable_universal_introduction() {
     let quantified = ClickProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: "branch_local".to_string(),
+        name: "branch_local".to_string().into(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
@@ -2085,7 +2085,7 @@ fn have_scope_rejects_unreachable_universal_introduction() {
     let error = match scope.with_reported_goal_introductions(
         &reported,
         Some(vec![LoweringIntroduction::WrittenUniversal {
-            name: "branch_local".to_string(),
+            name: "branch_local".to_string().into(),
             variable: Variable(9_876_543),
             pointer: false,
             integer: false,
@@ -2153,7 +2153,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: memory.clone(),
             values: BTreeMap::new(),
             array_refs: BTreeMap::new(),
@@ -2389,7 +2389,7 @@ fn persistent_fact_lookup_scales_logarithmically() {
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: Memory::new(),
             values: BTreeMap::new(),
             array_refs: BTreeMap::new(),
@@ -2687,7 +2687,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
     let base_context = PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        integer_values: crate::persistent::PersistentMap::default(),
+        integer_values: PersistentBinderMap::default(),
         memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
@@ -2713,7 +2713,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             requires: requires.clone(),
             ..base_context.clone()
         };
@@ -3211,7 +3211,7 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: Memory::new(),
             values: BTreeMap::new(),
             array_refs: BTreeMap::new(),
@@ -3344,7 +3344,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
     };
     let surface_goal = ClickProposition::Exists {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: "chosen".to_string(),
+        name: "chosen".to_string().into(),
         written_name: None,
         body: Box::new(expected_surface),
     };
@@ -3436,7 +3436,7 @@ fn universal_intro_binding_is_local_to_its_focused_sibling_branch() {
         |value| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value)));
     let surface_goal = ClickProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: binder.clone(),
+        name: binder.clone().into(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
             left: binder_expression.clone(),
@@ -3771,7 +3771,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
     let base_context = PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        integer_values: crate::persistent::PersistentMap::default(),
+        integer_values: PersistentBinderMap::default(),
         memory: Memory::new(),
         values,
         array_refs: BTreeMap::new(),
@@ -3794,7 +3794,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             requires: requires.clone(),
             ..base_context.clone()
         };
@@ -3933,7 +3933,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
     let base_context = PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        integer_values: crate::persistent::PersistentMap::default(),
+        integer_values: PersistentBinderMap::default(),
         memory: Memory::new(),
         values,
         array_refs: BTreeMap::new(),
@@ -3976,7 +3976,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             requires: requires.clone(),
             surface_requirements: surface_requirements.clone(),
             ..base_context.clone()
@@ -4038,7 +4038,7 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
     let theorem_context = PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        integer_values: crate::persistent::PersistentMap::default(),
+        integer_values: PersistentBinderMap::default(),
         memory: Memory::new(),
         values: BTreeMap::from([(
             "x".to_string(),
@@ -4212,7 +4212,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
     };
     let quantified_surface = ClickProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: "k".to_string(),
+        name: "k".to_string().into(),
         written_name: None,
         body: Box::new(ClickProposition::Implies(
             Box::new(ClickProposition::Comparison {
@@ -5010,14 +5010,22 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
     let expected = substitute_click_proposition(
         &synthesized,
         &BTreeMap::from([(
-            "x".into(),
+            "x".to_owned(),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 parsed_function.parameters()[1].binding_name().clone(),
             )),
         )]),
     )
     .unwrap();
-    assert_eq!(proposition, &expected);
+    let actual = at_call
+        .lower_surface_proposition_direct(proposition, "synthesized retry")
+        .unwrap();
+    let expected = at_call
+        .lower_surface_proposition_direct(&expected, "expected retry")
+        .unwrap();
+    assert!(crate::kernel::proof::propositions_are_alpha_equal(
+        &actual, &expected
+    ));
 }
 
 #[test]
@@ -6340,7 +6348,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: memory.clone(),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
@@ -6384,7 +6392,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
         let exact_theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: memory.clone(),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
@@ -6478,7 +6486,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: memory.clone(),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
@@ -6592,7 +6600,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: memory.clone(),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
@@ -6711,7 +6719,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: memory.clone(),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
@@ -7495,7 +7503,7 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
             let theorem_context = PureTheoremContext {
                 diagnostic_names: Default::default(),
                 declaration_bindings: BTreeMap::new(),
-                integer_values: crate::persistent::PersistentMap::default(),
+                integer_values: PersistentBinderMap::default(),
                 memory: state.memory().clone(),
                 values: named_values.clone(),
                 array_refs: BTreeMap::new(),
@@ -7811,7 +7819,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             let theorem_context = PureTheoremContext {
                 diagnostic_names: Default::default(),
                 declaration_bindings: BTreeMap::new(),
-                integer_values: crate::persistent::PersistentMap::default(),
+                integer_values: PersistentBinderMap::default(),
                 memory: state.memory().clone(),
                 values: named_values.clone(),
                 array_refs: BTreeMap::new(),
@@ -7933,7 +7941,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: state.memory().clone(),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
@@ -8103,7 +8111,7 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: state.memory().clone(),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
@@ -8524,7 +8532,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
             let theorem_context = PureTheoremContext {
                 diagnostic_names: Default::default(),
                 declaration_bindings: BTreeMap::new(),
-                integer_values: crate::persistent::PersistentMap::default(),
+                integer_values: PersistentBinderMap::default(),
                 memory: state.memory().clone(),
                 values: named_values.clone(),
                 array_refs: BTreeMap::new(),
@@ -9060,7 +9068,7 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
             let theorem_context = PureTheoremContext {
                 diagnostic_names: Default::default(),
                 declaration_bindings: BTreeMap::new(),
-                integer_values: crate::persistent::PersistentMap::default(),
+                integer_values: PersistentBinderMap::default(),
                 memory: state.memory().clone(),
                 values: named_values.clone(),
                 array_refs: BTreeMap::new(),
@@ -9178,7 +9186,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: memory.clone(),
             values: BTreeMap::new(),
             array_refs: BTreeMap::new(),
@@ -9363,7 +9371,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let theorem_context = PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        integer_values: crate::persistent::PersistentMap::default(),
+        integer_values: PersistentBinderMap::default(),
         memory,
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
@@ -10932,7 +10940,7 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
                 &[],
                 |_, _| PropositionPresentation {
                     surface: None,
-                    surface_bindings: PersistentMap::default(),
+                    surface_bindings: PersistentBinderMap::default(),
                     ..PropositionPresentation::default()
                 },
             )
@@ -14599,7 +14607,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         );
         let mut locals = root.state().locals().clone();
         locals.set_values(locals.values.with_inserted(
-            "chosen".into(),
+            "chosen",
             ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
                 left.clone(),
             ))),
@@ -14652,7 +14660,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         samples.push(cached_work);
         let mut changed_locals = instantiated.state().locals().clone();
         changed_locals.set_values(changed_locals.values.with_inserted(
-            "chosen".into(),
+            "chosen",
             ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::Variable(Variable(9_104_102)),
             ))),
@@ -14728,7 +14736,7 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
     );
     let mut locals = root.state().locals().clone();
     locals.set_values(locals.values.with_inserted(
-        "chosen".into(),
+        "chosen",
         ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(right))),
     ));
     let root = root.with_kernel_state(root.state.with_locals(locals));
@@ -14987,34 +14995,61 @@ fn proof_binding_name_index_tracks_aliases_scopes_and_forks() {
         ))
     };
     let mut parent = ProofLocals::default();
-    parent.set_values(
-        parent
-            .values
-            .with_inserted("identity".into(), value(981_010)),
-    );
-    parent.set_values(
-        parent
-            .values
-            .with_inserted("other_name".into(), value(981_010)),
-    );
+    parent.set_values(parent.values.with_inserted("identity", value(981_010)));
+    parent.set_values(parent.values.with_inserted("other_name", value(981_010)));
     let mut child = parent.clone();
-    child.set_values(
-        child
-            .values
-            .with_inserted("identity".into(), value(981_011)),
-    );
-    assert_eq!(parent.value_names.name(Variable(981_010)), Some("identity"));
-    assert_eq!(parent.value_names.name(Variable(981_011)), None);
+    child.set_values(child.values.with_inserted("identity", value(981_011)));
     assert_eq!(
-        child.value_names.name(Variable(981_010)),
+        parent
+            .value_names
+            .name(Variable(981_010))
+            .and_then(SurfaceBinder::written),
+        Some("identity")
+    );
+    assert_eq!(
+        parent
+            .value_names
+            .name(Variable(981_011))
+            .and_then(SurfaceBinder::written),
+        None
+    );
+    assert_eq!(
+        child
+            .value_names
+            .name(Variable(981_010))
+            .and_then(SurfaceBinder::written),
         Some("other_name")
     );
-    assert_eq!(child.value_names.name(Variable(981_011)), Some("identity"));
+    assert_eq!(
+        child
+            .value_names
+            .name(Variable(981_011))
+            .and_then(SurfaceBinder::written),
+        Some("identity")
+    );
     child.set_values(child.values.without_key(&"other_name".to_string()));
-    assert_eq!(child.value_names.name(Variable(981_010)), None);
+    assert_eq!(
+        child
+            .value_names
+            .name(Variable(981_010))
+            .and_then(SurfaceBinder::written),
+        None
+    );
     child.set_values(parent.values.clone());
-    assert_eq!(child.value_names.name(Variable(981_010)), Some("identity"));
-    assert_eq!(child.value_names.name(Variable(981_011)), None);
+    assert_eq!(
+        child
+            .value_names
+            .name(Variable(981_010))
+            .and_then(SurfaceBinder::written),
+        Some("identity")
+    );
+    assert_eq!(
+        child
+            .value_names
+            .name(Variable(981_011))
+            .and_then(SurfaceBinder::written),
+        None
+    );
 }
 
 #[test]
@@ -15022,30 +15057,54 @@ fn proof_binding_names_keep_typed_scopes_when_a_generic_alias_leaves() {
     let variable = Variable(981_012);
     let mut locals = ProofLocals::default();
     locals.set_values(locals.values.with_inserted(
-        "number".into(),
+        "number",
         ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
             MachineTerm::Variable(variable),
         ))),
     ));
     locals.set_integer_values(locals.integer_values.with_inserted(
-        "number".into(),
+        "number",
         crate::kernel::SpecIntegerExpression::Term(IntegerTerm::Variable(variable)),
     ));
-    locals.set_values(PersistentMap::default());
-    assert_eq!(locals.value_names.name(variable), Some("number"));
-    locals.set_integer_values(PersistentMap::default());
-    assert_eq!(locals.value_names.name(variable), None);
+    locals.set_values(PersistentBinderMap::default());
+    assert_eq!(
+        locals
+            .value_names
+            .name(variable)
+            .and_then(SurfaceBinder::written),
+        Some("number")
+    );
+    locals.set_integer_values(PersistentBinderMap::default());
+    assert_eq!(
+        locals
+            .value_names
+            .name(variable)
+            .and_then(SurfaceBinder::written),
+        None
+    );
     locals.set_algebraic_values(locals.algebraic_values.with_inserted(
-        "model".into(),
+        "model",
         crate::kernel::SpecAlgebraicExpression {
             algebraic_type: crate::kernel::AlgebraicType::parameter("T".into()),
             node: crate::kernel::SpecAlgebraicExpressionNode::Variable(variable),
         },
     ));
     let parent = locals.clone();
-    locals.set_algebraic_values(PersistentMap::default());
-    assert_eq!(locals.value_names.name(variable), None);
-    assert_eq!(parent.value_names.name(variable), Some("model"));
+    locals.set_algebraic_values(PersistentBinderMap::default());
+    assert_eq!(
+        locals
+            .value_names
+            .name(variable)
+            .and_then(SurfaceBinder::written),
+        None
+    );
+    assert_eq!(
+        parent
+            .value_names
+            .name(variable)
+            .and_then(SurfaceBinder::written),
+        Some("model")
+    );
 }
 
 #[test]
@@ -15057,7 +15116,7 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
         ProgramValue::Pointer(pointer.clone()),
     ));
     let mut locals = ProofLocals::default();
-    locals.set_values(locals.values.with_inserted("identity".into(), expression));
+    locals.set_values(locals.values.with_inserted("identity", expression));
     let state = ExecutionState::new();
     let goal = Proposition::ConditionIs(
         ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null()),
@@ -15074,12 +15133,12 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
     {
         let _scope = crate::surface::proof::surface_synthesis::ProofBindingNamesScope::enter(
             locals.value_names.clone(),
-            PersistentMap::default(),
+            PersistentBinderMap::default(),
         );
         let spelling = crate::surface::printing::source_click_proposition(&synthesize().unwrap());
         assert!(spelling.contains("identity"), "{spelling}");
-        let shadows = PersistentMap::default().with_inserted(
-            "identity".into(),
+        let shadows = PersistentBinderMap::default().with_inserted(
+            "identity",
             ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::typed_pointer(
                     Pointer::symbolic(Variable(981_021)),

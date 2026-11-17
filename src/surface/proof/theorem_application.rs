@@ -75,8 +75,7 @@ pub(super) struct TheoremApplicationContext<'a> {
     pub(super) post_state: &'a ExecutionState,
     pub(super) result: Option<&'a ProgramValue>,
     pub(super) recorded_states: &'a RecordedStates,
-    pub(super) integer_values:
-        &'a crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    pub(super) integer_values: &'a PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     /// Physical pointee widths for C parameters in the caller's scope.  A
     /// theorem application may rename such a parameter, so the application
     /// binding maps this by argument expression before lowering the callee's
@@ -1052,7 +1051,7 @@ pub(super) fn theorem_application_bindings(
         BTreeMap<String, ProgramValue>,
         ClickArrayRefs,
         BTreeMap<String, SpecAlgebraicExpression>,
-        crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+        PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     ),
     String,
 > {
@@ -1064,7 +1063,7 @@ pub(super) fn theorem_application_bindings(
     // bindings as the immutable lookup environment, and accumulate the
     // resulting parameter bindings separately; otherwise an earlier callee
     // parameter can capture a later argument with the same spelling.
-    let mut integer_values = crate::persistent::PersistentMap::default();
+    let mut integer_values = PersistentBinderMap::default();
     for (parameter, argument) in theorem.parameters().iter().zip(&application.arguments) {
         if parameter.click_type() == &ClickType::Resource {
             if !matches!(argument, ContractExpression::Resource(_)) {
@@ -1776,7 +1775,7 @@ theorem nested_count(value: int32) {
         let values = BTreeMap::new();
         let arrays = BTreeMap::new();
         let algebraic = BTreeMap::new();
-        let integers = crate::persistent::PersistentMap::default();
+        let integers = PersistentBinderMap::default();
         let result = int32(11u32);
         let mut retained_states = RecordedStates::default();
         retained_states.insert(

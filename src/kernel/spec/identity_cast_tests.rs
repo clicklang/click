@@ -20,8 +20,11 @@ pub(super) fn cast_chain(
     count: usize,
 ) -> (SpecExpressionPath, usize) {
     let state = ExecutionState::new();
-    let mut values = crate::persistent::PersistentMap::default();
-    values.insert("x".to_string(), root.clone());
+    let mut values: crate::persistent::PersistentMap<
+        crate::kernel::BindingName,
+        crate::kernel::KernelTerm,
+    > = crate::persistent::PersistentMap::default();
+    values.insert("x".into(), root.clone());
     let scope = SpecScope {
         values: Some(&values),
         ..SpecScope::unbound(&state, None)

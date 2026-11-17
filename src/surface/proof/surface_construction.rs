@@ -345,7 +345,7 @@ fn checked_surface_comparison_fact_in_state_with_availability(
             .iter()
             .map(|(name, value)| (name.clone(), value.clone()))
             .collect::<BTreeMap<_, _>>();
-        let mut names = BTreeMap::<Variable, Option<String>>::new();
+        let mut names = BTreeMap::<Variable, Option<SurfaceBinder>>::new();
         for (name, expression) in bindings.iter() {
             if let ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::Int32(MachineTerm::Variable(variable)),
