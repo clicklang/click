@@ -38,7 +38,7 @@ int32 caller(int32 **slot) {
         preserve(memory(*slot), statement(1).assignment(ignored, 0));
     }
     step_until(function.exit);
-    have defined(*slot) by { known(); }
+    have defined(*slot) by { solve(); }
 }
 ```
 
