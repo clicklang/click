@@ -2830,17 +2830,20 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
             "a proof cannot omit a required destructor",
         ),
         // Each `step()` runs the next lowered statement, so a destructor runs
-        // once however many steps a proof writes: once both destructors and
-        // the return have run, no step is left. One extra step only moves
-        // the `have` past the first guard's destructor, where it still holds
-        // and now verifies, since the caller's `second_cell` is kept
-        // across that call although its value is not cached
-        // (`mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md`).
+        // once however many steps a proof writes. After the four written
+        // steps, the returning path has `second`'s lifetime end, `~first`,
+        // `first`'s lifetime end, and the return left: three more steps are
+        // a valid proof (the `have` still holds past `~first`), and the
+        // eighth reaches function exit. A ninth step has no statement to
+        // run, rather than running a destructor again, and is refused.
         (
             "duplicated_cleanup",
             sidecar_source.replacen(
                 "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
-                "            step();\n            step();\n            step();\n            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
+                &format!(
+                    "{}            have second_cell == old(second_cell);",
+                    "            step();\n".repeat(9)
+                ),
                 1,
             ),
             "a proof cannot execute a destructor twice",
