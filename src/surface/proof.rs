@@ -3191,3 +3191,11 @@ pub(in crate::surface) use proof_object::take_outcome_fact_reads;
 pub(in crate::surface) use proof_object::take_terminal_join_materialized_facts;
 #[cfg(test)]
 pub(in crate::surface) use proof_object::take_terminal_publication_visits;
+
+/// What closing an `open` scope adds to its source form: the `by` proving
+/// the one body fact its closing fold leaves open, or `have`s proving
+/// several at the end of its block.
+pub(in crate::surface::proof) enum ScopeCloseProof {
+    By(Box<crate::surface::ProofCertificate>),
+    BlockTail(Box<crate::surface::ProofCertificate>),
+}
