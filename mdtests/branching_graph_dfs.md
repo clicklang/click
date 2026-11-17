@@ -287,9 +287,9 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), path) == to
             }) using { left_result != 0; };
         }
-        obtain (rest: Path) {
+        let rest = obtain(exists (rest: Path) {
             walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), rest) == to
-        }
+        });
         have walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to by {
             unfold(walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)));
             known();
@@ -427,9 +427,9 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 walk(at(before_right, left), at(before_right, right), at(before_right, right[cur]), path) == to
             }) using { right_result != 0; };
         }
-        obtain (right_rest: Path) {
+        let right_rest = obtain(exists (right_rest: Path) {
             walk(at(before_right, left), at(before_right, right), at(before_right, right[cur]), right_rest) == to
-        }
+        });
         have walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest)) == to by {
             unfold(walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest)));
             known();

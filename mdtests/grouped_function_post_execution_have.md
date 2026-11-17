@@ -45,7 +45,7 @@ int32 identity(int32 x) {
         solve();
     }
     have exists (j: int32) { j == x } by {
-        obtain (k: int32) { k == x }
+        let k = obtain(exists (k: int32) { k == x });
         witness(k);
         solve();
     }

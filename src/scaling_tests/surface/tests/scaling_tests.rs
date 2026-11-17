@@ -7819,7 +7819,7 @@ fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
         .spawn(|| {
             let mut body = "normalize();".to_string();
             for index in 0..64 {
-                body = format!("if 0 == 0 {{ normalize(); }} else {{ obtain (v{index}: Integer) {{ v{index} == v{index} }} {body} }} obtain (v{index}: int32) {{ v{index} == v{index} }}");
+                body = format!("if 0 == 0 {{ normalize(); }} else {{ let v{index} = obtain(exists (k: Integer) {{ k == k }}); {body} }} let v{index} = obtain(exists (k: int32) {{ k == k }});");
             }
             parser::parse_file_items(&format!("theorem spine() {{ ensures 0 == 0 by {{ {body} }} }}"))
                 .expect("else scopes restore their existential bindings before later tactics");

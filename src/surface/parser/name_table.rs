@@ -307,10 +307,6 @@ impl NameTable {
         self.names[kind.index()].remove(name)
     }
 
-    pub(super) fn extend(&mut self, kind: NameKind, names: impl IntoIterator<Item = String>) {
-        self.names[kind.index()].extend(names);
-    }
-
     #[cfg(test)]
     pub(super) fn is_empty(&self, kind: NameKind) -> bool {
         self.names[kind.index()].is_empty()
