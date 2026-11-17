@@ -75,8 +75,12 @@ pub(super) fn region_count(statement: &ProgramStatement) -> usize {
             ..
         } => 1 + region_count(then_branch) + region_count(else_branch),
         ProgramStatement::Loop {
-            test, update, body, ..
+            test: loop_test,
+            update,
+            body,
+            ..
         } => {
+            let (_, _, test) = loop_test.execution_parts();
             1 + region_count(body)
                 + test
                     .as_ref()

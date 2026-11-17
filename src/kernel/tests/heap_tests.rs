@@ -983,17 +983,11 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
     assert!(freed.resources().facts().is_empty());
     assert!(matches!(
         free_facts.to_vec().as_slice(),
-        [ExecutionPureFact {
-            proposition: Proposition::HeapAllocationFreed {
-                after,
-                allocation_base,
-                bytes,
-                ..
-            },
-            ..
-        }] if after == freed.memory()
+        [fact] if matches!(fact.proposition(), Proposition::HeapAllocationFreed {
+            after, allocation_base, bytes, ..
+        } if after == freed.memory()
             && allocation_base == pointer.pointer()
-            && *bytes == HeapExtent::int32(MachineTerm::constant(16))
+            && *bytes == HeapExtent::int32(MachineTerm::constant(16)))
     ));
     let derivation = intern_memory_ref(freed.memory())
         .derivation()
