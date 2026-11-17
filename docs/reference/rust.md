@@ -1582,6 +1582,11 @@ paths. Its checked `Drop` contract restores the original storage value. The
 caller proves the result was captured before cleanup and that the storage was
 restored on both paths.
 
+A function returns its value directly when nothing runs between computing it
+and returning. When a drop runs in between, the value is held in a local named
+`result`, which a proof reads before the exit as any local
+([magic variables](magic-variables.md#result)).
+
 Local non-Copy structs support whole-value construction and moves, scope and
 early-return cleanup, conditional initialization/moves, and explicit
 `std::mem::drop`. Structs can have lifetime parameters and a local `Drop`

@@ -224,11 +224,11 @@ fn preserve_field(
         (
             AlgebraicValue::Program(ProgramValue::Int64(a)),
             AlgebraicValue::Program(ProgramValue::Int64(b)),
-        ) => ConditionTerm::int64_equal(a.clone(), b.clone()),
+        ) => integer_equality(MachineIntegerType::Int64, a.clone(), b.clone())?,
         (
             AlgebraicValue::Program(ProgramValue::UInt64(a)),
             AlgebraicValue::Program(ProgramValue::UInt64(b)),
-        ) => ConditionTerm::uint64_equal(a.clone(), b.clone()),
+        ) => integer_equality(MachineIntegerType::UInt64, a.clone(), b.clone())?,
         _ => return None,
     };
     Some(Proposition::ConditionIs(condition, true))
@@ -320,7 +320,16 @@ fn integer_equality(
         MachineIntegerType::Int32 => ConditionTerm::equal(left, right),
         MachineIntegerType::UInt32 => ConditionTerm::uint32_equal(left, right),
         MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
-            ConditionTerm::int64_equal(left, right)
+            // The produced equality must have the same shape as its logical
+            // goal, including reflexive variables and closed literal operands.
+            crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+                format,
+                CompareRelation::Equal,
+                [
+                    MachineOperandView::Legacy(&left),
+                    MachineOperandView::Legacy(&right),
+                ],
+            )
         }
         _ => return None,
     })
@@ -496,9 +505,23 @@ mod tests {
     }
 
     pub(super) fn resource_fixture(size: u64) -> (Preservation, Proposition) {
+        resource_fixture_with_values(
+            size,
+            MachineIntegerType::Int32,
+            MachineTerm::Variable(Variable(8_390_901)),
+            MachineTerm::Variable(Variable(8_390_902)),
+        )
+    }
+
+    pub(super) fn resource_fixture_with_values(
+        size: u64,
+        format: MachineIntegerType,
+        before_value: MachineTerm,
+        after_value: MachineTerm,
+    ) -> (Preservation, Proposition) {
         let schema = ResourceFieldSchema::new(vec![(
             "value".into(),
-            ResourceFieldType::Program(ProgramType::Int32),
+            ResourceFieldType::Program(format.program_type()),
         )])
         .unwrap();
         let instance = |identity, value| {
@@ -507,19 +530,18 @@ mod tests {
                 "model".into(),
                 vec![].into(),
                 schema.clone(),
-                vec![AlgebraicValue::Program(ProgramValue::Int32(
-                    MachineTerm::Variable(Variable(value)),
-                ))]
-                .into(),
+                vec![AlgebraicValue::Program(format.value_from_term(value))].into(),
             )
             .unwrap()
         };
-        let kept = instance(8_390_900, 8_390_901);
+        let kept = instance(8_390_900, before_value.clone());
         let mut resources = ResourceContext::new();
         for i in 0..size {
-            resources = resources.unchecked_with_fact(ResourceFact::own(Resource::Instance(
-                instance(9_000_000 + i, 10_000_000 + i),
-            )));
+            resources =
+                resources.unchecked_with_fact(ResourceFact::own(Resource::Instance(instance(
+                    9_000_000 + i,
+                    MachineTerm::Variable(Variable(10_000_000 + i)),
+                ))));
         }
         let before = ExecutionState::new().with_resource_context(
             resources
@@ -527,7 +549,7 @@ mod tests {
                 .unchecked_with_fact(ResourceFact::own(Resource::Instance(kept.clone()))),
         );
         let after = ExecutionState::new().with_resource_context(resources.unchecked_with_fact(
-            ResourceFact::own(Resource::Instance(instance(8_390_900, 8_390_902))),
+            ResourceFact::own(Resource::Instance(instance(8_390_900, after_value.clone()))),
         ));
         // A supplied frame premise relates these symbolic endpoint values.
         // As with the memory fixture, establishing the premise is a separate
@@ -543,10 +565,15 @@ mod tests {
             right: Box::new(Resource::Instance(kept)),
         };
         let goal = Proposition::ConditionIs(
-            ConditionTerm::equal(
-                MachineTerm::Variable(Variable(8_390_902)),
-                MachineTerm::Variable(Variable(8_390_901)),
-            ),
+            match format {
+                MachineIntegerType::Int64 | MachineIntegerType::UInt64 => ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(after_value),
+                    right: Box::new(before_value),
+                },
+                _ => ConditionTerm::equal(after_value, before_value),
+            },
             true,
         );
         (
@@ -560,6 +587,38 @@ mod tests {
             },
             goal,
         )
+    }
+
+    #[test]
+    fn wide_resource_field_equalities_retain_their_selected_endpoints() {
+        for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let variable = MachineTerm::Variable(Variable(8_390_901));
+            let literal = if format == MachineIntegerType::Int64 {
+                MachineTerm::int64_constant(7)
+            } else {
+                MachineTerm::uint64_constant(7)
+            };
+            for (before, after) in [
+                (variable.clone(), variable.clone()),
+                (literal.clone(), literal.clone()),
+                (variable.clone(), MachineTerm::Variable(Variable(8_390_902))),
+                (literal, variable),
+            ] {
+                let (mut preservation, goal) =
+                    resource_fixture_with_values(4, format, before, after);
+                let separation = preservation.separation.clone();
+                assert_eq!(preservation.apply(|p| p == &separation).unwrap(), goal);
+                assert!(preservation.apply(|_| false).is_err());
+                let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, _) =
+                    &mut preservation.result
+                else {
+                    panic!("wide equality");
+                };
+                **left = MachineTerm::Variable(Variable(8_390_999));
+                assert!(preservation.apply(|p| p == &separation).is_err());
+            }
+        }
     }
 
     pub(super) fn resource_history_fixture(history: u64) -> (Preservation, Proposition) {

@@ -323,7 +323,9 @@ fn preserve_checks_integer_resource_field() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_02")]
 fn preserve_checks_wide_resource_field() {
-    check_resource_field_certificate("uint64");
+    for ty in ["int64", "uint64"] {
+        check_resource_field_certificate(ty);
+    }
 }
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_02")]

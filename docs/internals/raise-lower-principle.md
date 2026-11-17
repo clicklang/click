@@ -414,6 +414,9 @@ Lowering never folds a comparison of two literals.
   `1u64 == 0u64` lowers to that comparison, not to `false`. A closed 64-bit
   equality is filed at the native `Int64` word equality format, with its
   literal operand payloads, and is decided by its bits.
+- A comparison of the same variable at 32/64 bits retains its comparison
+  node: recognition compares the two variable IDs, without consulting facts
+  or walking expression trees.
 - A comparison of two `bool` literals, `true == false`, retains a
   `BoolEqual` of the two constants.
 - A written `true` or `false` is a literal proposition, not `literal ==
@@ -438,12 +441,15 @@ path. Regressions: `mdtests/closed_machine_order_comparisons.md`,
 unchanged, and the shared comparison constructors used by checking still
 fold.
 
-Machine conditionals with closed 32/64-bit order guards or closed 64-bit
-equality guards retain their `if` node and guard during logical lowering. Their arm domains remain guarded, including
+Machine conditionals with closed 32/64-bit order guards, closed 64-bit equality
+guards, or same-variable 32/64-bit comparison guards retain their `if` node and
+guard during logical lowering. Their arm domains remain guarded, including
 unselected reads and invalid shifts. Checking selects the arm when needed.
 The comparison boundary recognizes conditionals guarded by a Boolean variable
 or a 32/64-bit comparison over literal/variable operands, with literal/variable
-arms, as fixed-size native atoms. Negated Boolean variables use the same guard
+arms or one bitwise operation (`&`, `|`, `^`) over literal/variable arm operands,
+as fixed-size native atoms. Bitwise recognition reads only the operation and
+its immediate leaves. Negated Boolean variables use the same guard
 with swapped arms. It retains the comparison family without exporting arithmetic
 DAGs or selecting an arm from ambient facts. Other result families retain their existing
 selected-arm behavior; literal Boolean and closed 32-bit equality guards keep

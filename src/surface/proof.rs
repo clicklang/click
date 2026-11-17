@@ -2091,7 +2091,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         }
         projection_state = projected;
     }
-    state = state.with_memory(projection_state.memory().clone());
+    state = state.with_memory_of(&projection_state);
     let lowered_requirement_facts =
         crate::surface::lowering::requirement_propositions_with_sources_and_assumptions(
             function_block.requires(),
@@ -2231,6 +2231,17 @@ pub(super) fn initial_claim_context_with_caller_owner(
     for (surface, kernel) in &bool_range_facts {
         surface_propositions.record_lowering(surface, kernel)?;
     }
+    // Two requirements can lower to the same fact (`requires viewable(a[0..n])`
+    // beside `views a[0..n]`, and their shared range guards). Resource
+    // projection keeps one occurrence of each fact and appends its own, so
+    // drop repeats here together with their origins: each retained fact keeps
+    // its first source, and the origins stay aligned with the projected list.
+    let mut seen = BTreeSet::new();
+    (requirement_pure_facts, entry_fact_origins) = requirement_pure_facts
+        .into_iter()
+        .zip(entry_fact_origins)
+        .filter(|(fact, _)| seen.insert(fact.clone()))
+        .unzip();
     let requirement_facts = PureFactList::from(requirement_pure_facts);
     state = project_initial_composite_resource_cores(
         resource_environment,
@@ -2250,6 +2261,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         claim_label,
     )?
     .into_vec();
+    debug_assert!(requirement_pure_facts.len() >= entry_fact_origins.len());
     entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
     let definedness_state = project_initial_composite_resource_cores(
         resource_environment,
