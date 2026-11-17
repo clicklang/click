@@ -1558,7 +1558,8 @@ pub(in crate::kernel) fn collect_execution_statement_outcome_bitvector_variables
         StatementOutcome::Normal(state) => {
             collect_execution_state_bitvector_variables(state, variables)
         }
-        StatementOutcome::Break(state)
+        StatementOutcome::LoopTestFalse(state)
+        | StatementOutcome::Break(state)
         | StatementOutcome::Continue(state)
         | StatementOutcome::Jump { state, .. } => {
             collect_execution_state_bitvector_variables(state, variables)

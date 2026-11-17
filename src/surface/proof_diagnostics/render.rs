@@ -2699,6 +2699,7 @@ impl Renderer<'_> {
         self.push(match outcome {
             crate::kernel::StatementOutcome::Normal(_) => "normal",
             crate::kernel::StatementOutcome::Break(_) => "break",
+            crate::kernel::StatementOutcome::LoopTestFalse(_) => "loop-test-false",
             crate::kernel::StatementOutcome::Continue(_) => "continue",
             crate::kernel::StatementOutcome::Jump { .. } => "jump",
             crate::kernel::StatementOutcome::Return { .. } => "return",
