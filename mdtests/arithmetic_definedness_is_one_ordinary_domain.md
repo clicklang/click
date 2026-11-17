@@ -10,7 +10,7 @@ theorem add32_domain(a: int32, b: int32) {
     requires to_integer(a) + to_integer(b) <= 2147483647;
     requires to_integer(a) + to_integer(b) >= -2147483648;
     ensures defined(a + b) by {
-        both { known(); } and { known(); }
+        both { left => { known(); } right => { known(); } }
     }
 }
 theorem add32_bounds(a: int32, b: int32) {
@@ -24,7 +24,7 @@ theorem subtract32_domain(a: int32, b: int32) {
     requires to_integer(a) - to_integer(b) <= 2147483647;
     requires to_integer(a) - to_integer(b) >= -2147483648;
     ensures defined(a - b) by {
-        both { known(); } and { known(); }
+        both { left => { known(); } right => { known(); } }
     }
 }
 theorem subtract32_bounds(a: int32, b: int32) {
@@ -38,7 +38,7 @@ theorem multiply32_domain(a: int32, b: int32) {
     requires to_integer(a) * to_integer(b) <= 2147483647;
     requires to_integer(a) * to_integer(b) >= -2147483648;
     ensures defined(a * b) by {
-        both { known(); } and { known(); }
+        both { left => { known(); } right => { known(); } }
     }
 }
 theorem multiply32_bounds(a: int32, b: int32) {
@@ -63,7 +63,7 @@ theorem add64_domain(a: int64, b: int64) {
     requires to_integer(a) + to_integer(b) <= 9223372036854775807;
     requires to_integer(a) + to_integer(b) >= -9223372036854775808;
     ensures defined(a + b) by {
-        both { known(); } and { known(); }
+        both { left => { known(); } right => { known(); } }
     }
 }
 theorem add64_bounds(a: int64, b: int64) {
@@ -77,7 +77,7 @@ theorem subtract64_domain(a: int64, b: int64) {
     requires to_integer(a) - to_integer(b) <= 9223372036854775807;
     requires to_integer(a) - to_integer(b) >= -9223372036854775808;
     ensures defined(a - b) by {
-        both { known(); } and { known(); }
+        both { left => { known(); } right => { known(); } }
     }
 }
 theorem subtract64_bounds(a: int64, b: int64) {
@@ -91,7 +91,7 @@ theorem multiply64_domain(a: int64, b: int64) {
     requires to_integer(a) * to_integer(b) <= 9223372036854775807;
     requires to_integer(a) * to_integer(b) >= -9223372036854775808;
     ensures defined(a * b) by {
-        both { known(); } and { known(); }
+        both { left => { known(); } right => { known(); } }
     }
 }
 theorem multiply64_bounds(a: int64, b: int64) {

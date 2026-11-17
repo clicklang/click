@@ -52,7 +52,7 @@ fn lower_name(
     lowerer.lower_program_binding_to_spec(
         name,
         &SpecElaborationContext {
-            current_memory: SpecPoint::At(state.program_point()),
+            current_point: SpecPoint::At(state.program_point()),
             at_function_entry: at_entry,
             ..Default::default()
         },

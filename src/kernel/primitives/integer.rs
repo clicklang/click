@@ -1835,26 +1835,6 @@ impl IntegerTerm {
         BigInt::from_str(value).ok().map(Self::constant)
     }
 
-    pub(crate) fn algebraic_match(
-        scrutinee: AlgebraicTerm,
-        arms: Vec<AlgebraicIntegerMatchArm>,
-    ) -> Self {
-        let native = Self::AlgebraicMatch {
-            scrutinee: Box::new(scrutinee),
-            arms,
-        };
-        let matched =
-            crate::kernel::KernelMatch::import_integer(&mut KernelTermImport::default(), &native)
-                .expect("Integer match producer");
-        // This native API returns a shallow Integer reading. Arm bodies retain
-        // their common handles across the explicit compatibility boundary.
-        KernelTermExport::default()
-            .integer(&matched.into_term())
-            .expect("Integer match result reading")
-            .as_ref()
-            .clone()
-    }
-
     pub fn range_fold(
         index: IntegerRangeFoldIndex,
         initial: Self,

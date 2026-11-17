@@ -58,6 +58,10 @@ id = "c.type.struct-value"
 path = "reference/language/c.md#struct-subset"
 
 [[item]]
+id = "c.type.local-integer-bit-field-record"
+path = "reference/language/c.md#local-integer-bit-fields"
+
+[[item]]
 id = "c.type.function-pointer"
 path = "reference/language/c.md#supported-types"
 

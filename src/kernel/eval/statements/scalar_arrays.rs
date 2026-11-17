@@ -90,11 +90,11 @@ pub(super) fn execute(
             if bytes != 0
                 && let Some(refusal) = subobject_access_refusal(
                     target,
-                    target_pointer.bounds(),
+                    &target_pointer,
                     bytes,
                     &facts,
                     &obligations,
-                    assumptions,
+                    &selected,
                 )
             {
                 paths.push(path(
@@ -156,11 +156,11 @@ pub(super) fn execute(
                 };
                 if let Some(refusal) = subobject_access_refusal(
                     source.pointer(),
-                    source.bounds(),
+                    source,
                     bytes,
                     &facts,
                     &obligations,
-                    assumptions,
+                    &selected,
                 ) {
                     paths.push(path(
                         StatementOutcome::UndefinedBehavior(refusal),
