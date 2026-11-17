@@ -67,7 +67,6 @@ src/kernel/loans.rs	legacy-caller	::plan_stable_view_transfer_with_protocol_effe
 src/kernel/loans.rs	legacy-caller	::plan_stable_view_transfer_with_protocol_effect	validity_error	1
 src/kernel/loans.rs	legacy-caller	StableViewTransferPlan::lend_local_views_with_worker_shares	try_compose_with_fact_with_occurrence	1
 src/kernel/loans.rs	legacy-caller	StableViewTransferPlan::recover_stable_views_impl	try_compose_into_valid_context_delaying_normalization	1
-src/kernel/loans/local_references/memory.rs	legacy-caller	ExecutionState::local_scalar_access_resources	try_compose_with_legacy_discovery_and_occurrences	1
 src/kernel/loans/mutex_calls.rs	legacy-caller	MutexUseCallTransfer::finish_checked_ledger	try_compose_with_facts_delaying_normalization	1
 src/kernel/loans/mutex_calls.rs	legacy-caller	MutexUseCallTransfer::finish_suspended_checked_ledger	try_compose_with_facts_delaying_normalization	1
 src/kernel/loans/mutex_calls.rs	legacy-caller	MutexUseCallTransfer::prepare	try_compose_with_facts_delaying_normalization	1
