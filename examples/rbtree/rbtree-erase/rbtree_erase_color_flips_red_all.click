@@ -213,7 +213,8 @@ decreases ctx
 theorem outer_nonblack_node_color(node: struct rb_node*, parent: struct rb_node*, color: Color, left: RbTree, right: RbTree) {
     requires not(rb_root_black(RbTree::Node(node, parent, color, left, right)) == 1);
     ensures color == Color::Red by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Red => { normalize(); }
             Color::Black => {
                 have rb_root_black(RbTree::Node(node, parent, Color::Black, left, right)) == 1 by {
@@ -229,7 +230,8 @@ theorem outer_nonblack_node_color(node: struct rb_node*, parent: struct rb_node*
 theorem outer_black_node_color(node: struct rb_node*, parent: struct rb_node*, color: Color, left: RbTree, right: RbTree) {
     requires rb_root_black(RbTree::Node(node, parent, color, left, right)) == 1;
     ensures color == Color::Black by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Black => { normalize(); }
             Color::Red => {
                 have not(rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)) == 1) by {
@@ -245,7 +247,8 @@ theorem outer_black_node_color(node: struct rb_node*, parent: struct rb_node*, c
 theorem erase_flips_red_all_right_red_step_empty(id: struct rb_node*, above: struct rb_node*, sid: struct rb_node*, near: RbTree, up: Context, focus: RbTree) {
     requires rb_root_black(near) == 1;
     ensures erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, near), up), focus) == plug(up, RbTree::Node(id, above, Color::Black, rb_recolor(RbTree::Node(sid, id, Color::Black, RbTree::Empty, near), Color::Red), focus)) by {
-        induct(near) as ih {
+        let ih = induct(near);
+        match near {
             RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), up), focus)); normalize(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
@@ -259,7 +262,8 @@ theorem erase_flips_red_all_right_red_step_empty(id: struct rb_node*, above: str
 theorem erase_flips_red_all_right_red_step_black(id: struct rb_node*, above: struct rb_node*, sid: struct rb_node*, near: RbTree, rid: struct rb_node*, rp: struct rb_node*, rl: RbTree, rr: RbTree, up: Context, focus: RbTree) {
     requires rb_root_black(near) == 1;
     ensures erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), near), up), focus) == plug(up, RbTree::Node(id, above, Color::Black, rb_recolor(RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), near), Color::Red), focus)) by {
-        induct(near) as ih {
+        let ih = induct(near);
+        match near {
             RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), RbTree::Empty), up), focus)); normalize(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
@@ -274,7 +278,8 @@ theorem erase_flips_red_all_right_red_step(id: struct rb_node*, above: struct rb
     requires rb_root_black(far) == 1;
     requires rb_root_black(near) == 1;
     ensures erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, far, near), up), focus) == plug(up, RbTree::Node(id, above, Color::Black, rb_recolor(RbTree::Node(sid, id, Color::Black, far, near), Color::Red), focus)) by {
-        induct(far) as ih {
+        let ih = induct(far);
+        match far {
             RbTree::Empty => { apply(erase_flips_red_all_right_red_step_empty(id, above, sid, near, up, focus)); known(); }
             RbTree::Node(rid, rp, rc, rl, rr) => {
                 apply(outer_black_node_color(rid, rp, rc, rl, rr));
@@ -288,7 +293,8 @@ theorem erase_flips_red_all_right_red_step(id: struct rb_node*, above: struct rb
 theorem erase_flips_red_all_right_black_step_empty(id: struct rb_node*, above: struct rb_node*, sid: struct rb_node*, near: RbTree, up: Context, focus: RbTree) {
     requires rb_root_black(near) == 1;
     ensures erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, near), up), focus) == erase_flips_red_all_result(up, RbTree::Node(id, above, Color::Black, rb_recolor(RbTree::Node(sid, id, Color::Black, RbTree::Empty, near), Color::Red), focus)) by {
-        induct(near) as ih {
+        let ih = induct(near);
+        match near {
             RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), up), focus)); normalize(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
@@ -302,7 +308,8 @@ theorem erase_flips_red_all_right_black_step_empty(id: struct rb_node*, above: s
 theorem erase_flips_red_all_right_black_step_black(id: struct rb_node*, above: struct rb_node*, sid: struct rb_node*, near: RbTree, rid: struct rb_node*, rp: struct rb_node*, rl: RbTree, rr: RbTree, up: Context, focus: RbTree) {
     requires rb_root_black(near) == 1;
     ensures erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), near), up), focus) == erase_flips_red_all_result(up, RbTree::Node(id, above, Color::Black, rb_recolor(RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), near), Color::Red), focus)) by {
-        induct(near) as ih {
+        let ih = induct(near);
+        match near {
             RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), RbTree::Empty), up), focus)); normalize(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
@@ -317,7 +324,8 @@ theorem erase_flips_red_all_right_black_step(id: struct rb_node*, above: struct 
     requires rb_root_black(far) == 1;
     requires rb_root_black(near) == 1;
     ensures erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, far, near), up), focus) == erase_flips_red_all_result(up, RbTree::Node(id, above, Color::Black, rb_recolor(RbTree::Node(sid, id, Color::Black, far, near), Color::Red), focus)) by {
-        induct(far) as ih {
+        let ih = induct(far);
+        match far {
             RbTree::Empty => { apply(erase_flips_red_all_right_black_step_empty(id, above, sid, near, up, focus)); known(); }
             RbTree::Node(rid, rp, rc, rl, rr) => {
                 apply(outer_black_node_color(rid, rp, rc, rl, rr));
@@ -331,7 +339,8 @@ theorem erase_flips_red_all_right_black_step(id: struct rb_node*, above: struct 
 theorem erase_flips_red_all_left_red_step_empty(id: struct rb_node*, above: struct rb_node*, sid: struct rb_node*, near: RbTree, up: Context, focus: RbTree) {
     requires rb_root_black(near) == 1;
     ensures erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, near, RbTree::Empty), up), focus) == plug(up, RbTree::Node(id, above, Color::Black, focus, rb_recolor(RbTree::Node(sid, id, Color::Black, near, RbTree::Empty), Color::Red))) by {
-        induct(near) as ih {
+        let ih = induct(near);
+        match near {
             RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), up), focus)); normalize(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
@@ -345,7 +354,8 @@ theorem erase_flips_red_all_left_red_step_empty(id: struct rb_node*, above: stru
 theorem erase_flips_red_all_left_red_step_black(id: struct rb_node*, above: struct rb_node*, sid: struct rb_node*, near: RbTree, rid: struct rb_node*, rp: struct rb_node*, rl: RbTree, rr: RbTree, up: Context, focus: RbTree) {
     requires rb_root_black(near) == 1;
     ensures erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, near, RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus) == plug(up, RbTree::Node(id, above, Color::Black, focus, rb_recolor(RbTree::Node(sid, id, Color::Black, near, RbTree::Node(rid, rp, Color::Black, rl, rr)), Color::Red))) by {
-        induct(near) as ih {
+        let ih = induct(near);
+        match near {
             RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus)); normalize(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
@@ -360,7 +370,8 @@ theorem erase_flips_red_all_left_red_step(id: struct rb_node*, above: struct rb_
     requires rb_root_black(far) == 1;
     requires rb_root_black(near) == 1;
     ensures erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, near, far), up), focus) == plug(up, RbTree::Node(id, above, Color::Black, focus, rb_recolor(RbTree::Node(sid, id, Color::Black, near, far), Color::Red))) by {
-        induct(far) as ih {
+        let ih = induct(far);
+        match far {
             RbTree::Empty => { apply(erase_flips_red_all_left_red_step_empty(id, above, sid, near, up, focus)); known(); }
             RbTree::Node(rid, rp, rc, rl, rr) => {
                 apply(outer_black_node_color(rid, rp, rc, rl, rr));
@@ -374,7 +385,8 @@ theorem erase_flips_red_all_left_red_step(id: struct rb_node*, above: struct rb_
 theorem erase_flips_red_all_left_black_step_empty(id: struct rb_node*, above: struct rb_node*, sid: struct rb_node*, near: RbTree, up: Context, focus: RbTree) {
     requires rb_root_black(near) == 1;
     ensures erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, near, RbTree::Empty), up), focus) == erase_flips_red_all_result(up, RbTree::Node(id, above, Color::Black, focus, rb_recolor(RbTree::Node(sid, id, Color::Black, near, RbTree::Empty), Color::Red))) by {
-        induct(near) as ih {
+        let ih = induct(near);
+        match near {
             RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), up), focus)); normalize(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
@@ -388,7 +400,8 @@ theorem erase_flips_red_all_left_black_step_empty(id: struct rb_node*, above: st
 theorem erase_flips_red_all_left_black_step_black(id: struct rb_node*, above: struct rb_node*, sid: struct rb_node*, near: RbTree, rid: struct rb_node*, rp: struct rb_node*, rl: RbTree, rr: RbTree, up: Context, focus: RbTree) {
     requires rb_root_black(near) == 1;
     ensures erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, near, RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus) == erase_flips_red_all_result(up, RbTree::Node(id, above, Color::Black, focus, rb_recolor(RbTree::Node(sid, id, Color::Black, near, RbTree::Node(rid, rp, Color::Black, rl, rr)), Color::Red))) by {
-        induct(near) as ih {
+        let ih = induct(near);
+        match near {
             RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus)); normalize(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
@@ -403,7 +416,8 @@ theorem erase_flips_red_all_left_black_step(id: struct rb_node*, above: struct r
     requires rb_root_black(far) == 1;
     requires rb_root_black(near) == 1;
     ensures erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, near, far), up), focus) == erase_flips_red_all_result(up, RbTree::Node(id, above, Color::Black, focus, rb_recolor(RbTree::Node(sid, id, Color::Black, near, far), Color::Red))) by {
-        induct(far) as ih {
+        let ih = induct(far);
+        match far {
             RbTree::Empty => { apply(erase_flips_red_all_left_black_step_empty(id, above, sid, near, up, focus)); known(); }
             RbTree::Node(rid, rp, rc, rl, rr) => {
                 apply(outer_black_node_color(rid, rp, rc, rl, rr));
@@ -417,7 +431,8 @@ theorem erase_flips_red_all_left_black_step(id: struct rb_node*, above: struct r
 theorem erase_flips_red_all_left_inner_result(id: struct rb_node*, above: struct rb_node*, pc: Color, sid: struct rb_node*, rid: struct rb_node*, rl: RbTree, rr: RbTree, far: RbTree, up: Context, focus: RbTree) {
     requires rb_root_black(far) == 1;
     ensures erase_flips_red_all_result(Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, sid, Color::Red, rl, rr), far), up), focus) == plug(up, RbTree::Node(rid, above, pc, RbTree::Node(id, rid, Color::Black, focus, rb_reparent(rl, id)), RbTree::Node(sid, rid, Color::Black, rb_reparent(rr, sid), far))) by {
-        induct(far) as ih {
+        let ih = induct(far);
+        match far {
             RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, sid, Color::Red, rl, rr), RbTree::Empty), up), focus)); normalize(); }
             RbTree::Node(fid, fp, fc, fl, fr) => {
                 apply(outer_black_node_color(fid, fp, fc, fl, fr));
@@ -431,7 +446,8 @@ theorem erase_flips_red_all_left_inner_result(id: struct rb_node*, above: struct
 theorem erase_flips_red_all_right_inner_result(id: struct rb_node*, above: struct rb_node*, pc: Color, sid: struct rb_node*, rid: struct rb_node*, rl: RbTree, rr: RbTree, far: RbTree, up: Context, focus: RbTree) {
     requires rb_root_black(far) == 1;
     ensures erase_flips_red_all_result(Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, far, RbTree::Node(rid, sid, Color::Red, rl, rr)), up), focus) == plug(up, RbTree::Node(rid, above, pc, RbTree::Node(sid, rid, Color::Black, far, rb_reparent(rl, sid)), RbTree::Node(id, rid, Color::Black, rb_reparent(rr, id), focus))) by {
-        induct(far) as ih {
+        let ih = induct(far);
+        match far {
             RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(rid, sid, Color::Red, rl, rr)), up), focus)); normalize(); }
             RbTree::Node(fid, fp, fc, fl, fr) => {
                 apply(outer_black_node_color(fid, fp, fc, fl, fr));
@@ -445,7 +461,8 @@ theorem erase_flips_red_all_right_inner_result(id: struct rb_node*, above: struc
 theorem black_root_has_black_color(tree: RbTree) {
     requires rb_root_black(tree) == 1;
     ensures rb_color(tree) == Color::Black by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => { unfold(rb_color(RbTree::Empty)); normalize(); }
             RbTree::Node(id, p, c, l, r) => {
                 apply(outer_black_node_color(id, p, c, l, r));
@@ -561,7 +578,8 @@ theorem ctx_reroot_fixed(ctx: Context, p: struct rb_node*) {
     requires ctx_node_is(ctx, p) == 1;
 
     ensures ctx == ctx_reroot(ctx, p) by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(ctx_reroot_top_fixed(p));
                 known();
@@ -585,7 +603,8 @@ color: Color, left: RbTree, right: RbTree) {
     requires rb_root_black(RbTree::Node(node, parent, color, left, right)) == 1;
 
     ensures color_bit(color) == 1 by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Red => {
                 have rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)) != 1 by {
                     unfold(rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)));
@@ -772,7 +791,8 @@ struct rb_root* root, int32 color) {
 theorem color_bit_nonzero_is_one(color: Color) {
     requires not(color_bit(color) == 0);
     ensures color_bit(color) == 1 by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Red => {
                 have color_bit(Color::Red) == 0 by {
                     unfold(color_bit(Color::Red));
@@ -830,7 +850,8 @@ theorem ctx_parent_word_from_color(ctx: Context, parent: struct rb_node*, word: 
     requires ctx_node_is(ctx, parent) == 1;
     requires word == address(parent) + color_bit(color);
     ensures ctx_parent_word(ctx, word) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 have parent == 0 by { apply(ctx_node_is_top_null(parent)); known(); }
                 if color_bit(color) == 0 {
@@ -901,7 +922,8 @@ void rb_set_parent(struct rb_node* rb, struct rb_node* p) {
 theorem erase_color_not_black(c: Color) {
     requires not(c == Color::Black);
     ensures c == Color::Red by {
-        induct(c) as ih {
+        let ih = induct(c);
+        match c {
             Color::Red => {
                 normalize();
             }
@@ -917,7 +939,8 @@ theorem erase_red_near_left(id: struct rb_node*, above: struct rb_node*, pc: Col
     requires rb_root_black(near) == 1;
     requires black_height(near) == Nat::Succ(height);
     ensures erase_flips_red_all(Context::Left(id, above, pc, RbTree::Node(sid, sp, Color::Red, near, far), up)) == 1 by {
-        induct(near) as ih {
+        let ih = induct(near);
+        match near {
             RbTree::Empty => {
                 have Nat::Zero == Nat::Succ(height);
                 contradiction(Nat::Zero == Nat::Succ(height));
@@ -938,7 +961,8 @@ theorem erase_frame_left(id: struct rb_node*, above: struct rb_node*, pc: Color,
     requires black_height(sibling) == Nat::Succ(height);
     requires erase_flips_red_all(up) == 1;
     ensures erase_flips_red_all(Context::Left(id, above, pc, sibling, up)) == 1 by {
-        induct(sibling) as ih {
+        let ih = induct(sibling);
+        match sibling {
             RbTree::Empty => {
                 have Nat::Zero == Nat::Succ(height) by {
                     unfold(black_height(RbTree::Empty));
@@ -1081,7 +1105,8 @@ theorem erase_red_near_right(id: struct rb_node*, above: struct rb_node*, pc: Co
     requires rb_root_black(near) == 1;
     requires black_height(near) == Nat::Succ(height);
     ensures erase_flips_red_all(Context::Right(id, above, pc, RbTree::Node(sid, sp, Color::Red, far, near), up)) == 1 by {
-        induct(near) as ih {
+        let ih = induct(near);
+        match near {
             RbTree::Empty => {
                 have Nat::Zero == Nat::Succ(height);
                 contradiction(Nat::Zero == Nat::Succ(height));
@@ -1102,7 +1127,8 @@ theorem erase_frame_right(id: struct rb_node*, above: struct rb_node*, pc: Color
     requires black_height(sibling) == Nat::Succ(height);
     requires erase_flips_red_all(up) == 1;
     ensures erase_flips_red_all(Context::Right(id, above, pc, sibling, up)) == 1 by {
-        induct(sibling) as ih {
+        let ih = induct(sibling);
+        match sibling {
             RbTree::Empty => {
                 have Nat::Zero == Nat::Succ(height);
                 contradiction(Nat::Zero == Nat::Succ(height));
@@ -1241,7 +1267,8 @@ theorem erase_frame_right(id: struct rb_node*, above: struct rb_node*, pc: Color
 theorem erase_flips_red_all_covers_deficit(ctx: Context, height: Nat, focus_color: Color) {
     requires ctx_rb(ctx, Nat::Succ(height), focus_color) == 1;
     ensures erase_flips_red_all(ctx) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 unfold(erase_flips_red_all(Context::Top));
                 normalize();

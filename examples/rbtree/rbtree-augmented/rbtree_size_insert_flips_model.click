@@ -93,7 +93,8 @@ function sized_flip_result(chain: SizedFlipChain, sub: SizedTree) -> SizedTree
 
 theorem sized_flip_depth_nonnegative(chain: SizedFlipChain) {
     ensures 0 <= sized_flip_depth(chain) by {
-        induct(chain) as ih {
+        let ih = induct(chain);
+        match chain {
             SizedFlipChain::Root => { unfold(sized_flip_depth(SizedFlipChain::Root)); normalize(); },
             SizedFlipChain::Stop(ctx) => { unfold(sized_flip_depth(SizedFlipChain::Stop(ctx))); normalize(); },
             SizedFlipChain::LL(p, g, pv, gv, other, uncle, up) => { apply(ih(up)); unfold(sized_flip_depth(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); solve() using { 0 <= sized_flip_depth(up); }; },

@@ -915,7 +915,8 @@ function color_black(color: Color) -> int32 {
 theorem black_color_is_black(color: Color) {
     requires color_black(color) == 1;
     ensures color == Color::Black by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Red => {
                 have not(color_black(Color::Red) == 1);
                 contradiction(color_black(Color::Red) == 1);
@@ -941,7 +942,8 @@ function color_black(color: Color) -> int32 {
 theorem black_color_is_black(color: Color) {
     requires color_black(color) == 1;
     ensures color == Color::Black by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Red => {
                 have not(color_black(Color::Red) == 1) by solve();
                 contradiction(color_black(Color::Red) == 1);

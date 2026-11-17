@@ -72,7 +72,7 @@ remains supported.
   constructors. See [Proposition reasoning](#proposition-reasoning).
 - `intro()`: assume an implication's antecedent or fix a universal's
   variable. See [Proposition reasoning](#proposition-reasoning).
-- `let ih = induct(n)` or `induct(xs) as ih { ... }`, with `apply(ih(m))`: prove
+- `let ih = induct(value)`, with `apply(ih(m))`: prove
   a pure theorem by induction. See
   [Proposition reasoning](#proposition-reasoning).
 - `rewrite(from, to)`: rewrite the goal with an available equality. See
@@ -1118,8 +1118,7 @@ step is still checked.
 | `apply(theorem(args)) using { P; ... }` | simple | Expansion output | Apply a theorem using written premises. | [Reference](#theorem-application-with-selected-premises) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
-| `let ih = induct(n)` | simple | Core | Introduce strong induction on a nonnegative `int32` or a `uint64`. | [Reference](#scalar-induction) |
-| `induct(xs) as ih { Type::Variant(fields) => { ... } ... }` | control | Core | Prove constructor cases with recursive hypotheses. | [Reference](#algebraic-induction) |
+| `let ih = induct(value)` | simple | Core | Introduce scalar or structural induction. | [Reference](#proposition-reasoning) |
 | `apply(ih(m))` | smart | Core | Apply an induction hypothesis, looking up its premises. | [Reference](#induction-hypothesis-application) |
 | `apply(ih(m)) using { P; ... }` | simple | Expansion output | Apply an induction hypothesis using written premises. | [Reference](#induction-hypotheses-with-selected-premises) |
 | `have P by { ... }` | control | Core | Prove and retain a named or unnamed fact. | [Reference](#intermediate-facts) |
@@ -2862,7 +2861,7 @@ before its declaration. The script then uses `ih` through `apply(ih(m))` or
   induction while the original theorem goal remains focused.
 - A parameter of another C width (`uint32`, `int64`, ...), an `Integer`, or an
   algebraic value: induct on an `int32` or `uint64` parameter, or use
-  `induct(xs) as ih { ... }` for an algebraic one.
+  `let ih = induct(xs);` followed by `match xs { ... }` for an algebraic one.
 - A signed domain that only follows from other facts, such as `0 <= m` and
   `m <= n`: prove `have n >= 0;` before `induct`.
 - `induct` in a C function proof: state the property as a pure theorem and
@@ -2888,12 +2887,21 @@ and [`scalar_induction_domain_needs_a_bound_on_the_measure.md`](https://github.c
 
 ### Algebraic induction
 
-**Form:** `induct(xs) as ih { Type::Variant(fields) => { ... } ... }`
+**Form:** `let ih = induct(xs);` followed by
+`match xs { Type::Variant(fields) => { ... } ... }`.
 
 **Core.** Prove a pure theorem for a recursive algebraic parameter by exhaustive
 constructor cases; each immediate recursive field admits `ih(field)`, and
 `ih(field, other, ...)` states the theorem at that field and any well-typed
 terms in the remaining parameter positions.
+
+The declaration and its exhaustive `match` are the two top-level tactics in
+this form of a pure theorem proof. The match must inspect the inducted
+parameter itself. Each arm proves the theorem goal; a join `ensuring`
+interface is not supported. Both statements use the ordinary `induct` and
+`match` Surface and certificate nodes. Expansion preserves the declaration
+and expands the proofs inside the match arms. The retired
+`induct(xs) as ih { ... }` spelling is refused.
 
 **Failure, checking, and tools:**
 

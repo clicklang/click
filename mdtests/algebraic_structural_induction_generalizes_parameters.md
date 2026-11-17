@@ -19,7 +19,8 @@ function rev_onto(xs: List<int32>, acc: List<int32>) -> List<int32>
 
 theorem rev_onto_appends(xs: List<int32>, acc: List<int32>) {
     ensures rev_onto(xs, acc) == list::append(rev_onto(xs, List<int32>::Nil), acc) by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 unfold(rev_onto(List<int32>::Nil, acc));
                 unfold(rev_onto(List<int32>::Nil, List<int32>::Nil));

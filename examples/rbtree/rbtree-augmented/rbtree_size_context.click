@@ -68,7 +68,8 @@ function sized_context_valid(ctx: SizedContext, hole: Integer) -> int32
 
 theorem sized_plug_preserves_shape(ctx: SizedContext, sub: SizedTree) {
     ensures sized_shape(sized_plug(ctx, sub)) == plug(sized_context_shape(ctx), sized_shape(sub)) by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             SizedContext::Top => {
                 unfold(sized_plug(SizedContext::Top, sub));
                 unfold(sized_context_shape(SizedContext::Top));
@@ -97,7 +98,8 @@ theorem sized_plug_preserves_shape(ctx: SizedContext, sub: SizedTree) {
 
 theorem sized_context_depth_nonnegative(ctx: SizedContext) {
     ensures 0 <= sized_context_depth(ctx) by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             SizedContext::Top => { unfold(sized_context_depth(SizedContext::Top)); normalize(); },
             SizedContext::Left(node, parent, color, value, sibling, up) => {
                 apply(ih(up));
@@ -120,7 +122,8 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
     requires sized_value(sub) == previous;
     requires sized_context_valid(ctx, to_integer(previous)) == 1;
     ensures sized_counts_valid(sized_plug(ctx, sub)) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             SizedContext::Top => {
                 unfold(sized_plug(SizedContext::Top, sub));
                 known();
@@ -167,7 +170,8 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
 // lets propagation reuse the original whole-tree bound for checked size sums.
 theorem sized_plug_contains_focus(ctx: SizedContext, sub: SizedTree) {
     ensures rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(sized_plug(ctx, sub))) by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             SizedContext::Top => {
                 unfold(sized_plug(SizedContext::Top, sub));
                 normalize();

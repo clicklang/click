@@ -8,7 +8,8 @@ spec enum TestList<T> {
 
 theorem rejected(xs: TestList<int32>) {
     ensures xs == xs by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             TestList::Nil => {
                 solve();
             }

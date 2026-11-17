@@ -1054,16 +1054,22 @@ fn tactic_certificate_rejects_smart_tactics_in_nested_control_tactics() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_09")]
 fn tactic_certificate_checks_structural_induction_arms() {
-    let tactics = [ProofTactic::StructuralInduct {
-        parameter: "xs".to_string(),
-        hypothesis: "ih".to_string(),
-        arms: vec![ProofInductionArm {
-            type_name: "List".to_string(),
-            variant: "Nil".to_string(),
-            bindings: Vec::new(),
-            tactics: vec![ProofTactic::Solve],
-        }],
-    }];
+    let tactics = [
+        ProofTactic::Induct {
+            parameter: "xs".into(),
+            hypothesis: "ih".into(),
+        },
+        ProofTactic::Match(std::sync::Arc::new(ProofMatch {
+            scrutinee: ContractExpression::Binding("xs".into()),
+            ensuring: None,
+            arms: vec![ProofInductionArm {
+                type_name: "List".into(),
+                variant: "Nil".into(),
+                bindings: Vec::new(),
+                tactics: vec![ProofTactic::Solve],
+            }],
+        })),
+    ];
 
     let error = ProofCertificate::from_proof_tactics(&tactics)
         .expect_err("smart tactics cannot be hidden in an induction arm");
@@ -1074,8 +1080,8 @@ fn tactic_certificate_checks_structural_induction_arms() {
     assert_eq!(
         error.path(),
         &[
-            CertificatePathSegment::Tactic(0),
-            CertificatePathSegment::InductionArm(0),
+            CertificatePathSegment::Tactic(1),
+            CertificatePathSegment::MatchArm(0),
             CertificatePathSegment::Tactic(0),
         ]
     );
