@@ -1241,7 +1241,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
             },
             fact: fact.clone(),
-            negated_goal: ClickProposition::Not(Box::new(surface_goal.clone())),
         };
         let Ok((split_proof, split, ids)) = search_input.split_focused_if(surface_goal.clone())
         else {
@@ -1263,7 +1262,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &(else_branch),
             plan,
             &refutation,
-            &[],
+            &[ClickProposition::Not(Box::new(surface_goal.clone()))],
         )?
         else {
             return Ok(None);
@@ -1410,6 +1409,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     && definition_end_value(end).is_some_and(|end| end != value))
                 .then(|| DefinitionPlan::End {
                     unfolds: unfolds.to_vec(),
+                    value: end.clone(),
                 })
             }
         }
@@ -1426,33 +1426,67 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("refute_definition_ends");
         check_verification_deadline()?;
+        // A split may revisit a guard already established by the caller.
+        // Its impossible arm needs only the explicit conflicting guard.
+        if let Some(guard) = taken.last()
+            && let Ok(closed) = search_input
+                .driver()
+                .apply_step(ProofStep::Contradiction(guard.clone()))
+        {
+            return Ok(Some(closed));
+        }
         match plan {
-            DefinitionPlan::End { unfolds } => {
-                let mut using = taken.to_vec();
-                using.push(refutation.negated_goal.clone());
-                let mut steps = vec![ProofStep::UnfoldFunction(refutation.application.clone())];
-                steps.extend(unfolds.iter().cloned().map(ProofStep::UnfoldFunction));
-                steps.push(ProofStep::NormalizeUsing(using));
-                let refute = |steps: Vec<ProofStep>| {
-                    search_input
+            DefinitionPlan::End { unfolds, value } => {
+                let refuted = (|| {
+                    let equation = ClickProposition::Comparison {
+                        left: ContractExpression::Call {
+                            name: refutation.application.name.clone(),
+                            arguments: refutation.application.arguments.clone(),
+                        },
+                        operator: ComparisonOperator::Equal,
+                        right: value.clone(),
+                    };
+                    let mut scope = search_input.driver().open_have(equation.clone())?;
+                    for application in std::iter::once(&refutation.application).chain(unfolds) {
+                        if scope.is_complete() {
+                            break;
+                        }
+                        scope = scope
+                            .driver()
+                            .apply_step(ProofStep::UnfoldFunction(application.clone()))?;
+                    }
+                    if !scope.is_complete() {
+                        if let Ok(closed) = scope.driver().apply_step(ProofStep::Known) {
+                            scope = closed;
+                        } else if let Some(rewritten) =
+                            scope.driver().try_rewrite_conditional_arms_using(taken)?
+                        {
+                            scope = rewritten;
+                            if !scope.is_complete() {
+                                scope = scope.driver().apply_step(ProofStep::Known)?;
+                            }
+                        }
+                    }
+                    if let Some(goal) = scope.body().surface_goal()
+                        && !scope.is_complete()
+                    {
+                        return Err(scope.body().step_error(format!(
+                            "definition branch did not prove its literal: {}",
+                            crate::surface::printing::source_click_proposition(goal),
+                        )));
+                    }
+                    let proof = scope.join()?;
+                    let mut differs = proof.driver().open_have(refutation.differs.clone())?;
+                    differs = differs.driver().apply_step(ProofStep::Rewrite(equation))?;
+                    if !differs.is_complete() {
+                        differs = differs.driver().apply_step(ProofStep::Known)?;
+                    }
+                    differs
+                        .join()?
                         .driver()
-                        .apply_step(have(refutation.differs.clone(), steps))
-                        .and_then(|next| {
-                            next.driver()
-                                .apply_step(ProofStep::Contradiction(refutation.fact.clone()))
-                        })
-                };
-                // The unfolds alone can decide a `Bool` end (Stage 5): the
-                // refreshed goal is then a cited condition, and the
-                // `normalize` after them has nothing left to prove.
-                let mut unfolded = steps.clone();
-                unfolded.pop();
-                let mut known = unfolded.clone();
-                known.push(ProofStep::Known);
-                let refuted = refute(known)
-                    .or_else(|_| refute(steps))
-                    .or_else(|error| refute(unfolded).map_err(|_| error));
-                Ok(refuted.ok().filter(Proof::focused_discharged))
+                        .apply_step(ProofStep::Contradiction(refutation.fact.clone()))
+                })();
+                Ok(attempt::candidate_outcome(refuted)?.filter(Proof::focused_discharged))
             }
             DefinitionPlan::Split {
                 condition,

@@ -253,8 +253,10 @@ forces the goal, as `is_rb(Node(.., left, right)) == 1` forces
 such as a `match` arm's `up.model == Context::Left(..)`, is replaced by it:
 the fact is first restated as a `have` by rewriting with that equation. The proof is ordinary checked steps: `if` the goal
 holds, `known`; otherwise a proof `if` on each condition met before the
-goal's, and at each end `have f(args) != k` by `unfold` and
-`normalize() using` the conditions taken, then `contradiction`. At most 16
+goal's. At each end, expansion proves an equation between the application and
+the selected branch's literal using `unfold`, selected arm equations and
+`known()`. It rewrites the claimed value comparison with the equation and
+closes the branch with `contradiction`. At most 16
 connected function facts are read, each up to 16 ends; a `match` that its
 arguments do not decide, or an end that is not a constant, is a miss. See
 [`solve_reads_a_condition_out_of_a_definition.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_reads_a_condition_out_of_a_definition.md)

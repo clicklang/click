@@ -33,6 +33,23 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
+    /// Rewrite selected conditional arms inside an owned have body.
+    pub(in crate::surface::proof) fn try_rewrite_conditional_arms_using(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some((body, _)) = crate::kernel::search::ProofSearch::rewrite_conditional_arms_using(
+            &self.proof.body,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Construct a selected scalar interval leaf without normalization.
     pub(in crate::surface::proof) fn try_interval_fact_using(
         &self,
