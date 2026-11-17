@@ -115,9 +115,19 @@ Distinguish these producer boundaries:
 | Return composition | An executed body's `ConstructedBodyReturn` retains its constructed output group and captured caller frame; `finish` installs it directly. Summary paths restore selected entry borrows, consumed-cell transfers, and fresh-allocation outputs, then send remaining descriptions through compatibility admission. `ValidateDescriptions` deliberately does not turn a role marker into transfer evidence. |
 | Produced composite boundary | A retained child rule binds unchanged one-level parameter footprints to selected consumed inputs. Unguarded borrowed parameter-only children retain entry provenance. Those children leave no new boundary; unmatched children and post-memory footprints still pass through `produced_composite_frontier_conflict`. |
 | Iterated `take` and `scatter` | The checked hole/guard transition or hole-free whole-range consumption constructs the exposed memory directly in the same frame. Neither operation readmits it or normalizes the surrounding block. Source selection, guard reasoning, and the explicit hole list have separate costs. |
-| Call and suspended-loan recovery | `recover_candidate_stable_view_resources` restores escrows beside the callee's output residual; `StableViewTransferPlan::recover_stable_views_impl` also restores selected resources. An unmatched raw output has not necessarily been checked against a withheld escrow. Suspended recovery additionally uses the parent's current frame. These relationships must be constructed before generic recovery admission can be removed. The former `ReservedLocalScalarOwner` carrier is no longer present. |
-| Worker completion and loop-frame exchange | Checked output inside a worker or narrowed loop body is not by itself evidence about the current parent or withheld frame. These callers still validate the newly composed boundary. A replacement must construct that boundary from the operation's transfer evidence. |
+| Call and suspended-loan recovery | `recover_returned_views` constructs recovery directly in the actual return residual, retaining output occurrences and supported cores. Each escrow is admitted once against that destination; publication receives its constructed context and explicit recovered hold occurrence IDs. There is no discarded entry-frame reconstruction or second insertion. Suspended recovery likewise uses today's parent frame. An unmatched output's relationship to withheld escrow remains a real boundary obligation, with compatibility discovery for unsupported geometry. |
+| Worker completion and loop-frame exchange | `compose_checked_outputs` checks only the checked worker group's boundary with today's parent frame, and retains output occurrences, projection support, loan dependencies and cached expansions in the resulting construction. It does not recheck output/output memory pairs. `restore_frame_after_exchange` admits the changed loop partition directly with the exit's selected occurrence IDs and retains that successor; it no longer checks a temporary context and reinserts the same facts. Newly described output must still establish its boundary with the current or withheld frame. Unsupported geometry retains compatibility discovery. |
 | Instance and authority bookkeeping | Some callers add only an instance identity or an exclusive authority. Those facts do not have a raw memory footprint for alias discovery; do not classify every use of the generic API as a memory scan. |
+
+Whole-range iterated guard checking selects a retained universal equality by
+an alpha/load identity key built from its bounds and guard cell. The index is
+maintained when the explicit universal is admitted. Exact value conclusions
+come first; a selected cell-value source can also decide the comparison, and
+one cell source with different bounds is usable only if its instantiated
+antecedent is proved. The operation never enumerates a universal bucket or
+replays its conclusion into a temporary context. Bounds with several possible
+sources may need an explicit whole-range `have forall` premise; selection does
+not search those alternatives. Query keys preserve the read's memory version.
 
 The return paths are in
 [`mixed_return_resources.rs`](https://github.com/clicklang/click/blob/master/src/kernel/functions/mixed_return_resources.rs)

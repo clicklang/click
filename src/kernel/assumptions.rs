@@ -1292,6 +1292,7 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
         key.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         key.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
         key.universals_by_conclusion = crate::persistent::PersistentMap::default();
+        key.universal_equality_sources = Default::default();
         key.shared_condition_variables = Default::default();
         key.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         key.state_condition_variable_base = crate::persistent::PersistentMap::default();
@@ -8159,6 +8160,7 @@ impl PureFactContext {
         }
         if matches!(proposition, Proposition::ForAll { .. }) {
             self.atomic_quantified_facts = self.atomic_quantified_facts.with_value(shared.clone());
+            self.index_universal_equality(proposition);
             for key in UniversalConclusionKey::of(proposition) {
                 crate::instrumentation::record_deterministic_work(1);
                 let bucket = self
@@ -8199,6 +8201,7 @@ impl PureFactContext {
         self.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         self.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
         self.universals_by_conclusion = crate::persistent::PersistentMap::default();
+        self.universal_equality_sources = Default::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.scan_for_upkeep() {
             self.adjust_atomic_connection_fact(&Proposition::ConditionIs(

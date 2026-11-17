@@ -3388,35 +3388,157 @@ impl PureFactContext {
             .map(|(_, instance)| instance)
     }
 
-    /// The consequents of this context's universal implications, instantiated
-    /// where the `int32` equality `left == right` names their bound variable
-    /// and their antecedent is proved here. Each candidate costs its own
-    /// antecedent. An equality instantiates only a conclusion equality
-    /// (`guided_forall_condition_candidates`), so this reads the universals
-    /// concluding one.
-    pub(in crate::kernel) fn instantiated_universal_consequents(
-        &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
-    ) -> Vec<Proposition> {
-        use crate::kernel::assumptions::UniversalConclusionKey;
-        let condition = ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(left.clone()),
-            right: Box::new(right.clone()),
+    /// Index each operand of one explicit range equality, preserving its
+    /// binder, antecedent and exact read version in the alpha/load key.
+    pub(super) fn index_universal_equality(&mut self, proposition: &Proposition) {
+        let Proposition::ForAll {
+            var,
+            sort: Sort::ProgramInt32,
+            body,
+            ..
+        } = proposition
+        else {
+            return;
         };
-        let mut consequents = Vec::new();
-        for proposition in self.universals_concluding(UniversalConclusionKey::Equal) {
-            for instance in self.forall_instantiations_for_condition(proposition, &condition) {
-                if let Proposition::Implies(antecedent, consequent) = instance
-                    && self.proves_without_prop_facts(&antecedent)
+        let Proposition::Implies(antecedent, consequent) = body.as_ref() else {
+            return;
+        };
+        let Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            truth,
+        ) = consequent.as_ref()
+        else {
+            return;
+        };
+        let source = std::sync::Arc::new(proposition.clone());
+        for (selected, other, reversed) in [(left, right, false), (right, left, true)] {
+            for (antecedent, other, truth) in [
+                (antecedent.as_ref().clone(), other, *truth),
+                (antecedent.as_ref().clone(), selected, true),
+                (
+                    Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                    selected,
+                    true,
+                ),
+            ] {
+                let query = Self::universal_equality_query(
+                    *var,
+                    antecedent,
+                    selected.as_ref().clone(),
+                    other.as_ref().clone(),
+                    truth,
+                );
+                if let Some(key) = crate::kernel::proof::proposition_identity_key(&query)
+                    && !self.universal_equality_sources.contains_key(&key)
                 {
-                    consequents.push(*consequent);
+                    self.universal_equality_sources = self
+                        .universal_equality_sources
+                        .with_inserted(key, (source.clone(), reversed));
                 }
             }
         }
-        consequents
+    }
+
+    fn universal_equality_query(
+        var: Variable,
+        antecedent: Proposition,
+        left: MachineTerm,
+        right: MachineTerm,
+        truth: bool,
+    ) -> Proposition {
+        Proposition::ForAll {
+            name: Default::default(),
+            var,
+            sort: Sort::ProgramInt32,
+            body: Box::new(Proposition::Implies(
+                Box::new(antecedent),
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                    truth,
+                )),
+            )),
+        }
+    }
+
+    /// Select an explicit whole-range equality by its written bounds and
+    /// cell. Exact conclusions take precedence; otherwise one retained value
+    /// source may establish the guard. No candidate bucket is enumerated and
+    /// no instantiated equality is replayed into the fact context.
+    pub(in crate::kernel) fn selected_universal_equality_value(
+        &self,
+        var: Variable,
+        antecedent: Proposition,
+        cell: &MachineTerm,
+        expected: &MachineTerm,
+    ) -> Option<(MachineTerm, bool)> {
+        for (antecedent, right, truth, check_antecedent, exact_conclusion) in [
+            (antecedent.clone(), expected, true, false, true),
+            (antecedent.clone(), expected, false, false, true),
+            (antecedent, cell, true, false, false),
+            (
+                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                cell,
+                true,
+                true,
+                false,
+            ),
+        ] {
+            let query =
+                Self::universal_equality_query(var, antecedent, cell.clone(), right.clone(), truth);
+            let Some(key) = crate::kernel::proof::proposition_identity_key(&query) else {
+                continue;
+            };
+            crate::instrumentation::record_deterministic_work(1);
+            let Some((source, reversed)) = self.universal_equality_sources.get(&key) else {
+                continue;
+            };
+            if exact_conclusion {
+                record_implicit_reasoning_provenance(self, source);
+                return Some((expected.clone(), truth));
+            }
+            let Proposition::ForAll {
+                var: source_var,
+                body,
+                ..
+            } = source.as_ref()
+            else {
+                unreachable!()
+            };
+            let Proposition::Implies(source_antecedent, consequent) = body.as_ref() else {
+                unreachable!()
+            };
+            if check_antecedent
+                && !self.proves_without_prop_facts(&substitute_bitvector_variable_in_proposition(
+                    source_antecedent,
+                    *source_var,
+                    &MachineTerm::Variable(var),
+                ))
+            {
+                continue;
+            }
+            let Proposition::ConditionIs(ConditionTerm::Compare { left, right, .. }, truth) =
+                consequent.as_ref()
+            else {
+                unreachable!()
+            };
+            record_implicit_reasoning_provenance(self, source);
+            let value = if *reversed { left } else { right };
+            return Some((
+                substitute_bitvector_variable(value, *source_var, &MachineTerm::Variable(var)),
+                *truth,
+            ));
+        }
+        None
     }
 
     pub(in crate::kernel) fn forall_instantiations_for_condition(
