@@ -33,7 +33,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
     requires hi <= n;
     requires n >= 0 and viewable(v[lo..n]);
     ensures 0 <= unmarked(v, lo, hi) by {
-        induct(hi) as ih;
+        let ih = induct(hi);
         if hi <= lo {
             unfold(unmarked(v, lo, hi));
             solve();

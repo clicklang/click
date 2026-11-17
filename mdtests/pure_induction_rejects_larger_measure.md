@@ -8,7 +8,7 @@ theorem bad_larger(n: int32) {
     requires n >= 0;
     requires n <= 100;
     ensures n == n by {
-        induct(n) as ih;
+        let ih = induct(n);
         have 0 <= to_integer(n + 1);
         apply(ih(n + 1));
         solve();

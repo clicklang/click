@@ -72,7 +72,7 @@ remains supported.
   constructors. See [Proposition reasoning](#proposition-reasoning).
 - `intro()`: assume an implication's antecedent or fix a universal's
   variable. See [Proposition reasoning](#proposition-reasoning).
-- `induct(n) as ih` or `induct(xs) as ih { ... }`, with `apply(ih(m))`: prove
+- `let ih = induct(n)` or `induct(xs) as ih { ... }`, with `apply(ih(m))`: prove
   a pure theorem by induction. See
   [Proposition reasoning](#proposition-reasoning).
 - `rewrite(from, to)`: rewrite the goal with an available equality. See
@@ -1108,7 +1108,7 @@ step is still checked.
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
-| `intro() as name` | simple | Specialized | Choose the name introduced into the proof. | [Reference](#naming-an-introduced-binder) |
+| `let name = intro()` | simple | Specialized | Choose the name introduced into the proof. | [Reference](#naming-an-introduced-binder) |
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
 | `instantiate(F, value)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
@@ -1118,7 +1118,7 @@ step is still checked.
 | `apply(theorem(args)) using { P; ... }` | simple | Expansion output | Apply a theorem using written premises. | [Reference](#theorem-application-with-selected-premises) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
-| `induct(n) as ih` | simple | Core | Introduce strong induction on a nonnegative `int32` or a `uint64`. | [Reference](#scalar-induction) |
+| `let ih = induct(n)` | simple | Core | Introduce strong induction on a nonnegative `int32` or a `uint64`. | [Reference](#scalar-induction) |
 | `induct(xs) as ih { Type::Variant(fields) => { ... } ... }` | control | Core | Prove constructor cases with recursive hypotheses. | [Reference](#algebraic-induction) |
 | `apply(ih(m))` | smart | Core | Apply an induction hypothesis, looking up its premises. | [Reference](#induction-hypothesis-application) |
 | `apply(ih(m)) using { P; ... }` | simple | Expansion output | Apply an induction hypothesis using written premises. | [Reference](#induction-hypotheses-with-selected-premises) |
@@ -2378,7 +2378,7 @@ and profiling charges one leaf.
 
 ### Naming an introduced binder
 
-**Form:** `intro() as name`
+**Form:** `let name = intro()`
 
 **Specialized.** Write it when the quantifier's own variable name would clash
 with or obscure a name the proof uses. For a goal written `forall (x: T) { ...
@@ -2830,14 +2830,14 @@ after local proof prefixes and all-impossible matches remain unsupported.
 
 ### Scalar induction
 
-**Form:** `induct(n) as ih`
+**Form:** `let ih = induct(n)`
 
 **Core.** At a pure theorem's original goal, introduce a strong induction
 hypothesis named `ih` over an `int32` or `uint64` parameter `n`. The signed measure
 requires a nonnegative domain; the unsigned measure has that domain intrinsically.
 
 **Accepts** a pure theorem `ensures ... by { ... }` script containing one
-top-level `induct(n) as ih`, when:
+top-level `let ih = induct(n)`, when:
 
 - `n` names a theorem parameter of type `int32` or `uint64`. Other parameters
   of any type, including `Integer`, may sit beside it.
@@ -2934,7 +2934,7 @@ which selects the decrease and requirements. Instantiate the local induction
 hypothesis from exactly the listed strict-decrease and substituted-requirement
 obligations, including nonnegativity for a signed measure.
 
-**Accepts**, after scalar `induct(n) as ih`, one argument `m` of the measure's
+**Accepts**, after scalar `let ih = induct(n)`, one argument `m` of the measure's
 type (any expression, such as `n - 1` or `n - 1u64`), when:
 
 - Every listed `P` is an available fact, read as `using` lists read premises:
@@ -3062,8 +3062,9 @@ with that reason
 ([`have_name_is_not_cited_in_its_own_proof.md`](https://github.com/clicklang/click/blob/master/mdtests/have_name_is_not_cited_in_its_own_proof.md),
 [`have_name_is_cited_only_in_its_block.md`](https://github.com/clicklang/click/blob/master/mdtests/have_name_is_cited_only_in_its_block.md)).
 
-A quantifier variable hides a fact of the same name in its body, and `intro() as
-name` refuses a fact name in scope.
+A quantifier variable, including one named by `let name = intro()`, hides a
+fact of the same name in its body. The chosen name must not reuse an active
+value binding.
 The container stays intrinsically control; its selectable source site may own
 simple work or expandable automation from its body.
 
