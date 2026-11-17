@@ -316,11 +316,12 @@ impl ProgramPoint {
     /// The point a state with `memory` stands at, `path` being the last
     /// point it reached. Steps the state has taken since, still in the
     /// memory's log, are a point of their own after that one, so the point
-    /// handed out holds the memory it names.
+    /// handed out holds the memory it names. The log determines the
+    /// successor even when the steps return to the predecessor's contents.
     pub(super) fn of_state(memory: &Memory, path: &PathLink) -> Self {
         let shared = intern_memory_ref(memory);
         let path = match &memory.pending_steps {
-            Some(steps) if path.memory() != Some(&shared) => pending_point(path, steps, &shared),
+            Some(steps) => pending_point(path, steps, &shared),
             _ => path.clone(),
         };
         Self {
@@ -484,6 +485,40 @@ mod tests {
         assert!(frame.memory().same_storage_roots(moved.memory()));
     }
 
+    /// Recorded steps reach a new point even when their net contents match
+    /// the predecessor. Looking up that pending successor, or making a frame
+    /// there, must retain the same point identity.
+    #[test]
+    fn pending_steps_returning_to_equal_memory_reach_a_stable_successor() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let start = ExecutionState::default().with_memory(memory_holding(0));
+        let memory = start
+            .memory()
+            .clone()
+            .store(slot(), ProgramValue::Int32(MachineTerm::constant(1)))
+            .store(slot(), ProgramValue::Int32(MachineTerm::constant(0)));
+        assert!(memory.pending_steps.is_some());
+        let moved = start.clone().with_materialized_memory(memory);
+        assert_eq!(start.memory(), moved.memory());
+        let point = moved.program_point();
+        assert_ne!(point.id(), start.program_point().id());
+        assert_eq!(
+            point.predecessor_ids(),
+            vec![start.program_point().id().unwrap()]
+        );
+        assert_eq!(moved.program_point().id(), point.id());
+        assert_eq!(point.path_link().memory(), Some(point.shared_memory()));
+        let frame = ExecutionState::at_state(&moved);
+        assert_eq!(frame.program_point().id(), point.id());
+        assert!(frame.memory().pending_steps.is_none());
+        assert_eq!(frame.program_point().id(), point.id());
+        // A frame without pending steps stays at the predecessor.
+        assert_eq!(
+            ExecutionState::at_state(&start).program_point().id(),
+            start.program_point().id()
+        );
+    }
+
     /// A state that takes another state's memory continues that state's
     /// path, through the steps that made the memory, not its own.
     #[test]
@@ -551,5 +586,8 @@ mod tests {
                 right.program_point().id().unwrap()
             ]
         );
+    }
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/primitives/program_point.rs");
     }
 }
