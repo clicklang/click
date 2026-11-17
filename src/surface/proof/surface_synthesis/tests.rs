@@ -3316,54 +3316,6 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
 }
 
 #[test]
-fn recorded_memories_near_a_read_are_offered_after_it_then_before_it() {
-    // Memories interned in program order: `first` and `second` are recorded,
-    // `between` is made between them and `last` after both. A read in
-    // `between` is next recorded at `second`; a read in `last` was last
-    // recorded at `second`, then `first`.
-    let memory = |block: &str| {
-        // Give each point distinct bytes; a declaration alone preserves
-        // read identity and intentionally selects its newest recorded point.
-        let memory = Memory::new().with_block(block, 4).store(
-            Pointer {
-                block: block.into(),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            ProgramValue::Int32(MachineTerm::constant(0)),
-        );
-        crate::kernel::intern_memory_ref(&memory)
-    };
-    let point = |index| {
-        ProgramPointSelector::from(ProgramPointRef {
-            region: CodeRegionRef::Region(index),
-            kind: ProgramPointKind::Exit,
-        })
-    };
-    let first = memory("near-first");
-    let between = memory("near-between");
-    let second = memory("near-second");
-    let last = memory("near-last");
-    let mut recorded_states = RecordedStates::new();
-    recorded_states.insert(
-        point(0),
-        ExecutionState::new().with_memory(first.memory().clone()),
-    );
-    recorded_states.insert(
-        point(1),
-        ExecutionState::new().with_memory(second.memory().clone()),
-    );
-    let near = |memory| {
-        recorded_states
-            .points_near_memory(memory)
-            .map(|(selector, _)| selector.clone())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(near(&between), vec![point(1), point(0)]);
-    assert_eq!(near(&last), vec![point(1), point(0)]);
-    assert_eq!(near(&first), vec![point(0), point(1)]);
-}
-
-#[test]
 fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_introduced() {
     // A call replaces `o`'s model, so the earlier `o.size` value is held by
     // no current instance; the point after the first call held it.

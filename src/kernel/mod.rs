@@ -69,6 +69,16 @@ pub(crate) use iterated::{IteratedStep, apply_iterated_step, plan_iterated_guard
 mod loans;
 #[cfg(test)]
 pub(crate) use loans::LoanLedger;
+
+/// The memory a canonical load projection was built from, for a read of
+/// `pointer`: the source `reasoning::memory_resolution` recorded when it
+/// built the projection. One lookup; the canonical form is not rebuilt.
+pub(crate) fn load_projection_source(
+    projected: &SharedMemory,
+    pointer: &Pointer,
+) -> Option<SharedMemory> {
+    reasoning::memory_resolution::canonical_load_projection_source(projected, pointer)
+}
 #[cfg(test)]
 pub(crate) use loans::LoanRefusal;
 pub(crate) use loans::owned_reservation_miss_for;
