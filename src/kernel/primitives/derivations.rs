@@ -2062,8 +2062,11 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
                 body,
                 ..
             } => {
-                let (condition, _, test) = loop_test.execution_parts();
-                cost.add_expression(program_expression_source_steps(condition));
+                let condition = loop_test.source_condition();
+                let test = loop_test.source_region();
+                if let Some(condition) = condition {
+                    cost.add_expression(program_expression_source_steps(condition));
+                }
                 pending.push(body);
                 if let Some(test) = test {
                     pending.push(&test.statement);

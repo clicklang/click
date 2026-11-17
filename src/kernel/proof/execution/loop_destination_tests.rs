@@ -21,20 +21,29 @@ fn enter_loop(
     function: &ProgramFunction,
     state: &ExecutionState,
 ) -> LoopControlSources {
-    core.record_loop_condition_transition(
-        function,
-        &[],
-        Theorem::new(Proposition::ProgramConditionEvaluates {
-            state: Box::new(state.clone()),
-            condition: variable("gate"),
-            outcome: ConditionOutcome::Value(true),
-        }),
-        PureFactContext::new(),
-        &[],
-        &[],
-    )
-    .expect("the source loop condition is checked")
-    .expect("the loop was entered")
+    let sources = core
+        .enter_loop_phases(function, &[])
+        .expect("the source loop enters its phases");
+    if let Some((next, _)) = core.next_source_statement_and_tail(function)
+        && matches!(next.as_ref(), ProgramStatement::LoopTest { .. })
+    {
+        let statement = next.into_owned();
+        core.record_statement_transition_native(
+            function,
+            &[],
+            Theorem::new(Proposition::ProgramStatementVerifies {
+                state: Box::new(state.clone()),
+                statement: Box::new(statement),
+                outcome: StatementOutcome::Normal(Box::new(state.clone())),
+            }),
+            PureFactContext::new(),
+            &ExecutionFacts::new(),
+            &[],
+            &crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        )
+        .expect("the entered test is true");
+    }
+    sources
 }
 
 fn nested_loop(
@@ -76,7 +85,7 @@ fn nested_loop(
             None => statement,
         }
     };
-    let repeat = Arc::new(make_inner(false));
+    let repeat = Arc::new(make_inner(post_test));
     let after_inner = Arc::new((0..tail_size).fold(
         program_assign("after_inner", int32_literal(7)),
         |rest, _| program_seq(program_assign("after_inner", int32_literal(7)), rest),
@@ -128,19 +137,15 @@ fn nested_loop(
         )
         .expect("outer loop destination"),
     );
-    let inner_sources = if post_test {
-        core.enter_post_test_loop_body(&function)
-            .expect("the post-test loop enters its body")
-    } else {
-        enter_loop(&mut core, &function, &state)
-    };
+    let inner_sources = enter_loop(&mut core, &function, &state);
+    let continuation = inner_sources.continuation.clone();
     core.frontier.continuations.push(
         ProofExecutionContinuation::loop_body(
             Arc::new(ProgramStatement::seq(repeat.clone(), after_inner.clone())),
             1,
             Some(after_inner.clone()),
             2,
-            update.as_ref().map(|_| 3),
+            continuation.as_ref().map(|_| 3),
             inner_sources,
         )
         .expect("inner loop destination"),
@@ -168,7 +173,7 @@ fn nested_loop(
         after_inner,
         outer,
         after_function,
-        update,
+        update: continuation,
     }
 }
 
@@ -210,7 +215,7 @@ fn assert_destination(fixture: &NestedLoop, continuing: bool, parent_frames: usi
     let mut expected = Vec::new();
     if continuing {
         if let Some(update) = &fixture.update {
-            expected.push((**update).clone());
+            expected.extend(source_heads(Some(update.clone())));
         }
         expected.push((*fixture.repeat).clone());
     }
@@ -279,21 +284,7 @@ fn loop_entry_refuses_an_if_source_without_advancing_evidence() {
             ..ExecutionFrontier::default()
         },
     );
-    assert!(
-        core.record_loop_condition_transition(
-            &function,
-            &[],
-            Theorem::new(Proposition::ProgramConditionEvaluates {
-                state: Box::new(state),
-                condition: variable("gate"),
-                outcome: ConditionOutcome::Value(true),
-            }),
-            PureFactContext::new(),
-            &[],
-            &[],
-        )
-        .is_err()
-    );
+    assert!(core.enter_loop_phases(&function, &[]).is_err());
     assert!(core.evidence_state.is_none());
     assert!(core.evidence_source.is_none());
     assert_eq!(core.current_source(&function), Some(statement.as_ref()));
@@ -358,5 +349,55 @@ fn test_false_and_written_break_keep_distinct_checked_region_exits() {
             core.frontier.position,
             FrontierPosition::RegionBoundary
         ));
+    }
+}
+
+#[test]
+fn loop_phase_entry_retains_the_original_loop_and_records_no_skip() {
+    for position in [
+        crate::kernel::LoopTestPosition::BeforeBody,
+        crate::kernel::LoopTestPosition::AfterBody,
+    ] {
+        let statement = program_while(variable("gate"), Vec::new(), ProgramStatement::Break)
+            .with_loop_test(
+                ProgramStatement::LoopTest {
+                    condition: variable("gate"),
+                    aggregate_steps: Vec::new(),
+                },
+                position,
+            );
+        let function = ProgramFunction::new(
+            ProgramType::Void,
+            "phase_entry",
+            Vec::new(),
+            statement.clone(),
+        );
+        let state = ExecutionState::new().with_local("gate", int32(1));
+        let mut core = ExecutionProofCore::at_entry(
+            state,
+            ExecutionFrontier {
+                position: FrontierPosition::StatementEntry {
+                    remaining: Arc::new(statement.clone()),
+                },
+                ..ExecutionFrontier::default()
+            },
+        );
+        let sources = core.enter_loop_phases(&function, &[]).unwrap();
+        assert_eq!(
+            sources.repeat.as_ref(),
+            &statement,
+            "entry must not rewrite a post-test loop"
+        );
+        let events = &core.execution_evidence[0].events;
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events.last(),
+            Some(CheckedExecutionEvent::LoopEntry { .. })
+        ));
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, CheckedExecutionEvent::Statement(_)))
+        );
     }
 }

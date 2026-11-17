@@ -40,3 +40,30 @@ fn continue_exit_metadata_grows_with_the_locals_it_retires() {
         assert!(work <= 80 * size + 300, "{size} locals: {work}");
     }
 }
+
+#[test]
+fn nested_post_test_routing_visits_each_source_edge_once() {
+    for size in [4, 16, 64] {
+        let source = format!(
+            "void nested_tests() {{ {} int32 x; {} }}",
+            "do {".repeat(size),
+            "} while (0);".repeat(size),
+        );
+        let function = syntax::parse_function(&source).unwrap();
+        let (layout, work) = crate::instrumentation::measure_deterministic_work(|| {
+            SourceExecutionLayout::for_function(&function).unwrap()
+        });
+        assert_eq!(layout.data.hidden_loop_tests.len(), size);
+        for index in 0..size {
+            let last_body_region = index + 1;
+            assert_eq!(
+                layout
+                    .statement(last_body_region)
+                    .unwrap()
+                    .continuation_node,
+                layout.loop_test_phase_entry(index).unwrap(),
+            );
+        }
+        assert!(work <= 80 * size + 300, "{size} nested tests: {work}");
+    }
+}
