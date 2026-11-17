@@ -2183,7 +2183,8 @@ fn hashing_a_memory_fact_is_constant_in_the_memory_size() {
 
 /// Stores to a sequence of separately owned parameter fields must not revisit
 /// cached fields of earlier objects. Check both scalar and pointer contents;
-/// the latter reproduces the linked-node shape from the bug report.
+/// the latter reproduces the linked-node shape from the bug report. An
+/// unrelated admitted read equality must not disable the parameter partition.
 #[test]
 fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
     let mut samples = Vec::new();
@@ -2208,8 +2209,17 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
                         4u32.into(),
                     )))
                 });
+            let unrelated = MachineTerm::MemoryLoad(
+                ProgramPoint::at(&intern_memory(Memory::new())),
+                Box::new(Pointer::symbolic(Variable(970_000))),
+                LoadKind::Int32,
+            );
             let assumptions = PureFactContext::new()
-                .assume_proposition(Proposition::ResourceComposition(composition));
+                .assume_proposition(Proposition::ResourceComposition(composition))
+                .assume_condition(
+                    ConditionTerm::equal(unrelated, MachineTerm::constant(7)),
+                    true,
+                );
             let mut memory = Memory::new();
             let mut largest = 0;
             for (index, object) in objects.iter().enumerate() {
@@ -2236,6 +2246,7 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
             samples.push((pointer_values, count, largest));
         }
     }
+    eprintln!("pointer contents, cell count, largest store work: {samples:?}");
     assert!(
         samples.iter().all(|(_, _, work)| *work <= 100),
         "a field store visited unrelated cached objects: {samples:?}"
