@@ -716,6 +716,10 @@ The final broad run passed all 3,346 selected checks, including all 1,835
 scaling checks, the distinct shared-offset comparison regression and all 44
 documentation checks. Seven exact regular pointer fixtures passed with zero
 fact-stability differences; quality checks passed. Nightly was not run.
+A queue run hit the existing 30-second containment cap while one test combined
+independent skewed/balanced conjunction curves. Those curves now run separately,
+retaining every size, replay check and work bound. Both separated tests passed;
+no timeout, deterministic budget or proof fixture changed.
 
 ## Chunk 3: machine-valued pure-function results
 
