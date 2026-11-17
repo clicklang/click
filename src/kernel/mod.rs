@@ -57,7 +57,7 @@ pub(crate) use functions::rewrite_resource_instance;
 pub(crate) use functions::rewrite_resource_instance_selecting_children;
 pub(crate) use functions::selected_instance_child_names;
 pub(crate) use functions::{
-    InstantiatedCompositeResourceFacts, instantiate_composite_resource_facts,
+    InstantiatedCompositeResourceFacts, instantiate_composite_resource_facts_at,
     instantiate_private_member_body_facts,
 };
 pub use resource_description::{ResourceDescription, ResourceReference};

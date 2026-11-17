@@ -1061,7 +1061,7 @@ fn return_argument_facts_do_not_project_mutable_memory_invariants() {
         crate::kernel::functions::evaluate_composite_resource_fact_propositions(
             &held,
             std::slice::from_ref(&definition),
-            &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
+            &SymbolicMemory::new(),
             &ResourceContext::new(),
             &PureFactContext::new().require_owned_expression_loads()
         )

@@ -3039,8 +3039,8 @@ impl CheckedResourceObservation {
             allowed.extend(propositions);
         }
         if projects_body
-            && let Some(propositions) =
-                crate::kernel::functions::evaluate_composite_resource_fact_propositions(
+            && let Some(instantiated) =
+                crate::kernel::functions::instantiate_composite_resource_facts_at(
                     observation_authority,
                     function.composite_resource_definitions(),
                     &observed_at,
@@ -3048,7 +3048,7 @@ impl CheckedResourceObservation {
                     assumptions,
                 )
         {
-            allowed.extend(propositions);
+            allowed.extend(instantiated.propositions);
         }
         allowed.extend(
             derivations
@@ -7426,7 +7426,7 @@ fn retain_return_context(
                     crate::kernel::functions::evaluate_composite_resource_fact_propositions(
                         &authority,
                         definition,
-                        &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
+                        &SymbolicMemory::new(),
                         &ResourceContext::new(),
                         &PureFactContext::new().require_owned_expression_loads(),
                     )
