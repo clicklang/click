@@ -12076,3 +12076,42 @@ axiom float64_pointer_add_address_int64(p: double*, index: int64) {
 ```
 
 **Axiom:** trusted, not proved.
+
+### `integer::nonnegative_remainder_from_reconstruction`
+
+Recover a nonnegative dividend's remainder from a reconstruction with a
+positive divisor and an explicit remainder range. This is a proved helper for
+transporting a bounded residue through scalar addition.
+
+```click
+theorem nonnegative_remainder_from_reconstruction(n: Integer, d: Integer, q: Integer, r: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= n;
+    requires 0 <= r;
+    requires r <= d - 1;
+    requires n == q * d + r;
+    ensures truncating_remainder(n, d) == r by {
+        apply(integer::nonnegative_quotient_from_remainder(n, d, q, r)) using {
+            d != 0; 1 <= d; 0 <= n; 0 <= r; r <= d - 1; n == q * d + r;
+        };
+        apply(integer::truncation_identity(n, d)) using { d != 0; };
+        have n == q * d + truncating_remainder(n, d) by known();
+        have n == truncating_remainder(n, d) + q * d by {
+            apply(integer::sum_commute(n, q * d, truncating_remainder(n, d))) using {
+                n == q * d + truncating_remainder(n, d); d != 0;
+            };
+        }
+        have n == r + q * d by {
+            apply(integer::sum_commute(n, q * d, r)) using { n == q * d + r; };
+        }
+        apply(integer::sum_difference(n, truncating_remainder(n, d), q * d)) using {
+            n == truncating_remainder(n, d) + q * d; d != 0;
+        };
+        apply(integer::sum_difference(n, r, q * d)) using { n == r + q * d; };
+        known();
+    }
+}
+```
+
+**Verified use:** [`signed_interval_remainder_reconstruction.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_interval_remainder_reconstruction.md).

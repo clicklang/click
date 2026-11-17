@@ -5186,3 +5186,7 @@ path = "reference/library/index.md#integerfloat64_pointer_add_address_int32"
 [[item]]
 id = "library.theorem.integer::float64_pointer_add_address_int64"
 path = "reference/library/index.md#integerfloat64_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::nonnegative_remainder_from_reconstruction"
+path = "reference/library/index.md#integernonnegative_remainder_from_reconstruction"

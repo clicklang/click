@@ -84,6 +84,9 @@ The unsigned address-word laws are checked in
 `integer::float32_pointer_add_address_int64`, `integer::float64_pointer_add_address_int32`,
 `integer::float64_pointer_add_address_int64`.
 
+The derived `integer::nonnegative_remainder_from_reconstruction` law is checked
+in [`signed_interval_remainder_reconstruction.md`](signed_interval_remainder_reconstruction.md).
+
 ```c filename=stdlib_every_symbol.c
 int32 docs_identity(int32 value) {
     return value;

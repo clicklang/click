@@ -347,19 +347,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_signed_interval_using");
-        if Self::known_bridge_using(search_input, premises)? {
-            return search_input.driver().apply_step(ProofStep::Known).map(Some);
-        }
-        if let Some(closed) = Self::try_machine_bridge_using(search_input, premises)? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = Self::try_division_bound_using(search_input, premises)? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = Self::try_multiply_order_using(search_input, premises)? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = Self::try_product_bound_using(search_input, premises)? {
+        if let Some(closed) = Self::try_interval_fact_using(search_input, premises)? {
             return Ok(Some(closed));
         }
         let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
@@ -381,20 +369,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         }
         let kernels = pairs.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
-        if crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-            goal,
-            &kernels,
-            &crate::kernel::proof::PureFactStore::from_ordered(&kernels),
-        )
-        .is_ok()
-        {
-            let closed = search_input
-                .driver()
-                .apply_step(ProofStep::NormalizeUsing(premises.to_vec()))?;
-            if closed.focused_discharged() {
-                return Ok(Some(closed));
-            }
-        }
         let Some(plan) =
             plan_arithmetic(ArithmeticEngine::SignedInt32WithWeakening, goal, &kernels)
                 .and_then(ArithmeticPlan::signed_int32)
@@ -10477,7 +10451,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let arithmetic_domain = signed_definedness_operands(goal).is_some()
             || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                 .is_some();
-        let typed_first = signed_order || arithmetic_domain;
+        // An Integer observation can still name a native 32-bit operation.
+        // Give its ordinary interval proof the same priority as a native
+        // comparison, before the selected compatibility normalizer closes it.
+        let observed_word32 =
+            crate::kernel::proof::integer_arithmetic::integer_affine_machine_values(goal)
+                .iter()
+                .any(|value| value.ty().format().bits() == 32);
+        let typed_first = signed_order || arithmetic_domain || observed_word32;
         if arithmetic_domain
             && let Ok(Some(closed)) =
                 Self::try_restricted_signed_definedness_closure(&proof, &premise_pairs)

@@ -105,7 +105,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             selected.push(kernel);
         }
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&selected);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&selected);
         for (lhs, rhs) in [(left, right), (right, left)] {
             let Some((numerator, divisor)) = arguments(lhs) else {
                 continue;

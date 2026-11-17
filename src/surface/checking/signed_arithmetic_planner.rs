@@ -2576,7 +2576,9 @@ impl<'a> Planner<'a> {
                 // A known residue transports through a checked bounded sum.
                 if let binary_term!(Int32, Add, base, addend) = dividend.as_ref()
                     && Self::is_safe_interval_atom(base)
-                    && let Some(addend) = addend.as_const().and_then(|v| v.to_i32())
+                    // `as_const` exposes the int32 word bits. Interpret its
+                    // sign here; a checked unsigned conversion rejects -1.
+                    && let Some(addend) = addend.as_const().map(|bits| bits as i32)
                     && let Some(divisor) = divisor.as_const().and_then(|v| v.to_i32())
                     && let Some(operand) = self.build_interval(base)
                 {

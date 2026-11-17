@@ -74,3 +74,5 @@ try_product_bound_using
 
 try_integer_algebra
 try_address_words_using
+
+try_interval_fact_using

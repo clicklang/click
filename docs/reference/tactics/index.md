@@ -2232,8 +2232,13 @@ ranges and constant-divisor quotient, shift, and remainder bounds use
 Machine operation and cast identities use `known()` after their exact Integer
 bounds have been proved. Literal shifts and nonnegative literal masks expand
 to these leaves, explicit product bounds, and rounding laws. A root conditional
-with an available guard expands to a `known()` arm equation and a rewrite. Signed intervals expand to ordinary bounds and observation identities;
-specialized selected rules normalize from explicit inputs, while polynomial
+with an available guard expands to a `known()` arm equation and a rewrite.
+Scalar signed interval claims, operation bounds, and narrowed casts expand
+through selected Integer and machine-observation proofs, without `normalize()`.
+Their intermediate facts replay with implicit solving disabled. The initialized
+read-domain adapter retains its compatibility normalizer; it does not select a
+different memory state or version point. Other specialized selected rules
+normalize from explicit inputs, while polynomial
 search emits separate distribution and rewrite steps. All library proofs use
 ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
 states the named laws' exact guards.
