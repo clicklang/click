@@ -256,6 +256,7 @@ template<class T> Stack<T>::~Stack() {
         }
     }
     unfold(list);
+    step_until(function.exit);
     solve();
 }
 

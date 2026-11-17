@@ -34,7 +34,7 @@ fn statement_store_views_only_index_their_delta() {
                     let mut view = PureFactList::from_statement_store(root.clone());
                     assert!(view.contains(&fact(index, related)));
                     view.push(fact(size + index, related));
-                    let child = view.proof_facts();
+                    let child = view.fact_store();
                     assert!(child.contains(&fact(size + index, related)));
                     assert!(!root.contains(&fact(size + index, related)));
                 }
@@ -118,7 +118,7 @@ fn general_store_round_trips_and_priority_only_touch_the_batch() {
     for related in [false, true] {
         let mut samples = Vec::new();
         for size in [32, 128, 512] {
-            let root = ProofFacts::from_ordered(
+            let root = PureFactStore::from_ordered(
                 &(0..size)
                     .map(|index| fact(index, related))
                     .collect::<Vec<_>>(),
@@ -131,18 +131,20 @@ fn general_store_round_trips_and_priority_only_touch_the_batch() {
                     let selected = fact(index, related);
                     let added = fact(size + index, related);
                     let child = root.with_statement_facts(vec![selected.clone(), added.clone()]);
-                    let view = PureFactList::from_proof_facts(&child);
+                    let view = PureFactList::from_store(&child);
                     assert_eq!(view.get(0), Some(&selected));
                     assert_eq!(view.get(1), Some(&added));
                     let copy = PureFactList::from_source(&view);
-                    let retained = ProofFacts::from_source(&copy);
+                    let retained = PureFactStore::from_source(&copy);
+                    let forwarded = std::sync::Arc::new(&copy);
+                    assert!(forwarded.fact_store().shares_assumptions_with(&retained));
                     assert!(retained.shares_assumptions_with(&child));
                     assert!(retained.shares_exact_index_with(&child));
                     assert!(!root.contains(&added));
                     let mut duplicates = copy;
                     duplicates.push(selected.clone());
                     assert_eq!(duplicates.get(duplicates.len() - 1), Some(&selected));
-                    assert!(duplicates.proof_facts().shares_assumptions_with(&child));
+                    assert!(duplicates.fact_store().shares_assumptions_with(&child));
                 }
             });
             samples.push(work);

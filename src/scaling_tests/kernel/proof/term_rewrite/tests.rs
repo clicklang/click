@@ -1040,7 +1040,7 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         true,
     );
     let premise = Proposition::ConditionIs(bound, true);
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&premise));
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&premise));
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
             &goal,
@@ -1053,7 +1053,7 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
             &goal,
             &[premise],
-            &crate::kernel::proof::ProofFacts::from_ordered(&[])
+            &crate::kernel::proof::PureFactStore::from_ordered(&[])
         )
         .is_err()
     );

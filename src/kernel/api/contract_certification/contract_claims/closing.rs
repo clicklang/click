@@ -3,7 +3,7 @@
 use super::*;
 use crate::kernel::proof::{
     ContractClosingGoal, ContractClosingGoals, OutcomeClaimGoals, OutcomeIdentity,
-    OutcomeProofCore, ProofFacts,
+    OutcomeProofCore, PureFactStore,
 };
 use std::sync::{Arc, OnceLock};
 
@@ -186,7 +186,7 @@ pub(crate) struct ContractExitObligations {
 struct CheckedResourceTransition;
 
 struct PreparedEffectGoals {
-    base: ProofFacts,
+    base: PureFactStore,
     paths: Vec<CertifiedFunctionClaimPath>,
 }
 
@@ -326,7 +326,7 @@ impl ContractExitObligations {
         path: &SymbolicExecutionPath,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
     ) -> Result<Self, ContractClosingRefusal> {
         let publication = outcome
             .publication
@@ -353,7 +353,7 @@ impl ContractExitObligations {
         specification: &FunctionSpecification,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
     ) -> Result<Self, ContractClosingRefusal> {
         self.prove_goal_with_specification(
             kind,
@@ -375,7 +375,7 @@ impl ContractExitObligations {
         specification: &FunctionSpecification,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
     ) -> Result<Self, ContractClosingRefusal> {
         if !self.outcome.same_as(&outcome.identity) {
             return Err(ContractClosingRefusal::Resource(
@@ -552,7 +552,7 @@ impl ContractExitObligations {
         path: &SymbolicExecutionPath,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
         check_resources: bool,
     ) -> Result<Vec<CertifiedFunctionClaimPath>, ContractClosingRefusal> {
         let context = &self.context;
@@ -712,7 +712,7 @@ impl ContractExitObligations {
         &self,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
     ) -> Result<(), ContractClosingRefusal> {
         let context = &self.context;
         let assumptions = facts.assumptions();

@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::proof::ProofFacts;
+use crate::kernel::proof::PureFactStore;
 use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
 
 #[test]
@@ -26,7 +26,7 @@ fn specialized_normalization_uses_only_selected_inputs_as_related_and_unrelated_
                     IntegerTerm::constant_i64(1000 + index as i64),
                 ));
             }
-            let facts = ProofFacts::from_ordered(&ambient);
+            let facts = PureFactStore::from_ordered(&ambient);
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 normalize_using_conditions(&goal, &selected, &facts)
             });

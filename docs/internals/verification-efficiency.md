@@ -113,9 +113,9 @@ Distinguish these producer boundaries:
 | Instance unfold | `unfold_instance_body` consumes the selected parent and exposes its constructed body in the retained frame. It checks exclusive identities without rediscovering memory overlap. Evaluating the body description earlier is a separate operation. |
 | Return-clause evaluation | Executed-body returns consume each output from one persistent body context. Summary returns retain a clause-level rule for unchanged flat footprints, bind it to selected entry reservations, and record those outputs and checked entry borrows directly. Unjustified descriptions still use compatibility admission. |
 | Return composition | An executed body's `ConstructedBodyReturn` retains its constructed output group and captured caller frame; `finish` installs it directly. Summary paths restore selected entry borrows, consumed-cell transfers, and fresh-allocation outputs, then send remaining descriptions through compatibility admission. `ValidateDescriptions` deliberately does not turn a role marker into transfer evidence. |
-| Produced composite boundary | Construction of the body's internal partition does not itself record a transfer against the destination frame. `produced_composite_frontier_conflict` checks that boundary through indexed admission or legacy discovery. Audit the producer's frame evidence before removing this check. |
-| Iterated `take` and `scatter` | These consume or update an iterated owner and expose selected memory, but still pass the exposed memory through compatibility admission. Their checked exchange and retained frame are the starting point for removing rediscovery; no complete-operation fast bound follows from not enumerating the iterated range. |
-| Local-reference and loan recovery | A reserved owner or escrow supplies provenance, but `ReservedLocalScalarOwner::restore_into`, temporary local access, and stable-view recovery still use compatibility admission. Trace the reservation, intervening operations, and destination frame together. |
+| Produced composite boundary | A retained child rule binds unchanged one-level parameter footprints to selected consumed inputs. Unguarded borrowed parameter-only children retain entry provenance. Those children leave no new boundary; unmatched children and post-memory footprints still pass through `produced_composite_frontier_conflict`. |
+| Iterated `take` and `scatter` | The checked hole/guard transition or hole-free whole-range consumption constructs the exposed memory directly in the same frame. Neither operation readmits it or normalizes the surrounding block. Source selection, guard reasoning, and the explicit hole list have separate costs. |
+| Call and suspended-loan recovery | `recover_candidate_stable_view_resources` restores escrows beside the callee's output residual; `StableViewTransferPlan::recover_stable_views_impl` also restores selected resources. An unmatched raw output has not necessarily been checked against a withheld escrow. Suspended recovery additionally uses the parent's current frame. These relationships must be constructed before generic recovery admission can be removed. The former `ReservedLocalScalarOwner` carrier is no longer present. |
 | Worker completion and loop-frame exchange | Checked output inside a worker or narrowed loop body is not by itself evidence about the current parent or withheld frame. These callers still validate the newly composed boundary. A replacement must construct that boundary from the operation's transfer evidence. |
 | Instance and authority bookkeeping | Some callers add only an instance identity or an exclusive authority. Those facts do not have a raw memory footprint for alias discovery; do not classify every use of the generic API as a memory scan. |
 
@@ -223,8 +223,22 @@ memory-dependent expressions, guarded effects, and unmatched outputs retain
 admission. The description-only mode ignores transfer provenance and establishes
 the missing relationship to its destination. Raw outputs are checked against
 the restored frame even when they precede a justified output in clause order.
-Composite children retain their existing selected fixed-footprint transfer and
-post-memory boundary paths.
+The same rule records selected input clauses for children of finite one-level
+composite outputs. Formal arguments must preserve their exact parameter types;
+conversions, loads, guarded memory clauses, and changed bounds do not acquire
+unchanged-footprint evidence. Definition replacement and substitution rebuild
+the recipe after the definitions are updated. Each input supplies only one
+direct output or child. Nested/general definitions retain the existing literal
+child-transfer adapter. Definition analysis visits the selected one-level body,
+never an unfolded recursive or nested definition tree.
+
+The body producer attaches that selected custody to each emitted child, omitting
+it from the new boundary. An unguarded entry-borrowed body's parameter-only
+memory likewise retains its already-established footprint. Guarded bodies keep
+their existing literal adapter; parameter bounds and post-memory loads outside
+the invariant fragment remain descriptions. A raw-description evaluation ignores these origins and
+still refuses overlap with the caller. Head admission, child-group construction,
+and unmatched post-memory boundary checks remain distinct operations.
 
 `summary_transfer_construction_scales_with_clauses_not_retained_owners_or_aliases`
 measures complete summary return construction at 4/16/64 retained owners,
@@ -233,6 +247,48 @@ axes require bounded work; growing the clauses permits output-proportional work.
 The summary-return regressions cover symbolic endpoints, persistent branches,
 verified call application, duplicate outputs, raw aliases in either clause
 order, stale rule replacement, and description-only refusal.
+
+`composite_parameter_footprints_scale_with_parts_not_the_frame_or_alias_classes`
+grows retained same-block owners, cross-block aliases, same-block aliases, and
+the selected body's parts at 4/16/64. The first three axes require bounded
+complete-return work; the last permits work proportional to the expanded body.
+
+#### Iterated exposure and the remaining callers
+
+`apply_iterated_step` constructs `take` by adding one checked hole and exposing
+that element. `scatter` consumes a hole-free owner and exposes its covering
+range after checking the all-true guard. `plan_iterated_guard_store` preserves
+this partition: changing a live guard requires the element to be outside the
+range, already out, or not held, and a newly true guard stays a hole until
+`give`. A declaring loop that may write guards drops the framed iterated fact.
+The exposed bytes therefore come from the selected owner, in the same retained
+frame; comparing them against that frame again is revalidation.
+
+Both operations publish the selected range without normalizing its block.
+Scatter retains its checked residual frame and optional exposed range in a
+private construction, whose installer does not repeat the guard check.
+Retained ownership occurrences and supported observations keep their identities.
+`iterated_exposure_preserves_the_frame_without_admission_or_normalization` grows
+same-block owners and related alias classes at 4/16/64, checks the resulting
+ownership, retains support-removal lifetimes, and keeps repeated-take and
+repeated-scatter refusals. It measures the complete take and scatter installation;
+scatter guard preparation is recorded separately. Its existing quantified-guard
+preparation still grows with alias classes, so this is not a complete scatter
+bound. Existing guard, range, and hole controls still apply. Growing
+iterated-source buckets and the explicit hole list remain separate axes.
+
+The other callers need separate transfer derivations. Call recovery in
+`functions.rs` and `loans.rs` must establish that all outputs coexist with the
+withheld escrow before restoring it. A body-local valid output is insufficient.
+Worker `join` in `threads.rs` composes into today's parent frame, which may
+contain another child's outputs; the entry snapshot alone is not its successor.
+Loop-frame exchange in `resource_algebra.rs` and interface joins in
+`proof/execution.rs` must likewise retain a derivation against their withheld or
+common frame. Composite child-group validation in `construct_composite_resource_body`
+still checks newly evaluated descriptions together; a child/frame transfer alone
+does not replace that operation. These checks are retained until their producer
+carries the missing relationship, rather than removed as a batch of generic
+admission calls.
 
 These are current implementation boundaries, not exceptions to construction
 without re-validation. Remove repeated checking where the producer already
@@ -253,7 +309,7 @@ Current instances of the rule:
   (`constructing_an_instance_fold_pays_for_its_body_once`).
 - A logical case partition retains each arm's indexed context with its exact
   premise delta, and entering an arm shares it.
-- Branch-interface publication extends one `ProofFacts` context as it
+- Branch-interface publication extends one `PureFactStore` context as it
   exports facts; each assertion lowers against the accumulated context.
 - An interface join combines the effects each arm's checked walk retained and
   does not reconstruct store or call-havoc results
@@ -443,7 +499,7 @@ charged to visible semantic output rather than hidden ambient state:
   and effects a restart would fold restarts it, and the restart defers that
   fold until as many transitions have recorded since or the path completes.
   The surface `EffectLeaf` holds each statement's facts with the path's
-  effects, extended through `ProofFacts::introduced_since_within` up to the
+  effects, extended through `PureFactStore::introduced_since_within` up to the
   effects a rebuild refolds. Retained-trace walks visit each shared node once;
   surface path synthesis advances cursors instead of renumbering choices.
   Each path theorem still lists its own `k` premises, which is its output,

@@ -13465,7 +13465,7 @@ mod shared_load_atom_comparison_tests {
 
     #[test]
     fn shared_state_premise_requires_the_selected_frame() {
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         let _session = crate::kernel::VerificationSession::enter();
         let before = Memory::new()
             .with_block("shared-frame", 8)
@@ -13527,8 +13527,8 @@ mod shared_load_atom_comparison_tests {
         for source in std::iter::once(Proposition::ConditionIs(condition(&before), true)).chain(
             crate::kernel::proof::fact_reasoning::order_claim_forms(&source),
         ) {
-            let unframed = ProofFacts::from_ordered(std::slice::from_ref(&source));
-            let framed = ProofFacts::from_ordered(&[source.clone(), equality.clone()]);
+            let unframed = PureFactStore::from_ordered(std::slice::from_ref(&source));
+            let framed = PureFactStore::from_ordered(&[source.clone(), equality.clone()]);
             let exports = KernelTermExport::machine_export_count();
             assert!(!unframed.exact_available_across_effects(&target, &[]));
             let available = framed.exact_available_across_effects(&target, &[]);
@@ -13573,8 +13573,8 @@ mod shared_load_atom_comparison_tests {
             },
             false,
         );
-        let missing_frame = ProofFacts::from_ordered(std::slice::from_ref(&source));
-        let framed = ProofFacts::from_ordered(&[source, equality]);
+        let missing_frame = PureFactStore::from_ordered(std::slice::from_ref(&source));
+        let framed = PureFactStore::from_ordered(&[source, equality]);
         let later = condition(&after);
         let view = native_comparison_view(&later, true).unwrap();
         let query = OverflowQueryView::from_operands(
@@ -13601,7 +13601,7 @@ mod shared_load_atom_comparison_tests {
             Operation,
             definedness::{OverflowQueryView, defined_formats},
         };
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         for ty in defined_formats() {
             for (operation, op) in [
                 (Operation::Add, OverflowOperation::Add),
@@ -13626,10 +13626,10 @@ mod shared_load_atom_comparison_tests {
                         truth,
                     )
                 };
-                let held = ProofFacts::from_ordered(&[source(op, false)]);
-                let missing = ProofFacts::from_ordered(&[]);
-                let refuted = ProofFacts::from_ordered(&[source(op, true)]);
-                let wrong = ProofFacts::from_ordered(&[source(
+                let held = PureFactStore::from_ordered(&[source(op, false)]);
+                let missing = PureFactStore::from_ordered(&[]);
+                let refuted = PureFactStore::from_ordered(&[source(op, true)]);
+                let wrong = PureFactStore::from_ordered(&[source(
                     if op == OverflowOperation::Add {
                         OverflowOperation::Multiply
                     } else {

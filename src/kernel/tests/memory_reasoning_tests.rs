@@ -1862,7 +1862,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
             &address_equality,
             &base_premises,
-            &crate::kernel::proof::ProofFacts::from_ordered(&base_premises),
+            &crate::kernel::proof::PureFactStore::from_ordered(&base_premises),
         )
         .is_ok(),
         "the preserved field gives equal array addresses"

@@ -24,7 +24,7 @@ pub(crate) fn disjunction_candidates(
 
 /// Enumerate universal premises only while planning an expandable proof.
 pub(crate) fn universal_candidates(
-    facts: &crate::kernel::proof::ProofFacts,
+    facts: &crate::kernel::proof::PureFactStore,
 ) -> impl Iterator<Item = &crate::kernel::Proposition> {
     facts.universal_facts_for_search(SearchPermission::new())
 }
@@ -36,7 +36,7 @@ pub(crate) use operation_guard::{FastOperationScope, record_discovery};
 
 /// Select explicit implication sources from the consequent's indexed bucket.
 pub(crate) fn implication_candidates(
-    facts: &crate::kernel::proof::ProofFacts,
+    facts: &crate::kernel::proof::PureFactStore,
     goal: &crate::kernel::Proposition,
 ) -> Vec<crate::kernel::Proposition> {
     facts.implication_sources_for_search(goal, SearchPermission::new())

@@ -2377,7 +2377,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
         .with_population_creation_tracking()
         .with_local("call_result", int32(0))
         .with_local("after", int32(0));
-    let call_root = crate::kernel::proof::ProofFacts::from_ordered(&[]);
+    let call_root = crate::kernel::proof::PureFactStore::from_ordered(&[]);
     let call_paths = prove_symbolic_program_execution_paths_with_environment(
         call_state.clone(),
         call_statement.clone(),
@@ -4376,7 +4376,7 @@ fn completion_accepts_a_case_arm_recorded_after_the_return() {
         state: Box::new(entry_state),
     };
     let (candidates, function, trace) = early_return_inputs(returning);
-    let root = crate::kernel::proof::ProofFacts::default();
+    let root = crate::kernel::proof::PureFactStore::default();
     let then_fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(1_000_050)),
@@ -6084,7 +6084,8 @@ fn certification_keeps_conditional_universal_guards_states_and_sorts() {
     let ty = AlgebraicType::parameter("Path".into());
     let memory = Memory::new().with_block("graph", 4);
     let fact = conditional_path_universal(&ty, 100, memory.clone(), 0);
-    let proof_facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&fact));
+    let proof_facts =
+        crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&fact));
     let facts = PureFactContext::new().assume_proposition(fact);
     let proves = |goal: &Proposition| {
         let certified = crate::kernel::PureFactContext::settles_exactly(&facts, goal);
@@ -6375,7 +6376,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             };
             let owned = crate::kernel::CheckedPathSpecification::new(&forward, path)
                 .expect("forwarded path specification");
-            let closing_facts = ProofFacts::from_ordered(&facts);
+            let closing_facts = PureFactStore::from_ordered(&facts);
             let claim_goals = OutcomeClaimGoals::open([], false);
             let mut goals = closing.open(path_index, &core);
             while let Some(kind) = goals.first_open_goal() {
@@ -6429,7 +6430,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                                 0, outcome,
                             )),
                             ProofBranchState {
-                                facts: ProofFacts::from_ordered(&goal_facts),
+                                facts: PureFactStore::from_ordered(&goal_facts),
                                 execution: None,
                             },
                         ),
