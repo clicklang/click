@@ -6934,6 +6934,8 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         ProgramStatement::TryCatchInt32 { binding, .. } => {
             format!("try ... catch (int {binding})")
         }
+        // The statement is its body; the cleanup is not source.
+        ProgramStatement::UnwindCleanup { body, .. } => describe_execution_statement_head(body),
         ProgramStatement::Store { pointer, value } => format!(
             "*{} = {};",
             describe_program_expression(pointer),

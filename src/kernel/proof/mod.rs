@@ -41,11 +41,12 @@ pub(crate) use execution::{
     CheckedBranchSplit, CheckedBranchSplitError, CheckedCallEvent, CheckedCallEvents,
     CheckedCallOutcomeSplit, CheckedExecutionEvent, CheckedProofCasePartition,
     CompletedExecutionFacts, ContractEntryAuthority, EvidenceRefusal, ExceptionalContinuation,
-    ExecutionEvidence, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,
-    FrontierPosition, LoopControlExit, OpenedContractEntry, OpenedEntryFactSource,
-    OutcomeEvidenceFork, ProofExecutionContinuation, ProofExecutionState,
+    ExceptionalEntry, ExecutionEvidence, ExecutionFrontier, ExecutionProofCore,
+    ExecutionRegionKind, FrontierPosition, LoopControlExit, OpenedContractEntry,
+    OpenedEntryFactSource, OutcomeEvidenceFork, ProofExecutionContinuation, ProofExecutionState,
     RejectedResourceRewriteFact, ResourceRewriteCheckError, UnestablishedInterfaceGoal,
-    checked_branch_fact_is_available, old_reference_state, take_unestablished_interface_goal,
+    checked_branch_fact_is_available, exceptional_region, old_reference_state,
+    take_unestablished_interface_goal,
 };
 pub(crate) use execution::{CheckedReturnSeed, OutcomeForkArm};
 #[allow(unused_imports)]

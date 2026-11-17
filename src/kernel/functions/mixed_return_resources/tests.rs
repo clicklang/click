@@ -43,7 +43,7 @@ fn mixed_composition_restores_symbolic_borrows_and_keeps_emitted_occurrence_orde
         let prepared = evaluated
             .restore_entry_borrows(
                 parent.clone(),
-                ReturnResourceComposition::RestoreEntryBorrows,
+                ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                 &facts,
             )
             .unwrap();
@@ -129,7 +129,7 @@ fn equal_return_descriptions_keep_distinct_transfers_and_projection_lifetimes() 
             let prepared = evaluated
                 .restore_entry_borrows(
                     ResourceContext::new_with_equalities(&facts),
-                    ReturnResourceComposition::RestoreEntryBorrows,
+                    ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                     &facts,
                 )
                 .unwrap();
@@ -281,7 +281,7 @@ fn consumed_scalar_transfer_retains_entry_and_emitted_occurrences_on_branches() 
         let (result, mapping) = evaluated
             .restore_entry_borrows(
                 transfer.caller_resources_after_requirements.clone(),
-                ReturnResourceComposition::RestoreEntryBorrows,
+                ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                 &facts,
             )
             .unwrap()
@@ -333,7 +333,7 @@ fn changed_scalar_output_keeps_description_validation_and_rejects_overlap() {
             evaluated
                 .restore_entry_borrows(
                     transfer.caller_resources_after_requirements,
-                    ReturnResourceComposition::RestoreEntryBorrows,
+                    ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                     &facts,
                 )
                 .unwrap()
@@ -445,7 +445,7 @@ fn consumed_scalar_transfer_preserves_output_spelling_and_partial_residual() {
         let (result, mapping) = evaluated
             .restore_entry_borrows(
                 transfer.caller_resources_after_requirements.clone(),
-                ReturnResourceComposition::RestoreEntryBorrows,
+                ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                 &facts,
             )
             .unwrap()
@@ -652,7 +652,7 @@ fn mixed_return_occurrences_carry_distinct_transfers_past_a_skipped_clause() {
         let prepared = evaluated
             .restore_entry_borrows(
                 transfer.caller_resources_after_requirements.clone(),
-                ReturnResourceComposition::RestoreEntryBorrows,
+                ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                 &facts,
             )
             .unwrap();
@@ -708,7 +708,7 @@ fn ordinary_outputs_still_validate_against_a_mixed_return_frame() {
         evaluated
             .restore_entry_borrows(
                 transfer.caller_resources_after_requirements,
-                ReturnResourceComposition::RestoreEntryBorrows,
+                ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                 &facts,
             )
             .unwrap()
@@ -999,7 +999,7 @@ fn fixed_range_transfers_preserve_typed_widths_and_partial_frames() {
             let (result, mapping) = evaluated
                 .restore_entry_borrows(
                     transfer.caller_resources_after_requirements.clone(),
-                    ReturnResourceComposition::RestoreEntryBorrows,
+                    ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                     &facts,
                 )
                 .unwrap()
@@ -1146,7 +1146,7 @@ fn fixed_wide_range_returns_keep_their_original_index_kind() {
     let (result, mapping) = evaluated
         .restore_entry_borrows(
             transfer.caller_resources_after_requirements,
-            ReturnResourceComposition::RestoreEntryBorrows,
+            ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
             &facts,
         )
         .unwrap()
@@ -1211,7 +1211,7 @@ fn flat_composite_return_carries_its_body_through_frontier_and_projection() {
     let prepared = evaluated
         .restore_entry_borrows(
             ResourceContext::new(),
-            ReturnResourceComposition::RestoreEntryBorrows,
+            ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
             &facts,
         )
         .unwrap();
@@ -1590,7 +1590,7 @@ fn invariant_borrowed_children_retain_provenance_without_granting_it_to_descript
             .contract_interface()
             .composite_resource_definitions(),
         &state,
-        ReturnResourceComposition::RestoreEntryBorrows,
+        ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
         &facts,
     )
     .unwrap();
@@ -1803,11 +1803,15 @@ fn viewed_children_keep_ownership_incremental_without_acquiring_ownership_origin
             .admit(head, ReturnOwnershipOrigin::EntryBorrow, &facts)
             .unwrap();
         for composition in [
-            ReturnResourceComposition::RestoreEntryBorrows,
-            ReturnResourceComposition::BodyAllocations {
-                creator: entry.population_effects.creation.as_ref().unwrap(),
-                events: post.population_effects.creation.as_ref().unwrap(),
-                consumed: None,
+            ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
+            ReturnResourceComposition::BodyReturn {
+                state: &post,
+                frame: entry.resources(),
+                allocations: Some((
+                    entry.population_effects.creation.as_ref().unwrap(),
+                    post.population_effects.creation.as_ref().unwrap(),
+                )),
+                consumed: &ConsumedCellReturns::default(),
             },
         ] {
             let bodies = ConstructedReturnBodies::try_construct(

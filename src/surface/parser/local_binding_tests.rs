@@ -193,11 +193,10 @@ fn parse_temporary_expression(text: &str) -> Result<ContractExpression, ClickErr
                     object,
                     crate::kernel::AggregateLayout::new(4, 4, Vec::new()),
                 ),
-                crate::kernel::program_try_catch_int32_with_cleanup(
+                crate::kernel::program_try_catch_int32(
                     crate::kernel::program_skip(),
                     payload,
                     crate::kernel::program_skip(),
-                    true,
                 ),
             ),
         ),

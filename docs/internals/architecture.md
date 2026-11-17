@@ -165,7 +165,15 @@ forward C edges and C++ cleanup edges. A frontier carries its path state and
 obligations to the next source operation; a transfer does not execute skipped
 statements. C forward `goto` keeps its target and source attribution, while the
 C++ importer supplies checked destructor operations on normal returns and
-exceptional unwinding edges. The language frontends decide which edges are
+exceptional unwinding edges. A statement that may throw while destructible
+locals live is `ProgramStatement::UnwindCleanup { body, cleanup }`: on an
+`int32` exceptional exit from `body`, `cleanup` runs and the same exception
+continues (`program_unwind_continuation`). It is not a `try`: nothing is
+caught, no payload is bound, and traces show `body`. The source layout numbers
+its cleanup and the point where the exception continues, so a proof steps
+through them as statements; the proof cursor and evidence checking enter it as
+an `ExceptionalEntry::Unwind` frame, distinct from a source `try`'s
+`ExceptionalEntry::Catch(binding)`. The language frontends decide which edges are
 legal; the kernel does not infer cleanup or loan recovery from lexical scope
 alone.
 

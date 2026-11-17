@@ -65,7 +65,7 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
         &state,
         2,
         &[],
-        ReturnResourceComposition::RestoreEntryBorrows,
+        ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
         &PureFactContext::new(),
         &mut ExecutionBudget::beside_live_state(),
     )
@@ -296,7 +296,7 @@ fn return_roles_follow_skipped_guards_and_deferred_output_emission() {
         &state,
         4,
         &[],
-        ReturnResourceComposition::RestoreEntryBorrows,
+        ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
         &PureFactContext::new(),
         &mut ExecutionBudget::beside_live_state(),
     )
@@ -419,7 +419,7 @@ fn borrowed_composite_bodies_still_check_post_memory_against_the_retained_frame(
         "moving_borrow",
         function.contract_interface(),
         &[],
-        ReturnResourceComposition::RestoreEntryBorrows,
+        ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
         &facts,
         &mut ExecutionBudget::beside_live_state(),
     )
@@ -466,7 +466,7 @@ fn unmatched_entry_borrow_descriptions_do_not_authorize_restoration() {
         &state,
         2,
         &[],
-        ReturnResourceComposition::RestoreEntryBorrows,
+        ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
         &facts,
         &mut ExecutionBudget::beside_live_state(),
     )
@@ -483,7 +483,7 @@ fn unmatched_entry_borrow_descriptions_do_not_authorize_restoration() {
     let prepared = evaluated
         .restore_entry_borrows(
             frame,
-            ReturnResourceComposition::RestoreEntryBorrows,
+            ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
             &facts,
         )
         .unwrap();

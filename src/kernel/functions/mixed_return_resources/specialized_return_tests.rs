@@ -317,7 +317,7 @@ fn named_model_pointer_does_not_gain_parameter_borrow_custody() {
         &outputs,
         &[definition],
         &ExecutionState::new(),
-        ReturnResourceComposition::RestoreEntryBorrows,
+        ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
         &facts,
     )
     .unwrap();

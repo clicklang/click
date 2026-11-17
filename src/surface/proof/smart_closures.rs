@@ -4208,16 +4208,11 @@ fn source_backed_call_requirement_surface(
         "smart retained-have call source",
     )
     .ok()?;
-    // A frontend's cleanup edge (a C++ local with a destructor) wraps the
-    // source call; the call is its body.
+    // A call made while a C++ local with a destructor lives carries that
+    // destructor for its exceptional exit; the call is its body.
     let mut statement = &statement;
-    while let ProgramStatement::TryCatchInt32 {
-        try_body,
-        cleanup_unwind: true,
-        ..
-    } = statement
-    {
-        statement = try_body;
+    while let ProgramStatement::UnwindCleanup { body, .. } = statement {
+        statement = body;
     }
     let (callee, arguments) = match statement {
         ProgramStatement::Call {
