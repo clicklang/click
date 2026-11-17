@@ -148,10 +148,12 @@ fn exact_propagation_does_not_match_different_memory_states_or_types() {
         base: "propagation-cell".into(),
         offset: AddressOffset::Constant(0),
     };
-    let before = Memory::new().with_block("propagation-cell", 4).store(
-        pointer.clone(),
-        ProgramValue::Int32(MachineTerm::Variable(Variable(781_000))),
-    );
+    let before = SymbolicMemory::new()
+        .with_block("propagation-cell", 4)
+        .store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(781_000))),
+        );
     let after = before.clone().store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::Variable(Variable(781_001))),

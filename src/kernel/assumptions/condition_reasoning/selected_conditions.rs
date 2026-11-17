@@ -323,9 +323,9 @@ mod memory_condition_match_tests {
     #[test]
     fn compound_memory_condition_candidates_preserve_states() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let pointer = Address::symbolic(Variable(999_000));
-        let load = |memory: &Memory| {
+        let load = |memory: &SymbolicMemory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(pointer.clone()),

@@ -597,7 +597,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
 pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
     let ranges = evaluate_composite_resource_memory_ranges(
@@ -617,7 +617,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
 pub(in crate::kernel) fn evaluate_composite_resource_fact_propositions(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
@@ -636,7 +636,7 @@ pub(crate) struct InstantiatedCompositeResourceFacts {
 pub(crate) fn instantiate_composite_resource_facts(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
@@ -687,7 +687,7 @@ pub(crate) fn instantiate_private_member_body_facts(
 pub(super) fn instantiate_composite_resource_facts_with_state(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
     population_state: Option<&ExecutionState>,

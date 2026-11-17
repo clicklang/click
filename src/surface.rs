@@ -18,18 +18,18 @@ use crate::kernel::{
     FunctionContractClaimKey, FunctionContractClaimTarget, FunctionContractExecutionMode,
     FunctionExecutionCandidates, FunctionOutcome, FunctionSpecification, LoopEarlyExit, LoopEffect,
     LoopEffectCheck, LoopEffectSpan, LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit,
-    MachineTerm, Memory, MemoryRange, MemorySegment, ProgramExpression, ProgramFunction,
-    ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,
-    PropositionDerivation, PureFactContext, Resource,
-    ResourceAccessMode as KernelResourceAccessMode, ResourceContext, ResourceContextValidityError,
-    ResourceFact, ResourceFamily, ResourceSpec, ResourceStateSource, ResourceTransferRole, Sort,
-    SpecAlgebraicExpression, SpecExpression, SpecPoint, SpecPredicateArgument, SpecProposition,
-    SpecResource, StatementOutcome, SymbolicExecution, Term, TerminationRefusal, Theorem,
-    UnsuitableCallback, Variable, VerifiedLoopRule,
-    VerifiedPureTheorem as KernelVerifiedPureTheorem, abstract_execution_state_for_join,
-    assume_universally_quantified_pure_implication, contract_refinement_context, int32,
-    loop_invariants_hold_at_entry, program_assign, program_condition_fact_memories,
-    program_declare, program_do_while_with_invariant_and_effect_checks, program_function,
+    MachineTerm, MemoryRange, MemorySegment, ProgramExpression, ProgramFunction, ProgramStatement,
+    ProgramType, ProgramValue, ProofObligation, Proposition, PropositionDerivation,
+    PureFactContext, Resource, ResourceAccessMode as KernelResourceAccessMode, ResourceContext,
+    ResourceContextValidityError, ResourceFact, ResourceFamily, ResourceSpec, ResourceStateSource,
+    ResourceTransferRole, Sort, SpecAlgebraicExpression, SpecExpression, SpecPoint,
+    SpecPredicateArgument, SpecProposition, SpecResource, StatementOutcome, SymbolicExecution,
+    SymbolicMemory, Term, TerminationRefusal, Theorem, UnsuitableCallback, Variable,
+    VerifiedLoopRule, VerifiedPureTheorem as KernelVerifiedPureTheorem,
+    abstract_execution_state_for_join, assume_universally_quantified_pure_implication,
+    contract_refinement_context, int32, loop_invariants_hold_at_entry, program_assign,
+    program_condition_fact_memories, program_declare,
+    program_do_while_with_invariant_and_effect_checks, program_function,
     program_function_contract_entry_state, program_function_contract_refinement_arguments,
     program_function_contract_refinement_context, program_function_entry_state,
     program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
@@ -3431,7 +3431,7 @@ pub(crate) use binary_contract_expression;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickArrayRef {
-    memory: Memory,
+    memory: SymbolicMemory,
     pointer: Address,
     element_type: ProgramType,
 }
@@ -3670,7 +3670,7 @@ struct RecordedStates {
     cell_points: crate::persistent::PersistentMap<(u64, usize), ProgramPointSelector>,
     /// The memory of the state inserted last, against which the next insert
     /// finds the cells it changed.
-    last_memory: Option<crate::kernel::Memory>,
+    last_memory: Option<crate::kernel::SymbolicMemory>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -3817,7 +3817,7 @@ impl RecordedStates {
         }
         let before_state = self.get(&before).ok_or("missing footprint entry")?;
         let after_state = self.get(&after).ok_or("missing footprint exit")?;
-        let memory_is = |a: &crate::kernel::Memory, b: &crate::kernel::Memory| {
+        let memory_is = |a: &crate::kernel::SymbolicMemory, b: &crate::kernel::SymbolicMemory| {
             crate::kernel::intern_memory_ref(a) == crate::kernel::intern_memory_ref(b)
         };
         let covered = if start == end {
@@ -9749,7 +9749,7 @@ impl StructuralClause {
     /// declared-resource arguments, and the `decreases` measure may spell a
     /// proof `match` arm's bindings or a `let { ... } = unfold(...)` name, which are in
     /// scope for a loop written inside that arm exactly as for a `have` goal
-    /// there. Memory segments are left as written; they name C places.
+    /// there. SymbolicMemory segments are left as written; they name C places.
     pub(in crate::surface) fn with_substituted_bindings(
         &self,
         substitutions: &BinderMap<ContractExpression>,

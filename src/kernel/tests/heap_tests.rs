@@ -13,7 +13,7 @@ fn free_retires_a_cached_interior_alias() {
         ConditionTerm::pointer_equal(alias.clone(), base.offset_by_bytes(8)),
         true,
     ));
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(12))
         .unwrap()
         .with_block(base.base.clone(), 12)
@@ -31,7 +31,7 @@ fn free_retires_a_cached_interior_alias() {
 fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
     let base = Address::symbolic(Variable(945_010));
     let cell = Address::symbolic(Variable(945_011));
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(12))
         .unwrap()
         .store(
@@ -78,7 +78,7 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
         base: AddressBase::Heap(950_002),
         offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
         .unwrap()
         .store(cell.clone(), ProgramValue::pointer(value));
@@ -698,7 +698,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(Address::null()))
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("arg-memory", 4)
                 .store(existing.clone(), int32(37)),
         );
@@ -808,7 +808,7 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
     ));
     assert!(pointers_proven_distinct_for_memory_resolution(
         &first_pointer,
-        &Memory::local_pointer("local"),
+        &SymbolicMemory::local_pointer("local"),
         &PureFactContext::new(),
     ));
     assert!(pointers_proven_distinct_for_memory_resolution(
@@ -877,7 +877,7 @@ mod a_free_reaches_every_element_of_its_block {
 
     /// The rule's answer about one cell for the `free` that produced
     /// `freed`, inside the one scope that may read these edges at all.
-    fn effect_of_the_free(freed: &Memory, cell: &Address) -> StepEffect {
+    fn effect_of_the_free(freed: &SymbolicMemory, cell: &Address) -> StepEffect {
         let produced = crate::kernel::intern_memory(freed.clone());
         let derivation = produced.derivation().expect("the free records an edge");
         let no_facts = PureFactContext::new();
@@ -897,7 +897,7 @@ mod a_free_reaches_every_element_of_its_block {
         })
     }
 
-    fn freed_sixteen_byte_allocation() -> (Memory, Address) {
+    fn freed_sixteen_byte_allocation() -> (SymbolicMemory, Address) {
         let state = successful_heap_allocation_state();
         let local_native_output_849 = state.locals().get_native("p");
         let Some(ProgramValue::Pointer(pointer)) = local_native_output_849.as_deref() else {
@@ -1240,7 +1240,7 @@ fn free_of_external_allocation_forgets_cells_without_separation() {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(908_001)), 4),
     };
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .store(unrelated.clone(), int32(37))
         .with_heap_allocation_claim(allocation_base.clone(), AllocationSize::int32(16))
         .expect("external allocation claim should be fresh");
@@ -1301,7 +1301,7 @@ fn interface_heap_join_retains_potential_live_allocation() {
         offset: AddressOffset::Constant(0),
     };
     let retained = ExecutionState::new().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_heap_allocation_claim(allocation_base.clone(), AllocationSize::int32(16))
             .expect("the allocation claim should be fresh"),
     );
@@ -1615,7 +1615,7 @@ fn free_preserves_a_separate_recursive_tail_with_the_same_symbolic_block() {
             MachineTerm::constant(4),
         )))
         .unchecked_with_fact(tail_resource.clone());
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(16))
         .expect("symbolic allocation claim should be fresh");
     let state = ExecutionState::new()
@@ -2046,7 +2046,7 @@ fn freeing_through_one_spelling_retires_the_equal_spelling_too() {
         true,
     ));
 
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .store(alias.clone(), int32(7))
         .with_block(fresh.base.clone(), 8)
         .store(fresh.clone(), int32(11))
@@ -2189,11 +2189,9 @@ fn store_union_forgets_aliased_raw_cell() {
         ConditionTerm::pointer_equal(alias.clone(), base.clone()),
         true,
     ));
-    let memory = Memory::new().store(alias.clone(), int32(7)).store_union(
-        base.clone(),
-        ProgramType::Int16,
-        crate::kernel::int16(42),
-    );
+    let memory = SymbolicMemory::new()
+        .store(alias.clone(), int32(7))
+        .store_union(base.clone(), ProgramType::Int16, crate::kernel::int16(42));
     assert!(memory.has_union_overlay_at(&base));
     assert_eq!(memory.known_value(&alias), None);
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -2204,7 +2202,7 @@ fn store_union_forgets_aliased_raw_cell() {
         )
     ));
 
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .store_union(base.clone(), ProgramType::Int16, crate::kernel::int16(42))
         .store_with_context(alias.clone(), int32(7), &assumptions);
     assert_eq!(memory.known_value(&alias), Some(int32(7)));
@@ -2365,7 +2363,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
     let alias = Address::symbolic(Variable(943_001));
     let field = base.offset_by_bytes(4);
     let alias_field = alias.offset_by_bytes(4);
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(8))
         .unwrap();
     let assumptions = PureFactContext::new()
@@ -2430,7 +2428,7 @@ fn naming_an_uninitialized_local_cell_does_not_initialize_it() {
         base: "local:uninitialized".into(),
         offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("local:uninitialized", 4);
+    let memory = SymbolicMemory::new().with_block("local:uninitialized", 4);
     let name = canonical_form_of_load(
         intern_memory(memory.clone()),
         address.clone(),
@@ -2483,7 +2481,7 @@ fn an_unplaced_heap_store_keeps_the_elements_it_may_alias_initialized() {
         base: base.base.clone(),
         offset: AddressOffset::scale_int32(index, 4),
     };
-    let store = |memory: Memory, pointer: Address, value: u32| {
+    let store = |memory: SymbolicMemory, pointer: Address, value: u32| {
         memory
             .without_possible_aliasing_cells(&pointer, 4, &assumptions)
             .store_with_context(pointer, int32(value), &assumptions)
@@ -2966,7 +2964,7 @@ fn viewability_alone_cannot_certify_initialization_of_external_storage() {
         ProgramType::Int32Pointer,
     ] {
         for initialized in [false, true] {
-            let mut memory = Memory::new();
+            let mut memory = SymbolicMemory::new();
             if initialized {
                 memory = memory.with_initialized_object(&pointer, value_type.byte_width());
             }
@@ -2990,13 +2988,13 @@ fn typed_read_initialization_accepts_only_complete_cached_byte_coverage() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address::symbolic(Variable(9_492_102));
     for count in [0, 1, 2] {
-        let memory = Memory::new().with_seeded_cells(
+        let memory = SymbolicMemory::new().with_seeded_cells(
             pointer.clone(),
             4,
             ProgramType::Int32,
             0,
             count,
-            crate::kernel::intern_memory(Memory::new()),
+            crate::kernel::intern_memory(SymbolicMemory::new()),
         );
         let context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),

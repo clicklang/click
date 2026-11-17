@@ -63,7 +63,7 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                 let (resources, inserted) = ResourceContext::new_with_equalities(&facts)
                     .unchecked_with_facts_and_occurrences(owners);
                 let retained_source = inserted.last().unwrap().1;
-                let memory = Memory::new()
+                let memory = SymbolicMemory::new()
                     .with_block(guards.base.clone(), 16)
                     .initialize_scalar_array(
                         &guards,

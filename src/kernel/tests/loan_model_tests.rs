@@ -6,7 +6,7 @@
 //!
 //! V14 design handoff: the extension model treats a context as an abstract
 //! sequential actor and explores interleavings only at explicit transition
-//! boundaries. Memory is a bounded array of initialized byte cells; ranges
+//! boundaries. SymbolicMemory is a bounded array of initialized byte cells; ranges
 //! are nonempty, concrete, and at most eight cells wide in the witnesses.
 //! The original loan search remains depth five with a 50,000-state cap, and
 //! extension identities are eight-bit counters with checked exhaustion. This

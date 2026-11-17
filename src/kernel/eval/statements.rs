@@ -5558,7 +5558,7 @@ fn local_declaration_pointer(
         state.set_memory(state.memory.without_local_block(&previous.base));
         return Ok(fresh_local_object_identity(state, name));
     }
-    let unnumbered = Memory::local_pointer(name);
+    let unnumbered = SymbolicMemory::local_pointer(name);
     if state.enclosing_frame_holds_locals()
         || state.memory.local_block_is_occupied(&unnumbered.base)
     {
@@ -5609,7 +5609,7 @@ fn fresh_local_object_identity(state: &mut ExecutionState, name: &BindingName) -
         *state = state
             .clone()
             .with_next_local_lifetime(lifetime.saturating_add(1));
-        let pointer = Memory::local_lifetime_pointer(lifetime, name);
+        let pointer = SymbolicMemory::local_lifetime_pointer(lifetime, name);
         if !state.memory.local_block_is_occupied(&pointer.base) {
             return pointer;
         }
@@ -6179,7 +6179,7 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
     refresh_scalar_local_binding(state, name, slot, program_type, assumptions);
 }
 
-/// Reconcile one address-backed scalar after a checked call effect. Memory
+/// Reconcile one address-backed scalar after a checked call effect. SymbolicMemory
 /// decides its current value and initialization; a postcondition is not a store.
 pub(in crate::kernel) fn refresh_scalar_local_from_memory(
     state: &mut ExecutionState,

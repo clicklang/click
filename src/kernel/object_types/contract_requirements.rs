@@ -457,7 +457,7 @@ mod tests {
                 interface.parameters(),
                 interface.object_type_requirements(),
                 &mut normal,
-                &Memory::new(),
+                &SymbolicMemory::new(),
                 &PureFactContext::new()
             )
             .is_none()
@@ -471,7 +471,7 @@ mod tests {
                 "f",
                 &interface,
                 &mut captured,
-                &Memory::new(),
+                &SymbolicMemory::new(),
                 &PureFactContext::new()
             )
             .is_some()
@@ -482,7 +482,7 @@ mod tests {
                 "f",
                 &interface,
                 &mut captured,
-                &Memory::new(),
+                &SymbolicMemory::new(),
                 &PureFactContext::new()
             )
             .is_none()

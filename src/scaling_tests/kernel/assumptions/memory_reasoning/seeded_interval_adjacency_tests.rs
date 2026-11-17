@@ -11,7 +11,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
         base: "run-adjacency".into(),
         offset: AddressOffset::Constant(0),
     };
-    let source = crate::kernel::intern_memory(Memory::new());
+    let source = crate::kernel::intern_memory(SymbolicMemory::new());
     let context = PureFactContext::new();
     let mut costs = Vec::new();
     for size in [16, 64, 4096, 22208, 1048576] {
@@ -28,7 +28,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
                 source.clone(),
                 holes,
             );
-            let mut memory = Memory::new();
+            let mut memory = SymbolicMemory::new();
             std::sync::Arc::make_mut(&mut memory.cells).add_run(run);
             let memory = memory.store(base.offset_by_bytes(size), crate::kernel::uint8(7));
             let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {

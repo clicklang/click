@@ -50,7 +50,7 @@ fn model_argument_guard_work(prepare: bool) {
                 crate::kernel::Variable(90_000),
             )),
         )]);
-        let memory = crate::kernel::Memory::new();
+        let memory = crate::kernel::SymbolicMemory::new();
         let arrays = ClickArrayRefs::new();
         let lowered = lower_pure_theorem_proposition(
             "argument guard scaling",

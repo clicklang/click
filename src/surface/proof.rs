@@ -216,7 +216,7 @@ mod certificate_tests {
             offset: AddressOffset::Constant(0),
         };
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );
@@ -296,8 +296,8 @@ mod certificate_tests {
 
     #[test]
     fn state_index_finds_a_late_exact_selector_inside_a_quantifier() {
-        let early_memory = Memory::new().with_block("early", 4);
-        let target_memory = Memory::new().with_block("target", 4);
+        let early_memory = SymbolicMemory::new().with_block("early", 4);
+        let target_memory = SymbolicMemory::new().with_block("target", 4);
         let pointer = Address {
             base: "target".into(),
             offset: AddressOffset::Constant(0),
@@ -350,7 +350,7 @@ mod certificate_tests {
 
     #[test]
     fn missing_state_form_reports_a_concise_indexed_failure() {
-        let target_memory = Memory::new().with_block("target", 4);
+        let target_memory = SymbolicMemory::new().with_block("target", 4);
         let pointer = Address {
             base: "target".into(),
             offset: AddressOffset::Constant(0),
@@ -368,7 +368,8 @@ mod certificate_tests {
             },
             true,
         );
-        let state = ExecutionState::new().with_memory(Memory::new().with_block("current", 4));
+        let state =
+            ExecutionState::new().with_memory(SymbolicMemory::new().with_block("current", 4));
 
         let facts = PureFactStore::from_ordered(&[]);
         let error = checked_surface_comparison_fact_in_state_with_indexed_facts(
@@ -397,7 +398,7 @@ mod certificate_tests {
                 .contains("0 exact and 0 compatible recorded states"),
             "{error}"
         );
-        assert!(!error.message().contains("Memory"), "{error}");
+        assert!(!error.message().contains("SymbolicMemory"), "{error}");
     }
 
     #[test]
@@ -2720,7 +2721,7 @@ fn evaluate_entry_resource_context(
     include_owned_composite_cores: Option<resources::OwnedCores>,
     claim_label: &str,
     entry_resources: &ResourceContext,
-    entry_memory: &Memory,
+    entry_memory: &SymbolicMemory,
 ) -> Result<(ExecutionState, Vec<Proposition>, Vec<Proposition>), ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
     let (resource_specs, _) = crate::surface::verification::function_resource_summary(

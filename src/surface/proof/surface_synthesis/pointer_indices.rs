@@ -169,7 +169,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let _scope = SurfaceSynthesisScope::enter();
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Box::new(Address::symbolic(Variable(1014000))),
             crate::kernel::LoadKind::Int32,
         );

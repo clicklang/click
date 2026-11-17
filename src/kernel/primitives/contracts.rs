@@ -2568,7 +2568,7 @@ impl MemoryRange {
     /// count is the unsigned 64-bit `(end - start) * width`, written by
     /// [`wide_loadable_byte_count`] and read back by
     /// [`wide_loadable_element_count`].
-    pub(crate) fn loadable_fact(&self, memory: &Memory) -> Proposition {
+    pub(crate) fn loadable_fact(&self, memory: &SymbolicMemory) -> Proposition {
         match self.wide_bounds() {
             None => {
                 let (base, bytes) = self.byte_footprint();

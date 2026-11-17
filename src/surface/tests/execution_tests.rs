@@ -1365,7 +1365,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
         offset: AddressOffset::Constant(0),
     };
     let initial_memory = memory_with_symbolic_loadable_cells(
-        Memory::new(),
+        SymbolicMemory::new(),
         &std::collections::BTreeMap::from([(
             "p".to_string(),
             ConcreteMemoryRangeSeed {
@@ -2590,9 +2590,11 @@ test_batches! {
 /// is found by its own path's point, whatever the memories hold.
 #[test]
 fn recorded_points_are_named_by_the_point_each_path_reached() {
-    let start = ExecutionState::new().with_memory(crate::kernel::Memory::new());
-    let left = start.clone().with_memory(crate::kernel::Memory::new());
-    let right = start.with_memory(crate::kernel::Memory::new());
+    let start = ExecutionState::new().with_memory(crate::kernel::SymbolicMemory::new());
+    let left = start
+        .clone()
+        .with_memory(crate::kernel::SymbolicMemory::new());
+    let right = start.with_memory(crate::kernel::SymbolicMemory::new());
     assert_eq!(left, right);
     let mut states = RecordedStates::default();
     states.insert(ProgramPointSelector::Mark("left".into()), left.clone());

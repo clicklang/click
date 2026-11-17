@@ -5,8 +5,8 @@ mod callback_signature_tests;
 mod one_byte_one_name_tests;
 
 fn checked_memory_load_equality(
-    left: &Memory,
-    right: &Memory,
+    left: &SymbolicMemory,
+    right: &SymbolicMemory,
     pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -57,8 +57,8 @@ pub(in crate::kernel) fn explicit_signed_elements(
 /// certificate. Tests supply the selected transition and prove its separation;
 /// the logical read producers provide both observations without reconstruction.
 pub(in crate::kernel) fn explicit_frame(
-    before: &Memory,
-    after: &Memory,
+    before: &SymbolicMemory,
+    after: &SymbolicMemory,
     address: &Address,
     ty: ProgramType,
     effects: &[Proposition],
@@ -109,7 +109,7 @@ pub(in crate::kernel) fn explicit_frame(
         right: Box::new(kept),
     };
     let _reads = ReadScope::enter();
-    let observe = |memory: &Memory| {
+    let observe = |memory: &SymbolicMemory| {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
             memory,
             address.clone(),
