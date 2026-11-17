@@ -216,7 +216,7 @@ expansion output.
   `exists (k: int32) { P(k) }`, introducing `k` and its body as proof facts.
   Multiple typed bindings are allowed. The existential must already be
   established; use `have` first when it is not.
-- `witness { k: expression };`: prove the current existential goal by substituting
+- `witness(expression);`: prove the current existential goal by substituting
   the given int32 expression for binder `k`.
 - `known();`: close a goal already present as the same semantic fact; it
   does not normalize or transport a new fact.
@@ -392,7 +392,7 @@ typical existential-introduction proof names a witness:
 ```click
 ensures found_zero: (0..n).any(|k| { k == result }) by {
     step_until(function.exit);
-    witness { k: 0 };
+    witness(0);
     solve();
 }
 ```
@@ -406,8 +406,8 @@ contract clause by name or position, and it does not prove the existential.
 requires exists (x: Integer, y: Integer) { x == y };
 ensures exists (a: Integer, b: Integer) { a == b } by {
     obtain (left: Integer, right: Integer) { left == right }
-    witness { a: left };
-    witness { b: right };
+    witness(left);
+    witness(right);
     known();
 }
 ```
@@ -424,7 +424,7 @@ ensures opened_contains: bytes::contains(p, 0, n as uint64, 'x') by {
     obtain (found: uint64) {
         0u64 <= found and found < n as uint64 and p[found] == 'x'
     }
-    witness { k: found };
+    witness(found);
     solve();
 }
 ```

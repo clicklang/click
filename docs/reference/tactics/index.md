@@ -1127,7 +1127,7 @@ step is still checked.
 | `cases { A => { ... } B => { ... } }` | control | Specialized | Prove a written collection of cases. | [Reference](#explicit-cases) |
 | `open(resource) { ... }` | control | Specialized | Unfold a resource for a nested proof. | [Reference](#scoped-resource-opening) |
 | `open(...) { ... } by { ... }` | control | Expansion output | Supply the proof that restores an opened resource. | [Reference](#scoped-resource-opening-with-restoration) |
-| `witness { name: value, ... };` | simple | Specialized | Supply values for existential binders. | [Reference](#existential-witnesses) |
+| `witness(value, ...);` | simple | Specialized | Supply values for existential binders. | [Reference](#existential-witnesses) |
 | `obtain (name: Type, ...) { P }` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
 
 `sorry()` is a dev-only proof hole, not a tactic for committed proofs: it
@@ -1165,8 +1165,9 @@ unfold alone closed the goal
 closure is refused by naming the tactic that closed it
 (`mdtests/tactic_after_closed_goal_is_named.md`).
 
-`induct` is available only in a pure theorem, must be the first tactic, and
-names a proof-local hypothesis. The algebraic form is the enclosing control
+Scalar `induct` is available only in a pure theorem and may follow earlier
+proof steps while the original theorem goal remains focused. Its hypothesis
+is introduced at that step. The algebraic form is the enclosing control
 tactic and therefore the only top-level tactic; its constructor arms contain
 the proof steps. It is never inserted by `solve` or the implicit closer.
 
@@ -1383,7 +1384,7 @@ An argument nothing fixes stays folded
 
 An existential `exists v { x == C(.., v, ..) }` whose `x` a fact fixes to a
 constructor of the same variant, `x == C(.., t, ..)`, takes `t` as its witness:
-`solve` writes `witness { v: t }` and closes the instance. A constant payload is
+`solve` writes `witness(t)` and closes the instance. A constant payload is
 written as itself and any other value by the local, parameter or binder that
 holds it; a value of another variant gives no witness
 ([`solve_takes_a_known_constructor_payload_as_the_witness.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_takes_a_known_constructor_payload_as_the_witness.md),
@@ -2831,12 +2832,12 @@ after local proof prefixes and all-impossible matches remain unsupported.
 
 **Form:** `induct(n) as ih`
 
-**Core.** As the first step of a pure theorem over an `int32` or `uint64` parameter
-`n`, introduce a strong induction hypothesis named `ih`. The signed measure
+**Core.** At a pure theorem's original goal, introduce a strong induction
+hypothesis named `ih` over an `int32` or `uint64` parameter `n`. The signed measure
 requires a nonnegative domain; the unsigned measure has that domain intrinsically.
 
-**Accepts** a pure theorem `ensures ... by { ... }` script whose first tactic is
-`induct(n) as ih`, when:
+**Accepts** a pure theorem `ensures ... by { ... }` script containing one
+top-level `induct(n) as ih`, when:
 
 - `n` names a theorem parameter of type `int32` or `uint64`. Other parameters
   of any type, including `Integer`, may sit beside it.
@@ -2849,33 +2850,34 @@ It adds one fact, `ih`: for every `m` of the measure's type, `m >= 0` (signed
 only), `m < n`, and every theorem requirement at `m`, together with the extent
 halves of each range that requirement names at `m`, imply the theorem's goal
 at `m`. Every other parameter keeps its current value. The goal is unchanged.
-The script then uses `ih` through `apply(ih(m))` or
+Earlier helper proofs may precede `induct`; the hypothesis is unavailable
+before its declaration. The script then uses `ih` through `apply(ih(m))` or
 `apply(ih(m)) using { ... }`, at its top level and inside nested `if`, `both`,
 `cases`, `have`, and `match` blocks.
 
 **Outside it**, with what to write instead:
 
-- `induct` after another tactic, or a second `induct` in the same script: make
-  it the first tactic and induct once.
+- A second `induct` in the same script: induct once.
+- A changed goal, after `intro` or a goal-changing `rewrite`: introduce
+  induction while the original theorem goal remains focused.
 - A parameter of another C width (`uint32`, `int64`, ...), an `Integer`, or an
   algebraic value: induct on an `int32` or `uint64` parameter, or use
   `induct(xs) as ih { ... }` for an algebraic one.
 - A signed domain that only follows from other facts, such as `0 <= m` and
-  `m <= n`: add `requires n >= 0;` and prove that requirement where the
-  theorem is applied.
+  `m <= n`: prove `have n >= 0;` before `induct`.
 - `induct` in a C function proof: state the property as a pure theorem and
   apply it.
 
 **Failure, checking, and tools:**
 
-A later position, unsupported parameter type, or unproved signed nonnegative
-domain fails with a message naming the case. `induct` in a C function proof
-is refused with the generic "no checked proof driver accepts this proof
+An unsupported parameter type, changed goal, repeated induction, or unproved
+signed nonnegative domain fails with a message naming the case. `induct` in
+a C function proof is refused with the generic "no checked proof driver accepts this proof
 script's shape". Click opens the
 induction rule; expansion is unchanged, and profiling charges the structural
 setup.
 
-**Checked examples:** [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md),
+**Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md),
 [`an_induction_hypothesis_applies_inside_a_have.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_inside_a_have.md),
 [`an_induction_hypothesis_applies_inside_match_arms.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_inside_match_arms.md),
 [`an_induction_hypothesis_applies_in_a_have_and_a_match_nested_either_way.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_in_a_have_and_a_match_nested_either_way.md),
@@ -2921,7 +2923,7 @@ fails. A premise that is not an available fact is a search miss: the refusal
 says so and names the `have` that states the premise. Click checks the
 selected operations; expansion adds a `using` block.
 
-**Checked examples:** [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md)
+**Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md)
 
 ### Induction hypotheses with selected premises
 
@@ -3202,19 +3204,22 @@ prints the body's checked steps; a smart tactic written in the `by` expands with
 
 ### Existential witnesses
 
-**Form:** `witness { name: value, ... };`
+**Form:** `witness(value, ...);`
 
-**Specialized.** Write it for an existential goal, naming the value that
-satisfies it. On an existential goal, instantiate each named binder with its
-value, in the order written, and continue with the instantiated body. One
-`witness` can supply every binder of `exists (x: T, y: U) { ... }`.
+**Specialized.** Write it for an existential goal, supplying values for its
+outermost binders in declaration order. Continue with the instantiated body.
+One `witness` can supply every binder of `exists (x: T, y: U) { ... }` or
+just a nonempty prefix, leaving the remaining existential goal open.
 
 **Accepts** a goal whose outermost form is `exists (name: T) { B }` or
 `(lo..hi).any(|name| { B })`, in a pure theorem or a C proof, when:
 
-- Each written name is the goal's outermost binder at that point:
-  `witness { x: 3, y: 4 }` on `exists (x: int32, y: int32) { ... }` takes `x`,
-  then `y`. Several `witness` steps may supply the binders one at a time.
+- Values follow the outermost binders: `witness(3, 4)` on
+  `exists (x: int32, y: int32) { ... }` takes `x`, then `y`.
+  `witness(3); witness(4);` has the same effect. Intermediate proof steps
+  may appear between them. Binder names do not appear in the tactic.
+  Remaining binders keep their declared types, including when an Integer
+  binder precedes an enum binder.
 - Each value has its binder's type: a C integer of exactly that type (`3u64`
   for `uint64`), a pointer, an `Integer` expression such as `0` or
   `to_integer(n)` for `Integer`, or an algebraic value of that datatype.
@@ -3227,19 +3232,18 @@ checked; prove it next.
 
 - An existential below the top of the goal, such as `A and exists ...`: split
   it with `both` first.
-- Binders named out of their declared order: name them in order.
 - A value of another type, such as an `int32` variable for a `uint64` or
   `Integer` binder: convert it (`to_integer(n)`) or write the suffixed literal.
 
 **Failure, checking, and tools:**
 
-A wrong binder, ill-typed value, or nonexistential goal fails. On a
-nonexistential pure goal the message reads "pure `witness` currently requires
-an Integer existential proposition" even though C integer and algebraic
-binders are accepted. Click records the exact witness; expansion is unchanged,
-and profiling charges one instantiation.
+An empty argument list, ill-typed value, or nonexistential goal fails.
+Extra arguments fail when no existential binder remains. A nonexistential
+pure goal reports "`witness` requires an existential proposition goal".
+Click records the exact witness; expansion prints `witness(value)` steps,
+and profiling charges one instantiation per value.
 
-**Checked examples:** [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_names_binders_in_their_order.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_names_binders_in_their_order.md)
+**Checked examples:** [`witness_preserves_remaining_binder_types.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_preserves_remaining_binder_types.md), [`witness_values_follow_the_goal_binders.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_values_follow_the_goal_binders.md), [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_reversed_values_leave_a_false_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_reversed_values_leave_a_false_goal.md)
 
 ### Obtaining witnesses
 

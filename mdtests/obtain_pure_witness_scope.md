@@ -10,7 +10,7 @@ theorem obtained_int32(x: int32) {
         have forall (k: int32) { k == k } by { intro(); normalize(); }
         instantiate(forall (j: int32) { j > x implies j > 1000 }, k);
         have k > 1000;
-        witness { z: k };
+        witness(k);
         known();
     }
 }
@@ -20,7 +20,7 @@ theorem obtained_uint32(x: uint32) {
     ensures exists (z: uint32) { z == x } by {
         obtain (k: uint32) { k == x }
         have k == x by known();
-        witness { z: k };
+        witness(k);
         known();
     }
 }
@@ -30,7 +30,7 @@ theorem obtained_int64(x: int64) {
     ensures exists (z: int64) { z == x } by {
         obtain (k: int64) { k == x }
         have k == x by known();
-        witness { z: k };
+        witness(k);
         known();
     }
 }
@@ -40,7 +40,7 @@ theorem obtained_uint64(x: uint64) {
     ensures exists (z: uint64) { z == x } by {
         obtain (k: uint64) { k == x }
         have k == x by known();
-        witness { z: k };
+        witness(k);
         known();
     }
 }
@@ -50,7 +50,7 @@ theorem obtained_integer(x: Integer) {
     ensures exists (z: Integer) { z == x } by {
         obtain (k: Integer) { k == x }
         have k == x by known();
-        witness { z: k };
+        witness(k);
         known();
     }
 }
@@ -60,7 +60,7 @@ theorem obtained_algebraic(x: Nat) {
     ensures exists (z: Nat) { z == x } by {
         obtain (k: Nat) { k == x }
         have k == x by known();
-        witness { z: k };
+        witness(k);
         known();
     }
 }
@@ -70,7 +70,7 @@ theorem obtained_pointer(x: int32*) {
     ensures exists (z: int32*) { z == x } by {
         obtain (k: int32*) { k == x }
         have k == x by known();
-        witness { z: k };
+        witness(k);
         known();
     }
 }

@@ -8,11 +8,6 @@ pub enum SurfaceBinder {
     Generated(GeneratedBinderId),
 }
 impl SurfaceBinder {
-    pub(super) fn matches_witness_label(&self, hint: Option<&str>, label: &str) -> bool {
-        hint.or_else(|| self.written())
-            .is_none_or(|name| name == label)
-    }
-
     pub(crate) fn fresh() -> Self {
         Self::Generated(GeneratedBinderId::fresh())
     }

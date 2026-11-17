@@ -1505,9 +1505,7 @@ impl<'a> Proof<'a> {
         let expected_goal =
             self.lower_surface_proposition(&setup.surface_goal, "induction theorem goal")?;
         if self.goal() != Some(&expected_goal) {
-            return Err(
-                self.step_error("`induct` must be the first step of the pure theorem proof")
-            );
+            return Err(self.step_error("`induct` requires the original theorem goal"));
         }
         match context.theorem_context.values.get(parameter) {
             Some(ProgramValue::Int32(current)) => {
