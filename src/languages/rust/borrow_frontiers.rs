@@ -221,6 +221,9 @@ impl CheckedScalarReferenceEnd<'_> {
             })
             .collect()
     }
+    pub fn import_identity(&self) -> &str {
+        self.import_identity
+    }
     pub fn function(&self) -> &Function {
         self.function
     }

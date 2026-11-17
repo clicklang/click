@@ -912,11 +912,7 @@ impl<'a> Proof<'a> {
                     );
                 }
             }
-            // A clause that holds without facts, such as `p == identity` once
-            // both name the same pointer, owes no proof.
-            for clause in rewrite.body_clauses.iter().filter(|clause| {
-                !crate::kernel::proposition_holds_without_facts(&clause.proposition)
-            }) {
+            for clause in &rewrite.body_clauses {
                 let declared = context.resource_environment.fold_source(instance.name())?;
                 let body = match &clause.arm {
                     None => &declared.body,
