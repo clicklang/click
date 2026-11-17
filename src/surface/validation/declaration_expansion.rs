@@ -2021,14 +2021,7 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                 .into_iter()
                 .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
                 .collect::<Result<Vec<_>, _>>()?,
-            close_proof: open
-                .close_proof
-                .map(|body| {
-                    body.into_iter()
-                        .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?,
+            deferred_tail: open.deferred_tail,
         })),
         ProofTactic::If(proof_if) => {
             let condition =
