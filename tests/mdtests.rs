@@ -48,6 +48,8 @@ const NIGHTLY: &[&str] = &[
     "widened_unsigned_sum_returned_identity.md",    // 1.19s focused: explicit returned-sum identity
     "widened_unsigned_sum_observation_identity.md", // 0.63s focused: widening and reassociation
     "aligned_address_word_library.md", // 0.9s focused: 36 explicit word and scalar-pointer law applications
+    "loop_numeric_descent_on_exit.md", // 1.09s focused: split final and continuing preservation paths
+    "loop_numeric_descent_on_generated_exit.md", // 0.58s in parallel: generated preservation of a false next test
     "a_returned_member_domain_supports_a_logical_read.md", // 2.3s: member-result resource fold and logical read
     "scalar_induction_after_helper_facts.md", // 0.78s in the parallel induction fixture selection
     "witness_mixed_type_values.md", // 1.36s focused: pointer, Integer, and machine binders
