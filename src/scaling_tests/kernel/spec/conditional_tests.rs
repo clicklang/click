@@ -137,7 +137,9 @@ fn nested_closed_order_conditionals_lower_with_linear_work() {
                 .collect::<Vec<_>>();
             while layer.len() > 1 {
                 layer = layer
-                    .as_chunks::<2>().0.iter()
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|pair| closed_order_if(pair[0].clone(), pair[1].clone(), truth))
                     .collect();
             }
