@@ -141,7 +141,7 @@ returned value, and the `have` proves a fact there; the implicit tail closes
 the contract's claims.
 
 Current tactics. The [proof tactics reference](../reference/tactics/index.md) is the
-authoritative inventory and classifies each spelling as simple, smart, or
+authoritative inventory and classifies each form as simple, smart, or
 control flow. Its [core tactics](../reference/tactics/index.md#core-tactics)
 are the fifteen or so a hand-written proof needs; the rest are specialized or
 expansion output.
@@ -185,9 +185,9 @@ expansion output.
   the standard library or current file. It looks each requirement up among
   the current facts and proves none: a requirement it cannot find is a search
   miss, so state it first with `have P by { ... }`. It adds the theorem's
-  conclusions and never changes the resource context. This bare spelling is
+  conclusions and never changes the resource context. This bare form is
   smart because it searches for its premises.
-- `apply(theorem_name(args...)) using { P; ... }`: the simple spelling,
+- `apply(theorem_name(args...)) using { P; ... }`: the simple form,
   drawing premises only from the listed facts. Expansion rewrites bare `apply`
   into this form.
 - `have proposition by { ... }`: run a scoped fixed-state proof and add its proposition
@@ -228,9 +228,9 @@ expansion output.
   certified atomic transport rule to establish the stated target fact at the
   current statement frontier. Conditions use framing; structural memory facts
   such as `viewable(...)` use the certified execution effects. Like `apply`,
-  this bare spelling is smart.
+  this bare form is smart.
 - `transport(source, target) using { P; ... }`: the simple, exact-premise
-  spelling of the same rule.
+  form of the same rule.
 - `solve() using { Q; ... }`: smart simplification restricted to exactly the
   listed proposition facts. It tries arithmetic over them last, and a miss
   adds arithmetic's reason. `solve() using {}` reads no facts from the
@@ -630,7 +630,7 @@ Failure messages usually include:
 - pure facts
 - resource facts, when the failing tactic has a current resource context
 - remaining proof obligations
-- the goal a failed `solve` could not establish, in source spelling
+- the goal a failed `solve` could not establish, in source form
 
 Practical approach:
 

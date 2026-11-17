@@ -101,7 +101,7 @@ impl<'a> SpecScope<'a> {
         }
     }
 
-    fn without_values<'n>(
+    fn without_values(
         self,
         names: impl IntoIterator<Item = impl Into<BindingName>>,
     ) -> crate::persistent::PersistentMap<BindingName, KernelTerm> {
@@ -1300,7 +1300,7 @@ fn wrap_spec_universal_path(
 ) -> SpecPropositionPath {
     let (body, guards) = wrap_path_context_with_introductions(path.proposition, &path.facts, &[]);
     let mut introductions = vec![LoweringIntroduction::WrittenUniversal {
-        name: binder.name.clone().into(),
+        name: binder.name.clone(),
         variable: binder.variable,
         pointer: binder.pointer,
         integer: binder.integer,
@@ -7027,7 +7027,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             paths
         }
         SpecExpression::ProgramExpression(ProgramExpression::Variable(name))
-            if scope.values.and_then(|values| values.get(&name)).is_some() =>
+            if scope.values.and_then(|values| values.get(name)).is_some() =>
         {
             vec![SpecExpressionPath {
                 value: scope.values.unwrap().get(name).unwrap().clone().into(),

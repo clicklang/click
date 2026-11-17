@@ -612,6 +612,7 @@ impl LoopFinalExitCandidate {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn new(state: ExecutionState, pure_facts: Vec<Proposition>) -> Self {
         crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {

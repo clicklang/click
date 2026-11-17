@@ -178,7 +178,7 @@ Click sets the standard, target, exception and RTTI modes, the project's
 [optimization level](#optimization-level), and at an optimizing level
 `-fno-strict-aliasing`, as for C. A unit's or source's `args` may not name
 them, except that, as for C, they may repeat the project's level. Each other argument must be one of these, and any other is refused with
-its position and spelling:
+its position and text:
 
 | Arguments | Class | Reason |
 | --- | --- | --- |
@@ -469,7 +469,7 @@ int32 increment(int32& value) {
 for a contract that says two references alias (`requires &a == &b;`) or that a
 stored pointer points at one. A struct reference names its fields as
 `state.field`. Writing `int32* value` for an `int&` is a signature mismatch
-that names both spellings; a C++ `int*` parameter stays a pointer. A member
+that names both types; a C++ `int*` parameter stays a pointer. A member
 function's receiver is the pointer `this`, as in C++: `this->fee`,
 `owns *this`.
 
@@ -537,7 +537,7 @@ writes its referent; it does not rebind the alias.
 
 Native element references are `int&`, `unsigned int&`, `unsigned char&` and
 `std::byte&`, each possibly `const`, written `int32&`, `uint32&` and `uint8&`
-in the sidecar. A C++ sidecar may also spell `std::byte` itself, in a head,
+in the sidecar. A C++ sidecar may also write `std::byte` itself, in a head,
 contract or `sizeof`: it is `uint8`, and `const std::byte` is `const uint8`. They are admitted as parameters, results and locals. A call
 that returns one can also be read or written directly, as in `return s[0];`
 and `s[0] = v;`. A read is a typed load of the returned address and needs a
@@ -565,7 +565,7 @@ rather than assigning its proof fields an ambiguous layout.
 
 A proof names a reference local as it names a reference parameter. For
 `int& r = value;`, `r` is the referent, as in `have r == 1;`, and `&r` is its
-address, as in `have &r == &value;`. `r[0]` is refused with the spelling to
+address, as in `have &r == &value;`. `r[0]` is refused with the form to
 write. Binding a reference is not an assignment, so `assignment(r, N)` is
 refused; a store through `r` is selected by its statement.
 
@@ -894,7 +894,7 @@ record and field declaration identities plus the exact LP64 size, alignment,
 field offsets, and field widths. A function may receive an existing object by
 mutable reference and read or write those fields with `object.field`; a pointer
 loaded from a field may use the already-supported checked dereference rules.
-The proof interface spells that reference as `struct Name*` and uses ordinary
+The proof interface writes that reference as `struct Name*` and uses ordinary
 field resources such as `owns state->saved`. Click does not reconstruct the
 layout from C++ source or create a synthetic C body.
 
@@ -1252,7 +1252,7 @@ guards but do not demand that a certified result definition be supplied as
 another assumption. False product claims and missing guards remain refused.
 
 The `wide-contracts` fixture adds by-value wide parameters, results, and
-matching-width call captures. Contracts spell these types `int128` and
+matching-width call captures. Contracts write these types as `int128` and
 `uint128`; `to_integer(value)` observes their full mathematical value.
 `to_int128(z)` and `to_uint128(z)` require both exact destination bounds;
 these proof conversions remain distinct from C++ modulo casts. Identities,
@@ -1425,7 +1425,7 @@ block and read at the instance's own Clang layout: `Cell<int>`'s `value` is a
 contract; `void Cell<int>::set(int v) { ... }` is refused. An instance's
 parameters take the instance's own names, by position: if Clang names
 `Cell<int>::set`'s parameter `value`, the written-out contract reads `value`
-where the template wrote `v`, so a template need not spell an implementation's
+where the template wrote `v`, so a template need not write an implementation's
 reserved names (libstdc++'s `__count`). A non-template head restates its one
 declaration and keeps its names exactly. A record holding a
 value of an abstract type is laid out at a word for each such value, which no
@@ -1461,7 +1461,7 @@ listed template takes exactly the type parameters it is named with, without
 defaults, packs or non-type parameters, and its written constructors are
 outside the slice.
 
-A sidecar template also takes a non-type parameter, an extent spelled
+A sidecar template also takes a non-type parameter, an extent written
 `std::size_t N`, `size_t N` or `unsigned long N`:
 `template<class T, std::size_t N> unsigned long Buf<T, N>::size() const {
 ensures result == N; }`. Each instance writes the extent as a `uint64`
@@ -2195,7 +2195,7 @@ the repository's fixtures does; `design/adler32/project/zlib/` uses Click's head
 
 Configured forced includes and ordered `-D` and `-U` options select additional
 preprocessing inputs. Other compiler options are rejected unless a named option
-profile, described below, lists their exact spelling. Response files, plugins,
+profile, described below, lists their exact text. Response files, plugins,
 and execution hooks are always rejected. The compiler runs with a cleared environment;
 only the configuration's supported variables are supplied. Use explicit
 `SOURCE_DATE_EPOCH` when source depends on date/time macros.
@@ -2236,7 +2236,7 @@ import. An option is accepted only where ignoring it cannot make Click accept
 a program the compiler treats differently: the option affects only
 preprocessing, whose result is the locked artifact, or only diagnostics, or
 only code generation, or it makes the compiler's semantics stricter than
-Click's or no weaker. The list is closed and keyed to exact spellings. A
+Click's or no weaker. The list is closed and keyed to exact option text. A
 different value, an unlisted sibling, or an unknown option is refused with its
 source and argument position, for example
 ``source `lib/rbtree.c`: unsupported compiler argument 50 `-O3`; ...``. Some
@@ -2246,7 +2246,7 @@ option is refused with the missing one named.
 Besides `-E` and the source operand, which the importer supplies itself, the
 recorded vector has 102 options: 15 base preprocessing options, 4 that the
 target fixes, 2 that the project's `-O2` level fixes, and 81 others with 77
-distinct spellings. All 77 are accepted, `-mno-sse` and `-mno-sse2` only
+distinct forms. All 77 are accepted, `-mno-sse` and `-mno-sse2` only
 beside `-mno-80387`. The optimizer promises below are refused in the imported
 source.
 
@@ -2563,7 +2563,7 @@ const and mutable overloads, require an index below `N` and return
 `views std_array_data(a)[1];`, and a write requires
 `owns std_array_data(a)[1];`. Owning a neighboring element or viewing the
 written element does not authorize the write. Resource clauses also accept
-the imported field spelling, such as `views a._M_elems[1];`, on a record
+the imported field name, such as `views a._M_elems[1];`, on a record
 reference. Expansion retains the field and its subscripts, and a failed
 resource-clause evaluation names that place.
 

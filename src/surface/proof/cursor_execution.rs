@@ -986,7 +986,7 @@ fn execute_concrete_loop_head_step(
     let condition_transitions = certified_condition_transitions(
         &current_state,
         available_pure_facts,
-        &condition,
+        condition,
         &transition_label,
         prerequisite_policy,
         // A step decides the loop condition from the same whole proof
@@ -996,7 +996,7 @@ fn execute_concrete_loop_head_step(
     if condition_transitions.len() != 1 {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not prove one exact truth value for loop({loop_index}) condition `{}`; got {} feasible condition paths\n{}",
-            describe_program_expression(&condition),
+            describe_program_expression(condition),
             condition_transitions.len(),
             describe_proof_context(
                 available_pure_facts,

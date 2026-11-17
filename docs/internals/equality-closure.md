@@ -190,7 +190,7 @@ cover `_Bool` and every supported signed/unsigned integer type, including 128-bi
 values, with distinct C type tags. Floating-point expressions remain opaque.
 
 A wide shift's independently promoted count has no source-type tag in the term
-representation. Its complete count spelling remains opaque rather than guessing
+representation. Its complete count expression remains opaque rather than guessing
 a width. Congruence still propagates equalities of the shifted value. Binder-bearing
 matches/folds and legacy untyped pure applications also remain opaque.
 
@@ -263,7 +263,7 @@ A checked pointer store also emits the equation between its complete stored
 value and the typed read at the written address in the resulting state.
 The equation travels with the certified execution facts into the ordinary
 graph, so an equal-address query does not require a preliminary read through
-the store spelling. It relates only that state; a subsequent write needs
+the store's address form. It relates only that state; a subsequent write needs
 its own preservation evidence. Scalar or partial stores do not emit pointer
 value equations.
 
@@ -309,7 +309,7 @@ when one is known. The annotation is a field of the stored address term, so
 memory storage, rewriting and substitution carry it without a global
 address-to-class registry. It is not part of the term's identity: equality,
 hashing and ordering ignore it, as they ignore a pointer value's class. A
-classed and a bare spelling of one address are therefore one term in equality
+classed and a bare form of one address are therefore one term in equality
 closure, exact fact lookup, `rewrite`, `contradiction` and theorem-premise
 matching. The supported tag operations carry the
 annotation to decoding; an integer-to-pointer cast restores the original
@@ -450,7 +450,7 @@ context restriction rebuilds retain all graph
 fragments from their remaining exact equality indexes. The pointer query
 compares affine coordinates and whole offset classes inside the graph. Same-block pointer premises also join whole offsets.
 Equal-base and representable constant-displacement queries use direct offset
-class lookups, including either translated spelling. At an unclassed ordinary
+class lookups, including either translated form. At an unclassed ordinary
 base with no offset merges, the known-equality query stops after reflexivity;
 explicit offset normalization remains available through `are_offsets_equal`.
 This avoids normalization work during unrelated field-separation checks.
@@ -467,7 +467,7 @@ equal offsets. Only witnesses in the lighter class move, so unrelated
 address classes are never scanned. Offset-class merges then propagate by
 ordinary congruence, so `x == y`, `address(A, y) == z`, and `z == null` establish
 `address(A, x) == null` in any insertion order. Affine block merges translate
-registered applications when that translation is spellable. Query registration
+registered applications when that translation is expressible. Query registration
 can use a stated `i64::MIN` translation directly without constructing its
 opposite sign. Unsupported translations otherwise remain unknown.
 Raw applications preserve these exact premises independently of affine
@@ -479,7 +479,7 @@ application on its complete base address. Equal base addresses therefore remain
 equal after the same displacement, even when an earlier block merge flattened
 the base into affine coordinates. Registration publishes one selected prefix;
 it does not enumerate aliases or recursively publish every prefix. Each raw
-address spelling retains its registered shift definition, so repeated queries
+address form retains its registered shift definition, so repeated queries
 do not repeat base registration or closure. This supplies address equality only: field access still requires an owned range of the correct
 width. Regressions cover multiple owned fields, late cursor aliases, different
 offsets, missing ownership, and constant query work as unrelated fields grow.
@@ -524,9 +524,9 @@ defined. Admission interns nothing when no byte-offset node exists, so an
 operand held only in shared form stays unexported
 (`retained_overflow_source_lookup_ignores_unrelated_guards`). A defined
 product counts as a pending equivalence, so an offset query registers its
-offsets rather than answering from spelling alone. The work is a constant-size
-match and one keyed lookup per admission or registration; no node or fact is
-scanned. C
+offsets rather than answering from representation alone. The work is a
+constant-size match and one keyed lookup per admission or registration; no node
+or fact is scanned. C
 pointer arithmetic over a `char`-width displacement `i * K` records this fact
 when the path's facts decide it, since lowering keeps the written byte offset
 (`docs/internals/raise-lower-principle.md#lowering-is-fact-stable`). Regressions:
@@ -735,7 +735,7 @@ Registered four-byte scalar loads also participate as int32 applications. Their
 signature contains the registered defining state's read identity and the
 complete address class, as pointer and uint64 reads do. A checked address
 equality therefore gives equal reads at that state, even when its block
-relation has no affine spelling. Late address merges propagate through the
+relation has no affine form. Late address merges propagate through the
 same parent-use index as addition and scaling.
 
 Registering an 8-, 16-, 32-, or 64-bit integer read does not equate it
@@ -772,7 +772,7 @@ Selected int32 operands prepare their pointer dependencies before registering
 the scalar read. A shifted raw pointer read imports only the exact definition
 retained by its typed producer; matching arithmetic without that metadata is
 not a pointer read. These operations inspect the selected expression and new
-parent uses, without scanning unrelated definitions or address spellings.
+parent uses, without scanning unrelated definitions or address forms.
 
 The defining state can already be an assumption-free canonical projection.
 The graph uses that registered definition, never the mutable live origin. It
@@ -822,11 +822,11 @@ previous equality answer.
 ### Pointer values and address offsets
 
 A typed pointer-load application in the equality graph denotes the stored
-value independently of the storage address spelling and pointee width. The
+value independently of the storage address form and pointee width. The
 graph can answer equality of two such applications without replacing the
 `Pointer` values produced by C execution. A live caller must supply the actual
 defining state and address from a typed load site or checked evidence. A
-loaded value is spelled only by its `LoadedPointer` name; an address indexed
+loaded value is represented only by its `LoadedPointer` name; an address indexed
 by a loaded scalar (`a[*p]`) is pointer arithmetic, never a read.
 
 The bridge from a completed nonvolatile C pointer read to the graph
@@ -853,7 +853,7 @@ Each query registers only its named values and their recorded dependencies.
 Filing a checked pointer equality also registers the producer definitions of
 its two operands. A later query can therefore use a read hidden behind another
 class member without first comparing that read directly or searching the
-class for read spellings.
+class for read forms.
 A registration generation distinguishes reasoning memo entries from earlier
 misses, without scanning or rebuilding the proof environment. `solve` can emit
 `normalize() using {}` to check an equality against this ambient graph.
@@ -879,7 +879,7 @@ checks, its certified typed producer metadata is retained before the temporary
 fact stream is discarded. The cached scalar-cell conversion preserves this
 metadata just as the symbolic pointer-read route does. Ordinary propositions
 and volatile reads cannot supply it. `mdtests/egraph_recursive_child_alias.md`
-checks unfold at one parent spelling and fold at an equal model identity,
+checks unfold at one parent form and fold at an equal model identity,
 without intermediate field-load claims or C writes. This does not transport
 loads across different states.
 
@@ -896,7 +896,7 @@ swapping the constructor breaks existing verification and expansion fixtures.
 
 Pointer classes are weighted:
 `base(member) = base(representative) + delta`. Exact affine normalization can
-relate displaced spellings such as `p + 8` and `(p + 4) + 4`. Preserve signedness,
+relate displaced forms such as `p + 8` and `(p + 4) + 4`. Preserve signedness,
 bit width, wrapping, and definedness obligations of the supported C semantics;
 do not distribute arithmetic through a wrapped index as if it were an
 unbounded integer.
@@ -972,7 +972,7 @@ equalities file nothing. The integer-to-pointer cast, recovering a pointer from
 `word == address(p)` (`pointer_tags::form_of`), finds such a fact about every
 word equal to its own in one class lookup. It cites the recorded fact; the graph equality it crossed is not a
 named premise, so the record cannot certify. The graph's numeric-address
-spellings still authorize no conversion. Regressions:
+forms still authorize no conversion. Regressions:
 `mdtests/packed_pointer_loop_object_class.md` and the scaling test
 `a_recorded_address_fact_is_found_through_its_word_class_without_scanning`.
 
@@ -991,7 +991,7 @@ separation using evidence justified by supported C semantics, ownership, and
 lifetime/reachability rules. Equal values must have consistent provenance
 information, but mere inequality of term IDs proves no separation.
 
-Do not infer a pointer's provenance from the spelling of the cell that held
+Do not infer a pointer's provenance from the representation of the cell that held
 it. Do not infer an allocation's birth from a contract allocation claim or
 from absence in a projected state. The existing special rules for hidden
 locals and later-declared locals need their exact preconditions retained.
@@ -1023,7 +1023,7 @@ Signature keys (`LoadSignature`) contain state arena identity,
 representative block identity, an affine-offset ID, and the load kind. Offset sequences are interned with shallow prefix keys
 and retained machine-atom IDs. This removes deep state/term comparison from
 signature lookup. Explicit affine syntax is normalized with an iterative walk;
-legacy spelling output sorts structurally rather than by interning order.
+legacy printed output sorts structurally rather than by interning order.
 The existing weighted affine payload operations still need broader scaling
 review for growing symbolic deltas. Same-block equations and equality between
 offset atoms are not yet incorporated into this closure.
@@ -1058,7 +1058,7 @@ its existing complete-input operation because normalization can renumber entry
 IDs; ordinary deltas do not rebuild it or scan exact-fact buckets.
 
 Fold consumption uses this paired address/span index instead of enumerating
-pointer spellings. A selected candidate can express the requirement in its
+pointer forms. A selected candidate can express the requirement in its
 own block coordinates using the graph's affine relation; this visits no other
 class members. Existing local range matching remains responsible for
 same-block containment and endpoint reasoning.
@@ -1155,7 +1155,7 @@ work over growing resource inputs.
 The read/write candidate contract retains the selected query, resource
 occurrence IDs, and their paired graph checkpoint together. Address alignment
 accepts an occurrence ID and reads its range from that retained checkpoint;
-consumers do not supply an alternate query spelling or reconstruct a range.
+consumers do not supply an alternate query form or reconstruct a range.
 The direct ownership-support consumer uses the same retained alignment, then
 restores the requested range's base from its checked start displacement. It
 never asks an ambient graph that may lack the selected loads' registrations.
@@ -1225,7 +1225,7 @@ resources during a read query. A reduced fold of `tag(q[i])` through a view of
 reverifies. Dropping the equality or either bound refuses the read. General
 permissions share the bounded supplier service below.
 An indexed miss or failed candidate check is decisive for this covered
-fragment; it does not retry spellings or scan the remaining resources.
+fragment; it does not retry other forms or scan the remaining resources.
 Whole-cell writes additionally use a separate footprint payload containing
 only positive concrete owners at registered typed address classes. Late
 offset and loaded-pointer equalities update this payload through the graph's
@@ -1314,11 +1314,11 @@ attachment is required. Unsupported symbolic containment and retained
 load-origin forms refuse when the indexed service cannot select a supplier. Forks of a published
 input retain their pairing. Address anchors alone are not a substitute for
 attachment. Stored-value and initialization-evidence lookups use their own
-spelling indexes.
+form indexes.
 
-Checked additive producers retain one spelling per index width in both address
+Checked additive producers retain one form per index width in both address
 classes and offset classes. Same-block pointer comparisons can enter as offset
-equalities; those spellings are applied only in the queried pointer's own block
+equalities; those forms are applied only in the queried pointer's own block
 and cannot identify unrelated blocks. A wide-view requirement selects a checked
 uint64 displacement instead of losing its window bounds in an equal signed or
 mixed-index expression. Payload lookup and class merging use a constant number
@@ -1328,7 +1328,7 @@ aliases, short extents, mixed prefixes, block isolation, and increasing numbers
 of aliases.
 
 Read, write, and fold consumers are integration examples. A lookup must not
-enumerate every spelling in a class. Equality indexing narrows candidates;
+enumerate every form in a class. Equality indexing narrows candidates;
 permission quantities, range containment, ownership reservation, and ordering
 still require their own checked judgments and complete candidate indexes.
 
@@ -1397,7 +1397,7 @@ read starts have their own class payload, so a partition rooted in an outer
 storage block does not hide its logical pointer base. A multi-size regression
 selects the left partition beside unrelated same-base ranges without searching
 them; missing bounds and view-only write authority still refuse. Ambiguous
-or unsupported queries refuse before checking. No consumer retries spellings,
+or unsupported queries refuse before checking. No consumer retries other forms,
 searches a block/frame, or tries another strategy after a failed supplier check.
 Views supply read authority; writes select owners. Quantity, alignment, width,
 signed bounds, initialization, and no-wrap obligations remain checked separately.
@@ -1436,7 +1436,7 @@ increasing unrelated resources, same-class views, late merges, and forks.
 direct fact support, owned support (including its other-support check), and
 incremental consumption. It retains original entry IDs and the paired graph
 checkpoint. Requirement alignment uses that checkpoint rather than a pointer
-spelling selected from an ambient graph. Direct support returns the original
+form selected from an ambient graph. Direct support returns the original
 held representation; owned support returns its original occurrence. A supported
 projection must still name a live owner matching its recorded dependency.
 The graph and this derived candidate evidence are part of the trusted kernel.
@@ -1542,7 +1542,7 @@ provenance, lifetime, bounds, initialization, or writability. Mutex
 initialization and runtime storage havoc use it to identify the storage they
 subsequently check or affect. The shared alignment checker accepts this one
 checked concrete formation as well as its original formation evidence;
-mutex initialization does not retry alignment on another pointer spelling.
+mutex initialization does not retry alignment on another pointer form.
 Explicit power-of-two alignment premises also supply one retained witness on
 an address class. Late equality merges keep the strongest original premise;
 lookup checks that premise directly instead of enumerating class members.
@@ -1713,12 +1713,12 @@ rejects the expanded proof.
 
 A load's equal-cell scan also reads this graph when the cached cells are a
 seeded run. A run names the slot a load is at from the byte shift between the
-load and the run's base. `run_slots_equal_to_load` re-expresses a load spelled
+load and the run's base. `run_slots_equal_to_load` re-expresses a load expressed
 in another block in the run's block
 with `pointer_in_block`, one keyed query over the affine class relation, so a
 run answers for `id + 8` exactly as a single cached cell does through
 `pointers_known_equal`. It selects a cached slot only; it adds no separation,
-framing, or read authority: the slot is the one a load spelled at the run's
+framing, or read authority: the slot is the one a load expressed at the run's
 own address reads from the same state. `mdtests/fold_at_arm_identity_after_store_to_other_node.md`
 and its three negatives retain the case.
 
@@ -1779,7 +1779,7 @@ Equality substitution has a kernel-owned checked rule in
 `proof/equality_rewrite.rs`. It admits the cited equality through the persistent
 exact premise index, computes the substitution, and returns a private checked
 result. That result constructs the proposition obligation; surface code supplies
-presentation data, not a replacement semantic goal. A different load spelling
+presentation data, not a replacement semantic goal. A different load form
 must pass the kernel's corresponding-leaf transport check first. The candidate
 helper used by smart planning has no proof authority.
 
@@ -1809,7 +1809,7 @@ theory and tactic extensions require a concrete use case.
 pointer/offset endpoints, full-width source neighbors, literal-pinning
 premises, algebraic constructor-field projections, typed read definitions,
 alignment premises, and canonical edge support counts belong to this service.
-They retain source spellings and proof premises; they do not maintain a second
+They retain source forms and proof premises; they do not maintain a second
 notion of equivalence. Their owning allocation is shared until the first input
 mutation. Its private erased handle also breaks the recursive Rust `Send`/`Sync`
 type path through resource indexes retaining a graph and source propositions
@@ -1831,7 +1831,7 @@ premises. None of these operations grants memory access or state transport.
 Restriction resets the closure and refiles only the selected facts. Branch clones
 share persistent input roots and fork subsequent changes. Pointer-predicate source handles are retained with
 the service so reconstruction cannot import facts from a sibling context.
-Atomic condition matching checks only the selected spellings for full-width
+Atomic condition matching checks only the selected forms for full-width
 sources. Parameter-store shortcuts consult selected coordinate dependencies;
 complex deferred load dependencies conservatively use ordinary store reasoning.
 Unrelated ordinary scalar or offset premises do not disable these paths.

@@ -4249,7 +4249,6 @@ mod tests {
     const ARTIFACT: &[u8] =
         include_bytes!("../../../design/charon-trial/.click/trial/trial.rs.ullbc");
     const SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/trial.rs");
-    const CLAIM: &str = include_str!("../../../design/charon-trial/trial.click");
 
     const ARRAY_ARTIFACT: &[u8] = include_bytes!(
         "../../../design/charon-trial/conversions-arrays/.click/arrays/arrays.rs.ullbc"

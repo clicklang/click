@@ -165,7 +165,7 @@ impl<'a> Analysis<'a> {
         let name = name.into();
         match old {
             Some(value) => {
-                self.bindings.insert(name.into(), value);
+                self.bindings.insert(name, value);
             }
             None => {
                 self.bindings.remove(&name);

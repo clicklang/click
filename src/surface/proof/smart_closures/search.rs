@@ -720,7 +720,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .facts()
                         .contains_discharged_implication_consequent(&kernel)
                         && let Some(extracted) = attempt::candidate_outcome(
-                            Self::publish_selected_fact(&search_input, &(mirrored)),
+                            Self::publish_selected_fact(search_input, &(mirrored)),
                         )?
                     {
                         if extracted.focused_discharged() {
@@ -740,7 +740,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             );
         }
         Ok(attempt::candidate_outcome(Self::publish_selected_fact(
-            &search_input,
+            search_input,
             &(surface.clone()),
         ))?
         .filter(Proof::focused_discharged))
@@ -798,7 +798,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             None => spelled,
         };
         let Some(extracted) =
-            attempt::candidate_outcome(Self::publish_selected_fact(&search_input, &(spelled)))?
+            attempt::candidate_outcome(Self::publish_selected_fact(search_input, &(spelled)))?
         else {
             return Ok(None);
         };
@@ -2680,7 +2680,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if matches!(search_input.context.as_ref(), ProofContext::Pure(_))
             && let Some(surface) = search_input.surface_goal()
-            && let Ok(proof) = Self::publish_selected_fact(&search_input, &(surface.clone()))
+            && let Ok(proof) = Self::publish_selected_fact(search_input, &(surface.clone()))
             && proof.focused_discharged()
         {
             scope.succeed();
@@ -2691,7 +2691,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             && let Some(surface_goal) = search_input.surface_goal()
             && let Ok(source) =
                 surface_at_program_point(surface_goal, &ProgramPointSelector::ProgramPoint(anchor))
-            && let Ok(proof) = Self::publish_selected_fact(&search_input, &(source))
+            && let Ok(proof) = Self::publish_selected_fact(search_input, &(source))
             && proof.is_complete()
         {
             scope.succeed();
@@ -9562,8 +9562,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     let substitutions = std::iter::once((name.clone(), argument.clone()))
                         .collect::<BTreeMap<_, _>>();
-                    let Ok(mut source) =
-                        substitute_click_proposition(&surface_body, &substitutions)
+                    let Ok(mut source) = substitute_click_proposition(surface_body, &substitutions)
                     else {
                         continue;
                     };

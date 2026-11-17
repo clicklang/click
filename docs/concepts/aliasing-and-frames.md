@@ -103,7 +103,7 @@ reason that a context cannot own one byte twice.
 
 A clause that is not a plain range contributes nothing here. `owns *r`
 is a plain range — the whole struct — and does separate from a `views` clause,
-but a folded composite's footprint has no spelling as a range, so pairing it
+but a folded composite's footprint cannot be written as a range, so pairing it
 with a view yields nothing and a `separate(...)` requirement is still the way
 to say it.
 

@@ -66,11 +66,11 @@ propositions so diagnostics and expansion can return to source language.
 Those records are presentation hints, not evidence that a fact is available.
 Loop-head lowering returns one selected proposition per declared invariant,
 including duplicates, separately from the new-fact delta. A preservation
-proof records generated iteration-entry spellings against those selected
-propositions in its local scope; an unqualified source spelling continues to
+proof records generated iteration-entry forms against those selected
+propositions in its local scope; an unqualified source form continues to
 lower against the current execution state. Certificate generation checks a candidate
-spelling at its output location and validates the selected kernel premise,
-never whichever available fact happens to share that spelling.
+raised term at its output location and validates the selected kernel premise,
+never whichever available fact happens to raise to that same text.
 
 The kernel's persistent `ProofObject` owns typed obligations, facts, symbolic
 program execution, resources, focus, and checked successor authority. A
@@ -145,8 +145,8 @@ havoc opens an owned composite one level, the boundary a composite lend and
 
 Instance binders reach one kernel map whether a proof writes a call map or a
 named contract's proof arguments; an execution theorem's `as` map only renames
-spellings before binding through one of those. The loan ledger, its laws, and
-the call boundary's lending and recovery are in
+written names before binding through one of those. The loan ledger, its laws,
+and the call boundary's lending and recovery are in
 [stable views](stable-views.md).
 
 ## Selected control-flow and C++ cleanup model

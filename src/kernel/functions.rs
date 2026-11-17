@@ -13909,10 +13909,10 @@ fn indexed_witness_origin_words(facts: &[SpecProposition]) -> BTreeMap<&str, &Sp
                     target_type: ProgramType::UInt64 | ProgramType::Int64,
                     ..
                 }) => {
-                    if let ProgramExpression::Variable(name) = expression.as_ref() {
-                        if let Some(name) = name.named() {
-                            words.entry(name).or_insert(word);
-                        }
+                    if let ProgramExpression::Variable(name) = expression.as_ref()
+                        && let Some(name) = name.named()
+                    {
+                        words.entry(name).or_insert(word);
                     }
                 }
                 SpecExpression::Add(left, right) => {

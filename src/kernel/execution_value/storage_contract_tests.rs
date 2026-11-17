@@ -296,7 +296,8 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
         }));
     }
     let condition = ConditionTerm::Variable(Variable(998736));
-    for branch in values[..3].to_vec() {
+    let branches = values[..3].to_vec();
+    for branch in branches {
         values.push(make(AlgebraicTermNode::If {
             condition: Box::new(condition.clone()),
             then_term: Box::new(branch.clone()),

@@ -6743,13 +6743,13 @@ impl PureFactContext {
     fn insert_shared_proposition_fact(&mut self, shared: std::sync::Arc<Proposition>) {
         let proposition = shared.as_ref();
         self.execution_variable_ceiling
-            .file_proposition(&proposition);
+            .file_proposition(proposition);
         if let Proposition::ResourceComposition(resources) = proposition {
-            if !self.resource_compositions.contains(&resources) {
+            if !self.resource_compositions.contains(resources) {
                 self.resource_compositions =
                     self.resource_compositions.with_value(resources.clone());
-                self.composition_members.admit(&resources);
-                self.composition_object_resources.admit(&resources);
+                self.composition_members.admit(resources);
+                self.composition_object_resources.admit(resources);
                 self.composition_object_resources
                     .advance_memory_equalities(self);
                 self.content_fingerprint ^= Self::fingerprint(3, &resources);
@@ -6759,39 +6759,39 @@ impl PureFactContext {
         }
         if self
             .prop_facts
-            .insert(crate::kernel::clone_proposition_iteratively(&proposition))
+            .insert(crate::kernel::clone_proposition_iteratively(proposition))
             .is_none()
         {
             self.execution_fact_projection.insert(
                 ContextFactKey::Proposition(proposition.clone()),
                 std::sync::Arc::new(ExecutionPureFact::from_shared(shared.clone())),
             );
-            self.adjust_comparison_view(&proposition);
-            self.adjust_atomic_connection_fact(&proposition);
-            self.adjust_stated_proposition_index(&proposition);
+            self.adjust_comparison_view(proposition);
+            self.adjust_atomic_connection_fact(proposition);
+            self.adjust_stated_proposition_index(proposition);
             if matches!(proposition, Proposition::Or(_, _)) {
                 self.disjunction_facts = self
                     .disjunction_facts
-                    .with_value(crate::kernel::clone_proposition_iteratively(&proposition));
+                    .with_value(crate::kernel::clone_proposition_iteratively(proposition));
             }
             if matches!(proposition, Proposition::ResourceSeparate { .. }) {
                 self.separation_facts = self
                     .separation_facts
-                    .with_value(crate::kernel::clone_proposition_iteratively(&proposition));
+                    .with_value(crate::kernel::clone_proposition_iteratively(proposition));
             }
-            self.adjust_algebraic_constructor_field_equalities(&proposition);
-            self.adjust_algebraic_constructor_conflict(&proposition);
-            self.adjust_algebraic_variable_constructor(&proposition);
-            self.adjust_algebraic_graph_equality(&proposition);
-            self.adjust_pointer_value_equality(&proposition);
-            self.adjust_algebraic_variable_variant_evidence(&proposition);
-            self.adjust_memory_loadable_fact(&proposition);
-            self.adjust_separation_block_fact(&proposition);
-            self.adjust_memory_separation_fact(&proposition);
-            self.adjust_nonmemory_separation_fact(&proposition);
-            self.adjust_resource_contains_fact(&proposition);
-            self.adjust_memory_effect_fact(&proposition);
-            self.adjust_pointer_class_fact(&proposition);
+            self.adjust_algebraic_constructor_field_equalities(proposition);
+            self.adjust_algebraic_constructor_conflict(proposition);
+            self.adjust_algebraic_variable_constructor(proposition);
+            self.adjust_algebraic_graph_equality(proposition);
+            self.adjust_pointer_value_equality(proposition);
+            self.adjust_algebraic_variable_variant_evidence(proposition);
+            self.adjust_memory_loadable_fact(proposition);
+            self.adjust_separation_block_fact(proposition);
+            self.adjust_memory_separation_fact(proposition);
+            self.adjust_nonmemory_separation_fact(proposition);
+            self.adjust_resource_contains_fact(proposition);
+            self.adjust_memory_effect_fact(proposition);
+            self.adjust_pointer_class_fact(proposition);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
             self.admit_shared_exact_propagation(shared);
         }
