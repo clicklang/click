@@ -24,13 +24,14 @@ mod literal_objects;
 mod mixed_return_resources;
 mod produced_argument_supply;
 mod return_loan_backing;
+pub(in crate::kernel) use mixed_return_resources::{
+    ConstructedBodyReturn, ConstructedReturnBody, ReturnResourceTransfer, ReturnedConsumedCell,
+    ReturnedFreshAllocation,
+};
 use mixed_return_resources::{
     ConstructedReturnBodies, ConsumedCellReturns, EvaluatedReturnResources, FreshAllocationReturn,
     ProducedBorrowingPiece, ProjectedReturnResource, ReturnOwnershipOrigin,
     project_return_resource_cores,
-};
-pub(in crate::kernel) use mixed_return_resources::{
-    ConstructedReturnBody, ReturnResourceTransfer, ReturnedConsumedCell, ReturnedFreshAllocation,
 };
 #[cfg(test)]
 mod produced_argument_supply_tests;
@@ -208,10 +209,17 @@ enum ReturnResourceComposition<'a> {
     #[cfg(test)]
     RestoreEntryBorrows,
     ApplyTransfers(&'a ConsumedCellReturns),
+    #[cfg_attr(not(test), allow(dead_code))]
     BodyAllocations {
         creator: &'a CreationEvents,
         events: &'a CreationEvents,
         consumed: Option<&'a ConsumedCellReturns>,
+    },
+    BodyReturn {
+        state: &'a ExecutionState,
+        frame: &'a ResourceContext,
+        allocations: Option<(&'a CreationEvents, &'a CreationEvents)>,
+        consumed: &'a ConsumedCellReturns,
     },
     ValidateDescriptions,
 }
@@ -221,6 +229,28 @@ impl<'a> ReturnResourceComposition<'a> {
         match self {
             Self::ApplyTransfers(plan) => Some(plan),
             Self::BodyAllocations { consumed, .. } => consumed,
+            Self::BodyReturn {
+                consumed,
+                allocations: Some(_),
+                ..
+            } => Some(consumed),
+            _ => None,
+        }
+    }
+
+    fn body_return(self) -> Option<(&'a ExecutionState, &'a ResourceContext)> {
+        match self {
+            Self::BodyReturn { state, frame, .. } => Some((state, frame)),
+            _ => None,
+        }
+    }
+
+    fn allocation_events(self) -> Option<(&'a CreationEvents, &'a CreationEvents)> {
+        match self {
+            Self::BodyAllocations {
+                creator, events, ..
+            } => Some((creator, events)),
+            Self::BodyReturn { allocations, .. } => allocations,
             _ => None,
         }
     }
@@ -240,10 +270,7 @@ impl<'a> ReturnResourceComposition<'a> {
         entry_borrow: bool,
         fact: &ResourceFact,
     ) -> ReturnOwnershipOrigin {
-        if let Self::BodyAllocations {
-            creator, events, ..
-        } = self
-        {
+        if let Some((creator, events)) = self.allocation_events() {
             return FreshAllocationReturn::from_created_owner(fact, creator, events)
                 .map(ReturnOwnershipOrigin::FreshAllocation)
                 .unwrap_or(ReturnOwnershipOrigin::Description);
@@ -12780,7 +12807,7 @@ fn evaluate_contract_return_resource_context(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<EvaluatedReturnResources, RuntimeError>> {
-    let mut evaluated = EvaluatedReturnResources::new(assumptions);
+    let mut evaluated = EvaluatedReturnResources::for_composition(composition, assumptions);
     // `owns` requirements that are returned as entry-state borrows carry
     // caller identity in the checked transition. Re-evaluating an address
     // such as `self->pointer` in the callee entry state can replace that
@@ -13196,14 +13223,16 @@ fn evaluate_contract_return_resource_context(
         // its occurrence. Consumers compose the pieces of their requested
         // footprint; constructing outputs must not discover optional merges
         // by walking the ambient pointer/endpoint equality classes.
-        evaluated = match evaluated.admit_clause(
+        evaluated = match evaluated.construct_clause(
             resource.clone(),
             composition.origin_for_return(clause_index, return_entry_borrow, &resource),
             Some(clause_index),
+            composition,
+            interface,
             assumptions,
         ) {
             Ok(evaluated) => evaluated,
-            Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+            Err(error) => return Ok(Err(error)),
         };
         returned.push(resource);
     }
@@ -13221,14 +13250,16 @@ fn evaluate_contract_return_resource_context(
                 budget,
             )? {
                 Ok(fact) => {
-                    evaluated = match evaluated.admit_clause(
+                    evaluated = match evaluated.construct_clause(
                         fact.clone(),
                         composition.origin_for_return(clause_index, false, &fact),
                         Some(clause_index),
+                        composition,
+                        interface,
                         assumptions,
                     ) {
                         Ok(evaluated) => evaluated,
-                        Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+                        Err(error) => return Ok(Err(error)),
                     };
                     returned.push(fact);
                 }
@@ -13314,6 +13345,7 @@ fn evaluate_function_return_resources(
     entry_clauses: &[CheckedResourceFact],
     entry_state: &ExecutionState,
     post_state: &ExecutionState,
+    body_state: &ExecutionState,
     function: &ProgramFunction,
     allocation_creator: Option<&CreationEvents>,
     consumed_returns: &ConsumedCellReturns,
@@ -13331,16 +13363,11 @@ fn evaluate_function_return_resources(
         function.name(),
         function.contract_interface(),
         &[],
-        match (
-            allocation_creator,
-            post_state.population_effects.creation.as_ref(),
-        ) {
-            (Some(creator), Some(events)) => ReturnResourceComposition::BodyAllocations {
-                creator,
-                events,
-                consumed: Some(consumed_returns),
-            },
-            _ => ReturnResourceComposition::ValidateDescriptions,
+        ReturnResourceComposition::BodyReturn {
+            state: body_state,
+            frame: caller_resources_after_requirements,
+            allocations: allocation_creator.zip(post_state.population_effects.creation.as_ref()),
+            consumed: consumed_returns,
         },
         assumptions,
         budget,
@@ -16603,6 +16630,92 @@ pub(super) fn function_return_resources_definitionally_established(
 /// Definitional fact validation does not make exclusive units duplicable.
 /// Consume the explicit output frontier jointly. Expansion is limited to a
 /// required unit's own body and never searches unrelated available heads.
+fn consume_returned_resource_unit(
+    available: ResourceContext,
+    required: &ResourceFact,
+    state: &ExecutionState,
+    interface: &FunctionContractInterface,
+    assumptions: &PureFactContext,
+    active: &mut BTreeSet<ResourceFact>,
+) -> Option<ResourceContext> {
+    // Views are duplicable; the caller already checked their complete
+    // definitional validity before entering this quantity check.
+    if required.is_view() {
+        return Some(available);
+    }
+    if let Some(remaining) = available
+        .clone()
+        .without_fact_delaying_normalization(required, assumptions)
+    {
+        return Some(remaining);
+    }
+    // Only memory ranges need adjacent supplier fragments to rejoin.
+    // Preserve the checked representation of composite/population exchanges.
+    if required.memory_range().is_some()
+        && let Some(remaining) = available
+            .clone()
+            .without_fact_incrementally(required, assumptions)
+    {
+        return Some(remaining);
+    }
+    let ResourceFact::Own(Resource::Composite { name, .. }, quantity) = required else {
+        return None;
+    };
+    // Authority populations hold ledger fragments and stay linear: a
+    // unit the exit state does not hold exactly is consumed through its
+    // definition's body.
+    interface.composite_resource_definition(name)?;
+
+    let unit = quantity_condition_holds(
+        assumptions,
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: quantity.clone(),
+            right: Box::new(MachineTerm::constant(1)),
+        },
+    );
+    if !active.insert(required.clone()) {
+        return None;
+    }
+    let result = (|| {
+        let singleton =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(required.clone());
+        let expanded = expand_composite_resource_fact(
+            &singleton,
+            required,
+            interface.composite_resource_definitions(),
+            &state.program_point(),
+            assumptions,
+        )?;
+        if !unit && expanded.facts().iter().any(ResourceFact::is_own) {
+            return None;
+        }
+        // An empty expansion cannot manufacture a missing unit. A
+        // protected empty member needs an actually held ledger fragment,
+        // and a declaration with no body at all is a token that only a
+        // held copy supplies: two `Permit(x)` cannot come from one. A
+        // conditional body whose guard is false is refused the same way.
+        if expanded.facts().is_empty() {
+            return None;
+        }
+        let mut remaining = available.clone();
+        for child in expanded.facts() {
+            remaining = consume_returned_resource_unit(
+                remaining,
+                child,
+                state,
+                interface,
+                assumptions,
+                active,
+            )?;
+        }
+        Some(remaining)
+    })();
+    active.remove(required);
+    result
+}
+
 pub(super) fn jointly_consume_returned_resource_units(
     available: &ResourceContext,
     required: &ResourceContext,
@@ -16610,89 +16723,17 @@ pub(super) fn jointly_consume_returned_resource_units(
     interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
 ) -> bool {
-    fn consume(
-        available: ResourceContext,
-        required: &ResourceFact,
-        state: &ExecutionState,
-        interface: &FunctionContractInterface,
-        assumptions: &PureFactContext,
-        active: &mut BTreeSet<ResourceFact>,
-    ) -> Option<ResourceContext> {
-        // Views are duplicable; the caller already checked their complete
-        // definitional validity before entering this quantity check.
-        if required.is_view() {
-            return Some(available);
-        }
-        if let Some(remaining) = available
-            .clone()
-            .without_fact_delaying_normalization(required, assumptions)
-        {
-            return Some(remaining);
-        }
-        // Only memory ranges need adjacent supplier fragments to rejoin.
-        // Preserve the checked representation of composite/population exchanges.
-        if required.memory_range().is_some()
-            && let Some(remaining) = available
-                .clone()
-                .without_fact_incrementally(required, assumptions)
-        {
-            return Some(remaining);
-        }
-        let ResourceFact::Own(Resource::Composite { name, .. }, quantity) = required else {
-            return None;
-        };
-        // Authority populations hold ledger fragments and stay linear: a
-        // unit the exit state does not hold exactly is consumed through its
-        // definition's body.
-        interface.composite_resource_definition(name)?;
-
-        let unit = quantity_condition_holds(
-            assumptions,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: quantity.clone(),
-                right: Box::new(MachineTerm::constant(1)),
-            },
-        );
-        if !active.insert(required.clone()) {
-            return None;
-        }
-        let result = (|| {
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(required.clone());
-            let expanded = expand_composite_resource_fact(
-                &singleton,
-                required,
-                interface.composite_resource_definitions(),
-                &state.program_point(),
-                assumptions,
-            )?;
-            if !unit && expanded.facts().iter().any(ResourceFact::is_own) {
-                return None;
-            }
-            // An empty expansion cannot manufacture a missing unit. A
-            // protected empty member needs an actually held ledger fragment,
-            // and a declaration with no body at all is a token that only a
-            // held copy supplies: two `Permit(x)` cannot come from one. A
-            // conditional body whose guard is false is refused the same way.
-            if expanded.facts().is_empty() {
-                return None;
-            }
-            let mut remaining = available.clone();
-            for child in expanded.facts() {
-                remaining = consume(remaining, child, state, interface, assumptions, active)?;
-            }
-            Some(remaining)
-        })();
-        active.remove(required);
-        result
-    }
     let mut remaining = available.clone();
     let mut active = BTreeSet::new();
     for fact in required.facts() {
-        let Some(next) = consume(remaining, fact, state, interface, assumptions, &mut active)
-        else {
+        let Some(next) = consume_returned_resource_unit(
+            remaining,
+            fact,
+            state,
+            interface,
+            assumptions,
+            &mut active,
+        ) else {
             return false;
         };
         remaining = next;
@@ -20996,6 +21037,7 @@ fn function_outcome_from_body_with_resource_transfer(
                 &transfer_entry_clauses(&transfer),
                 &entry_resource_state,
                 &output_resource_state,
+                &state,
                 function,
                 transfer.allocation_creator.as_ref(),
                 &transfer.consumed_cell_returns,
@@ -21017,22 +21059,8 @@ fn function_outcome_from_body_with_resource_transfer(
         }
         Err(error) => return Ok((FunctionOutcome::RuntimeError(error), obligations, None)),
     };
-    // Authority members require actual joint custody before output projection.
-    if !jointly_consume_returned_resource_units(
-        state.resources(),
-        &output_resources,
-        &state,
-        function.contract_interface(),
-        assumptions,
-    ) {
-        return Ok((
-            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
-                "function body does not yet establish its joint returned resource units".into(),
-            )),
-            obligations,
-            None,
-        ));
-    }
+    // Return construction consumed each output from one persistent body
+    // context and installed that constructed group. Do not consume it again.
     transfer.candidate_output_views = returned_views;
     transfer.produced_borrowing_pieces = produced_borrowing_pieces;
     let (return_resources, return_ledger, return_participant, return_view_bindings, loan_evidence) =
