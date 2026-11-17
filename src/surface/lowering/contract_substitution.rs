@@ -3250,7 +3250,7 @@ impl<'a> ContractSubstitutions<'a> {
         {
             return None;
         }
-        points.call_capture_expression(name, locals.get(name)?)
+        points.call_capture_expression(name, locals.get(name)?, None)
     }
 
     /// The source name `name` is written as here, if any.

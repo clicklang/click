@@ -781,7 +781,13 @@ fn synthesize_state_local(term: &MachineTerm) -> Option<ContractExpression> {
                 crate::kernel::MachineIntegerType::from_program_type(value.program_type()).is_some()
             })
         })?;
-        if let Some(result) = synthesize_call_capture(state, name) {
+        if let Some(result) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
+            slot.borrow().as_ref()?.call_capture_expression(
+                name,
+                state.locals().get(name)?,
+                Some(selector),
+            )
+        }) {
             return Some(result);
         }
         Some(ContractExpression::At {
@@ -808,7 +814,7 @@ fn synthesize_recorded_local(term: &MachineTerm) -> Option<ContractExpression> {
         if let Some(result) = state
             .locals()
             .get(name)
-            .and_then(|value| points.call_capture_expression(name, value))
+            .and_then(|value| points.call_capture_expression(name, value, Some(selector)))
         {
             return Some(result);
         }
@@ -4740,9 +4746,15 @@ fn synthesize_call_capture(
         return None;
     }
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
-        slot.borrow()
-            .as_ref()?
-            .call_capture_expression(name, state.locals().get(name)?)
+        let slot = slot.borrow();
+        let points = slot.as_ref()?;
+        let value = state.locals().get(name)?;
+        points
+            .call_capture_expression(name, value, None)
+            .or_else(|| {
+                let selector = points.point_name(state.program_point_id()?)?;
+                points.call_capture_expression(name, value, Some(selector))
+            })
     })
 }
 
@@ -6909,6 +6921,17 @@ fn synthesize_recorded_pointer_expression(
     candidates.into_iter().find_map(|(selector, state)| {
         let expression =
             synthesize_surface_pointer(pointer, parameter_binding, &state, bound_variables)?;
+        if let ProgramExpression::Variable(name) = &expression
+            && let Some(result) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
+                slot.borrow().as_ref()?.call_capture_expression(
+                    name,
+                    state.locals().get(name)?,
+                    Some(&selector),
+                )
+            })
+        {
+            return Some(result);
+        }
         Some(ContractExpression::At {
             selector,
             expression: Box::new(ContractExpression::ProgramExpression(expression)),

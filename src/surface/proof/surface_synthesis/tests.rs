@@ -7667,16 +7667,58 @@ fn call_capture_names_the_selected_result_at_its_declared_type() {
             0,
         )]));
 
-    let raise = |points: &RecordedStates| {
+    let raise = |points: &RecordedStates, sought: &MachineTerm, state: &ExecutionState| {
         let _scope = SynthesisRecordedPointsScope::enter(points);
-        synthesize_surface_bitvector(&term, ParameterBinding::default(), &state, &BTreeMap::new())
+        synthesize_surface_bitvector(sought, ParameterBinding::default(), state, &BTreeMap::new())
     };
-    points.record_call_result(0, Some(value));
-    assert_eq!(raise(&points), Some(expected.clone()));
+    let before = ProgramPointSelector::Mark("before".into());
+    points.insert(before.clone(), ExecutionState::new());
+    points.record_call_result(0, Some(value.clone()));
+    assert_eq!(raise(&points, &term, &state), Some(expected.clone()));
+    let saved = ProgramPointSelector::Mark("saved".into());
+    points.insert(saved.clone(), state.clone());
 
-    // The call has run again, but this snapshot still holds its earlier value.
-    points.record_call_result(0, Some(int32(7)));
-    assert_ne!(raise(&points), Some(expected.clone()));
+    // The same static call runs again and its capture is assigned a new
+    // symbolic value. The earlier value is still named at the proof mark.
+    let newer = MachineTerm::Variable(Variable(977_922));
+    let newer_value = ProgramValue::Int32(newer.clone());
+    let current = state.clone().with_local(&capture, newer_value.clone());
+    points.record_call_result(0, Some(newer_value.clone()));
+    let historical = ContractExpression::At {
+        selector: saved,
+        expression: Box::new(expected.clone()),
+    };
+    assert_eq!(raise(&points, &newer, &current), Some(expected.clone()));
+    assert_eq!(raise(&points, &term, &current), Some(historical.clone()));
+
+    let lower = |expression| {
+        crate::surface::lowering::elaborate_fixed_state_expression(
+            expression,
+            BTreeMap::new(),
+            &current,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            None,
+            &points,
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            ),
+            BTreeSet::new(),
+            BTreeMap::new(),
+        )
+    };
+    assert_eq!(lower(&historical).unwrap(), SpecExpression::Value(value));
+    assert_eq!(
+        lower(&expected).unwrap(),
+        SpecExpression::Value(newer_value)
+    );
+    let missing = ContractExpression::At {
+        selector: before,
+        expression: Box::new(expected.clone()),
+    };
+    assert!(lower(&missing).unwrap_err().contains("at `before`"));
+
     points.record_call_result(0, Some(ProgramValue::UInt32(term.clone())));
-    assert_ne!(raise(&points), Some(expected));
+    assert_ne!(raise(&points, &term, &state), Some(expected));
 }

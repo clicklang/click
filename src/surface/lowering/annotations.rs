@@ -7251,7 +7251,8 @@ impl AnnotationLowerer<'_> {
                     .retained_states
                     .ok_or("`.result` names a region of a function body being executed")?;
                 Ok(SpecExpression::Value(
-                    retained_states.region_result_value(region)?,
+                    retained_states
+                        .region_result_value_at(region, environment.call_result_point.as_ref())?,
                 ))
             }
             ContractExpression::RegionParameter { region, name } => Err(format!(
@@ -7703,7 +7704,11 @@ impl AnnotationLowerer<'_> {
             ContractExpression::Old(inner) => self.enum_program_value_type(inner, environment),
             // The enum value a call returned.
             ContractExpression::RegionResult(region) => {
-                match self.retained_states?.region_result_value(region).ok()? {
+                match self
+                    .retained_states?
+                    .region_result_value_at(region, environment.call_result_point.as_ref())
+                    .ok()?
+                {
                     ProgramValue::Parameter(term) => {
                         let enum_type = crate::kernel::TypeParameterName::of(&term.algebraic_type);
                         crate::surface::holds_spec_value(enum_type).then_some(enum_type)
@@ -8143,7 +8148,8 @@ impl AnnotationLowerer<'_> {
                 let retained_states = self
                     .retained_states
                     .ok_or("`.result` names a region of a function body being executed")?;
-                retained_states.region_result_value(region)?;
+                retained_states
+                    .region_result_value_at(region, environment.call_result_point.as_ref())?;
                 Err(format!(
                     "`{}.result` is not an algebraic value",
                     diagnostics::describe_code_region_ref(region)
@@ -8987,6 +8993,7 @@ impl AnnotationLowerer<'_> {
             function_contract: false,
             at_function_entry: false,
             reference_state: Some(state.clone()),
+            call_result_point: Some(selector.clone()),
             contract_result_in_scope: environment.contract_result_in_scope,
             contract_result: environment.contract_result.clone(),
             checking_definedness: environment.checking_definedness,
@@ -10300,8 +10307,10 @@ impl AnnotationLowerer<'_> {
     ) -> Option<u32> {
         match expression {
             ContractExpression::RegionResult(region) => {
-                let ProgramValue::Pointer(pointer) =
-                    self.retained_states?.region_result_value(region).ok()?
+                let ProgramValue::Pointer(pointer) = self
+                    .retained_states?
+                    .region_result_value_at(region, environment.call_result_point.as_ref())
+                    .ok()?
                 else {
                     return None;
                 };
@@ -10318,10 +10327,17 @@ impl AnnotationLowerer<'_> {
             | ContractExpression::Field { lowered, .. } => {
                 self.program_expression_array_element_width(lowered, environment)
             }
-            ContractExpression::Old(inner)
-            | ContractExpression::At {
-                expression: inner, ..
-            } => self.contract_pointer_element_width(inner, environment),
+            ContractExpression::Old(inner) => {
+                self.contract_pointer_element_width(inner, environment)
+            }
+            ContractExpression::At {
+                selector,
+                expression,
+            } => {
+                let mut context = environment.clone();
+                context.call_result_point = Some(selector.clone());
+                self.contract_pointer_element_width(expression, &context)
+            }
             ContractExpression::Add(left, right) => self
                 .contract_pointer_element_width(left, environment)
                 .or_else(|| self.contract_pointer_element_width(right, environment)),

@@ -748,7 +748,7 @@ fn advance_execution_proof_statement(
                 );
                 recorded_states.record_read_events(statement_index, &transition.execution_facts);
                 if let Some(result) = &transition.call_result {
-                    recorded_states.record_call_result(statement_index, Some(result.clone()));
+                    recorded_states.record_call_transition_result(statement_index, result.clone());
                 }
                 if let Some(parameters) = &transition.call_parameters {
                     record_code_region_program_state(

@@ -1687,7 +1687,7 @@ fn register_call_result_name(
 /// persistent storage.
 fn citable_states(
     retained_states: &crate::surface::RecordedStates,
-) -> Vec<(String, ExecutionState)> {
+) -> Vec<(crate::surface::ProgramPointSelector, ExecutionState)> {
     use crate::surface::{CodeRegionRef, ProgramPointRef, ProgramPointSelector};
     let recent = retained_states.recent(NAMED_STATE_LIMIT);
     // The proof's own marks stay citable however many statements ran since:
@@ -1711,28 +1711,29 @@ fn citable_states(
                 CodeRegionRef::Region(_) | CodeRegionRef::Loop(_) | CodeRegionRef::Label(_)
             ),
         })
-        .map(|(selector, state)| {
-            (
-                crate::surface::diagnostics::describe_program_point_selector(selector),
-                state.clone(),
-            )
-        })
+        .map(|(selector, state)| (selector.clone(), state.clone()))
         .collect()
 }
 
 fn register_state_names(
     labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
-    citable: &[(String, ExecutionState)],
+    citable: &[(ProgramPointSelector, ExecutionState)],
     retained_states: &crate::surface::RecordedStates,
 ) {
     // A read of a state's memory is spelled against the locals it held,
     // as `at(point, p[1])`.
     for (point, state) in citable {
-        labels.source_state(state, point.clone());
+        labels.source_state(
+            state,
+            crate::surface::diagnostics::describe_program_point_selector(point),
+        );
     }
-    for (point, state) in citable {
+    for (selector, state) in citable {
+        let point = crate::surface::diagnostics::describe_program_point_selector(selector);
         for (name, stored) in state.locals().object_values() {
-            if let Some(result) = retained_states.call_capture_expression(name, stored) {
+            if let Some(result) =
+                retained_states.call_capture_expression(name, stored, Some(selector))
+            {
                 register_call_result_name(
                     labels,
                     crate::surface::diagnostics::describe_contract_expression(&result),
@@ -1862,7 +1863,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                         let spelling = execution
                             .presentation
                             .recorded_states
-                            .call_capture_expression(name, value)
+                            .call_capture_expression(name, value, None)
                             .map(|result| {
                                 crate::surface::diagnostics::describe_contract_expression(&result)
                             })
