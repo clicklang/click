@@ -7599,7 +7599,7 @@ fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
     use crate::kernel::PointerValue;
     let _session = crate::kernel::VerificationSession::enter();
     let node = PointerValue::new(
-        Pointer::symbolic(Variable(999977)),
+        Address::symbolic(Variable(999977)),
         ProgramType::Int32Pointer,
     );
     let parameters = [crate::languages::interface::ImportedParameter::new(
