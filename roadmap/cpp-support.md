@@ -160,9 +160,13 @@ implementation:
   checking, plus bounds, permission, byte-value, result and cursor controls.
   The [modular byte-output](../design/object-model-current-audit.md#modular-byte-output-composition)
   and [writable-byte span](../design/object-model-current-audit.md#writable-byte-span-composition)
-  witnesses remain the smaller initializer/authority checks. The next
-  application step is the real cursor's exception behavior; the fixture reader
-  does not model Bitcoin's `SpanReader` or malformed input.
+  witnesses remain the smaller initializer/authority checks. The real cursor's
+  unchanged `SpanReader::ignore` now proves its normal advance and exact
+  `std::ios_base::failure` path, returning borrowed authority and preserving
+  backing bytes on both exits. Its modular caller also expands and replays.
+  The next application step is `SpanReader::read`, followed by serialization
+  through that real reader and typed catches; the earlier fixture reader
+  still does not model malformed input.
   Plain `owns` still requires initialized input and does not express an
   initializer.
 

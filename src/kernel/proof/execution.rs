@@ -1846,7 +1846,7 @@ impl CheckedResourceRewrite {
             &singleton,
             selected,
             std::slice::from_ref(definition),
-            before_state.memory(),
+            &before_state.program_point(),
             assumptions,
         )
         .ok_or("cannot instantiate authority transfer wrapper")?;
@@ -2282,7 +2282,7 @@ impl CheckedResourceRewrite {
                     &singleton,
                     selected,
                     std::slice::from_ref(definition),
-                    before_state.memory(),
+                    &before_state.program_point(),
                     assumptions,
                 )
                 .ok_or("member body access cannot instantiate its private body")?;
@@ -2738,7 +2738,7 @@ fn checked_borrowing_fold_hold(
         &temporary,
         selected,
         function.composite_resource_definitions(),
-        before_state.memory(),
+        &before_state.program_point(),
         assumptions,
     )
     .ok_or("a loan hold's composite body could not be instantiated")?;
@@ -2977,7 +2977,7 @@ impl CheckedResourceObservation {
                     &temporary,
                     &definition_authority,
                     function.composite_resource_definitions(),
-                    after_state.memory(),
+                    &after_state.program_point(),
                     assumptions,
                 )
                 .ok_or("the observed composite body could not be instantiated")?;
@@ -5414,7 +5414,7 @@ fn interface_resources_guard_heap_frees(
                     .unchecked_with_fact(resource.clone()),
                 resource,
                 function.composite_resource_definitions(),
-                arm_states[arm_index].memory(),
+                &arm_states[arm_index].program_point(),
                 arm_facts[arm_index].assumptions(),
             )
             .is_some_and(|expanded| {
@@ -5870,8 +5870,9 @@ pub(crate) enum CheckedBranchSplitError {
     InvalidEvidence,
 }
 
-/// A complete, kernel-checked direct call with exactly one feasible normal
-/// successor and one feasible exceptional successor. Individual statement
+/// A complete, kernel-checked direct call with one normal successor and one
+/// exceptional successor. An arm may be inconsistent with the root facts;
+/// its proof then closes by contradiction. Individual statement
 /// theorems prove each arm; this witness proves that neither arm was omitted.
 /// Its source and fact root are exact, so it cannot authorize a fork at a
 /// different call or after the proof context has changed.
@@ -5932,12 +5933,7 @@ impl CheckedCallOutcomeSplit {
                 else {
                     return false;
                 };
-                if **proved_state != state
-                    || **proved_statement != statement
-                    || outcome != expected
-                    || path_facts
-                        .iter()
-                        .any(|fact| root_facts.directly_conflicts_with(fact))
+                if **proved_state != state || **proved_statement != statement || outcome != expected
                 {
                     return false;
                 }
@@ -9311,7 +9307,11 @@ impl ExecutionProofCore {
                         if let Some(tail) = tail {
                             frame.handler = tail;
                         } else {
-                            self.evidence_try_stack.pop();
+                            let completed = self
+                                .evidence_try_stack
+                                .pop()
+                                .expect("handler frame just matched");
+                            return Some(completed.tail_after_try);
                         }
                     }
                     return Some(self.evidence_source.clone());
@@ -9371,11 +9371,20 @@ impl ExecutionProofCore {
                             matches!(tail_head.as_ref(), ProgramStatement::Throw(_))
                                 && tail_tail.is_none()
                         });
-                    self.evidence_try_stack.pop();
+                    let completed = self
+                        .evidence_try_stack
+                        .pop()
+                        .expect("handler frame just matched");
                     if cleanup_rethrows {
                         return Some(self.evidence_source.clone());
                     }
-                    return Some(handler_tail);
+                    return Some(match (handler_tail, completed.tail_after_try) {
+                        (Some(handler), Some(tail)) => {
+                            Some(Arc::new(ProgramStatement::seq(handler, tail)))
+                        }
+                        (Some(handler), None) => Some(handler),
+                        (None, tail) => tail,
+                    });
                 }
             }
             return None;

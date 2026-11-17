@@ -7912,6 +7912,10 @@ impl ResourceContext {
         self,
         assumptions: &PureFactContext,
     ) -> Self {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter(
+            "bounded constructed return normalization",
+        );
         self.normalized_with_byte_endpoints(assumptions, false, true)
     }
 

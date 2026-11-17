@@ -389,7 +389,6 @@ impl BindingName {
     }
     pub fn program_type(&self) -> Option<ProgramType> {
         match self {
-            Self::ContractException => Some(ProgramType::Int32),
             Self::Local(id) => id.program_type(),
             Self::Static(id) => id.program_type(),
             _ => None,

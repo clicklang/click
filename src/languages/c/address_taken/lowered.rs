@@ -56,7 +56,8 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             ProgramStatement::DeclareAggregate { name, .. } => {
                 summary.taken.insert(name.clone().into());
             }
-            ProgramStatement::Skip
+            ProgramStatement::ThrowOpaque(_)
+            | ProgramStatement::Skip
             | ProgramStatement::EndScalarReference(_)
             | ProgramStatement::ScalarReferenceScope(_)
             | ProgramStatement::Break

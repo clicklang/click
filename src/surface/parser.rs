@@ -8,6 +8,7 @@ mod rust_generic_functions;
 mod rust_generic_resources;
 mod rust_generic_traits;
 mod rust_literals;
+mod rust_reference_authority;
 use super::names;
 use crate::kernel::{bits32_constant, constant_u32};
 mod rust_syntax;
@@ -1610,6 +1611,14 @@ impl Parser {
                 positions,
                 written,
                 rust_generic_resources::rust_concrete,
+            )?;
+            // A reference parameter's type grants the authority a safe
+            // caller holds over its referent.
+            let (tokens, positions) = rust_reference_authority::derive_reference_authority(
+                tokens,
+                positions,
+                &parser.struct_layouts,
+                &parser.rust_enum_types,
             )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
@@ -5288,7 +5297,7 @@ impl Parser {
                 Some("exceptional") => {
                     if signature.exceptional_type().is_none() {
                         return Err(self.error(format!(
-                            "`exceptional ensures` requires `throws int32` in the signature of `{}`",
+                            "`exceptional ensures` requires `throws` in the signature of `{}`",
                             signature.name()
                         )));
                     }
@@ -5367,16 +5376,33 @@ impl Parser {
         }
         if signature.exceptional_type().is_some()
             && (!constructs.is_empty()
+                || requires.iter().any(|requirement| matches!(requirement, Requirement::Resource(resource)
+                    if !matches!(resource, ResourceClause::OwnMemory(_) | ResourceClause::ViewMemory(_) | ResourceClause::MemoryAggregate { .. })))
+                || ensures.iter().any(|ensure| {
+                    matches!(ensure.ensure(), Ensure::Resource(_)) && !ensure.borrowed
+                })
                 || requires
                     .iter()
-                    .any(|requirement| matches!(requirement, Requirement::Resource(_)))
-                || ensures
-                    .iter()
-                    .any(|ensure| matches!(ensure.ensure(), Ensure::Resource(_))))
+                    .filter(|requirement| matches!(requirement, Requirement::Resource(_)))
+                    .count()
+                    != ensures.iter().filter(|ensure| ensure.borrowed).count()
+                        + requires
+                            .iter()
+                            .filter(|requirement| {
+                                matches!(
+                                    requirement,
+                                    Requirement::Resource(
+                                        ResourceClause::ViewMemory(_)
+                                            | ResourceClause::MemoryAggregate {
+                                                access: ResourceAccessMode::View,
+                                                ..
+                                            }
+                                    )
+                                )
+                            })
+                            .count())
         {
-            return Err(self.error(
-                "exceptional contracts with resources or mutable effects are not supported in this slice",
-            ));
+            return Err(self.error("throwing contracts support borrowed memory `owns` and `views`, not resource transitions"));
         }
         // `diverges` says the function may not return, so it cannot also ask
         // for the termination evidence a `decreases` clause requests, and
@@ -5864,12 +5890,22 @@ impl Parser {
             let parsed = self.parse_type()?;
             if parsed.constant
                 || parsed.pointee_constant
-                || parsed.struct_name.is_some()
-                || parsed.interface_type != InterfaceType::Int32
+                || parsed.reference
+                || parsed.struct_pointer
             {
-                return Err(self.error("the exceptional payload type must be `int32`"));
+                return Err(self.error("an exception payload is an unqualified value type"));
             }
-            Some(InterfaceType::Int32)
+            match (parsed.interface_type, parsed.struct_name) {
+                (_, Some(name)) if self.verifies_cpp() => Some(InterfaceType::Parameter(
+                    crate::languages::cpp::names::opaque_exception_type(&name),
+                )),
+                (ty @ (InterfaceType::Int32 | InterfaceType::Parameter(_)), None) => Some(ty),
+                _ => {
+                    return Err(self.error(
+                        "the exceptional payload must be int32 or a resolved opaque value type",
+                    ));
+                }
+            }
         } else {
             None
         };
@@ -6184,6 +6220,34 @@ impl Parser {
         } else {
             false
         };
+        // Opaque standard exception values have no addressable layout.
+        if self.verifies_cpp()
+            && (self.peek_ident() == Some("std::ios_base::failure")
+                || (self.peek_ident() == Some("std")
+                    && self.tokens.get(self.position + 1) == Some(&Token::ColonColon)
+                    && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(name)) if name == "ios_base")
+                    && self.tokens.get(self.position + 3) == Some(&Token::ColonColon)
+                    && matches!(self.tokens.get(self.position + 4), Some(Token::Ident(name)) if name == "failure")))
+        {
+            self.position += if self.peek_ident() == Some("std::ios_base::failure") {
+                1
+            } else {
+                5
+            };
+            if matches!(self.peek(), Some(Token::Amp | Token::Star)) {
+                return Err(self.error("opaque exception payloads have no addressable layout"));
+            }
+            return Ok(ParsedType {
+                interface_type: InterfaceType::Parameter(crate::kernel::TypeParameterName::intern(
+                    "std::ios_base::failure",
+                )),
+                struct_name: None,
+                struct_pointer: false,
+                constant: is_constant,
+                pointee_constant: false,
+                reference: false,
+            });
+        }
         // A generic class template's type parameter in its method's head,
         // `T`, `T&` or `T*`: a value of the abstract type, or its address.
         if self.verifies_cpp()
@@ -12309,6 +12373,7 @@ impl Parser {
             self.parse_segment_primary()?
         };
         let mut struct_name = match &surface_base {
+            ContractExpression::Field { .. } => self.contract_expression_struct_name(&surface_base),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
@@ -13579,6 +13644,7 @@ impl Parser {
     }
 
     fn contract_expression_struct_name(&self, expression: &ContractExpression) -> Option<String> {
+        crate::instrumentation::record_deterministic_work(1);
         match expression {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::Local(_)
@@ -13606,9 +13672,14 @@ impl Parser {
                 .cloned(),
             ContractExpression::Field { base, field, .. } => {
                 let struct_name = self.contract_expression_struct_name(base)?;
-                self.resolve_struct_field_metadata(&struct_name, field)
-                    .ok()?
-                    .struct_name
+                // Only nominal identity is needed here. Read the exact
+                // declaration and field indexes, without preparing a resource
+                // slot or inspecting the record's other fields.
+                self.struct_layouts
+                    .get(&struct_name)?
+                    .field(field)?
+                    .struct_name()
+                    .map(str::to_string)
             }
             ContractExpression::Old(inner)
             | ContractExpression::At {
@@ -14323,6 +14394,7 @@ impl Parser {
         }
         expression = self.resolve_reference_parameter(expression)?;
         let mut struct_name = match &expression {
+            ContractExpression::Field { .. } => self.contract_expression_struct_name(&expression),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),

@@ -6620,7 +6620,7 @@ fn with_owner_read_authority_rederived(
                     .unchecked_with_fact(owner.clone()),
                 owner,
                 definitions,
-                head.memory(),
+                &head.program_point(),
                 assumptions,
             )
             .map(|(_, children, _)| {
@@ -8660,7 +8660,8 @@ pub(super) fn statement_may_write_memory(
 ) -> bool {
     match statement {
         ProgramStatement::ScalarReferenceScope(scope) => !scope.cleared_locals().is_empty(),
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -8753,7 +8754,8 @@ pub(super) fn collect_loop_modified_locals(
         ProgramStatement::EndAutomaticLifetimes { names: retired, .. } => {
             names.extend(retired.iter().cloned())
         }
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -8994,6 +8996,7 @@ fn for_each_statement_expression<'a>(
 ) {
     match statement {
         ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
@@ -9104,7 +9107,8 @@ pub(crate) fn collect_address_taken_locals(
 ) {
     match statement {
         ProgramStatement::EndAutomaticLifetimes { .. } => {}
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break

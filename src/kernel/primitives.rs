@@ -3698,16 +3698,15 @@ impl std::fmt::Debug for CallbackSignature {
 
 /// The exceptional result channel declared by a function signature.
 ///
-/// This is deliberately kernel-internal until the surface language has a
-/// settled way to spell exceptional contracts.  The closed representation
-/// prevents body execution from silently inventing new exceptional payload
-/// types in the meantime.
+/// The declared, exact exceptional channel. Surface contracts currently spell
+/// the scalar channel and the pinned opaque standard exception class; source
+/// execution cannot silently invent another payload type.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) enum ExceptionalSignature {
     #[default]
     None,
-    // Staged for kernel callers before any source importer can construct it.
     Int32,
+    Opaque(TypeParameterName),
 }
 
 impl ExceptionalSignature {
@@ -3716,7 +3715,15 @@ impl ExceptionalSignature {
     }
 
     pub(crate) fn permits(self, value: &ProgramValue) -> bool {
-        matches!((self, value), (Self::Int32, ProgramValue::Int32(_)))
+        self.payload_type() == Some(value.program_type())
+    }
+
+    pub(crate) fn payload_type(self) -> Option<ProgramType> {
+        match self {
+            Self::None => None,
+            Self::Int32 => Some(ProgramType::Int32),
+            Self::Opaque(name) => Some(ProgramType::Parameter(name)),
+        }
     }
 }
 
@@ -5696,6 +5703,9 @@ pub enum ProgramStatement {
     /// Produce a checked exceptional outcome. The first internal slice carries
     /// one int32 payload; source-language handler matching lands separately.
     Throw(ProgramExpression),
+    /// Throw a fresh opaque value of a nominal type. The frontend has checked
+    /// construction and trivial destruction; the outcome names it `exception`.
+    ThrowOpaque(TypeParameterName),
     /// Catch an int32 exceptional outcome from `try_body` and bind its payload
     /// for the handler. Other outcomes retain their original path and state.
     TryCatchInt32 {
@@ -15904,8 +15914,17 @@ mod representation_size_tests {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TypeParameterName(u32);
 
-static TYPE_PARAMETER_NAMES: std::sync::Mutex<Vec<&'static AlgebraicType>> =
-    std::sync::Mutex::new(Vec::new());
+struct TypeParameterNames {
+    types: Vec<&'static AlgebraicType>,
+    // Rigid values use only their name, never the unrelated enum definitions.
+    rigid: std::collections::BTreeMap<String, TypeParameterName>,
+}
+
+static TYPE_PARAMETER_NAMES: std::sync::Mutex<TypeParameterNames> =
+    std::sync::Mutex::new(TypeParameterNames {
+        types: Vec::new(),
+        rigid: std::collections::BTreeMap::new(),
+    });
 
 impl TypeParameterName {
     /// The abstract type parameter of this name.
@@ -15915,37 +15934,75 @@ impl TypeParameterName {
 
     /// The type a value of `algebraic_type` has.
     pub fn of(algebraic_type: &AlgebraicType) -> Self {
-        let mut types = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
-        if let Some(index) = types.iter().position(|known| *known == algebraic_type) {
+        let mut names = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
+        let rigid = algebraic_type.rigid
+            && algebraic_type.arguments.is_empty()
+            && algebraic_type.variants.is_empty();
+        if rigid {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(known) = names.rigid.get(&algebraic_type.name) {
+                return *known;
+            }
+        } else if let Some(index) = names.types.iter().position(|known| {
+            crate::instrumentation::record_deterministic_work(1);
+            *known == algebraic_type
+        }) {
             return Self(index as u32);
         }
-        types.push(Box::leak(Box::new(algebraic_type.clone())));
-        Self(types.len() as u32 - 1)
+        let id = Self(names.types.len() as u32);
+        names
+            .types
+            .push(Box::leak(Box::new(algebraic_type.clone())));
+        if rigid {
+            names.rigid.insert(algebraic_type.name.clone(), id);
+        }
+        id
     }
 
     pub fn name(self) -> &'static str {
-        &TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].name
+        &TYPE_PARAMETER_NAMES
+            .lock()
+            .expect("type parameter names")
+            .types[self.0 as usize]
+            .name
     }
 
     /// The algebraic type a value of this type is: rigid for a type
     /// parameter, with its variants for an enum.
     pub fn algebraic_type(self) -> AlgebraicType {
-        TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].clone()
+        TYPE_PARAMETER_NAMES
+            .lock()
+            .expect("type parameter names")
+            .types[self.0 as usize]
+            .clone()
     }
 
     /// Whether `algebraic_type` is the type of a C carrier already named,
     /// so a memory cell can hold its values. Nothing is registered.
     pub(crate) fn carries(algebraic_type: &AlgebraicType) -> bool {
-        TYPE_PARAMETER_NAMES
-            .lock()
-            .expect("type parameter names")
-            .contains(&algebraic_type)
+        let names = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
+        if algebraic_type.rigid
+            && algebraic_type.arguments.is_empty()
+            && algebraic_type.variants.is_empty()
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            names.rigid.contains_key(&algebraic_type.name)
+        } else {
+            names.types.iter().any(|known| {
+                crate::instrumentation::record_deterministic_work(1);
+                *known == algebraic_type
+            })
+        }
     }
 
     /// Whether values of this type are an enum's, which the program
     /// constructs and matches, rather than an abstract type parameter's.
     pub fn is_enum(self) -> bool {
-        !TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].rigid
+        !TYPE_PARAMETER_NAMES
+            .lock()
+            .expect("type parameter names")
+            .types[self.0 as usize]
+            .rigid
     }
 }
 

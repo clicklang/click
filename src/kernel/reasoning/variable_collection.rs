@@ -971,7 +971,8 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match statement {
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }

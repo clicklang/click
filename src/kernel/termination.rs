@@ -559,7 +559,8 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
             ProgramStatement::EndAutomaticLifetimes { names, .. } => {
                 Ok(names.iter().fold(paths, |paths, name| forget(name, paths)))
             }
-            ProgramStatement::Skip
+            ProgramStatement::ThrowOpaque(_)
+            | ProgramStatement::Skip
             | ProgramStatement::Continue
             | ProgramStatement::Goto { .. }
             | ProgramStatement::Assert { .. }
@@ -1378,7 +1379,8 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
     let mut escapes =
         |expression: &ProgramExpression| expression_address_taken_locals(expression, names);
     match statement {
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -1811,8 +1813,8 @@ fn statement_calls_visiting(
                 statement_calls_visiting(&case.body, calls, visit);
             }
         }
-
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -1894,8 +1896,8 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
                 statement_declared_variables(&case.body, names);
             }
         }
-
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -2039,7 +2041,9 @@ fn walk_termination_paths<W: TerminationWalk>(
         walk_termination_paths(walk, statement, paths)
     };
     match statement {
-        ProgramStatement::Return(_) | ProgramStatement::Throw(_) => Ok(WalkPaths::none()),
+        ProgramStatement::Return(_)
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::ThrowOpaque(_) => Ok(WalkPaths::none()),
         // A `break` leaves the innermost `switch` or loop and resumes after
         // it, carrying what it holds here. It does not reach the next
         // statement in this body, which is what `continuing` is empty for.
@@ -2191,7 +2195,8 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
                 }
                 Ok(lower_bounds)
             }
-            ProgramStatement::Skip
+            ProgramStatement::ThrowOpaque(_)
+            | ProgramStatement::Skip
             | ProgramStatement::Continue
             | ProgramStatement::Goto { .. }
             | ProgramStatement::Declare { .. }
@@ -3587,7 +3592,8 @@ fn collect_loops_in_order<'a>(
         // Spelled out, as in `check_loops`: the two walks number the same
         // loops only while they descend into the same statements, so a new
         // statement kind must be placed in both.
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -3855,8 +3861,8 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
                 collect_loops(&case.body, loops);
             }
         }
-
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -4105,8 +4111,8 @@ fn visit_loop_obligations(
             }
             Ok(())
         }
-
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -4394,7 +4400,8 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
     let mut visit =
         |expression: &ProgramExpression| expression_function_addresses(expression, taken);
     match statement {
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -4769,7 +4776,8 @@ fn self_call_loop_indices(
         // Spelled out, as in `loop_at_index` and `check_loops`: these walks
         // number the same loops only while they descend into the same
         // statements, so a new statement kind must be placed in all of them.
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }

@@ -80,8 +80,8 @@ fn children_all(
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => visit(try_body) && visit(handler),
-
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }

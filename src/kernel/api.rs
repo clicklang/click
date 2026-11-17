@@ -3984,7 +3984,7 @@ fn install_borrowed_contract_inputs(
                 &singleton,
                 &viewed,
                 function.composite_resource_definitions(),
-                state.memory(),
+                &state.program_point(),
                 assumptions,
             )
             .map(|(_, mut children, raw_children)| {

@@ -211,7 +211,7 @@ fn viewed_existential_children_keep_their_binding_and_never_gain_owned_custody()
 }
 
 #[test]
-fn complex_existentials_stay_explicitly_legacy_and_migrated_failures_do_not_retry() {
+fn unsupported_existentials_stay_legacy_and_migrated_failures_do_not_retry() {
     let facts = PureFactContext::new();
     let evaluated = existential_outputs(Pointer::symbolic(Variable(8_850_003)), 1, &facts);
     let source = evaluated.occurrences[0].source;
@@ -234,8 +234,13 @@ fn complex_existentials_stay_explicitly_legacy_and_migrated_failures_do_not_retr
             &ExecutionState::new(),
             &facts,
         );
-        assert!(bodies.get(source).is_none());
-        assert!(bodies.1.contains(&source));
+        if variant == 0 {
+            assert_eq!(bodies.get(source).unwrap().witnesses[&source].len(), 2);
+            assert!(bodies.1.is_empty());
+        } else {
+            assert!(bodies.get(source).is_none());
+            assert!(bodies.1.contains(&source));
+        }
     }
     let mut invalid = existential_definition(1);
     invalid.contains.push(invalid.contains[1].clone());
@@ -291,4 +296,147 @@ fn existential_binding_retains_the_recorded_word_origin() {
         vec![ProgramValue::pointer(hidden.clone())]
     );
     assert_eq!(body.transfers[1].fact, owner(hidden, 0, 1));
+}
+
+#[test]
+fn nested_existential_returns_keep_bindings_and_do_not_infer_them_from_siblings() {
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_850_030));
+    let mut outer = existential_definition(0);
+    outer
+        .witnesses
+        .push(program_parameter("second", ProgramType::Int32Pointer));
+    outer.contains.push(composite_spec(
+        "leaf",
+        variable("hidden"),
+        ResourceTransferRole::Borrow,
+    ));
+    outer.contains.push(composite_spec(
+        "leaf",
+        variable("second"),
+        ResourceTransferRole::Borrow,
+    ));
+    let leaf = CompositeResourceDefinition::new(
+        "leaf",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
+            variable("p"),
+            int32_literal(0),
+            int32_literal(1),
+        ))],
+        vec![],
+    );
+    let evaluated = existential_outputs(pointer, 1, &facts);
+    let source = evaluated.occurrences[0].source;
+    let _fast =
+        crate::kernel::search::FastOperationScope::enter("multiple nested returned witnesses");
+    let bodies = ConstructedReturnBodies::construct(
+        &evaluated,
+        &[outer, leaf],
+        &ExecutionState::new(),
+        &facts,
+    );
+    assert!(bodies.1.is_empty());
+    let body = bodies.get(source).unwrap();
+    let values = &body.witnesses[&source];
+    assert_eq!(values.len(), 2);
+    assert_ne!(values[0], values[1]);
+    let nested = body
+        .transfers
+        .iter()
+        .filter(|transfer| transfer.parent != source)
+        .collect::<Vec<_>>();
+    assert_eq!(nested.len(), 2);
+    for (value, child) in values.iter().zip(nested) {
+        let ProgramValue::Pointer(pointer) = value else {
+            panic!("pointer witness");
+        };
+        assert_eq!(child.fact, owner(pointer.pointer().clone(), 0, 1));
+        assert!(
+            body.transfers
+                .iter()
+                .any(|parent| parent.source == child.parent)
+        );
+    }
+}
+
+#[test]
+fn a_nested_witness_does_not_select_a_matching_sibling_description() {
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_850_050));
+    let parent = CompositeResourceDefinition::new(
+        "a_parent",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![
+            ResourceSpec::composite(
+                ResourceAccessMode::Own,
+                "b_witnessed".into(),
+                vec![],
+                vec![],
+            ),
+            composite_spec("leaf", variable("p"), ResourceTransferRole::Borrow),
+        ],
+        vec![],
+    );
+    let mut witnessed = CompositeResourceDefinition::new(
+        "b_witnessed",
+        vec![],
+        None,
+        false,
+        vec![composite_spec(
+            "leaf",
+            variable("hidden"),
+            ResourceTransferRole::Borrow,
+        )],
+        vec![],
+    );
+    witnessed
+        .witnesses
+        .push(program_parameter("hidden", ProgramType::Int32Pointer));
+    let leaf = CompositeResourceDefinition::new(
+        "leaf",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
+            variable("p"),
+            int32_literal(0),
+            int32_literal(1),
+        ))],
+        vec![],
+    );
+    let evaluated = EvaluatedReturnResources::new(&facts)
+        .admit(
+            ResourceFact::own_composite(
+                "a_parent".into(),
+                vec![ProgramValue::pointer(pointer.clone())],
+            ),
+            ReturnOwnershipOrigin::Description,
+            &facts,
+        )
+        .unwrap();
+    let _fast = crate::kernel::search::FastOperationScope::enter(
+        "nested witness beside a matching sibling",
+    );
+    let bodies = ConstructedReturnBodies::construct(
+        &evaluated,
+        &[parent, witnessed, leaf],
+        &ExecutionState::new(),
+        &facts,
+    );
+    let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+    let nested_source = body.transfers[0].source;
+    let [ProgramValue::Pointer(hidden)] = body.witnesses[&nested_source].as_slice() else {
+        panic!("one nested witness");
+    };
+    assert_ne!(hidden.pointer(), &pointer);
+    assert!(body.expansion.contains(&owner(pointer, 0, 1)));
+    assert!(
+        body.expansion
+            .contains(&owner(hidden.pointer().clone(), 0, 1))
+    );
 }

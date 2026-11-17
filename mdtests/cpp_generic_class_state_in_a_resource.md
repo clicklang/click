@@ -297,6 +297,7 @@ template<class T> Stack<T>::~Stack() {
         }
     }
     unfold(list);
+    step();
     solve();
 }
 int round_trip(Container<int>& container, int x) {
