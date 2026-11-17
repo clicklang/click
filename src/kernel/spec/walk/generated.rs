@@ -410,7 +410,7 @@ impl Gen {
         let choice = if depth == 0 {
             self.pick(2)
         } else {
-            self.pick(18)
+            self.pick(19)
         };
         match choice {
             0 => SpecProposition::Comparison {
@@ -484,6 +484,7 @@ impl Gen {
                 classification: FloatClassification::Finite,
             },
             15 => SpecProposition::Or(Box::new(self.prop(d)), Box::new(self.prop(d))),
+            18 => SpecProposition::MutexHeld(Box::new(self.expr(d))),
             16 => SpecProposition::ResourceViewable {
                 memory: self.memory(),
                 resource: self.resource(d),

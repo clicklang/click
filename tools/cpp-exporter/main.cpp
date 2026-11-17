@@ -2697,6 +2697,12 @@ private:
     const auto *local_reference = local->getType()->getAs<clang::LValueReferenceType>();
     const bool int_reference = local_reference != nullptr &&
         supported_pointer_element(local_reference->getPointeeType());
+    const auto *reference_record = local_reference == nullptr ? nullptr :
+        local_reference->getPointeeType()->getAsCXXRecordDecl();
+    const bool record_reference = reference_record != nullptr &&
+        !local_reference->getPointeeType().isVolatileQualified() &&
+        !local_reference->getPointeeType().isRestrictQualified();
+    if (record_reference && !remember_record(reference_record)) return std::nullopt;
     const auto *record_type = local->getType()->getAs<clang::RecordType>();
     const auto *record =
         record_type == nullptr
@@ -2721,12 +2727,12 @@ private:
            "exception-enabled normal-only C++ local objects require trivial destruction");
       return std::nullopt;
     }
-    if (!scalar_int && !mutable_pointer && !record_object && !int_reference &&
+    if (!scalar_int && !mutable_pointer && !record_object && !int_reference && !record_reference &&
         !function_pointer_local) {
       fail(local->getLocation(),
            "the supported automatic C++ local must resolve to "
            "signed/unsigned "
-           "32/64/128-bit integer or unsigned char, an initialized native object or simple record pointer, a native element lvalue reference, a function pointer, or one simple record object");
+           "32/64/128-bit integer or unsigned char, an initialized native object or simple record pointer, a native element or record lvalue reference, a function pointer, or one simple record object");
       return std::nullopt;
     }
     if (!local->hasInit() && !mutable_int) {
@@ -2929,6 +2935,10 @@ private:
       initializer["span"] = span(source_initializer->getSourceRange());
     } else if (const auto *call = initializer_call;
                call != nullptr && !is_numeric_limits_max_call(call)) {
+      if (record_reference) {
+        fail(call->getExprLoc(), "record-reference locals currently bind existing object lvalues, not call results");
+        return std::nullopt;
+      }
       if (!(int_reference
               ? source_initializer->isLValue() && scalar_call->conversions.empty() &&
                 context_.hasSameType(call->getCallReturnType(context_), local->getType())
@@ -2948,7 +2958,7 @@ private:
       initializer["arguments"] = std::move(lowered->arguments);
       initializer["span"] = std::move(lowered->span);
     } else {
-      auto value = int_reference
+      auto value = (int_reference || record_reference)
           ? lower_reference_binding(source_initializer, local->getType(), function)
           : lower_expression(source_initializer, function);
       if (!value) {
@@ -3582,8 +3592,9 @@ private:
                           const clang::FunctionDecl *function) {
     const auto *reference = reference_type->getAs<clang::LValueReferenceType>();
     if (reference == nullptr || !expression->isLValue() ||
-        !supported_pointer_element(reference->getPointeeType())) {
-      fail(expression->getExprLoc(), "C++ reference results require a native element lvalue");
+        (!supported_pointer_element(reference->getPointeeType()) &&
+         reference->getPointeeType()->getAsCXXRecordDecl() == nullptr)) {
+      fail(expression->getExprLoc(), "C++ reference bindings require a native element or record lvalue");
       return std::nullopt;
     }
     const auto *source = expression->IgnoreParenImpCasts();
@@ -3599,7 +3610,8 @@ private:
           parameter->getType()->getAs<clang::LValueReferenceType>();
       const bool member = llvm::isa<clang::MemberExpr>(source);
       const bool scalar_object = parameter != nullptr && parameter->hasLocalStorage() &&
-          supported_pointer_element(parameter->getType());
+          (supported_pointer_element(parameter->getType()) ||
+           parameter->getType()->getAsCXXRecordDecl() != nullptr);
       if (!member && (parameter == nullptr || parameter->getDeclContext() != function ||
           (parameter_reference == nullptr && !scalar_object))) {
         fail(expression->getExprLoc(), "C++ references currently bind existing references, automatic native element objects, native element fields, or pointer dereferences");
@@ -5140,13 +5152,15 @@ private:
               ? nullptr
               : parameter->getType()->getAs<clang::LValueReferenceType>();
       const bool integer_field = llvm::isa<clang::MemberExpr>(operand) &&
-          operand->isLValue() && supported_pointer_element(operand->getType());
+          operand->isLValue() && (supported_pointer_element(operand->getType()) ||
+                                 operand->getType()->getAsCXXRecordDecl() != nullptr);
       const bool automatic_scalar = parameter != nullptr &&
           parameter->hasLocalStorage() &&
-          supported_pointer_element(parameter->getType());
+          (supported_pointer_element(parameter->getType()) ||
+           parameter->getType()->getAsCXXRecordDecl() != nullptr);
       const bool integer_reference = reference_type != nullptr &&
-          context_.hasSameType(reference_type->getPointeeType().getUnqualifiedType(),
-                               context_.IntTy);
+          (supported_pointer_element(reference_type->getPointeeType()) ||
+           reference_type->getPointeeType()->getAsCXXRecordDecl() != nullptr);
       if (!integer_field && (parameter == nullptr || parameter->getDeclContext() != function ||
           (!automatic_scalar && !integer_reference))) {
         fail(address->getOperatorLoc(),

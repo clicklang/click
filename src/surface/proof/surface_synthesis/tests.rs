@@ -1773,7 +1773,7 @@ fn forall_loadable_range_call_requirement_is_spellable() {
 /// `exists_loadable_range` calls `need_cells`, whose precondition wraps the
 /// same range in an existential over the length. The witness name and the
 /// binder identities a fresh lowering allocates are its own, so only
-/// spellability is asserted here; the range shape itself round-trips in the
+/// raise-lower principle is asserted here; the range shape itself round-trips in the
 /// universal test above.
 #[test]
 fn exists_loadable_range_call_requirement_is_spellable() {
@@ -6196,6 +6196,124 @@ fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
             );
         });
     }
+}
+
+/// Reduced from the inclusive-range loop's signed `0 <= total` premise.
+/// There is one named word, no program execution, and no recorded snapshot.
+fn comparison_over_named_word_round_trip(
+    local_type: MachineIntegerType,
+    comparison_type: MachineIntegerType,
+) {
+    let word = MachineTerm::Variable(Variable(730_001));
+    let state = ExecutionState::new().with_local(
+        "x",
+        match local_type {
+            MachineIntegerType::Int32 => ProgramValue::Int32(word.clone()),
+            MachineIntegerType::UInt32 => ProgramValue::UInt32(word.clone()),
+            _ => unreachable!(),
+        },
+    );
+    let original = Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: comparison_type,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(MachineTerm::constant(0)),
+            right: Box::new(word),
+        },
+        true,
+    );
+    let surface = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+        .expect("one current local names the only variable");
+    let text = crate::surface::printing::source_click_proposition(&surface);
+    let lowered = relower_written_proposition(&surface, &state).unwrap();
+    assert_eq!(lowered, original, "raised source: {text}");
+}
+
+#[test]
+fn signed_comparison_over_a_signed_local_round_trips() {
+    comparison_over_named_word_round_trip(MachineIntegerType::Int32, MachineIntegerType::Int32);
+}
+
+#[test]
+fn unsigned_comparison_over_an_unsigned_local_round_trips() {
+    comparison_over_named_word_round_trip(MachineIntegerType::UInt32, MachineIntegerType::UInt32);
+}
+
+fn raw_signed_nonnegative(word: MachineTerm) -> Proposition {
+    Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(MachineTerm::constant(0)),
+            right: Box::new(word),
+        },
+        true,
+    )
+}
+
+#[test]
+fn unsigned_small_bound_produces_round_tripping_signed_facts() {
+    let word = MachineTerm::Variable(Variable(730_002));
+    let raw_signed_bound = raw_signed_nonnegative(word.clone());
+    let converted_signed_bound = raw_signed_nonnegative(MachineTerm::sign_cast32(
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int32,
+        word.clone(),
+    ));
+    let parent = PureFactContext::new();
+    assert!(!parent.contains_assumed_exact(&raw_signed_bound));
+    let small = parent.clone().assume_condition(
+        ConditionTerm::unsigned_less_equal(word.clone(), MachineTerm::constant(256)),
+        true,
+    );
+    assert!(!small.contains_assumed_exact(&raw_signed_bound));
+    let state = ExecutionState::new().with_local("x", ProgramValue::UInt32(word.clone()));
+    let signed_word = MachineTerm::sign_cast32(
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int32,
+        word.clone(),
+    );
+    let upper = Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(signed_word),
+            right: Box::new(MachineTerm::constant(256)),
+        },
+        true,
+    );
+    for fact in [&converted_signed_bound, &upper] {
+        assert!(small.contains_assumed_exact(fact));
+        let surface = synthesize_surface_proposition(fact, ParameterBinding::default(), &state)
+            .expect("the derived signed bound has a typed Surface form");
+        let text = crate::surface::printing::source_click_proposition(&surface);
+        assert_eq!(
+            relower_written_proposition(&surface, &state).unwrap(),
+            *fact,
+            "{text}"
+        );
+    }
+    let beyond_sign_bit = parent.assume_condition(
+        ConditionTerm::unsigned_less_equal(word, MachineTerm::constant(0x8000_0000)),
+        true,
+    );
+    assert!(!beyond_sign_bit.contains_assumed_exact(&raw_signed_bound));
+    assert!(!beyond_sign_bit.contains_assumed_exact(&converted_signed_bound));
+}
+
+#[test]
+fn unsigned_small_bound_recovers_an_already_converted_signed_source() {
+    let signed = MachineTerm::Variable(Variable(730_003));
+    let unsigned = MachineTerm::sign_cast32(
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        signed.clone(),
+    );
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::unsigned_less_equal(unsigned, MachineTerm::constant(256)),
+        true,
+    );
+    assert!(facts.contains_assumed_exact(&raw_signed_nonnegative(signed)));
 }
 
 #[test]

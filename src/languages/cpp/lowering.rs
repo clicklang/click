@@ -830,16 +830,29 @@ impl LoweringContext<'_> {
                 (CppType::LvalueReference { .. }, CppInitializer::Value { value }) => {
                     let address = self.lower_expression(value)?;
                     let carrier = reference_carrier_name(&local.name);
-                    let element = scalar::reference_element(&local.value_type)
-                        .ok_or("unsupported C++ reference local")?;
+                    let (pointer_type, constant) = match &local.value_type {
+                        CppType::LvalueReference { pointee }
+                            if matches!(pointee.as_ref(), CppType::Record { .. }) =>
+                        {
+                            (
+                                ProgramType::Int32Pointer,
+                                matches!(pointee.as_ref(), CppType::Record { is_const: true, .. }),
+                            )
+                        }
+                        _ => {
+                            let element = scalar::reference_element(&local.value_type)
+                                .ok_or("unsupported C++ reference local")?;
+                            (element_pointer_type(element)?, element.is_const)
+                        }
+                    };
                     Ok(program_seq(
                         program_declare_with_all_qualifiers(
                             carrier.clone(),
-                            element_pointer_type(element)?,
+                            pointer_type,
                             false,
                             false,
                             false,
-                            element.is_const,
+                            constant,
                         ),
                         program_assign(carrier, address),
                     ))
@@ -2105,18 +2118,13 @@ impl LoweringContext<'_> {
                     input.may_throw,
                 )
             }
-            CppExpression::ReferenceBinding { address, .. } => {
+            CppExpression::ReferenceBinding {
+                address,
+                value_type,
+                ..
+            } => {
                 let input = self.normalize_expression(address)?;
-                let value = if matches!(address.as_ref(), CppExpression::AddressOf { .. }) {
-                    input.value
-                } else {
-                    crate::kernel::program_expression::checked_object_address(
-                        crate::kernel::program_expression::typed_load(
-                            input.value,
-                            ProgramType::Int32,
-                        ),
-                    )
-                };
+                let value = self.reference_binding_address(input.value, address, value_type)?;
                 (input.prefix, value, input.may_throw)
             }
             // The load has the pointee's type, as `lower_expression`'s
@@ -2222,12 +2230,17 @@ impl LoweringContext<'_> {
 
     fn lower_cleanup(&self, cleanup: &CppCleanup) -> Result<ProgramStatement, String> {
         let CppCleanup::Destructor { object, callee, .. } = cleanup;
-        Ok(program_call(
-            self.callee_name(callee)?,
-            vec![crate::kernel::program_expression::cast(
-                self.lower_place(object)?,
-                ProgramType::Int32Pointer,
-            )],
+        Ok(program_seq(
+            program_call(
+                self.callee_name(callee)?,
+                vec![crate::kernel::program_expression::cast(
+                    self.lower_place(object)?,
+                    ProgramType::Int32Pointer,
+                )],
+            ),
+            // A completed automatic destructor also ends its object's
+            // storage lifetime. Raw aliases must not keep that storage live.
+            program_end_automatic_lifetimes(vec![object.name.clone().into()]),
         ))
     }
 
@@ -2501,6 +2514,28 @@ impl LoweringContext<'_> {
             },
             CppExpression::AddressOf {
                 place, value_type, ..
+            } if scalar::record_referent(value_type).is_some() => {
+                let (_, name, constant) = scalar::record_referent(value_type).unwrap();
+                let pointer = self.lower_place(place)?;
+                let address = if place.projections.is_empty() {
+                    pointer
+                } else {
+                    ProgramExpression::Subobject {
+                        pointer: Box::new(pointer),
+                        width: self.record_layout(name)?.size_bytes(),
+                    }
+                };
+                Ok(
+                    crate::kernel::program_expression::cast_with_pointee_qualifiers(
+                        address,
+                        ProgramType::Int32Pointer,
+                        false,
+                        constant,
+                    ),
+                )
+            }
+            CppExpression::AddressOf {
+                place, value_type, ..
             } if !place.projections.is_empty() => {
                 // Address formation checks storage, not a read of the field value.
                 // The member is its own subobject (C++ [basic.compound]): the
@@ -2543,16 +2578,13 @@ impl LoweringContext<'_> {
                 }
                 _ => Err("C++ address-of is outside integer reference lowering".into()),
             },
-            CppExpression::ReferenceBinding { address, .. } => {
+            CppExpression::ReferenceBinding {
+                address,
+                value_type,
+                ..
+            } => {
                 let pointer = self.lower_expression(address)?;
-                if matches!(address.as_ref(), CppExpression::AddressOf { .. }) {
-                    // An existing reference parameter already denotes its referent.
-                    Ok(pointer)
-                } else {
-                    Ok(crate::kernel::program_expression::checked_object_address(
-                        crate::kernel::program_expression::typed_load(pointer, ProgramType::Int32),
-                    ))
-                }
+                self.reference_binding_address(pointer, address, value_type)
             }
             CppExpression::Dereference {
                 pointer,
@@ -2616,6 +2648,44 @@ impl LoweringContext<'_> {
                 Ok(lower_binary_value(*operator, left, right, value_type))
             }
         }
+    }
+
+    fn reference_binding_address(
+        &self,
+        pointer: ProgramExpression,
+        address: &CppExpression,
+        value_type: &CppType,
+    ) -> Result<ProgramExpression, String> {
+        if matches!(address, CppExpression::AddressOf { .. }) {
+            return Ok(pointer);
+        }
+        let (pointer, element) = if let Some((_, name, _)) = scalar::record_referent(value_type) {
+            // The byte-array lvalue denotes the complete record footprint.
+            // Checked address formation validates it without reading fields.
+            let bytes = self.record_layout(name)?.size_bytes();
+            (
+                ProgramExpression::Subobject {
+                    pointer: Box::new(pointer),
+                    width: bytes,
+                },
+                ProgramType::UInt8Array(bytes),
+            )
+        } else {
+            (pointer, ProgramType::Int32)
+        };
+        let checked = crate::kernel::program_expression::checked_object_address(
+            crate::kernel::program_expression::typed_load(pointer, element),
+        );
+        Ok(if matches!(element, ProgramType::UInt8Array(_)) {
+            crate::kernel::program_expression::cast_with_pointee_qualifiers(
+                checked,
+                ProgramType::Int32Pointer,
+                false,
+                matches!(value_type, CppType::LvalueReference { pointee } if matches!(pointee.as_ref(), CppType::Record { is_const: true, .. })),
+            )
+        } else {
+            checked
+        })
     }
 
     fn record_layout(&self, name: &str) -> Result<AggregateLayout, String> {

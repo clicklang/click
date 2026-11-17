@@ -224,7 +224,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   fast-checking guarantee; being called from search grants no exemption.
 - **Unmeasured/coverage work:** the three bridge groups, transition checks, declaration validation, and operation-map growth axes.
   An unresolved label is an investigation task, not proof of a bug.
-- **Owned elsewhere:** `roadmap/unspellable-facts.md` owns the remaining
+- **Owned elsewhere:** `roadmap/raise-lower-principle.md` owns the remaining
   shared-term representation boundaries. Its original R1–R7 reproductions are
   closed; use its current closure checklist rather than reopening those groups.
   Representation costs can occur without any `ProofSearch` call; do not duplicate

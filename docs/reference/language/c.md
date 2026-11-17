@@ -2450,7 +2450,11 @@ Direct assignment to an array object is rejected. Each modeled scalar array
 uses its ABI element width (`int8`/`uint8`: 1 byte, `int16`/`uint16`: 2 bytes,
 `int32`/`uint32`: 4 bytes, and `int64`/`uint64`: 8 bytes). A local array
 initializer writes each element in declaration order; omitted elements are
-zero-initialized, and too many elements are rejected.
+zero-initialized, and too many elements are rejected. Automatic `unsigned int`
+(`uint32`) arrays accept brace initializers, including nested groups for
+multidimensional arrays; each explicit value converts to the unsigned element
+type and omitted elements become zero
+(`mdtests/c_unsigned_array_initializer.md`).
 
 Scalar local arrays may have multiple fixed dimensions, such as
 `int32 matrix[3][4]`. Click lowers their storage in row-major order while

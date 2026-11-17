@@ -109,6 +109,22 @@ fn pure_function_returns_check_all_scalar_result_leaves() {
 }
 
 #[test]
+fn scalar_returns_keep_constructor_bound_algebraic_types() {
+    parser::parse(
+        "spec enum Color { Red, Black, } spec enum Tree { Empty, Node(Color, Tree, Tree), } function black(t: Tree) -> int32 { match t { Tree::Empty => 1, Tree::Node(c, l, r) => if c == Color::Black { 1 } else { 0 }, } }",
+    ).unwrap();
+    let error = parser::parse(
+        "spec enum Color { Red, Black, } spec enum Other { Black, } spec enum Tree { Empty, Node(Color, Tree, Tree), } function wrong(t: Tree) -> int32 { match t { Tree::Empty => 1, Tree::Node(c, l, r) => if c == Other::Black { 1 } else { 0 }, } }",
+    ).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("comparison has types Color and Other in function `wrong`"),
+        "{error}"
+    );
+}
+
+#[test]
 fn pure_function_returns_keep_null_and_numeric_conversions() {
     parser::parse(
         "function narrow(n: uint64) -> int32 { n as int32 } function null() -> int32* { 0 } function choose(p: int32*, n: int32) -> int32* { if n == 0 { 0 } else { p } } spec enum Ptr { Empty, At(int32*) } function get(m: Ptr) -> int32* { match m { Ptr::Empty => 0, Ptr::At(p) => p, } } function inc(n: Integer) -> Integer { n + 1 } function big() -> Integer { 999999999999999999999999999999 }",

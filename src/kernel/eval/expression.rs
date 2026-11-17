@@ -3692,7 +3692,14 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                     let pointer_type = if is_aggregate {
                         Some(ProgramType::Int32Pointer)
                     } else {
-                        lvalue.value_type().pointer_to()
+                        // A byte-array lvalue can name a complete record's
+                        // footprint for non-reading checked address formation.
+                        // Its address is carried as a byte pointer; no array
+                        // element or record field is loaded here.
+                        match lvalue.value_type() {
+                            ProgramType::UInt8Array(_) => Some(ProgramType::UInt8Pointer),
+                            value_type => value_type.pointer_to(),
+                        }
                     };
                     match pointer_type {
                         Some(pointer_type) => {

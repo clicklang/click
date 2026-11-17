@@ -2380,7 +2380,8 @@ named binder and continue with the body goal. A universal's variable keeps the
 name its quantifier wrote; if that name is already in scope it shadows the older
 one, which stays readable as `outer.name`. That includes a range quantifier's
 variable in a `have` stated between C statements
-([`intro_names_a_range_variable_in_a_have_between_statements.md`](https://github.com/clicklang/click/blob/master/mdtests/intro_names_a_range_variable_in_a_have_between_statements.md)).
+([`intro_names_a_range_variable_in_a_have_between_statements.md`](https://github.com/clicklang/click/blob/master/mdtests/intro_names_a_range_variable_in_a_have_between_statements.md)). A known C/C++ record binding named `outer` keeps ordinary `outer.field`
+access in a proof; it is not parsed as the shadowed-binder qualifier.
 
 **Accepts** a goal whose lowered head is one of these, and makes one
 introduction:
@@ -2749,6 +2750,9 @@ profiling charges its explicit input and guarantees.
 
 **Core.** Expose one defining equation for the exact pure-function call at the
 current proof state and refresh the current goal through that one layer.
+Library field accessors such as `slice::len` and `slice::as_ptr` follow the
+same rule as locally defined functions: a constructor argument alone does
+not unfold the call.
 Integer arguments resolve in their lexical proof scope, including `intro` and
 `obtain` binders; a proof local shadows a same-named theorem parameter.
 
@@ -2798,7 +2802,7 @@ count mismatch fails; an argument that does not lower at this point fails with
 "could not lower defining equation". Expansion is unchanged, and profiling
 charges the arguments and one body layer.
 
-**Checked examples:** [`pure_function_unfold.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_function_unfold.md), [`unfold_rewrites_each_occurrence_of_the_exact_call.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_rewrites_each_occurrence_of_the_exact_call.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`a_step_after_an_unfold_that_closed_the_goal_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_after_an_unfold_that_closed_the_goal_is_refused.md), [`unfold_function_after_integer_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_after_integer_intro.md), [`unfold_function_integer_shadow.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_integer_shadow.md), [`unfold_using_names_peel.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_using_names_peel.md)
+**Checked examples:** [`library_field_accessors_unfold_after_a_constructor_rewrite.md`](https://github.com/clicklang/click/blob/master/mdtests/library_field_accessors_unfold_after_a_constructor_rewrite.md), [`library_field_accessors_need_their_defining_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/library_field_accessors_need_their_defining_equation.md), [`pure_function_unfold.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_function_unfold.md), [`unfold_rewrites_each_occurrence_of_the_exact_call.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_rewrites_each_occurrence_of_the_exact_call.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`a_step_after_an_unfold_that_closed_the_goal_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_after_an_unfold_that_closed_the_goal_is_refused.md), [`unfold_function_after_integer_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_after_integer_intro.md), [`unfold_function_integer_shadow.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_integer_shadow.md), [`unfold_using_names_peel.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_using_names_peel.md)
 
 ### Peeling a pure function
 

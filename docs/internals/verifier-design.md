@@ -272,8 +272,9 @@ conditions:
 3. **It is checked.** It advances the proof only through fast-part
    operations, so the kernel checks everything it concludes.
 
-Writing a search out requires every fact it cites or proves to have a Click
-spelling; [Spellability](spellability.md) states that rule. A search that
+Writing a search out requires every fact it cites or proves to raise to a
+Surface AST that lowers back to it; the
+[raise-lower principle](raise-lower-principle.md) states that rule. A search that
 can't be written out as explicit tactics isn't allowed in the
 slow part either: then there's no way to remove its cost, which makes it fast
 part, and fast part may not search. [Smart and simple
@@ -301,7 +302,7 @@ Answer these before proposing a verifier change that adds work.
 5. **Is lowering still fact-stable?** A change to lowering or evaluation may
    let facts refuse a term, discharge its obligations, or add side facts, but
    never change the term it produces; equalities belong to the equality
-   graph ([fact-stable lowering](spellability.md#lowering-is-fact-stable)).
+   graph ([fact-stable lowering](raise-lower-principle.md#lowering-is-fact-stable)).
    Run `scripts/fact-stability.sh` before and after, add no new
    `differs` lines, and report any change in its `refused` and `paths:N`
    counts.

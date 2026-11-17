@@ -15573,6 +15573,11 @@ impl Parser {
         if self.proof_nesting > 0
             && self.peek_ident() == Some("outer")
             && self.peek_next() == Some(&Token::Dot)
+            // A source record named `outer` still has ordinary field
+            // accesses in proofs, including expanded postconditions.
+            && !self.names.struct_params.contains_key("outer")
+            && !self.names.struct_params.contains_key("&outer")
+            && !self.names.aggregate_objects.contains_key("outer")
         {
             let start = self.position;
             let mut depth = 0;

@@ -6,30 +6,32 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 usage() {
-    echo "Usage: scripts/setup-environment.sh [--docs-only|--test-runner|--rust-test-runner]" >&2
+    echo "Usage: scripts/setup-environment.sh [--docs-only|--test-runner|--unit-test-runner|--rust-test-runner]" >&2
 }
 
-# A test runner executes an already-built test archive and installs no
-# compiler. Only a Rust test runner, whose tests start Charon, also needs the
-# pinned compiler runtime restored first.
+# Archive runners need no build. Unit tests compile Rust visibility probes,
+# so their runner installs Click's pinned compiler before starting the tests.
+# Rust import tests instead need Charon's pinned runtime restored first.
 docs_only=false
 test_runner=false
+unit_test_runner=false
 rust_test_runner=false
 case "${1:-}" in
     "") ;;
     --docs-only) docs_only=true ;;
     --test-runner) test_runner=true ;;
+    --unit-test-runner) test_runner=true; unit_test_runner=true ;;
     --rust-test-runner) test_runner=true; rust_test_runner=true ;;
     *) usage; exit 2 ;;
 esac
 
-if [[ "$test_runner" != true ]] && ! command -v rustup >/dev/null 2>&1; then
+if [[ "$test_runner" != true || "$unit_test_runner" == true ]] && ! command -v rustup >/dev/null 2>&1; then
     echo "error: rustup is required; install Rust with rustup, then rerun this script" >&2
     exit 1
 fi
 
 # rust-toolchain.toml pins the compiler and requests rustfmt and Clippy.
-if [[ "$test_runner" != true ]]; then
+if [[ "$test_runner" != true || "$unit_test_runner" == true ]]; then
     rustup toolchain install
 fi
 

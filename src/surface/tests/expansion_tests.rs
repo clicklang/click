@@ -21250,6 +21250,7 @@ fn compact_store_proof_repairs_expand_and_replay() {
             "release_run",
         ),
         ("modeled_pthread_local_job_external_output", "worker"),
+        ("return_fold_retains_transported_facts", "arena_write"),
     ] {
         if std::env::var("CLICK_COMPACT_REPAIR").is_ok_and(|selected| selected != function) {
             continue;
@@ -21259,11 +21260,14 @@ fn compact_store_proof_repairs_expand_and_replay() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
+        if function == "arena_write" {
+            assert!(!source.contains("transport("), "{fixture}: {source}");
+        }
         verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{fixture}: {error}"));
         let claim = format!("{function}.contract");
         let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
             .unwrap_or_else(|error| panic!("{fixture}: {error}"));
-        if function == "release_run" {
+        if matches!(function, "arena_write" | "release_run") {
             assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
         }
         without_implicit_solve_for_claim(&claim, || {

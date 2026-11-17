@@ -124,8 +124,8 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
     fi
 
     # Extract at the checkout root so embedded fixture paths still work on
-    # GitHub's identical build/test checkout paths. No Cargo build or
-    # Rust toolchain is needed to run a nextest archive.
+    # GitHub's identical build/test checkout paths. No Cargo build is needed;
+    # unit runners provision rustc for the search-boundary visibility probes.
     cargo-nextest nextest run --archive-file "$artifacts/tests.tar.zst" \
         --extract-to "$PWD" --extract-overwrite \
         --filterset "$filter" "${nextest_args[@]}"
