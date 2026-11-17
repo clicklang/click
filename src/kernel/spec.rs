@@ -2751,29 +2751,28 @@ fn integer_range_fold_index_is_empty(index: &IntegerRangeFoldIndex) -> bool {
     }
 }
 
-fn integer_carrier_in_pointer(pointer: &Pointer, variable: Variable) -> bool {
+fn integer_carrier_in_pointer(pointer: &Address, variable: Variable) -> bool {
     // Like an opaque algebraic application, a pointer call can carry the
     // accumulator through its arguments, and a loaded pointer through its
     // defining read's address. Retain the scope without expanding a shared
     // application or registry DAG once for every fold obligation.
     matches!(
-        pointer.block,
-        PointerBlock::PureFunctionApplication(_) | PointerBlock::LoadedPointer(_)
+        pointer.base,
+        AddressBase::PureFunctionApplication(_) | AddressBase::LoadedPointer(_)
     ) || integer_carrier_in_pointer_offset(&pointer.offset, variable)
 }
 
-fn integer_carrier_in_pointer_offset(offset: &PointerOffsetTerm, variable: Variable) -> bool {
+fn integer_carrier_in_pointer_offset(offset: &AddressOffset, variable: Variable) -> bool {
     match offset {
-        PointerOffsetTerm::Constant(_) => false,
-        PointerOffsetTerm::Variable(load) => {
+        AddressOffset::Constant(_) => false,
+        AddressOffset::Variable(load) => {
             integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
         }
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Add(left, right) => {
             integer_carrier_in_pointer_offset(left, variable)
                 || integer_carrier_in_pointer_offset(right, variable)
         }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => {
+        AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
             if let Some(load) = value.operand_view().variable() {
                 integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
             } else {
@@ -2790,15 +2789,15 @@ fn integer_carrier_in_pointer_offset(offset: &PointerOffsetTerm, variable: Varia
 /// Keep this query conservative for those selected pointer leaves: retaining
 /// the accumulator quantifier is sound, while expanding the registry here
 /// would duplicate the checked carrier collector and reopen its DAG.
-fn pointer_offset_contains_registered_load(offset: &PointerOffsetTerm) -> bool {
+fn pointer_offset_contains_registered_load(offset: &AddressOffset) -> bool {
     match offset {
-        PointerOffsetTerm::Constant(_) => false,
-        PointerOffsetTerm::Variable(variable) => crate::kernel::is_load_variable(variable),
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Constant(_) => false,
+        AddressOffset::Variable(variable) => crate::kernel::is_load_variable(variable),
+        AddressOffset::Add(left, right) => {
             pointer_offset_contains_registered_load(left)
                 || pointer_offset_contains_registered_load(right)
         }
-        PointerOffsetTerm::Int32Scaled { .. } | PointerOffsetTerm::Int64Scaled { .. } => false,
+        AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. } => false,
     }
 }
 
@@ -3430,8 +3429,8 @@ fn rewrite_integer_match_typed_fields(
                     }
                 }
                 (ProgramValue::Pointer(from), ProgramValue::Pointer(to)) => {
-                    let (PointerBlock::Symbolic(from) | PointerBlock::FunctionSymbolic(from)) =
-                        &from.block
+                    let (AddressBase::Symbolic(from) | AddressBase::FunctionSymbolic(from)) =
+                        &from.base
                     else {
                         return None;
                     };
@@ -5256,8 +5255,8 @@ fn lower_spec_memory_loadable_at_state_in(
         {
             let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
             let range = MemoryRange::new_wide(
-                Pointer {
-                    block: base.block.clone(),
+                Address {
+                    base: base.base.clone(),
                     offset: crate::kernel::eval::canonical_offset_term(&base.offset),
                 },
                 crate::kernel::eval::canonical_term(&start),
@@ -5286,8 +5285,8 @@ fn lower_spec_memory_loadable_at_state_in(
             ProgramValue::UInt64(end),
         ] => {
             let range = MemoryRange::new_wide(
-                Pointer {
-                    block: base.block.clone(),
+                Address {
+                    base: base.base.clone(),
                     offset: crate::kernel::eval::canonical_offset_term(&base.offset),
                 },
                 MachineTerm::uint64_constant(0),
@@ -5319,8 +5318,8 @@ fn lower_spec_memory_loadable_at_state_in(
             let mut discarded_facts = ExecutionFacts::new();
             let start =
                 crate::kernel::canonicalized_offset_index_term(start.clone(), &mut discarded_facts);
-            let base = Pointer {
-                block: base.block.clone(),
+            let base = Address {
+                base: base.base.clone(),
                 offset: canonical_offset_sum(
                     base.offset.clone(),
                     canonical_scaled_offset(start, i64::from(element_width)),
@@ -5493,24 +5492,24 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
 }
 
 /// An element index scaled to bytes, folded when the index is a constant.
-fn canonical_scaled_offset(value: MachineTerm, byte_width: i64) -> PointerOffsetTerm {
+fn canonical_scaled_offset(value: MachineTerm, byte_width: i64) -> AddressOffset {
     match value {
         bits32_constant!(value) => {
-            PointerOffsetTerm::Constant((constant_u32(value) as i32 as i64) * byte_width)
+            AddressOffset::Constant((constant_u32(value) as i32 as i64) * byte_width)
         }
-        value => PointerOffsetTerm::scaled_int32_node(value, byte_width),
+        value => AddressOffset::scaled_int32_node(value, byte_width),
     }
 }
 
 /// `left + right` on offsets with constants folded and zero addends dropped.
-fn canonical_offset_sum(left: PointerOffsetTerm, right: PointerOffsetTerm) -> PointerOffsetTerm {
+fn canonical_offset_sum(left: AddressOffset, right: AddressOffset) -> AddressOffset {
     match (&left, &right) {
-        (PointerOffsetTerm::Constant(left), PointerOffsetTerm::Constant(right)) => {
-            PointerOffsetTerm::Constant(left + right)
+        (AddressOffset::Constant(left), AddressOffset::Constant(right)) => {
+            AddressOffset::Constant(left + right)
         }
-        (PointerOffsetTerm::Constant(0), _) => right,
-        (_, PointerOffsetTerm::Constant(0)) => left,
-        _ => PointerOffsetTerm::Add(Box::new(left), Box::new(right)),
+        (AddressOffset::Constant(0), _) => right,
+        (_, AddressOffset::Constant(0)) => left,
+        _ => AddressOffset::Add(Box::new(left), Box::new(right)),
     }
 }
 
@@ -6259,7 +6258,7 @@ fn evaluate_spec_add_chain_paths_in(
 fn aggregate_projection_pointer(
     expression: &SpecExpression,
     parameter: &BindingName,
-    slot: &Pointer,
+    slot: &Address,
 ) -> Option<SpecExpression> {
     match expression {
         SpecExpression::ProgramExpression(ProgramExpression::Variable(name))
@@ -6582,17 +6581,16 @@ fn evaluate_resource_count_paths(
                         obligations,
                     });
                 }
-                if anchor.offset != PointerOffsetTerm::Constant(0) {
+                if anchor.offset != AddressOffset::Constant(0) {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 }
                 if creation.governing_authority(&description).as_ref() != Some(&description) {
                     return Err(ExecutionLimit::AuthorityCountNeedsOwnership);
                 }
                 let count = creation
-                    .observe_term(&anchor.block, name)
+                    .observe_term(&anchor.base, name)
                     .map_err(|_| ExecutionLimit::AuthorityCountNeedsOwnership)?;
-                if let Some((base, quantity)) =
-                    creation.observed_symbolic_batch(&anchor.block, name)
+                if let Some((base, quantity)) = creation.observed_symbolic_batch(&anchor.base, name)
                 {
                     facts.push(ExecutionPureFact::certified(
                         Proposition::signed_arithmetic_domain(
@@ -6660,7 +6658,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             // the contract retains the value from entry, never its permission.
             // Contract validation separately refuses current reads of fields
             // modified by the body, as for ordinary by-value parameter claims.
-            let memory = if state.memory.has_block(&slot.block) {
+            let memory = if state.memory.has_block(&slot.base) {
                 state.memory()
             } else {
                 entry.memory()
@@ -7901,13 +7899,13 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .then(|| SharedPureApplication::intern(name.to_owned(), call_arguments(arguments)));
             let value = PointerValue::new(
                 if all_null {
-                    Pointer::null()
+                    Address::null()
                 } else {
-                    Pointer {
-                        block: PointerBlock::PureFunctionApplication(
+                    Address {
+                        base: AddressBase::PureFunctionApplication(
                             application.as_ref().unwrap().clone(),
                         ),
-                        offset: PointerOffsetTerm::Constant(0),
+                        offset: AddressOffset::Constant(0),
                     }
                 },
                 result_type,
@@ -8062,7 +8060,7 @@ pub(crate) fn refine_object_pointer_argument(
         |facts, pointer| {
             facts.decide(&ConditionTerm::pointer_equal(
                 pointer.clone(),
-                Pointer::null(),
+                Address::null(),
             )) == Some(true)
         },
     )
@@ -8084,7 +8082,7 @@ pub(crate) fn refine_object_pointer_argument_using_facts(
         |facts, pointer| {
             facts.exact_condition_value(&ConditionTerm::pointer_equal(
                 pointer.clone(),
-                Pointer::null(),
+                Address::null(),
             )) == Some(true)
         },
     )
@@ -8095,7 +8093,7 @@ fn refine_object_pointer_argument_with_null(
     object_class: &crate::kernel::effective_type::CAccessClass,
     memory: &SymbolicMemory,
     assumptions: &PureFactContext,
-    proves_null: impl FnOnce(&PureFactContext, &Pointer) -> bool,
+    proves_null: impl FnOnce(&PureFactContext, &Address) -> bool,
 ) -> bool {
     let ProgramValue::Pointer(pointer) = value else {
         return false;
@@ -8116,7 +8114,7 @@ fn refine_object_pointer_argument_with_null(
             || [pointer.pointer(), pointer.provenance()]
                 .into_iter()
                 .any(|object| {
-                    object.offset == PointerOffsetTerm::Constant(0)
+                    object.offset == AddressOffset::Constant(0)
                         && memory.declared_class(object).as_ref() == Some(object_class)
                 })
             // A pointer the facts prove null meets the requirement too. It
@@ -8329,7 +8327,7 @@ fn array_ref_argument_memory(memory: &SymbolicMemory, pointer: &ProgramValue) ->
     };
     let interned = crate::kernel::intern_memory(memory.clone());
     crate::kernel::resource_tracker::last_same_version_point(
-        crate::kernel::resource_tracker::TrackedResource::Block(&pointer.pointer().block),
+        crate::kernel::resource_tracker::TrackedResource::Block(&pointer.pointer().base),
         &crate::kernel::resource_tracker::ProgramPoint::at(&interned),
     )
     .map(|point| point.memory().clone())
@@ -10061,7 +10059,7 @@ pub(super) fn program_value_comparison_proposition(
                 | ComparisonOperator::LessEqual
                 | ComparisonOperator::GreaterThan
                 | ComparisonOperator::GreaterEqual
-                    if left.block == right.block =>
+                    if left.base == right.base =>
                 {
                     let left = byte_offset_from_pointer_offset(&left.offset)?;
                     let right = byte_offset_from_pointer_offset(&right.offset)?;
@@ -10423,7 +10421,7 @@ mod pointer_integer_observation_tests {
     fn integer_specifications_observe_bits_without_a_pointer_record() {
         let context = PureFactContext::new();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(994_001)),
+            Address::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );
         let word = crate::kernel::eval::cast_program_value_to_type(

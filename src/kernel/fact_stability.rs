@@ -184,7 +184,7 @@ int32 id(int32 x) {
                     4,
                     crate::kernel::ProgramType::Int32,
                 ),
-                base: crate::kernel::Pointer::symbolic(Variable(700)),
+                base: crate::kernel::Address::symbolic(Variable(700)),
                 bytes: MachineTerm::Variable(var),
                 wide: false,
             }),

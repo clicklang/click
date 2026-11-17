@@ -523,16 +523,16 @@ pub(super) fn mutable_footprint_is_compatible_for_interfaces(
     {
         return Ok(false);
     }
-    let mut available_by_family: BTreeMap<(PointerBlock, u32), Vec<&MemoryRange>> = BTreeMap::new();
+    let mut available_by_family: BTreeMap<(AddressBase, u32), Vec<&MemoryRange>> = BTreeMap::new();
     for available in contract_projection.ranges() {
         available_by_family
-            .entry((available.base.block.clone(), available.element_width))
+            .entry((available.base.base.clone(), available.element_width))
             .or_default()
             .push(available);
     }
     Ok(function_projection.ranges().iter().all(|required_range| {
         if let Some(candidates) = available_by_family.get(&(
-            required_range.base.block.clone(),
+            required_range.base.base.clone(),
             required_range.element_width,
         )) {
             candidates.iter().any(|available_range| {

@@ -44,9 +44,9 @@ fn wide_equality_bounds_use_incremental_index_and_preserve_branches() {
 
 #[test]
 fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
-    let external = |variable| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+    let external = |variable| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let target = external(31_070);
     let loadable = |base| Proposition::MemoryLoadable {
@@ -170,9 +170,9 @@ fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn resource_object_provenance_does_not_scan_same_raw_block() {
-    let pointer = |id| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Variable(Variable(895_000 + id)),
+    let pointer = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(895_000 + id)),
     };
     let target = pointer(0);
     let expression = crate::kernel::program_expression::less_equal(
@@ -216,7 +216,7 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
 fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
     for size in [8u64, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Pointer::symbolic(Variable(96_311));
+        let field = Address::symbolic(Variable(96_311));
         let stored = subobject_pointer(0, 0, 4);
         let memory =
             SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));

@@ -53,7 +53,7 @@ fn wildcard_helper_death_does_not_scan_unrelated_imports() {
         }
         let (spent, work) = crate::persistent::measure_persistent_work(|| {
             entry
-                .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+                .checked_member_exchange(&AddressBase::ExternalArgument, &member, false)
                 .unwrap()
                 .0
         });
@@ -93,7 +93,7 @@ fn exclusive_member_update_and_transfer_scale_over_neighboring_members() {
         for index in 0..size {
             events = events
                 .checked_exclusive_member_exchange_quantity(
-                    &PointerBlock::ExternalArgument,
+                    &AddressBase::ExternalArgument,
                     &at(index),
                     true,
                     &MachineTerm::constant(1),
@@ -111,7 +111,7 @@ fn exclusive_member_update_and_transfer_scale_over_neighboring_members() {
                 .transfer_call_fact(&events, &child, &selected, false)
                 .unwrap();
             let spent = sent
-                .checked_member_exchange(&PointerBlock::ExternalArgument, &selected, false)
+                .checked_member_exchange(&AddressBase::ExternalArgument, &selected, false)
                 .unwrap()
                 .0;
             let returned = spent
@@ -171,7 +171,7 @@ fn wildcard_helper_birth_does_not_scan_unrelated_imports() {
         let (issued, work) = crate::persistent::measure_persistent_work(|| {
             entry
                 .checked_member_exchange_quantity(
-                    &PointerBlock::ExternalArgument,
+                    &AddressBase::ExternalArgument,
                     &member,
                     true,
                     &MachineTerm::constant(1),
@@ -196,7 +196,7 @@ fn wildcard_helper_birth_does_not_scan_unrelated_imports() {
 #[test]
 fn exact_count_lookup_and_update_do_not_scan_neighboring_members() {
     let samples = [16, 64, 256].map(|size| {
-        let pool = PointerBlock::Heap(950_003);
+        let pool = AddressBase::Heap(950_003);
         let scope = scope(&pool, 2);
         let (mut events, _) = CreationEvents::new()
             .created(pool.clone())
@@ -233,11 +233,11 @@ fn exact_count_lookup_and_update_do_not_scan_neighboring_members() {
 #[test]
 fn wildcard_scope_lookup_and_exchange_ignore_unrelated_pools() {
     let samples = [16_u64, 64, 256, 1024].map(|size| {
-        let pool = PointerBlock::Heap(930_000);
+        let pool = AddressBase::Heap(930_000);
         let mut events = CreationEvents::new().created(pool.clone());
         events = events.checked_establish(&pool, &scope(&pool, 2)).unwrap().0;
         for index in 1..=size {
-            let other = PointerBlock::Heap(930_000 + index);
+            let other = AddressBase::Heap(930_000 + index);
             events = events
                 .created(other.clone())
                 .checked_establish(&other, &scope(&other, 2))
@@ -255,7 +255,7 @@ fn wildcard_scope_lookup_and_exchange_ignore_unrelated_pools() {
             MachineTerm::constant(1)
         );
         assert_eq!(
-            next.observe_term(&PointerBlock::Heap(930_001), "slot")
+            next.observe_term(&AddressBase::Heap(930_001), "slot")
                 .unwrap(),
             MachineTerm::constant(0)
         );

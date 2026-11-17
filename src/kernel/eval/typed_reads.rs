@@ -29,7 +29,7 @@ impl ReadType {
     }
 }
 
-type Reads = imbl::HashMap<(SharedMemory, Pointer, ReadType), ProgramValue>;
+type Reads = imbl::HashMap<(SharedMemory, Address, ReadType), ProgramValue>;
 thread_local! {
     static READS: std::cell::RefCell<Option<Reads>> = const { std::cell::RefCell::new(None) };
 }
@@ -48,7 +48,7 @@ impl Drop for ReadScope {
     }
 }
 
-pub(super) fn record(memory: &SymbolicMemory, address: &Pointer, value: &ProgramValue) {
+pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &ProgramValue) {
     if !READS.with(|reads| reads.borrow().is_some()) {
         return;
     }
@@ -84,7 +84,7 @@ pub(super) fn record(memory: &SymbolicMemory, address: &Pointer, value: &Program
 /// them before applying the primitive.
 pub(in crate::kernel) fn get(
     memory: &SymbolicMemory,
-    address: &Pointer,
+    address: &Address,
     kind: ReadType,
 ) -> Option<ProgramValue> {
     crate::instrumentation::record_deterministic_work(1);

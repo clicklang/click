@@ -6,9 +6,9 @@ use super::*;
 
 #[test]
 fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
-    let pointer = Pointer {
-        block: "counter".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "counter".into(),
+        offset: AddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new();
     let memory = SymbolicMemory::new().with_block("counter", 4);
@@ -113,7 +113,7 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
     let mut asking = Vec::new();
     for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
-        let object = |index: u64| Pointer::symbolic(Variable(782_000 + index));
+        let object = |index: u64| Address::symbolic(Variable(782_000 + index));
         let residual = (0..size).fold(ResourceContext::new(), |residual, index| {
             residual.unchecked_with_fact(ResourceFact::own_composite(
                 "boxed".into(),
@@ -158,12 +158,9 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
     let mut recording = Vec::new();
     for size in [2u64, 4, 8, 16] {
         let _session = VerificationSession::enter();
-        let object = |index: u64| Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(
-                MachineTerm::Variable(Variable(783_000 + index)),
-                4,
-            ),
+        let object = |index: u64| Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(783_000 + index)), 4),
         };
         let residual = (0..size).fold(ResourceContext::new(), |resources, index| {
             resources.unchecked_with_fact(ResourceFact::own_composite(
@@ -223,7 +220,7 @@ fn call_frame_preparation_ignores_unrelated_retained_instances() {
                     Variable(8_600_000 + index),
                     "boxed".into(),
                     vec![
-                        ProgramValue::pointer(Pointer::symbolic(Variable(8_610_000 + index)))
+                        ProgramValue::pointer(Address::symbolic(Variable(8_610_000 + index)))
                             .into(),
                     ]
                     .into(),
@@ -265,7 +262,7 @@ fn call_frame_preparation_must_not_open_unrelated_composites() {
     for memory_bound in [false, true] {
         let samples = [4_u64, 16, 64].map(|size| {
             let _session = VerificationSession::enter();
-            let object = |index| Pointer::symbolic(Variable(8_700_000 + index));
+            let object = |index| Address::symbolic(Variable(8_700_000 + index));
             let body = if memory_bound {
                 vec![
                     ResourceSpec::owned_memory(MemorySegment::new(

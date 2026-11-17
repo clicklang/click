@@ -10,7 +10,7 @@ fn retained_run_reads_refresh_load_origins_without_scanning_the_run() {
     for count in [16, 64, 65, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
         let source = source(99);
-        let base = constant(&PointerBlock::from("cell-store-source-99"), 0);
+        let base = constant(&AddressBase::from("cell-store-source-99"), 0);
         let run = run(base.clone(), 4, count, &source);
         let first = run.value(0);
         let ProgramValue::Int32(ref read) = first else {

@@ -636,12 +636,9 @@ mod tests {
                     ProgramValue::Int32(MachineTerm::Variable(Variable(999811))),
                 ),
         );
-        let pointer = Pointer {
-            block: PointerBlock::Symbolic(Variable(999812)),
-            offset: PointerOffsetTerm::scaled_int32_node(
-                MachineTerm::Variable(Variable(999813)),
-                4,
-            ),
+        let pointer = Address {
+            base: AddressBase::Symbolic(Variable(999812)),
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(999813)), 4),
         };
         for format in [
             crate::kernel::KernelFloatType::Float32,
@@ -682,7 +679,7 @@ mod tests {
             let left = Box::new(MachineTerm::Variable(Variable(999933)));
             let right = Box::new(MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
-                Box::new(Pointer::symbolic(Variable(999934))),
+                Box::new(Address::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
             let native = match format {
@@ -731,7 +728,7 @@ mod tests {
             let left = Box::new(MachineTerm::Variable(Variable(999933)));
             let right = Box::new(MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
-                Box::new(Pointer::symbolic(Variable(999934))),
+                Box::new(Address::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
             let native = match format {
@@ -949,9 +946,9 @@ mod tests {
                             ProgramValue::UInt64(MachineTerm::Variable(Variable(999741))),
                         ),
                 ),
-                pointer: Box::new(Pointer {
-                    block: PointerBlock::Symbolic(Variable(999742)),
-                    offset: PointerOffsetTerm::scaled_int32_node(
+                pointer: Box::new(Address {
+                    base: AddressBase::Symbolic(Variable(999742)),
+                    offset: AddressOffset::scaled_int32_node(
                         MachineTerm::Variable(Variable(999743)),
                         4,
                     ),
@@ -1017,7 +1014,7 @@ mod tests {
             )),
             else_condition: Box::new(ConditionTerm::BoolLoad(
                 crate::kernel::intern_memory(SymbolicMemory::new()),
-                Box::new(Pointer::symbolic(Variable(999563))),
+                Box::new(Address::symbolic(Variable(999563))),
             )),
         });
         let application = SharedPureApplication::intern(
@@ -1068,9 +1065,9 @@ mod tests {
                             ProgramValue::Int32(MachineTerm::Variable(Variable(970_030))),
                         ),
                 ),
-                Box::new(Pointer {
-                    block: PointerBlock::Symbolic(Variable(970_031)),
-                    offset: PointerOffsetTerm::scaled_int32_node(
+                Box::new(Address {
+                    base: AddressBase::Symbolic(Variable(970_031)),
+                    offset: AddressOffset::scaled_int32_node(
                         MachineTerm::Variable(Variable(970_032)),
                         4,
                     ),
@@ -1088,23 +1085,23 @@ mod tests {
             ConditionTerm::PointerValueEqual(
                 Box::new(
                     PointerValue::new(
-                        Pointer::symbolic(Variable(970_010)),
+                        Address::symbolic(Variable(970_010)),
                         ProgramType::Int32Pointer,
                     )
                     .with_bounds(Some(SubobjectBounds {
-                        start: Pointer::symbolic(Variable(970_011)),
+                        start: Address::symbolic(Variable(970_011)),
                         width: MachineTerm::Variable(Variable(970_012)),
                     })),
                 ),
                 Box::new(PointerValue::new(
-                    Pointer::null(),
+                    Address::null(),
                     ProgramType::Int32Pointer,
                 )),
             ),
             ConditionTerm::PointerOffsetEqual(
-                Box::new(PointerOffsetTerm::Add(
-                    Box::new(PointerOffsetTerm::Variable(Variable(970_005))),
-                    Box::new(PointerOffsetTerm::scaled_int32_node(
+                Box::new(AddressOffset::Add(
+                    Box::new(AddressOffset::Variable(Variable(970_005))),
+                    Box::new(AddressOffset::scaled_int32_node(
                         MachineTerm::IntegerToMachine {
                             value: IntegerTerm::Variable(Variable(970_006)).into(),
                             destination: MachineIntegerType::Int32,
@@ -1112,28 +1109,28 @@ mod tests {
                         4,
                     )),
                 )),
-                Box::new(PointerOffsetTerm::scaled_int64_node(
+                Box::new(AddressOffset::scaled_int64_node(
                     MachineTerm::Variable(Variable(970_007)),
                     8,
                     true,
                 )),
             ),
             ConditionTerm::PointerEqual(
-                Box::new(Pointer {
-                    block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+                Box::new(Address {
+                    base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                         "raw_pointer_dependency".into(),
                         vec![PureFunctionArgument::Integer(
                             IntegerTerm::Variable(Variable(970_008)).into(),
                         )],
                     )),
-                    offset: PointerOffsetTerm::scaled_int32_node(
+                    offset: AddressOffset::scaled_int32_node(
                         MachineTerm::Variable(Variable(970_009)),
                         4,
                     ),
                 }),
-                Box::new(Pointer {
-                    block: PointerBlock::ExternalObject(Variable(970_010)),
-                    offset: PointerOffsetTerm::scaled_int64_node(
+                Box::new(Address {
+                    base: AddressBase::ExternalObject(Variable(970_010)),
+                    offset: AddressOffset::scaled_int64_node(
                         MachineTerm::Variable(Variable(970_011)),
                         8,
                         false,
@@ -1508,7 +1505,7 @@ mod mixed_argument_tests {
             },
         };
         let pointer = ProgramValue::Pointer(PointerValue::new(
-            Pointer::symbolic(Variable(1008512)),
+            Address::symbolic(Variable(1008512)),
             ProgramType::Int32Pointer,
         ));
         let arguments = [

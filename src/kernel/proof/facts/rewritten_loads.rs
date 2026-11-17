@@ -183,9 +183,9 @@ mod tests {
     fn retained_load_differences_preserve_native_operator_and_binder_rules() {
         let _session = VerificationSession::enter();
         let memory = intern_memory(SymbolicMemory::new());
-        let pointer = Pointer {
-            block: PointerBlock::Symbolic(Variable(1005600)),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Symbolic(Variable(1005600)),
+            offset: AddressOffset::Constant(0),
         };
         let named = MachineTerm::Variable(crate::kernel::eval::load_variable_for_cell(
             &memory,
@@ -305,7 +305,7 @@ mod tests {
         let binder = Variable(1005699);
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
-            Box::new(Pointer::symbolic(binder)),
+            Box::new(Address::symbolic(binder)),
             LoadKind::Int32,
         );
         let equal = |value| {
@@ -370,7 +370,7 @@ mod tests {
     fn arithmetic_read_evidence_keeps_its_exact_source_authority() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let pointer = Pointer::symbolic(Variable(1007340));
+        let pointer = Address::symbolic(Variable(1007340));
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             pointer.into(),

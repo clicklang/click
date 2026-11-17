@@ -15,7 +15,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
         },
     };
     let pointer = PointerValue::new(
-        Pointer::symbolic(Variable(1008501)),
+        Address::symbolic(Variable(1008501)),
         ProgramType::Int32Pointer,
     )
     .with_pointee_constant(true)
@@ -152,7 +152,7 @@ fn prepared_call_children_reuse_the_producer_only_in_the_current_session() {
         "session_pointer_argument".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
             PointerValue::new(
-                Pointer::symbolic(Variable(1008515)),
+                Address::symbolic(Variable(1008515)),
                 ProgramType::Int32Pointer,
             ),
         ))],
@@ -184,7 +184,7 @@ fn prepared_call_children_do_not_cross_threads_with_equal_session_generations() 
         "thread_pointer_argument".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
             PointerValue::new(
-                Pointer::symbolic(Variable(1008517)),
+                Address::symbolic(Variable(1008517)),
                 ProgramType::Int32Pointer,
             ),
         ))],

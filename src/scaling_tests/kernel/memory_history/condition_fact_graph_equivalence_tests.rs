@@ -33,15 +33,15 @@ fn condition_fact_graph_queries_scale_without_fact_index() {
 #[test]
 fn failed_check_cell_capture_is_bounded_and_ignores_unrelated_facts() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer {
-        block: "diagnostic-access".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "diagnostic-access".into(),
+        offset: AddressOffset::Constant(0),
     };
     let memory = crate::kernel::intern_memory(
         SymbolicMemory::new()
-            .with_block(base.block.clone(), 128)
+            .with_block(base.base.clone(), 128)
             .store(
-                Pointer::symbolic(Variable(982_000)),
+                Address::symbolic(Variable(982_000)),
                 ProgramValue::Int32(MachineTerm::constant(9)),
             ),
     );

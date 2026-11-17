@@ -158,7 +158,7 @@ impl ResourceContext {
         let fact = self.fact(entry);
         let private = fact.is_own()
             && fact.memory_range().is_some_and(|range| {
-                crate::kernel::block_is_never_address_taken_local(&range.base().block)
+                crate::kernel::block_is_never_address_taken_local(&range.base().base)
             });
         self.advance_observable_projection(previous, private, |source, composition| {
             if private {

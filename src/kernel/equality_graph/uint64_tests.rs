@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::VerificationSession;
 
-fn word(memory: &SharedMemory, pointer: &Pointer, bytes: u32) -> MachineTerm {
+fn word(memory: &SharedMemory, pointer: &Address, bytes: u32) -> MachineTerm {
     MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
@@ -9,7 +9,7 @@ fn word(memory: &SharedMemory, pointer: &Pointer, bytes: u32) -> MachineTerm {
         bytes,
     ))
 }
-fn packed(value: &MachineTerm, parent: &Pointer) -> MachineTerm {
+fn packed(value: &MachineTerm, parent: &Address) -> MachineTerm {
     MachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Add,
@@ -28,14 +28,14 @@ fn packed(value: &MachineTerm, parent: &Pointer) -> MachineTerm {
 fn fact(a: MachineTerm, b: MachineTerm) -> Proposition {
     Proposition::ConditionIs(ConditionTerm::uint64_equal(a, b), true)
 }
-fn alias(a: &Pointer, b: &Pointer) -> Proposition {
+fn alias(a: &Address, b: &Address) -> Proposition {
     Proposition::ConditionIs(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
 }
 fn proved(context: &PureFactContext, goal: &Proposition) -> bool {
     crate::kernel::reasoning::required_obligation_is_exactly_discharged(context, goal)
 }
 
-fn raw_address(pointer: &Pointer) -> MachineTerm {
+fn raw_address(pointer: &Address) -> MachineTerm {
     // Deliberately bypass the surface constructor's address cancellation.
     MachineTerm::PointerAddress(Box::new(pointer.clone()), AddressObjectClass::NONE)
 }
@@ -44,8 +44,8 @@ fn raw_address(pointer: &Pointer) -> MachineTerm {
 fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() {
     let _session = VerificationSession::enter();
     let bits = MachineTerm::Variable(Variable(960_001));
-    let pointer = Pointer::symbolic(Variable(960_002));
-    let decoded = Pointer::integer_address(bits.clone());
+    let pointer = Address::symbolic(Variable(960_002));
+    let decoded = Address::integer_address(bits.clone());
     let equation = fact(bits.clone(), raw_address(&pointer));
     let goal = Proposition::ConditionIs(
         ConditionTerm::uint64_equal(raw_address(&decoded), raw_address(&pointer)),
@@ -98,10 +98,10 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
 fn integer_address_definition_preserves_byte_displacements_and_load_states() {
     let _session = VerificationSession::enter();
     let bits = MachineTerm::Variable(Variable(960_003));
-    let decoded = Pointer::integer_address(bits.clone());
-    let shifted = Pointer {
-        block: decoded.block.clone(),
-        offset: PointerOffsetTerm::Constant(8),
+    let decoded = Address::integer_address(bits.clone());
+    let shifted = Address {
+        base: decoded.base.clone(),
+        offset: AddressOffset::Constant(8),
     };
     let sum = MachineTerm::uint64_add(bits.clone(), MachineTerm::uint64_constant(8));
     let graph = EqualityGraph::default();
@@ -109,9 +109,9 @@ fn integer_address_definition_preserves_byte_displacements_and_load_states() {
     assert!(!graph.are_uint64_equal(&raw_address(&shifted), &bits));
     // Equal numeric addresses connect compatible reads, not state identity.
     let memory = intern_memory(SymbolicMemory::new().with_block("coordinates", 32));
-    let pointer = Pointer {
-        block: "coordinates".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "coordinates".into(),
+        offset: AddressOffset::Constant(0),
     };
     let after = intern_memory(memory.memory().clone().store(
         pointer.clone(),
@@ -129,8 +129,8 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
     let _session = VerificationSession::enter();
     let a = MachineTerm::Variable(Variable(960_005));
     let b = MachineTerm::Variable(Variable(960_006));
-    let p = Pointer::integer_address(a.clone());
-    let q = Pointer::integer_address(b.clone());
+    let p = Address::integer_address(a.clone());
+    let q = Address::integer_address(b.clone());
     let mut context = PureFactContext::new();
     assert!(
         !context
@@ -157,10 +157,10 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
 fn wide_read_and_packed_word_congruence_compose_early_and_late() {
     let _session = VerificationSession::enter();
     let memory = intern_memory(SymbolicMemory::new().with_block("wide", 128));
-    let zid = Pointer::symbolic(Variable(910_001));
-    let sid = Pointer::symbolic(Variable(910_002));
-    let p = Pointer::loaded_value(&memory, &Pointer::symbolic(Variable(910_003)));
-    let q = Pointer::loaded_value(&memory, &Pointer::symbolic(Variable(910_004)));
+    let zid = Address::symbolic(Variable(910_001));
+    let sid = Address::symbolic(Variable(910_002));
+    let p = Address::loaded_value(&memory, &Address::symbolic(Variable(910_003)));
+    let q = Address::loaded_value(&memory, &Address::symbolic(Variable(910_004)));
     let v = word(&memory, &zid, 8);
     let a = word(&memory, &p, 8);
     let premise = fact(v.clone(), packed(&v, &sid));
@@ -197,8 +197,8 @@ fn wide_read_and_packed_word_congruence_compose_early_and_late() {
 fn wide_reads_preserve_state_width_and_value_sort() {
     let _session = VerificationSession::enter();
     let before = intern_memory(SymbolicMemory::new().with_block("wide", 128));
-    let p = Pointer::symbolic(Variable(920_001));
-    let q = Pointer::symbolic(Variable(920_002));
+    let p = Address::symbolic(Variable(920_001));
+    let q = Address::symbolic(Variable(920_002));
     let after = intern_memory(before.memory().clone().store(
         p.clone(),
         ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
@@ -226,7 +226,7 @@ fn wide_reads_preserve_state_width_and_value_sort() {
     wide_only.add_uint64_equality(&x, &y);
     assert!(!wide_only.are_int32_equal(&x, &y));
     // Equality of applications never implies equality of their operands.
-    let r = Pointer::symbolic(Variable(920_003));
+    let r = Address::symbolic(Variable(920_003));
     wide_only.add_uint64_equality(&packed(&x, &p), &packed(&x, &r));
     assert!(!wide_only.are_equal(&p, &r));
 }
@@ -234,8 +234,8 @@ fn wide_reads_preserve_state_width_and_value_sort() {
 #[test]
 fn wide_equality_inputs_reconstruct_in_derived_graphs() {
     let _session = VerificationSession::enter();
-    let p = Pointer::symbolic(Variable(930_001));
-    let q = Pointer::symbolic(Variable(930_002));
+    let p = Address::symbolic(Variable(930_001));
+    let q = Address::symbolic(Variable(930_002));
     let a = MachineTerm::Variable(Variable(930_003));
     let b = MachineTerm::Variable(Variable(930_004));
     let mut graph = EqualityGraph::default();
@@ -256,9 +256,9 @@ mod scaling_tests {
 fn a_wide_read_requires_an_explicit_store_equation_even_through_aliases() {
     let _session = VerificationSession::enter();
     let memory = intern_memory(SymbolicMemory::new().with_block("cells", 32));
-    let stored_at = Pointer {
-        block: "cells".into(),
-        offset: PointerOffsetTerm::Constant(8),
+    let stored_at = Address {
+        base: "cells".into(),
+        offset: AddressOffset::Constant(8),
     };
     let value = ProgramValue::UInt64(MachineTerm::uint64_constant(5));
     let after = intern_memory(
@@ -267,7 +267,7 @@ fn a_wide_read_requires_an_explicit_store_equation_even_through_aliases() {
             .clone()
             .store(stored_at.clone(), value.clone()),
     );
-    let alias_of = Pointer::symbolic(Variable(960_101));
+    let alias_of = Address::symbolic(Variable(960_101));
     let read = word(&after, &alias_of, 8);
     let five = MachineTerm::uint64_constant(5);
     let base = PureFactContext::new();
@@ -301,9 +301,9 @@ fn a_wide_read_requires_an_explicit_store_equation_even_through_aliases() {
 fn raw_wide_read_requires_its_explicit_store_equation() {
     use crate::kernel::{KernelTermImport, MachineOperandView as V};
     let _session = VerificationSession::enter();
-    let pointer = Pointer {
-        block: "wide".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "wide".into(),
+        offset: AddressOffset::Constant(0),
     };
     let value = MachineTerm::uint64_constant(0xfedc_ba98_7654_3210);
     let stored = ProgramValue::UInt64(value.clone());
@@ -363,7 +363,7 @@ fn shared_wide_endpoint_queries_preserve_exact_sources_and_scope() {
     let root = KernelTermImport::default()
         .machine_arithmetic(ty, &query)
         .unwrap();
-    let address = MachineTerm::pointer_address(Pointer::symbolic(Variable(984004)));
+    let address = MachineTerm::pointer_address(Address::symbolic(Variable(984004)));
     let parent = PureFactContext::new().assume_proposition(fact(source.clone(), address));
     let exports = KernelTermExport::machine_export_count();
     assert!(

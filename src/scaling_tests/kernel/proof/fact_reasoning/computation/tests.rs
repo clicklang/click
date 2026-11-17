@@ -6,13 +6,13 @@ fn computation_refusal_is_independent_of_memory_history() {
     let mut costs = Vec::new();
     for size in [4, 16, 64, 256] {
         let _session = VerificationSession::enter();
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("computation-read".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Concrete("computation-read".into()),
+            offset: AddressOffset::Constant(0),
         };
-        let other = Pointer {
-            block: PointerBlock::Concrete("computation-write".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let other = Address {
+            base: AddressBase::Concrete("computation-write".into()),
+            offset: AddressOffset::Constant(0),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new()

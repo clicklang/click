@@ -35,7 +35,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::kernel::functions::CheckedResourceFact;
 use crate::kernel::loans::{LoanLedger, LoanRefusal, LoanViewBinding, plan_stable_view_transfer};
 use crate::kernel::{
-    MachineTerm, MemoryRange, Pointer, PointerOffsetTerm, PureFactContext, ResourceContext,
+    Address, AddressOffset, MachineTerm, MemoryRange, PureFactContext, ResourceContext,
     ResourceFact, ResourceOccurrenceId, ResourceStateSource, ResourceTransferRole,
 };
 
@@ -1228,9 +1228,9 @@ impl ThreadLocalCellModel {
 
 fn production_memory_fact(start: u32, end: u32, own: bool) -> ResourceFact {
     let range = MemoryRange::new(
-        Pointer {
-            block: "v14-buffer".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "v14-buffer".into(),
+            offset: AddressOffset::Constant(0),
         },
         MachineTerm::constant(start),
         MachineTerm::constant(end),

@@ -59,8 +59,8 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 // These operation tests also exercise kernel proposition search explicitly.
 use crate::kernel::{
-    ComparisonOperator, CompositeResourceDefinition, MachineTerm, Pointer, PointerBlock,
-    PointerOffsetTerm, ProgramType, ProgramValue, ResourceAccessMode, ResourceFact, ResourceSpec,
+    Address, AddressBase, AddressOffset, ComparisonOperator, CompositeResourceDefinition,
+    MachineTerm, ProgramType, ProgramValue, ResourceAccessMode, ResourceFact, ResourceSpec,
     SpecExpression, SymbolicMemory, int32, program_function,
 };
 
@@ -503,9 +503,9 @@ fn constructor_partition_freshness_is_indexed_and_output_linear() {
 #[test]
 fn cached_body_loadability_preserves_exact_range_and_state_barriers() {
     let before = SymbolicMemory::new();
-    let at = |block: &str| Pointer {
-        block: block.into(),
-        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+    let at = |block: &str| Address {
+        base: block.into(),
+        offset: crate::kernel::AddressOffset::Constant(0),
     };
     let cached = before.clone().with_seeded_cells(
         at("cache"),
@@ -830,7 +830,7 @@ fn return_proposition_checks_resource_compositions_without_granting_ownership() 
     let base = PureFactStore::default();
     let context = returned_proposition_context(&state);
     for overlaps in [false, true] {
-        let pointer = crate::kernel::Pointer::symbolic(Variable(42));
+        let pointer = crate::kernel::Address::symbolic(Variable(42));
         let fact = Proposition::ResourceComposition(ResourceContext::new().unchecked_with_facts([
             ResourceFact::own_memory(crate::kernel::MemoryRange::new(
                 pointer.clone(),
@@ -865,7 +865,7 @@ fn return_proposition_checks_resource_compositions_without_granting_ownership() 
 
 #[test]
 fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts() {
-    let pointer = Pointer::symbolic(Variable(42));
+    let pointer = Address::symbolic(Variable(42));
     let memory = SymbolicMemory::new().store(pointer.clone(), int32(7));
     let state = ExecutionState::new().with_memory(memory.clone());
     let empty = PureFactStore::default();
@@ -894,7 +894,7 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
         (
             read(
                 memory.clone(),
-                Pointer::symbolic(Variable(44)),
+                Address::symbolic(Variable(44)),
                 MachineTerm::constant(4),
             ),
             false,
@@ -909,7 +909,7 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
         ),
         (
             read(
-                memory.without_local_block(&pointer.block),
+                memory.without_local_block(&pointer.base),
                 pointer,
                 MachineTerm::constant(4),
             ),
@@ -938,8 +938,8 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
 /// an unjustified path fact once a post-return `have` imported it.
 #[test]
 fn return_proposition_accepts_the_store_loadability_of_a_pointer_cell() {
-    let pointer = Pointer::symbolic(Variable(42));
-    let value = ProgramValue::pointer(Pointer::symbolic(Variable(43)));
+    let pointer = Address::symbolic(Variable(42));
+    let value = ProgramValue::pointer(Address::symbolic(Variable(43)));
     let memory = SymbolicMemory::new().store(pointer.clone(), value.clone());
     let state = ExecutionState::new().with_memory(memory.clone());
     let empty = PureFactStore::default();
@@ -1030,7 +1030,7 @@ fn return_argument_facts_do_not_project_mutable_memory_invariants() {
     use crate::kernel::{
         ComparisonOperator, MemorySegment, SpecExpression, SpecProposition, program_parameter,
     };
-    let pointer = Pointer::symbolic(Variable(42));
+    let pointer = Address::symbolic(Variable(42));
     let held = ResourceFact::own_composite(
         "cell".into(),
         vec![ProgramValue::typed_pointer(
@@ -1308,7 +1308,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     for extra in [
         Proposition::MemoryLoadable {
             memory: before.memory().clone(),
-            base: Pointer::symbolic(Variable(42)),
+            base: Address::symbolic(Variable(42)),
             bytes: 4.into(),
             wide: false,
         },
@@ -1334,7 +1334,7 @@ fn return_exchange_keeps_the_published_body_state() {
     use crate::kernel::{
         PointerValue, ResourceFieldSchema, ResourceFieldType, ResourceInstance, SpecPoint,
     };
-    let pointer = Pointer::symbolic(Variable(810_000));
+    let pointer = Address::symbolic(Variable(810_000));
     let schema = ResourceFieldSchema::new(vec![(
         "model".into(),
         ResourceFieldType::Program(ProgramType::Int32),
@@ -1597,9 +1597,9 @@ fn condition_event(
 #[test]
 fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
     let assumptions = PureFactContext::new();
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let range = MemoryRange::new(pointer, MachineTerm::constant(0), MachineTerm::constant(1));
     let before =
@@ -1698,10 +1698,10 @@ fn checked_call_view_lookup_does_not_scan_unrelated_events() {
 
 #[test]
 fn interface_pointer_congruence_preserves_scope_and_read_obligations() {
-    let a = Pointer::symbolic(Variable(95_700));
-    let b = Pointer::symbolic(Variable(95_701));
-    let c = Pointer::symbolic(Variable(95_702));
-    let equal = |a: Pointer, b: Pointer| {
+    let a = Address::symbolic(Variable(95_700));
+    let b = Address::symbolic(Variable(95_701));
+    let c = Address::symbolic(Variable(95_702));
+    let equal = |a: Address, b: Address| {
         Proposition::ConditionIs(crate::kernel::ConditionTerm::pointer_equal(a, b), true)
     };
     let parent = PureFactStore::from_ordered(&[equal(a.clone(), b.clone())]);
@@ -1821,9 +1821,9 @@ fn checked_function_entry_rebase_rejects_semantic_memory_and_population_changes(
         Vec::new(),
         Vec::new(),
     )]);
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let caller = ExecutionState::new()
         .with_memory(SymbolicMemory::new().store(
@@ -1974,9 +1974,9 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
         .is_err(),
         "observation must not invent an unrelated pure fact"
     );
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let changed_memory = observed.clone().with_memory(
         SymbolicMemory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(1))),
@@ -2072,13 +2072,13 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
 #[test]
 fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
     let before = ExecutionState::new();
-    let left_pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let left_pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
-    let right_pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(4),
+    let right_pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(4),
     };
     let left = before.clone().with_memory(
         before
@@ -2156,9 +2156,9 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
 #[test]
 fn checked_interface_effects_reject_uncertified_memory_effects() {
     let before = ExecutionState::new();
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let after = before
         .clone()
@@ -2188,13 +2188,13 @@ fn checked_interface_effects_reject_uncertified_memory_effects() {
 #[test]
 fn checked_interface_effects_require_memory_diff_coverage() {
     let before = ExecutionState::new();
-    let changed_pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(4),
+    let changed_pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(4),
     };
-    let declared_pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let declared_pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let after = before.clone().with_memory(
         before
@@ -2282,9 +2282,9 @@ fn checked_interface_effects_require_memory_diff_coverage() {
 
 #[test]
 fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
-    let allocation_base = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let allocation_base = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let before = ExecutionState::new().with_memory(
         SymbolicMemory::new()
@@ -2673,9 +2673,9 @@ fn branch_split_obligations_require_evidence_on_each_named_arm() {
 fn interface_logical_read_does_not_establish_validity() {
     use crate::kernel::{PointerValue, SpecPoint};
     let state = ExecutionState::new();
-    let pointer = crate::kernel::Pointer {
-        block: "interface_cell".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = crate::kernel::Address {
+        base: "interface_cell".into(),
+        offset: AddressOffset::Constant(0),
     };
     let load = SpecExpression::MemoryLoad {
         memory: SpecPoint::Current,
@@ -2787,11 +2787,11 @@ fn interface_assertion_requires_an_available_proof_not_derivability() {
 
 #[test]
 fn interface_load_definition_rejects_wrong_variable_address_and_state() {
-    use crate::kernel::{ConditionTerm, Pointer, SymbolicMemory};
+    use crate::kernel::{Address, ConditionTerm, SymbolicMemory};
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let pointer = Pointer {
-        block: "interface_definition".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "interface_definition".into(),
+        offset: AddressOffset::Constant(0),
     };
     let variable = crate::kernel::eval::load_variable_for_cell(
         &memory,
@@ -2828,9 +2828,9 @@ fn interface_load_definition_rejects_wrong_variable_address_and_state() {
     let wrong_address = equation(
         variable,
         crate::kernel::ProgramPoint::at(&memory),
-        Pointer {
-            block: "other".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "other".into(),
+            offset: AddressOffset::Constant(0),
         },
     );
     let wrong_state = equation(
@@ -3052,9 +3052,9 @@ mod scaling_tests {
 
 #[test]
 fn named_pointer_cell_requires_its_complete_read_and_provenance() {
-    use crate::kernel::{LoadKind, Pointer, SymbolicMemory, VerificationSession};
+    use crate::kernel::{Address, LoadKind, SymbolicMemory, VerificationSession};
     let _session = VerificationSession::enter();
-    let address = Pointer::symbolic(Variable(986_101));
+    let address = Address::symbolic(Variable(986_101));
     let memory = SymbolicMemory::new();
     let name = crate::kernel::canonical_form_of_load(
         crate::kernel::intern_memory(memory.clone()),

@@ -59,7 +59,7 @@ fn addition_congruence_forks_do_not_reindex_unrelated_parents() {
 
 #[test]
 fn offset_graph_construction_and_fork_queries_scale_with_indexed_work() {
-    let offset = |id| PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(id)), 4);
+    let offset = |id| AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(id)), 4);
     for size in [16u64, 64, 256, 1024] {
         let ((graph, work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -95,19 +95,19 @@ fn late_wide_zero_reindexes_only_its_existing_offsets() {
     let mut measured = Vec::new();
     for size in [4u64, 16, 64] {
         let mut graph = EqualityGraph::default();
-        let scaled = |base: &Pointer, value| Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::scaled_int64_node(
+        let scaled = |base: &Address, value| Address {
+            base: base.base.clone(),
+            offset: AddressOffset::scaled_int64_node(
                 MachineTerm::Variable(Variable(value)),
                 4,
                 true,
             ),
         };
         for i in 0..size {
-            let base = Pointer::symbolic(Variable(896_000 + i));
+            let base = Address::symbolic(Variable(896_000 + i));
             assert!(!graph.are_equal(&scaled(&base, 897_000 + i), &base));
         }
-        let base = Pointer::symbolic(Variable(898_000));
+        let base = Address::symbolic(Variable(898_000));
         let pointer = scaled(&base, 898_001);
         assert!(!graph.are_equal(&pointer, &base));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

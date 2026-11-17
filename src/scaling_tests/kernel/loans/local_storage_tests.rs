@@ -18,7 +18,7 @@ fn local_view_work_tracks_the_explicit_delta_not_ambient_local_storage() {
                     .memory_range()
                     .unwrap()
                     .base()
-                    .block
+                    .base
                     .clone(),
                 4,
             );

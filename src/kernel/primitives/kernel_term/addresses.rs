@@ -1,18 +1,18 @@
 //! Raw addresses retain block identity and shared displacement. Exact producer
 //! identity is distinct from the logical pointer equality used by checking.
-use super::offsets::{KernelPointerOffset, SharedPointerOffset};
+use super::offsets::{KernelAddressOffset, SharedAddressOffset};
 use super::*;
 
 #[derive(Clone, Debug)]
 struct ExactBlock {
-    source: Arc<PointerBlock>,
+    source: Arc<AddressBase>,
     fingerprint: u64,
 }
 impl ExactBlock {
-    fn new(block: &PointerBlock) -> Self {
+    fn new(block: &AddressBase) -> Self {
         let bytes = match block {
-            PointerBlock::Concrete(name) | PointerBlock::Function(name) => name.len(),
-            PointerBlock::StringLiteral { identity, bytes } => {
+            AddressBase::Concrete(name) | AddressBase::Function(name) => name.len(),
+            AddressBase::StringLiteral { identity, bytes } => {
                 identity.payload_bytes().saturating_add(bytes.len())
             }
             _ => 0,
@@ -20,7 +20,7 @@ impl ExactBlock {
         crate::instrumentation::record_deterministic_work(bytes);
         let mut hash = crate::id_hash::FingerprintHasher::default();
         match block {
-            PointerBlock::PureFunctionApplication(call) => {
+            AddressBase::PureFunctionApplication(call) => {
                 10u64.hash(&mut hash);
                 call.payload_id().hash(&mut hash);
             }
@@ -38,10 +38,9 @@ impl PartialEq for ExactBlock {
             return true;
         }
         match (&*self.source, &*other.source) {
-            (
-                PointerBlock::PureFunctionApplication(a),
-                PointerBlock::PureFunctionApplication(b),
-            ) => a.payload_id() == b.payload_id(),
+            (AddressBase::PureFunctionApplication(a), AddressBase::PureFunctionApplication(b)) => {
+                a.payload_id() == b.payload_id()
+            }
             (a, b) => a == b,
         }
     }
@@ -54,31 +53,29 @@ impl Hash for ExactBlock {
 }
 
 #[derive(Clone)]
-pub(crate) struct SharedPointerBlock(BlockStorage);
+pub(crate) struct SharedAddressBase(BlockStorage);
 #[derive(Clone)]
 enum BlockStorage {
     // These atoms already have scalar identities. They need neither an arena
     // allocation nor weak-entry cleanup on every read descriptor import.
-    Inline(PointerBlock),
+    Inline(AddressBase),
     Interned(Arc<BlockData>),
 }
 struct BlockData {
     id: u64,
     source: ExactBlock,
 }
-impl std::fmt::Debug for SharedPointerBlock {
+impl std::fmt::Debug for SharedAddressBase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.0 {
-            BlockStorage::Inline(block) => {
-                f.debug_tuple("SharedPointerBlock").field(block).finish()
-            }
+            BlockStorage::Inline(block) => f.debug_tuple("SharedAddressBase").field(block).finish(),
             BlockStorage::Interned(node) => {
-                f.debug_tuple("SharedPointerBlock").field(&node.id).finish()
+                f.debug_tuple("SharedAddressBase").field(&node.id).finish()
             }
         }
     }
 }
-impl PartialEq for SharedPointerBlock {
+impl PartialEq for SharedAddressBase {
     fn eq(&self, other: &Self) -> bool {
         match (&self.0, &other.0) {
             (BlockStorage::Inline(a), BlockStorage::Inline(b)) => a == b,
@@ -87,8 +84,8 @@ impl PartialEq for SharedPointerBlock {
         }
     }
 }
-impl Eq for SharedPointerBlock {}
-impl Hash for SharedPointerBlock {
+impl Eq for SharedAddressBase {}
+impl Hash for SharedAddressBase {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match &self.0 {
             BlockStorage::Inline(block) => {
@@ -108,21 +105,21 @@ struct BlockInterner {
     cleanup: VecDeque<ExactBlock>,
     next_id: u64,
 }
-impl SharedPointerBlock {
-    pub(crate) fn import(block: &PointerBlock) -> Self {
+impl SharedAddressBase {
+    pub(crate) fn import(block: &AddressBase) -> Self {
         Self::import_with_upkeep(block, false)
     }
 
-    fn import_with_upkeep(block: &PointerBlock, producer: bool) -> Self {
+    fn import_with_upkeep(block: &AddressBase, producer: bool) -> Self {
         if matches!(
             block,
-            PointerBlock::Symbolic(_)
-                | PointerBlock::FunctionSymbolic(_)
-                | PointerBlock::ExternalArgument
-                | PointerBlock::ExternalObject(_)
-                | PointerBlock::LoadedPointer(_)
-                | PointerBlock::Heap(_)
-                | PointerBlock::Temporary(_)
+            AddressBase::Symbolic(_)
+                | AddressBase::FunctionSymbolic(_)
+                | AddressBase::ExternalArgument
+                | AddressBase::ExternalObject(_)
+                | AddressBase::LoadedPointer(_)
+                | AddressBase::Heap(_)
+                | AddressBase::Temporary(_)
         ) {
             crate::instrumentation::record_deterministic_work(1);
             return Self(BlockStorage::Inline(block.clone()));
@@ -173,14 +170,14 @@ impl SharedPointerBlock {
     /// Producer imports continue to retain its exact payload identity.
     pub(crate) fn observation(&self) -> Self {
         match self.native_atom() {
-            block @ PointerBlock::PureFunctionApplication(_) => {
+            block @ AddressBase::PureFunctionApplication(_) => {
                 Self(BlockStorage::Inline(block.clone()))
             }
             _ => self.clone(),
         }
     }
 
-    pub(crate) fn native_atom(&self) -> &PointerBlock {
+    pub(crate) fn native_atom(&self) -> &AddressBase {
         match &self.0 {
             BlockStorage::Inline(block) => block,
             BlockStorage::Interned(node) => &node.source.source,
@@ -189,44 +186,44 @@ impl SharedPointerBlock {
 }
 
 /// Cloning, comparing and hashing prepared addresses inspect only handles.
-/// There is no retained native Pointer or native offset tree.
+/// There is no retained native Address or native offset tree.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct SharedPointerAddress(Arc<KernelPointerAddress>);
+pub struct SharedAddress(Arc<KernelAddress>);
 #[derive(Debug, Eq, PartialEq, Hash)]
-pub(crate) struct KernelPointerAddress {
-    pub(crate) block: SharedPointerBlock,
-    pub(crate) offset: SharedPointerOffset,
+pub(crate) struct KernelAddress {
+    pub(crate) base: SharedAddressBase,
+    pub(crate) offset: SharedAddressOffset,
 }
-impl SharedPointerAddress {
-    pub(crate) fn new(block: SharedPointerBlock, offset: SharedPointerOffset) -> Self {
+impl SharedAddress {
+    pub(crate) fn new(base: SharedAddressBase, offset: SharedAddressOffset) -> Self {
         crate::instrumentation::record_deterministic_work(1);
-        Self(Arc::new(KernelPointerAddress { block, offset }))
+        Self(Arc::new(KernelAddress { base, offset }))
     }
-    pub(crate) fn node(&self) -> &KernelPointerAddress {
+    pub(crate) fn node(&self) -> &KernelAddress {
         &self.0
     }
-    pub(crate) fn import(pointer: &Pointer) -> Self {
+    pub(crate) fn import(pointer: &Address) -> Self {
         Self::new(
-            SharedPointerBlock::import(&pointer.block),
-            KernelPointerOffset::import(&pointer.offset),
+            SharedAddressBase::import(&pointer.base),
+            KernelAddressOffset::import(&pointer.offset),
         )
     }
-    pub(crate) fn import_produced(pointer: &Pointer) -> Self {
+    pub(crate) fn import_produced(pointer: &Address) -> Self {
         Self::new(
-            SharedPointerBlock::import_with_upkeep(&pointer.block, true),
-            KernelPointerOffset::import(&pointer.offset),
+            SharedAddressBase::import_with_upkeep(&pointer.base, true),
+            KernelAddressOffset::import(&pointer.offset),
         )
     }
     pub(crate) fn syntax_equal(&self, other: &Self) -> bool {
-        (self.node().block == other.node().block
-            || self.node().block.native_atom() == other.node().block.native_atom())
+        (self.node().base == other.node().base
+            || self.node().base.native_atom() == other.node().base.native_atom())
             && self.node().offset.syntax_equal(&other.node().offset)
     }
 
-    pub(crate) fn export(&self) -> Result<Pointer, &'static str> {
-        Ok(Pointer {
-            block: self.0.block.native_atom().clone(),
-            offset: KernelPointerOffset::export(&self.0.offset)?,
+    pub(crate) fn export(&self) -> Result<Address, &'static str> {
+        Ok(Address {
+            base: self.0.base.native_atom().clone(),
+            offset: KernelAddressOffset::export(&self.0.offset)?,
         })
     }
 }
@@ -237,38 +234,38 @@ mod tests {
     #[test]
     fn address_atoms_round_trip_without_changing_identity_or_offset_shape() {
         let blocks = vec![
-            PointerBlock::Concrete("object".into()),
-            PointerBlock::StringLiteral {
+            AddressBase::Concrete("object".into()),
+            AddressBase::StringLiteral {
                 identity: StringLiteralId::new("literal", 0),
                 bytes: vec![0, 255],
             },
-            PointerBlock::Function("function".into()),
-            PointerBlock::FunctionSymbolic(Variable(998001)),
-            PointerBlock::ExternalArgument,
-            PointerBlock::ExternalObject(Variable(998002)),
-            PointerBlock::Symbolic(Variable(998003)),
-            PointerBlock::LoadedPointer(PointerLoadId(998004)),
-            PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+            AddressBase::Function("function".into()),
+            AddressBase::FunctionSymbolic(Variable(998001)),
+            AddressBase::ExternalArgument,
+            AddressBase::ExternalObject(Variable(998002)),
+            AddressBase::Symbolic(Variable(998003)),
+            AddressBase::LoadedPointer(PointerLoadId(998004)),
+            AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "call".into(),
                 vec![],
             )),
-            PointerBlock::Heap(998005),
-            PointerBlock::Temporary(998006),
+            AddressBase::Heap(998005),
+            AddressBase::Temporary(998006),
         ];
         for block in blocks {
-            let source = Pointer {
-                block,
-                offset: PointerOffsetTerm::Add(
-                    Box::new(PointerOffsetTerm::Constant(0)),
-                    Box::new(PointerOffsetTerm::Variable(Variable(998007))),
+            let source = Address {
+                base: block,
+                offset: AddressOffset::Add(
+                    Box::new(AddressOffset::Constant(0)),
+                    Box::new(AddressOffset::Variable(Variable(998007))),
                 ),
             };
-            let shared = SharedPointerAddress::import(&source);
+            let shared = SharedAddress::import(&source);
             assert_eq!(shared.export().unwrap(), source);
-            assert_eq!(SharedPointerAddress::import(&source), shared);
+            assert_eq!(SharedAddress::import(&source), shared);
             assert!(matches!(
                 shared.node().offset.node(),
-                KernelPointerOffset::Add(_)
+                KernelAddressOffset::Add(_)
             ));
         }
     }
@@ -279,16 +276,16 @@ mod tests {
         assert_eq!(a, b);
         assert_ne!(a.payload_id(), b.payload_id());
         let address = |call| {
-            SharedPointerAddress::import(&Pointer {
-                block: PointerBlock::PureFunctionApplication(call),
-                offset: PointerOffsetTerm::Constant(0),
+            SharedAddress::import(&Address {
+                base: AddressBase::PureFunctionApplication(call),
+                offset: AddressOffset::Constant(0),
             })
         };
         let left = address(a.clone());
         let right = address(b);
         assert_ne!(left, right);
         assert_eq!(left.export().unwrap(), right.export().unwrap());
-        let PointerBlock::PureFunctionApplication(output) = left.export().unwrap().block else {
+        let AddressBase::PureFunctionApplication(output) = left.export().unwrap().base else {
             panic!("call")
         };
         assert_eq!(output.payload_id(), a.payload_id());

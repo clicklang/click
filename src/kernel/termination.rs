@@ -774,9 +774,9 @@ fn call_passes_witness_child(
         let variable = Variable(PARAMETER_VARIABLE_BASE + index as u64);
         let value = if parameter.program_type().is_pointer() {
             ProgramValue::typed_pointer(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(variable), 1),
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::scale_int32(MachineTerm::Variable(variable), 1),
                 },
                 parameter.program_type(),
             )
@@ -815,7 +815,7 @@ fn call_passes_witness_child(
             );
         }
         for (index, witness) in definition.witnesses().iter().enumerate() {
-            let pointer = Pointer::symbolic(Variable(WITNESS_VARIABLE_BASE + index as u64));
+            let pointer = Address::symbolic(Variable(WITNESS_VARIABLE_BASE + index as u64));
             body_state.locals.set_typed(
                 witness.name().to_string(),
                 ProgramValue::typed_pointer(pointer, witness.program_type()),
@@ -1455,8 +1455,11 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            escapes(condition);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                escapes(condition);
+            }
             collect_address_taken_locals(body, names);
             if let Some(test) = test {
                 collect_address_taken_locals(&test.statement, names);
@@ -1786,7 +1789,7 @@ fn statement_calls_visiting(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_calls_visiting(body, calls, visit);
             if let Some(test) = test {
                 statement_calls_visiting(&test.statement, calls, visit);
@@ -1880,7 +1883,7 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_declared_variables(body, names);
             if let Some(test) = test {
                 statement_declared_variables(&test.statement, names);
@@ -2108,14 +2111,18 @@ fn walk_termination_paths<W: TerminationWalk>(
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
             // A `break` in the body lands where the loop's own exit lands,
             // carrying what the incoming paths already carry, so it is
             // covered by the incoming paths this returns.
             if let Some(test) = test {
                 descend(&test.statement, paths.clone())?;
             }
-            let entered = walk.refine(condition, true, paths.clone());
+            let entered = condition.map_or_else(
+                || paths.clone(),
+                |condition| walk.refine(condition, true, paths.clone()),
+            );
             let body_paths = descend(body, entered.clone())?;
             if let Some(update) = update {
                 descend(update, body_paths.continuing)?;
@@ -3567,7 +3574,7 @@ fn collect_loops_in_order<'a>(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             loops.push(statement);
             for region in program_loop_regions(body, update.as_deref(), test) {
                 collect_loops_in_order(region, loops);
@@ -3842,7 +3849,7 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             loops.push(statement);
             for region in program_loop_regions(body, update.as_deref(), test) {
                 collect_loops(region, loops);
@@ -4119,7 +4126,7 @@ fn visit_loop_obligations(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             let index = *next_index;
             *next_index += 1;
             for region in program_loop_regions(body, update.as_deref(), test) {
@@ -4328,8 +4335,8 @@ fn value_function_address(value: &ProgramValue) -> Option<&str> {
     let ProgramValue::Pointer(pointer) = value else {
         return None;
     };
-    match &pointer.pointer().block {
-        PointerBlock::Function(name) => Some(name),
+    match &pointer.pointer().base {
+        AddressBase::Function(name) => Some(name),
         _ => None,
     }
 }
@@ -4498,8 +4505,11 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            visit(condition);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                visit(condition);
+            }
             statement_function_addresses(body, taken);
             if let Some(test) = test {
                 statement_function_addresses(&test.statement, taken);
@@ -4760,7 +4770,7 @@ fn self_call_loop_indices(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             let index = *next_index;
             *next_index += 1;
             enclosing.push(index);
@@ -5316,16 +5326,16 @@ mod ranking_member_tests {
         );
     }
 
-    fn int32_cell(name: &str) -> Pointer {
-        Pointer {
-            block: PointerBlock::Concrete(name.to_string()),
-            offset: PointerOffsetTerm::Constant(0),
+    fn int32_cell(name: &str) -> Address {
+        Address {
+            base: AddressBase::Concrete(name.to_string()),
+            offset: AddressOffset::Constant(0),
         }
     }
 
     /// A pure component that reads memory: the load is against the state the
     /// component is read at, not a state the surface named.
-    fn current_load(cell: &Pointer) -> SpecExpression {
+    fn current_load(cell: &Address) -> SpecExpression {
         SpecExpression::MemoryLoad {
             memory: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(

@@ -5,7 +5,7 @@ use super::super::resource_algebra::{insert_resource_index_entry, remove_resourc
 use super::*;
 use crate::kernel::{bits32_constant, int64_constant};
 
-type Key = (PointerBlock, u64);
+type Key = (AddressBase, u64);
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel::primitives) struct StructuralMemory {
@@ -13,27 +13,27 @@ pub(in crate::kernel::primitives) struct StructuralMemory {
     origins: PersistentMap<Key, ResourceEntryIds>,
 }
 
-fn shape(pointer: &Pointer) -> Key {
+fn shape(pointer: &Address) -> Key {
     (
-        pointer.block.clone(),
+        pointer.base.clone(),
         crate::kernel::assumptions::memory_blind_pointer_fingerprint(pointer),
     )
 }
 
-fn origin(pointer: &Pointer) -> Option<Key> {
+fn origin(pointer: &Address) -> Option<Key> {
     // Literal bases need no normalization traversal (including during large
     // certified input publications).
     let offset = match &pointer.offset {
-        PointerOffsetTerm::Constant(_) => AffineOffset::constant(0),
+        AddressOffset::Constant(_) => AffineOffset::constant(0),
         offset => AffineOffset::of(offset)?,
     };
-    Some((pointer.block.clone(), offset.origin_fingerprint()))
+    Some((pointer.base.clone(), offset.origin_fingerprint()))
 }
 
 impl StructuralMemory {
     pub(in crate::kernel::primitives) fn update(
         &mut self,
-        base: &Pointer,
+        base: &Address,
         entry: ResourceEntryId,
         insert: bool,
     ) {
@@ -48,11 +48,11 @@ impl StructuralMemory {
         }
     }
 
-    fn candidates(&self, pointer: &Pointer) -> BTreeSet<ResourceEntryId> {
+    fn candidates(&self, pointer: &Address) -> BTreeSet<ResourceEntryId> {
         let mut result = BTreeSet::new();
-        let mut add_shape = |offset: &PointerOffsetTerm| {
-            let key = shape(&Pointer {
-                block: pointer.block.clone(),
+        let mut add_shape = |offset: &AddressOffset| {
+            let key = shape(&Address {
+                base: pointer.base.clone(),
                 offset: offset.clone(),
             });
             if let Some(entries) = self.shapes.get(&key) {
@@ -63,7 +63,7 @@ impl StructuralMemory {
         // These are subterms of the explicit access, not alternate spellings
         // of it. They cover precisely the bases the structural read judgment
         // can recognize in an addition, including either operand.
-        if let PointerOffsetTerm::Add(left, right) = &pointer.offset {
+        if let AddressOffset::Add(left, right) = &pointer.offset {
             add_shape(left);
             add_shape(right);
         }
@@ -88,22 +88,21 @@ fn remove_owned_key(
 // constant displacement. Symbolic indexing and state matching need the
 // shape payload instead; their membership is a checked judgment, not an
 // ordering of affine vectors.
-fn plain_origin(mut offset: &PointerOffsetTerm) -> bool {
+fn plain_origin(mut offset: &AddressOffset) -> bool {
     loop {
         match offset {
-            PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => return true,
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+            AddressOffset::Constant(_) | AddressOffset::Variable(_) => return true,
+            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
                 let value = value.operand_view();
                 return value.variable().is_some()
                     || value.literal().is_some_and(|literal| {
                         matches!(literal, bits32_constant!(_) | int64_constant!(_))
                     });
             }
-            PointerOffsetTerm::Add(left, right) => {
-                offset = if matches!(left.as_ref(), PointerOffsetTerm::Constant(_)) {
+            AddressOffset::Add(left, right) => {
+                offset = if matches!(left.as_ref(), AddressOffset::Constant(_)) {
                     right
-                } else if matches!(right.as_ref(), PointerOffsetTerm::Constant(_)) {
+                } else if matches!(right.as_ref(), AddressOffset::Constant(_)) {
                     left
                 } else {
                     return false;
@@ -116,19 +115,14 @@ fn plain_origin(mut offset: &PointerOffsetTerm) -> bool {
 impl ResourceContext {
     pub(in crate::kernel::primitives) fn structural_memory_entries(
         &self,
-        base: &Pointer,
-        start: &Pointer,
+        base: &Address,
+        start: &Address,
         bytes: Option<u32>,
     ) -> MemoryAccessEntries {
         if let Some(bytes) = bytes
             && plain_origin(&start.offset)
             && let Some(offset) = AffineOffset::of(&start.offset)
-            && let Some(bucket) = self
-                .storage
-                .index
-                .memory_addresses
-                .classes
-                .get(&start.block)
+            && let Some(bucket) = self.storage.index.memory_addresses.classes.get(&start.base)
             && bucket.general_coordinates == 0
             && bucket.read_intervals.len() == bucket.memory_count
             && let Some(end) = offset.checked_add(&AffineOffset::constant(i128::from(bytes)))
@@ -155,7 +149,7 @@ mod tests {
 
     #[test]
     fn structural_selection_preserves_width_forks_and_consumption() {
-        let base = Pointer::symbolic(Variable(873_000));
+        let base = Address::symbolic(Variable(873_000));
         let owner =
             ResourceFact::own_memory(MemoryRange::new(base.clone(), 0u32.into(), 4u32.into()));
         let resources = ResourceContext::new().unchecked_with_fact(owner.clone());
@@ -180,9 +174,9 @@ mod tests {
         );
         assert!(slot.permits_memory_read(&base, 8, &empty));
         assert!(!slot.permits_memory_read(&base, 9, &empty));
-        let alias = Pointer::symbolic(Variable(873_001));
+        let alias = Address::symbolic(Variable(873_001));
         let equal = empty.assume_condition(ConditionTerm::pointer_equal(base, alias.clone()), true);
-        assert!(equal.pointers_known_equal(&alias, &Pointer::symbolic(Variable(873_000)),));
+        assert!(equal.pointers_known_equal(&alias, &Address::symbolic(Variable(873_000)),));
         assert!(slot.permits_memory_read(&alias, 4, &equal));
         assert!(
             !slot.satisfies_memory_fact_structurally(&ResourceFact::view_memory(MemoryRange::new(
@@ -220,7 +214,7 @@ fn retained_plain_origin_requires_an_exact_allowed_atom() {
         ),
     ] {
         let root = KernelTerm::retained_machine_operand(ty, V::Legacy(&term));
-        let offset = PointerOffsetTerm::Int32Scaled {
+        let offset = AddressOffset::Int32Scaled {
             value: V::Shared(&root).retain(T::Int32),
             byte_width: 4,
         };

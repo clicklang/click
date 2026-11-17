@@ -370,7 +370,7 @@ impl PureFactContext {
             ConditionTerm::PointerEqual(left, right) => {
                 if self.pointers_known_equal(left, right) {
                     Some(true)
-                } else if left.block == right.block {
+                } else if left.base == right.base {
                     self.decide_from_order_rules(&ConditionTerm::pointer_offset_equal(
                         left.offset.clone(),
                         right.offset.clone(),
@@ -508,15 +508,15 @@ impl PureFactContext {
                     )
                     || self.has_condition_fact(
                         ConditionTerm::pointer_offset_equal(
-                            PointerOffsetTerm::scale_int32(left.clone(), 4),
-                            PointerOffsetTerm::scale_int32(right.clone(), 4),
+                            AddressOffset::scale_int32(left.clone(), 4),
+                            AddressOffset::scale_int32(right.clone(), 4),
                         ),
                         true,
                     )
                     || self.has_condition_fact(
                         ConditionTerm::pointer_offset_equal(
-                            PointerOffsetTerm::scale_int32(right.clone(), 4),
-                            PointerOffsetTerm::scale_int32(left.clone(), 4),
+                            AddressOffset::scale_int32(right.clone(), 4),
+                            AddressOffset::scale_int32(left.clone(), 4),
                         ),
                         true,
                     )
@@ -557,15 +557,15 @@ impl PureFactContext {
                     )) == Some(true)
                     || self.has_condition_fact(
                         ConditionTerm::pointer_offset_equal(
-                            PointerOffsetTerm::scale_int32(left.clone(), 4),
-                            PointerOffsetTerm::scale_int32(right.clone(), 4),
+                            AddressOffset::scale_int32(left.clone(), 4),
+                            AddressOffset::scale_int32(right.clone(), 4),
                         ),
                         false,
                     )
                     || self.has_condition_fact(
                         ConditionTerm::pointer_offset_equal(
-                            PointerOffsetTerm::scale_int32(right.clone(), 4),
-                            PointerOffsetTerm::scale_int32(left.clone(), 4),
+                            AddressOffset::scale_int32(right.clone(), 4),
+                            AddressOffset::scale_int32(left.clone(), 4),
                         ),
                         false,
                     )
@@ -1001,7 +1001,7 @@ impl PureFactContext {
     /// arithmetic proof search, alias-component walk, or resource check.
     /// `false` means unknown, not unequal. SymbolicMemory consumers must retain their
     /// structural-distinctness and separation checks around this query.
-    pub(in crate::kernel) fn pointers_known_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+    pub(in crate::kernel) fn pointers_known_equal(&self, left: &Address, right: &Address) -> bool {
         self.equality_graph.are_equal(left, right)
     }
 
@@ -1009,7 +1009,7 @@ impl PureFactContext {
     /// of this context: one indexed class lookup, no search. Diagnostics use
     /// it to name two reads of one address that are spelled differently,
     /// such as the byte offset `(char *)q + i * 4` and the element `q[i]`.
-    pub(crate) fn addresses_known_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+    pub(crate) fn addresses_known_equal(&self, left: &Address, right: &Address) -> bool {
         left == right || self.pointers_known_equal(left, right)
     }
 
@@ -1527,27 +1527,24 @@ impl PureFactContext {
 /// share (one occurrence per match). Offsets are exact i64 sums of their
 /// addends, so `C + L == C + R` holds exactly if and only if `L == R`.
 pub(in crate::kernel) fn cancel_common_offset_addends(
-    left: &crate::kernel::PointerOffsetTerm,
-    right: &crate::kernel::PointerOffsetTerm,
-) -> (
-    crate::kernel::PointerOffsetTerm,
-    crate::kernel::PointerOffsetTerm,
-) {
-    use crate::kernel::PointerOffsetTerm;
-    fn addends(offset: &PointerOffsetTerm, out: &mut Vec<PointerOffsetTerm>) {
+    left: &crate::kernel::AddressOffset,
+    right: &crate::kernel::AddressOffset,
+) -> (crate::kernel::AddressOffset, crate::kernel::AddressOffset) {
+    use crate::kernel::AddressOffset;
+    fn addends(offset: &AddressOffset, out: &mut Vec<AddressOffset>) {
         match offset {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 addends(left, out);
                 addends(right, out);
             }
             other => out.push(other.clone()),
         }
     }
-    fn rebuild(addends: Vec<PointerOffsetTerm>) -> PointerOffsetTerm {
+    fn rebuild(addends: Vec<AddressOffset>) -> AddressOffset {
         addends
             .into_iter()
-            .reduce(|sum, addend| PointerOffsetTerm::Add(Box::new(sum), Box::new(addend)))
-            .unwrap_or(PointerOffsetTerm::Constant(0))
+            .reduce(|sum, addend| AddressOffset::Add(Box::new(sum), Box::new(addend)))
+            .unwrap_or(AddressOffset::Constant(0))
     }
     let mut left_addends = Vec::new();
     addends(left, &mut left_addends);
@@ -1556,11 +1553,11 @@ pub(in crate::kernel) fn cancel_common_offset_addends(
     crate::instrumentation::record_deterministic_work(left_addends.len() + right_addends.len());
     // A multiset count: each addend is hashed once, and an addend shared
     // `k` times cancels `k` times, so the work is linear in the addends.
-    let mut right_counts = std::collections::HashMap::<&PointerOffsetTerm, usize>::new();
+    let mut right_counts = std::collections::HashMap::<&AddressOffset, usize>::new();
     for addend in &right_addends {
         *right_counts.entry(addend).or_default() += 1;
     }
-    let mut cancelled = std::collections::HashMap::<&PointerOffsetTerm, usize>::new();
+    let mut cancelled = std::collections::HashMap::<&AddressOffset, usize>::new();
     let mut left_rest = Vec::new();
     for addend in &left_addends {
         match right_counts.get_mut(addend) {
@@ -1592,7 +1589,7 @@ impl PureFactContext {
     /// else stays undecided; alignment is never inferred from a pointee type.
     pub(in crate::kernel) fn decide_pointer_alignment(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         alignment: u64,
     ) -> Option<bool> {
         self.pointer_alignment_decision(pointer, alignment)
@@ -1603,7 +1600,7 @@ impl PureFactContext {
     /// derivation can retain that premise for its check.
     pub(in crate::kernel) fn pointer_alignment_decision(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         alignment: u64,
     ) -> Option<(bool, Option<Proposition>)> {
         self.pointer_formation_alignment_decision(pointer, alignment, true)
@@ -1623,7 +1620,7 @@ impl PureFactContext {
     /// though that restricted certificate also carried its equality support.
     pub(in crate::kernel) fn pointer_alignment_certificate_decision(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         alignment: u64,
     ) -> Option<(bool, Option<Proposition>)> {
         self.pointer_formation_alignment_decision(pointer, alignment, false)
@@ -1631,7 +1628,7 @@ impl PureFactContext {
 
     fn pointer_formation_alignment_decision(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         alignment: u64,
         allow_class_witness: bool,
     ) -> Option<(bool, Option<Proposition>)> {
@@ -1639,13 +1636,13 @@ impl PureFactContext {
             return None;
         }
         // The null pointer's address is zero, which every alignment divides.
-        let null_fact = ConditionTerm::pointer_equal(pointer.clone(), Pointer::null());
+        let null_fact = ConditionTerm::pointer_equal(pointer.clone(), Address::null());
         if self.decide(&null_fact) == Some(true) {
             return Some((true, Some(Proposition::ConditionIs(null_fact, true))));
         }
         let (base, displacement) = split_constant_displacement(&pointer.offset);
-        let intrinsic_block_alignment = match &pointer.block {
-            PointerBlock::Heap(_) => Some(crate::kernel::primitives::HEAP_ALLOCATION_ALIGNMENT),
+        let intrinsic_block_alignment = match &pointer.base {
+            AddressBase::Heap(_) => Some(crate::kernel::primitives::HEAP_ALLOCATION_ALIGNMENT),
             // A file-scope or static object's block is placed by the
             // compiler at its type's alignment, recorded when the block was
             // created.
@@ -1666,13 +1663,13 @@ impl PureFactContext {
                 .collect::<Vec<_>>();
             let mut found = None;
             'candidates: for candidate in candidates {
-                let base_pointer = Pointer {
-                    block: pointer.block.clone(),
+                let base_pointer = Address {
+                    base: pointer.base.clone(),
                     offset: candidate,
                 };
                 let mut probe = alignment;
                 while probe <= MAX_PROBED_ALIGNMENT {
-                    let premise_at = |pointer: &Pointer, alignment| {
+                    let premise_at = |pointer: &Address, alignment| {
                         self.equality_graph
                             .admitted
                             .pointer_alignment_facts
@@ -1860,7 +1857,7 @@ impl PureFactContext {
                 let tag = tag_bound(form.tag.operand_view())?;
                 let alignment = tag.checked_add(1)?.checked_next_power_of_two()?;
                 let nonnull = self.decide_citing(
-                    &ConditionTerm::pointer_equal(form.pointer.clone(), Pointer::null()),
+                    &ConditionTerm::pointer_equal(form.pointer.clone(), Address::null()),
                     used,
                 ) == Some(false);
                 let aligned = self.decide_citing(
@@ -1948,13 +1945,13 @@ impl PureFactContext {
 /// The offset without its scaled-index addends whose byte scale `alignment`
 /// divides; `None` when there is no such addend.
 fn drop_aligned_scaled_addends(
-    offset: &crate::kernel::PointerOffsetTerm,
+    offset: &crate::kernel::AddressOffset,
     alignment: u64,
-) -> Option<crate::kernel::PointerOffsetTerm> {
-    use crate::kernel::PointerOffsetTerm;
-    fn addends(offset: &PointerOffsetTerm, out: &mut Vec<PointerOffsetTerm>) {
+) -> Option<crate::kernel::AddressOffset> {
+    use crate::kernel::AddressOffset;
+    fn addends(offset: &AddressOffset, out: &mut Vec<AddressOffset>) {
         match offset {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 addends(left, out);
                 addends(right, out);
             }
@@ -1976,9 +1973,9 @@ fn drop_aligned_scaled_addends(
             .or_else(|| right.word32_constant())
             .map(|constant| i64::from(constant as i32))
     }
-    let divisible = |part: &PointerOffsetTerm| match part {
-        PointerOffsetTerm::Int32Scaled { value, byte_width }
-        | PointerOffsetTerm::Int64Scaled {
+    let divisible = |part: &AddressOffset| match part {
+        AddressOffset::Int32Scaled { value, byte_width }
+        | AddressOffset::Int64Scaled {
             value, byte_width, ..
         } => {
             let scale = constant_factor(value.operand_view())
@@ -1995,18 +1992,18 @@ fn drop_aligned_scaled_addends(
         parts
             .into_iter()
             .filter(|part| !divisible(part))
-            .reduce(PointerOffsetTerm::add)
-            .unwrap_or(PointerOffsetTerm::Constant(0)),
+            .reduce(AddressOffset::add)
+            .unwrap_or(AddressOffset::Constant(0)),
     )
 }
 
 fn split_constant_displacement(
-    offset: &crate::kernel::PointerOffsetTerm,
-) -> (crate::kernel::PointerOffsetTerm, i64) {
-    use crate::kernel::PointerOffsetTerm;
-    fn addends(offset: &PointerOffsetTerm, out: &mut Vec<PointerOffsetTerm>) {
+    offset: &crate::kernel::AddressOffset,
+) -> (crate::kernel::AddressOffset, i64) {
+    use crate::kernel::AddressOffset;
+    fn addends(offset: &AddressOffset, out: &mut Vec<AddressOffset>) {
         match offset {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 addends(left, out);
                 addends(right, out);
             }
@@ -2025,8 +2022,8 @@ fn split_constant_displacement(
     }
     let base = symbolic
         .into_iter()
-        .reduce(PointerOffsetTerm::add)
-        .unwrap_or(PointerOffsetTerm::Constant(0));
+        .reduce(AddressOffset::add)
+        .unwrap_or(AddressOffset::Constant(0));
     (base, displacement)
 }
 
@@ -2268,7 +2265,7 @@ impl PureFactContext {
     /// resolution uses the width-specific form for positive index equality.
     pub(in crate::kernel) fn element_index_rebuild_is_exact(
         &self,
-        offset: &crate::kernel::PointerOffsetTerm,
+        offset: &crate::kernel::AddressOffset,
     ) -> bool {
         self.element_index_rebuild_is_exact_for_width(offset, 4)
     }
@@ -2277,7 +2274,7 @@ impl PureFactContext {
     /// merely its 32-bit residue.
     pub(in crate::kernel) fn element_index_rebuild_is_exact_for_width(
         &self,
-        offset: &crate::kernel::PointerOffsetTerm,
+        offset: &crate::kernel::AddressOffset,
         element_width: u32,
     ) -> bool {
         self.rebuilt_offset_is_exact(offset, element_width, false)
@@ -2285,7 +2282,7 @@ impl PureFactContext {
 
     /// Whether the index or byte term the offset rebuilders produce for
     /// `offset` denotes the exact offset rather than a wrapped 32-bit value.
-    /// `PointerOffsetTerm` semantics are exact i64, so equal rebuilt terms
+    /// `AddressOffset` semantics are exact i64, so equal rebuilt terms
     /// imply equal offsets only when every rebuilt addition (and, on the byte
     /// path, every scaling by a width) is proved not to overflow under the
     /// current facts. Constants and single index terms are always exact.
@@ -2304,12 +2301,12 @@ impl PureFactContext {
 
     fn rebuilt_offset_is_exact(
         &self,
-        offset: &crate::kernel::PointerOffsetTerm,
+        offset: &crate::kernel::AddressOffset,
         element_width: u32,
         byte_path: bool,
     ) -> bool {
-        use crate::kernel::PointerOffsetTerm;
-        let rebuild = |offset: &PointerOffsetTerm| {
+        use crate::kernel::AddressOffset;
+        let rebuild = |offset: &AddressOffset| {
             if byte_path {
                 crate::kernel::reasoning::shared_byte_offset_from_pointer_offset(offset)
             } else {
@@ -2317,11 +2314,11 @@ impl PureFactContext {
             }
         };
         match offset {
-            PointerOffsetTerm::Constant(_) => true,
+            AddressOffset::Constant(_) => true,
             // Full-width constants or checked unsigned bounds make the
             // element projection exact. The byte projection below still
             // requires a constant whose scaled byte displacement fits.
-            PointerOffsetTerm::Int64Scaled { byte_width, .. } => {
+            AddressOffset::Int64Scaled { byte_width, .. } => {
                 if !byte_path && *byte_width != i64::from(element_width) {
                     return false;
                 }
@@ -2357,7 +2354,7 @@ impl PureFactContext {
                 crate::kernel::assumptions::exact_wide_scaled_offset_constant(offset, self)
                     .is_some_and(|bytes| i32::try_from(bytes).is_ok())
             }
-            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+            AddressOffset::Int32Scaled { value, byte_width } => {
                 if !byte_path || *byte_width <= 1 {
                     return true;
                 }
@@ -2372,17 +2369,13 @@ impl PureFactContext {
                     ],
                 )
             }
-            PointerOffsetTerm::Add(left, right)
-                if left.as_ref() == &PointerOffsetTerm::Constant(0) =>
-            {
+            AddressOffset::Add(left, right) if left.as_ref() == &AddressOffset::Constant(0) => {
                 self.rebuilt_offset_is_exact(right, element_width, byte_path)
             }
-            PointerOffsetTerm::Add(left, right)
-                if right.as_ref() == &PointerOffsetTerm::Constant(0) =>
-            {
+            AddressOffset::Add(left, right) if right.as_ref() == &AddressOffset::Constant(0) => {
                 self.rebuilt_offset_is_exact(left, element_width, byte_path)
             }
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 if !(self.rebuilt_offset_is_exact(left, element_width, byte_path)
                     && self.rebuilt_offset_is_exact(right, element_width, byte_path))
                 {
@@ -2396,7 +2389,7 @@ impl PureFactContext {
                     _ => false,
                 }
             }
-            PointerOffsetTerm::Variable(_) => false,
+            AddressOffset::Variable(_) => false,
         }
     }
 }
@@ -3478,7 +3471,7 @@ mod annotated_alignment_premise_tests {
     fn alignment_certificates_cite_the_exact_annotated_premise() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(996_210));
+        let pointer = Address::symbolic(Variable(996_210));
         // Address annotations share identity. Keep the written stronger
         // premise for exact citation, independently of a weaker alignment
         // premise.
@@ -4035,9 +4028,9 @@ mod shared_read_equality_rule_tests {
         // fact (the reversed-history regression uses this same edge shape).
         let read_index = MachineTerm::Variable(Variable(995_781));
         let write_index = MachineTerm::Variable(Variable(995_782));
-        let base = Pointer {
-            block: "selected-word".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: "selected-word".into(),
+            offset: AddressOffset::Constant(0),
         };
         let pointer = base.offset_by_elements(read_index.clone(), 4);
         let written = base.offset_by_elements(write_index.clone(), 4);
@@ -4052,7 +4045,7 @@ mod shared_read_equality_rule_tests {
             ProgramValue::Int32(MachineTerm::constant(9)),
             &context,
         );
-        let read = |memory: SymbolicMemory, at: &Pointer| {
+        let read = |memory: SymbolicMemory, at: &Address| {
             let memory = crate::kernel::intern_memory(memory);
             MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
@@ -4063,9 +4056,9 @@ mod shared_read_equality_rule_tests {
         };
         let left = read(before.clone(), &pointer);
         let right = read(after.clone(), &pointer);
-        let unrelated = Pointer {
-            block: "different-word".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let unrelated = Address {
+            base: "different-word".into(),
+            offset: AddressOffset::Constant(0),
         };
         let wrong_address = read(after.clone(), &unrelated);
         let wrong_state = read(
@@ -4151,9 +4144,9 @@ mod shared_read_order_bridge_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let read_index = MachineTerm::Variable(Variable(995_801));
         let write_index = MachineTerm::Variable(Variable(995_802));
-        let base = Pointer {
-            block: "order-read-bridge".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: "order-read-bridge".into(),
+            offset: AddressOffset::Constant(0),
         };
         let pointer = base.offset_by_elements(read_index.clone(), 4);
         let write = base.offset_by_elements(write_index.clone(), 4);
@@ -4254,7 +4247,7 @@ mod shared_byte_rebuild_tests {
         let empty = PureFactContext::new();
         let lower_only = empty.clone().assume_condition(lower, true);
         let bounded = lower_only.clone().assume_condition(upper, true);
-        let offset = PointerOffsetTerm::Int32Scaled {
+        let offset = AddressOffset::Int32Scaled {
             value: index,
             byte_width: 8,
         };

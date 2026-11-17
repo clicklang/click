@@ -2,13 +2,13 @@ use super::*;
 
 #[test]
 fn copying_a_union_drops_destination_views_absent_from_source() {
-    let source = Pointer {
-        block: "union-copy-source".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let source = Address {
+        base: "union-copy-source".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let destination = Pointer {
-        block: "union-copy-destination".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let destination = Address {
+        base: "union-copy-destination".into(),
+        offset: AddressOffset::Constant(0),
     };
     let layout = AggregateLayout::with_unions(
         4,
@@ -25,8 +25,8 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
         )],
     );
     let memory = SymbolicMemory::new()
-        .with_block(source.block.clone(), 4)
-        .with_block(destination.block.clone(), 4)
+        .with_block(source.base.clone(), 4)
+        .with_block(destination.base.clone(), 4)
         .store_union(
             source.clone(),
             ProgramType::UInt8,
@@ -55,14 +55,14 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
 /// written only when `union_written`.
 fn forgotten_local_packet(
     union_written: bool,
-) -> (SymbolicMemory, Pointer, Pointer, AggregateLayout) {
-    let source = Pointer {
-        block: "local:forgotten-packet-source".into(),
-        offset: PointerOffsetTerm::Constant(0),
+) -> (SymbolicMemory, Address, Address, AggregateLayout) {
+    let source = Address {
+        base: "local:forgotten-packet-source".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let destination = Pointer {
-        block: "local:forgotten-packet-destination".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let destination = Address {
+        base: "local:forgotten-packet-destination".into(),
+        offset: AddressOffset::Constant(0),
     };
     let layout = AggregateLayout::with_unions(
         8,
@@ -79,8 +79,8 @@ fn forgotten_local_packet(
         )],
     );
     let mut memory = SymbolicMemory::new()
-        .with_block(source.block.clone(), 8)
-        .with_block(destination.block.clone(), 8)
+        .with_block(source.base.clone(), 8)
+        .with_block(destination.base.clone(), 8)
         .store(
             source.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
@@ -94,9 +94,9 @@ fn forgotten_local_packet(
     }
     // `source[u] = …` for an index the facts do not place: every cell
     // and view of the block may be the one it writes.
-    let unplaced = Pointer {
-        block: source.block.clone(),
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(925_001)), 4),
+    let unplaced = Address {
+        base: source.base.clone(),
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(925_001)), 4),
     };
     let memory = memory.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new());
     assert!(memory.known_value(&source).is_none());
@@ -143,7 +143,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
     let source = SymbolicMemory::local_pointer("retained_copy_source");
     let target = SymbolicMemory::local_pointer("retained_copy_target");
     let pointer = PointerValue::new(
-        Pointer::symbolic(Variable(1027800)),
+        Address::symbolic(Variable(1027800)),
         ProgramType::Int32Pointer,
     )
     .with_pointee_constant(true);
@@ -156,8 +156,8 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
         crate::kernel::SharedPointerValue::import(&pointer),
     );
     let memory = SymbolicMemory::new()
-        .with_block(source.block.clone(), 8)
-        .with_block(target.block.clone(), 8)
+        .with_block(source.base.clone(), 8)
+        .with_block(target.base.clone(), 8)
         .store_retained(source.clone(), root.clone().into());
     let layout = AggregateLayout::new(
         8,

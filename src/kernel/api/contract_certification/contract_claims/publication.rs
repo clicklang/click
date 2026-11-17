@@ -276,7 +276,7 @@ mod tests {
         let (execution, _) = fixture();
         let seed = execution.published_outcome(0);
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(996901)),
+            Address::symbolic(Variable(996901)),
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true);

@@ -342,13 +342,13 @@ fn loop_backedge_rejects_divergent_holders_on_one_ledger_root() {
 /// Two arm states that share `known` cached cells and differ in one other
 /// cell, as the arms of an `if` that each store once leave them.
 fn arms_beside_known_cells(known: u32) -> (SymbolicMemory, [ExecutionState; 2]) {
-    let known_cell = |index: u32| Pointer {
-        block: "global:known".into(),
-        offset: PointerOffsetTerm::Constant(4 * i64::from(index)),
+    let known_cell = |index: u32| Address {
+        base: "global:known".into(),
+        offset: AddressOffset::Constant(4 * i64::from(index)),
     };
-    let written = Pointer {
-        block: "global:written".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let written = Address {
+        base: "global:written".into(),
+        offset: AddressOffset::Constant(0),
     };
     let mut memory = SymbolicMemory::new()
         .with_block("global:known", 4 * known)
@@ -451,11 +451,11 @@ fn interface_join_does_not_visit_locals_its_arms_share() {
 #[test]
 fn interface_join_history_uses_checked_arms_before_marker_union() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Pointer {
-        block: "global:branch-value".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "global:branch-value".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let base = SymbolicMemory::new().with_block(pointer.block.clone(), 4);
+    let base = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
     let then_state = ExecutionState::new().with_memory(
         base.clone()
             .store(pointer.clone(), int32(1))

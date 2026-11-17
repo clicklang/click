@@ -7,7 +7,7 @@ mod one_byte_one_name_tests;
 fn checked_memory_load_equality(
     left: &SymbolicMemory,
     right: &SymbolicMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     checked_atomic_load_equality(
@@ -27,7 +27,7 @@ fn checked_memory_load_equality(
 
 /// Instantiate the explicit elements law and discharge its written premise.
 pub(in crate::kernel) fn explicit_signed_elements(
-    base: Pointer,
+    base: Address,
     ty: ProgramType,
     i: MachineTerm,
     j: MachineTerm,
@@ -59,7 +59,7 @@ pub(in crate::kernel) fn explicit_signed_elements(
 pub(in crate::kernel) fn explicit_frame(
     before: &SymbolicMemory,
     after: &SymbolicMemory,
-    address: &Pointer,
+    address: &Address,
     ty: ProgramType,
     effects: &[Proposition],
     facts: &PureFactContext,
@@ -261,7 +261,7 @@ fn kernel_source_reads_no_environment_variable() {
 }
 
 fn memory_range(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> MemoryRange {
@@ -269,7 +269,7 @@ fn memory_range(
 }
 
 fn view_memory_fact(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> ResourceFact {
@@ -277,7 +277,7 @@ fn view_memory_fact(
 }
 
 fn own_memory_fact(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> ResourceFact {
@@ -285,7 +285,7 @@ fn own_memory_fact(
 }
 
 fn view_memory_context(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> ResourceContext {
@@ -293,7 +293,7 @@ fn view_memory_context(
 }
 
 fn own_memory_context(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> ResourceContext {
@@ -311,10 +311,10 @@ fn assert_checkable_derivation(assumptions: &PureFactContext, proposition: &Prop
     );
 }
 
-fn arc_pointer(offset: i64) -> Pointer {
-    Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Constant(offset),
+fn arc_pointer(offset: i64) -> Address {
+    Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::Constant(offset),
     }
 }
 

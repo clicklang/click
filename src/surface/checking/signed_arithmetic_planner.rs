@@ -3161,7 +3161,7 @@ mod tests {
     fn structural_read_decrement_uses_its_selected_bound() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
-        let pointer = crate::kernel::Pointer::symbolic(Variable(71_201));
+        let pointer = crate::kernel::Address::symbolic(Variable(71_201));
         let read = MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(pointer.clone()),

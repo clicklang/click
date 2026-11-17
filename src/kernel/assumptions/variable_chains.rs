@@ -256,14 +256,14 @@ impl PureFactContext {
 /// An exact symbolic array index. The base is returned separately so only
 /// cells spelling that same base participate in the indexed path.
 pub(in crate::kernel) fn array_index(
-    offset: &PointerOffsetTerm,
-) -> Option<(&PointerOffsetTerm, Variable, i64)> {
-    static ZERO: PointerOffsetTerm = PointerOffsetTerm::Constant(0);
+    offset: &AddressOffset,
+) -> Option<(&AddressOffset, Variable, i64)> {
+    static ZERO: AddressOffset = AddressOffset::Constant(0);
     let (base, index) = match offset {
-        PointerOffsetTerm::Add(base, index) => (base.as_ref(), index.as_ref()),
+        AddressOffset::Add(base, index) => (base.as_ref(), index.as_ref()),
         index => (&ZERO, index),
     };
-    let PointerOffsetTerm::Int32Scaled { value, byte_width } = index else {
+    let AddressOffset::Int32Scaled { value, byte_width } = index else {
         return None;
     };
     let variable = value.operand_view().variable()?;
@@ -385,9 +385,9 @@ mod memory_tests {
                 true,
             );
         }
-        let pointer = |variable, stride| Pointer {
-            block: PointerBlock::from("ordered"),
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(variable), stride),
+        let pointer = |variable, stride| Address {
+            base: AddressBase::from("ordered"),
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(variable), stride),
         };
         let mut memory = SymbolicMemory::new().with_block("ordered", 4096);
         for (index, variable) in variables.iter().enumerate() {

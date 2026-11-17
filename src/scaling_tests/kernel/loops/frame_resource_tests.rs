@@ -10,7 +10,7 @@ fn a_loop_frame_normalizes_its_retained_views_once() {
         let views = (0..count)
             .map(|index| {
                 ResourceFact::view_memory(MemoryRange::new(
-                    Pointer::symbolic(Variable(9_360_000 + index)),
+                    Address::symbolic(Variable(9_360_000 + index)),
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
                 ))
@@ -68,7 +68,7 @@ fn loop_binding_carryover_ignores_ambient_observations() {
             let _session = crate::kernel::VerificationSession::enter();
             let assumptions = PureFactContext::new();
             let pointer = PointerValue::new(
-                Pointer::symbolic(Variable(9_370_001)),
+                Address::symbolic(Variable(9_370_001)),
                 ProgramType::Int32Pointer,
             );
             let view = ResourceFact::view_memory(MemoryRange::from_pointer_value(
@@ -216,20 +216,20 @@ fn explicit_loop_views_keep_scalar_owners_without_visiting_observations() {
     let mut samples = Vec::new();
     for count in [4u64, 16, 64, 256] {
         let assumptions = PureFactContext::new();
-        let scalar = Pointer::symbolic(Variable(9_380_001));
-        let heap = Pointer::symbolic(Variable(9_380_002));
+        let scalar = Address::symbolic(Variable(9_380_001));
+        let heap = Address::symbolic(Variable(9_380_002));
         let scalar_owner =
             ResourceFact::own_memory(MemoryRange::new(scalar.clone(), 0u32.into(), 4u32.into()));
         let heap_owner = ResourceFact::own_memory(MemoryRange::new(heap, 0u32.into(), 4u32.into()));
         let state = ExecutionState::new().with_memory(
-            SymbolicMemory::new().with_declared_scalar_block(scalar.block, 4, ProgramType::Int32),
+            SymbolicMemory::new().with_declared_scalar_block(scalar.base, 4, ProgramType::Int32),
         );
         let mut withheld = ResourceContext::new_with_equalities(&assumptions)
             .unchecked_with_fact(scalar_owner.clone())
             .unchecked_with_fact(heap_owner.clone());
         for index in 0..count {
             withheld = withheld.unchecked_with_fact(ResourceFact::view_memory(MemoryRange::new(
-                Pointer::symbolic(Variable(9_381_000 + index)),
+                Address::symbolic(Variable(9_381_000 + index)),
                 0u32.into(),
                 4u32.into(),
             )));
@@ -266,9 +266,9 @@ fn explicit_loop_frame_ignores_rejected_heap_owners() {
     for count in [4u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
-        let scalar = Pointer::symbolic(Variable(9_390_001));
+        let scalar = Address::symbolic(Variable(9_390_001));
         let viewed = PointerValue::new(
-            Pointer::symbolic(Variable(9_390_002)),
+            Address::symbolic(Variable(9_390_002)),
             ProgramType::Int32Pointer,
         );
         let scalar_owner =
@@ -287,15 +287,15 @@ fn explicit_loop_frame_ignores_rejected_heap_owners() {
         let mut withheld =
             ResourceContext::new_with_equalities(&facts).unchecked_with_fact(scalar_owner.clone());
         let mut memory =
-            SymbolicMemory::new().with_declared_scalar_block(scalar.block, 4, ProgramType::Int32);
+            SymbolicMemory::new().with_declared_scalar_block(scalar.base, 4, ProgramType::Int32);
         let mut heaps = Vec::new();
         for index in 0..count {
             let owner = ResourceFact::own_memory(MemoryRange::new(
-                Pointer::symbolic(Variable(9_391_000 + index)),
+                Address::symbolic(Variable(9_391_000 + index)),
                 0u32.into(),
                 4u32.into(),
             ));
-            memory = memory.with_block(owner.memory_own_range().unwrap().base().block.clone(), 4);
+            memory = memory.with_block(owner.memory_own_range().unwrap().base().base.clone(), 4);
             withheld = withheld.unchecked_with_fact(owner.clone());
             heaps.push(owner);
         }

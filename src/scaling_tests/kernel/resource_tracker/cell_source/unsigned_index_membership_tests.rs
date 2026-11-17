@@ -13,8 +13,8 @@ fn unsigned_index_membership_ignores_unrelated_facts_and_stores() {
     let mut samples = Vec::new();
     for size in [4u64, 8, 16, 32] {
         let _session = crate::kernel::VerificationSession::enter();
-        let src = Pointer::symbolic(Variable(9_903_000));
-        let dst = Pointer::symbolic(Variable(9_903_001));
+        let src = Address::symbolic(Variable(9_903_000));
+        let dst = Address::symbolic(Variable(9_903_001));
         let k = Variable(9_903_002);
         let read = byte_at(&src, k);
         let range = bytes(&src, 4);
@@ -32,16 +32,16 @@ fn unsigned_index_membership_ignores_unrelated_facts_and_stores() {
             // An unrelated separation of two other buffers.
             context = context.assume_proposition(Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(bytes(
-                    &Pointer::symbolic(Variable(9_905_000 + index * 2)),
+                    &Address::symbolic(Variable(9_905_000 + index * 2)),
                     4,
                 ))),
                 right: Box::new(Resource::Memory(bytes(
-                    &Pointer::symbolic(Variable(9_905_001 + index * 2)),
+                    &Address::symbolic(Variable(9_905_001 + index * 2)),
                     4,
                 ))),
             });
             // A store to another object, and the effect fact it records.
-            let target = Pointer::symbolic(Variable(9_906_000 + index));
+            let target = Address::symbolic(Variable(9_906_000 + index));
             let before = memory.clone();
             memory = memory.store(target.clone(), crate::kernel::uint8(0u32));
             context = context.assume_proposition(Proposition::MemoryMutatesOnly {

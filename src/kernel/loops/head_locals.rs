@@ -12,7 +12,7 @@ struct LoopHeadLocal {
     name: BindingName,
     program_type: ProgramType,
     value: ProgramValue,
-    slot: Option<Pointer>,
+    slot: Option<Address>,
 }
 
 impl<'a> LoopHeadLocals<'a> {
@@ -41,7 +41,7 @@ impl<'a> LoopHeadLocals<'a> {
             let slot = entry
                 .locals
                 .slot(&name)
-                .filter(|pointer| entry.memory.has_block(&pointer.block))
+                .filter(|pointer| entry.memory.has_block(&pointer.base))
                 .cloned();
             values.push(LoopHeadLocal {
                 name,
@@ -85,7 +85,7 @@ mod tests {
             .with_local("logical", int32(9))
             .with_memory(
                 SymbolicMemory::new()
-                    .with_block(slot.block.clone(), 4)
+                    .with_block(slot.base.clone(), 4)
                     .store(slot.clone(), int32(3)),
             );
         let before = entry.clone();
@@ -109,7 +109,7 @@ mod tests {
         assert!(
             !head
                 .memory
-                .has_block(&SymbolicMemory::local_pointer("logical").block)
+                .has_block(&SymbolicMemory::local_pointer("logical").base)
         );
         assert!(head.locals.get("absent").is_none());
     }

@@ -9,7 +9,7 @@ fn automatic_lifetime_reuse_tracks_exact_memory_and_retired_blocks() {
     for size in [16usize, 32, 64, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let blocks = (0..size)
-            .map(|i| PointerBlock::from(format!("local:lifetime:memo_{i}")))
+            .map(|i| AddressBase::from(format!("local:lifetime:memo_{i}")))
             .collect::<Vec<_>>();
         let before = blocks.iter().fold(SymbolicMemory::new(), |memory, block| {
             memory.with_block(block.clone(), 4)
@@ -43,7 +43,7 @@ fn automatic_lifetime_reuse_tracks_exact_memory_and_retired_blocks() {
         assert!(partial.has_block(&blocks[size - 1]));
         let changed = before.clone().with_block("caller:preserved", 8);
         let changed_after = retire_automatic_lifetime_blocks(&changed, &blocks);
-        assert!(changed_after.has_block(&PointerBlock::from("caller:preserved")));
-        assert!(!after.has_block(&PointerBlock::from("caller:preserved")));
+        assert!(changed_after.has_block(&AddressBase::from("caller:preserved")));
+        assert!(!after.has_block(&AddressBase::from("caller:preserved")));
     }
 }

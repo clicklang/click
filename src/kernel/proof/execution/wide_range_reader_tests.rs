@@ -4,7 +4,7 @@ use crate::kernel::MemorySegment;
 // changed-cell framing dispatches to the native access rule.
 #[test]
 fn wide_interface_and_memory_effect_readers_preserve_the_range_kind() {
-    let base = Pointer::symbolic(Variable(984_600));
+    let base = Address::symbolic(Variable(984_600));
     let wide = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),
@@ -18,7 +18,7 @@ fn wide_interface_and_memory_effect_readers_preserve_the_range_kind() {
         crate::kernel::program_expression::uint64_literal(1 << 33),
     );
     let spec = ResourceSpec::owned_memory(segment);
-    let before = SymbolicMemory::new().with_block(base.block.clone(), 4);
+    let before = SymbolicMemory::new().with_block(base.base.clone(), 4);
     let state = ExecutionState::new().with_memory(before.clone());
     assert!(matches!(
         interface_resource_intrinsic_fact(&spec, &resource, &state),

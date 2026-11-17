@@ -22,8 +22,8 @@ use crate::persistent::PersistentMap;
 use super::functions::suspend_verified_worker;
 use super::loans::{LoanLedger, LoanViewBinding, LoanViewBindings, StableViewTransferPlan};
 use super::{
-    ConditionTerm, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact, ExecutionResult,
-    ExecutionState, MachineTerm, MemoryRange, Pointer, PointerBlock, ProgramValue, Proposition,
+    Address, AddressBase, ConditionTerm, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact,
+    ExecutionResult, ExecutionState, MachineTerm, MemoryRange, ProgramValue, Proposition,
     PureFactContext, ResourceContext, ResourceFact, RuntimeError, SymbolicMemory,
     VerifiedFunctionRule, VerifiedFunctionTerminationRule,
 };
@@ -73,7 +73,7 @@ pub(super) struct WorkerCreation {
 /// Until then the parent cannot observe that population's total.
 #[derive(Clone, Debug)]
 pub(super) struct DeferredMemberExchange {
-    pub(super) block: PointerBlock,
+    pub(super) block: AddressBase,
     pub(super) description: super::ResourceDescription,
     pub(super) produce: bool,
     pub(super) quantity: MachineTerm,
@@ -118,11 +118,11 @@ pub(super) struct PendingThreadCreate {
 #[derive(Clone, Debug)]
 pub(super) enum PendingThreadMemoryDelta {
     Declare {
-        block: PointerBlock,
+        block: AddressBase,
         bytes: u32,
     },
     Store {
-        pointer: Pointer,
+        pointer: Address,
         value: ProgramValue,
     },
 }
@@ -173,7 +173,7 @@ impl PendingCreateAuthority {
 struct PendingThreadCreateStorage {
     identity: u64,
     status: MachineTerm,
-    handle_slot: Pointer,
+    handle_slot: Address,
     handle_value: ProgramValue,
     success_memory: SymbolicMemory,
     success: PendingCreateAuthority,
@@ -202,7 +202,7 @@ impl PendingThreadCreate {
 
     pub(super) fn new(
         status: MachineTerm,
-        handle_slot: Pointer,
+        handle_slot: Address,
         handle_value: ProgramValue,
         success: &ExecutionState,
         failure: &ExecutionState,
@@ -265,7 +265,7 @@ impl PendingThreadCreate {
         &self,
         status: impl Fn(&MachineTerm) -> MachineTerm,
         resources: impl Fn(&ResourceContext) -> ResourceContext,
-        pointer: impl Fn(&Pointer) -> Pointer,
+        pointer: impl Fn(&Address) -> Address,
         value: impl Fn(&ProgramValue) -> ProgramValue,
         memory: impl Fn(&SymbolicMemory) -> SymbolicMemory,
     ) -> Self {
@@ -438,7 +438,7 @@ struct ThreadLedgerStorage {
     rights: PersistentMap<ThreadHandle, Arc<CompletionRight>>,
     loan_trace: Option<ThreadLoanTrace>,
     local_views: PersistentMap<ResourceFact, LoanViewBinding>,
-    mutex_workers: PersistentMap<Pointer, usize>,
+    mutex_workers: PersistentMap<Address, usize>,
 }
 
 /// The checked loan root before the first outstanding create and the root
@@ -512,7 +512,7 @@ impl ThreadLedger {
         })
     }
 
-    pub(super) fn has_mutex_workers(&self, mutex: &Pointer) -> bool {
+    pub(super) fn has_mutex_workers(&self, mutex: &Address) -> bool {
         self.storage.mutex_workers.contains_key(mutex)
     }
 

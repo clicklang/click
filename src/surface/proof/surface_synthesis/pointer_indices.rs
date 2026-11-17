@@ -170,7 +170,7 @@ mod tests {
         let _scope = SurfaceSynthesisScope::enter();
         let load = MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
-            Box::new(Pointer::symbolic(Variable(1014000))),
+            Box::new(Address::symbolic(Variable(1014000))),
             crate::kernel::LoadKind::Int32,
         );
         let variable = MachineTerm::Variable(Variable(1014001));

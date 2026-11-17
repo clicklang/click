@@ -29,7 +29,7 @@ struct ObjectField {
 /// kernel name (`None` when declarations sharing the name differ in layout).
 #[derive(Default)]
 struct ObjectFields {
-    globals: std::collections::HashMap<PointerBlock, (String, u32, Vec<ObjectField>)>,
+    globals: std::collections::HashMap<AddressBase, (String, u32, Vec<ObjectField>)>,
     locals: std::collections::HashMap<
         crate::kernel::BindingName,
         Option<(String, u32, Vec<ObjectField>)>,
@@ -54,7 +54,7 @@ pub(crate) fn enter_ambient_object_fields(
         ..ObjectFields::default()
     };
     for aggregate in function.global_aggregates().values() {
-        let block = crate::kernel::SymbolicMemory::global_pointer(aggregate.kernel_name()).block;
+        let block = crate::kernel::SymbolicMemory::global_pointer(aggregate.kernel_name()).base;
         let mut fields = Vec::new();
         collect_struct_fields(function, aggregate.layout(), "", 0, &mut fields, 0);
         objects.globals.insert(
@@ -106,18 +106,18 @@ fn same_fields(left: &[ObjectField], right: &[ObjectField]) -> bool {
 /// kernel name its block ends with.
 fn declared_object<'a>(
     objects: &'a ObjectFields,
-    block: &PointerBlock,
+    block: &AddressBase,
 ) -> Option<&'a (String, u32, Vec<ObjectField>)> {
     if let Some(object) = objects.globals.get(block) {
         return Some(object);
     }
-    if let PointerBlock::AutomaticLocal { binding, .. } = block {
+    if let AddressBase::AutomaticLocal { binding, .. } = block {
         return objects.locals.get(&binding.clone().into())?.as_ref();
     }
-    let PointerBlock::Concrete(block) = block else {
+    let AddressBase::Concrete(block) = block else {
         return None;
     };
-    if PointerBlock::is_local_name(block) {
+    if AddressBase::is_local_name(block) {
         // This function's own automatic objects only: a callee's frame
         // (`local:frame:3:s`) can reuse a name for another type.
         let rest = block.strip_prefix("local:")?;
@@ -263,11 +263,7 @@ pub(super) fn ambient_struct_layout(
     })
 }
 
-pub(super) fn object_field_surface(
-    block: &PointerBlock,
-    offset: u32,
-    width: u32,
-) -> Option<String> {
+pub(super) fn object_field_surface(block: &AddressBase, offset: u32, width: u32) -> Option<String> {
     AMBIENT_OBJECT_FIELDS.with(|slot| {
         let slot = slot.borrow();
         let (name, _, fields) = declared_object(slot.as_ref()?, block)?;
@@ -284,8 +280,8 @@ pub(super) fn object_field_surface(
 
 /// The declared object's name when a range covers exactly its complete ABI storage.
 pub(super) fn object_range_spelling(range: &MemoryRange) -> Option<String> {
-    let block = &range.base().block;
-    let PointerOffsetTerm::Constant(offset) = &range.base().offset else {
+    let block = &range.base().base;
+    let AddressOffset::Constant(offset) = &range.base().offset else {
         return None;
     };
     let offset = u64::try_from(*offset).ok()?;

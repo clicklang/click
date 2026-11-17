@@ -38,9 +38,9 @@ fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownershi
     ));
     let foreign =
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-            Pointer {
-                block: "local:foreign".into(),
-                offset: crate::kernel::PointerOffsetTerm::Constant(0),
+            Address {
+                base: "local:foreign".into(),
+                offset: crate::kernel::AddressOffset::Constant(0),
             },
             0.into(),
             1.into(),
@@ -57,8 +57,8 @@ fn source_state() -> (ExecutionState, ResourceFact) {
         .with_local("anchor", crate::kernel::int32(0))
         .with_population_creation_tracking();
     let pointer = state.locals.slot("anchor").unwrap().clone();
-    state.set_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 4));
-    state.record_population_storage_creation(pointer.block.clone());
+    state.set_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4));
+    state.record_population_storage_creation(pointer.base.clone());
     let description = crate::kernel::ResourceDescription::new(
         "reference".into(),
         vec![ProgramValue::pointer(pointer).into()].into(),
@@ -308,9 +308,9 @@ fn checked_member_events_conserve_one_occurrence_and_reject_forged_deltas() {
 #[test]
 fn member_exchange_requires_both_external_body_ownership_and_checked_span() {
     let (state, authority) = source_state();
-    let external = crate::kernel::Pointer {
-        block: crate::kernel::PointerBlock::ExternalArgument,
-        offset: crate::kernel::PointerOffsetTerm::Constant(16),
+    let external = crate::kernel::Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(16),
     };
     let Resource::PopulationAuthority(description) = authority.resource() else {
         unreachable!()

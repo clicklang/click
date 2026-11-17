@@ -126,7 +126,7 @@ fn algebraic_constructor_injectivity_ignores_unrelated_facts() {
 
 #[test]
 fn function_contract_lookup_ignores_unrelated_pointer_facts() {
-    fn contract_fact(name: &str, pointer: Pointer) -> Proposition {
+    fn contract_fact(name: &str, pointer: Address) -> Proposition {
         Proposition::Predicate {
             name: FunctionContract::predicate_name_for(name),
             arguments: vec![
@@ -142,13 +142,13 @@ fn function_contract_lookup_ignores_unrelated_pointer_facts() {
     let samples = [4, 16, 64, 256]
         .into_iter()
         .map(|size| {
-            let target = Pointer::symbolic_function(Variable(90_001));
+            let target = Address::symbolic_function(Variable(90_001));
             let mut assumptions =
                 PureFactContext::new().assume_proposition(contract_fact("Target", target.clone()));
             for index in 0..size {
                 assumptions = assumptions.assume_proposition(contract_fact(
                     "Unrelated",
-                    Pointer::symbolic_function(Variable(91_000 + index as u64)),
+                    Address::symbolic_function(Variable(91_000 + index as u64)),
                 ));
             }
             let (contracts, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -178,8 +178,8 @@ fn callback_contract_availability_uses_scoped_pointer_equality() {
             Term::ProgramValue(ProgramValue::typed_pointer(pointer, interface_type)),
         ],
     };
-    let target = Pointer::function("callback-target");
-    let callback = Pointer::symbolic_function(Variable(90_011));
+    let target = Address::function("callback-target");
+    let callback = Address::symbolic_function(Variable(90_011));
     let source = contract(
         "Invoke",
         target.clone(),
@@ -202,7 +202,7 @@ fn callback_contract_availability_uses_scoped_pointer_equality() {
         for index in 0..size {
             context = context.assume_proposition(contract(
                 "Invoke",
-                Pointer::symbolic_function(Variable(91_000 + index)),
+                Address::symbolic_function(Variable(91_000 + index)),
                 ExecutionState::new(),
                 interface_type,
             ));
@@ -647,7 +647,7 @@ fn forall_integer_instantiation_charges_shared_replacement_only_once() {
 #[test]
 fn loadability_same_base_span_graph_queries_scale_without_fact_index() {
     let memory = SymbolicMemory::new();
-    let base = Pointer::symbolic(Variable(90_310));
+    let base = Address::symbolic(Variable(90_310));
     let var = |id| MachineTerm::Variable(Variable(id));
     let bytes = |value| MachineTerm::add(value, MachineTerm::constant(1));
     for size in [16u64, 64, 256, 512] {
@@ -832,9 +832,9 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
         .into_iter()
         .map(|size| {
             let memory = SymbolicMemory::new();
-            let data = Pointer {
-                block: "quantified-data".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            let data = Address {
+                base: "quantified-data".into(),
+                offset: AddressOffset::Constant(0),
             };
             let fact_index = Variable(94_500);
             let target_index = Variable(94_501);
@@ -877,9 +877,9 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
             let mut assumptions = PureFactContext::new().assume_proposition(guarded_fact);
             for index in 0..size {
                 let unrelated_index = Variable(95_000 + index as u64 * 2);
-                let unrelated = Pointer {
-                    block: format!("quantified-unrelated-{index}").into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                let unrelated = Address {
+                    base: format!("quantified-unrelated-{index}").into(),
+                    offset: AddressOffset::Constant(0),
                 };
                 assumptions = assumptions.assume_proposition(forall_int32(
                     unrelated_index,
@@ -988,9 +988,9 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
         .map(|size| {
             let mut assumptions = PureFactContext::new();
             for index in 0..size {
-                let cell = Pointer {
-                    block: format!("arg-memory-{index}").into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                let cell = Address {
+                    base: format!("arg-memory-{index}").into(),
+                    offset: AddressOffset::Constant(0),
                 };
                 let load = MachineTerm::MemoryLoad(
                     ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
@@ -1336,11 +1336,11 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
     );
     let goal = Proposition::ConditionIs(
         ConditionTerm::pointer_offset_equal(
-            PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::scale_int32(i.clone(), 1)),
-                Box::new(PointerOffsetTerm::Constant(4)),
+            AddressOffset::Add(
+                Box::new(AddressOffset::scale_int32(i.clone(), 1)),
+                Box::new(AddressOffset::Constant(4)),
             ),
-            PointerOffsetTerm::scale_int32(MachineTerm::add(i, MachineTerm::constant(4)), 1),
+            AddressOffset::scale_int32(MachineTerm::add(i, MachineTerm::constant(4)), 1),
         ),
         true,
     );
@@ -1383,11 +1383,11 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
 fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
     let i = MachineTerm::Variable(Variable(198301));
     let goal_condition = ConditionTerm::pointer_offset_equal(
-        PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::scale_int64(i.clone(), 1, true)),
-            Box::new(PointerOffsetTerm::Constant(4)),
+        AddressOffset::Add(
+            Box::new(AddressOffset::scale_int64(i.clone(), 1, true)),
+            Box::new(AddressOffset::Constant(4)),
         ),
-        PointerOffsetTerm::scale_int64(
+        AddressOffset::scale_int64(
             MachineTerm::uint64_add(i, MachineTerm::uint64_constant(4)),
             1,
             true,
@@ -1406,11 +1406,11 @@ fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
     let other_bound = |n: u64| {
         let j = MachineTerm::Variable(Variable(199500 + n));
         bound_of(&ConditionTerm::pointer_offset_equal(
-            PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::scale_int64(j.clone(), 1, true)),
-                Box::new(PointerOffsetTerm::Constant(4)),
+            AddressOffset::Add(
+                Box::new(AddressOffset::scale_int64(j.clone(), 1, true)),
+                Box::new(AddressOffset::Constant(4)),
             ),
-            PointerOffsetTerm::scale_int64(
+            AddressOffset::scale_int64(
                 MachineTerm::uint64_add(j, MachineTerm::uint64_constant(4)),
                 1,
                 true,
@@ -1468,9 +1468,9 @@ fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
 #[test]
 fn native_loadability_window_query_work_ignores_unrelated_views() {
     let memory = SymbolicMemory::new();
-    let root = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let root = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let target = root.offset_by_bytes(1);
     let mut expected = None;
@@ -1522,9 +1522,9 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
 #[test]
 fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
     let memory = SymbolicMemory::new();
-    let base = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let requested = MachineTerm::Variable(Variable(973_103));
     let mut expected = None;
@@ -1575,9 +1575,9 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
 #[test]
 fn native_loadability_queries_do_not_visit_unrelated_addresses() {
     let memory = SymbolicMemory::new();
-    let base = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let mut expected = None;
     for count in [16, 64, 256] {
@@ -1585,9 +1585,9 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
         for index in 0..count {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
-                base: Pointer {
-                    block: base.block.clone(),
-                    offset: PointerOffsetTerm::Constant(4 * (index + 1)),
+                base: Address {
+                    base: base.base.clone(),
+                    offset: AddressOffset::Constant(4 * (index + 1)),
                 },
                 bytes: MachineTerm::uint64_constant(8),
                 wide: true,
@@ -1710,9 +1710,9 @@ fn restricting_model_support_ignores_unselected_scalar_graph_edges() {
 #[test]
 fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
     let memory = SymbolicMemory::new();
-    let base = Pointer {
-        block: "retention_data".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "retention_data".into(),
+        offset: AddressOffset::Constant(0),
     };
     let held = Proposition::MemoryLoadable {
         memory: memory.clone(),
@@ -1820,9 +1820,9 @@ fn finite_forall_requested_prefix_has_constant_work_across_domain_sizes() {
 
 #[test]
 fn equality_aware_pointer_fact_queries_ignore_unrelated_facts_and_old_states() {
-    let target = Pointer::symbolic_function(Variable(122_000));
-    let alias = Pointer::symbolic_function(Variable(122_001));
-    let fact = |pointer: Pointer, state: ExecutionState| Proposition::Predicate {
+    let target = Address::symbolic_function(Variable(122_000));
+    let alias = Address::symbolic_function(Variable(122_001));
+    let fact = |pointer: Address, state: ExecutionState| Proposition::Predicate {
         name: FunctionContract::predicate_name_for("Selected"),
         arguments: vec![
             Term::ExecutionState(Box::new(state)),
@@ -1839,7 +1839,7 @@ fn equality_aware_pointer_fact_queries_ignore_unrelated_facts_and_old_states() {
             PureFactContext::new().assume_proposition(fact(target.clone(), ExecutionState::new()));
         for index in 0..size {
             context = context.assume_proposition(fact(
-                Pointer::symbolic_function(Variable(123_000 + index)),
+                Address::symbolic_function(Variable(123_000 + index)),
                 ExecutionState::new(),
             ));
             // Same predicate and pointer, but different memory versions must

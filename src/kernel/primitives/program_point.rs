@@ -386,20 +386,20 @@ mod tests {
     use super::PathLink;
 
     fn memory_holding(value: u32) -> SymbolicMemory {
-        let block: PointerBlock = "local:slot".into();
-        let slot = Pointer {
-            block: block.clone(),
-            offset: PointerOffsetTerm::Constant(0),
+        let block: AddressBase = "local:slot".into();
+        let slot = Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(0),
         };
         SymbolicMemory::new()
             .with_block(block, 4)
             .store(slot, ProgramValue::Int32(MachineTerm::constant(value)))
     }
 
-    fn slot() -> Pointer {
-        Pointer {
-            block: "local:slot".into(),
-            offset: PointerOffsetTerm::Constant(0),
+    fn slot() -> Address {
+        Address {
+            base: "local:slot".into(),
+            offset: AddressOffset::Constant(0),
         }
     }
 

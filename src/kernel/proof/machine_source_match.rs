@@ -193,7 +193,7 @@ mod tests {
     fn boolean_cast_sources_keep_native_argument_equality() {
         let _session = VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(999464)),
+            Address::symbolic(Variable(999464)),
             ProgramType::Int32Pointer,
         );
         let values = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {

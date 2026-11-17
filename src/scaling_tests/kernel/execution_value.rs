@@ -46,7 +46,7 @@ fn retaining_pointer_read_results_ignores_unrelated_read_definitions() {
         let memory = SymbolicMemory::new();
         for n in 0..unrelated {
             memory.symbolic_pointer_load(
-                &Pointer::symbolic(Variable(1019000 + n)),
+                &Address::symbolic(Variable(1019000 + n)),
                 ProgramType::Int32Pointer,
             );
         }
@@ -55,7 +55,7 @@ fn retaining_pointer_read_results_ignores_unrelated_read_definitions() {
             let values = (0..size)
                 .map(|n| {
                     memory.symbolic_pointer_load(
-                        &Pointer::symbolic(Variable(1020000 + n)),
+                        &Address::symbolic(Variable(1020000 + n)),
                         ProgramType::Int32Pointer,
                     )
                 })
@@ -88,7 +88,7 @@ fn retaining_pointer_read_results_ignores_unrelated_read_definitions() {
 fn pointer_branch_handoffs_retain_selected_dags_without_export() {
     let _session = crate::kernel::VerificationSession::enter();
     let value = SharedPointerValue::import(&PointerValue::new(
-        Pointer::symbolic(Variable(1026300)),
+        Address::symbolic(Variable(1026300)),
         ProgramType::Int32Pointer,
     ));
     for unrelated in [0, 128, 512] {
@@ -132,7 +132,7 @@ fn pointer_branch_handoffs_retain_selected_dags_without_export() {
 fn pointer_local_bindings_preserve_prepared_dags_at_constant_work() {
     let _session = crate::kernel::VerificationSession::enter();
     let payload = SharedPointerValue::import(&PointerValue::new(
-        Pointer::symbolic(Variable(1027200)),
+        Address::symbolic(Variable(1027200)),
         ProgramType::Int32Pointer,
     ));
     for unrelated in [0, 128, 512] {
@@ -220,7 +220,7 @@ fn retained_pointer_cells_do_not_export_prepared_dags_or_scan_sibling_cells() {
                 );
             }
             let pointer = PointerValue::new(
-                Pointer::symbolic(Variable(1027701 + size)),
+                Address::symbolic(Variable(1027701 + size)),
                 ProgramType::Int32Pointer,
             );
             let root = KernelTerm::shared_pointer_call(
@@ -607,7 +607,7 @@ fn algebraic_storage_comparison_visits_shared_pairs_once() {
         let _session = crate::kernel::VerificationSession::enter();
         let native = KernelMatch::test_scrutinee(vec![]);
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(998740)),
+            Address::symbolic(Variable(998740)),
             ProgramType::Int32Pointer,
         );
         let mut roots = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {
@@ -649,17 +649,17 @@ fn algebraic_storage_comparison_visits_shared_pairs_once() {
 
 #[test]
 fn pointer_storage_keys_keep_growing_offsets_shared_and_session_scoped() {
-    use crate::kernel::{KernelPointerOffset, SharedPointerAddress};
+    use crate::kernel::{KernelAddressOffset, SharedAddress};
     use std::hash::Hash;
     let mut previous = None;
     for size in [16, 64, 256] {
         let value = SharedPointerValue::import_produced(&PointerValue::new(
-            Pointer::symbolic(Variable(998760)),
+            Address::symbolic(Variable(998760)),
             ProgramType::Int32Pointer,
         ));
         let mut payload = value.node().clone();
         let index = KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(998761));
-        let mut offset = KernelPointerOffset::Int64Scaled {
+        let mut offset = KernelAddressOffset::Int64Scaled {
             value: index,
             byte_width: 8,
             unsigned: false,
@@ -667,11 +667,11 @@ fn pointer_storage_keys_keep_growing_offsets_shared_and_session_scoped() {
         .into_shared()
         .unwrap();
         for _ in 0..size {
-            offset = KernelPointerOffset::Add([offset.clone(), offset])
+            offset = KernelAddressOffset::Add([offset.clone(), offset])
                 .into_shared()
                 .unwrap();
         }
-        payload.address = SharedPointerAddress::new(payload.address.node().block.clone(), offset);
+        payload.address = SharedAddress::new(payload.address.node().base.clone(), offset);
         payload.provenance = payload.address.clone();
         let root = KernelTerm::shared_pointer_value(SharedPointerValue::new(payload));
         let exports = KernelTermExport::machine_export_count();
@@ -706,15 +706,15 @@ fn pointer_storage_keys_keep_growing_offsets_shared_and_session_scoped() {
 #[test]
 fn pointer_storage_comparison_visits_shared_offset_pairs_once() {
     use crate::kernel::effective_type::{CAccessClass, CScalarClass};
-    use crate::kernel::{KernelPointerOffset, SharedPointerAddress};
+    use crate::kernel::{KernelAddressOffset, SharedAddress};
     use std::hash::Hash;
     let mut previous = None;
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let natives = [CScalarClass::Int, CScalarClass::Char].map(|class| {
-            PointerOffsetTerm::scaled_int64_node(
+            AddressOffset::scaled_int64_node(
                 MachineTerm::PointerAddress(
-                    Box::new(Pointer::symbolic(Variable(998765))),
+                    Box::new(Address::symbolic(Variable(998765))),
                     crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
                 ),
                 1,
@@ -722,23 +722,22 @@ fn pointer_storage_comparison_visits_shared_offset_pairs_once() {
             )
         });
         assert_eq!(natives[0], natives[1]);
-        let mut offsets = natives.each_ref().map(KernelPointerOffset::import);
+        let mut offsets = natives.each_ref().map(KernelAddressOffset::import);
         assert_ne!(offsets[0], offsets[1]);
         for _ in 0..size {
             offsets = offsets.map(|offset| {
-                KernelPointerOffset::Add([offset.clone(), offset])
+                KernelAddressOffset::Add([offset.clone(), offset])
                     .into_shared()
                     .unwrap()
             });
         }
         let value = SharedPointerValue::import_produced(&PointerValue::new(
-            Pointer::symbolic(Variable(998766)),
+            Address::symbolic(Variable(998766)),
             ProgramType::Int32Pointer,
         ));
         let values = offsets.map(|offset| {
             let mut payload = value.node().clone();
-            payload.address =
-                SharedPointerAddress::new(payload.address.node().block.clone(), offset);
+            payload.address = SharedAddress::new(payload.address.node().base.clone(), offset);
             payload.provenance = payload.address.clone();
             StoredExecutionValue::from(ExecutionValue::Shared(KernelTerm::shared_pointer_value(
                 SharedPointerValue::new(payload),

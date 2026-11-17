@@ -30,14 +30,14 @@ const WIDEST_INTEGER_CELL_BYTES: i64 = 8;
 /// authority come from the checked output transfer, not from this equation.
 pub(in crate::kernel) fn declared_uint32_read_representation(
     memory: &SymbolicMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     byte_order: Option<ByteOrder>,
 ) -> Option<Proposition> {
     if byte_order != Some(ByteOrder::Little) || pointer.offset.as_const() != Some(0) {
         return None;
     }
     crate::instrumentation::record_deterministic_work(1);
-    let declaration = memory.blocks.get(&pointer.block)?;
+    let declaration = memory.blocks.get(&pointer.base)?;
     if declaration.declared_scalar_type != Some(ProgramType::UInt32)
         || declaration.size().as_const() != Some(4)
         || memory.is_ended_local_address(pointer)
@@ -86,10 +86,10 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
 /// and the ordinary store transition invalidates overlapping cached values.
 pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
     memory: &SymbolicMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     stored: &ProgramValue,
     byte_order: Option<ByteOrder>,
-) -> Option<(Pointer, ProgramValue)> {
+) -> Option<(Address, ProgramValue)> {
     if byte_order != Some(ByteOrder::Little) {
         return None;
     }
@@ -98,7 +98,7 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
         return None;
     }
     crate::instrumentation::record_deterministic_work(1);
-    let declaration = memory.blocks.get(&pointer.block)?;
+    let declaration = memory.blocks.get(&pointer.base)?;
     if declaration.declared_scalar_type != Some(ProgramType::UInt32)
         || declaration.size().as_const() != Some(4)
         || memory.is_ended_local_address(pointer)
@@ -107,9 +107,9 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
     }
     let as_byte = byte_word;
     let incoming = as_byte(stored)?;
-    let start = Pointer {
-        block: pointer.block.clone(),
-        offset: PointerOffsetTerm::Constant(0),
+    let start = Address {
+        base: pointer.base.clone(),
+        offset: AddressOffset::Constant(0),
     };
     let mut assembled = MachineTerm::constant(0);
     for byte in 0..4 {
@@ -150,7 +150,7 @@ fn byte_word(value: &ProgramValue) -> Option<MachineTerm> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) struct ContainingIntegerCell {
     /// The cell's own address, `(block, const o')`.
-    pub(in crate::kernel) pointer: Pointer,
+    pub(in crate::kernel) pointer: Address,
     /// The cell's value, an integer variant wider than one byte.
     pub(in crate::kernel) value: ProgramValue,
     /// Which byte of the cell's representation the access names, `o - o'`.
@@ -187,13 +187,13 @@ fn integer_cell_width(value: &ProgramValue) -> Option<u32> {
 /// float, `_Bool`).
 pub(in crate::kernel) fn containing_integer_cell(
     memory: &SymbolicMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     byte_order: Option<ByteOrder>,
 ) -> Option<ContainingIntegerCell> {
     if byte_order != Some(ByteOrder::Little) {
         return None;
     }
-    let PointerOffsetTerm::Constant(offset) = pointer.offset else {
+    let AddressOffset::Constant(offset) = pointer.offset else {
         return None;
     };
     crate::instrumentation::record_deterministic_work(1);
@@ -209,16 +209,16 @@ pub(in crate::kernel) fn containing_integer_cell(
         });
     }
     let lowest = offset.checked_sub(WIDEST_INTEGER_CELL_BYTES - 1)?;
-    let start = Pointer {
-        block: pointer.block.clone(),
-        offset: PointerOffsetTerm::Constant(lowest),
+    let start = Address {
+        base: pointer.base.clone(),
+        offset: AddressOffset::Constant(lowest),
     };
     // Constant offsets order before every other offset form and among
     // themselves by value, so this range is exactly the cells of this block
     // at constant offsets `lowest .. offset`: at most seven entries.
     for (cell_pointer, value) in memory.cells.range(start..pointer.clone()).rev() {
         crate::instrumentation::record_deterministic_work(1);
-        let PointerOffsetTerm::Constant(cell_offset) = cell_pointer.offset else {
+        let AddressOffset::Constant(cell_offset) = cell_pointer.offset else {
             continue;
         };
         let reach = match integer_cell_width(value) {

@@ -1,10 +1,10 @@
 //! Numeric identity of retained machine observations. Exact producer payloads
 //! remain untouched; opaque leaves use the existing native observation key.
 use super::*;
-use crate::kernel::{KernelPointerOffset, SharedPointerOffset};
+use crate::kernel::{KernelAddressOffset, SharedAddressOffset};
 
 thread_local! {
-    static OFFSET_ROOTS: std::cell::RefCell<HashMap<SharedPointerOffset, SharedPointerOffset>> = Default::default();
+    static OFFSET_ROOTS: std::cell::RefCell<HashMap<SharedAddressOffset, SharedAddressOffset>> = Default::default();
     static ROOTS: std::cell::RefCell<crate::id_hash::U64Map<KernelTerm>> = Default::default();
 }
 pub(super) fn clear() {
@@ -209,13 +209,13 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 KernelTermNode::FloatRead(read) => {
                     let (_, address) = read.parts();
                     KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatRead(read.observe(
-                        crate::kernel::SharedPointerAddress::new(address.node().block.observation(), normalize_offset(&address.node().offset)),
+                        crate::kernel::SharedAddress::new(address.node().base.observation(), normalize_offset(&address.node().offset)),
                     )))
                 }
                 KernelTermNode::AlgebraicRead(read) => {
                     let (_, address) = read.parts();
                     KernelTerm::intern(term.ty().clone(), KernelTermNode::AlgebraicRead(read.observe(
-                        crate::kernel::SharedPointerAddress::new(address.node().block.observation(), normalize_offset(&address.node().offset)),
+                        crate::kernel::SharedAddress::new(address.node().base.observation(), normalize_offset(&address.node().offset)),
                     )))
                 }
                 KernelTermNode::BoolRead(read) => {
@@ -223,8 +223,8 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                     KernelTerm::intern(
                         KernelType::Bool,
                         KernelTermNode::BoolRead(read.observe(
-                            crate::kernel::SharedPointerAddress::new(
-                                address.node().block.observation(),
+                            crate::kernel::SharedAddress::new(
+                                address.node().base.observation(),
                                 normalize_offset(&address.node().offset),
                             ),
                         )),
@@ -234,8 +234,8 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                     KernelType::Bool,
                     KernelTermNode::PointerValueEqual(pair.observe(
                         |address| {
-                            crate::kernel::SharedPointerAddress::new(
-                                address.node().block.observation(),
+                            crate::kernel::SharedAddress::new(
+                                address.node().base.observation(),
                                 normalize_offset(&address.node().offset),
                             )
                         },
@@ -244,8 +244,8 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 ),
                 KernelTermNode::PointerEqual { arguments } => {
                     KernelTerm::pointer_equal_raw(arguments.each_ref().map(|address| {
-                        crate::kernel::SharedPointerAddress::new(
-                            address.node().block.observation(),
+                        crate::kernel::SharedAddress::new(
+                            address.node().base.observation(),
                             normalize_offset(&address.node().offset),
                         )
                     }))
@@ -383,9 +383,9 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
 // The same immutable observation normalization memo extends to address
 // components. Do not rewalk an old offset prefix for every new guard root.
 // As with ROOTS, end each borrow before normalizing a nested numeric child.
-fn normalize_offset(root: &SharedPointerOffset) -> SharedPointerOffset {
+fn normalize_offset(root: &SharedAddressOffset) -> SharedAddressOffset {
     OFFSET_ROOTS.with(|roots| {
-        let get = |root: &SharedPointerOffset| roots.borrow()[root].clone();
+        let get = |root: &SharedAddressOffset| roots.borrow()[root].clone();
         let mut pending = vec![(root, false)];
         while let Some((offset, finish)) = pending.pop() {
             if roots.borrow().contains_key(offset) {
@@ -393,24 +393,24 @@ fn normalize_offset(root: &SharedPointerOffset) -> SharedPointerOffset {
             }
             crate::instrumentation::record_deterministic_work(1);
             let node = match offset.node() {
-                KernelPointerOffset::Add([a, b]) => {
+                KernelAddressOffset::Add([a, b]) => {
                     if !finish {
                         pending.extend([(offset, true), (b, false), (a, false)]);
                         continue;
                     }
-                    KernelPointerOffset::Add([get(a), get(b)])
+                    KernelAddressOffset::Add([get(a), get(b)])
                 }
-                KernelPointerOffset::Int32Scaled { value, byte_width } => {
-                    KernelPointerOffset::Int32Scaled {
+                KernelAddressOffset::Int32Scaled { value, byte_width } => {
+                    KernelAddressOffset::Int32Scaled {
                         value: normalize(value),
                         byte_width: *byte_width,
                     }
                 }
-                KernelPointerOffset::Int64Scaled {
+                KernelAddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned,
-                } => KernelPointerOffset::Int64Scaled {
+                } => KernelAddressOffset::Int64Scaled {
                     value: normalize(value),
                     byte_width: *byte_width,
                     unsigned: *unsigned,

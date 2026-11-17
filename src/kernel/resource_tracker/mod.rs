@@ -137,10 +137,10 @@ pub(crate) enum TrackedResource<'a> {
     /// conservative width when unobserved. Callers holding only an address
     /// pass [`MAX_SCALAR_ACCESS_BYTES`]. Over-stating a width can only shrink
     /// the separated set, never grow it.
-    Cell { pointer: &'a Pointer, bytes: u32 },
+    Cell { pointer: &'a Address, bytes: u32 },
     /// A whole memory block, as a pure function reads it through an array
     /// argument: the footprint is every cell reachable through the pointer.
-    Block(&'a PointerBlock),
+    Block(&'a AddressBase),
     /// The byte ranges a resource fact was derived from: the footprint a
     /// projection's support states, as a list of ranges.
     Ranges(&'a [MemoryRange]),
@@ -209,10 +209,10 @@ impl TrackedResource<'_> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum OwnedResource {
     Cell {
-        pointer: Pointer,
+        pointer: Address,
         bytes: u32,
     },
-    Block(PointerBlock),
+    Block(AddressBase),
     Ranges(Vec<MemoryRange>),
     AnyMemory,
     ModelField {
@@ -305,29 +305,29 @@ impl Stop {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Change {
     /// One address was assigned.
-    Store { pointer: Pointer },
+    Store { pointer: Address },
     /// A compact range of cell values was recorded. The edge does not
     /// distinguish input materialization from a source-level range write.
-    CellsSeeded { pointer: Pointer },
+    CellsSeeded { pointer: Address },
     /// A call may have written the ranges it declared.
     Call { ranges: Vec<MemoryRange> },
     /// A loop may have written the ranges its checked effect summary
     /// declared, or anything at all when it declared none.
     Loop { ranges: Option<Vec<MemoryRange>> },
     /// One heap allocation's lifetime ended.
-    Free { allocation: Pointer },
+    Free { allocation: Address },
     /// A fresh heap block became live.
-    Allocation { block: PointerBlock },
+    Allocation { block: AddressBase },
     /// An allocation request has no resolved address yet.
     AllocationPending,
     /// Allocation claims moved across a contract boundary.
     ContractAllocationClaims,
     /// A contract consumed an allocation and did not guarantee continuity.
-    ContractRetirement { allocation: Pointer },
+    ContractRetirement { allocation: Address },
     /// A block entered the memory model.
-    Declaration { block: PointerBlock },
+    Declaration { block: AddressBase },
     /// An automatic-storage object was retired.
-    LifetimeEnd { block: PointerBlock },
+    LifetimeEnd { block: AddressBase },
     /// Cached cell values were dropped; the state is the same, the form is
     /// not.
     CellsForgotten,
@@ -527,7 +527,7 @@ impl Explanation {
 
 thread_local! {
     static PATH_CELL_VERSION_MEMO: std::cell::RefCell<
-        std::collections::HashMap<(ProgramPointId, Pointer, u32), PathLink>,
+        std::collections::HashMap<(ProgramPointId, Address, u32), PathLink>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
@@ -548,7 +548,7 @@ thread_local! {
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn cell_version_on_path(
     at: &PathLink,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
 ) -> Option<PathLink> {
     at.id()?;
@@ -707,7 +707,7 @@ pub(crate) fn last_same(resource: TrackedResource<'_>, at: &ProgramPoint) -> Opt
 /// walk stopped there. A caller asking about a cell a read was just named
 /// for pays no second walk.
 pub(crate) fn last_same_named_cell(
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     at: &ProgramPoint,
 ) -> Option<LastSame> {
@@ -1062,7 +1062,7 @@ thread_local! {
 /// **Why the separation has to be proven, not spelled.** This walk is
 /// assumption-free: it has no `PureFactContext` to read a `separate(..)`
 /// clause or a pointer disequality out of, so the only separation available to
-/// it is the kernel's structural one, [`PointerBlock::proven_distinct`].
+/// it is the kernel's structural one, [`AddressBase::proven_distinct`].
 /// Anything weaker is unsound here. "Both identities are known and they are
 /// written differently" is weaker: a parameter's `ExternalArgument` memory and
 /// a file-scope `global:g` are two known, differing spellings that the caller
@@ -1086,8 +1086,8 @@ thread_local! {
 /// The walk is assumption-free and terminates: state ids strictly decrease
 /// along `base`. It always reports a version, because a subject it can separate
 /// from nothing crosses nothing and so answers `memory` itself.
-fn block_last_same_version_point(memory: &SharedMemory, block: &PointerBlock) -> SharedMemory {
-    let recorded = |key: &(crate::kernel::SharedMemory, PointerBlock)| {
+fn block_last_same_version_point(memory: &SharedMemory, block: &AddressBase) -> SharedMemory {
+    let recorded = |key: &(crate::kernel::SharedMemory, AddressBase)| {
         BLOCK_VERSION_MEMO.with(|memo| memo.borrow().get(key).cloned())
     };
     let key = (memory.clone(), block.clone());
@@ -1158,7 +1158,7 @@ fn block_last_same_version_point(memory: &SharedMemory, block: &PointerBlock) ->
 thread_local! {
     static BLOCK_VERSION_MEMO: std::cell::RefCell<
         std::collections::HashMap<
-            (crate::kernel::SharedMemory, PointerBlock),
+            (crate::kernel::SharedMemory, AddressBase),
             crate::kernel::SharedMemory,
         >,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
@@ -1177,7 +1177,7 @@ struct NamedCellVersion {
 
 pub(super) fn cell_last_same_version_point(
     memory: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
 ) -> Option<SharedMemory> {
     cell_last_same_version(memory, pointer, bytes).map(|version| version.memory)
@@ -1185,7 +1185,7 @@ pub(super) fn cell_last_same_version_point(
 
 fn cell_last_same_version(
     memory: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
 ) -> Option<NamedCellVersion> {
     // Assumption-free and a function of the interned state, the pointer,
@@ -1220,7 +1220,7 @@ fn cell_last_same_version(
                 // fresh offset does not retrace all unrelated stores. The block
                 // rule is assumption-free and stronger than cell separation.
                 let mut current =
-                    block_last_same_version_point(&memory, &pointer.block).unchanged_bytes_source();
+                    block_last_same_version_point(&memory, &pointer.base).unchanged_bytes_source();
                 let mut visited = if current != memory {
                     vec![key.clone()]
                 } else {
@@ -1320,7 +1320,7 @@ fn cell_last_same_version(
 /// `assumptions` hold.
 pub(crate) fn cell_value_on_path(
     at: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<crate::kernel::ExecutionValue> {
@@ -1341,11 +1341,11 @@ pub(crate) fn cell_value_on_path(
 /// state is returned, and a load there is named at the root.
 pub(crate) fn static_cell_unwritten_since_entry_on_path(
     at: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<SharedMemory> {
-    if !pointer.block.is_static_storage_block() {
+    if !pointer.base.is_static_storage_block() {
         return None;
     }
     match cell_source::memory_dag_cell_source(at, pointer, bytes, assumptions, false)? {
@@ -1364,7 +1364,7 @@ pub(crate) fn static_cell_unwritten_since_entry_on_path(
 thread_local! {
     static CELL_VERSION_MEMO: std::cell::RefCell<
         std::collections::HashMap<
-            (crate::kernel::SharedMemory, Pointer, u32),
+            (crate::kernel::SharedMemory, Address, u32),
             Option<NamedCellVersion>,
         >,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
@@ -1510,7 +1510,7 @@ fn collect_condition_operand_reads(
         } else if let Some(values) = leaf.pointer_values() {
             for value in values {
                 for address in value.addresses() {
-                    collect_pointer_block_reads(address.node().block.native_atom(), reads);
+                    collect_address_base_reads(address.node().base.native_atom(), reads);
                     address.node().offset.visit_root_in_order(true, |node| {
                         if let Some(index) = node.index() {
                             collect_operand_reads(
@@ -1523,7 +1523,7 @@ fn collect_condition_operand_reads(
             }
         } else if let Some(addresses) = leaf.pointer_addresses() {
             for address in addresses {
-                collect_pointer_block_reads(address.node().block.native_atom(), reads);
+                collect_address_base_reads(address.node().base.native_atom(), reads);
                 address.node().offset.visit_root_in_order(true, |node| {
                     if let Some(index) = node.index() {
                         collect_operand_reads(
@@ -1534,7 +1534,7 @@ fn collect_condition_operand_reads(
                 });
             }
         } else if let Some(offsets) = leaf.pointer_offsets() {
-            crate::kernel::SharedPointerOffset::visit_pair_in_order(&offsets, true, |node| {
+            crate::kernel::SharedAddressOffset::visit_pair_in_order(&offsets, true, |node| {
                 if let Some(index) = node.index() {
                     collect_operand_reads(crate::kernel::MachineOperandView::Shared(index), reads);
                 }
@@ -1600,13 +1600,13 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
 
 /// A loaded pointer reads the complete pointer cell its name was defined at,
 /// at the point that name embeds, as an offset's load variable reads its cell.
-fn collect_pointer_reads(pointer: &Pointer, reads: &mut Vec<ResourceRead>) {
-    collect_pointer_block_reads(&pointer.block, reads);
+fn collect_pointer_reads(pointer: &Address, reads: &mut Vec<ResourceRead>) {
+    collect_address_base_reads(&pointer.base, reads);
     collect_offset_reads(&pointer.offset, reads);
 }
 
-fn collect_pointer_block_reads(block: &PointerBlock, reads: &mut Vec<ResourceRead>) {
-    if let PointerBlock::LoadedPointer(identity) = *block
+fn collect_address_base_reads(block: &AddressBase, reads: &mut Vec<ResourceRead>) {
+    if let AddressBase::LoadedPointer(identity) = *block
         && let Some((memory, address)) = crate::kernel::eval::registered_pointer_load(identity)
     {
         push_read(
@@ -1620,16 +1620,15 @@ fn collect_pointer_block_reads(block: &PointerBlock, reads: &mut Vec<ResourceRea
     }
 }
 
-fn collect_offset_reads(offset: &PointerOffsetTerm, reads: &mut Vec<ResourceRead>) {
+fn collect_offset_reads(offset: &AddressOffset, reads: &mut Vec<ResourceRead>) {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
                 collect_operand_reads(value.operand_view(), reads)
             }
             _ => {}
@@ -1758,7 +1757,7 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
             if let ProgramValue::Pointer(pointer) = pointer {
                 push_read(
                     reads,
-                    OwnedResource::Block(pointer.pointer().block.clone()),
+                    OwnedResource::Block(pointer.pointer().base.clone()),
                     ProgramPoint::of_memory(memory),
                 );
             }

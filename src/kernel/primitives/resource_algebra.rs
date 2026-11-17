@@ -24,7 +24,7 @@ pub(crate) use ownership_admission::{FlatBodyAdmission, OwnershipAdmission};
 enum CompositionQuery {
     ResourcesSeparate(Resource, Resource),
     RangesSeparate(MemoryRange, MemoryRange),
-    PointersSeparate(Pointer, Pointer),
+    PointersSeparate(Address, Address),
 }
 
 thread_local! {
@@ -64,9 +64,9 @@ impl Drop for ResourceCompositionQueryGuard {
 fn composition_query_guard_refuses_reentry_and_keeps_the_outer_query() {
     let range = |index: i64| {
         MemoryRange::new(
-            Pointer {
-                block: "buffer".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "buffer".into(),
+                offset: AddressOffset::Constant(0),
             },
             MachineTerm::constant(index as u32),
             MachineTerm::constant(index as u32 + 1),
@@ -137,11 +137,11 @@ pub(crate) fn memory_interval_nodes(
     range: &MemoryRange,
 ) -> Option<Vec<ResourceMemoryIntervalNode>> {
     let (start, end) = concrete_memory_range_bounds(range)?;
-    memory_interval_nodes_for_coordinates(&range.base().block, start, end)
+    memory_interval_nodes_for_coordinates(&range.base().base, start, end)
 }
 
 pub(in crate::kernel) fn memory_interval_nodes_for_coordinates(
-    block: &PointerBlock,
+    block: &AddressBase,
     start: i64,
     end: i64,
 ) -> Option<Vec<ResourceMemoryIntervalNode>> {
@@ -178,19 +178,19 @@ pub(in crate::kernel) fn memory_interval_nodes_for_coordinates(
 /// resource footprint stated over another block cannot be shown to miss it.
 ///
 /// This is a *variant* test, not a name test, and it is deliberately coarser
-/// than [`PointerBlock::proven_distinct`]: one of these blocks stands for an
+/// than [`AddressBase::proven_distinct`]: one of these blocks stands for an
 /// address the caller chose, and the answer here is spent dropping a resource
 /// projection, where being coarse only ever drops more. The three predicates
 /// below are the evidence language of the resource tracker's footprint arm
 /// (`src/kernel/resource_tracker/step_effect.rs`), which is the only decider
 /// that reads them.
-pub(in crate::kernel) fn memory_block_may_alias(block: &PointerBlock) -> bool {
+pub(in crate::kernel) fn memory_block_may_alias(block: &AddressBase) -> bool {
     matches!(
         block,
-        PointerBlock::ExternalArgument
-            | PointerBlock::Symbolic(_)
-            | PointerBlock::FunctionSymbolic(_)
-            | PointerBlock::LoadedPointer(_)
+        AddressBase::ExternalArgument
+            | AddressBase::Symbolic(_)
+            | AddressBase::FunctionSymbolic(_)
+            | AddressBase::LoadedPointer(_)
     )
 }
 
@@ -217,36 +217,36 @@ pub(crate) fn memory_interval_ancestors(
 /// goes; only a fact can relate them (an exact alias, or a recorded
 /// equality between the roots' index terms), and
 /// [`related_memory_base_roots`] adds the roots such facts select.
-pub(in crate::kernel) fn memory_base_root(base: &Pointer) -> MemoryBaseRoot {
-    (base.block.clone(), offset_root_atom(&base.offset))
+pub(in crate::kernel) fn memory_base_root(base: &Address) -> MemoryBaseRoot {
+    (base.base.clone(), offset_root_atom(&base.offset))
 }
 
 /// The offset half of [`memory_base_root`].
-pub(in crate::kernel) fn offset_root_atom(offset: &PointerOffsetTerm) -> Option<PointerOffsetTerm> {
+pub(in crate::kernel) fn offset_root_atom(offset: &AddressOffset) -> Option<AddressOffset> {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
-            PointerOffsetTerm::Constant(_) => {}
-            PointerOffsetTerm::Variable(_) => return Some(offset.clone()),
-            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+            AddressOffset::Constant(_) => {}
+            AddressOffset::Variable(_) => return Some(offset.clone()),
+            AddressOffset::Int32Scaled { value, byte_width } => {
                 if value.operand_view().word32_constant().is_some() {
                     continue;
                 }
-                return Some(PointerOffsetTerm::Int32Scaled {
+                return Some(AddressOffset::Int32Scaled {
                     value: crate::kernel::proof::equality_rewrite::canonical_pointer_index(value)?,
                     byte_width: *byte_width,
                 });
             }
-            PointerOffsetTerm::Int64Scaled {
+            AddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
             } => {
-                return Some(PointerOffsetTerm::Int64Scaled {
+                return Some(AddressOffset::Int64Scaled {
                     value: crate::kernel::proof::equality_rewrite::canonical_pointer_index(value)?,
                     byte_width: *byte_width,
                     unsigned: *unsigned,
@@ -262,7 +262,7 @@ pub(in crate::kernel) fn offset_root_atom(offset: &PointerOffsetTerm) -> Option<
 /// term's recorded-equality class (a member pinned to a constant relates
 /// the base to the block's constant-offset bases).
 fn related_memory_base_roots(
-    base: &Pointer,
+    base: &Address,
     assumptions: &PureFactContext,
 ) -> BTreeSet<MemoryBaseRoot> {
     let mut roots = BTreeSet::new();
@@ -286,10 +286,10 @@ type IndexScale = (bool, i64, bool);
 /// which both sides check: the class leaves its starting term out, and the
 /// root stands for it.
 fn extend_related_memory_base_roots(
-    base: &Pointer,
+    base: &Address,
     assumptions: &PureFactContext,
     roots: &mut BTreeSet<MemoryBaseRoot>,
-    walked: &mut BTreeSet<(PointerBlock, IndexScale, SharedMachineIntegerTerm)>,
+    walked: &mut BTreeSet<(AddressBase, IndexScale, SharedMachineIntegerTerm)>,
 ) {
     let root = memory_base_root(base);
     roots.insert(root.clone());
@@ -299,9 +299,9 @@ fn extend_related_memory_base_roots(
     let (value, scale, rescale): (
         &SharedMachineIntegerTerm,
         IndexScale,
-        &dyn Fn(SharedMachineIntegerTerm) -> PointerOffsetTerm,
+        &dyn Fn(SharedMachineIntegerTerm) -> AddressOffset,
     ) = match &atom {
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+        AddressOffset::Int32Scaled { value, byte_width } => {
             (value, (false, *byte_width, false), &|member| {
                 crate::kernel::memory_history::rebuild_scaled_pointer_index(
                     member,
@@ -310,7 +310,7 @@ fn extend_related_memory_base_roots(
                 )
             })
         }
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -324,8 +324,8 @@ fn extend_related_memory_base_roots(
         _ => return,
     };
     let image = |member: SharedMachineIntegerTerm| {
-        memory_base_root(&Pointer {
-            block: block.clone(),
+        memory_base_root(&Address {
+            base: block.clone(),
             offset: rescale(member),
         })
     };
@@ -349,17 +349,17 @@ fn extend_related_memory_base_roots(
 /// A constant translation of exactly one unregistered int32 scalar atom.
 /// Loads, sums of atoms, and native/wide expressions stay open. In particular
 /// a registered load variable is not an independent address parameter.
-fn memory_base_variable(base: &Pointer) -> Option<Variable> {
+fn memory_base_variable(base: &Address) -> Option<Variable> {
     let mut variable = None;
     let mut pending = vec![&base.offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            PointerOffsetTerm::Constant(_) => {}
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Constant(_) => {}
+            AddressOffset::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
-            PointerOffsetTerm::Int32Scaled { value, byte_width } if *byte_width > 0 => {
+            AddressOffset::Int32Scaled { value, byte_width } if *byte_width > 0 => {
                 let candidate = value.operand_view().variable()?;
                 if variable.is_some() || crate::kernel::is_load_variable(candidate) {
                     return None;
@@ -402,18 +402,17 @@ fn constant_relative_byte_endpoints(range: &MemoryRange) -> (Option<i128>, Optio
 /// that explicit displacement, without traversing offsets or consulting facts.
 pub(in crate::kernel) fn constant_memory_coordinates(
     range: &MemoryRange,
-) -> Option<(Pointer, i128, i128)> {
+) -> Option<(Address, i128, i128)> {
     let (start, end) = constant_relative_byte_endpoints(range);
     let (start, end) = (start?, end?);
     let original = range.base();
     let (offset, displacement) = match &original.offset {
-        PointerOffsetTerm::Constant(n) => (PointerOffsetTerm::Constant(0), i128::from(*n)),
-        PointerOffsetTerm::Add(left, right) => match (left.as_ref(), right.as_ref()) {
-            (PointerOffsetTerm::Constant(a), PointerOffsetTerm::Constant(b)) => (
-                PointerOffsetTerm::Constant(0),
-                i128::from(*a) + i128::from(*b),
-            ),
-            (rest, PointerOffsetTerm::Constant(n)) | (PointerOffsetTerm::Constant(n), rest) => {
+        AddressOffset::Constant(n) => (AddressOffset::Constant(0), i128::from(*n)),
+        AddressOffset::Add(left, right) => match (left.as_ref(), right.as_ref()) {
+            (AddressOffset::Constant(a), AddressOffset::Constant(b)) => {
+                (AddressOffset::Constant(0), i128::from(*a) + i128::from(*b))
+            }
+            (rest, AddressOffset::Constant(n)) | (AddressOffset::Constant(n), rest) => {
                 (rest.clone(), i128::from(*n))
             }
             _ => (original.offset.clone(), 0),
@@ -421,8 +420,8 @@ pub(in crate::kernel) fn constant_memory_coordinates(
         _ => (original.offset.clone(), 0),
     };
     Some((
-        Pointer {
-            block: original.block.clone(),
+        Address {
+            base: original.base.clone(),
             offset,
         },
         start.checked_add(displacement)?,
@@ -531,7 +530,7 @@ impl ResourceContextIndex {
                     );
                     result.owned_composites_by_argument_block = insert_resource_index_entry(
                         &result.owned_composites_by_argument_block,
-                        pointer.block.clone(),
+                        pointer.base.clone(),
                         entry,
                     );
                 }
@@ -663,14 +662,14 @@ impl ResourceContextIndex {
             result.refresh_suspect_mutex_authority(identity.clone());
         }
         if let Some(range) = fact.memory_range() {
-            let block = range.base().block.clone();
+            let block = range.base().base.clone();
             let mode = fact.is_own();
             if !matches!(
                 block,
-                PointerBlock::Concrete(_)
-                    | PointerBlock::StaticObject { .. }
-                    | PointerBlock::AutomaticLocal { .. }
-                    | PointerBlock::ReferenceCarrier { .. }
+                AddressBase::Concrete(_)
+                    | AddressBase::StaticObject { .. }
+                    | AddressBase::AutomaticLocal { .. }
+                    | AddressBase::ReferenceCarrier { .. }
             ) {
                 result.nonconcrete_memory_count += 1;
             }
@@ -718,14 +717,14 @@ impl ResourceContextIndex {
                 }
                 if matches!(
                     block,
-                    PointerBlock::Concrete(_)
-                        | PointerBlock::AutomaticLocal { .. }
-                        | PointerBlock::StaticObject { .. }
-                        | PointerBlock::AggregateReturn { .. }
-                        | PointerBlock::ContractResult
-                        | PointerBlock::ContractException
-                        | PointerBlock::Heap(_)
-                        | PointerBlock::Temporary(_)
+                    AddressBase::Concrete(_)
+                        | AddressBase::AutomaticLocal { .. }
+                        | AddressBase::StaticObject { .. }
+                        | AddressBase::AggregateReturn { .. }
+                        | AddressBase::ContractResult
+                        | AddressBase::ContractException
+                        | AddressBase::Heap(_)
+                        | AddressBase::Temporary(_)
                 ) {
                     result.owned_physical_memory_by_block = insert_resource_index_entry(
                         &result.owned_physical_memory_by_block,
@@ -860,7 +859,7 @@ impl ResourceContextIndex {
                     );
                     result.owned_composites_by_argument_block = remove_resource_index_entry(
                         &result.owned_composites_by_argument_block,
-                        &pointer.block,
+                        &pointer.base,
                         entry,
                     );
                 }
@@ -1018,14 +1017,14 @@ impl ResourceContextIndex {
             result.refresh_suspect_mutex_authority(identity.clone());
         }
         if let Some(range) = fact.memory_range() {
-            let block = range.base().block.clone();
+            let block = range.base().base.clone();
             let mode = fact.is_own();
             if !matches!(
                 block,
-                PointerBlock::Concrete(_)
-                    | PointerBlock::StaticObject { .. }
-                    | PointerBlock::AutomaticLocal { .. }
-                    | PointerBlock::ReferenceCarrier { .. }
+                AddressBase::Concrete(_)
+                    | AddressBase::StaticObject { .. }
+                    | AddressBase::AutomaticLocal { .. }
+                    | AddressBase::ReferenceCarrier { .. }
             ) {
                 result.nonconcrete_memory_count -= 1;
             }
@@ -1185,11 +1184,11 @@ pub(in crate::kernel) fn byte_intervals_disjoint(
 
 pub(in crate::kernel) fn memory_range_overlaps_pointer(
     range: &MemoryRange,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
 ) -> bool {
-    let pointer_base = Pointer {
-        block: pointer.block.clone(),
+    let pointer_base = Address {
+        base: pointer.base.clone(),
         offset: pointer.offset.clone(),
     };
     if range.base().blocks_proven_distinct(&pointer_base) {
@@ -1197,7 +1196,7 @@ pub(in crate::kernel) fn memory_range_overlaps_pointer(
     }
     // Constant offsets locate bytes only within one block: `q + 8` in one
     // block is `p + 0` in another when `q` is `p - 8`.
-    if range.base().block != pointer.block {
+    if range.base().base != pointer.base {
         return true;
     }
     let Some((start, end)) = concrete_memory_range_bounds(range) else {
@@ -1257,7 +1256,7 @@ pub(in crate::kernel) fn memory_ranges_overlap(left: &MemoryRange, right: &Memor
     if left.base().blocks_proven_distinct(right.base()) {
         return false;
     }
-    if left.base().block != right.base().block {
+    if left.base().base != right.base().base {
         return true;
     }
     let (Some((left_start, left_end)), Some((right_start, right_end))) = (
@@ -1342,7 +1341,7 @@ fn memory_footprint_for_fact(fact: &ResourceFact) -> ResourceMemoryFootprint {
 /// children are not exposed by this routine: those projections become an
 /// unknown footprint instead of escaping invalidation.
 fn collect_memory_load_ranges(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     ranges: &mut Vec<MemoryRange>,
     uncertain: &mut bool,
     source_memory_state: &mut Option<MemoryStateIdentity>,
@@ -1359,7 +1358,7 @@ const MAX_MEMORY_LOAD_FOOTPRINT_DEPTH: usize = 64;
 
 enum MemoryLoadFootprintWork<'a> {
     Shared(&'a KernelTerm, usize),
-    Offset(&'a PointerOffsetTerm, usize),
+    Offset(&'a AddressOffset, usize),
     Term(&'a MachineTerm, usize),
 }
 
@@ -1427,13 +1426,13 @@ fn collect_memory_load_work<'a>(
                     continue;
                 }
                 match offset {
-                    PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
-                    PointerOffsetTerm::Add(left, right) => {
+                    AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
+                    AddressOffset::Add(left, right) => {
                         work.push(MemoryLoadFootprintWork::Offset(left, depth + 1));
                         work.push(MemoryLoadFootprintWork::Offset(right, depth + 1));
                     }
-                    PointerOffsetTerm::Int32Scaled { value, .. }
-                    | PointerOffsetTerm::Int64Scaled { value, .. } => {
+                    AddressOffset::Int32Scaled { value, .. }
+                    | AddressOffset::Int64Scaled { value, .. } => {
                         if let Some(node) = value.shared_operand() {
                             work.push(MemoryLoadFootprintWork::Shared(node, depth + 1));
                         } else {
@@ -2605,11 +2604,7 @@ impl ResourceContext {
             Some(ResourceMemoryFootprint::Exact(ranges)) => ranges.iter().fold(
                 self.storage.projections_by_memory_block.clone(),
                 |index, footprint| {
-                    insert_occurrence_index_entry(
-                        &index,
-                        footprint.base().block.clone(),
-                        occurrence,
-                    )
+                    insert_occurrence_index_entry(&index, footprint.base().base.clone(), occurrence)
                 },
             ),
             Some(ResourceMemoryFootprint::None | ResourceMemoryFootprint::Unknown) | None => {
@@ -2674,7 +2669,7 @@ impl ResourceContext {
                 ResourceMemoryFootprint::Exact(ranges)
                     if ranges.iter().any(|range| {
                         memory_interval_nodes(range).is_none()
-                            || memory_block_may_alias(&range.base().block)
+                            || memory_block_may_alias(&range.base().base)
                     }) =>
                 {
                     self.storage.symbolic_memory_support.with_value(occurrence)
@@ -2830,7 +2825,7 @@ impl ResourceContext {
             Some(ResourceMemoryFootprint::Exact(ranges)) => ranges.iter().fold(
                 self.storage.projections_by_memory_block.clone(),
                 |index, footprint| {
-                    remove_occurrence_index_entry(&index, &footprint.base().block, occurrence)
+                    remove_occurrence_index_entry(&index, &footprint.base().base, occurrence)
                 },
             ),
             Some(ResourceMemoryFootprint::None | ResourceMemoryFootprint::Unknown) | None => {
@@ -2884,7 +2879,7 @@ impl ResourceContext {
                 ResourceMemoryFootprint::Exact(ranges)
                     if ranges.iter().any(|range| {
                         memory_interval_nodes(range).is_none()
-                            || memory_block_may_alias(&range.base().block)
+                            || memory_block_may_alias(&range.base().base)
                     }) =>
                 {
                     self.storage
@@ -3090,7 +3085,7 @@ impl ResourceContext {
     /// context's other instances.
     pub(in crate::kernel) fn owned_instances_with_pointer_argument<'a>(
         &'a self,
-        base: &Pointer,
+        base: &Address,
     ) -> impl Iterator<Item = (u64, &'a ResourceFact)> + 'a {
         crate::instrumentation::record_deterministic_work(1);
         self.storage
@@ -3110,7 +3105,7 @@ impl ResourceContext {
     /// composite returned.
     pub(in crate::kernel) fn owned_composites_with_pointer_argument<'a>(
         &'a self,
-        base: &Pointer,
+        base: &Address,
     ) -> impl Iterator<Item = &'a ResourceFact> + 'a {
         crate::instrumentation::record_deterministic_work(1);
         self.storage
@@ -3128,7 +3123,7 @@ impl ResourceContext {
     /// The owned folded composites with a C pointer argument in `block`.
     pub(in crate::kernel) fn owned_composites_with_argument_block<'a>(
         &'a self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> impl Iterator<Item = &'a ResourceFact> + 'a {
         crate::instrumentation::record_deterministic_work(1);
         self.storage
@@ -3194,7 +3189,7 @@ impl ResourceContext {
     /// block. Charges one work unit per visited fact.
     pub(in crate::kernel) fn facts_that_may_refer_to_memory_block<'a>(
         &'a self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> impl Iterator<Item = &'a ResourceFact> + use<'a> {
         let composite_block = block.clone();
         let composites = self
@@ -3236,13 +3231,13 @@ impl ResourceContext {
     /// those resources to decide whether they cover this particular request.
     pub(in crate::kernel) fn has_no_explicit_memory_for_local_storage(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         assumptions: &PureFactContext,
     ) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         self.storage.index.memory_by_block.is_empty()
             || (self.storage.index.nonconcrete_memory_count == 0
-                && !assumptions.has_pointer_block_aliases()
+                && !assumptions.has_address_base_aliases()
                 && !self.storage.index.memory_by_block.contains_key(block))
     }
 
@@ -3254,7 +3249,7 @@ impl ResourceContext {
     /// every parameter's range.
     pub(in crate::kernel) fn memory_facts_in_block<'a>(
         &'a self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> impl Iterator<Item = &'a ResourceFact> + use<'a> {
         self.storage
             .index
@@ -3270,7 +3265,7 @@ impl ResourceContext {
     /// suppliers based in other blocks. Selection does not infer aliases.
     pub(in crate::kernel) fn owned_memory_facts_in_block<'a>(
         &'a self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> impl Iterator<Item = &'a ResourceFact> + use<'a> {
         self.storage
             .index
@@ -3286,7 +3281,7 @@ impl ResourceContext {
     /// in `block`, from the block index. Charges one work unit per fact.
     pub(in crate::kernel) fn iterated_facts_in_block<'a>(
         &'a self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> impl Iterator<Item = &'a ResourceFact> + use<'a> {
         self.storage
             .index
@@ -3320,7 +3315,7 @@ impl ResourceContext {
     }
 
     /// Necessary-shape candidates for proof-aware direct resource matching.
-    /// MemoryState-insensitive matching cannot change a pointer block, resource
+    /// MemoryState-insensitive matching cannot change an address base, resource
     /// family, composite/token name, or arity, so unrelated facts need not
     /// enter the expensive memory-resolution comparator.
     pub(in crate::kernel) fn direct_match_candidates(
@@ -3448,7 +3443,7 @@ impl ResourceContext {
     /// Select a deterministic owned candidate from the pointer index. Multiple
     /// returned sibling shares are legitimate. This lookup grants no authority:
     /// callers must still check the selected loan, initialization, and type.
-    pub(crate) fn mutex_use_candidate_at(&self, pointer: &Pointer) -> Option<&ResourceFact> {
+    pub(crate) fn mutex_use_candidate_at(&self, pointer: &Address) -> Option<&ResourceFact> {
         let entries = self
             .storage
             .index
@@ -3459,7 +3454,7 @@ impl ResourceContext {
     }
 
     #[cfg(test)]
-    pub(crate) fn mutex_use_at(&self, pointer: &Pointer) -> Option<&ResourceFact> {
+    pub(crate) fn mutex_use_at(&self, pointer: &Address) -> Option<&ResourceFact> {
         let entries = self
             .storage
             .index
@@ -3472,7 +3467,7 @@ impl ResourceContext {
         matches!(fact, ResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
     }
 
-    pub(crate) fn mutex_live_at(&self, pointer: &Pointer) -> Option<&ResourceFact> {
+    pub(crate) fn mutex_live_at(&self, pointer: &Address) -> Option<&ResourceFact> {
         let entries = self
             .storage
             .index
@@ -3490,7 +3485,7 @@ impl ResourceContext {
     pub(crate) fn publication_right_at(
         &self,
         side: super::PublicationSide,
-        pointer: &Pointer,
+        pointer: &Address,
     ) -> Option<&ResourceFact> {
         let entries = self
             .storage
@@ -3532,7 +3527,7 @@ impl ResourceContext {
             .unwrap_or_default()
     }
 
-    pub(crate) fn mutex_guard_at(&self, pointer: &Pointer) -> Option<&ResourceFact> {
+    pub(crate) fn mutex_guard_at(&self, pointer: &Address) -> Option<&ResourceFact> {
         let entries = self
             .storage
             .index
@@ -3893,12 +3888,9 @@ impl ResourceContext {
         let mut cursor = 0i64;
         let mut supports = Vec::new();
         while cursor < end {
-            let pointer = Pointer {
-                block: start.block.clone(),
-                offset: PointerOffsetTerm::add(
-                    start.offset.clone(),
-                    PointerOffsetTerm::Constant(cursor),
-                ),
+            let pointer = Address {
+                base: start.base.clone(),
+                offset: AddressOffset::add(start.offset.clone(), AddressOffset::Constant(cursor)),
             };
             let entries = self.write_access(&pointer, 1, assumptions)?;
             let entry = entries.entry();
@@ -4301,14 +4293,14 @@ impl ResourceContext {
         // side reads.
         let mut before_side = crate::kernel::intern_memory_ref(before);
         let mut after_side = crate::kernel::intern_memory_ref(after);
-        let unchanged_cell = |pointer: &Pointer| {
+        let unchanged_cell = |pointer: &Address| {
             matches!(
                 (before.cells.get(pointer), after.cells.get(pointer)),
                 (Some(left), Some(right)) if left == right
             )
         };
         let mut dropped = Vec::<ResourceFact>::new();
-        let facts_in_block = |context: &Self, block: &PointerBlock| {
+        let facts_in_block = |context: &Self, block: &AddressBase| {
             if memory_block_may_alias(block) {
                 context
                     .storage
@@ -4338,7 +4330,7 @@ impl ResourceContext {
             };
             // A seeded run is the stores it stands for, each judged as one.
             let seeded = derivation.seeded_stores();
-            let stores: Vec<(&Pointer, &ProgramValue)> = match (&*derivation, &seeded) {
+            let stores: Vec<(&Address, &ProgramValue)> = match (&*derivation, &seeded) {
                 (MemoryDerivation::Store { pointer, value, .. }, _) => {
                     vec![(pointer, value.native())]
                 }
@@ -4356,15 +4348,15 @@ impl ResourceContext {
                         if unchanged_cell(pointer) {
                             continue;
                         }
-                        for fact in facts_in_block(&self, &pointer.block) {
+                        for fact in facts_in_block(&self, &pointer.base) {
                             let Resource::Iterated(iterated) = fact.resource() else {
                                 continue;
                             };
                             let guard = iterated.guard();
                             // A store that did not pass the store rule keeps the
                             // fact only when it provably misses the guard cells.
-                            let keeps = pointer.block.proven_distinct(&guard.base.block)
-                                || (pointer.block == guard.base.block
+                            let keeps = pointer.base.proven_distinct(&guard.base.base)
+                                || (pointer.base == guard.base.base
                                     && value.byte_width() == guard.cell_width
                                     && pointer
                                         .shared_element_index_from_base_with_width(
@@ -4386,10 +4378,10 @@ impl ResourceContext {
                 }
                 MemoryDerivation::CallHavoc { mutable_ranges, .. } => {
                     for range in mutable_ranges {
-                        for fact in facts_in_block(&self, &range.base().block) {
+                        for fact in facts_in_block(&self, &range.base().base) {
                             if let Resource::Iterated(iterated) = fact.resource()
-                                && (iterated.guard().base.block == range.base().block
-                                    || memory_block_may_alias(&range.base().block))
+                                && (iterated.guard().base.base == range.base().base
+                                    || memory_block_may_alias(&range.base().base))
                             {
                                 dropped.push(fact);
                             }
@@ -4401,7 +4393,7 @@ impl ResourceContext {
                 }
                 | MemoryDerivation::ContractAllocationRetired {
                     allocation_base, ..
-                } => dropped.extend(facts_in_block(&self, &allocation_base.block)),
+                } => dropped.extend(facts_in_block(&self, &allocation_base.base)),
                 MemoryDerivation::LocalLifetimeEnded { block, .. } => {
                     dropped.extend(facts_in_block(&self, block));
                 }
@@ -4447,15 +4439,15 @@ impl ResourceContext {
             });
         let ambiguous_event = match derivation {
             MemoryDerivation::BranchJoin { .. } => true,
-            MemoryDerivation::Store { pointer, .. } => memory_block_may_alias(&pointer.block),
-            MemoryDerivation::CellsSeeded { run, .. } => memory_block_may_alias(&run.base().block),
+            MemoryDerivation::Store { pointer, .. } => memory_block_may_alias(&pointer.base),
+            MemoryDerivation::CellsSeeded { run, .. } => memory_block_may_alias(&run.base().base),
             MemoryDerivation::CallHavoc { mutable_ranges, .. }
             | MemoryDerivation::LoopHavoc {
                 mutable_ranges: Some(mutable_ranges),
                 ..
             } => mutable_ranges
                 .iter()
-                .any(|range| memory_block_may_alias(&range.base().block)),
+                .any(|range| memory_block_may_alias(&range.base().base)),
             MemoryDerivation::HeapFreed {
                 allocation_base, ..
             }
@@ -4464,7 +4456,7 @@ impl ResourceContext {
             }
             | MemoryDerivation::HeapAllocationPending {
                 allocation_base, ..
-            } => memory_block_may_alias(&allocation_base.block),
+            } => memory_block_may_alias(&allocation_base.base),
             MemoryDerivation::LocalLifetimeEnded { block, .. } => memory_block_may_alias(block),
             MemoryDerivation::LoopHavoc {
                 mutable_ranges: None,
@@ -4507,7 +4499,7 @@ impl ResourceContext {
                             &mut entries,
                         );
                     } else if let Some(bucket) =
-                        self.storage.projections_by_memory_block.get(&pointer.block)
+                        self.storage.projections_by_memory_block.get(&pointer.base)
                     {
                         for occurrence in bucket.iter() {
                             entries = entries.with_value(*occurrence);
@@ -4531,7 +4523,7 @@ impl ResourceContext {
                     } else if let Some(bucket) = self
                         .storage
                         .projections_by_memory_block
-                        .get(&range.base().block)
+                        .get(&range.base().base)
                     {
                         for occurrence in bucket.iter() {
                             entries = entries.with_value(*occurrence);
@@ -4565,7 +4557,7 @@ impl ResourceContext {
                 } else if let Some(bucket) = self
                     .storage
                     .projections_by_memory_block
-                    .get(&allocation_base.block)
+                    .get(&allocation_base.base)
                 {
                     for occurrence in bucket.iter() {
                         entries = entries.with_value(*occurrence);
@@ -4634,14 +4626,14 @@ impl ResourceContext {
             let right_positions = self.owned_memory_candidates_for_range(right, assumptions);
             #[cfg(debug_assertions)]
             {
-                self.cross_check_owned_candidates(&left.base().block, &left_positions, |range| {
+                self.cross_check_owned_candidates(&left.base().base, &left_positions, |range| {
                     resource_fact_entails(
                         &ResourceFact::own_memory(range.clone()),
                         &left_view,
                         assumptions,
                     )
                 });
-                self.cross_check_owned_candidates(&right.base().block, &right_positions, |range| {
+                self.cross_check_owned_candidates(&right.base().base, &right_positions, |range| {
                     resource_fact_entails(
                         &ResourceFact::own_memory(range.clone()),
                         &right_view,
@@ -4705,7 +4697,7 @@ impl ResourceContext {
         self.storage
             .index
             .memory_by_block
-            .get(&range.base().block)?
+            .get(&range.base().base)?
             .iter()
             .copied()
             .find_map(|entry| {
@@ -4724,7 +4716,7 @@ impl ResourceContext {
     /// which for `ExternalArgument` is every object reached from a parameter.
     pub(in crate::kernel) fn owned_memory_members_with_base<'a>(
         &'a self,
-        base: &Pointer,
+        base: &Address,
     ) -> impl Iterator<Item = (u64, &'a MemoryRange)> + 'a {
         crate::instrumentation::record_deterministic_work(1);
         self.storage
@@ -4746,7 +4738,7 @@ impl ResourceContext {
     /// when selecting its owner would require proof search.
     pub(in crate::kernel) fn unique_owned_memory_member_with_base(
         &self,
-        base: &Pointer,
+        base: &Address,
     ) -> Option<(u64, &MemoryRange)> {
         crate::instrumentation::record_deterministic_work(1);
         let entries = self.storage.index.memory_by_base.get(base)?;
@@ -4763,7 +4755,7 @@ impl ResourceContext {
     /// needs the prepared address index or an explicitly selected resource.
     pub(in crate::kernel) fn unique_memory_member_with_base(
         &self,
-        base: &Pointer,
+        base: &Address,
         include_views: bool,
     ) -> Option<&MemoryRange> {
         crate::instrumentation::record_deterministic_work(1);
@@ -4782,7 +4774,7 @@ impl ResourceContext {
     /// Flat owned members, and optionally views, from the exact base index.
     pub(in crate::kernel) fn memory_members_with_base<'a>(
         &'a self,
-        base: &Pointer,
+        base: &Address,
         include_views: bool,
     ) -> impl Iterator<Item = (u64, &'a MemoryRange)> + 'a {
         crate::instrumentation::record_deterministic_work(1);
@@ -4808,12 +4800,12 @@ impl ResourceContext {
     /// `pointer`, as its entry and its own range.
     pub(in crate::kernel) fn owned_memory_member_containing_pointer(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
     ) -> Option<(ResourceEntryId, &MemoryRange)> {
         self.storage
             .index
             .memory_by_block
-            .get(&pointer.block)?
+            .get(&pointer.base)?
             .iter()
             .copied()
             .find_map(|entry| {
@@ -4841,13 +4833,13 @@ impl ResourceContext {
         left: &MemoryRange,
         right: &MemoryRange,
     ) -> bool {
-        if string_literal_blocks_may_alias(&left.base().block, &right.base().block) {
+        if string_literal_blocks_may_alias(&left.base().base, &right.base().base) {
             return false;
         }
         let Some((left_position, _)) = self.owned_memory_member_containing(left) else {
             return false;
         };
-        let Some(positions) = self.storage.index.memory_by_block.get(&right.base().block) else {
+        let Some(positions) = self.storage.index.memory_by_block.get(&right.base().base) else {
             return false;
         };
         positions.iter().copied().any(|entry| {
@@ -4865,20 +4857,20 @@ impl ResourceContext {
 
     pub(in crate::kernel) fn proves_owned_pointers_separate_shallow(
         &self,
-        left: &Pointer,
-        right: &Pointer,
+        left: &Address,
+        right: &Address,
     ) -> bool {
         // Each side in its own block's bucket: two owned members are
         // disjoint whatever blocks their pointers are spelled in, except
         // equal literals, which may share their bytes.
-        if string_literal_blocks_may_alias(&left.block, &right.block) {
+        if string_literal_blocks_may_alias(&left.base, &right.base) {
             return false;
         }
-        let containing = |pointer: &Pointer| {
+        let containing = |pointer: &Address| {
             self.storage
                 .index
                 .memory_by_block
-                .get(&pointer.block)?
+                .get(&pointer.base)?
                 .iter()
                 .copied()
                 .find(|entry| {
@@ -4897,7 +4889,7 @@ impl ResourceContext {
     /// they do not all share one concrete base with constant bounds (validity
     /// orders those, and the kernel separates them from their constants
     /// without a premise). Linear in the block's owned ranges.
-    fn separates_owned_members_in_block(&self, block: &PointerBlock) -> bool {
+    fn separates_owned_members_in_block(&self, block: &AddressBase) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         if !self
             .storage
@@ -4932,7 +4924,7 @@ impl ResourceContext {
     /// an owner's ordinary read observation is deliberately ineligible.
     pub(in crate::kernel) fn partition_memory_member_at(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         borrowed: bool,
         accepts: impl Fn(&MemoryRange) -> bool,
     ) -> Option<&MemoryRange> {
@@ -4960,14 +4952,14 @@ impl ResourceContext {
                 }
             }
             base.offset = match &base.offset {
-                PointerOffsetTerm::Add(left, _) => (**left).clone(),
-                PointerOffsetTerm::Constant(value) if *value != 0 => PointerOffsetTerm::Constant(0),
+                AddressOffset::Add(left, _) => (**left).clone(),
+                AddressOffset::Constant(value) if *value != 0 => AddressOffset::Constant(0),
                 // A loaded pointer's displacement is all of its offset: the
                 // read itself, at displacement zero, is the object's base.
-                PointerOffsetTerm::Int32Scaled { .. } | PointerOffsetTerm::Int64Scaled { .. }
-                    if matches!(base.block, PointerBlock::LoadedPointer(_)) =>
+                AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. }
+                    if matches!(base.base, AddressBase::LoadedPointer(_)) =>
                 {
-                    PointerOffsetTerm::Constant(0)
+                    AddressOffset::Constant(0)
                 }
                 _ => return None,
             };
@@ -5031,10 +5023,10 @@ impl ResourceContext {
     /// not apply, since two entries of different blocks are never one.
     pub(in crate::kernel) fn separated_owned_members(
         &self,
-        left_block: &PointerBlock,
-        right_block: &PointerBlock,
-        left_at: &Pointer,
-        right_at: &Pointer,
+        left_block: &AddressBase,
+        right_block: &AddressBase,
+        left_at: &Address,
+        right_at: &Address,
         assumptions: &crate::kernel::PureFactContext,
         mut left: impl FnMut(&MemoryRange) -> bool,
         mut right: impl FnMut(&MemoryRange) -> bool,
@@ -5134,7 +5126,7 @@ impl ResourceContext {
     #[cfg(debug_assertions)]
     fn cross_check_owned_candidates(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         candidates: &BTreeSet<ResourceEntryId>,
         mut accepts: impl FnMut(&MemoryRange) -> bool,
     ) {
@@ -5183,8 +5175,8 @@ impl ResourceContext {
     /// and composition authority still decide every accepted separation.
     fn owned_memory_candidates_at(
         &self,
-        block: &PointerBlock,
-        at: &Pointer,
+        block: &AddressBase,
+        at: &Address,
         assumptions: &PureFactContext,
     ) -> BTreeSet<ResourceEntryId> {
         let full_block = || {
@@ -5230,7 +5222,7 @@ impl ResourceContext {
                 ),
             }
         });
-        if at.block != *block || related {
+        if at.base != *block || related {
             return full_block();
         }
         crate::instrumentation::record_deterministic_work(2);
@@ -5256,14 +5248,14 @@ impl ResourceContext {
                 .storage
                 .index
                 .owned_memory_by_block
-                .get(&range.base().block)
+                .get(&range.base().base)
                 .into_iter()
                 .flat_map(ResourceEntryIds::iter)
                 .copied()
                 .inspect(|_| crate::instrumentation::record_deterministic_work(1))
                 .collect();
         }
-        self.owned_memory_candidates_at(&range.base().block, &range.start_pointer(), assumptions)
+        self.owned_memory_candidates_at(&range.base().base, &range.start_pointer(), assumptions)
     }
 
     /// The owned members of `block` filed under the root of `at`
@@ -5274,17 +5266,17 @@ impl ResourceContext {
     /// whole block. Charges one unit per root and per nominated member.
     fn owned_members_nominated_at(
         &self,
-        block: &PointerBlock,
-        at: &Pointer,
+        block: &AddressBase,
+        at: &Address,
         assumptions: &crate::kernel::PureFactContext,
     ) -> Option<BTreeSet<ResourceEntryId>> {
-        if &at.block != block {
+        if &at.base != block {
             return None;
         }
         let mut roots = BTreeSet::new();
         for spelling in std::iter::once(at).chain(assumptions.exact_pointer_aliases(at)) {
             crate::instrumentation::record_deterministic_work(1);
-            if &spelling.block != block {
+            if &spelling.base != block {
                 continue;
             }
             let root = memory_base_root(spelling);
@@ -5332,7 +5324,7 @@ impl ResourceContext {
         )) else {
             return false;
         };
-        if string_literal_blocks_may_alias(&left.base().block, &right.base().block) {
+        if string_literal_blocks_may_alias(&left.base().base, &right.base().base) {
             return false;
         }
         let holds = |child: &MemoryRange, entry: ResourceEntryId| {
@@ -5371,7 +5363,7 @@ impl ResourceContext {
                     .storage
                     .index
                     .memory_by_block
-                    .get(&child.base().block)?
+                    .get(&child.base().base)?
                     .iter()
                     .copied()
                     .find(|entry| holds(child, *entry));
@@ -5420,9 +5412,9 @@ impl ResourceContext {
             [other.base(), &start]
                 .into_iter()
                 .flat_map(|pointer| assumptions.pointer_equality_component(pointer))
-                .filter(|(alias, _)| alias.block != other.base().block)
+                .filter(|(alias, _)| alias.base != other.base().base)
                 .flat_map(|(alias, _)| {
-                    self.owned_memory_candidates_at(&alias.block, &alias, assumptions)
+                    self.owned_memory_candidates_at(&alias.base, &alias, assumptions)
                 })
                 .filter(|entry| contains(self.fact(*entry).resource(), &other_resource))
                 .collect::<BTreeSet<_>>()
@@ -5442,7 +5434,7 @@ impl ResourceContext {
     #[cfg(debug_assertions)]
     pub(in crate::kernel) fn owned_memory_ranges_separate_from_full_scan(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         other: &Resource,
         contains: impl Fn(&Resource, &Resource) -> bool,
     ) -> Vec<MemoryRange> {
@@ -5465,30 +5457,30 @@ impl ResourceContext {
                     return None;
                 }
                 let range = fact.memory_own_range()?;
-                (range.base().block == *block).then(|| range.clone())
+                (range.base().base == *block).then(|| range.clone())
             })
             .collect()
     }
 
     pub(in crate::kernel) fn proves_owned_pointers_separate_by(
         &self,
-        left: &Pointer,
-        right: &Pointer,
-        contains: impl Fn(&Pointer, &MemoryRange) -> bool,
+        left: &Address,
+        right: &Address,
+        contains: impl Fn(&Address, &MemoryRange) -> bool,
     ) -> bool {
         let Some(_guard) = ResourceCompositionQueryGuard::enter(
             CompositionQuery::PointersSeparate(left.clone(), right.clone()),
         ) else {
             return false;
         };
-        if string_literal_blocks_may_alias(&left.block, &right.block) {
+        if string_literal_blocks_may_alias(&left.base, &right.base) {
             return false;
         }
-        let containing = |pointer: &Pointer| {
+        let containing = |pointer: &Address| {
             self.storage
                 .index
                 .memory_by_block
-                .get(&pointer.block)?
+                .get(&pointer.base)?
                 .iter()
                 .copied()
                 .find(|entry| {
@@ -5509,9 +5501,9 @@ impl ResourceContext {
     pub(in crate::kernel) fn proves_owned_range_separate_from_pointer_shallow(
         &self,
         range: &MemoryRange,
-        pointer: &Pointer,
+        pointer: &Address,
         assumptions: &PureFactContext,
-        contains_pointer: impl Fn(&Pointer, &MemoryRange) -> bool,
+        contains_pointer: impl Fn(&Address, &MemoryRange) -> bool,
     ) -> bool {
         self.proves_owned_range_separate_from_pointer_with(
             range,
@@ -5529,12 +5521,12 @@ impl ResourceContext {
     pub(in crate::kernel) fn proves_owned_range_separate_from_pointer_with(
         &self,
         range: &MemoryRange,
-        pointer: &Pointer,
+        pointer: &Address,
         assumptions: &PureFactContext,
         range_contained: impl Fn(&MemoryRange, &MemoryRange) -> bool,
-        contains_pointer: impl Fn(&Pointer, &MemoryRange) -> bool,
+        contains_pointer: impl Fn(&Address, &MemoryRange) -> bool,
     ) -> bool {
-        if string_literal_blocks_may_alias(&range.base().block, &pointer.block) {
+        if string_literal_blocks_may_alias(&range.base().base, &pointer.base) {
             return false;
         }
         // A failed separation query must not ask every other parameter
@@ -5543,7 +5535,7 @@ impl ResourceContext {
         // membership predicates still decide which ones hold each operand.
         let range_candidates = self.owned_memory_candidates_for_range(range, assumptions);
         #[cfg(debug_assertions)]
-        self.cross_check_owned_candidates(&range.base().block, &range_candidates, |available| {
+        self.cross_check_owned_candidates(&range.base().base, &range_candidates, |available| {
             range_contained(range, available)
         });
         let range_position = range_candidates.into_iter().find(|entry| {
@@ -5555,9 +5547,9 @@ impl ResourceContext {
             return false;
         };
         let pointer_candidates =
-            self.owned_memory_candidates_at(&pointer.block, pointer, assumptions);
+            self.owned_memory_candidates_at(&pointer.base, pointer, assumptions);
         #[cfg(debug_assertions)]
-        self.cross_check_owned_candidates(&pointer.block, &pointer_candidates, |available| {
+        self.cross_check_owned_candidates(&pointer.base, &pointer_candidates, |available| {
             contains_pointer(pointer, available)
         });
         pointer_candidates.into_iter().any(|entry| {
@@ -5576,7 +5568,7 @@ impl ResourceContext {
                 let Resource::Memory(range) = fact.resource() else {
                     unreachable!("only memory has no member key")
                 };
-                index.memory_by_block.get(&range.base().block)
+                index.memory_by_block.get(&range.base().base)
             }
             Some(OwnedMemberKey::TrackedResource(resource)) => index.by_resource.get(&resource),
             Some(OwnedMemberKey::Instance(identity)) => index.instances.get(&identity),
@@ -6209,7 +6201,7 @@ impl ResourceContext {
     /// caller excludes itself, one representative of the other owners remains.
     fn constant_owned_neighbors(
         &self,
-        origin: &Pointer,
+        origin: &Address,
         start: i128,
         end: i128,
         members: usize,
@@ -6260,7 +6252,7 @@ impl ResourceContext {
     fn constant_owned_neighbors_at_exact_alias(
         &self,
         range: &MemoryRange,
-        alias: &Pointer,
+        alias: &Address,
     ) -> Option<BTreeSet<ResourceEntryId>> {
         let rebased = range.with_base(alias.clone());
         let (origin, start, end) = constant_memory_coordinates(&rebased)?;
@@ -6275,7 +6267,7 @@ impl ResourceContext {
 
     /// Cached key count proves absence without enumerating pointer aliases.
     /// A key exists exactly when its block has at least one memory owner.
-    fn has_owned_memory_outside_block(&self, block: &PointerBlock) -> bool {
+    fn has_owned_memory_outside_block(&self, block: &AddressBase) -> bool {
         let blocks = &self.storage.index.owned_memory_by_block;
         blocks.len() > usize::from(blocks.contains_key(block))
     }
@@ -6305,7 +6297,7 @@ impl ResourceContext {
     fn owned_validity_candidates(
         &self,
         range: &MemoryRange,
-        skip_block: Option<&PointerBlock>,
+        skip_block: Option<&AddressBase>,
         assumptions: &PureFactContext,
     ) -> BTreeSet<ResourceEntryId> {
         crate::kernel::search::ProofSearch::<ResourceContext>::ownership_validity_candidates(
@@ -6691,7 +6683,7 @@ impl ResourceContext {
     /// its direct cross-block aliases.
     fn cross_block_alias_error(
         &self,
-        base: &Pointer,
+        base: &Address,
         entries: &ResourceEntryIds,
         assumptions: &PureFactContext,
         use_separation: bool,
@@ -6701,7 +6693,7 @@ impl ResourceContext {
                 continue;
             }
             for alias in assumptions.exact_pointer_aliases(base) {
-                if alias.block == base.block {
+                if alias.base == base.base {
                     continue;
                 }
                 let Some(alias_entries) = self.storage.index.memory_by_base.get(alias) else {
@@ -6948,7 +6940,7 @@ impl ResourceContext {
 
     pub(in crate::kernel) fn permits_memory_read(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -6957,8 +6949,8 @@ impl ResourceContext {
 
     pub(in crate::kernel) fn permits_designated_memory_read(
         &self,
-        pointer: &Pointer,
-        provenance: Option<(&Pointer, Option<&Pointer>)>,
+        pointer: &Address,
+        provenance: Option<(&Address, Option<&Address>)>,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -6988,9 +6980,9 @@ impl ResourceContext {
     /// Zero bytes select intervals without claiming a readable element.
     pub(in crate::kernel) fn permits_designated_pointer_position(
         &self,
-        pointer: &Pointer,
-        operand: &Pointer,
-        provenance: (&Pointer, Option<&Pointer>),
+        pointer: &Address,
+        operand: &Address,
+        provenance: (&Address, Option<&Address>),
         assumptions: &PureFactContext,
     ) -> bool {
         let Some(entries) = self.read_access(pointer, 0, assumptions) else {
@@ -7074,8 +7066,8 @@ impl ResourceContext {
     /// not shorten an array copy's footprint.
     pub(in crate::kernel) fn permits_designated_storage_read(
         &self,
-        pointer: &Pointer,
-        provenance: Option<(&Pointer, Option<&Pointer>)>,
+        pointer: &Address,
+        provenance: Option<(&Address, Option<&Address>)>,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -7108,7 +7100,7 @@ impl ResourceContext {
     /// byte footprint remain ordinary resource entailment obligations.
     pub(in crate::kernel) fn owns_storage_access(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -7118,8 +7110,8 @@ impl ResourceContext {
 
     pub(in crate::kernel) fn owns_designated_storage_access(
         &self,
-        pointer: &Pointer,
-        provenance: (&Pointer, Option<&Pointer>),
+        pointer: &Address,
+        provenance: (&Address, Option<&Address>),
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -7131,7 +7123,7 @@ impl ResourceContext {
     /// at the address of the fact that supplies it.
     pub(in crate::kernel) fn without_owned_storage_access(
         self,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
@@ -7141,8 +7133,8 @@ impl ResourceContext {
 
     fn owned_storage_access(
         &self,
-        pointer: &Pointer,
-        provenance: Option<(&Pointer, Option<&Pointer>)>,
+        pointer: &Address,
+        provenance: Option<(&Address, Option<&Address>)>,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Option<ResourceFact> {
@@ -7169,7 +7161,7 @@ impl ResourceContext {
 
     pub(in crate::kernel) fn memory_write_range(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> Option<&MemoryRange> {
@@ -7178,8 +7170,8 @@ impl ResourceContext {
 
     pub(in crate::kernel) fn designated_memory_write_range(
         &self,
-        pointer: &Pointer,
-        provenance: Option<(&Pointer, Option<&Pointer>)>,
+        pointer: &Address,
+        provenance: Option<(&Address, Option<&Address>)>,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> Option<&MemoryRange> {
@@ -7207,7 +7199,7 @@ impl ResourceContext {
     /// candidate; the physical frame judgment checks its complete byte span.
     pub(in crate::kernel) fn owned_memory_member_covering_access(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> Option<(u64, &MemoryRange)> {
@@ -7510,7 +7502,7 @@ impl ResourceContext {
         &self,
         entries: &[ResourceEntryId],
         candidates: &super::memory_equality_index::MemoryFactCandidates,
-        base: &Pointer,
+        base: &Address,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         if entries.len() < 2
@@ -7784,7 +7776,7 @@ impl ResourceContext {
         for fact in seeds {
             match fact.resource() {
                 Resource::Memory(range) => {
-                    memory_blocks.insert(range.base().block.clone());
+                    memory_blocks.insert(range.base().base.clone());
                 }
                 resource => {
                     exact_resources.insert(resource.clone());
@@ -8389,7 +8381,7 @@ enum ResourceNormalizationKey {
     ExactShape(ResourceFamily, String, usize),
     /// A token or composite whose first argument is a pointer into a block
     /// proven distinct from every block but itself and a symbolic one.
-    ExactShapeAnchored(ResourceFamily, String, usize, PointerBlock),
+    ExactShapeAnchored(ResourceFamily, String, usize, AddressBase),
     /// Every anchored token or composite of one shape, for the unanchored
     /// facts that may still name the same block.
     ExactShapeAnchoredAll(ResourceFamily, String, usize),
@@ -8406,8 +8398,8 @@ enum ResourceNormalizationKey {
     // Native adjacency retains the exact base and width plus a compact,
     // state-sensitive endpoint fingerprint. These keys only propose pairs;
     // the existing merge rule remains authoritative (including collisions).
-    MemoryNativeStart(Pointer, u32, bool, WideNormalizationEndpointKey),
-    MemoryNativeEnd(Pointer, u32, bool, WideNormalizationEndpointKey),
+    MemoryNativeStart(Address, u32, bool, WideNormalizationEndpointKey),
+    MemoryNativeEnd(Address, u32, bool, WideNormalizationEndpointKey),
     MemoryByteStart(MemoryBaseRoot, bool, i64),
     MemoryByteEnd(MemoryBaseRoot, bool, i64),
 }
@@ -8444,8 +8436,8 @@ fn memory_normalization_position(
     };
     let root_position = || -> Option<SharedMachineIntegerTerm> {
         let (block, atom) = memory_base_root(range.base());
-        let root = Pointer {
-            block,
+        let root = Address {
+            base: block,
             offset: atom?,
         };
         if range.base() == &root {
@@ -8482,8 +8474,8 @@ fn memory_normalization_relative_byte_position(
     let elements = crate::kernel::assumptions::signed_index_constant(bound)?;
     let displacement = match memory_base_root(range.base()).1 {
         Some(offset) => {
-            let root = Pointer {
-                block: range.base().block.clone(),
+            let root = Address {
+                base: range.base().base.clone(),
                 offset,
             };
             let delta = range.base().exact_element_delta_from_base(&root, 1, None)?;
@@ -8870,12 +8862,12 @@ impl ResourceNormalizationIndex {
 }
 
 /// The C pointer arguments of an instance, as its index keys them.
-fn instance_pointer_arguments(instance: &ResourceInstance) -> impl Iterator<Item = &Pointer> {
+fn instance_pointer_arguments(instance: &ResourceInstance) -> impl Iterator<Item = &Address> {
     algebraic_pointer_arguments(&instance.arguments)
 }
 
 /// The C pointer arguments among `arguments`, in order.
-fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<Item = &Pointer> {
+fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<Item = &Address> {
     arguments.iter().filter_map(|argument| match argument {
         AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => Some(pointer.pointer()),
         _ => None,
@@ -8883,20 +8875,20 @@ fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<It
 }
 
 /// The block of a token or composite's first argument when that argument is
-/// a pointer into a heap or temporary block. `PointerBlock::proven_distinct`
+/// a pointer into a heap or temporary block. `AddressBase::proven_distinct`
 /// separates such a block from every block except itself and a symbolic one,
 /// with no assumption able to override it, so two facts anchored in
 /// different blocks can never have their first arguments proven equal and
 /// never normalize together.
-fn normalization_anchor(arguments: &[AlgebraicValue]) -> Option<&PointerBlock> {
+fn normalization_anchor(arguments: &[AlgebraicValue]) -> Option<&AddressBase> {
     match arguments.first() {
         Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer)))
             if matches!(
-                pointer.pointer().block,
-                PointerBlock::Heap(_) | PointerBlock::Temporary(_)
+                pointer.pointer().base,
+                AddressBase::Heap(_) | AddressBase::Temporary(_)
             ) =>
         {
-            Some(&pointer.pointer().block)
+            Some(&pointer.pointer().base)
         }
         _ => None,
     }
@@ -8925,7 +8917,7 @@ fn shape_root_key(
 pub(in crate::kernel) enum OwnedMemberKey {
     TrackedResource(Resource),
     Instance(Variable),
-    IteratedBlock(PointerBlock),
+    IteratedBlock(AddressBase),
     Shape(ResourceFamily, String, usize),
     /// A token or composite's shape and first-pointer root, the narrower
     /// bucket `direct_match_candidates_for` reads.
@@ -8947,9 +8939,7 @@ impl OwnedMemberKey {
             | Resource::MutexUse(_)
             | Resource::Publication(_)) => Self::TrackedResource(resource.clone()),
             Resource::Instance(instance) => Self::Instance(instance.identity),
-            Resource::Iterated(iterated) => {
-                Self::IteratedBlock(iterated.element_base.block.clone())
-            }
+            Resource::Iterated(iterated) => Self::IteratedBlock(iterated.element_base.base.clone()),
             Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 Self::Shape(fact.family(), name.clone(), arguments.len())
             }
@@ -9015,7 +9005,7 @@ impl OwnedMemberKey {
 }
 
 /// The first argument of a token or composite when it is a pointer.
-fn normalization_root_pointer(arguments: &[AlgebraicValue]) -> Option<&Pointer> {
+fn normalization_root_pointer(arguments: &[AlgebraicValue]) -> Option<&Address> {
     match arguments.first() {
         Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) => Some(pointer.pointer()),
         _ => None,
@@ -9027,10 +9017,10 @@ fn normalization_root_pointer(arguments: &[AlgebraicValue]) -> Option<&Pointer> 
 /// range at `pointer`, so the compositions `CompositionMemberIndex` lists
 /// under them are the ones that can answer it.
 pub(in crate::kernel) fn related_pointer_root_blocks(
-    pointer: &Pointer,
+    pointer: &Address,
     assumptions: &PureFactContext,
-) -> BTreeSet<PointerBlock> {
-    let mut blocks = BTreeSet::from([pointer.block.clone()]);
+) -> BTreeSet<AddressBase> {
+    let mut blocks = BTreeSet::from([pointer.base.clone()]);
     blocks.extend(
         related_pointer_roots(pointer, assumptions)
             .into_iter()
@@ -9042,7 +9032,7 @@ pub(in crate::kernel) fn related_pointer_root_blocks(
 /// The roots a normalization lookup visits for a pointer: its related roots
 /// and those of its recorded exact aliases.
 fn related_pointer_roots(
-    pointer: &Pointer,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> BTreeSet<MemoryBaseRoot> {
     // Aliases of one pointer usually have indexes in one equality class;
@@ -9206,7 +9196,7 @@ fn exact_resources_proven_equal(
             iterated_memories_proven_equal(left, right, assumptions)
         }
         (Resource::Publication(left), Resource::Publication(right)) => {
-            let pointer = |pointer: &Pointer| -> AlgebraicValue {
+            let pointer = |pointer: &Address| -> AlgebraicValue {
                 ProgramValue::pointer(pointer.clone()).into()
             };
             left.side == right.side
@@ -9543,9 +9533,9 @@ mod zero_quantity_graph_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let before =
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("zero-quantity", 8));
-        let pointer = |index| Pointer {
-            block: "zero-quantity".into(),
-            offset: PointerOffsetTerm::scale_int32(index, 4),
+        let pointer = |index| Address {
+            base: "zero-quantity".into(),
+            offset: AddressOffset::scale_int32(index, 4),
         };
         let load = |memory: &SharedMemory, index| {
             MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
@@ -9743,15 +9733,15 @@ pub(in crate::kernel) fn resources_structurally_separate(
 /// Equal-content string literal blocks may be merged by the C implementation.
 /// They provide shared, read-only access, so two such literal facts do not
 /// compete for mutable ownership and cannot establish separation by spelling.
-fn string_literal_blocks_may_alias(left: &PointerBlock, right: &PointerBlock) -> bool {
+fn string_literal_blocks_may_alias(left: &AddressBase, right: &AddressBase) -> bool {
     if left == right {
         return false;
     }
     matches!(
         (left, right),
         (
-            PointerBlock::StringLiteral { bytes: left, .. },
-            PointerBlock::StringLiteral { bytes: right, .. }
+            AddressBase::StringLiteral { bytes: left, .. },
+            AddressBase::StringLiteral { bytes: right, .. }
         ) if left == right
     )
 }
@@ -9766,7 +9756,7 @@ fn pair_validity_error_with_separation(
         && let (Some(left_range), Some(right_range)) =
             (left.memory_own_range(), right.memory_own_range())
     {
-        if string_literal_blocks_may_alias(&left_range.base().block, &right_range.base().block) {
+        if string_literal_blocks_may_alias(&left_range.base().base, &right_range.base().base) {
             return None;
         }
         return memory_ranges_proven_overlapping_ignoring_separation(
@@ -9821,7 +9811,7 @@ impl ResourceFamilyAlgebra for MemoryResourceAlgebra {
         let (Some(left), Some(right)) = (left.memory_own_range(), right.memory_own_range()) else {
             return None;
         };
-        if string_literal_blocks_may_alias(&left.base().block, &right.base().block) {
+        if string_literal_blocks_may_alias(&left.base().base, &right.base().base) {
             return None;
         }
         memory_ranges_proven_overlapping(left, right, assumptions).then(|| {
@@ -10315,7 +10305,7 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
                 right: Box::new(b.clone()),
             }) == Some(true)
     };
-    let pointer_equal = |a: &Pointer, b: &Pointer| {
+    let pointer_equal = |a: &Address, b: &Address| {
         crate::kernel::prelude::pointers_proven_equal_for_memory_resolution(a, b, assumptions)
     };
     left.element_width == right.element_width
@@ -10362,7 +10352,7 @@ pub(super) fn resource_fact_read_core_range(resource: &ResourceFact) -> Option<M
 
 fn memory_resource_fact_permits_read(
     resource: &ResourceFact,
-    pointer: &Pointer,
+    pointer: &Address,
     byte_width: u32,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -10383,7 +10373,7 @@ fn memory_resource_fact_permits_read(
 
 fn memory_resource_fact_permits_write(
     resource: &ResourceFact,
-    pointer: &Pointer,
+    pointer: &Address,
     byte_width: u32,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -10427,7 +10417,7 @@ fn memory_resource_fact_permits_write(
 #[cfg(test)]
 #[test]
 fn owned_cell_access_uses_transitive_graph_address_equality() {
-    let pointer = |id| Pointer::symbolic(Variable(id));
+    let pointer = |id| Address::symbolic(Variable(id));
     let (a, b, c, d) = (
         pointer(91_100),
         pointer(91_101),
@@ -10529,33 +10519,33 @@ fn range_endpoint_views_equal(
 /// two forms of one loaded base pointer are equal when the loaded cell
 /// is provably unchanged between their states.
 fn pointer_bases_equal_with_load_bridging(
-    left: &Pointer,
-    right: &Pointer,
+    left: &Address,
+    right: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
-    left.block == right.block
+    left.base == right.base
         && pointer_offsets_equal_with_load_bridging(&left.offset, &right.offset, assumptions)
 }
 
 fn pointer_offsets_equal_with_load_bridging(
-    left: &PointerOffsetTerm,
-    right: &PointerOffsetTerm,
+    left: &AddressOffset,
+    right: &AddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
     if left == right {
         return true;
     }
     match (left, right) {
-        (PointerOffsetTerm::Add(left_a, left_b), PointerOffsetTerm::Add(right_a, right_b)) => {
+        (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) => {
             pointer_offsets_equal_with_load_bridging(left_a, right_a, assumptions)
                 && pointer_offsets_equal_with_load_bridging(left_b, right_b, assumptions)
         }
         (
-            PointerOffsetTerm::Int32Scaled {
+            AddressOffset::Int32Scaled {
                 value: left_value,
                 byte_width: left_width,
             },
-            PointerOffsetTerm::Int32Scaled {
+            AddressOffset::Int32Scaled {
                 value: right_value,
                 byte_width: right_width,
             },
@@ -10728,8 +10718,8 @@ fn wide_memory_range_in_element_width(
 /// Bounds geometry shared by held ranges and opaque-domain coverage facts.
 /// This constructs no read authority and includes the one-past position.
 pub(in crate::kernel) fn pointer_formation_in_range(
-    pointer: &Pointer,
-    operand: &Pointer,
+    pointer: &Address,
+    operand: &Address,
     range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -10756,7 +10746,7 @@ pub(in crate::kernel) fn pointer_formation_in_range(
             })
         })
     };
-    let wide_window = |base: &Pointer, start: u64, end: u64| {
+    let wide_window = |base: &Address, start: u64, end: u64| {
         wide.as_ref().is_some_and(|(first, limit)| {
             if assumptions.decide(&wide_index_comparison(
                 CompareRelation::LessEqual,
@@ -10793,12 +10783,12 @@ pub(in crate::kernel) fn pointer_formation_in_range(
             }
         })
     };
-    let narrow_contains = |position: &Pointer, bytes| {
+    let narrow_contains = |position: &Address, bytes| {
         narrow
             .as_ref()
             .is_some_and(|range| assumptions.pointer_access_in_held_range(position, bytes, range))
     };
-    let contains = |position: &Pointer| {
+    let contains = |position: &Address| {
         narrow_contains(position, 0)
             || narrow_contains(position, 1)
             || wide_window(position, 0, 0)
@@ -10842,13 +10832,13 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
     if available.constant_start() != Some(0) {
         return false;
     }
-    fn split_constant(offset: &PointerOffsetTerm) -> Option<(PointerOffsetTerm, i64)> {
+    fn split_constant(offset: &AddressOffset) -> Option<(AddressOffset, i64)> {
         match offset {
-            PointerOffsetTerm::Constant(value) => Some((PointerOffsetTerm::Constant(0), *value)),
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Constant(value) => Some((AddressOffset::Constant(0), *value)),
+            AddressOffset::Add(left, right) => {
                 let (left, a) = split_constant(left)?;
                 let (right, b) = split_constant(right)?;
-                Some((PointerOffsetTerm::add(left, right), a.checked_add(b)?))
+                Some((AddressOffset::add(left, right), a.checked_add(b)?))
             }
             _ => Some((offset.clone(), 0)),
         }
@@ -11146,7 +11136,7 @@ fn wide_bounds_cover(
 /// guards to avoid wrapping. A suffix `(whole - count)[0..count]` additionally
 /// transports a checked observer value to the available endpoint.
 fn wide_memory_range_covers_window(
-    available_base: &Pointer,
+    available_base: &Address,
     available_width: u32,
     available_bounds: [MachineOperandView<'_>; 2],
     required: &MemoryRange,
@@ -11484,10 +11474,10 @@ fn constant_spans_contain(available: (i64, i64), delta: i64, required: (i64, i64
 /// The delta from `available`'s base to `required`'s, as an exact number of
 /// elements.
 ///
-/// `Pointer::element_index_from_base_with_width` answers with one modular
+/// `Address::element_index_from_base_with_width` answers with one modular
 /// term, which names the delta only modulo `2^32`; a containment conclusion
 /// reads the delta as a number, so it takes
-/// [`Pointer::exact_element_delta_from_base`] instead. That keeps the constant
+/// [`Address::exact_element_delta_from_base`] instead. That keeps the constant
 /// part in `i64` beside at most one symbolic index, and the index's *signed*
 /// value is part of the delta — which is why `exact_signed_constant` may be
 /// asked for it, and may not be asked for a residue.
@@ -11675,12 +11665,12 @@ fn exact_shifted_endpoint(
 fn native_wide_normalization_key(
     range: &MemoryRange,
 ) -> Option<(
-    Pointer,
+    Address,
     WideNormalizationEndpointKey,
     WideNormalizationEndpointKey,
 )> {
-    let shifted = matches!(&range.base().offset, PointerOffsetTerm::Add(_, last)
-        if matches!(last.as_ref(), PointerOffsetTerm::Int64Scaled { byte_width, unsigned: true, .. }
+    let shifted = matches!(&range.base().offset, AddressOffset::Add(_, last)
+        if matches!(last.as_ref(), AddressOffset::Int64Scaled { byte_width, unsigned: true, .. }
             if *byte_width == i64::from(range.element_width())));
     if !shifted {
         if let Some((start, end)) = range.wide_bounds() {
@@ -11725,17 +11715,17 @@ fn native_wide_normalization_key(
 /// a lookup key; the merge it proposes is checked by [`merge_memory_ranges`].
 pub(super) fn wide_normalization_form(
     range: &MemoryRange,
-) -> Option<(Pointer, SharedMachineIntegerTerm, SharedMachineIntegerTerm)> {
+) -> Option<(Address, SharedMachineIntegerTerm, SharedMachineIntegerTerm)> {
     let width = i64::from(range.element_width());
     let (root, index) = match &range.base().offset {
-        PointerOffsetTerm::Add(rest, last) => match last.as_ref() {
-            PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Add(rest, last) => match last.as_ref() {
+            AddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned: true,
             } if *byte_width == width => (
-                Pointer {
-                    block: range.base().block.clone(),
+                Address {
+                    base: range.base().base.clone(),
                     offset: rest.as_ref().clone(),
                 },
                 Some(value.clone()),
@@ -11816,7 +11806,7 @@ pub(in crate::kernel) fn shared_wide_range_bounds(
 /// additions do not wrap. No temporary native range is constructed for a check.
 fn shared_rebased_wide_bounds(
     range: &MemoryRange,
-    base: &Pointer,
+    base: &Address,
     assumptions: &PureFactContext,
 ) -> Option<(SharedMachineIntegerTerm, SharedMachineIntegerTerm)> {
     let index = assumptions.shared_wide_element_index_of_access(
@@ -12223,7 +12213,7 @@ fn memory_ranges_proven_overlapping_without_aliases(
 /// The same containment as [`memory_range_structurally_covers`], for a base
 /// delta the facts pin rather than the offsets alone.
 ///
-/// An element index is signed: `Pointer::offset_by_elements` sign-extends it
+/// An element index is signed: `Address::offset_by_elements` sign-extends it
 /// before scaling, so element `-1` of `p` is the element below `p`. This read
 /// both endpoints of both ranges through `as_const`, which answers `u32`, so a
 /// `-1` start arrived as `4294967295` and `p[-1..0]` — the element *before*
@@ -12342,12 +12332,12 @@ impl ResourceFact {
     }
 
     /// `allocation(base, bytes)` with a 32-bit byte count.
-    pub fn own_allocation(base: Pointer, bytes: impl Into<MachineTerm>) -> Self {
+    pub fn own_allocation(base: Address, bytes: impl Into<MachineTerm>) -> Self {
         Self::own_heap_allocation(base, &AllocationSize::int32(bytes))
     }
 
     /// `allocation(base, bytes)` with the byte count in the size's format.
-    pub(in crate::kernel) fn own_heap_allocation(base: Pointer, size: &AllocationSize) -> Self {
+    pub(in crate::kernel) fn own_heap_allocation(base: Address, size: &AllocationSize) -> Self {
         Self::own_designated_allocation(PointerValue::new(base, ProgramType::Int32Pointer), size)
     }
 
@@ -12391,7 +12381,7 @@ impl ResourceFact {
 
     /// The base and byte term of an owned `allocation` token of either
     /// size kind; [`Self::allocation_size`] also gives the kind.
-    pub fn allocation(&self) -> Option<(&Pointer, &MachineTerm)> {
+    pub fn allocation(&self) -> Option<(&Address, &MachineTerm)> {
         self.allocation_value()
             .map(|(base, bytes)| (base.pointer(), bytes))
     }
@@ -12427,12 +12417,12 @@ impl ResourceFact {
         Some((base, bytes))
     }
 
-    pub(in crate::kernel) fn may_refer_to_memory_block(&self, block: &PointerBlock) -> bool {
+    pub(in crate::kernel) fn may_refer_to_memory_block(&self, block: &AddressBase) -> bool {
         match self.resource() {
         Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => true,
-            Resource::Memory(range) => &range.base().block == block,
+            Resource::Memory(range) => &range.base().base == block,
             Resource::Composite { arguments, .. } => arguments.iter().any(
-                |argument| matches!(argument, AlgebraicValue::Program(ProgramValue::Pointer(pointer)) if &pointer.block == block),
+                |argument| matches!(argument, AlgebraicValue::Program(ProgramValue::Pointer(pointer)) if &pointer.base == block),
             ),
             Resource::Iterated(iterated) => iterated.blocks().contains(&block),
             Resource::Token { .. } | Resource::PopulationAuthority(_)
@@ -12442,7 +12432,7 @@ impl ResourceFact {
 
     pub(in crate::kernel) fn is_proven_separate_from_allocation(
         &self,
-        base: &Pointer,
+        base: &Address,
         bytes: &AllocationSize,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -12451,7 +12441,7 @@ impl ResourceFact {
 
     pub(in crate::kernel) fn is_proven_separate_from_allocation_with_element_width(
         &self,
-        base: &Pointer,
+        base: &Address,
         bytes: &AllocationSize,
         element_width: u32,
         assumptions: &PureFactContext,
@@ -12835,7 +12825,7 @@ fn merge_abutting_memory_ranges(
 /// wrapping difference preserves.
 fn memory_range_rebased(
     range: &MemoryRange,
-    base: &Pointer,
+    base: &Address,
     assumptions: &PureFactContext,
 ) -> Option<MemoryRange> {
     let (start, count) = constant_range_span(range)?;
@@ -12879,9 +12869,9 @@ mod support_removal_tests {
     fn frame_exchange_refuses_duplicate_authority_and_unrelated_histories() {
         let assumptions = PureFactContext::new();
         let authority = ResourceFact::own_memory(MemoryRange::new(
-            Pointer {
-                block: "frame".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "frame".into(),
+                offset: AddressOffset::Constant(0),
             },
             MachineTerm::constant(0),
             MachineTerm::constant(4),
@@ -12922,7 +12912,7 @@ mod support_removal_tests {
         let (a, b) = (Variable(90_010), Variable(90_011));
         let endpoint =
             |variable| MachineTerm::add(MachineTerm::Variable(variable), MachineTerm::constant(1));
-        let base = Pointer::symbolic(Variable(90_012));
+        let base = Address::symbolic(Variable(90_012));
         let left = MemoryRange::new(base.clone(), MachineTerm::constant(0), endpoint(a));
         let right = MemoryRange::new(base.clone(), endpoint(b), MachineTerm::constant(16));
         let premise = ConditionTerm::equal(MachineTerm::Variable(a), MachineTerm::Variable(b));
@@ -12945,9 +12935,9 @@ mod support_removal_tests {
     #[test]
     fn concrete_interval_rejects_exclusive_end_outside_shared_coordinate_space() {
         let range = MemoryRange::new(
-            Pointer {
-                block: "boundary".into(),
-                offset: PointerOffsetTerm::Constant(1),
+            Address {
+                base: "boundary".into(),
+                offset: AddressOffset::Constant(1),
             },
             MachineTerm::constant((i32::MAX - 1) as u32),
             MachineTerm::constant(i32::MAX as u32),
@@ -12957,13 +12947,13 @@ mod support_removal_tests {
 
     #[test]
     fn memory_load_footprints_use_checked_state_widths() {
-        let short_pointer = Pointer {
-            block: "typed-loads".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let short_pointer = Address {
+            base: "typed-loads".into(),
+            offset: AddressOffset::Constant(0),
         };
-        let wide_pointer = Pointer {
-            block: "typed-loads".into(),
-            offset: PointerOffsetTerm::Constant(8),
+        let wide_pointer = Address {
+            base: "typed-loads".into(),
+            offset: AddressOffset::Constant(8),
         };
         let memory = SymbolicMemory::new()
             .with_block("typed-loads", 24)
@@ -12983,9 +12973,9 @@ mod support_removal_tests {
             crate::kernel::LoadKind::Float64,
         );
         let fact = ResourceFact::view_memory(MemoryRange::new(
-            Pointer {
-                block: "result".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "result".into(),
+                offset: AddressOffset::Constant(0),
             },
             short_load,
             wide_load,
@@ -13007,9 +12997,9 @@ mod support_removal_tests {
 
     #[test]
     fn memory_load_footprints_reject_mixed_source_states() {
-        let pointer = Pointer {
-            block: "mixed-loads".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "mixed-loads".into(),
+            offset: AddressOffset::Constant(0),
         };
         let first = SymbolicMemory::new()
             .with_block("mixed-loads", 8)
@@ -13026,9 +13016,9 @@ mod support_removal_tests {
             crate::kernel::LoadKind::Int32,
         );
         let fact = ResourceFact::view_memory(MemoryRange::new(
-            Pointer {
-                block: "mixed-result".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "mixed-result".into(),
+                offset: AddressOffset::Constant(0),
             },
             first_load,
             second_load,
@@ -13041,9 +13031,9 @@ mod support_removal_tests {
 
     #[test]
     fn memory_load_footprint_depth_is_bounded_conservatively() {
-        let pointer = Pointer {
-            block: "deep-load".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "deep-load".into(),
+            offset: AddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new()
             .with_block("deep-load", 8)
@@ -13063,9 +13053,9 @@ mod support_removal_tests {
             );
         }
         let fact = ResourceFact::view_memory(MemoryRange::new(
-            Pointer {
-                block: "deep-result".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "deep-result".into(),
+                offset: AddressOffset::Constant(0),
             },
             MachineTerm::constant(0),
             nested,
@@ -13173,11 +13163,11 @@ mod support_removal_tests {
 #[cfg(test)]
 #[test]
 fn symbolic_struct_coverage_uses_exact_element_indices() {
-    let base = Pointer::symbolic(Variable(99_300));
+    let base = Address::symbolic(Variable(99_300));
     let i = MachineTerm::Variable(Variable(99_301));
     let n = MachineTerm::Variable(Variable(99_302));
     let owned = MemoryRange::new_with_element_width(base.clone(), 0u32.into(), n.clone(), 16);
-    let required = |pointer: Pointer, bytes| {
+    let required = |pointer: Address, bytes| {
         MemoryRange::new_with_element_width(pointer, 0u32.into(), bytes, 1)
     };
     let lower = PureFactContext::new().assume_condition(
@@ -13231,11 +13221,11 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
         &first
     ));
     // A displacement of 2^32 elements must never wrap back into element zero.
-    let distant = Pointer {
-        block: base.block.clone(),
-        offset: PointerOffsetTerm::add(
+    let distant = Address {
+        base: base.base.clone(),
+        offset: AddressOffset::add(
             base.offset.clone(),
-            PointerOffsetTerm::Constant((1i64 << 32) * 16 + 8),
+            AddressOffset::Constant((1i64 << 32) * 16 + 8),
         ),
     };
     assert!(!memory_range_covers(
@@ -13250,18 +13240,18 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
 fn absent_view_queries_ignore_owned_frames_and_track_view_lifecycle() {
     let _session = crate::kernel::VerificationSession::enter();
     let assumptions = PureFactContext::new();
-    let pointer = Pointer {
-        block: "local:selected-view".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "local:selected-view".into(),
+        offset: AddressOffset::Constant(0),
     };
     let required = ResourceFact::view_memory(MemoryRange::new(pointer, 0u32.into(), 1u32.into()));
     for size in [0, 16, 64, 256] {
         let mut owned = ResourceContext::new();
         for index in 0..size {
             owned = owned.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-                Pointer {
-                    block: format!("local:unrelated-view-owner-{index}").into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: format!("local:unrelated-view-owner-{index}").into(),
+                    offset: AddressOffset::Constant(0),
                 },
                 0u32.into(),
                 1u32.into(),
@@ -13303,10 +13293,10 @@ fn absent_view_queries_ignore_owned_frames_and_track_view_lifecycle() {
 mod related_pointer_root_tests {
     use super::*;
 
-    fn external(index: u64) -> Pointer {
-        Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scaled_int32_node(
+    fn external(index: u64) -> Address {
+        Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scaled_int32_node(
                 MachineTerm::Variable(Variable(986_400 + index)),
                 4,
             ),
@@ -13315,7 +13305,7 @@ mod related_pointer_root_tests {
 
     /// `count` pointers each stated equal to one base, as `requires q == b`
     /// states them.
-    fn aliases_of_base(count: u64) -> (Pointer, PureFactContext) {
+    fn aliases_of_base(count: u64) -> (Address, PureFactContext) {
         let base = external(0);
         let assumptions = (1..=count).fold(PureFactContext::new(), |assumptions, index| {
             assumptions.assume_condition(
@@ -13329,7 +13319,7 @@ mod related_pointer_root_tests {
     /// The roots as each alias computes them on its own, the reference the
     /// shared walk must reproduce.
     fn roots_alias_by_alias(
-        pointer: &Pointer,
+        pointer: &Address,
         assumptions: &PureFactContext,
     ) -> BTreeSet<MemoryBaseRoot> {
         let mut roots = related_memory_base_roots(pointer, assumptions);
@@ -13407,9 +13397,9 @@ mod shared_wide_bound_tests {
     #[test]
     fn mixed_endpoint_coverage_needs_the_complete_bound_without_export() {
         let _session = VerificationSession::enter();
-        let base = Pointer {
-            block: "shared_wide_bound".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: "shared_wide_bound".into(),
+            offset: AddressOffset::Constant(0),
         };
         let length = MachineTerm::Variable(Variable(1018501));
         let low = MachineTerm::uint32_from_64(length.clone());
@@ -13444,9 +13434,9 @@ mod shared_wide_bound_tests {
         assert!(!wide_memory_range_covers(&narrow, &wide, &truncated));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
 
-        let pointer = Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::scale_int64(length, 1, true),
+        let pointer = Address {
+            base: base.base.clone(),
+            offset: AddressOffset::scale_int64(length, 1, true),
         };
         let exports = KernelTermExport::machine_export_count();
         assert!(pointer_formation_in_range(
@@ -13459,9 +13449,9 @@ mod shared_wide_bound_tests {
     #[test]
     fn wide_split_and_merge_keep_full_width_output_endpoints() {
         let _session = VerificationSession::enter();
-        let base = Pointer {
-            block: "wide_bound_outputs".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: "wide_bound_outputs".into(),
+            offset: AddressOffset::Constant(0),
         };
         let big = 1u64 << 40;
         let range = |start, end| {
@@ -13500,8 +13490,8 @@ mod constructed_normalization_tests {
 
     #[test]
     fn written_normalization_keeps_both_facts_when_a_merge_needs_an_alias() {
-        let pointer = Pointer::symbolic(Variable(8_853_001));
-        let alias = Pointer::symbolic(Variable(8_853_002));
+        let pointer = Address::symbolic(Variable(8_853_001));
+        let alias = Address::symbolic(Variable(8_853_002));
         let facts = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_equal(pointer.clone(), alias.clone()),
             true,

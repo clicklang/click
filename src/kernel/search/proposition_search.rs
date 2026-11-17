@@ -1892,14 +1892,14 @@ mod condition_premise_tests {
 
     #[test]
     fn condition_component_keeps_load_address_and_state_variables() {
-        let pointer = Pointer {
-            block: "cell".into(),
-            offset: PointerOffsetTerm::scaled_int32_node(term(40), 4),
+        let pointer = Address {
+            base: "cell".into(),
+            offset: AddressOffset::scaled_int32_node(term(40), 4),
         };
         let memory = SymbolicMemory::new().with_block("cell", 64).store(
-            Pointer {
-                block: "cell".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "cell".into(),
+                offset: AddressOffset::Constant(0),
             },
             ProgramValue::Int32(term(70)),
         );

@@ -10,11 +10,11 @@ fn int32_load_late_merge_and_fork_work_scales_with_affected_applications() {
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = memory();
-        let indexed = |index, suffix| Pointer {
-            block: "array".into(),
-            offset: PointerOffsetTerm::Add(
+        let indexed = |index, suffix| Address {
+            base: "array".into(),
+            offset: AddressOffset::Add(
                 Box::new(address(index).offset),
-                Box::new(PointerOffsetTerm::Variable(Variable(100 + suffix))),
+                Box::new(AddressOffset::Variable(Variable(100 + suffix))),
             ),
         };
         let mut graph = EqualityGraph::default();
@@ -63,9 +63,9 @@ fn int32_load_nested_registration_and_late_closure_are_iterative_and_scale() {
             for _ in 0..size {
                 value = load(
                     &memory,
-                    &Pointer {
-                        block: "array".into(),
-                        offset: PointerOffsetTerm::scale_int32(value, 4),
+                    &Address {
+                        base: "array".into(),
+                        offset: AddressOffset::scale_int32(value, 4),
                     },
                     4,
                 );
@@ -109,17 +109,17 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
                 crate::kernel::LoadKind::Int32,
             )
         };
-        let backing = Pointer {
-            block: owner.block.clone(),
-            offset: PointerOffsetTerm::scale_int32(load(&execution), 4),
+        let backing = Address {
+            base: owner.base.clone(),
+            offset: AddressOffset::scale_int32(load(&execution), 4),
         };
         let after = execution.clone().store(
             backing.offset_by_int32_elements(var(88)),
             ProgramValue::Int32(7u32.into()),
         );
-        let selected = Pointer {
-            block: owner.block.clone(),
-            offset: PointerOffsetTerm::scale_int32(load(&after), 4),
+        let selected = Address {
+            base: owner.base.clone(),
+            offset: AddressOffset::scale_int32(load(&after), 4),
         };
         let mut graph = EqualityGraph::default();
         for extra in 0..size {
@@ -150,11 +150,11 @@ fn nested_named_pointer_reads_ignore_unrelated_definitions() {
                 .symbolic_pointer_load(&address(950_000 + index), ProgramType::Int32Pointer);
         }
         let field = address(940_061);
-        let arena = Pointer::symbolic(Variable(940_062));
+        let arena = Address::symbolic(Variable(940_062));
         let mut graph = EqualityGraph::default();
-        graph.add_equality(&Pointer::loaded_value(&memory, &field), &arena);
-        let named_read = |address: &Pointer| {
-            let value = Pointer::loaded(&load(&memory, address, 8)).unwrap();
+        graph.add_equality(&Address::loaded_value(&memory, &field), &arena);
+        let named_read = |address: &Address| {
+            let value = Address::loaded(&load(&memory, address, 8)).unwrap();
             graph.register_pointer_read_definition(&value, &memory, address);
             value
         };

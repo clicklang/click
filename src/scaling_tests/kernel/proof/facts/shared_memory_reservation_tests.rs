@@ -12,9 +12,9 @@ use super::*;
 #[test]
 fn facts_over_one_memory_reserve_its_variables_once() {
     let samples = [16u64, 64, 256].map(|size| {
-        let pointer = |index: u64| Pointer {
-            block: PointerBlock::ExternalObject(Variable(7_100_000 + index)),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = |index: u64| Address {
+            base: AddressBase::ExternalObject(Variable(7_100_000 + index)),
+            offset: AddressOffset::Constant(0),
         };
         let memory = (0..size).fold(SymbolicMemory::new(), |memory, index| {
             memory.store(
@@ -50,9 +50,9 @@ fn facts_over_one_memory_reserve_its_variables_once() {
 #[test]
 fn facts_over_one_memory_walk_its_bound_variables_once() {
     let samples = [16u64, 64, 256].map(|size| {
-        let pointer = |index: u64| Pointer {
-            block: PointerBlock::ExternalObject(Variable(7_300_000 + index)),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = |index: u64| Address {
+            base: AddressBase::ExternalObject(Variable(7_300_000 + index)),
+            offset: AddressOffset::Constant(0),
         };
         let memory = (0..size).fold(SymbolicMemory::new(), |memory, index| {
             memory.store(

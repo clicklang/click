@@ -241,12 +241,12 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
         let mut memory = SymbolicMemory::new();
         let mut resources = ResourceContext::new();
         for index in 0..count {
-            let pointer = Pointer {
-                block: format!("global:unrelated:{index}").into(),
-                offset: PointerOffsetTerm::Constant(0),
+            let pointer = Address {
+                base: format!("global:unrelated:{index}").into(),
+                offset: AddressOffset::Constant(0),
             };
             memory = memory
-                .with_block(pointer.block.clone(), 4)
+                .with_block(pointer.base.clone(), 4)
                 .store(pointer.clone(), uint32(index));
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(
                 MemoryRange::new_with_element_width(pointer, 0.into(), 4.into(), 1),

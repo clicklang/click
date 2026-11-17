@@ -46,9 +46,9 @@ fn float_read_construction_keeps_growing_shared_addresses_and_states() {
             memory = memory.with_block(format!("float-unrelated-{i}"), 8);
         }
         let memory = intern_memory(memory);
-        let address = SharedPointerAddress::new(
-            SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(999921))),
-            KernelPointerOffset::Int32Scaled {
+        let address = SharedAddress::new(
+            SharedAddressBase::import(&AddressBase::Symbolic(Variable(999921))),
+            KernelAddressOffset::Int32Scaled {
                 value: index,
                 byte_width: 4,
             }

@@ -2,9 +2,9 @@ use super::*;
 
 fn read_pointer(id: u64) -> PointerValue {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let cell = Pointer::symbolic(Variable(id));
+    let cell = Address::symbolic(Variable(id));
     PointerValue::from_read(
-        Pointer::loaded_value(&memory, &cell),
+        Address::loaded_value(&memory, &cell),
         ProgramType::Int32Pointer,
         &memory,
         &cell,
@@ -14,9 +14,9 @@ fn read_pointer(id: u64) -> PointerValue {
 #[test]
 fn a_full_pointer_equality_connects_a_read_bounds_to_owned_root_storage() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer {
-        block: PointerBlock::Heap(981_000),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Heap(981_000),
+        offset: AddressOffset::Constant(0),
     };
     let stored = PointerValue::new(base.clone(), ProgramType::Int32Pointer);
     let read = read_pointer(981_001);
@@ -49,9 +49,9 @@ fn a_full_pointer_equality_connects_a_read_bounds_to_owned_root_storage() {
 #[test]
 fn a_known_subobject_bounds_does_not_grant_root_storage_access() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer {
-        block: PointerBlock::Heap(981_002),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Heap(981_002),
+        offset: AddressOffset::Constant(0),
     };
     let bounded = PointerValue::new(base.clone(), ProgramType::Int32Pointer).with_bounds(Some(
         SubobjectBounds {

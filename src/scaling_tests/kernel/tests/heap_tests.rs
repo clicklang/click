@@ -7,11 +7,11 @@ use super::*;
 #[test]
 fn aliased_read_validity_lookup_ignores_unrelated_facts() {
     let memory = SymbolicMemory::new();
-    let pointer = Pointer {
-        block: PointerBlock::Heap(941_000),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Heap(941_000),
+        offset: AddressOffset::Constant(0),
     };
-    let alias = Pointer::symbolic(Variable(941_001));
+    let alias = Address::symbolic(Variable(941_001));
     let validity = Proposition::MemoryReadDefined {
         memory: memory.clone(),
         pointer: pointer.offset_by_bytes(4),
@@ -27,9 +27,9 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
         for index in 1..=count {
             unrelated = unrelated.assume_proposition(Proposition::MemoryReadDefined {
                 memory: memory.clone(),
-                pointer: Pointer {
-                    block: PointerBlock::Heap(942_000 + index),
-                    offset: PointerOffsetTerm::Constant(0),
+                pointer: Address {
+                    base: AddressBase::Heap(942_000 + index),
+                    offset: AddressOffset::Constant(0),
                 },
                 value_type: ProgramType::Int32,
             });
@@ -55,9 +55,9 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
 #[test]
 fn read_validity_lookup_ignores_unrelated_cells() {
     let memory = SymbolicMemory::new();
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let validity = Proposition::MemoryReadDefined {
         memory: memory.clone(),
@@ -70,9 +70,9 @@ fn read_validity_lookup_ignores_unrelated_cells() {
         for index in 1..=count {
             unrelated = unrelated.assume_proposition(Proposition::MemoryReadDefined {
                 memory: memory.clone(),
-                pointer: Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Constant(index * 4),
+                pointer: Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(index * 4),
                 },
                 value_type: ProgramType::Int32,
             });
@@ -93,18 +93,18 @@ fn read_validity_lookup_ignores_unrelated_cells() {
 
 #[test]
 fn unknown_read_validity_does_not_resolve_unrelated_cells() {
-    let target = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(770)), 4),
+    let target = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(770)), 4),
     };
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.store(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Constant(index * 4),
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(index * 4),
                 },
                 int32(index as u32),
             );
@@ -123,13 +123,13 @@ fn unknown_read_validity_does_not_resolve_unrelated_cells() {
 
 #[test]
 fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
-    let address = Pointer {
-        block: PointerBlock::Heap(9100),
-        offset: PointerOffsetTerm::Constant(0),
+    let address = Address {
+        base: AddressBase::Heap(9100),
+        offset: AddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
-        let mut memory = SymbolicMemory::new().with_block(address.block.clone(), 4);
+        let mut memory = SymbolicMemory::new().with_block(address.base.clone(), 4);
         let mut assumptions = PureFactContext::new();
         for index in 0..count {
             assumptions = assumptions.assume_proposition(Proposition::MemoryReadDefined {
@@ -138,25 +138,25 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
                 value_type: ProgramType::Int32,
             });
             memory = memory.store(
-                Pointer {
-                    block: PointerBlock::Heap(9200 + index),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Heap(9200 + index),
+                    offset: AddressOffset::Constant(0),
                 },
                 int32(1),
             );
         }
-        let request = Pointer {
-            block: PointerBlock::Symbolic(Variable(9300)),
-            offset: PointerOffsetTerm::Constant(0),
+        let request = Address {
+            base: AddressBase::Symbolic(Variable(9300)),
+            offset: AddressOffset::Constant(0),
         };
         let pending =
             memory.with_pending_heap_allocation(request.clone(), AllocationSize::int32(4), false);
         // C assigns malloc's result before branching on it. That intervening
         // store prevents failure from merely interning back to the old memory.
         let pending = pending.store(
-            Pointer {
-                block: "local:result".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "local:result".into(),
+                offset: AddressOffset::Constant(0),
             },
             ProgramValue::pointer(request.clone()),
         );
@@ -205,7 +205,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
 #[test]
 fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer::symbolic(Variable(948_000));
+    let base = Address::symbolic(Variable(948_000));
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
         let mut resources = ResourceContext::new()
@@ -217,9 +217,9 @@ fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
             )));
         for index in 0..count {
             resources = resources.unchecked_with_fact(ResourceFact::own_allocation(
-                Pointer {
-                    block: PointerBlock::Heap(948_100 + index),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Heap(948_100 + index),
+                    offset: AddressOffset::Constant(0),
                 },
                 16,
             ));
@@ -269,16 +269,16 @@ fn realloc_reference_check_ignores_unrelated_resource_tokens() {
         let mut resources = state.resources().clone();
         for index in 0..count {
             resources = resources.unchecked_with_fact(ResourceFact::own_allocation(
-                Pointer {
-                    block: PointerBlock::Heap(949_100 + index),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Heap(949_100 + index),
+                    offset: AddressOffset::Constant(0),
                 },
                 16,
             ));
         }
         let state = state
             .with_resource_context(resources)
-            .with_local("q", ProgramValue::pointer(Pointer::null()));
+            .with_local("q", ProgramValue::pointer(Address::null()));
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_execution_statement_paths(
                 &state,
@@ -325,14 +325,14 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.with_pending_typed_heap_allocation(
-                Pointer::symbolic(Variable(950_000 + index)),
+                Address::symbolic(Variable(950_000 + index)),
                 AllocationSize::int32(8),
                 false,
                 Some(class.clone()),
             );
         }
         let ((next, resolved), work) = crate::instrumentation::measure_deterministic_work(|| {
-            let base = Pointer::symbolic(Variable(960_000));
+            let base = Address::symbolic(Variable(960_000));
             let next = memory.clone().with_pending_typed_heap_allocation(
                 base.clone(),
                 AllocationSize::int32(8),
@@ -359,10 +359,10 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
 
 #[test]
 fn free_ownership_lookup_ignores_unrelated_resources() {
-    let base = Pointer::symbolic(Variable(946_000));
-    let cell = Pointer::symbolic(Variable(946_001));
+    let base = Address::symbolic(Variable(946_000));
+    let cell = Address::symbolic(Variable(946_001));
     let range =
-        |p: Pointer| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
+        |p: Address| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
@@ -373,7 +373,7 @@ fn free_ownership_lookup_ignores_unrelated_resources() {
         let mut ownership = ResourceContext::new().unchecked_with_fact(range(cell.clone()));
         for index in 0..count {
             ownership =
-                ownership.unchecked_with_fact(range(Pointer::symbolic(Variable(947_000 + index))));
+                ownership.unchecked_with_fact(range(Address::symbolic(Variable(947_000 + index))));
         }
         let (freed, work) = crate::instrumentation::measure_deterministic_work(|| {
             memory
@@ -394,15 +394,15 @@ fn sequential_frees_preserving_one_owned_cell_stay_near_linear() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let cell = Pointer::symbolic(Variable(948_000));
+        let cell = Address::symbolic(Variable(948_000));
         let range =
-            |p: Pointer| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
+            |p: Address| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
         let mut memory = SymbolicMemory::new().store(cell.clone(), int32(7));
         let mut ownership = ResourceContext::new().unchecked_with_fact(range(cell.clone()));
         let bases = (0..count)
-            .map(|index| Pointer {
-                block: PointerBlock::Heap(949_000 + index),
-                offset: PointerOffsetTerm::Constant(0),
+            .map(|index| Address {
+                base: AddressBase::Heap(949_000 + index),
+                offset: AddressOffset::Constant(0),
             })
             .collect::<Vec<_>>();
         for base in &bases {
@@ -438,16 +438,16 @@ fn sequential_free_pointer_frames_stay_near_linear() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let cell = Pointer::symbolic(Variable(951_000));
-        let value = Pointer::symbolic(Variable(951_001));
+        let cell = Address::symbolic(Variable(951_000));
+        let value = Address::symbolic(Variable(951_001));
         let mut memory = SymbolicMemory::new().store(cell.clone(), ProgramValue::pointer(value));
         let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new_with_element_width(cell.clone(), 0u32.into(), 1u32.into(), 8),
         ));
         let bases = (0..count)
-            .map(|index| Pointer {
-                block: PointerBlock::Heap(952_000 + index),
-                offset: PointerOffsetTerm::Constant(0),
+            .map(|index| Address {
+                base: AddressBase::Heap(952_000 + index),
+                offset: AddressOffset::Constant(0),
             })
             .collect::<Vec<_>>();
         for base in &bases {
@@ -504,25 +504,25 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
     let mut samples = Vec::new();
     for count in [1, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer {
-            block: "global:validity-anchor".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: "global:validity-anchor".into(),
+            offset: AddressOffset::Constant(0),
         };
-        let query = Pointer::symbolic(Variable(960_000));
+        let query = Address::symbolic(Variable(960_000));
         let mut memory = SymbolicMemory::new()
-            .with_block(base.block.clone(), 8)
+            .with_block(base.base.clone(), 8)
             .store(base.offset_by_bytes(4), int32(7));
         let mut facts = PureFactContext::new();
         for index in 0..count {
-            let alias = Pointer::symbolic(Variable(960_000 + index));
+            let alias = Address::symbolic(Variable(960_000 + index));
             facts = facts.assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::pointer_equal(alias, base.clone()),
                 true,
             ));
             memory = memory.store(
-                Pointer {
-                    block: PointerBlock::Heap(970_000 + index),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Heap(970_000 + index),
+                    offset: AddressOffset::Constant(0),
                 },
                 int32(9),
             );

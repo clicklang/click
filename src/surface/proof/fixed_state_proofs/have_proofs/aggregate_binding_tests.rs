@@ -5,9 +5,9 @@ use crate::kernel::{
 };
 
 fn aggregate_entry(count: u32) -> (ExecutionState, BTreeMap<String, ProgramValue>) {
-    let source = Pointer {
-        block: "local:caller_packet".into(),
-        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+    let source = Address {
+        base: "local:caller_packet".into(),
+        offset: crate::kernel::AddressOffset::Constant(0),
     };
     let layout = AggregateLayout::new(
         8,
@@ -34,7 +34,7 @@ fn aggregate_entry(count: u32) -> (ExecutionState, BTreeMap<String, ProgramValue
         program_return(program_void_value()),
     );
     let caller =
-        ExecutionState::new().with_memory(SymbolicMemory::new().with_block(source.block, 8));
+        ExecutionState::new().with_memory(SymbolicMemory::new().with_block(source.base, 8));
     let arguments = values
         .values()
         .cloned()

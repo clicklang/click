@@ -211,9 +211,9 @@ mod certificate_tests {
 
     #[test]
     fn local_index_surface_candidates_reject_nested_loads() {
-        let pointer = Pointer {
-            block: "data".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "data".into(),
+            offset: AddressOffset::Constant(0),
         };
         let load = MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
@@ -298,9 +298,9 @@ mod certificate_tests {
     fn state_index_finds_a_late_exact_selector_inside_a_quantifier() {
         let early_memory = SymbolicMemory::new().with_block("early", 4);
         let target_memory = SymbolicMemory::new().with_block("target", 4);
-        let pointer = Pointer {
-            block: "target".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "target".into(),
+            offset: AddressOffset::Constant(0),
         };
         let kernel = Proposition::ForAll {
             name: Default::default(),
@@ -351,9 +351,9 @@ mod certificate_tests {
     #[test]
     fn missing_state_form_reports_a_concise_indexed_failure() {
         let target_memory = SymbolicMemory::new().with_block("target", 4);
-        let pointer = Pointer {
-            block: "target".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "target".into(),
+            offset: AddressOffset::Constant(0),
         };
         let kernel = Proposition::ConditionIs(
             ConditionTerm::Compare {

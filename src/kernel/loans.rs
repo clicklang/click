@@ -17,7 +17,7 @@ use return_backing::PermittedDescriptions;
 
 use super::functions::CheckedResourceFact;
 use super::primitives::{
-    MemorySplitOrigins, OwnedMemberKey, Pointer, PointerBlock, ResourceMemoryIntervalNode,
+    Address, AddressBase, MemorySplitOrigins, OwnedMemberKey, ResourceMemoryIntervalNode,
     memory_interval_ancestors, memory_interval_nodes, memory_range_is_proven_empty,
     memory_ranges_proven_overlapping,
 };
@@ -184,7 +184,7 @@ pub(crate) struct LoanViewBindings {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum BoundViewKey {
-    Memory(Pointer),
+    Memory(Address),
     Other(OwnedMemberKey),
 }
 
@@ -460,7 +460,7 @@ impl LoanViewBindings {
 /// another block, so an unproved separation from it is not a conflict, as for
 /// any symbolic view (docs/internals/stable-views.md, "Footprints").
 fn ledger_interval_nodes(range: &MemoryRange) -> Option<Vec<ResourceMemoryIntervalNode>> {
-    if matches!(range.base().block, PointerBlock::LoadedPointer(_)) {
+    if matches!(range.base().base, AddressBase::LoadedPointer(_)) {
         return None;
     }
     memory_interval_nodes(range)
@@ -525,15 +525,15 @@ fn symbolic_memory_ranges(ranges: &[MemoryRange]) -> Vec<MemoryRange> {
 }
 
 fn with_unindexed_memory(
-    map: &PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<MemoryRange>>>,
+    map: &PersistentMap<AddressBase, PersistentMap<LoanId, Vec<MemoryRange>>>,
     loan: LoanId,
     ranges: &[MemoryRange],
-) -> PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<MemoryRange>>> {
+) -> PersistentMap<AddressBase, PersistentMap<LoanId, Vec<MemoryRange>>> {
     let mut map = map.clone();
-    let mut by_block: BTreeMap<PointerBlock, Vec<MemoryRange>> = BTreeMap::new();
+    let mut by_block: BTreeMap<AddressBase, Vec<MemoryRange>> = BTreeMap::new();
     for range in ranges {
         by_block
-            .entry(range.base().block.clone())
+            .entry(range.base().base.clone())
             .or_default()
             .push(range.clone());
     }
@@ -545,13 +545,13 @@ fn with_unindexed_memory(
 }
 
 fn without_unindexed_memory(
-    map: &PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<MemoryRange>>>,
+    map: &PersistentMap<AddressBase, PersistentMap<LoanId, Vec<MemoryRange>>>,
     loan: LoanId,
     ranges: &[MemoryRange],
-) -> PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<MemoryRange>>> {
+) -> PersistentMap<AddressBase, PersistentMap<LoanId, Vec<MemoryRange>>> {
     let mut map = map.clone();
     for range in ranges {
-        let block = &range.base().block;
+        let block = &range.base().base;
         let Some(bucket) = map.get(block) else {
             continue;
         };
@@ -932,7 +932,7 @@ struct LoanLedgerData {
     /// entries in its own block, and the entries are bounded by the active
     /// loans with symbolic footprints, which a modular proof creates only
     /// from its contract's explicit view clauses and its own calls.
-    unindexed_memory: PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<MemoryRange>>>,
+    unindexed_memory: PersistentMap<AddressBase, PersistentMap<LoanId, Vec<MemoryRange>>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -942,14 +942,14 @@ struct LoanLedgerStorage {
 }
 
 type CacheProtectionIndex =
-    PersistentMap<(Pointer, ResourceMemoryIntervalNode), PersistentSet<LoanId>>;
+    PersistentMap<(Address, ResourceMemoryIntervalNode), PersistentSet<LoanId>>;
 
 fn cache_protection_nodes(
     range: &MemoryRange,
-) -> Option<(Pointer, Vec<ResourceMemoryIntervalNode>)> {
+) -> Option<(Address, Vec<ResourceMemoryIntervalNode>)> {
     let (origin, start, end) = super::primitives::constant_memory_coordinates(range)?;
     let nodes = super::primitives::memory_interval_nodes_for_coordinates(
-        &origin.block,
+        &origin.base,
         i64::try_from(start).ok()?,
         i64::try_from(end).ok()?,
     )?;
@@ -958,7 +958,7 @@ fn cache_protection_nodes(
 
 fn update_cache_protection_bucket(
     index: &mut CacheProtectionIndex,
-    key: (Pointer, ResourceMemoryIntervalNode),
+    key: (Address, ResourceMemoryIntervalNode),
     loan: LoanId,
     insert: bool,
 ) {
@@ -1018,7 +1018,7 @@ fn update_indexed_memory_range(
     }
     let index = update_active_memory_index(&data.active_memory_index, range, loan, insert)?;
     let subtree = update_active_memory_subtree(&data.active_memory_subtree, range, loan, insert)?;
-    let nonlocal = if range.base().block.is_local_block() {
+    let nonlocal = if range.base().base.is_local_block() {
         data.active_nonlocal_indexed_ranges
     } else if insert {
         data.active_nonlocal_indexed_ranges
@@ -1539,7 +1539,7 @@ enum LoanTransitionEvidence {
     BorrowedMutexUseRoot {
         holder: LoanParticipantId,
         support: ResourceOccurrenceId,
-        mutex: super::Pointer,
+        mutex: super::Address,
         protected: Option<ResourceDescription>,
         initialization: super::mutexes::MutexInitializationId,
         scope: LoanScopeId,
@@ -1803,17 +1803,17 @@ impl LocalViewBacking {
     ) -> Option<Self> {
         let range = viewed.memory_range()?;
         if !viewed.is_view()
-            || !range.base().block.is_local_block()
-            || !memory.has_block(&range.base().block)
+            || !range.base().base.is_local_block()
+            || !memory.has_block(&range.base().base)
             || memory.is_ended_local_address(range.base())
         {
             return None;
         }
-        let bytes = memory.block_size(&range.base().block)?.clone();
+        let bytes = memory.block_size(&range.base().base)?.clone();
         let entire = MemoryRange::new_with_element_width(
-            super::Pointer {
-                block: range.base().block.clone(),
-                offset: super::PointerOffsetTerm::Constant(0),
+            super::Address {
+                base: range.base().base.clone(),
+                offset: super::AddressOffset::Constant(0),
             },
             0.into(),
             bytes,
@@ -4949,7 +4949,7 @@ impl LoanLedger {
         &self,
         holder: LoanParticipantId,
         support: ResourceOccurrenceId,
-        mutex: super::Pointer,
+        mutex: super::Address,
     ) -> Result<(Self, MutexUseContractInput), LoanRefusal> {
         self.borrowed_mutex_use_input_with_protected(holder, support, mutex, None)
     }
@@ -4958,7 +4958,7 @@ impl LoanLedger {
         &self,
         holder: LoanParticipantId,
         support: ResourceOccurrenceId,
-        mutex: super::Pointer,
+        mutex: super::Address,
         protected: Option<ResourceDescription>,
     ) -> Result<(Self, MutexUseContractInput), LoanRefusal> {
         let arena = self.storage.data.arena;
@@ -6210,10 +6210,10 @@ impl LoanLedger {
         }
         let mut checked_blocks = BTreeSet::new();
         for alias in memory_range_aliases(range, assumptions) {
-            if !checked_blocks.insert(alias.base().block.clone()) {
+            if !checked_blocks.insert(alias.base().base.clone()) {
                 continue;
             }
-            let Some(block) = self.storage.data.unindexed_memory.get(&alias.base().block) else {
+            let Some(block) = self.storage.data.unindexed_memory.get(&alias.base().base) else {
                 continue;
             };
             for (loan, protected_ranges) in block.iter() {
@@ -6252,7 +6252,7 @@ impl LoanLedger {
             return false;
         };
         let root = ResourceMemoryIntervalNode {
-            block: origin.block.clone(),
+            block: origin.base.clone(),
             level: 32,
             start: 0,
         };
@@ -7297,7 +7297,7 @@ impl LoanLedger {
             }
             for range in symbolic_memory_ranges(&loan.memory_backing) {
                 expected_unindexed
-                    .entry((range.base().block.clone(), *loan_id))
+                    .entry((range.base().base.clone(), *loan_id))
                     .or_insert_with(Vec::new)
                     .push(range);
             }
@@ -7308,7 +7308,7 @@ impl LoanLedger {
                 return false;
             }
             for (loan_id, ranges) in bucket.iter() {
-                if ranges.is_empty() || ranges.iter().any(|range| &range.base().block != block) {
+                if ranges.is_empty() || ranges.iter().any(|range| &range.base().base != block) {
                     return false;
                 }
                 actual_unindexed.insert((block.clone(), *loan_id), ranges.clone());
@@ -7342,7 +7342,7 @@ impl LoanLedger {
             })
             .flat_map(|(_, loan)| &loan.memory_backing)
             .filter(|range| {
-                !range.base().block.is_local_block() && ledger_interval_nodes(range).is_some()
+                !range.base().base.is_local_block() && ledger_interval_nodes(range).is_some()
             })
             .count();
         if data.active_nonlocal_indexed_ranges != expected_nonlocal_indexed_ranges {

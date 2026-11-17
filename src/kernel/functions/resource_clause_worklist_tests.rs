@@ -2,9 +2,9 @@ use super::*;
 
 #[test]
 fn memory_waiter_requires_a_whole_range_supplier() {
-    let base = Pointer {
-        block: PointerBlock::Concrete("resource-clause-adjacent".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Concrete("resource-clause-adjacent".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let wide = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
@@ -79,9 +79,9 @@ fn memory_waiter_requires_a_whole_range_supplier() {
 /// `MemoryBlock` index would produce `size * size` visits here.
 #[test]
 fn same_block_disjoint_waiters_use_interval_candidates() {
-    let base = Pointer {
-        block: PointerBlock::Concrete("resource-clause-disjoint".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Concrete("resource-clause-disjoint".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let samples = [4_usize, 8, 16, 32]
             .into_iter()
@@ -130,14 +130,14 @@ fn same_block_disjoint_waiters_use_interval_candidates() {
 
 #[test]
 fn comparable_constant_bases_share_interval_space() {
-    let block = PointerBlock::Concrete("resource-clause-base-aware".to_string());
-    let dependency_base = Pointer {
-        block: block.clone(),
-        offset: PointerOffsetTerm::Constant(0),
+    let block = AddressBase::Concrete("resource-clause-base-aware".to_string());
+    let dependency_base = Address {
+        base: block.clone(),
+        offset: AddressOffset::Constant(0),
     };
-    let supplied_base = Pointer {
-        block,
-        offset: PointerOffsetTerm::Constant(8),
+    let supplied_base = Address {
+        base: block,
+        offset: AddressOffset::Constant(8),
     };
     let dependency = ResourceFact::view_memory(MemoryRange::new(
         dependency_base,
@@ -160,9 +160,9 @@ fn comparable_constant_bases_share_interval_space() {
 
 #[test]
 fn concrete_memory_waiters_share_physical_byte_space_across_widths() {
-    let base = Pointer {
-        block: PointerBlock::Concrete("resource-clause-byte-space".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Concrete("resource-clause-byte-space".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let dependency = ResourceFact::view_memory(MemoryRange::new_with_element_width(
         base.clone(),
@@ -187,9 +187,9 @@ fn concrete_memory_waiters_share_physical_byte_space_across_widths() {
 
 #[test]
 fn symbolic_memory_waiters_keep_conservative_block_fallback() {
-    let base = Pointer {
-        block: PointerBlock::Concrete("resource-clause-symbolic".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Concrete("resource-clause-symbolic".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let dependency = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
@@ -212,9 +212,9 @@ fn symbolic_memory_waiters_keep_conservative_block_fallback() {
 
 #[test]
 fn concrete_waiter_block_fallback_registers_and_unregisters_symmetrically() {
-    let base = Pointer {
-        block: PointerBlock::Concrete("resource-clause-fallback-lifetime".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Concrete("resource-clause-fallback-lifetime".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let dependency = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),

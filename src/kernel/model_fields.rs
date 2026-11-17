@@ -187,7 +187,7 @@ pub(crate) fn model_field_surface(variable: Variable) -> Option<String> {
 #[derive(Clone, Debug)]
 pub(crate) struct PopulationEntryCount {
     pub(crate) family: Arc<str>,
-    pub(crate) anchor: crate::kernel::Pointer,
+    pub(crate) anchor: crate::kernel::Address,
     pub(crate) wildcards: usize,
     /// An exact member's arguments, anchor first, for the entry count of
     /// one member, `old(count(R(a, k)))`; `None` for a population's total.

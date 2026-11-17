@@ -54,7 +54,7 @@ fn unused_creation_ledgers_compare_equal_and_used_ones_do_not() {
     assert!(!left.equal_up_to_unused_creation_ledgers(&ExecutionState::new()));
 
     let mut base = ExecutionState::new().with_local("frame:holder", int32(0));
-    let block = base.locals.slot("frame:holder").unwrap().block.clone();
+    let block = base.locals.slot("frame:holder").unwrap().base.clone();
     base.set_memory(SymbolicMemory::new().with_block(block.clone(), 4));
     let unused = base.clone().with_population_creation_tracking();
     let mut used = base.with_population_creation_tracking();
@@ -76,7 +76,7 @@ fn ended_automatic_storage_retires_creation_evidence() {
         let mut state = ExecutionState::new()
             .with_local(name, int32(0))
             .with_population_creation_tracking();
-        let block = state.locals.slot(name).unwrap().block.clone();
+        let block = state.locals.slot(name).unwrap().base.clone();
         state.set_memory(SymbolicMemory::new().with_block(block.clone(), 4));
         state.record_population_storage_creation(block.clone());
         assert!(

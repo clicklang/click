@@ -47,7 +47,7 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
             let state = ExecutionState::new()
                 .with_population_creation_tracking()
                 .with_memory(with_initialized_cells(
-                    SymbolicMemory::new().with_block(pointer.block.clone(), 16384),
+                    SymbolicMemory::new().with_block(pointer.base.clone(), 16384),
                     &pointer,
                     1024,
                 ))
@@ -147,7 +147,7 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
         let state = ExecutionState::new()
             .with_population_creation_tracking()
             .with_memory(with_initialized_cells(
-                SymbolicMemory::new().with_block(pointer.block.clone(), 16384),
+                SymbolicMemory::new().with_block(pointer.base.clone(), 16384),
                 &pointer,
                 1024,
             ))
@@ -250,9 +250,9 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
 /// unrelated owners. Each query forks the same prepared residual frame.
 #[test]
 fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
-    let symbolic = |id| Pointer {
-        block: PointerBlock::Symbolic(Variable(id)),
-        offset: PointerOffsetTerm::Constant(0),
+    let symbolic = |id| Address {
+        base: AddressBase::Symbolic(Variable(id)),
+        offset: AddressOffset::Constant(0),
     };
     let own = |base| ResourceFact::own_memory(MemoryRange::new(base, 0u32.into(), 4u32.into()));
     for axis in ["aliases", "frame"] {
@@ -323,7 +323,7 @@ fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
 }
 
 fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
-    let symbolic = |id| Pointer::symbolic(Variable(id));
+    let symbolic = |id| Address::symbolic(Variable(id));
     let mut samples = Vec::new();
     for count in [4_u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
@@ -362,7 +362,7 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
         resources.synchronize_memory_equalities(&facts);
         let state = ExecutionState::new()
             .with_population_creation_tracking()
-            .with_memory(SymbolicMemory::new().with_block(selected.block.clone(), 8))
+            .with_memory(SymbolicMemory::new().with_block(selected.base.clone(), 8))
             .with_resource_context(resources);
         let output = ResourceSpec::owned_memory(MemorySegment::new(
             crate::kernel::program_expression::variable("p"),

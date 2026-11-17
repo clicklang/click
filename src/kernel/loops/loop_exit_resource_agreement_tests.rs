@@ -2,9 +2,9 @@ use super::*;
 
 fn range(block: &str) -> MemoryRange {
     MemoryRange::new_with_element_width(
-        Pointer {
-            block: PointerBlock::Concrete(block.to_string()),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::Concrete(block.to_string()),
+            offset: AddressOffset::Constant(0),
         },
         MachineTerm::constant(0),
         MachineTerm::constant(1),

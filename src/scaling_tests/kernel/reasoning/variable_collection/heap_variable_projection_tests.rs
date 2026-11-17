@@ -8,9 +8,9 @@ use super::*;
 fn heap_variable_counts_follow_local_edits_and_keep_siblings_isolated() {
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = |id| Pointer {
-            block: PointerBlock::Symbolic(Variable(id)),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = |id| Address {
+            base: AddressBase::Symbolic(Variable(id)),
+            offset: AddressOffset::Constant(0),
         };
         let mut heap = crate::kernel::primitives::HeapMemory::default();
         for id in 1..=size {
@@ -98,7 +98,7 @@ fn shared_machine_variable_collection_keeps_state_deferral_and_load_addresses() 
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let load = crate::kernel::eval::load_variable_for_exact_cell(
         &memory,
-        &Pointer::symbolic(address),
+        &Address::symbolic(address),
         crate::kernel::LoadKind::Int32,
         4,
     );

@@ -22,7 +22,7 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
     };
     let pointer = pointer.pointer();
     let memory = SymbolicMemory::new()
-        .with_block(pointer.block.clone(), 8)
+        .with_block(pointer.base.clone(), 8)
         .store(
             pointer.offset_by_elements(1.into(), 4),
             crate::kernel::int32(0),

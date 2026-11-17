@@ -731,7 +731,7 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
 /// canonical form are the same on check.
 fn rewrite_through_load_variable(
     term: &MachineTerm,
-    rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
+    rewrite_pointer: &impl Fn(&Address) -> Address,
 ) -> Option<MachineTerm> {
     let MachineTerm::Variable(variable) = term else {
         return None;
@@ -769,24 +769,24 @@ fn rewrite_through_load_variable(
 
 /// Read definitions selected by one address substitution. Cache by read
 /// identity, not by a deep memory or address key; misses are shared too.
-type PointerReadRewrites = RefCell<HashMap<PointerBlock, Option<Pointer>>>;
+type PointerReadRewrites = RefCell<HashMap<AddressBase, Option<Address>>>;
 
 /// Substitute through the selected read-definition chain, then rebuild it
 /// outward. The explicit stack is bounded by those definitions, not a depth
 /// cutoff. A repeated identity refuses a cyclic definition without looping.
-fn rewrite_through_loaded_pointer_block(
-    pointer: &Pointer,
-    rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
+fn rewrite_through_loaded_address_base(
+    pointer: &Address,
+    rewrite_pointer: &impl Fn(&Address) -> Address,
     cache: &PointerReadRewrites,
-) -> Option<Pointer> {
+) -> Option<Address> {
     fn name_read(
         memory: SharedMemory,
-        address: Pointer,
+        address: Address,
         kind: Option<LoadKind>,
-    ) -> Option<Pointer> {
+    ) -> Option<Address> {
         crate::instrumentation::record_deterministic_work(1);
         let Some(kind) = kind else {
-            return Some(Pointer::version_read(&memory, &address));
+            return Some(Address::version_read(&memory, &address));
         };
         // Name the legacy scalar-carrier read, too: folding stored bits can
         // discard the rewritten read or cease to be a pointer carrier.
@@ -798,7 +798,7 @@ fn rewrite_through_loaded_pointer_block(
             }
             _ => return None,
         };
-        Some(Pointer::symbolic(variable))
+        Some(Address::symbolic(variable))
     }
 
     let mut cursor = pointer.clone();
@@ -806,19 +806,19 @@ fn rewrite_through_loaded_pointer_block(
     let mut frames = Vec::new();
     let mut result = loop {
         crate::instrumentation::record_deterministic_work(1);
-        let cached = cache.borrow().get(&cursor.block).cloned();
+        let cached = cache.borrow().get(&cursor.base).cloned();
         if let Some(cached) = cached {
             break cached;
         }
-        if !seen.insert(cursor.block.clone()) {
+        if !seen.insert(cursor.base.clone()) {
             break None;
         }
-        let definition = match &cursor.block {
-            PointerBlock::LoadedPointer(identity) => {
+        let definition = match &cursor.base {
+            AddressBase::LoadedPointer(identity) => {
                 crate::kernel::eval::registered_pointer_load(*identity)
                     .map(|(memory, address)| (memory, address, None))
             }
-            PointerBlock::Symbolic(variable) if crate::kernel::is_load_variable(variable) => {
+            AddressBase::Symbolic(variable) if crate::kernel::is_load_variable(variable) => {
                 crate::kernel::registered_load_origin_for_variable(variable)
                     .or_else(|| crate::kernel::registered_load_for_variable(variable))
                     .zip(crate::kernel::registered_load_kind_for_variable(variable))
@@ -827,34 +827,34 @@ fn rewrite_through_loaded_pointer_block(
             _ => None,
         };
         let Some((memory, address, kind)) = definition else {
-            cache.borrow_mut().insert(cursor.block, None);
+            cache.borrow_mut().insert(cursor.base, None);
             break None;
         };
         let rewritten = rewrite_pointer(&address);
         if rewritten != address {
             let named = name_read(memory, rewritten, kind);
-            cache.borrow_mut().insert(cursor.block, named.clone());
+            cache.borrow_mut().insert(cursor.base, named.clone());
             break named;
         }
-        frames.push((cursor.block, memory, kind, address.offset.clone()));
+        frames.push((cursor.base, memory, kind, address.offset.clone()));
         cursor = address;
     };
     for (block, memory, kind, displacement) in frames.into_iter().rev() {
         result = result.and_then(|address| {
             name_read(
                 memory,
-                Pointer {
-                    block: address.block,
-                    offset: PointerOffsetTerm::add(address.offset, displacement),
+                Address {
+                    base: address.base,
+                    offset: AddressOffset::add(address.offset, displacement),
                 },
                 kind,
             )
         });
         cache.borrow_mut().insert(block, result.clone());
     }
-    result.map(|base| Pointer {
-        block: base.block,
-        offset: PointerOffsetTerm::add(base.offset, pointer.offset.clone()),
+    result.map(|base| Address {
+        base: base.base,
+        offset: AddressOffset::add(base.offset, pointer.offset.clone()),
     })
 }
 
@@ -865,11 +865,11 @@ fn rewrite_through_loaded_pointer_block(
 /// Neither path searches an ambient proof state or changes load states.
 fn pointer_congruence_rewrite(
     goal: &Proposition,
-    left: &Pointer,
-    right: &Pointer,
+    left: &Address,
+    right: &Address,
 ) -> Option<Proposition> {
-    let mut rewrite = if let PointerBlock::Symbolic(variable) = left.block
-        && left.offset == PointerOffsetTerm::Constant(0)
+    let mut rewrite = if let AddressBase::Symbolic(variable) = left.base
+        && left.offset == AddressOffset::Constant(0)
     {
         crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_address_variable(
             variable, right,
@@ -887,8 +887,8 @@ fn pointer_congruence_rewrite(
 
 fn pointer_offset_congruence_rewrite(
     goal: &Proposition,
-    left: &PointerOffsetTerm,
-    right: &PointerOffsetTerm,
+    left: &AddressOffset,
+    right: &AddressOffset,
 ) -> Option<Proposition> {
     let mut rewrite = super::term_rewrite::TermRewrite::for_pointer_offset_exact(left, right);
     rewrite.enable_registered_load_resolution();
@@ -932,13 +932,13 @@ impl From<AtomicRewriteRefusal> for String {
 // observed by a numeric equality. Keep the pointer and mask themselves
 // exact; no pointer-value or memory-state identity is substituted.
 fn same_address_observation(left: MachineOperandView<'_>, right: MachineOperandView<'_>) -> bool {
-    fn pointer(term: MachineOperandView<'_>) -> Option<&Pointer> {
+    fn pointer(term: MachineOperandView<'_>) -> Option<&Address> {
         match term {
             MachineOperandView::Legacy(term) => term.address_pointer(),
             MachineOperandView::Shared(term) => term.machine_conversion_leaf()?.address_pointer(),
         }
     }
-    fn key(term: MachineOperandView<'_>) -> Option<(&Pointer, Option<u64>)> {
+    fn key(term: MachineOperandView<'_>) -> Option<(&Address, Option<u64>)> {
         if let Some(pointer) = pointer(term) {
             return Some((pointer, None));
         }
@@ -957,7 +957,7 @@ fn same_address_observation(left: MachineOperandView<'_>, right: MachineOperandV
     matches!((key(left), key(right)), (Some(a), Some(b)) if a == b)
 }
 /// Rebuild only a selected read's address, preserving its observation width.
-fn rewrite_read_address(term: &MachineTerm, address: Pointer) -> MachineTerm {
+fn rewrite_read_address(term: &MachineTerm, address: Address) -> MachineTerm {
     let read = crate::kernel::eval::scalar_read_observation(
         crate::kernel::MachineOperandView::Legacy(term),
     )
@@ -967,23 +967,23 @@ fn rewrite_read_address(term: &MachineTerm, address: Pointer) -> MachineTerm {
 
 fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> MachineTerm {
     fn rewrite_offset(
-        offset: &PointerOffsetTerm,
+        offset: &AddressOffset,
         from: &MachineTerm,
         to: &MachineTerm,
-    ) -> PointerOffsetTerm {
+    ) -> AddressOffset {
         match offset {
-            PointerOffsetTerm::Add(left, right) => PointerOffsetTerm::add(
+            AddressOffset::Add(left, right) => AddressOffset::add(
                 rewrite_offset(left, from, to),
                 rewrite_offset(right, from, to),
             ),
-            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+            AddressOffset::Int32Scaled { value, byte_width } => {
                 crate::kernel::memory_history::rebuild_scaled_pointer_index(
                     rewrite_pointer_index(value, from, to),
                     *byte_width,
                     None,
                 )
             }
-            PointerOffsetTerm::Int64Scaled {
+            AddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
@@ -992,7 +992,7 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
                 *byte_width,
                 Some(*unsigned),
             ),
-            PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => offset.clone(),
+            AddressOffset::Constant(_) | AddressOffset::Variable(_) => offset.clone(),
         }
     }
     if term == from
@@ -1112,20 +1112,20 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
         // expression: exact equality substitution is congruent there too.
         MachineTerm::MemoryLoad(_, pointer, _) => rewrite_read_address(
             term,
-            Pointer {
-                block: pointer.block.clone(),
+            Address {
+                base: pointer.base.clone(),
                 offset: rewrite_offset(&pointer.offset, from, to),
             },
         ),
         MachineTerm::PointerAddress(pointer, class) => MachineTerm::object_pointer_address(
-            Pointer {
-                block: pointer.block.clone(),
+            Address {
+                base: pointer.base.clone(),
                 offset: rewrite_offset(&pointer.offset, from, to),
             },
             class.class(),
         ),
-        MachineTerm::Variable(_) => rewrite_through_load_variable(term, &|pointer| Pointer {
-            block: pointer.block.clone(),
+        MachineTerm::Variable(_) => rewrite_through_load_variable(term, &|pointer| Address {
+            base: pointer.base.clone(),
             offset: rewrite_offset(&pointer.offset, from, to),
         })
         .unwrap_or_else(|| term.clone()),
@@ -1302,7 +1302,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
     fn rewrite_program_value(
         value: &ProgramValue,
         rewrite_term: &impl Fn(&MachineTerm) -> MachineTerm,
-        rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
+        rewrite_pointer: &impl Fn(&Address) -> Address,
         rewrite_shared: &impl Fn(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
     ) -> ProgramValue {
         match value {
@@ -1347,7 +1347,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
     fn rewrite_algebraic(
         term: &AlgebraicTerm,
         rewrite_term: &impl Fn(&MachineTerm) -> MachineTerm,
-        rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
+        rewrite_pointer: &impl Fn(&Address) -> Address,
         rewrite_shared: &impl Fn(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
     ) -> AlgebraicTerm {
         let node = match &term.node {
@@ -1470,7 +1470,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
     fn rewrite_algebraic_value(
         value: &AlgebraicValue,
         rewrite_term: &impl Fn(&MachineTerm) -> MachineTerm,
-        rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
+        rewrite_pointer: &impl Fn(&Address) -> Address,
         rewrite_shared: &impl Fn(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
     ) -> AlgebraicValue {
         match value {
@@ -1545,10 +1545,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
         && let Some((left, right)) = condition.pointer_offset_sides()
     {
         fn rewrite_offset(
-            offset: &PointerOffsetTerm,
-            left: &PointerOffsetTerm,
-            right: &PointerOffsetTerm,
-        ) -> PointerOffsetTerm {
+            offset: &AddressOffset,
+            left: &AddressOffset,
+            right: &AddressOffset,
+        ) -> AddressOffset {
             if offset == left
                 // Load variables and load terms of one atom are
                 // the same occurrence.
@@ -1557,7 +1557,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 return right.clone();
             }
             match offset {
-                PointerOffsetTerm::Add(first, second) => PointerOffsetTerm::add(
+                AddressOffset::Add(first, second) => AddressOffset::add(
                     rewrite_offset(first, left, right),
                     rewrite_offset(second, left, right),
                 ),
@@ -1565,7 +1565,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 // names the rewritten offset (`p->q->cells[i]` under
                 // `p->q == r`): rewrite through it, as through the outer
                 // load. Each level is the registered address of one load.
-                PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                AddressOffset::Int32Scaled { value, byte_width } => {
                     let rewritten = crate::kernel::memory_history::map_shared_pointer_index(
                         value,
                         |leaf| Some(rewrite_term_offset(leaf, left, right)),
@@ -1583,7 +1583,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         )
                     }
                 }
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned,
@@ -1605,16 +1605,16 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         )
                     }
                 }
-                PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => offset.clone(),
+                AddressOffset::Constant(_) | AddressOffset::Variable(_) => offset.clone(),
             }
         }
         fn rewrite_term_offset(
             term: &MachineTerm,
-            left: &PointerOffsetTerm,
-            right: &PointerOffsetTerm,
+            left: &AddressOffset,
+            right: &AddressOffset,
         ) -> MachineTerm {
-            let rewrite_pointer = |pointer: &Pointer| Pointer {
-                block: pointer.block.clone(),
+            let rewrite_pointer = |pointer: &Address| Address {
+                base: pointer.base.clone(),
                 offset: rewrite_offset(&pointer.offset, left, right),
             };
             match term {
@@ -1664,8 +1664,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
         fn rewrite_resource_offset(
             resource: &Resource,
-            left: &PointerOffsetTerm,
-            right: &PointerOffsetTerm,
+            left: &AddressOffset,
+            right: &AddressOffset,
         ) -> Resource {
             match resource {
                 Resource::Star(pair) => Resource::star(
@@ -1674,8 +1674,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 ),
                 Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp => resource.clone(),
                 Resource::Memory(range) => Resource::Memory(range.with_bounds(
-                    Pointer {
-                        block: range.base().block.clone(),
+                    Address {
+                        base: range.base().base.clone(),
                         offset: rewrite_offset(&range.base().offset, left, right),
                     },
                     rewrite_term_offset(range.bound_terms().0, left, right),
@@ -1704,8 +1704,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 // PointerEqual carrier. Substitute the selected address while
                 // retaining the exact state and readable byte span.
                 memory: memory.clone(),
-                base: Pointer {
-                    block: base.block.clone(),
+                base: Address {
+                    base: base.base.clone(),
                     offset: rewrite_offset(&base.offset, left, right),
                 },
                 bytes: bytes.clone(),
@@ -1725,8 +1725,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 ConditionTerm::PointerEqual(goal_left, goal_right),
                 expected,
             ) => {
-                let rewrite_pointer = |pointer: &Pointer| Pointer {
-                    block: pointer.block.clone(),
+                let rewrite_pointer = |pointer: &Address| Address {
+                    base: pointer.base.clone(),
                     offset: rewrite_offset(&pointer.offset, left, right),
                 };
                 Proposition::ConditionIs(
@@ -1836,8 +1836,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             },
             Proposition::Equal(Term::Algebraic(goal_left), Term::Algebraic(goal_right)) => {
                 let rewrite_term = |term: &MachineTerm| rewrite_term_offset(term, left, right);
-                let rewrite_pointer = |pointer: &Pointer| Pointer {
-                    block: pointer.block.clone(),
+                let rewrite_pointer = |pointer: &Address| Address {
+                    base: pointer.base.clone(),
                     offset: rewrite_offset(&pointer.offset, left, right),
                 };
                 let rewrite_shared = |value: &SharedMachineIntegerTerm| {
@@ -1887,19 +1887,19 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // Match one structural suffix; do not search the ambient pointer
         // equalities or change the memory state of a load.
         fn offset_after_base(
-            address: &PointerOffsetTerm,
-            base: &PointerOffsetTerm,
-        ) -> Option<PointerOffsetTerm> {
-            if base == &PointerOffsetTerm::Constant(0) {
+            address: &AddressOffset,
+            base: &AddressOffset,
+        ) -> Option<AddressOffset> {
+            if base == &AddressOffset::Constant(0) {
                 return Some(address.clone());
             }
             // Keep parent links rather than cloning a growing suffix at each
             // Add node. A deeply nested address costs one walk plus one
             // construction of the matched displacement.
             struct OffsetNode<'a> {
-                offset: &'a PointerOffsetTerm,
+                offset: &'a AddressOffset,
                 parent: Option<usize>,
-                sibling: Option<&'a PointerOffsetTerm>,
+                sibling: Option<&'a AddressOffset>,
             }
             let mut nodes = vec![OffsetNode {
                 offset: address,
@@ -1910,13 +1910,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
             while let Some(index) = pending.pop() {
                 let offset = nodes[index].offset;
                 let difference = if offset == base {
-                    Some(PointerOffsetTerm::Constant(0))
-                } else if let (
-                    PointerOffsetTerm::Constant(address),
-                    PointerOffsetTerm::Constant(base),
-                ) = (offset, base)
+                    Some(AddressOffset::Constant(0))
+                } else if let (AddressOffset::Constant(address), AddressOffset::Constant(base)) =
+                    (offset, base)
                 {
-                    address.checked_sub(*base).map(PointerOffsetTerm::Constant)
+                    address.checked_sub(*base).map(AddressOffset::Constant)
                 } else {
                     None
                 };
@@ -1929,7 +1927,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     }
                     return Some(difference);
                 }
-                if let PointerOffsetTerm::Add(left, right) = offset {
+                if let AddressOffset::Add(left, right) = offset {
                     let left_index = nodes.len();
                     nodes.push(OffsetNode {
                         offset: left,
@@ -1948,11 +1946,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
             None
         }
-        fn add_pointer_offsets(
-            left: PointerOffsetTerm,
-            right: PointerOffsetTerm,
-        ) -> Option<PointerOffsetTerm> {
-            use PointerOffsetTerm::{Add, Constant};
+        fn add_pointer_offsets(left: AddressOffset, right: AddressOffset) -> Option<AddressOffset> {
+            use AddressOffset::{Add, Constant};
             match (left, right) {
                 (Constant(0), other) | (other, Constant(0)) => Some(other),
                 (Constant(left), Constant(right)) => left.checked_add(right).map(Constant),
@@ -1972,11 +1967,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 (left, right) => Some(Add(Box::new(left), Box::new(right))),
             }
         }
-        let rewrite_pointer_directly = |pointer: &Pointer| {
+        let rewrite_pointer_directly = |pointer: &Address| {
             if pointer == left.as_ref() {
                 return right.as_ref().clone();
             }
-            if pointer.block != left.block {
+            if pointer.base != left.base {
                 return pointer.clone();
             }
             let Some(displacement) = offset_after_base(&pointer.offset, &left.offset) else {
@@ -1985,13 +1980,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
             let Some(offset) = add_pointer_offsets(right.offset.clone(), displacement) else {
                 return pointer.clone();
             };
-            Pointer {
-                block: right.block.clone(),
+            Address {
+                base: right.base.clone(),
                 offset,
             }
         };
         let read_rewrites = PointerReadRewrites::default();
-        let rewrite_pointer = |pointer: &Pointer| {
+        let rewrite_pointer = |pointer: &Address| {
             if pointer == left.as_ref() {
                 return right.as_ref().clone();
             }
@@ -1999,7 +1994,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             if &rewritten != pointer {
                 return rewritten;
             }
-            rewrite_through_loaded_pointer_block(pointer, &rewrite_pointer_directly, &read_rewrites)
+            rewrite_through_loaded_address_base(pointer, &rewrite_pointer_directly, &read_rewrites)
                 .unwrap_or(rewritten)
         };
         // A pointer equality also rewrites the subject of a load: replacing
@@ -2007,7 +2002,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // congruence, with work bounded by the goal's size.
         fn rewrite_load_pointers(
             term: &MachineTerm,
-            rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
+            rewrite_pointer: &impl Fn(&Address) -> Address,
         ) -> MachineTerm {
             let binary = |left_term: &MachineTerm, right_term: &MachineTerm| {
                 (
@@ -2225,23 +2220,23 @@ fn rewrite_atomic_proposition_by_exact_equality(
 
     };
     fn rewrite_offset_term(
-        offset: &PointerOffsetTerm,
+        offset: &AddressOffset,
         from: &MachineTerm,
         to: &MachineTerm,
-    ) -> PointerOffsetTerm {
+    ) -> AddressOffset {
         match offset {
-            PointerOffsetTerm::Add(left, right) => PointerOffsetTerm::add(
+            AddressOffset::Add(left, right) => AddressOffset::add(
                 rewrite_offset_term(left, from, to),
                 rewrite_offset_term(right, from, to),
             ),
-            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+            AddressOffset::Int32Scaled { value, byte_width } => {
                 crate::kernel::memory_history::rebuild_scaled_pointer_index(
                     rewrite_pointer_index(value, from, to),
                     *byte_width,
                     None,
                 )
             }
-            PointerOffsetTerm::Int64Scaled {
+            AddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
@@ -2250,7 +2245,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 *byte_width,
                 Some(*unsigned),
             ),
-            PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => offset.clone(),
+            AddressOffset::Constant(_) | AddressOffset::Variable(_) => offset.clone(),
         }
     }
 
@@ -2420,8 +2415,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             resource.clone()
         }
         Resource::Memory(range) => Resource::Memory(range.with_bounds(
-            Pointer {
-                block: range.base().block.clone(),
+            Address {
+                base: range.base().base.clone(),
                 offset: rewrite_offset_term(&range.base().offset, left, right),
             },
             rewrite_range_bound(range, range.bound_terms().0),
@@ -2513,8 +2508,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         )
                     }
                     ConditionTerm::PointerEqual(goal_left, goal_right) => {
-                        let rewrite_pointer = |pointer: &Pointer| Pointer {
-                            block: pointer.block.clone(),
+                        let rewrite_pointer = |pointer: &Address| Address {
+                            base: pointer.base.clone(),
                             offset: rewrite_offset_term(&pointer.offset, left, right),
                         };
                         ConditionTerm::pointer_equal(
@@ -2564,8 +2559,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             value_type,
         } => Proposition::MemoryReadDefined {
             memory: memory.clone(),
-            pointer: Pointer {
-                block: pointer.block.clone(),
+            pointer: Address {
+                base: pointer.base.clone(),
                 offset: rewrite_offset_term(&pointer.offset, left, right),
             },
             value_type: *value_type,
@@ -2577,8 +2572,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             wide,
         } => Proposition::MemoryLoadable {
             memory: memory.clone(),
-            base: Pointer {
-                block: base.block.clone(),
+            base: Address {
+                base: base.base.clone(),
                 offset: rewrite_offset_term(&base.offset, left, right),
             },
             bytes: rewrite_term(bytes, left, right),
@@ -2586,8 +2581,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
         },
         Proposition::Equal(Term::Algebraic(goal_left), Term::Algebraic(goal_right)) => {
             let rewrite_term = |term: &MachineTerm| rewrite_term(term, left, right);
-            let rewrite_pointer = |pointer: &Pointer| Pointer {
-                block: pointer.block.clone(),
+            let rewrite_pointer = |pointer: &Address| Address {
+                base: pointer.base.clone(),
                 offset: rewrite_offset_term(&pointer.offset, left, right),
             };
             let rewrite_shared =
@@ -2639,15 +2634,15 @@ mod tests {
             let root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
             let index = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
-            let pointer = Pointer {
-                block: PointerBlock::ExternalArgument,
+            let pointer = Address {
+                base: AddressBase::ExternalArgument,
                 offset: if ty == MachineIntegerType::Int32 {
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: index.clone(),
                         byte_width: 4,
                     }
                 } else {
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: index.clone(),
                         byte_width: 4,
                         unsigned: ty == MachineIntegerType::UInt64,
@@ -2655,7 +2650,7 @@ mod tests {
                 },
             };
             let goal = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(pointer.clone(), Pointer::symbolic(Variable(1081003))),
+                ConditionTerm::pointer_equal(pointer.clone(), Address::symbolic(Variable(1081003))),
                 true,
             );
             let equality = Proposition::ConditionIs(
@@ -2688,9 +2683,9 @@ mod tests {
             let _session = VerificationSession::enter();
             let memory = intern_memory(SymbolicMemory::new());
             let index = MachineTerm::Variable(Variable(73_001));
-            let base = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(73_002)), 4),
+            let base = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(73_002)), 4),
             };
             let address = base.offset_by_int32_elements(index.clone());
             crate::kernel::eval::record_load_access_width(memory.memory(), &address, bytes);
@@ -2717,15 +2712,15 @@ mod tests {
     fn address_rewrite_reaches_legacy_pointer_reads_beyond_eight_levels() {
         let _session = VerificationSession::enter();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let from = Pointer::symbolic(Variable(998_930));
-        let to = Pointer::symbolic(Variable(998_931));
+        let from = Address::symbolic(Variable(998_930));
+        let to = Address::symbolic(Variable(998_931));
         let other = from.clone();
         let rewritten_other = to.clone();
         let cited =
             Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
         let facts = PureFactStore::default().with_fact(cited.clone());
-        let read = |address: &Pointer| {
-            Pointer::symbolic(crate::kernel::eval::load_variable_for_exact_cell(
+        let read = |address: &Address| {
+            Address::symbolic(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 address,
                 LoadKind::Int32,
@@ -2753,9 +2748,9 @@ mod tests {
     #[test]
     fn address_rewrite_preserves_native_read_versions_beside_a_shallow_occurrence() {
         let _session = VerificationSession::enter();
-        let from = Pointer::symbolic(Variable(998_940));
-        let to = Pointer::symbolic(Variable(998_941));
-        let stored = ProgramValue::pointer(Pointer::symbolic(Variable(998_942)));
+        let from = Address::symbolic(Variable(998_940));
+        let to = Address::symbolic(Variable(998_941));
+        let stored = ProgramValue::pointer(Address::symbolic(Variable(998_942)));
         let memory = SymbolicMemory::new().store(to.clone(), stored);
         let memory = crate::kernel::intern_memory(memory);
         let cited =
@@ -2764,8 +2759,8 @@ mod tests {
         let mut input = from.clone();
         let mut expected = to.clone();
         for depth in 1..=32 {
-            input = Pointer::version_read(&memory, &input);
-            expected = Pointer::version_read(&memory, &expected);
+            input = Address::version_read(&memory, &input);
+            expected = Address::version_read(&memory, &expected);
             let goal = Proposition::ConditionIs(
                 ConditionTerm::pointer_equal(input.clone(), from.clone()),
                 true,
@@ -2785,7 +2780,7 @@ mod tests {
         }
         let later = memory.memory().clone().store(
             to.clone(),
-            ProgramValue::pointer(Pointer::symbolic(Variable(998_943))),
+            ProgramValue::pointer(Address::symbolic(Variable(998_943))),
         );
         let _ = later.symbolic_pointer_version_load(&to, ProgramType::Int32Pointer);
         let goal = Proposition::ConditionIs(
@@ -2809,12 +2804,12 @@ mod tests {
     #[test]
     fn address_rewrite_keeps_legacy_reads_named_when_the_target_stores_bits() {
         let _session = VerificationSession::enter();
-        let from = Pointer::symbolic(Variable(998_960));
-        let to = Pointer::symbolic(Variable(998_961));
+        let from = Address::symbolic(Variable(998_960));
+        let to = Address::symbolic(Variable(998_961));
         let memory = crate::kernel::intern_memory(
             SymbolicMemory::new().store(to.clone(), ProgramValue::Int32(7u32.into())),
         );
-        let read = |address: &Pointer| {
+        let read = |address: &Address| {
             let load = MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
                 Box::new(address.clone()),
@@ -2822,7 +2817,7 @@ mod tests {
             );
             let (variable, _) =
                 crate::kernel::load_variable_for_term(&load).expect("legacy read adapter");
-            Pointer::symbolic(variable)
+            Address::symbolic(variable)
         };
         let input = read(&from);
         let expected = read(&to);
@@ -3371,7 +3366,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
-            Box::new(Pointer::symbolic(Variable(193_024))),
+            Box::new(Address::symbolic(Variable(193_024))),
             LoadKind::Int32,
         );
         let replacement = MachineTerm::logical_machine_binary(
@@ -3669,9 +3664,9 @@ mod tests {
     #[test]
     fn integer_equality_rewrite_keeps_state_identity_and_checks_work_budget() {
         let _session = VerificationSession::enter();
-        let pointer = Pointer {
-            block: "integer-rewrite-retained_state".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "integer-rewrite-retained_state".into(),
+            offset: AddressOffset::Constant(0),
         };
         let before = SymbolicMemory::new().with_block("integer-rewrite-retained_state", 8);
         let after = before.clone().store(
@@ -3863,9 +3858,9 @@ mod tests {
     fn compound_read_rewrite_checks_states_kinds_and_operators() {
         let _session = crate::kernel::VerificationSession::enter();
         for wide in [false, true] {
-            let pointer = Pointer {
-                block: "compound-rewrite".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            let pointer = Address {
+                base: "compound-rewrite".into(),
+                offset: AddressOffset::Constant(0),
             };
             let before = SymbolicMemory::new().with_block("compound-rewrite", 16);
             let after = before.clone().with_block("local:compound-unrelated", 4);
@@ -3883,7 +3878,7 @@ mod tests {
                 LoadKind::Int32
             };
             crate::kernel::eval::declare_load_access_width(&pointer, if wide { 8 } else { 4 });
-            let load = |memory: &SymbolicMemory, pointer: Pointer, kind| {
+            let load = |memory: &SymbolicMemory, pointer: Address, kind| {
                 MachineTerm::MemoryLoad(
                     ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                     Box::new(pointer),
@@ -3962,8 +3957,8 @@ mod tests {
                 )),
                 mask(load(
                     &after,
-                    Pointer {
-                        offset: PointerOffsetTerm::Constant(8),
+                    Address {
+                        offset: AddressOffset::Constant(8),
                         ..pointer.clone()
                     },
                     kind,
@@ -3996,9 +3991,9 @@ mod tests {
     #[test]
     fn compound_read_rewrite_work_is_local_to_selected_expressions() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: "compound-rewrite-work".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "compound-rewrite-work".into(),
+            offset: AddressOffset::Constant(0),
         };
         crate::kernel::eval::declare_load_access_width(&pointer, 8);
         let before = SymbolicMemory::new().with_block("compound-rewrite-work", 8);
@@ -4064,9 +4059,9 @@ mod tests {
 
     #[test]
     fn checked_rewrite_presentation_requires_checked_load_transport() {
-        let pointer = Pointer {
-            block: "rewrite-presentation".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "rewrite-presentation".into(),
+            offset: AddressOffset::Constant(0),
         };
         // The load is an `int32` one. A stored value answers only for a read
         // of its own width, and a load whose width nobody recorded is taken
@@ -4210,10 +4205,9 @@ mod wide_range_reader_tests {
     #[test]
     fn wide_resource_bounds_survive_offset_and_scalar_rewriting() {
         let _session = crate::kernel::VerificationSession::enter();
-        let offset =
-            PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(984_700)), 4);
-        let base = Pointer {
-            block: crate::kernel::PointerBlock::Symbolic(Variable(984_701)),
+        let offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(984_700)), 4);
+        let base = Address {
+            base: crate::kernel::AddressBase::Symbolic(Variable(984_701)),
             offset: offset.clone(),
         };
         let wide = MemoryRange::new_wide(
@@ -4229,7 +4223,7 @@ mod wide_range_reader_tests {
         let equality = Proposition::ConditionIs(
             ConditionTerm::PointerOffsetEqual(
                 Box::new(offset),
-                Box::new(PointerOffsetTerm::Constant(0)),
+                Box::new(AddressOffset::Constant(0)),
             ),
             true,
         );
@@ -4258,7 +4252,7 @@ mod wide_bound_equality_reader_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let end = MachineTerm::Variable(Variable(985_900));
         let wide = MemoryRange::new_wide(
-            Pointer::symbolic(Variable(985_901)),
+            Address::symbolic(Variable(985_901)),
             MachineTerm::uint64_constant(0),
             end.clone(),
             1,
@@ -4291,18 +4285,18 @@ mod wide_bound_equality_reader_tests {
 mod numeric_address_annotation_tests {
     use super::*;
 
-    fn check(p: Pointer, q: Pointer) {
+    fn check(p: Address, q: Address) {
         let class = crate::kernel::effective_type::CAccessClass::Struct(
             crate::kernel::effective_type::CStructClass::opaque("node"),
         );
-        let observed = |pointer: &Pointer| {
+        let observed = |pointer: &Address| {
             MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone()))
         };
         let equality = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(observed(&p), observed(&q)),
             true,
         );
-        let mask = |pointer: &Pointer| {
+        let mask = |pointer: &Address| {
             Proposition::ConditionIs(
                 ConditionTerm::uint64_equal(
                     MachineTerm::uint64_bitwise_and(
@@ -4359,12 +4353,12 @@ mod numeric_address_annotation_tests {
     fn address_equality_rewrites_canonical_alignment_masks_without_pointer_authority() {
         let _session = VerificationSession::enter();
         check(
-            Pointer::symbolic(Variable(998_821)),
-            Pointer::symbolic(Variable(998_822)),
+            Address::symbolic(Variable(998_821)),
+            Address::symbolic(Variable(998_822)),
         );
         check(
-            Pointer::integer_address(MachineTerm::Variable(Variable(998_823))),
-            Pointer::integer_address(MachineTerm::Variable(Variable(998_824))),
+            Address::integer_address(MachineTerm::Variable(Variable(998_823))),
+            Address::integer_address(MachineTerm::Variable(Variable(998_824))),
         );
     }
 }

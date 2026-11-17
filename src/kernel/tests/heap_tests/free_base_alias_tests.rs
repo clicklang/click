@@ -13,7 +13,7 @@ fn free_once(state: &ExecutionState, name: &str, facts: &PureFactContext) -> Sta
     paths.pop().unwrap().outcome
 }
 
-fn owned_base(base: &Pointer) -> ResourceContext {
+fn owned_base(base: &Address) -> ResourceContext {
     ResourceContext::new()
         .unchecked_with_fact(ResourceFact::own_allocation(base.clone(), 4))
         .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
@@ -26,11 +26,11 @@ fn owned_base(base: &Pointer) -> ResourceContext {
 #[test]
 fn free_uses_the_owned_base_and_retires_every_proven_alias() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer {
-        block: PointerBlock::Heap(973_000),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Heap(973_000),
+        offset: AddressOffset::Constant(0),
     };
-    let alias = Pointer::symbolic(Variable(973_001));
+    let alias = Address::symbolic(Variable(973_001));
     let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
             PointerValue::new(alias.clone(), ProgramType::Int32Pointer),
@@ -73,11 +73,11 @@ fn free_uses_the_owned_base_and_retires_every_proven_alias() {
 #[test]
 fn free_does_not_treat_an_unproved_or_interior_alias_as_a_base() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer {
-        block: PointerBlock::Heap(973_010),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Heap(973_010),
+        offset: AddressOffset::Constant(0),
     };
-    let alias = Pointer::symbolic(Variable(973_011));
+    let alias = Address::symbolic(Variable(973_011));
     let state = ExecutionState::new()
         .with_resource_context(owned_base(&base))
         .with_local("q", ProgramValue::pointer(alias.clone()));
@@ -106,12 +106,12 @@ mod scaling_tests {
 #[test]
 fn free_alias_cannot_bypass_an_unresolved_reallocation() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer {
-        block: PointerBlock::Heap(973_020),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Heap(973_020),
+        offset: AddressOffset::Constant(0),
     };
-    let alias = Pointer::symbolic(Variable(973_021));
-    let pending = Pointer::symbolic(Variable(973_022));
+    let alias = Address::symbolic(Variable(973_021));
+    let pending = Address::symbolic(Variable(973_022));
     let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
             PointerValue::new(alias.clone(), ProgramType::Int32Pointer),

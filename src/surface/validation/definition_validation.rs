@@ -1588,7 +1588,7 @@ fn validate_resource_fact_memory_read_authority(
         values.insert(
             witness.name().to_string(),
             crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Pointer::symbolic(crate::kernel::Variable(4_100_000 + index as u64)),
+                crate::kernel::Address::symbolic(crate::kernel::Variable(4_100_000 + index as u64)),
                 witness.interface_type().to_kernel_type(),
             ),
         );

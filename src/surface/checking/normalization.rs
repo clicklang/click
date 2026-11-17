@@ -644,10 +644,10 @@ mod tests {
         // the address must use the observed state, including its latest
         // overwrite, rather than inventing a disconnected target load.
         for (case, stored) in [(0, 17), (1, 29)] {
-            let source = Pointer::symbolic(Variable(910_000 + case));
-            let target = Pointer {
-                block: PointerBlock::Heap(920_000 + case),
-                offset: PointerOffsetTerm::Constant(4),
+            let source = Address::symbolic(Variable(910_000 + case));
+            let target = Address {
+                base: AddressBase::Heap(920_000 + case),
+                offset: AddressOffset::Constant(4),
             };
             let identity = crate::kernel::intern_memory(
                 SymbolicMemory::new().with_block(format!("rewrite-origin-{case}"), 16),
@@ -711,13 +711,13 @@ mod tests {
         // `w` is the pointer read from `source`. Rewriting `source` to
         // `target` rewrites the load `w` names, so a read through `w`
         // becomes a read through the pointer read from `target`.
-        let source = Pointer::symbolic(Variable(930_000));
-        let target = Pointer {
-            block: PointerBlock::Heap(930_001),
-            offset: PointerOffsetTerm::Constant(0),
+        let source = Address::symbolic(Variable(930_000));
+        let target = Address {
+            base: AddressBase::Heap(930_001),
+            offset: AddressOffset::Constant(0),
         };
         let memory = crate::kernel::intern_memory(
-            SymbolicMemory::new().with_block(PointerBlock::Heap(930_001), 16),
+            SymbolicMemory::new().with_block(AddressBase::Heap(930_001), 16),
         );
         let loaded = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -735,9 +735,9 @@ mod tests {
         let read_through = |variable| {
             MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&memory),
-                Box::new(Pointer {
-                    block: PointerBlock::Symbolic(variable),
-                    offset: PointerOffsetTerm::Constant(8),
+                Box::new(Address {
+                    base: AddressBase::Symbolic(variable),
+                    offset: AddressOffset::Constant(8),
                 }),
                 crate::kernel::LoadKind::Int32,
             )
@@ -775,22 +775,22 @@ mod tests {
     #[test]
     fn pointer_rewrite_changes_every_matching_field_load_at_one_state() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let source = Pointer {
-            block: PointerBlock::Symbolic(Variable(91)),
-            offset: PointerOffsetTerm::Constant(0),
+        let source = Address {
+            base: AddressBase::Symbolic(Variable(91)),
+            offset: AddressOffset::Constant(0),
         };
-        let target = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(92)), 4),
+        let target = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(92)), 4),
         };
-        let field_load = |base: &Pointer, displacement| {
+        let field_load = |base: &Address, displacement| {
             MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&memory),
-                Box::new(Pointer {
-                    block: base.block.clone(),
-                    offset: PointerOffsetTerm::add(
+                Box::new(Address {
+                    base: base.base.clone(),
+                    offset: AddressOffset::add(
                         base.offset.clone(),
-                        PointerOffsetTerm::Constant(displacement),
+                        AddressOffset::Constant(displacement),
                     ),
                 }),
                 crate::kernel::LoadKind::Int32,
@@ -856,19 +856,19 @@ mod tests {
 
     #[test]
     fn rewrite_uses_pointer_offset_equalities_inside_pointer_goals() {
-        let left = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
-        let right = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
+        let left = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
+        let right = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
         let equality = Proposition::ConditionIs(
             ConditionTerm::PointerOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
             true,
         );
-        let pointer = |offset| Pointer {
-            block: PointerBlock::ExternalArgument,
+        let pointer = |offset| Address {
+            base: AddressBase::ExternalArgument,
             offset,
         };
-        let null = Pointer {
-            block: "null".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let null = Address {
+            base: "null".into(),
+            offset: AddressOffset::Constant(0),
         };
         let goal = Proposition::ConditionIs(
             ConditionTerm::pointer_equal(pointer(left), null.clone()),
@@ -892,8 +892,8 @@ mod tests {
         let data = MachineTerm::Variable(Variable(51));
         let alias = MachineTerm::Variable(Variable(52));
         let index = MachineTerm::Variable(Variable(53));
-        let pointer = |offset| Pointer {
-            block: PointerBlock::ExternalArgument,
+        let pointer = |offset| Address {
+            base: AddressBase::ExternalArgument,
             offset,
         };
         let load = |offset| {
@@ -903,11 +903,11 @@ mod tests {
                 crate::kernel::LoadKind::Int32,
             )
         };
-        let data_offset = PointerOffsetTerm::scale_int32(data.clone(), 4);
-        let alias_offset = PointerOffsetTerm::scale_int32(alias.clone(), 4);
-        let indexed_offset = PointerOffsetTerm::add(
+        let data_offset = AddressOffset::scale_int32(data.clone(), 4);
+        let alias_offset = AddressOffset::scale_int32(alias.clone(), 4);
+        let indexed_offset = AddressOffset::add(
             data_offset.clone(),
-            PointerOffsetTerm::scale_int32(index.clone(), 4),
+            AddressOffset::scale_int32(index.clone(), 4),
         );
         let goal = Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -947,18 +947,18 @@ mod tests {
         let source_len = MachineTerm::Variable(Variable(63));
         let target_len = MachineTerm::Variable(Variable(64));
         let fixed = Resource::Memory(MemoryRange::new(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(65)), 4),
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(65)), 4),
             },
             MachineTerm::constant(0),
             MachineTerm::constant(4),
         ));
         let range = |base: MachineTerm, end: MachineTerm| {
             Resource::Memory(MemoryRange::new(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::scale_int32(base, 4),
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::scale_int32(base, 4),
                 },
                 MachineTerm::constant(0),
                 end,
@@ -979,8 +979,8 @@ mod tests {
         );
         let base_equality = Proposition::ConditionIs(
             ConditionTerm::PointerOffsetEqual(
-                Box::new(PointerOffsetTerm::scale_int32(source.clone(), 4)),
-                Box::new(PointerOffsetTerm::scale_int32(target.clone(), 4)),
+                Box::new(AddressOffset::scale_int32(source.clone(), 4)),
+                Box::new(AddressOffset::scale_int32(target.clone(), 4)),
             ),
             true,
         );
@@ -995,9 +995,9 @@ mod tests {
             Proposition::ResourceSeparate {
                 left: Box::new(fixed),
                 right: Box::new(match range(source, target_len) {
-                    Resource::Memory(range) => Resource::Memory(range.with_base(Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: PointerOffsetTerm::scale_int32(target, 4),
+                    Resource::Memory(range) => Resource::Memory(range.with_base(Address {
+                        base: AddressBase::ExternalArgument,
+                        offset: AddressOffset::scale_int32(target, 4),
                     })),
                     _ => unreachable!(),
                 }),
@@ -1009,9 +1009,9 @@ mod tests {
     fn integer_observation_rewrite_requires_an_available_machine_equality() {
         let memory =
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("rewrite-cell", 4));
-        let pointer = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
         let load = MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&memory),
@@ -1048,9 +1048,9 @@ mod tests {
             MachineIntegerType::Int32,
             MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&memory),
-                Box::new(Pointer {
-                    block: "fold".into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                Box::new(Address {
+                    base: "fold".into(),
+                    offset: AddressOffset::Constant(0),
                 }),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -1147,9 +1147,9 @@ mod tests {
 
     #[test]
     fn integer_observation_rewrite_does_not_cross_memory_states() {
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("rewrite-cell".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Concrete("rewrite-cell".into()),
+            offset: AddressOffset::Constant(0),
         };
         let first_memory = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("rewrite-cell", 4).store(

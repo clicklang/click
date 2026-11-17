@@ -9,8 +9,8 @@ use super::*;
 fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let scalar = |id| MachineTerm::Variable(Variable(92_000 + id));
-        let offset = |id| PointerOffsetTerm::scale_int32(scalar(id), 4);
-        let named = PointerOffsetTerm::Variable(Variable(94_000));
+        let offset = |id| AddressOffset::scale_int32(scalar(id), 4);
+        let named = AddressOffset::Variable(Variable(94_000));
         let mut context = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_offset_equal(offset(0), named.clone()),
             true,
@@ -37,13 +37,13 @@ fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
 #[cfg(test)]
 #[test]
 fn stored_load_alias_lookup_ignores_unrelated_cells() {
-    let target = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(8_991_001)), 4),
+    let target = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(8_991_001)), 4),
     };
-    let alias = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(8_991_002)), 4),
+    let alias = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(8_991_002)), 4),
     };
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::pointer_offset_equal(target.offset.clone(), alias.offset.clone()),
@@ -54,9 +54,9 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.store(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Constant(index * 4),
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(index * 4),
                 },
                 ProgramValue::Int32(MachineTerm::constant(0)),
             );
@@ -86,17 +86,17 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
 #[test]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
-    let base = Pointer {
-        block: PointerBlock::Heap(920_000),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Heap(920_000),
+        offset: AddressOffset::Constant(0),
     };
-    let alias = Pointer {
-        block: PointerBlock::Symbolic(Variable(920_001)),
-        offset: PointerOffsetTerm::Constant(0),
+    let alias = Address {
+        base: AddressBase::Symbolic(Variable(920_001)),
+        offset: AddressOffset::Constant(0),
     };
-    let local = Pointer {
-        block: "local:interior-alias-store".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local = Address {
+        base: "local:interior-alias-store".into(),
+        offset: AddressOffset::Constant(0),
     };
     let equality = ConditionTerm::pointer_equal(alias.clone(), base.clone());
     let mut samples = Vec::new();
@@ -105,13 +105,13 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         for index in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::pointer_equal(
-                    Pointer {
-                        block: PointerBlock::Symbolic(Variable(930_000 + index)),
-                        offset: PointerOffsetTerm::Constant(0),
+                    Address {
+                        base: AddressBase::Symbolic(Variable(930_000 + index)),
+                        offset: AddressOffset::Constant(0),
                     },
-                    Pointer {
-                        block: PointerBlock::Heap(940_000 + index),
-                        offset: PointerOffsetTerm::Constant(0),
+                    Address {
+                        base: AddressBase::Heap(940_000 + index),
+                        offset: AddressOffset::Constant(0),
                     },
                 ),
                 true,
@@ -121,8 +121,8 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         facts = facts.assume_condition(equality.clone(), true);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for offset in [-1i64, 0, 1, 2, 3, 16] {
-                let read = Pointer {
-                    offset: PointerOffsetTerm::Constant(offset),
+                let read = Address {
+                    offset: AddressOffset::Constant(offset),
                     ..alias.clone()
                 };
                 assert!(pointers_proven_distinct_for_memory_resolution(
@@ -136,8 +136,8 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
             }
         });
         samples.push((size, work));
-        let interior = Pointer {
-            offset: PointerOffsetTerm::Constant(1),
+        let interior = Address {
+            offset: AddressOffset::Constant(1),
             ..alias.clone()
         };
         assert!(!pointers_proven_distinct_for_memory_resolution(
@@ -168,8 +168,8 @@ fn mixed_index_offsets_work_ignores_unrelated_facts() {
     use crate::kernel::{IntegerTerm, MachineIntegerType};
     let wide = MachineTerm::Variable(Variable(82001));
     let narrow = MachineTerm::Variable(Variable(82002));
-    let native = PointerOffsetTerm::scale_int64(wide.clone(), 1, true);
-    let signed = PointerOffsetTerm::scale_int32(narrow.clone(), 1);
+    let native = AddressOffset::scale_int64(wide.clone(), 1, true);
+    let signed = AddressOffset::scale_int32(narrow.clone(), 1);
     let fact = ConditionTerm::IntegerEqual(
         IntegerTerm::from_machine(MachineIntegerType::UInt64, wide)
             .unwrap()
@@ -219,17 +219,17 @@ fn unresolved_load_projection_ignores_earlier_objects_and_hidden_slots() {
                 .map(Into::into)
                 .collect(),
         );
-        let slot = |index: usize| Pointer {
-            block: PointerBlock::Concrete(format!("local:hidden{index}")),
-            offset: PointerOffsetTerm::Constant(0),
+        let slot = |index: usize| Address {
+            base: AddressBase::Concrete(format!("local:hidden{index}")),
+            offset: AddressOffset::Constant(0),
         };
-        let object = |index: usize| Pointer::symbolic(Variable(98_700 + index as u64));
+        let object = |index: usize| Address::symbolic(Variable(98_700 + index as u64));
         let value = |index: usize| ProgramValue::Int32((index as u32).into());
         let mut memory = SymbolicMemory::new();
         let mut last = 0;
         for index in 0..=size {
             memory = memory
-                .with_block(slot(index).block.clone(), 4)
+                .with_block(slot(index).base.clone(), 4)
                 .store(slot(index), value(index))
                 .store(object(index), value(index));
             let (canonical, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -317,9 +317,9 @@ fn run_access_retains_cold_shared_index_dags() {
                 );
             }
             let retained = MachineOperandView::Shared(&term).retain(ty);
-            let base = Pointer {
-                block: "retained_run".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            let base = Address {
+                base: "retained_run".into(),
+                offset: AddressOffset::Constant(0),
             };
             let run = CellRun::new(
                 base.clone(),
@@ -330,19 +330,19 @@ fn run_access_retains_cold_shared_index_dags() {
                 Default::default(),
             );
             let offset = if ty == MachineIntegerType::Int32 {
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: retained.clone(),
                     byte_width: 4,
                 }
             } else {
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value: retained.clone(),
                     byte_width: 4,
                     unsigned: true,
                 }
             };
-            let pointer = Pointer {
-                block: base.block,
+            let pointer = Address {
+                base: base.base,
                 offset,
             };
             let exports = KernelTermExport::machine_export_count();
@@ -399,14 +399,14 @@ fn wide_offset_step_retains_dags_and_ignores_unrelated_facts() {
                 index.operand_view(),
                 MachineOperandView::Legacy(&MachineTerm::uint64_constant(1)),
             );
-            let scaled = |value| PointerOffsetTerm::Int64Scaled {
+            let scaled = |value| AddressOffset::Int64Scaled {
                 value,
                 byte_width: 8,
                 unsigned: true,
             };
-            let stepped = PointerOffsetTerm::Add(
+            let stepped = AddressOffset::Add(
                 Box::new(scaled(index.clone())),
-                Box::new(PointerOffsetTerm::Constant(8)),
+                Box::new(AddressOffset::Constant(8)),
             );
             let whole = scaled(advanced);
             let mut facts = PureFactContext::new().assume_condition(
@@ -470,11 +470,11 @@ fn a_byte_product_comparison_ignores_unrelated_bounded_indices() {
         for id in 1..=size {
             context = bounds(context, id);
         }
-        let bytes = PointerOffsetTerm::scale_int32(
+        let bytes = AddressOffset::scale_int32(
             MachineTerm::multiply(scalar(0), MachineTerm::constant(4)),
             1,
         );
-        let elements = PointerOffsetTerm::scale_int32(scalar(0), 4);
+        let elements = AddressOffset::scale_int32(scalar(0), 4);
         let _scope = context.enter_id_scope();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(

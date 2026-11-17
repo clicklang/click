@@ -3,9 +3,9 @@ use super::*;
 #[test]
 fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
     let field = |name: &str| {
-        let address = Pointer {
-            block: format!("parent:{name}").into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let address = Address {
+            base: format!("parent:{name}").into(),
+            offset: AddressOffset::Constant(0),
         };
         ProgramExpression::TypedLoad {
             pointer: Box::new(ProgramExpression::Value(ProgramValue::pointer(address))),
@@ -35,9 +35,9 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
     let children = ["child:left", "child:right"].map(|name| {
         ResourceFact::own_composite(
             "child_ref".into(),
-            vec![ProgramValue::pointer(Pointer {
-                block: name.into(),
-                offset: PointerOffsetTerm::Constant(0),
+            vec![ProgramValue::pointer(Address {
+                base: name.into(),
+                offset: AddressOffset::Constant(0),
             })],
         )
     });
@@ -129,12 +129,12 @@ fn run_mixed_call(
     produced_first: bool,
     overlap: bool,
 ) -> (ExecutionState, Vec<FunctionPath>) {
-    let pointer = Pointer::symbolic(Variable(8_800_000));
+    let pointer = Address::symbolic(Variable(8_800_000));
     let held =
         ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into()));
     let state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 8))
+        .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 8))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(held));
     let function = mixed_memory_contract(composite, produced_first);
     let environment =
@@ -227,7 +227,7 @@ fn mixed_produced_flat_memory_cannot_duplicate_a_restored_borrow() {
 #[test]
 fn return_roles_follow_skipped_guards_and_deferred_output_emission() {
     use crate::kernel::program_expression::{int32_literal, pointer_value, variable};
-    let at = |id: u64| Pointer::symbolic(Variable(8_840_000 + id));
+    let at = |id: u64| Address::symbolic(Variable(8_840_000 + id));
     let segment = |base| MemorySegment::new(base, int32_literal(0), int32_literal(1));
     let borrowed = ResourceSpec::owned_memory(segment(variable("unmaterialized_entry_name")))
         .with_role(ResourceTransferRole::Borrow)
@@ -283,8 +283,8 @@ fn return_roles_follow_skipped_guards_and_deferred_output_emission() {
     }];
     let state = ExecutionState::new().with_memory(
         SymbolicMemory::new()
-            .with_block(field.block.clone(), C_POINTER_BYTE_WIDTH)
-            .with_block(target.block.clone(), 4)
+            .with_block(field.base.clone(), C_POINTER_BYTE_WIDTH)
+            .with_block(target.base.clone(), 4)
             .store(field, ProgramValue::pointer(target)),
     );
     let returned = evaluate_contract_return_resource_context(
@@ -323,9 +323,9 @@ fn return_roles_follow_skipped_guards_and_deferred_output_emission() {
 #[test]
 fn borrowed_composite_bodies_still_check_post_memory_against_the_retained_frame() {
     use crate::kernel::program_expression::{int32_literal, variable};
-    let field = Pointer::symbolic(Variable(8_850_000));
-    let old_child = Pointer::symbolic(Variable(8_850_001));
-    let retained_child = Pointer::symbolic(Variable(8_850_002));
+    let field = Address::symbolic(Variable(8_850_000));
+    let old_child = Address::symbolic(Variable(8_850_001));
+    let retained_child = Address::symbolic(Variable(8_850_002));
     let field_value = ProgramValue::typed_pointer(field.clone(), ProgramType::Int32PointerPointer);
     let borrowed = ResourceSpec::declared(
         ResourceFamily::Composite,
@@ -374,9 +374,9 @@ fn borrowed_composite_bodies_still_check_post_memory_against_the_retained_frame(
             MemoryRange::new(retained_child.clone(), 0u32.into(), 1u32.into()),
         ));
     let memory = SymbolicMemory::new()
-        .with_block(field.block.clone(), C_POINTER_BYTE_WIDTH)
-        .with_block(old_child.block.clone(), 4)
-        .with_block(retained_child.block.clone(), 4)
+        .with_block(field.base.clone(), C_POINTER_BYTE_WIDTH)
+        .with_block(old_child.base.clone(), 4)
+        .with_block(retained_child.base.clone(), 4)
         .store(field.clone(), ProgramValue::pointer(old_child));
     let entry = ExecutionState::new()
         .with_memory(memory.clone())
@@ -447,8 +447,8 @@ fn unmatched_entry_borrow_descriptions_do_not_authorize_restoration() {
         program_skip(),
     )
     .with_resource_summary(vec![], vec![borrowed, produced]);
-    let p = Pointer::symbolic(Variable(8_860_000));
-    let q = Pointer::symbolic(Variable(8_860_001));
+    let p = Address::symbolic(Variable(8_860_000));
+    let q = Address::symbolic(Variable(8_860_001));
     let facts = PureFactContext::new();
     let held = ResourceFact::own_memory(MemoryRange::new(p.clone(), 0u32.into(), 1u32.into()));
     let frame = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(held);
@@ -458,8 +458,8 @@ fn unmatched_entry_borrow_descriptions_do_not_authorize_restoration() {
         .with_local("q", ProgramValue::pointer(q.clone()))
         .with_memory(
             SymbolicMemory::new()
-                .with_block(p.block, 4)
-                .with_block(q.block, 4),
+                .with_block(p.base, 4)
+                .with_block(q.base, 4),
         );
     let evaluated = evaluate_contract_return_resource_context(
         function.contract_interface(),

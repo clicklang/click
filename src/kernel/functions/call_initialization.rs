@@ -100,7 +100,7 @@ pub(crate) fn memory_range_is_initialized(
     assumptions: &PureFactContext,
 ) -> bool {
     let start = range.start_pointer();
-    let tracked = (start.block.is_local_block() && memory.has_block(&start.block))
+    let tracked = (start.base.is_local_block() && memory.has_block(&start.base))
         || memory.may_read_uninitialized_object(&start, 1)
         || memory.is_uninitialized_heap_address(&start, 1, assumptions);
     if !tracked {
@@ -129,7 +129,7 @@ pub(crate) fn memory_range_is_initialized(
         (Some(bytes), None) => bytes_are_initialized(memory, &start, bytes, width, assumptions),
         // A length known only at the call: every byte from the start to the
         // end of a constant-size object covers it.
-        (None, _) => match (start.offset.as_const(), memory.block_size(&start.block)) {
+        (None, _) => match (start.offset.as_const(), memory.block_size(&start.base)) {
             (Some(offset), Some(size)) => size
                 .as_const()
                 .and_then(|size| u32::try_from(i64::from(size) - offset).ok())
@@ -145,7 +145,7 @@ pub(crate) fn memory_range_is_initialized(
 /// `defined` by a fact such as a callee's `ensures defined(p[k])`.
 fn bytes_are_initialized(
     memory: &SymbolicMemory,
-    start: &Pointer,
+    start: &Address,
     bytes: u32,
     width: u32,
     assumptions: &PureFactContext,
@@ -158,7 +158,7 @@ fn bytes_are_initialized(
 /// this address does: a cell is evidence its bytes were written.
 fn written(
     memory: &SymbolicMemory,
-    start: &Pointer,
+    start: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -172,7 +172,7 @@ fn written(
 /// `ensures defined(p[k])`.
 fn elements_are_initialized(
     memory: &SymbolicMemory,
-    start: &Pointer,
+    start: &Address,
     bytes: u32,
     width: u32,
     assumptions: &PureFactContext,

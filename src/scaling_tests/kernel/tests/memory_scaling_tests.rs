@@ -23,8 +23,8 @@ fn symbolic_stores_into_compact_arrays_scale_with_represented_cells() {
             let separate = scaling_cell("local:compact-symbolic-separate", 0);
             let value = ProgramValue::UInt32(7u32.into());
             let memory = SymbolicMemory::new()
-                .with_block(source.block.clone(), (count + 2) * 4)
-                .with_block(separate.block.clone(), 4)
+                .with_block(source.base.clone(), (count + 2) * 4)
+                .with_block(separate.base.clone(), 4)
                 .write_scalar_array_region(
                     &source,
                     ProgramType::UInt32,
@@ -40,7 +40,7 @@ fn symbolic_stores_into_compact_arrays_scale_with_represented_cells() {
                 .store(separate.clone(), value.clone());
             let index = MachineTerm::Variable(Variable(925_002));
             let assumptions = if bounded {
-                let range = |base: &Pointer, elements: u32| {
+                let range = |base: &Address, elements: u32| {
                     ResourceFact::own_memory(MemoryRange::new_with_element_width(
                         base.clone(),
                         0u32.into(),
@@ -114,7 +114,7 @@ fn whole_and_partial_stores_into_compact_arrays_visit_live_intervals() {
             let _session = crate::kernel::VerificationSession::enter();
             let source = scaling_cell("local:compact-whole-store", 0);
             let memory = SymbolicMemory::new()
-                .with_block(source.block.clone(), count * 4)
+                .with_block(source.base.clone(), count * 4)
                 .write_scalar_array_region(
                     &source,
                     ProgramType::UInt32,
@@ -145,10 +145,10 @@ fn whole_and_partial_stores_into_compact_arrays_visit_live_intervals() {
     }
 }
 
-fn scaling_cell(block: &str, index: usize) -> Pointer {
-    Pointer {
-        block: PointerBlock::from(block),
-        offset: PointerOffsetTerm::Constant(4 * index as i64),
+fn scaling_cell(block: &str, index: usize) -> Address {
+    Address {
+        base: AddressBase::from(block),
+        offset: AddressOffset::Constant(4 * index as i64),
     }
 }
 
@@ -421,10 +421,10 @@ const HEAP_SIZES: [usize; 4] = [16, 64, 256, 1024];
 /// unrelated ones take identities below it.
 const TARGET_HEAP: u64 = 1_000_000;
 
-fn heap_cell(identity: u64, offset: i64) -> Pointer {
-    Pointer {
-        block: PointerBlock::Heap(identity),
-        offset: PointerOffsetTerm::Constant(offset),
+fn heap_cell(identity: u64, offset: i64) -> Address {
+    Address {
+        base: AddressBase::Heap(identity),
+        offset: AddressOffset::Constant(offset),
     }
 }
 
@@ -434,9 +434,9 @@ fn with_initialized_allocation(
     identity: u64,
     value: u32,
 ) -> SymbolicMemory {
-    let pending = Pointer {
-        block: PointerBlock::Symbolic(Variable(identity)),
-        offset: PointerOffsetTerm::Constant(0),
+    let pending = Address {
+        base: AddressBase::Symbolic(Variable(identity)),
+        offset: AddressOffset::Constant(0),
     };
     let (memory, _, base) = memory
         .with_pending_heap_allocation(pending.clone(), AllocationSize::int32(16), false)
@@ -563,9 +563,9 @@ fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocat
                 true,
             );
         let allocate = |(memory, resources): (SymbolicMemory, ResourceContext), identity: u64| {
-            let pending = Pointer {
-                block: PointerBlock::Symbolic(Variable(identity)),
-                offset: PointerOffsetTerm::Constant(0),
+            let pending = Address {
+                base: AddressBase::Symbolic(Variable(identity)),
+                offset: AddressOffset::Constant(0),
             };
             let (memory, _, base) = memory
                 .with_pending_heap_allocation(
@@ -657,9 +657,9 @@ fn one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_
                 true,
             );
         let allocate = |(memory, resources): (SymbolicMemory, ResourceContext), identity: u64| {
-            let pending = Pointer {
-                block: PointerBlock::Symbolic(Variable(identity)),
-                offset: PointerOffsetTerm::Constant(0),
+            let pending = Address {
+                base: AddressBase::Symbolic(Variable(identity)),
+                offset: AddressOffset::Constant(0),
             };
             let (memory, _, base) = memory
                 .with_pending_heap_allocation(
@@ -955,10 +955,10 @@ fn one_heap_load_is_logarithmic_in_unrelated_allocations() {
 /// composition, like `examples/arena`'s `arena_write`).
 fn owned_parameter_objects_and_a_region_store(
     count: usize,
-) -> (SymbolicMemory, PureFactContext, Pointer, Vec<Pointer>) {
-    let parameter = |id: u64| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+) -> (SymbolicMemory, PureFactContext, Address, Vec<Address>) {
+    let parameter = |id: u64| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
     };
     let objects = (0..count)
         .map(|index| parameter(97_000 + index as u64))
@@ -967,7 +967,7 @@ fn owned_parameter_objects_and_a_region_store(
     let data = parameter(97_901);
     let length = MachineTerm::Variable(Variable(97_902));
     let index = MachineTerm::Variable(Variable(97_903));
-    let field = |object: &Pointer| object.offset_by_elements(MachineTerm::constant(1), 4);
+    let field = |object: &Address| object.offset_by_elements(MachineTerm::constant(1), 4);
     let mut cells = objects.iter().map(field).collect::<Vec<_>>();
     cells.push(field(&region));
     let memory = cells
@@ -976,7 +976,7 @@ fn owned_parameter_objects_and_a_region_store(
         .fold(SymbolicMemory::new(), |memory, (value, cell)| {
             memory.store(cell.clone(), scaling_value(value))
         });
-    let object_range = |base: &Pointer, elements: u32| {
+    let object_range = |base: &Address, elements: u32| {
         MemoryRange::new(
             base.clone(),
             MachineTerm::constant(0),
@@ -1102,11 +1102,11 @@ fn a_store_beside_fields_of_one_heap_object_is_linear_in_the_cached_cells() {
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn consecutive_reallocating_calls_cost_the_same_each() {
     const CALLS: [usize; 4] = [16, 64, 256, 1024];
-    let external = |variable: u64| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+    let external = |variable: u64| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
-    let int32_range = |base: &Pointer, end: u32| {
+    let int32_range = |base: &Address, end: u32| {
         MemoryRange::new_with_element_width(
             base.clone(),
             MachineTerm::constant(0),
@@ -1170,7 +1170,7 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
                 }
                 crate::kernel::resource_tracker::last_same_version_point(
                     crate::kernel::resource_tracker::TrackedResource::Block(
-                        &PointerBlock::ExternalArgument,
+                        &AddressBase::ExternalArgument,
                     ),
                     &point,
                 );
@@ -1224,11 +1224,11 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
 /// proved separation.
 #[test]
 fn retirement_admits_a_view_of_a_kept_owned_range() {
-    let external = |variable: u64| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+    let external = |variable: u64| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
-    let int32_range = |base: &Pointer, end: u32| {
+    let int32_range = |base: &Address, end: u32| {
         MemoryRange::new_with_element_width(
             base.clone(),
             MachineTerm::constant(0),
@@ -1317,13 +1317,13 @@ fn condition_fact_queries_ignore_unrelated_facts() {
         MachineTerm::Variable(Variable(95_002)),
         MachineTerm::Variable(Variable(95_003)),
     );
-    let symbolic = Pointer {
-        block: PointerBlock::Symbolic(Variable(95_004)),
-        offset: PointerOffsetTerm::Constant(0),
+    let symbolic = Address {
+        base: AddressBase::Symbolic(Variable(95_004)),
+        offset: AddressOffset::Constant(0),
     };
-    let argument = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(95_005)), 4),
+    let argument = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(95_005)), 4),
     };
     let mut samples = Vec::new();
     for size in [8, 16, 32, 64] {
@@ -1404,19 +1404,19 @@ fn condition_fact_queries_ignore_unrelated_facts() {
 /// An object reached through a parameter: every such object shares the
 /// `ExternalArgument` block and differs by a symbolic base, as the arena's
 /// descriptors do, so no block distinctness separates them.
-fn external_object(identity: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
+fn external_object(identity: u64) -> Address {
+    Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
-fn external_field(identity: u64, bytes: i64) -> Pointer {
-    Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Add(
+fn external_field(identity: u64, bytes: i64) -> Address {
+    Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Add(
             Box::new(external_object(identity).offset),
-            Box::new(PointerOffsetTerm::Constant(bytes)),
+            Box::new(AddressOffset::Constant(bytes)),
         ),
     }
 }
@@ -1619,11 +1619,11 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
     let mut samples = Vec::new();
     for size in HEAP_SIZES {
         let _session = crate::kernel::VerificationSession::enter();
-        let data = |index: MachineTerm| Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Add(
+        let data = |index: MachineTerm| Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Add(
                 Box::new(external_object(DATA).offset),
-                Box::new(PointerOffsetTerm::scale_int32(index, 4)),
+                Box::new(AddressOffset::scale_int32(index, 4)),
             ),
         };
         // `data[start..start + 1]`, spelled through the instance's field.
@@ -1689,7 +1689,7 @@ fn symbolic_range_membership_ignores_unrelated_index_bounds() {
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(94_100));
+        let base = Address::symbolic(Variable(94_100));
         let index = MachineTerm::Variable(Variable(94_101));
         let end = MachineTerm::Variable(Variable(94_102));
         let range = memory_range(base.clone(), 0, end.clone());
@@ -1750,7 +1750,7 @@ fn wide_range_membership_ignores_unrelated_index_bounds() {
     let mut samples = Vec::new();
     for size in [64, 128, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(96_100));
+        let base = Address::symbolic(Variable(96_100));
         let index = MachineTerm::Variable(Variable(96_101));
         let end = MachineTerm::Variable(Variable(96_102));
         let range = MemoryRange::new_wide(
@@ -1956,9 +1956,9 @@ fn an_unplaced_store_records_a_local_array_as_one_run() {
             SymbolicMemory::new().with_block(block, u32::try_from(4 * size).unwrap()),
             |memory, element| memory.store(scaling_cell(block, element), scaling_value(element)),
         );
-        let unplaced = Pointer {
-            block: PointerBlock::from(block),
-            offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+        let unplaced = Address {
+            base: AddressBase::from(block),
+            offset: AddressOffset::scale_int32(index.clone(), 4),
         };
         let (forgotten, work) = crate::instrumentation::measure_deterministic_work(|| {
             written.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new())
@@ -2004,7 +2004,7 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
     let mut samples = Vec::new();
     for size in [0, 64, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(983_300));
+        let base = Address::symbolic(Variable(983_300));
         let n = MachineTerm::Variable(Variable(983_301));
         let count = MachineTerm::Variable(Variable(983_302));
         let available =
@@ -2199,9 +2199,9 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
         for count in [4, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let objects: Vec<_> = (0..count)
-                .map(|index| Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::scale_int32(
+                .map(|index| Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::scale_int32(
                         MachineTerm::Variable(Variable(980_000 + index as u64)),
                         4,
                     ),
@@ -2218,7 +2218,7 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
                 });
             let unrelated = MachineTerm::MemoryLoad(
                 ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-                Box::new(Pointer::symbolic(Variable(970_000))),
+                Box::new(Address::symbolic(Variable(970_000))),
                 LoadKind::Int32,
             );
             let assumptions = PureFactContext::new()
@@ -2279,10 +2279,10 @@ fn a_symbolic_store_skips_locals_whose_address_is_never_taken() {
         let mut memory = SymbolicMemory::new();
         for index in 0..size {
             memory = memory
-                .with_block(slot(index).block.clone(), 4)
+                .with_block(slot(index).base.clone(), 4)
                 .store(slot(index), scaling_value(index));
         }
-        let written = Pointer::symbolic(Variable(98_500));
+        let written = Address::symbolic(Variable(98_500));
         // The first store catches the reachable-cell index up to this
         // memory; the measured one pays only the change since.
         let memory = memory.without_possible_aliasing_cells(&written, 4, &PureFactContext::new());
@@ -2383,9 +2383,9 @@ fn direct_literal_checks_do_not_walk_related_equality_classes() {
                 var(0)
             };
             let expected = if shape == "unrelated" { Some(7) } else { None };
-            let pointer = |index| Pointer {
-                block: Pointer::symbolic(Variable(995_000)).block,
-                offset: PointerOffsetTerm::scale_int32(index, 4),
+            let pointer = |index| Address {
+                base: Address::symbolic(Variable(995_000)).base,
+                offset: AddressOffset::scale_int32(index, 4),
             };
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..4 {
@@ -2435,9 +2435,9 @@ fn store_preservation_ignores_unrelated_owned_members() {
         let mut samples = Vec::new();
         for size in [4u64, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let object = |i| Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(997_000 + i)),
+            let object = |i| Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(997_000 + i)),
             };
             let own =
                 |i| ResourceFact::own_memory(MemoryRange::new(object(i), 0u32.into(), 2u32.into()));
@@ -2494,9 +2494,9 @@ fn store_preservation_ignores_unrelated_owned_members() {
 #[test]
 fn store_distinctness_does_not_search_same_block_range_candidates() {
     let index = |i| MachineTerm::Variable(Variable(998_000 + i));
-    let pointer = |i| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(index(i), 4),
+    let pointer = |i| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(index(i), 4),
     };
     let mut samples = Vec::new();
     for size in [4u64, 16, 64] {
@@ -2570,9 +2570,9 @@ fn wide_store_index_lookup_ignores_unrelated_facts_and_same_array_cells() {
             MachineIntegerType::Int64
         };
         let index = |i: u64| MachineTerm::Variable(Variable(999_100 + i));
-        let pointer = |i: u64| Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int64(index(i), 4, unsigned),
+        let pointer = |i: u64| Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int64(index(i), 4, unsigned),
         };
         let differ = |i: u64, j: u64| {
             ConditionTerm::machine_compare(format, CompareRelation::Equal, index(i), index(j))
@@ -2653,13 +2653,13 @@ fn wide_store_index_lookup_ignores_unrelated_facts_and_same_array_cells() {
             );
             stores.push((size, work));
             // The other signedness, and a 32-bit index, have no key.
-            let other = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int64(index(1), 4, !unsigned),
+            let other = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int64(index(1), 4, !unsigned),
             };
-            let narrow = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(index(1), 4),
+            let narrow = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(index(1), 4),
             };
             for declined in [other, narrow] {
                 assert!(
@@ -2695,9 +2695,9 @@ fn store_ownership_selection_bounds_same_base_candidates() {
                 let mut samples = Vec::new();
                 for size in [4u64, 16, 64] {
                     let _session = crate::kernel::VerificationSession::enter();
-                    let object = |i| Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: PointerOffsetTerm::Variable(Variable(999_100 + i)),
+                    let object = |i| Address {
+                        base: AddressBase::ExternalArgument,
+                        offset: AddressOffset::Variable(Variable(999_100 + i)),
                     };
                     let own = |base, start: u32| {
                         ResourceFact::own_memory(MemoryRange::new(
@@ -2750,9 +2750,9 @@ fn store_ownership_selection_bounds_same_base_compositions() {
         let mut samples = Vec::new();
         for size in [4u64, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let object = |i| Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(999_500 + i)),
+            let object = |i| Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(999_500 + i)),
             };
             let own = |base, end: u32| {
                 ResourceFact::own_memory(MemoryRange::new(object(base), 0u32.into(), end.into()))
@@ -2794,9 +2794,9 @@ fn store_byte_gap_bounds_recorded_order_walks() {
         for size in [4u64, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
             let index = |i| MachineTerm::Variable(Variable(999_800 + i));
-            let pointer = |i| Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(index(i), 4),
+            let pointer = |i| Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(index(i), 4),
             };
             let mut facts = PureFactContext::new();
             for i in 0..size {
@@ -2829,9 +2829,9 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
     let mut samples = Vec::new();
     for count in [1u32, 128, 65_536] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(128),
+        let field = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(128),
         };
         let source = crate::kernel::intern_memory(SymbolicMemory::new());
         // The seed reads the original source, not its immediate parent.
@@ -2852,12 +2852,12 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
         // Prepare a partial write: discard the cached whole pointer, but
         // do not perform the write yet. This records cache-only forgetting.
         let seed_state = crate::kernel::intern_memory(seeded.clone());
-        let seeded_read = Pointer::loaded_value(&seed_state, &field);
+        let seeded_read = Address::loaded_value(&seed_state, &field);
         let forgotten = seeded.without_possible_aliasing_cells(&field, 4, &context);
         assert!(!forgotten.has_known_cell_at(&field));
-        let before = Pointer::loaded_value(&source, &field);
+        let before = Address::loaded_value(&source, &field);
         let after_memory = crate::kernel::intern_memory(forgotten.clone());
-        let after = Pointer::loaded_value(&after_memory, &field);
+        let after = Address::loaded_value(&after_memory, &field);
         let mut work = Vec::new();
         for _ in 0..3 {
             let (equal, units) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2887,7 +2887,7 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
             assert!(
                 !crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                     &before,
-                    &Pointer::loaded_value(&changed, &field),
+                    &Address::loaded_value(&changed, &field),
                     &context,
                 ),
                 "overwriting either pointer half invalidates the frame"
@@ -2896,14 +2896,14 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
         let changed = crate::kernel::intern_memory(forgotten.store(
             field.clone(),
             ProgramValue::typed_pointer(
-                Pointer::symbolic(Variable(998_902)),
+                Address::symbolic(Variable(998_902)),
                 ProgramType::Int32Pointer,
             ),
         ));
         assert!(
             !crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                 &before,
-                &Pointer::loaded_value(&changed, &field),
+                &Address::loaded_value(&changed, &field),
                 &context,
             )
         );
@@ -2929,11 +2929,11 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
     let mut samples = Vec::new();
     for size in [4u32, 8, 16, 32] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Pointer::symbolic(Variable(998_910));
-        let write = Pointer::symbolic(Variable(998_911));
+        let field = Address::symbolic(Variable(998_910));
+        let write = Address::symbolic(Variable(998_911));
         let initial = crate::kernel::intern_memory(SymbolicMemory::new());
         let original = PointerValue::new(
-            Pointer::loaded_value(&initial, &field),
+            Address::loaded_value(&initial, &field),
             ProgramType::Int32Pointer,
         );
         let mut facts = PureFactContext::new().assume_proposition(Proposition::ResourceSeparate {
@@ -2959,7 +2959,7 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
                     .store(write.clone(), ProgramValue::Int32(index.into()));
                 let retained_state = crate::kernel::intern_memory_ref(&memory);
                 let current = PointerValue::new(
-                    Pointer::loaded_value(&retained_state, &field),
+                    Address::loaded_value(&retained_state, &field),
                     ProgramType::Int32Pointer,
                 );
                 let reference = if compare_to_entry {
@@ -3051,12 +3051,12 @@ fn cold_pointer_frame_refusals_do_not_scan_history() {
         let mut samples = Vec::new();
         for size in [4_u32, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let field = Pointer::symbolic(Variable(998_920));
-            let write = Pointer::symbolic(Variable(998_921));
+            let field = Address::symbolic(Variable(998_920));
+            let write = Address::symbolic(Variable(998_921));
             let initial = crate::kernel::intern_memory(SymbolicMemory::new().store(
                 field.clone(),
                 ProgramValue::typed_pointer(
-                    Pointer::symbolic(Variable(998_922)),
+                    Address::symbolic(Variable(998_922)),
                     ProgramType::Int32Pointer,
                 ),
             ));
@@ -3085,8 +3085,8 @@ fn cold_pointer_frame_refusals_do_not_scan_history() {
                     1,
                 ))),
             });
-            let before = Pointer::loaded_value(&initial, &field);
-            let after = Pointer::loaded_value(&current, &field);
+            let before = Address::loaded_value(&initial, &field);
+            let after = Address::loaded_value(&current, &field);
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                     &before, &after, &facts,
@@ -3113,13 +3113,13 @@ fn repeated_read_initialization_work(adjacent: bool, exact: bool) -> Vec<(u32, u
     let mut samples = Vec::new();
     for size in [16u32, 32, 64, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let read = Pointer {
-            block: PointerBlock::Heap(998_940),
-            offset: PointerOffsetTerm::Constant(0),
+        let read = Address {
+            base: AddressBase::Heap(998_940),
+            offset: AddressOffset::Constant(0),
         };
-        let write = Pointer {
-            block: PointerBlock::Heap(998_941),
-            offset: PointerOffsetTerm::Constant(0),
+        let write = Address {
+            base: AddressBase::Heap(998_941),
+            offset: AddressOffset::Constant(0),
         };
         let initial = SymbolicMemory::new();
         let defined = |memory: &SymbolicMemory| {
@@ -3204,9 +3204,9 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
     let mut samples = Vec::new();
     for size in [16u32, 32, 64, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer {
-            block: PointerBlock::Heap(998_960),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::Heap(998_960),
+            offset: AddressOffset::Constant(0),
         };
         let initial = crate::kernel::intern_memory(SymbolicMemory::new());
         let mut memory = initial.memory().clone();
@@ -3224,7 +3224,7 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
         let reads = (0..size)
             .map(|index| {
                 let address = base.offset_by_bytes(if same_cell { 0 } else { index * 8 });
-                let read = Pointer::loaded_value(&current, &address);
+                let read = Address::loaded_value(&current, &address);
                 (address, read)
             })
             .collect::<Vec<_>>();
@@ -3245,7 +3245,7 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
         // read would have the same bytes. No historical identity is inferred.
         for ((address, read), value) in reads.iter().zip(values.iter()) {
             assert_eq!(value.pointer(), read);
-            let exact = Pointer::loaded_value(&current, address);
+            let exact = Address::loaded_value(&current, address);
             assert_eq!(value.provenance(), &exact);
             assert_eq!(value.bounds_owner(), Some(&exact));
         }
@@ -3288,9 +3288,9 @@ fn symbolic_store_into_loaded_run_bounds_logical_slot_work() {
             let base = scaling_cell("local:loaded-run", 0);
             let source = crate::kernel::intern_memory(SymbolicMemory::new());
             let memory = SymbolicMemory::new()
-                .with_block(base.block.clone(), count * 4)
+                .with_block(base.base.clone(), count * 4)
                 .with_seeded_cells(base.clone(), 4, ProgramType::Int32, 0, count, source);
-            assert_eq!(memory.cells.runs_in_block(&base.block).count(), 1);
+            assert_eq!(memory.cells.runs_in_block(&base.base).count(), 1);
             let index = MachineTerm::Variable(Variable(999_900));
             let facts = if bounded {
                 PureFactContext::new()
@@ -3344,9 +3344,9 @@ fn compact_run_store_does_not_scan_separation_candidates() {
     let mut samples = Vec::new();
     for size in [4u64, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = |i| Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Variable(Variable(999_950 + i)),
+        let pointer = |i| Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Variable(Variable(999_950 + i)),
         };
         let base = pointer(0);
         let memory = SymbolicMemory::new().with_seeded_cells(
@@ -3357,7 +3357,7 @@ fn compact_run_store_does_not_scan_separation_candidates() {
             4,
             crate::kernel::intern_memory(SymbolicMemory::new()),
         );
-        assert_eq!(memory.cells.runs_in_block(&base.block).count(), 1);
+        assert_eq!(memory.cells.runs_in_block(&base.base).count(), 1);
         let mut facts = PureFactContext::new();
         for i in 0..size {
             facts = facts.assume_proposition(Proposition::ResourceSeparate {
@@ -3394,8 +3394,8 @@ fn compact_run_store_declines_crowded_anchor_buckets() {
     let mut samples = Vec::new();
     for size in [4u32, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(999_930));
-        let write = Pointer::symbolic(Variable(999_931));
+        let base = Address::symbolic(Variable(999_930));
+        let write = Address::symbolic(Variable(999_931));
         let memory = SymbolicMemory::new().with_seeded_cells(
             base.clone(),
             4,
@@ -3472,8 +3472,8 @@ fn compact_run_store_bounds_ownership_member_selection() {
         let mut samples = Vec::new();
         for size in [4u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let base = Pointer::symbolic(Variable(999_940));
-            let write = Pointer::symbolic(Variable(999_941));
+            let base = Address::symbolic(Variable(999_940));
+            let write = Address::symbolic(Variable(999_941));
             let memory = SymbolicMemory::new().with_seeded_cells(
                 base.clone(),
                 4,
@@ -3482,7 +3482,7 @@ fn compact_run_store_bounds_ownership_member_selection() {
                 4,
                 crate::kernel::intern_memory(SymbolicMemory::new()),
             );
-            let own = |base: Pointer, low: u32, high: u32| {
+            let own = |base: Address, low: u32, high: u32| {
                 ResourceFact::own_memory(MemoryRange::new(base, low.into(), high.into()))
             };
             let mut owner = ResourceContext::new().unchecked_with_fact(own(write.clone(), 0, 1));
@@ -3532,7 +3532,7 @@ fn compact_run_live_footprint_bounds_prefix_and_hole_work() {
     let mut samples = Vec::new();
     for size in [4u32, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(999_960));
+        let base = Address::symbolic(Variable(999_960));
         let mut holes = IndexIntervals::default();
         holes.insert_range(0, size);
         for i in 0..size {
@@ -3666,13 +3666,13 @@ fn wide_store_comparisons_keep_retained_arithmetic_and_exact_sources() {
                 );
             }
             let index = SharedMachineIntegerTerm::observe_shared(format, root.clone()).unwrap();
-            let zero = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(0.into()),
+            let zero = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0.into()),
             };
-            let selected = Pointer {
-                block: zero.block.clone(),
-                offset: PointerOffsetTerm::Int64Scaled {
+            let selected = Address {
+                base: zero.base.clone(),
+                offset: AddressOffset::Int64Scaled {
                     value: index,
                     byte_width: 4,
                     unsigned,

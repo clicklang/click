@@ -89,8 +89,8 @@ mod tests {
         );
         let second_value = ProgramValue::typed_pointer(second.clone(), ProgramType::UInt8Pointer);
         let memory = SymbolicMemory::new()
-            .with_block(first.block.clone(), 24)
-            .with_block(second.block.clone(), 24);
+            .with_block(first.base.clone(), 24)
+            .with_block(second.base.clone(), 24);
         let mut old = ExecutionState::new().with_memory(memory.clone());
         old.locals.set_typed_with_all_qualifiers(
             "p",

@@ -994,7 +994,7 @@ bucket. A condition requiring a different form can be established explicitly
 before the checked operation. Compound-query and carrier/state controls remain.
 
 Atomic certificate planning keeps persistent syntax adjacency for condition
-and proposition facts, keyed by value variables and explicit pointer blocks;
+and proposition facts, keyed by value variables and explicit address bases;
 filing a fact adjusts only its keys. Each complete fact is
 shared across its buckets, so a wide premise costs its syntax once
 (`wide_atomic_premise_cloning_scales_with_its_syntax`). Candidate trials check

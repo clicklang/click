@@ -2,9 +2,9 @@ use super::*;
 
 fn entry_state() -> ExecutionState {
     use crate::kernel::*;
-    let source = Pointer {
-        block: "local:caller".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let source = Address {
+        base: "local:caller".into(),
+        offset: AddressOffset::Constant(0),
     };
     let function = program_function(
         ProgramType::Void,
@@ -22,7 +22,7 @@ fn entry_state() -> ExecutionState {
     );
     program_function_entry_state(
         &ExecutionState::new()
-            .with_memory(SymbolicMemory::new().with_block(source.block.clone(), 8)),
+            .with_memory(SymbolicMemory::new().with_block(source.base.clone(), 8)),
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(source))],
     )
@@ -85,7 +85,7 @@ fn lower_recorded_input(state: &ExecutionState) -> (SpecExpression, usize) {
     let point = ProgramPointSelector::Mark("inside".into());
     retained_states.insert(point.clone(), state.clone());
     let caller_image = ProgramValue::typed_pointer(
-        crate::kernel::Pointer::symbolic(Variable(71_001)),
+        crate::kernel::Address::symbolic(Variable(71_001)),
         ProgramType::UInt8Pointer,
     );
     let (mut lowerer, context) = fixed_state_elaboration(

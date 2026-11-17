@@ -1,9 +1,9 @@
 use super::*;
 
-fn address(offset: i64) -> Pointer {
-    Pointer {
-        block: "local:wide-storage".into(),
-        offset: PointerOffsetTerm::Constant(offset),
+fn address(offset: i64) -> Address {
+    Address {
+        base: "local:wide-storage".into(),
+        offset: AddressOffset::Constant(offset),
     }
 }
 
@@ -14,7 +14,7 @@ fn literal(value: ProgramExpression) -> ProgramValue {
     value
 }
 
-fn load(pointer: Pointer, ty: ProgramType) -> ProgramExpression {
+fn load(pointer: Address, ty: ProgramType) -> ProgramExpression {
     crate::kernel::program_expression::typed_load(
         crate::kernel::program_expression::typed_pointer_value(pointer, ProgramType::VoidPointer),
         ty,
@@ -194,9 +194,9 @@ fn wide_storage_symbolic_load_requires_full_span_and_local_initialization() {
                 .is_none()
         );
     }
-    let pointer = Pointer {
-        block: "local:wide-storage".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "local:wide-storage".into(),
+        offset: AddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_block("local:wide-storage", 16);
     let state = ExecutionState::new().with_memory(memory);
@@ -332,9 +332,9 @@ fn wide_storage_overlapping_store_invalidates_high_bytes_and_gap_skip() {
 
 #[test]
 fn wide_storage_external_access_needs_sixteen_bytes_of_authority() {
-    let pointer = Pointer {
-        block: "wide-external".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "wide-external".into(),
+        offset: AddressOffset::Constant(0),
     };
     for bytes in [8, 16] {
         let range =

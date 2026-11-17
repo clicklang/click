@@ -1173,7 +1173,7 @@ fn has_live_aggregate_binding(state: &ExecutionState, name: &str) -> bool {
     state
         .locals()
         .aggregate_object_pointer(name)
-        .is_some_and(|slot| state.memory().has_block(&slot.block))
+        .is_some_and(|slot| state.memory().has_block(&slot.base))
 }
 
 impl FixedStateLowering {
@@ -1757,7 +1757,7 @@ mod retained_capture_tests {
             ProgramValue::Float64(MachineTerm::Variable(Variable(997002))),
             ProgramValue::Pointer(
                 crate::kernel::PointerValue::new(
-                    crate::kernel::Pointer::symbolic(Variable(997003)),
+                    crate::kernel::Address::symbolic(Variable(997003)),
                     ProgramType::Int32Pointer,
                 )
                 .with_pointee_constant(true),

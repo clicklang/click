@@ -23,19 +23,19 @@ fn binary(
     }
 }
 fn reads() -> [MachineTerm; 3] {
-    let pointer = Pointer {
-        block: "retained-retained_state".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "retained-retained_state".into(),
+        offset: AddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new()
-        .with_block(pointer.block.clone(), 64)
+        .with_block(pointer.base.clone(), 64)
         .store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(2)),
         );
-    let other = Pointer {
-        block: pointer.block.clone(),
-        offset: PointerOffsetTerm::Constant(32),
+    let other = Address {
+        base: pointer.base.clone(),
+        offset: AddressOffset::Constant(32),
     };
     let separate = memory
         .clone()
@@ -52,8 +52,8 @@ fn reads() -> [MachineTerm; 3] {
         )
     })
 }
-fn scaled(root: &KernelTerm) -> PointerOffsetTerm {
-    PointerOffsetTerm::Int32Scaled {
+fn scaled(root: &KernelTerm) -> AddressOffset {
+    AddressOffset::Int32Scaled {
         value: MachineOperandView::Shared(root).retain(MachineIntegerType::Int32),
         byte_width: 4,
     }
@@ -160,7 +160,7 @@ fn state_source_index_matches_retained_signed_and_unsigned_ring_terms() {
         });
         let [source, target, changed] = offsets;
         assert_eq!(offset_state_shape(&source), offset_state_shape(&target));
-        let end = PointerOffsetTerm::Constant(12);
+        let end = AddressOffset::Constant(12);
         let fact = Proposition::ConditionIs(
             ConditionTerm::pointer_offset_equal(source.clone(), end.clone()),
             true,
@@ -181,9 +181,9 @@ fn cached_state_syntax_never_caches_context_authority() {
     let _session = VerificationSession::enter();
     let memory =
         crate::kernel::intern_memory(SymbolicMemory::new().with_block("retained_state-alias", 16));
-    let pointers = [994110, 994111].map(|id| Pointer {
-        block: "retained_state-alias".into(),
-        offset: PointerOffsetTerm::Variable(Variable(id)),
+    let pointers = [994110, 994111].map(|id| Address {
+        base: "retained_state-alias".into(),
+        offset: AddressOffset::Variable(Variable(id)),
     });
     let roots = pointers.each_ref().map(|pointer| {
         shared(&MachineTerm::MemoryLoad(

@@ -23,7 +23,7 @@ pub(super) fn symbolic_contract() -> ProgramFunction {
 }
 
 pub(super) fn symbolic_state() -> (ExecutionState, PureFactContext, ResourceFact) {
-    let pointer = Pointer::symbolic(Variable(8_940_000));
+    let pointer = Address::symbolic(Variable(8_940_000));
     let end = MachineTerm::Variable(Variable(8_940_001));
     let facts = PureFactContext::new()
         .assume_condition(
@@ -38,7 +38,7 @@ pub(super) fn symbolic_state() -> (ExecutionState, PureFactContext, ResourceFact
         ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), end.clone()));
     let state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 1024))
+        .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 1024))
         .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_local("q", ProgramValue::pointer(pointer))
         .with_local("n", ProgramValue::Int32(end))

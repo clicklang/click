@@ -427,9 +427,9 @@ fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
                     before: memory.clone(),
                     after: memory.clone(),
                     writes: vec![(
-                        crate::kernel::Pointer {
-                            block: crate::kernel::PointerBlock::ExternalArgument,
-                            offset: crate::kernel::PointerOffsetTerm::Constant(index as i64 * 4),
+                        crate::kernel::Address {
+                            base: crate::kernel::AddressBase::ExternalArgument,
+                            offset: crate::kernel::AddressOffset::Constant(index as i64 * 4),
                         },
                         4,
                     )],
@@ -492,9 +492,9 @@ fn pure_identity_fixture() -> PureTheoremContext {
 }
 
 fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
-    let pointer = Pointer {
-        block: "sum".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "sum".into(),
+        offset: AddressOffset::Constant(0),
     };
     let loadable = Proposition::ForAll {
         name: Default::default(),
@@ -643,9 +643,9 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
             let predicates = PredicateEnvironment::new(&[]);
             let functions = ClickFunctionEnvironment::new(&[]);
             let theorems = TheoremEnvironment::new(&[]);
-            let pointer = Pointer {
-                block: "atomic-extract-cell".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            let pointer = Address {
+                base: "atomic-extract-cell".into(),
+                offset: AddressOffset::Constant(0),
             };
             let old_memory = SymbolicMemory::new().with_block("atomic-extract-cell", 4).store(
                 pointer.clone(),
@@ -1038,9 +1038,9 @@ fn both_and_preserves_exact_binders_and_saved_states() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
-    let pointer = Pointer {
-        block: "cell".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "cell".into(),
+        offset: AddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_block("cell", 4).store(
         pointer.clone(),
@@ -5150,9 +5150,9 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
         4 * u32::try_from(cells).expect("test array size should fit in a block"),
     ));
     let base = ProgramValue::typed_pointer(
-        Pointer {
-            block: PointerBlock::Concrete(block.into()),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::Concrete(block.into()),
+            offset: AddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -11605,9 +11605,9 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     )
     .expect("test C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
@@ -11768,9 +11768,9 @@ fn generated_load_source_event_fixture(
     occurrence: u32,
     pointer_offset: u32,
 ) -> crate::kernel::GeneratedLoadSourceEvent {
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(pointer_offset.into()),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(pointer_offset.into()),
     };
     crate::kernel::GeneratedLoadSourceEvent::new(
         crate::kernel::LoadSourceId {
@@ -14287,15 +14287,15 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
     }
     let (interface_type, read_local) =
         load_type(function.body()).expect("callback field is a typed load");
-    let argument = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(210_520)), 4),
+    let argument = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(210_520)), 4),
     };
-    let table = Pointer {
-        block: "global:callback-table".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let table = Address {
+        base: "global:callback-table".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let target = Pointer::function("callback");
+    let target = Address::function("callback");
     let memory = SymbolicMemory::new().store(
         table.clone(),
         ProgramValue::typed_pointer(target.clone(), interface_type),
@@ -14906,9 +14906,9 @@ fn proposed_goal_spelling_retains_unproved_domains_for_the_driver() {
 fn partition_known_uses_the_fixed_state_not_its_entry_partition() {
     let cell = |name: &str| {
         Resource::Memory(MemoryRange::new(
-            Pointer {
-                block: name.into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: name.into(),
+                offset: AddressOffset::Constant(0),
             },
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -14969,7 +14969,7 @@ fn proof_binding_name_index_tracks_aliases_scopes_and_forks() {
     let value = |variable| {
         ContractExpression::ProgramExpression(ProgramExpression::Value(
             ProgramValue::typed_pointer(
-                Pointer::symbolic(Variable(variable)),
+                Address::symbolic(Variable(variable)),
                 ProgramType::Int32Pointer,
             ),
         ))
@@ -15091,7 +15091,7 @@ fn proof_binding_names_keep_typed_scopes_when_a_generic_alias_leaves() {
 fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shadow() {
     let variable = Variable(981_020);
     let pointer =
-        crate::kernel::PointerValue::new(Pointer::symbolic(variable), ProgramType::Int32Pointer);
+        crate::kernel::PointerValue::new(Address::symbolic(variable), ProgramType::Int32Pointer);
     let expression = ContractExpression::ProgramExpression(ProgramExpression::Value(
         ProgramValue::Pointer(pointer.clone()),
     ));
@@ -15099,7 +15099,7 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
     locals.set_values(locals.values.with_inserted("identity", expression));
     let state = ExecutionState::new();
     let goal = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null()),
+        ConditionTerm::pointer_equal(pointer.pointer().clone(), Address::null()),
         false,
     );
     let synthesize = || {
@@ -15121,7 +15121,7 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
             "identity",
             ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::typed_pointer(
-                    Pointer::symbolic(Variable(981_021)),
+                    Address::symbolic(Variable(981_021)),
                     ProgramType::Int32Pointer,
                 ),
             )),
@@ -15148,5 +15148,88 @@ fn known_have_step(proposition: ClickProposition) -> ProofStep {
     ProofStep::Have {
         proposition,
         proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
+    }
+}
+
+#[test]
+#[ignore = "nightly: 0.77s in the parallel scaling selection; guard classification has fast scaling coverage"]
+fn loop_exit_eligibility_comes_from_the_guard_not_an_ownership_failure() {
+    let file = crate::surface::parse("void boundary() { ensures true; }").unwrap();
+    let parsed = syntax::parse_function("void boundary() {}").unwrap();
+    let function = parsed.to_kernel_function();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let resources = ResourceEnvironment::new(&[]);
+    let environment = ExecutionEnvironment::new();
+    let state = ExecutionState::new().with_local(
+        "gate",
+        ProgramValue::Int32(MachineTerm::Variable(Variable(9_771_000))),
+    );
+    let root = Proof::for_execution_frontier(
+        "loop edge",
+        0,
+        ExecutionProofState::at_entry(
+            state.clone(),
+            ExecutionFrontier {
+                region: ExecutionRegionKind::LoopBody,
+                position: FrontierPosition::RegionBoundary,
+                ..ExecutionFrontier::default()
+            },
+            RecordedStates::new(),
+            SurfacePropositionMap::default(),
+            PersistentSequence::default(),
+        ),
+        vec![],
+        ExecutionProofConstants::default(),
+        &file.function_blocks()[0],
+        &function,
+        &parsed,
+        &[],
+        &environment,
+        &resources,
+        SpecDefinitions::new(&predicates, &functions),
+        &theorems,
+    );
+    let true_guard = ProgramExpression::Value(crate::kernel::int32(1));
+    let false_guard = ProgramExpression::Value(crate::kernel::int32(0));
+    let unknown_guard = ProgramExpression::Variable("gate".into());
+    let owned = state.clone().with_resource_context(
+        crate::kernel::ResourceContext::new().unchecked_with_fact(
+            crate::kernel::ResourceFact::own_token("keep".into(), Vec::new()),
+        ),
+    );
+    for (guard, consumed, may_continue, may_exit) in [
+        (&false_guard, false, false, true),
+        (&false_guard, true, false, true),
+        (&true_guard, true, true, false),
+        (&unknown_guard, true, true, true),
+    ] {
+        let head = if consumed { &owned } else { &state };
+        let result = root.check_loop_boundary(
+            head,
+            head,
+            &crate::kernel::IntegerTerm::constant_i64(0),
+            Some(guard),
+            &[],
+            &[],
+            None,
+            &[],
+        );
+        if consumed && may_continue {
+            assert!(
+                result
+                    .err()
+                    .unwrap()
+                    .message()
+                    .contains("resource ownership"),
+                "a continuing edge cannot become an exit when ownership is missing"
+            );
+        } else {
+            let edge = result.unwrap();
+            assert_eq!(edge.may_exit(), may_exit);
+            assert_eq!(edge.state(), &state);
+            assert_eq!(edge.explicit_exit_state().is_some(), consumed && may_exit);
+        }
     }
 }

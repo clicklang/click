@@ -11,33 +11,30 @@ fn retained(ty: MachineIntegerType, term: &MachineTerm) -> SharedMachineIntegerT
     )
     .unwrap()
 }
-fn offset(value: SharedMachineIntegerTerm, width: i64, unsigned: bool) -> PointerOffsetTerm {
+fn offset(value: SharedMachineIntegerTerm, width: i64, unsigned: bool) -> AddressOffset {
     if matches!(
         value.ty(),
         MachineIntegerType::Int32 | MachineIntegerType::UInt32
     ) {
-        PointerOffsetTerm::Int32Scaled {
+        AddressOffset::Int32Scaled {
             value,
             byte_width: width,
         }
     } else {
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width: width,
             unsigned,
         }
     }
 }
-fn fact(offset: PointerOffsetTerm) -> Proposition {
+fn fact(offset: AddressOffset) -> Proposition {
     Proposition::ConditionIs(
-        ConditionTerm::PointerOffsetEqual(
-            Box::new(offset),
-            Box::new(PointerOffsetTerm::Constant(0)),
-        ),
+        ConditionTerm::PointerOffsetEqual(Box::new(offset), Box::new(AddressOffset::Constant(0))),
         true,
     )
 }
-fn quantified(variable: Variable, offset: PointerOffsetTerm) -> Proposition {
+fn quantified(variable: Variable, offset: AddressOffset) -> Proposition {
     Proposition::ForAll {
         var: variable,
         name: crate::kernel::BinderName::written("index"),

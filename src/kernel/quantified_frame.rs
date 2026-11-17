@@ -379,9 +379,9 @@ mod wide_condition_tests {
     #[test]
     fn wide_equality_frame_checks_read_kind_history_and_other_operand() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: "wide-equality-frame".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "wide-equality-frame".into(),
+            offset: AddressOffset::Constant(0),
         };
         let assumptions = PureFactContext::new();
         let before = SymbolicMemory::new().with_block("wide-equality-frame", 16);

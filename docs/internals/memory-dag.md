@@ -30,10 +30,10 @@ a root, and otherwise compares elementwise, charging each compared entry to
 the deterministic work counters. Ordering stays lexicographic over entries.
 
 A rule applied at one address visits only the entries that can alias it.
-Every state collection is keyed by a `Pointer` (or a key that orders by
-one), `Pointer` orders by block first, and `PointerBlock` orders by variant,
+Every state collection is keyed by an `Address` (or a key that orders by
+one), `Address` orders by base first, and `AddressBase` orders by variant,
 so one block's entries are one key range, the `Symbolic` blocks are one range
-and the `Heap` and `Temporary` blocks come last. `PointerBlock::proven_distinct`
+and the `Heap` and `Temporary` blocks come last. `AddressBase::proven_distinct`
 separates a `Heap` or `Temporary` block from every other block except a
 `Symbolic` one, so an access into an allocation can alias only its own block
 and the symbolic range; any other access can alias at most the non-heap prefix

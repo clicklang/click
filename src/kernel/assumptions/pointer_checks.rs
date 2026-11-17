@@ -3,8 +3,8 @@
 //! for each relation; these readers neither search nor create evidence.
 use super::*;
 use crate::kernel::{
-    KernelPointerOffset as O, KernelTerm, KernelType, MachineOperandView as V,
-    SharedPointerAddress, SharedPointerOffset, SharedPointerValue,
+    KernelAddressOffset as O, KernelTerm, KernelType, MachineOperandView as V, SharedAddress,
+    SharedAddressOffset, SharedPointerValue,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -14,7 +14,7 @@ pub(super) struct Origins<'a, A, W> {
     pub(super) bounds: Option<(&'a A, &'a W)>,
     pub(super) known: bool,
 }
-impl<'a> Origins<'a, Pointer, MachineTerm> {
+impl<'a> Origins<'a, Address, MachineTerm> {
     pub(super) fn native(value: &'a PointerValue) -> Self {
         Self {
             provenance: value.provenance(),
@@ -24,7 +24,7 @@ impl<'a> Origins<'a, Pointer, MachineTerm> {
         }
     }
 }
-impl<'a> Origins<'a, SharedPointerAddress, KernelTerm> {
+impl<'a> Origins<'a, SharedAddress, KernelTerm> {
     pub(super) fn shared(value: &'a SharedPointerValue) -> Self {
         let p = value.node();
         let q = p.qualifiers.as_ref();
@@ -46,20 +46,20 @@ pub(super) trait OriginChecks<A, W> {
     fn width(&self, a: &W, b: &W) -> bool;
     fn opaque_is_root(&self, a: &A) -> bool;
 }
-impl OriginChecks<Pointer, MachineTerm> for PureFactContext {
-    fn provenance(&self, a: &Pointer, b: &Pointer) -> bool {
+impl OriginChecks<Address, MachineTerm> for PureFactContext {
+    fn provenance(&self, a: &Address, b: &Address) -> bool {
         self.provenance_equal(a, b)
     }
-    fn opaque(&self, a: &Pointer, b: &Pointer) -> bool {
+    fn opaque(&self, a: &Address, b: &Address) -> bool {
         self.bounds_owners_equal(a, b)
     }
-    fn address(&self, a: &Pointer, b: &Pointer) -> bool {
+    fn address(&self, a: &Address, b: &Address) -> bool {
         self.equality_graph.are_equal(a, b)
     }
     fn width(&self, a: &MachineTerm, b: &MachineTerm) -> bool {
         a == b
     }
-    fn opaque_is_root(&self, a: &Pointer) -> bool {
+    fn opaque_is_root(&self, a: &Address) -> bool {
         self.equality_graph.bounds_owner_is_root(a)
     }
 }
@@ -123,27 +123,27 @@ fn exact_index(value: &KernelTerm) -> Option<SharedMachineIntegerTerm> {
 }
 
 pub(super) fn shared_addresses_equal_with_load_atoms(
-    left: &SharedPointerAddress,
-    right: &SharedPointerAddress,
+    left: &SharedAddress,
+    right: &SharedAddress,
     loads: LoadAtomsMatch<'_>,
 ) -> bool {
     // Borrow block atoms. Exact shared identity skips repeated literal-byte
     // comparisons; distinct producer payloads still use native logical identity.
-    let a = &left.node().block;
-    let b = &right.node().block;
-    if a != b && !pointer_blocks_equal_with_load_atoms(a.native_atom(), b.native_atom(), loads) {
+    let a = &left.node().base;
+    let b = &right.node().base;
+    if a != b && !address_bases_equal_with_load_atoms(a.native_atom(), b.native_atom(), loads) {
         return false;
     }
     shared_offsets_equal_with_load_atoms(&left.node().offset, &right.node().offset, loads)
 }
 
 pub(super) fn shared_offsets_equal_with_load_atoms(
-    left: &SharedPointerOffset,
-    right: &SharedPointerOffset,
+    left: &SharedAddressOffset,
+    right: &SharedAddressOffset,
     loads: LoadAtomsMatch<'_>,
 ) -> bool {
     let mut pending = vec![(left, right)];
-    let mut seen: HashSet<(SharedPointerOffset, SharedPointerOffset)> = HashSet::new();
+    let mut seen: HashSet<(SharedAddressOffset, SharedAddressOffset)> = HashSet::new();
     let mut numeric = HashSet::new();
     let mut exact_indices = HashMap::new();
     let mut index = |value: &KernelTerm| {
@@ -223,7 +223,7 @@ mod tests {
     // No common tree is exported and no ambient fact/alias set is searched.
     struct Selected<'a> {
         facts: &'a PureFactContext,
-        addresses: HashMap<SharedPointerAddress, Pointer>,
+        addresses: HashMap<SharedAddress, Address>,
         widths: HashMap<KernelTerm, MachineTerm>,
     }
     impl<'a> Selected<'a> {
@@ -259,16 +259,16 @@ mod tests {
             result
         }
     }
-    impl OriginChecks<SharedPointerAddress, KernelTerm> for Selected<'_> {
-        fn provenance(&self, a: &SharedPointerAddress, b: &SharedPointerAddress) -> bool {
+    impl OriginChecks<SharedAddress, KernelTerm> for Selected<'_> {
+        fn provenance(&self, a: &SharedAddress, b: &SharedAddress) -> bool {
             self.facts
                 .provenance_equal(&self.addresses[a], &self.addresses[b])
         }
-        fn opaque(&self, a: &SharedPointerAddress, b: &SharedPointerAddress) -> bool {
+        fn opaque(&self, a: &SharedAddress, b: &SharedAddress) -> bool {
             self.facts
                 .bounds_owners_equal(&self.addresses[a], &self.addresses[b])
         }
-        fn address(&self, a: &SharedPointerAddress, b: &SharedPointerAddress) -> bool {
+        fn address(&self, a: &SharedAddress, b: &SharedAddress) -> bool {
             self.facts
                 .equality_graph
                 .are_equal(&self.addresses[a], &self.addresses[b])
@@ -276,7 +276,7 @@ mod tests {
         fn width(&self, a: &KernelTerm, b: &KernelTerm) -> bool {
             self.widths[a] == self.widths[b]
         }
-        fn opaque_is_root(&self, a: &SharedPointerAddress) -> bool {
+        fn opaque_is_root(&self, a: &SharedAddress) -> bool {
             self.facts
                 .equality_graph
                 .bounds_owner_is_root(&self.addresses[a])
@@ -313,18 +313,18 @@ mod tests {
                         },
                     ),
                 );
-                Pointer {
-                    block: PointerBlock::Concrete("shared-check-base".into()),
+                Address {
+                    base: AddressBase::Concrete("shared-check-base".into()),
                     offset: if matches!(
                         format,
                         MachineIntegerType::Int32 | MachineIntegerType::UInt32
                     ) {
-                        PointerOffsetTerm::Int32Scaled {
+                        AddressOffset::Int32Scaled {
                             value,
                             byte_width: 4,
                         }
                     } else {
-                        PointerOffsetTerm::Int64Scaled {
+                        AddressOffset::Int64Scaled {
                             value,
                             byte_width: 8,
                             unsigned: true,
@@ -335,8 +335,8 @@ mod tests {
             let a = make(before.clone());
             let b = make(after.clone());
             for right in [&a, &b] {
-                let sa = SharedPointerAddress::import(&a);
-                let sb = SharedPointerAddress::import(right);
+                let sa = SharedAddress::import(&a);
+                let sb = SharedAddress::import(right);
                 for allowed in [false, true] {
                     let loads = |_: &MachineTerm, _: &MachineTerm| allowed;
                     let expected = pointers_equal_with_load_atoms(&a, right, &loads);
@@ -354,11 +354,11 @@ mod tests {
     #[test]
     fn shared_loaded_blocks_use_the_existing_selected_load_authority() {
         let _session = VerificationSession::enter();
-        let cell = Pointer::symbolic(Variable(1012050));
+        let cell = Address::symbolic(Variable(1012050));
         let before = crate::kernel::intern_memory(SymbolicMemory::new());
         let after = crate::kernel::intern_memory(SymbolicMemory::new().with_block("different", 8));
-        let a = SharedPointerAddress::import(&Pointer::loaded_value(&before, &cell));
-        let b = SharedPointerAddress::import(&Pointer::loaded_value(&after, &cell));
+        let a = SharedAddress::import(&Address::loaded_value(&before, &cell));
+        let b = SharedAddress::import(&Address::loaded_value(&after, &cell));
         assert!(shared_addresses_equal_with_load_atoms(&a, &a, &|_, _| {
             false
         }));
@@ -370,9 +370,9 @@ mod tests {
     #[test]
     fn shared_origins_require_the_same_bounds_start_and_width_evidence() {
         let _session = VerificationSession::enter();
-        let a = Pointer::symbolic(Variable(1012000));
-        let b = Pointer::symbolic(Variable(1012001));
-        let provenance = std::sync::Arc::new(Pointer::symbolic(Variable(1012002)));
+        let a = Address::symbolic(Variable(1012000));
+        let b = Address::symbolic(Variable(1012001));
+        let provenance = std::sync::Arc::new(Address::symbolic(Variable(1012002)));
         let make = |start, width| {
             PointerValue::new(a.clone(), ProgramType::Int32Pointer)
                 .with_provenance(provenance.clone())
@@ -412,16 +412,16 @@ mod tests {
     fn shared_access_keeps_complete_value_and_root_bounds_authority() {
         let _session = VerificationSession::enter();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let cell = Pointer::symbolic(Variable(1012100));
+        let cell = Address::symbolic(Variable(1012100));
         let read = PointerValue::from_read(
-            Pointer::loaded_value(&memory, &cell),
+            Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
             &cell,
         );
-        let base = Pointer {
-            block: PointerBlock::Heap(1012101),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::Heap(1012101),
+            offset: AddressOffset::Constant(0),
         };
         let stored = PointerValue::new(base.clone(), ProgramType::Int32Pointer);
         let bounded = stored.clone().with_bounds(Some(SubobjectBounds {
@@ -444,7 +444,7 @@ mod tests {
         let sr = SharedPointerValue::import(&read);
         let ss = SharedPointerValue::import(&stored);
         let sb = SharedPointerValue::import(&bounded);
-        let available = SharedPointerAddress::import(&held.provenance);
+        let available = SharedAddress::import(&held.provenance);
         for (facts, expected) in [(&before, false), (&after, true), (&bounded_facts, false)] {
             let selected = Selected::new(facts, &[(&read, &sr), (&stored, &ss), (&bounded, &sb)]);
             let origin = Origins::shared(&sr);

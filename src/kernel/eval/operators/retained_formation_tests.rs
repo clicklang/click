@@ -53,12 +53,12 @@ fn exact_coordinate_reconstruction_preserves_native_signed_shapes() {
         ] {
             for stride in [-4, 0, 1, 4] {
                 let offset = if ty == T::Int32 {
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: retained(ty, &value),
                         byte_width: stride,
                     }
                 } else {
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: retained(ty, &value),
                         byte_width: stride,
                         unsigned: ty == T::UInt64,
@@ -99,7 +99,7 @@ fn exact_coordinate_reconstruction_preserves_native_signed_shapes() {
     }
     assert!(
         exact_pointer_offset_i64_with_guards(
-            &PointerOffsetTerm::Variable(Variable(993101)),
+            &AddressOffset::Variable(Variable(993101)),
             &mut vec![],
         )
         .is_none()
@@ -117,7 +117,7 @@ fn exact_coordinate_guards_keep_full_width_and_overflow_refusals() {
         (1 << 63, 1, false),
         (i64::MAX as u64, 2, false),
     ] {
-        let offset = PointerOffsetTerm::Int64Scaled {
+        let offset = AddressOffset::Int64Scaled {
             value: retained(T::UInt64, &MachineTerm::uint64_constant(value)),
             byte_width: stride,
             unsigned: true,
@@ -137,9 +137,9 @@ fn exact_coordinate_guards_keep_full_width_and_overflow_refusals() {
         );
     }
     for (left, right, accepted) in [(i64::MAX, 1, false), (i64::MIN, -1, false), (17, 4, true)] {
-        let offset = PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::Constant(left)),
-            Box::new(PointerOffsetTerm::Constant(right)),
+        let offset = AddressOffset::Add(
+            Box::new(AddressOffset::Constant(left)),
+            Box::new(AddressOffset::Constant(right)),
         );
         let mut guards = vec![];
         let _ = exact_pointer_offset_i64_with_guards(&offset, &mut guards).unwrap();
@@ -162,16 +162,16 @@ fn retained_block_bounds_require_the_full_index_and_preserve_missing_bounds() {
     let _session = crate::kernel::VerificationSession::enter();
     use MachineIntegerType as T;
     for ty in [T::Int64, T::UInt64] {
-        let base = Pointer {
-            block: PointerBlock::Concrete("retained-formation".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::Concrete("retained-formation".into()),
+            offset: AddressOffset::Constant(0),
         };
         let state = ExecutionState::new()
-            .with_memory(SymbolicMemory::new().with_block(base.block.clone(), 64));
+            .with_memory(SymbolicMemory::new().with_block(base.base.clone(), 64));
         let variable = MachineTerm::Variable(Variable(993200));
-        let pointer = Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::Int64Scaled {
+        let pointer = Address {
+            base: base.base.clone(),
+            offset: AddressOffset::Int64Scaled {
                 value: retained(ty, &variable),
                 byte_width: 4,
                 unsigned: ty == T::UInt64,
@@ -179,7 +179,7 @@ fn retained_block_bounds_require_the_full_index_and_preserve_missing_bounds() {
         };
         let root = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
-        let guards = pointer_block_bounds(&state, &pointer, 4, &root).unwrap();
+        let guards = address_base_bounds(&state, &pointer, 4, &root).unwrap();
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert!(guards.iter().any(|g| root.decide(&g.condition).is_none()));
         for n in [-1, 0, 16, 17, 1 << 32] {
@@ -215,12 +215,12 @@ mod scaling_tests {
 #[test]
 fn coordinate_reconstruction_keeps_the_selected_read_state() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("coordinate-retained_state".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("coordinate-retained_state".into()),
+        offset: AddressOffset::Constant(0),
     };
     let before = SymbolicMemory::new()
-        .with_block(pointer.block.clone(), 8)
+        .with_block(pointer.base.clone(), 8)
         .store(
             pointer.clone(),
             ProgramValue::Int64(MachineTerm::int64_constant(2)),
@@ -237,7 +237,7 @@ fn coordinate_reconstruction_keeps_the_selected_read_state() {
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         );
-        let offset = PointerOffsetTerm::Int64Scaled {
+        let offset = AddressOffset::Int64Scaled {
             value: retained(MachineIntegerType::Int64, &read),
             byte_width: 4,
             unsigned: false,
@@ -258,7 +258,7 @@ fn wide_block_bounds_keep_signed_extension_and_opaque_offset_refusals() {
     let ty = MachineIntegerType::Int32;
     let size = AllocationSize::new(MachineTerm::uint64_constant(64), AllocationSizeKind::UInt64);
     let index = MachineTerm::Variable(Variable(993400));
-    let offset = PointerOffsetTerm::Int32Scaled {
+    let offset = AddressOffset::Int32Scaled {
         value: retained(ty, &index),
         byte_width: 4,
     };
@@ -278,7 +278,7 @@ fn wide_block_bounds_keep_signed_extension_and_opaque_offset_refusals() {
         );
     }
     assert!(
-        wide_block_bounds_of_32_bit_offset(&PointerOffsetTerm::Variable(Variable(993401)), &size,)
+        wide_block_bounds_of_32_bit_offset(&AddressOffset::Variable(Variable(993401)), &size,)
             .is_none()
     );
 }

@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use click::cli::{VerificationInput, parse_mdtest, read_click_project, read_verification_inputs};
 use click::kernel::{
-    ExecutionState, FunctionOutcome, MachineTerm, MemoryRange, Pointer, PointerOffsetTerm,
+    Address, AddressOffset, ExecutionState, FunctionOutcome, MachineTerm, MemoryRange,
     ProgramExpression, ProgramStatement, ProgramType, Proposition, PureFactContext,
     ResourceContext, ResourceFact, SymbolicMemory, UndefinedBehavior, int32,
     prove_symbolic_program_function_execution,
@@ -6230,9 +6230,9 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
             ) }
     ));
 
-    let pointer = Pointer {
-        block: "cpp-reference".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "cpp-reference".into(),
+        offset: AddressOffset::Constant(0),
     };
     let resources =
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(

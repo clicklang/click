@@ -1,10 +1,10 @@
 //! Compact scalar arrays keep checked authority independent of logical length.
 use super::*;
 
-fn pointer(block: &str, offset: i64) -> Pointer {
-    Pointer {
-        block: block.into(),
-        offset: PointerOffsetTerm::Constant(offset),
+fn pointer(block: &str, offset: i64) -> Address {
+    Address {
+        base: block.into(),
+        offset: AddressOffset::Constant(offset),
     }
 }
 fn fresh(count: u32) -> SymbolicMemory {
@@ -257,7 +257,7 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
     let target = pointer("local:array-target", 0);
     for readonly_block in [false, true] {
         let memory =
-            SymbolicMemory::new().with_block_or_read_only(target.block.clone(), 16, readonly_block);
+            SymbolicMemory::new().with_block_or_read_only(target.base.clone(), 16, readonly_block);
         let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(own_memory_context(target.clone(), 0, 4));
@@ -367,8 +367,8 @@ fn compact_array_regions_check_source_type_size_alignment_and_initialization() {
     let source = pointer("local:source", 4);
     let target = pointer("local:target", 4);
     let memory = SymbolicMemory::new()
-        .with_block(source.block.clone(), 24)
-        .with_block(target.block.clone(), 24)
+        .with_block(source.base.clone(), 24)
+        .with_block(target.base.clone(), 24)
         .write_scalar_array_region(
             &source,
             ProgramType::UInt32,
@@ -423,8 +423,8 @@ fn compact_array_regions_check_source_type_size_alignment_and_initialization() {
         ExpressionOutcome::Value(ProgramValue::UInt32(9u32.into()))
     );
     let fresh = SymbolicMemory::new()
-        .with_block(source.block.clone(), 24)
-        .with_block(target.block.clone(), 24);
+        .with_block(source.base.clone(), 24)
+        .with_block(target.base.clone(), 24);
     assert!(
         fresh
             .write_scalar_array_region(
@@ -472,7 +472,7 @@ fn compact_array_region_execution_requires_full_authority_and_mutable_storage() 
         };
         let state = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block_or_read_only(
-                target.block.clone(),
+                target.base.clone(),
                 24,
                 readonly,
             ))

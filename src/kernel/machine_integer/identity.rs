@@ -245,12 +245,12 @@ pub(crate) fn machine_operation_of_integer_value(
 
 #[test]
 fn explicit_operation_identity_keeps_its_read_operands() {
-    use crate::kernel::{LoadKind, Pointer, ProgramValue, SymbolicMemory, Variable};
+    use crate::kernel::{Address, LoadKind, ProgramValue, SymbolicMemory, Variable};
     let _session = crate::kernel::VerificationSession::enter();
     let format = MachineIntegerType::Int32;
     let x = MachineTerm::Variable(Variable(989_773));
     let y = MachineTerm::Variable(Variable(989_774));
-    let address = Pointer::symbolic(Variable(989_775));
+    let address = Address::symbolic(Variable(989_775));
     let stored = MachineTerm::logical_machine_binary(
         format,
         crate::kernel::MachineBinaryOp::Add,

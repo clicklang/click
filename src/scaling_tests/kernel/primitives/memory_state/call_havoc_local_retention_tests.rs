@@ -6,24 +6,24 @@ use super::*;
 
 #[test]
 fn local_initialization_havoc_checks_scale_with_changed_cells() {
-    let target = Pointer {
-        block: "local:target".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let target = Address {
+        base: "local:target".into(),
+        offset: AddressOffset::Constant(0),
     };
     let range = MemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1);
     let facts = PureFactContext::new();
     let mut samples = Vec::new();
     for count in [16, 64, 256, 1024] {
         let mut before = SymbolicMemory::new()
-            .with_block(target.block.clone(), 8)
+            .with_block(target.base.clone(), 8)
             .store(
                 target.clone(),
                 ProgramValue::Int32(MachineTerm::constant(7)),
             );
         for index in 0..count {
-            let pointer = Pointer {
-                block: format!("local:ambient-{index}").into(),
-                offset: PointerOffsetTerm::Constant(0),
+            let pointer = Address {
+                base: format!("local:ambient-{index}").into(),
+                offset: AddressOffset::Constant(0),
             };
             std::sync::Arc::make_mut(&mut before.heap)
                 .initialized

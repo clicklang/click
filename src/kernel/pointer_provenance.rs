@@ -116,8 +116,8 @@ pub(super) fn prefer_pointer(left: &PointerValue, right: &PointerValue) -> Point
     // A contract supplies the provenance of an opaque incoming value. Its
     // explicit subobject boundary takes precedence over unknown bounds.
     if !left.bounds_are_known() && right.bounds_are_known()
-        || matches!(right.pointer().block, super::PointerBlock::Function(_))
-            && !matches!(left.pointer().block, super::PointerBlock::Function(_))
+        || matches!(right.pointer().base, super::AddressBase::Function(_))
+            && !matches!(left.pointer().base, super::AddressBase::Function(_))
     {
         // A complete-value class can expose a concrete callback target even
         // when both the structural read and the target have known root bounds.
@@ -151,7 +151,7 @@ mod tests {
     }
 
     fn value(id: u64) -> PointerValue {
-        PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer)
+        PointerValue::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
     fn equality(a: &PointerValue, b: &PointerValue) -> Proposition {
         Proposition::ConditionIs(
@@ -165,9 +165,9 @@ mod tests {
         let b = MachineTerm::Variable(Variable(809_999));
         let pointer = |index| {
             PointerValue::new(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::scale_int32(index, 4),
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::scale_int32(index, 4),
                 },
                 ProgramType::Int32Pointer,
             )
@@ -185,11 +185,11 @@ mod tests {
     #[test]
     fn a_proven_null_address_denotes_the_unique_null_value() {
         let pointer = value(810_000);
-        let null = PointerValue::new(Pointer::null(), ProgramType::Int32Pointer);
+        let null = PointerValue::new(Address::null(), ProgramType::Int32Pointer);
         let empty = PureFactContext::new();
         assert!(!empty.pointer_provenance_match(&pointer, &null));
         let context = empty.assume_condition(
-            ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null()),
+            ConditionTerm::pointer_equal(pointer.pointer().clone(), Address::null()),
             true,
         );
         assert!(context.pointer_provenance_match(&pointer, &null));
@@ -327,8 +327,8 @@ mod tests {
             width: 4u32.into(),
         }));
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
-        let cell = Pointer::symbolic(Variable(824_002));
-        let read_address = Pointer::symbolic(Variable(824_003));
+        let cell = Address::symbolic(Variable(824_002));
+        let read_address = Address::symbolic(Variable(824_003));
         let read = PointerValue::from_read(
             read_address,
             ProgramType::Int32Pointer,
@@ -348,13 +348,13 @@ mod tests {
         let b = value(825_002);
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
         let x = PointerValue::from_read(
-            Pointer::symbolic(Variable(825_003)),
+            Address::symbolic(Variable(825_003)),
             ProgramType::Int32Pointer,
             &retained_state,
             a.pointer(),
         );
         let y = PointerValue::from_read(
-            Pointer::symbolic(Variable(825_004)),
+            Address::symbolic(Variable(825_004)),
             ProgramType::Int32Pointer,
             &retained_state,
             b.pointer(),

@@ -210,7 +210,7 @@ pub(in crate::kernel) fn transported_scaled_index(
     value: SharedMachineIntegerTerm,
     byte_width: i64,
     wide: Option<bool>,
-) -> PointerOffsetTerm {
+) -> AddressOffset {
     let view = value.operand_view();
     if let Some(native) = view
         .literal()
@@ -225,10 +225,8 @@ pub(in crate::kernel) fn transported_scaled_index(
         })
     {
         return match wide {
-            None => PointerOffsetTerm::scale_int32(native.into_owned(), byte_width),
-            Some(unsigned) => {
-                PointerOffsetTerm::scale_int64(native.into_owned(), byte_width, unsigned)
-            }
+            None => AddressOffset::scale_int32(native.into_owned(), byte_width),
+            Some(unsigned) => AddressOffset::scale_int64(native.into_owned(), byte_width, unsigned),
         };
     }
     if wide == Some(false) {
@@ -265,7 +263,7 @@ pub(in crate::kernel) fn transported_scaled_index(
     if wide.is_none()
         && let Some(v) = view.word32_constant()
     {
-        return PointerOffsetTerm::Constant(i64::from(v as i32) * byte_width);
+        return AddressOffset::Constant(i64::from(v as i32) * byte_width);
     }
     let constant = match wide {
         Some(true) => view.uint64_constant().and_then(|v| i64::try_from(v).ok()),
@@ -274,7 +272,7 @@ pub(in crate::kernel) fn transported_scaled_index(
     }
     .and_then(|v| v.checked_mul(byte_width));
     if let Some(constant) = constant {
-        return PointerOffsetTerm::Constant(constant);
+        return AddressOffset::Constant(constant);
     }
     // The existing offset representation observes both signed and unsigned
     // wide indices through its Int64 carrier; `unsigned` carries the reading.
@@ -284,8 +282,8 @@ pub(in crate::kernel) fn transported_scaled_index(
         MachineIntegerType::Int32
     });
     match wide {
-        None => PointerOffsetTerm::Int32Scaled { value, byte_width },
-        Some(unsigned) => PointerOffsetTerm::Int64Scaled {
+        None => AddressOffset::Int32Scaled { value, byte_width },
+        Some(unsigned) => AddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -331,8 +329,8 @@ mod tests {
             let wide = (format != MachineIntegerType::Int32)
                 .then_some(format == MachineIntegerType::UInt64);
             let offset = transported_scaled_index(framed, 4, wide);
-            let (PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. }) = offset
+            let (AddressOffset::Int32Scaled { value, .. }
+            | AddressOffset::Int64Scaled { value, .. }) = offset
             else {
                 panic!("retained scaled call");
             };
@@ -366,26 +364,26 @@ mod tests {
         );
         for width in [1, 4, -1] {
             let offset = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: value.clone(),
                     byte_width: width,
                 }
             } else {
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value: value.clone(),
                     byte_width: width,
                     unsigned: ty == MachineIntegerType::UInt64,
                 }
             };
             let native = match &offset {
-                PointerOffsetTerm::Int32Scaled { .. } => match expected.as_const() {
-                    Some(bits) => PointerOffsetTerm::Constant(i64::from(bits as i32) * width),
-                    None => PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled { .. } => match expected.as_const() {
+                    Some(bits) => AddressOffset::Constant(i64::from(bits as i32) * width),
+                    None => AddressOffset::Int32Scaled {
                         value: retained(ty, &expected),
                         byte_width: width,
                     },
                 },
-                _ => PointerOffsetTerm::scale_int64(
+                _ => AddressOffset::scale_int64(
                     expected.clone(),
                     width,
                     ty == MachineIntegerType::UInt64,
@@ -396,11 +394,11 @@ mod tests {
             assert_eq!(exports, KernelTermExport::machine_export_count());
             match (actual, native) {
                 (
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: a,
                         byte_width: aw,
                     },
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: b,
                         byte_width: bw,
                     },
@@ -412,12 +410,12 @@ mod tests {
                     );
                 }
                 (
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: a,
                         byte_width: aw,
                         unsigned: au,
                     },
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: b,
                         byte_width: bw,
                         unsigned: bu,
@@ -467,18 +465,16 @@ mod tests {
                 let offset = transported_scaled_index(result.clone(), width, wide);
                 assert_eq!(exports, KernelTermExport::machine_export_count());
                 let expected_offset = match wide {
-                    None => PointerOffsetTerm::scale_int32(expected.clone(), width),
-                    Some(unsigned) => {
-                        PointerOffsetTerm::scale_int64(expected.clone(), width, unsigned)
-                    }
+                    None => AddressOffset::scale_int32(expected.clone(), width),
+                    Some(unsigned) => AddressOffset::scale_int64(expected.clone(), width, unsigned),
                 };
                 match (&offset, &expected_offset) {
                     (
-                        PointerOffsetTerm::Int32Scaled {
+                        AddressOffset::Int32Scaled {
                             value: a,
                             byte_width: aw,
                         },
-                        PointerOffsetTerm::Int32Scaled {
+                        AddressOffset::Int32Scaled {
                             value: b,
                             byte_width: bw,
                         },
@@ -488,12 +484,12 @@ mod tests {
                         assert_eq!(a.structural_value(), b.structural_value(), "{term:?}");
                     }
                     (
-                        PointerOffsetTerm::Int64Scaled {
+                        AddressOffset::Int64Scaled {
                             value: a,
                             byte_width: aw,
                             unsigned: au,
                         },
-                        PointerOffsetTerm::Int64Scaled {
+                        AddressOffset::Int64Scaled {
                             value: b,
                             byte_width: bw,
                             unsigned: bu,
@@ -598,9 +594,9 @@ mod tests {
     #[test]
     fn framed_index_transport_retains_read_authority_at_each_state() {
         let _session = VerificationSession::enter();
-        let pointer = Pointer {
-            block: "transport-index".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "transport-index".into(),
+            offset: AddressOffset::Constant(0),
         };
         let before = SymbolicMemory::new()
             .with_block("transport-index", 16)
@@ -649,9 +645,9 @@ mod tests {
     #[test]
     fn framed_index_transport_moves_registered_read_variables() {
         let _session = VerificationSession::enter();
-        let pointer = Pointer {
-            block: "registered-index".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "registered-index".into(),
+            offset: AddressOffset::Constant(0),
         };
         let before = SymbolicMemory::new().with_block("registered-index", 16);
         let load = MachineTerm::MemoryLoad(
@@ -707,7 +703,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let after = SymbolicMemory::new();
         let null = MachineTerm::PointerAddress(
-            Box::new(Pointer::null()),
+            Box::new(Address::null()),
             crate::kernel::AddressObjectClass::NONE,
         );
         let x = MachineTerm::Variable(Variable(1018912));
@@ -930,9 +926,9 @@ mod tests {
             }
         }
         let index = MachineTerm::Variable(Variable(1018953));
-        let query = Pointer {
-            block: pointer.block.clone(),
-            offset: PointerOffsetTerm::scaled_int32_node(index.clone(), 4),
+        let query = Address {
+            base: pointer.base.clone(),
+            offset: AddressOffset::scaled_int32_node(index.clone(), 4),
         };
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(
@@ -975,8 +971,8 @@ mod tests {
             ty,
             &MachineTerm::If {
                 condition: Box::new(ConditionTerm::pointer_equal(
-                    Pointer::symbolic(Variable(1007510)),
-                    Pointer::symbolic(Variable(1007511)),
+                    Address::symbolic(Variable(1007510)),
+                    Address::symbolic(Variable(1007511)),
                 )),
                 then_term: Box::new(MachineTerm::constant(1)),
                 else_term: Box::new(MachineTerm::constant(0)),

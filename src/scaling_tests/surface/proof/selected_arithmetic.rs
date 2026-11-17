@@ -279,7 +279,7 @@ fn rewrite_history_keys_share_call_carriers_and_keep_state_authority() {
     let mut samples = Vec::new();
     for depth in [4, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(995941));
+        let pointer = Address::symbolic(Variable(995941));
         let before = SymbolicMemory::new();
         let after = before
             .clone()

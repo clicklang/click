@@ -5,12 +5,12 @@ use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct MemoryBlocks {
-    entries: HashedOrdMap<PointerBlock, MemoryBlock>,
-    scalars: HashedOrdSet<PointerBlock>,
+    entries: HashedOrdMap<AddressBase, MemoryBlock>,
+    scalars: HashedOrdSet<AddressBase>,
 }
 
 impl std::ops::Deref for MemoryBlocks {
-    type Target = HashedOrdMap<PointerBlock, MemoryBlock>;
+    type Target = HashedOrdMap<AddressBase, MemoryBlock>;
     fn deref(&self) -> &Self::Target {
         &self.entries
     }
@@ -27,12 +27,12 @@ impl Hash for MemoryBlocks {
     }
 }
 impl MemoryBlocks {
-    pub(crate) fn scalar_blocks(&self) -> impl Iterator<Item = &PointerBlock> {
+    pub(crate) fn scalar_blocks(&self) -> impl Iterator<Item = &AddressBase> {
         self.scalars
             .iter()
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
-    pub(crate) fn insert(&mut self, key: PointerBlock, value: MemoryBlock) -> Option<MemoryBlock> {
+    pub(crate) fn insert(&mut self, key: AddressBase, value: MemoryBlock) -> Option<MemoryBlock> {
         if value.declared_scalar_type.is_some() {
             self.scalars.insert(key.clone());
         } else {
@@ -40,11 +40,11 @@ impl MemoryBlocks {
         }
         self.entries.insert(key, value)
     }
-    pub(crate) fn remove(&mut self, key: &PointerBlock) -> Option<MemoryBlock> {
+    pub(crate) fn remove(&mut self, key: &AddressBase) -> Option<MemoryBlock> {
         self.scalars.remove(key);
         self.entries.remove(key)
     }
-    pub(crate) fn get_or_insert(&mut self, key: PointerBlock, value: MemoryBlock) -> &MemoryBlock {
+    pub(crate) fn get_or_insert(&mut self, key: AddressBase, value: MemoryBlock) -> &MemoryBlock {
         if !self.entries.contains_key(&key) {
             self.insert(key.clone(), value);
         }
@@ -68,7 +68,7 @@ impl MemoryBlocks {
             self.insert(key, value);
         }
     }
-    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&PointerBlock, &MemoryBlock) -> bool) {
+    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&AddressBase, &MemoryBlock) -> bool) {
         // The existing whole-map operation charges each visited declaration.
         let scalars = &mut self.scalars;
         self.entries.retain(|key, value| {
@@ -82,7 +82,7 @@ impl MemoryBlocks {
     pub(crate) fn union_of_arms<'a>(
         &self,
         others: impl Iterator<Item = &'a Self>,
-    ) -> Result<Self, PointerBlock> {
+    ) -> Result<Self, AddressBase> {
         let mut union = self.clone();
         for other in others {
             for change in self.entries.diff(&other.entries) {
@@ -103,8 +103,8 @@ impl MemoryBlocks {
         Ok(union)
     }
 }
-impl FromIterator<(PointerBlock, MemoryBlock)> for MemoryBlocks {
-    fn from_iter<T: IntoIterator<Item = (PointerBlock, MemoryBlock)>>(iter: T) -> Self {
+impl FromIterator<(AddressBase, MemoryBlock)> for MemoryBlocks {
+    fn from_iter<T: IntoIterator<Item = (AddressBase, MemoryBlock)>>(iter: T) -> Self {
         let mut blocks = Self::default();
         for (key, value) in iter {
             blocks.insert(key, value);
@@ -119,8 +119,8 @@ mod tests {
 
     #[test]
     fn scalar_index_tracks_lifetime_replacement_and_branch_isolation() {
-        let scalar = Pointer::symbolic(Variable(9_392_001)).block;
-        let heap = Pointer::symbolic(Variable(9_392_002)).block;
+        let scalar = Address::symbolic(Variable(9_392_001)).base;
+        let heap = Address::symbolic(Variable(9_392_002)).base;
         let memory = SymbolicMemory::new()
             .with_declared_scalar_block(scalar.clone(), 4, ProgramType::Int32)
             .with_block(heap.clone(), 64);
@@ -146,8 +146,8 @@ mod tests {
 
     #[test]
     fn scalar_index_survives_arm_union_and_selected_projection() {
-        let a = Pointer::symbolic(Variable(9_392_003)).block;
-        let b = Pointer::symbolic(Variable(9_392_004)).block;
+        let a = Address::symbolic(Variable(9_392_003)).base;
+        let b = Address::symbolic(Variable(9_392_004)).base;
         let first =
             SymbolicMemory::new().with_declared_scalar_block(a.clone(), 4, ProgramType::Int32);
         let second = first

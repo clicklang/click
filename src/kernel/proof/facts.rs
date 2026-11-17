@@ -1718,9 +1718,9 @@ impl PureFactStore {
         let body_variables = crate::kernel::proposition_variables(body);
         let fresh = self.fresh_universal_witness(&body_variables)?;
         let pointer = if matches!(program_type, ProgramType::FunctionPointer(_)) {
-            Pointer::symbolic_function(fresh)
+            Address::symbolic_function(fresh)
         } else {
-            Pointer::symbolic(fresh)
+            Address::symbolic(fresh)
         };
         // A pointer binder never occurs in a range's element endpoints, which
         // are `int32` terms, so the span has nothing to put back here.
@@ -3062,8 +3062,8 @@ fn index_bitvector_equality_fact(
         Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
             match (left.as_ref(), right.as_ref()) {
                 (
-                    PointerOffsetTerm::Int32Scaled { value: left, .. },
-                    PointerOffsetTerm::Int32Scaled { value: right, .. },
+                    AddressOffset::Int32Scaled { value: left, .. },
+                    AddressOffset::Int32Scaled { value: right, .. },
                 ) => {
                     let mut atoms = BTreeSet::new();
                     selected_atoms::collect(left, &mut atoms);
@@ -3658,19 +3658,18 @@ fn collect_load_address_atoms(
     atoms.insert(BitvectorEqualityAtomKey::PointerReadSource(
         source_hasher.finish(),
     ));
-    if let PointerBlock::Symbolic(inner) = pointer.block {
+    if let AddressBase::Symbolic(inner) = pointer.base {
         atoms.insert(BitvectorEqualityAtomKey::Variable(inner));
         collect_load_address_atoms(inner, atoms, depth + 1);
     }
     let mut pending = vec![&pointer.offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
                 if let Some(atom) = selected_atoms::root_atom(value.operand_view()) {
                     atoms.insert(atom);
                 }
@@ -3678,13 +3677,13 @@ fn collect_load_address_atoms(
                     collect_load_address_atoms(*inner, atoms, depth + 1);
                 }
             }
-            PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
+            AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
         }
     }
 }
 
 fn collect_pointer_bitvector_atoms(
-    pointer: &Pointer,
+    pointer: &Address,
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
     let mut address_hasher = std::collections::hash_map::DefaultHasher::new();
@@ -3692,7 +3691,7 @@ fn collect_pointer_bitvector_atoms(
     atoms.insert(BitvectorEqualityAtomKey::PointerReadSource(
         address_hasher.finish(),
     ));
-    if let PointerBlock::Symbolic(variable) = pointer.block {
+    if let AddressBase::Symbolic(variable) = pointer.base {
         atoms.insert(BitvectorEqualityAtomKey::Variable(variable));
         collect_load_address_atoms(variable, atoms, 0);
     }
@@ -3700,7 +3699,7 @@ fn collect_pointer_bitvector_atoms(
 }
 
 fn collect_pointer_offset_bitvector_atoms(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
     offset.for_each_scaled_operand(|value| selected_atoms::collect(value, atoms));
@@ -4035,16 +4034,16 @@ fn collect_owned_atomic_conjuncts(fact: &Proposition, output: &mut Vec<Propositi
 mod integer_equality_fact_index_tests {
     use super::*;
     use crate::kernel::{
-        IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm, Pointer,
-        PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedIntegerTerm,
+        Address, AddressOffset, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
+        MachineTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedIntegerTerm,
         SharedMachineIntegerTerm, Sort, SymbolicMemory, Variable,
     };
 
     #[test]
     #[ignore = "nightly: 1.4s in the parallel gate"]
     fn opaque_pointer_alias_selection_ignores_unrelated_facts() {
-        let read = Pointer::symbolic(Variable(949_001));
-        let target = Pointer::symbolic(Variable(949_002));
+        let read = Address::symbolic(Variable(949_001));
+        let target = Address::symbolic(Variable(949_002));
         let alias =
             Proposition::ConditionIs(ConditionTerm::pointer_equal(read.clone(), target), true);
         let goal = Proposition::ConditionIs(
@@ -4063,8 +4062,8 @@ mod integer_equality_fact_index_tests {
             for index in 0..size {
                 facts = facts.with_kernel_checked_fact(Proposition::ConditionIs(
                     ConditionTerm::pointer_equal(
-                        Pointer::symbolic(Variable(950_000 + 2 * u64::from(index))),
-                        Pointer::symbolic(Variable(950_001 + 2 * u64::from(index))),
+                        Address::symbolic(Variable(950_000 + 2 * u64::from(index))),
+                        Address::symbolic(Variable(950_001 + 2 * u64::from(index))),
                     ),
                     true,
                 ));
@@ -4136,9 +4135,9 @@ mod integer_equality_fact_index_tests {
                 MachineIntegerType::Int32,
                 MachineTerm::MemoryLoad(
                     ProgramPoint::at(memory),
-                    Box::new(Pointer {
-                        block: "retained_state-alpha-facts".into(),
-                        offset: PointerOffsetTerm::Constant(0),
+                    Box::new(Address {
+                        base: "retained_state-alpha-facts".into(),
+                        offset: AddressOffset::Constant(0),
                     }),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -4153,11 +4152,11 @@ mod integer_equality_fact_index_tests {
         free_offset: Option<Variable>,
         bytes: u32,
     ) -> Proposition {
-        let bound_offset = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(binder), 4);
+        let bound_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(binder), 4);
         let offset = free_offset.map_or(bound_offset.clone(), |free| {
-            PointerOffsetTerm::Add(
+            AddressOffset::Add(
                 Box::new(bound_offset),
-                Box::new(PointerOffsetTerm::scaled_int32_node(
+                Box::new(AddressOffset::scaled_int32_node(
                     MachineTerm::Variable(free),
                     1,
                 )),
@@ -4169,8 +4168,8 @@ mod integer_equality_fact_index_tests {
             sort: Sort::ProgramInt32,
             body: Box::new(Proposition::MemoryLoadable {
                 memory: memory.clone(),
-                base: Pointer {
-                    block: block.into(),
+                base: Address {
+                    base: block.into(),
                     offset,
                 },
                 bytes: MachineTerm::constant(bytes),
@@ -4187,11 +4186,11 @@ mod integer_equality_fact_index_tests {
         free_offset: Option<Variable>,
         bytes: u32,
     ) -> Proposition {
-        let bound_offset = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(binder), 4);
+        let bound_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(binder), 4);
         let offset = free_offset.map_or(bound_offset.clone(), |free| {
-            PointerOffsetTerm::Add(
+            AddressOffset::Add(
                 Box::new(bound_offset),
-                Box::new(PointerOffsetTerm::scaled_int32_node(
+                Box::new(AddressOffset::scaled_int32_node(
                     MachineTerm::Variable(free),
                     1,
                 )),
@@ -4203,8 +4202,8 @@ mod integer_equality_fact_index_tests {
             sort: Sort::ProgramInt32,
             body: Box::new(Proposition::MemoryLoadable {
                 memory: memory.clone(),
-                base: Pointer {
-                    block: block.into(),
+                base: Address {
+                    base: block.into(),
                     offset,
                 },
                 bytes: MachineTerm::constant(bytes),
@@ -4217,9 +4216,9 @@ mod integer_equality_fact_index_tests {
     fn transport_index_extracts_separation_without_importing_arithmetic() {
         let range = |block: &str| {
             crate::kernel::Resource::Memory(crate::kernel::MemoryRange::new(
-                Pointer {
-                    block: block.into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: block.into(),
+                    offset: AddressOffset::Constant(0),
                 },
                 MachineTerm::constant(0),
                 MachineTerm::Variable(Variable(210_000)),
@@ -4401,9 +4400,9 @@ mod integer_equality_fact_index_tests {
             SymbolicMemory::new().with_block("retained_state-alpha-facts", 8),
         );
         let changed = crate::kernel::intern_memory(before.as_ref().clone().store(
-            Pointer {
-                block: "retained_state-alpha-facts".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "retained_state-alpha-facts".into(),
+                offset: AddressOffset::Constant(0),
             },
             ProgramValue::Int32(MachineTerm::constant(7)),
         ));
@@ -4437,16 +4436,16 @@ mod integer_equality_fact_index_tests {
         let memory = SymbolicMemory::new()
             .with_block("quantified-viewable", 32)
             .store(
-                Pointer {
-                    block: "quantified-viewable".into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: "quantified-viewable".into(),
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(MachineTerm::Variable(Variable(207_000))),
             );
         let changed_memory = memory.clone().store(
-            Pointer {
-                block: "quantified-viewable".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "quantified-viewable".into(),
+                offset: AddressOffset::Constant(0),
             },
             ProgramValue::Int32(MachineTerm::constant(7)),
         );
@@ -4593,9 +4592,9 @@ mod integer_equality_fact_index_tests {
         let block = "implication-existential-viewable";
         let memory = SymbolicMemory::new().with_block(block, 32);
         let changed_memory = memory.clone().store(
-            Pointer {
-                block: block.into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: block.into(),
+                offset: AddressOffset::Constant(0),
             },
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
@@ -4895,9 +4894,9 @@ mod integer_equality_fact_index_tests {
             SymbolicMemory::new().with_block("retained_state-alpha-facts", 8),
         );
         let changed = crate::kernel::intern_memory(before.as_ref().clone().store(
-            Pointer {
-                block: "retained_state-alpha-facts".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "retained_state-alpha-facts".into(),
+                offset: AddressOffset::Constant(0),
             },
             ProgramValue::Int32(MachineTerm::constant(7)),
         ));
@@ -5110,9 +5109,9 @@ mod held_separation_tests {
 
     fn cell(index: u64) -> Resource {
         Resource::Memory(MemoryRange::new(
-            Pointer {
-                block: "shared".into(),
-                offset: PointerOffsetTerm::Variable(Variable(980_000 + index)),
+            Address {
+                base: "shared".into(),
+                offset: AddressOffset::Variable(Variable(980_000 + index)),
             },
             MachineTerm::constant(0),
             MachineTerm::constant(1),

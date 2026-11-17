@@ -30,9 +30,9 @@ fn static_declaration_preserves_a_cell_materialized_before_its_block() {
     let pointer = SymbolicMemory::static_pointer("increment", "calls");
     let state =
         ExecutionState::new().with_memory(SymbolicMemory::new().store(pointer.clone(), int32(37)));
-    assert!(!state.memory().has_block(&pointer.block));
+    assert!(!state.memory().has_block(&pointer.base));
     let initialized = initialize_program_function_globals(&state, &function);
-    assert!(initialized.memory().has_block(&pointer.block));
+    assert!(initialized.memory().has_block(&pointer.base));
     assert_eq!(
         initialized.memory().load(&pointer),
         ExpressionOutcome::Value(int32(37))
@@ -55,7 +55,7 @@ fn ordinary_function_entry_does_not_restore_static_initializers() {
     assert!(
         ordinary
             .memory()
-            .has_block(&SymbolicMemory::global_pointer("state").block)
+            .has_block(&SymbolicMemory::global_pointer("state").base)
     );
     assert_ne!(
         ordinary
@@ -66,7 +66,7 @@ fn ordinary_function_entry_does_not_restore_static_initializers() {
     assert!(
         ordinary
             .memory()
-            .has_block(&SymbolicMemory::static_pointer("read", "calls").block)
+            .has_block(&SymbolicMemory::static_pointer("read", "calls").base)
     );
     assert_ne!(
         ordinary
@@ -175,7 +175,7 @@ fn startup_permission_partition_visits_scale_with_cells_and_blocks() {
         for index in 0..count {
             let pointer = SymbolicMemory::global_pointer(format!("state_{index}"));
             memory = memory
-                .with_block(pointer.block.clone(), 4)
+                .with_block(pointer.base.clone(), 4)
                 .store(pointer, int32(7));
         }
         let mut visits = 0;
@@ -281,7 +281,7 @@ fn zero_element(element_type: ProgramType) -> ProgramValue {
         ProgramType::UInt32 => uint32(0),
         ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(0)),
         ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
-        pointer => ProgramValue::typed_pointer(Pointer::null(), pointer),
+        pointer => ProgramValue::typed_pointer(Address::null(), pointer),
     }
 }
 
@@ -319,7 +319,7 @@ fn a_symbolic_global_array_entry_holds_no_cells() {
             let base = SymbolicMemory::global_pointer("buf");
             let width = element_type.byte_width();
             let slot = |index: u32| base.offset_by_bytes(index * width);
-            assert!(entry.memory().has_block(&base.block));
+            assert!(entry.memory().has_block(&base.base));
             assert_eq!(
                 entry.memory().cells.representation_len(),
                 0,
@@ -383,9 +383,9 @@ fn an_initialized_array_at_startup_holds_exactly_the_per_element_stores() {
             .expect("no run limit is installed");
         let mut reference = SymbolicMemory::new();
         let mut per_element =
-            |pointer: Pointer, element_type: ProgramType, contents: &ArrayContents| {
+            |pointer: Address, element_type: ProgramType, contents: &ArrayContents| {
                 reference = reference.clone().with_block_or_read_only(
-                    pointer.block.clone(),
+                    pointer.base.clone(),
                     length * element_type.byte_width(),
                     false,
                 );
@@ -497,7 +497,7 @@ fn an_aggregate_array_at_startup_holds_exactly_the_per_field_stores() {
             ),
         ] {
             reference = reference.clone().with_block_or_read_only(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 length * layout.size_bytes(),
                 false,
             );
@@ -536,20 +536,20 @@ fn an_aggregate_array_at_startup_holds_exactly_the_per_field_stores() {
 }
 
 /// Every block's owned bytes, as ascending disjoint half-open intervals.
-fn owned_bytes(resources: &ResourceContext) -> BTreeMap<PointerBlock, Vec<(i64, i64)>> {
-    let mut bytes = BTreeMap::<PointerBlock, Vec<(i64, i64)>>::new();
+fn owned_bytes(resources: &ResourceContext) -> BTreeMap<AddressBase, Vec<(i64, i64)>> {
+    let mut bytes = BTreeMap::<AddressBase, Vec<(i64, i64)>>::new();
     for fact in resources.facts() {
         let range = fact
             .memory_own_range()
             .expect("startup permissions own memory");
-        let PointerOffsetTerm::Constant(offset) = range.base().offset else {
+        let AddressOffset::Constant(offset) = range.base().offset else {
             panic!("startup ranges have constant bases");
         };
         let width = i64::from(range.element_width());
         let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const()) else {
             panic!("startup ranges have constant bounds");
         };
-        bytes.entry(range.base().block.clone()).or_default().push((
+        bytes.entry(range.base().base.clone()).or_default().push((
             offset + i64::from(start) * width,
             offset + i64::from(end) * width,
         ));
@@ -580,7 +580,7 @@ fn a_symbolic_aggregate_array_at_function_entry_holds_no_cells() {
             SymbolicMemory::global_pointer("pool"),
             SymbolicMemory::static_pointer("main", "slots"),
         ] {
-            assert!(entry.memory().has_block(&pointer.block), "[{length}]");
+            assert!(entry.memory().has_block(&pointer.base), "[{length}]");
         }
         assert_eq!(entry.memory().cells.representation_len(), 0, "[{length}]");
     }

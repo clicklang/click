@@ -16,7 +16,7 @@ enum MemoryMatchOperands<'a> {
         &'a MachineTerm,
         &'a MachineTerm,
     ),
-    Offsets(&'a PointerOffsetTerm, &'a PointerOffsetTerm),
+    Offsets(&'a AddressOffset, &'a AddressOffset),
     Exact,
 }
 
@@ -275,12 +275,12 @@ mod memory_condition_match_tests {
             true
         ));
         let offsets = ConditionTerm::pointer_offset_equal(
-            PointerOffsetTerm::Variable(Variable(960_006)),
-            PointerOffsetTerm::Variable(Variable(960_007)),
+            AddressOffset::Variable(Variable(960_006)),
+            AddressOffset::Variable(Variable(960_007)),
         );
         let reversed = ConditionTerm::pointer_offset_equal(
-            PointerOffsetTerm::Variable(Variable(960_007)),
-            PointerOffsetTerm::Variable(Variable(960_006)),
+            AddressOffset::Variable(Variable(960_007)),
+            AddressOffset::Variable(Variable(960_006)),
         );
         assert!(
             PureFactContext::new()
@@ -324,7 +324,7 @@ mod memory_condition_match_tests {
     fn compound_memory_condition_candidates_preserve_states() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = SymbolicMemory::new();
-        let pointer = Pointer::symbolic(Variable(999_000));
+        let pointer = Address::symbolic(Variable(999_000));
         let load = |memory: &SymbolicMemory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
@@ -345,8 +345,8 @@ mod memory_condition_match_tests {
                 0 => ConditionTerm::signed_less_than(left, right),
                 1 => ConditionTerm::unsigned_less_than(left, right),
                 _ => ConditionTerm::pointer_offset_equal(
-                    PointerOffsetTerm::scale_int32(left, 4),
-                    PointerOffsetTerm::scale_int32(right, 4),
+                    AddressOffset::scale_int32(left, 4),
+                    AddressOffset::scale_int32(right, 4),
                 ),
             }
         };
@@ -380,8 +380,8 @@ mod memory_condition_match_tests {
                 0 => ConditionTerm::signed_less_than(left, right),
                 1 => ConditionTerm::unsigned_less_than(left, right),
                 _ => ConditionTerm::pointer_offset_equal(
-                    PointerOffsetTerm::scale_int32(left, 4),
-                    PointerOffsetTerm::scale_int32(right, 4),
+                    AddressOffset::scale_int32(left, 4),
+                    AddressOffset::scale_int32(right, 4),
                 ),
             }
         };
@@ -469,7 +469,7 @@ impl SelectedFacts<'_> {
             ConditionTerm::PointerEqual(left, right) if left.blocks_proven_distinct(right) => {
                 Some(false)
             }
-            ConditionTerm::PointerEqual(left, right) if left.block == right.block => self
+            ConditionTerm::PointerEqual(left, right) if left.base == right.base => self
                 .decide_selected_condition(&ConditionTerm::pointer_offset_equal(
                     left.offset.clone(),
                     right.offset.clone(),
