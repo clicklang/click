@@ -4323,7 +4323,9 @@ fn source_backed_call_requirement_surface(
             (
                 parameters
                     .iter()
-                    .map(|parameter| parameter.binding_name().clone())
+                    .map(|parameter| {
+                        crate::surface::surface_parameter_binding(&parameter.binding_name())
+                    })
                     .collect::<Vec<_>>(),
                 parameters
                     .iter()
@@ -4358,7 +4360,9 @@ fn source_backed_call_requirement_surface(
                 function
                     .parameters()
                     .iter()
-                    .map(|parameter| parameter.binding_name().clone())
+                    .map(|parameter| {
+                        crate::surface::surface_parameter_binding(&parameter.binding_name())
+                    })
                     .collect::<Vec<_>>(),
                 function
                     .parameters()
@@ -4719,10 +4723,12 @@ fn caller_parameter_as_argument(
                 expected,
             ) =>
         {
-            crate::surface::lowering::character_byte_view(parameter.binding_name())
+            crate::surface::lowering::character_byte_view(
+                crate::surface::surface_parameter_binding(parameter.binding_name()),
+            )
         }
         _ => ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            parameter.binding_name().clone(),
+            crate::surface::surface_parameter_binding(parameter.binding_name()),
         )),
     }
 }

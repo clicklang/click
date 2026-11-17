@@ -1509,7 +1509,10 @@ pub(super) fn local_naming_tables_with_source(
                 } else if parameter.interface_type().is_pointer() {
                     parameter = crate::languages::interface::ImportedParameter::new(
                         InterfaceType::CharPointer(syntax::PlainChar::Unsigned),
-                        format!("((char *){})", parameter.binding_name()),
+                        format!(
+                            "((char *){})",
+                            crate::surface::surface_parameter_binding(parameter.binding_name())
+                        ),
                         None,
                     );
                 }
@@ -2353,7 +2356,7 @@ fn describe_struct_place_range(
             .and_then(|offset| offset.as_const())
             && let Some(place) = describe_layout_place_range(
                 layout,
-                &parameter.binding_name().to_string(),
+                &crate::surface::surface_parameter_binding(parameter.binding_name()).to_string(),
                 u64::from(offset) + start * width,
                 u64::from(offset) + end * width,
             )
@@ -2365,7 +2368,12 @@ fn describe_struct_place_range(
         if let Some(field_name) =
             describe_parameter_struct_field_pointer(range.base(), parameter, base.pointer())
             && let Some((_, field)) = layout.fields().iter().find(|(name, _)| {
-                field_name == describe_field_place(&parameter.binding_name().to_string(), name)
+                field_name
+                    == describe_field_place(
+                        &crate::surface::surface_parameter_binding(parameter.binding_name())
+                            .to_string(),
+                        name,
+                    )
             })
             && field.struct_name().is_some()
             && field.struct_name() == parameter.struct_name()
@@ -2448,7 +2456,7 @@ fn struct_byte_bounds(
     {
         let (start, end) = bounds(offset)?;
         return Some((
-            parameter.binding_name().to_string(),
+            crate::surface::surface_parameter_binding(parameter.binding_name()).to_string(),
             layout.clone(),
             start,
             end,
@@ -2655,8 +2663,13 @@ pub(super) fn describe_memory_range(
                 .or_else(|| parameter.struct_layout());
             let slot = layout.and_then(|layout| {
                 layout.fields().iter().find_map(|(name, slot)| {
-                    (field == describe_field_place(&parameter.binding_name().to_string(), name))
-                        .then_some(slot)
+                    (field
+                        == describe_field_place(
+                            &crate::surface::surface_parameter_binding(parameter.binding_name())
+                                .to_string(),
+                            name,
+                        ))
+                    .then_some(slot)
                 })
             });
             let width = slot
@@ -2804,9 +2817,16 @@ pub(super) fn describe_parameter_relative_range(
         rescale_range_index(&start, from, to),
         rescale_range_index(&end, from, to),
     ) {
-        (Some(start), Some(end)) => (parameter.binding_name().to_string(), start, end),
+        (Some(start), Some(end)) => (
+            crate::surface::surface_parameter_binding(parameter.binding_name()).to_string(),
+            start,
+            end,
+        ),
         _ => (
-            format!("((char *){})", parameter.binding_name()),
+            format!(
+                "((char *){})",
+                crate::surface::surface_parameter_binding(parameter.binding_name())
+            ),
             rescale_range_index(&start, from, 1)?,
             rescale_range_index(&end, from, 1)?,
         ),
@@ -2816,7 +2836,11 @@ pub(super) fn describe_parameter_relative_range(
     {
         // A whole element behind a reference parameter is its referent.
         // An explicit byte slice keeps its exact extent and cast spelling.
-        if low == 0 && name == parameter.binding_name().to_string() && parameter.is_reference() {
+        if low == 0
+            && name
+                == crate::surface::surface_parameter_binding(parameter.binding_name()).to_string()
+            && parameter.is_reference()
+        {
             return Some(parameter.name().to_string());
         }
         return Some(format!("{}[{low}]", name));
@@ -5150,11 +5174,11 @@ pub(in crate::surface) fn describe_pointer(
             diagnostic_parameter_element_width(parameter),
         ) {
             let spelled = if index == MachineTerm::constant(0) {
-                parameter.binding_name().to_string()
+                crate::surface::surface_parameter_binding(parameter.binding_name()).to_string()
             } else {
                 format!(
                     "{}[{}]",
-                    parameter.binding_name(),
+                    crate::surface::surface_parameter_binding(parameter.binding_name()),
                     describe_address_index(&index, parameter_binding)
                 )
             };
@@ -5173,7 +5197,7 @@ pub(in crate::surface) fn describe_pointer(
             // byte offset from the parameter, as a named object's is below.
             let spelled = format!(
                 "(char *){} + {}",
-                parameter.binding_name(),
+                crate::surface::surface_parameter_binding(parameter.binding_name()),
                 describe_pointer_offset(&bytes)
             );
             if byte_offset
@@ -5285,8 +5309,12 @@ fn describe_parameter_struct_field_pointer(
             return None;
         }
         let field_offset = diagnostic_pointer_element_index_from_base(&loaded_at, base, 1)?;
-        (field_offset == MachineTerm::constant(field.offset_bytes()))
-            .then(|| describe_field_place(&parameter.binding_name().to_string(), name))
+        (field_offset == MachineTerm::constant(field.offset_bytes())).then(|| {
+            describe_field_place(
+                &crate::surface::surface_parameter_binding(parameter.binding_name()).to_string(),
+                name,
+            )
+        })
     })
 }
 
@@ -6496,7 +6524,7 @@ fn describe_struct_field_load(
             .filter(|(_, field_offset)| *field_offset == offset);
         if let (Some((field, _)), None) = (fields.next(), fields.next()) {
             return Some(describe_field_place(
-                &parameter.binding_name().to_string(),
+                &crate::surface::surface_parameter_binding(parameter.binding_name()).to_string(),
                 field,
             ));
         }

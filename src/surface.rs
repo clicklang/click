@@ -3494,6 +3494,17 @@ impl<'a> ContractEnvironment<'a> {
         Some(value)
     }
 }
+/// Ordinary parameters are written by their source identifier in the current
+/// function scope. A reference's pointer has no lexical identifier: its Surface
+/// expression retains the structural carrier and prints as `&x`.
+fn surface_parameter_binding(binding: &crate::kernel::BindingName) -> crate::kernel::BindingName {
+    if binding.reference_referent().is_some() {
+        binding.clone()
+    } else {
+        binding.source_name().into()
+    }
+}
+
 /// How many recorded memories on each side of a load's own the raiser
 /// checks for it.
 const MEMORY_POINTS_NEAR: usize = 4;

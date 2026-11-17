@@ -182,7 +182,8 @@ impl MemoryStateLabels {
             if let crate::kernel::ProgramValue::Pointer(pointer) = value {
                 labels.immutable_pointer_name(
                     pointer.pointer(),
-                    &parameter.binding_name().to_string(),
+                    &crate::surface::surface_parameter_binding(parameter.binding_name())
+                        .to_string(),
                 );
             }
             let term = match value.numeric_value() {
