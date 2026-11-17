@@ -378,13 +378,21 @@ fn memory_write_obligation_outcome(
     {
         return Some(StatementOutcome::RuntimeError(error));
     }
+    require_write_loan_separation(state, &range, obligations);
+    memory_write_ownership_outcome(state, storage_range, assumptions)
+}
+
+fn require_write_loan_separation(
+    state: &ExecutionState,
+    range: &MemoryRange,
+    obligations: &mut Vec<ProofObligation>,
+) {
     if let Some(requirement) = state
         .loan_ledger()
-        .and_then(|ledger| ledger.memory_access_requirement(&range))
+        .and_then(|ledger| ledger.memory_access_requirement(range))
     {
         obligations.push(ProofObligation::verification_condition(requirement));
     }
-    memory_write_ownership_outcome(state, storage_range, assumptions)
 }
 
 fn memory_write_ownership_outcome(
@@ -1128,6 +1136,7 @@ fn execute_program_aggregate_step_paths(
         &ProgramExpression::Value(result.clone()),
         expression,
         layout,
+        AggregateCopyDestination::ResultTemporary,
         assumptions,
         budget,
     )?;
@@ -1150,11 +1159,46 @@ fn execute_program_aggregate_step_paths(
     Ok(paths)
 }
 
+#[derive(Clone, Copy)]
+enum AggregateCopyDestination {
+    Assignment,
+    ResultTemporary,
+}
+
+fn aggregate_assignment_write_outcome(
+    state: &ExecutionState,
+    target: &PointerValue,
+    bytes: u32,
+    assumptions: &PureFactContext,
+    obligations: &mut Vec<ProofObligation>,
+) -> Option<StatementOutcome> {
+    #[cfg(test)]
+    let _fast = crate::kernel::search::FastOperationScope::enter("aggregate copy loan check");
+    let pointer = target.pointer();
+    let storage =
+        MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes);
+    if let Some(error) = super::super::mutexes::storage_write_refusal(state, &storage, assumptions)
+    {
+        return Some(StatementOutcome::RuntimeError(error));
+    }
+    if let Some(outcome) = memory_write_ownership_outcome(state, storage, assumptions) {
+        return Some(outcome);
+    }
+    // Express the full destination, including padding, as a byte slice that
+    // the proof can name at the assignment's entry point.
+    let byte_pointer =
+        super::expression::cast_pointer_value(target.clone(), ProgramType::UInt8Pointer);
+    let destination = MemoryRange::from_pointer_value(&byte_pointer, 0u32.into(), bytes.into(), 1);
+    require_write_loan_separation(state, &destination, obligations);
+    None
+}
+
 fn execute_program_aggregate_copy_paths(
     state: &ExecutionState,
     target: &ProgramExpression,
     source: &ProgramExpression,
     layout: &AggregateLayout,
+    destination: AggregateCopyDestination,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
@@ -1181,7 +1225,7 @@ fn execute_program_aggregate_copy_paths(
                 facts: source_facts,
                 obligations: source_obligations,
             } = source_path;
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, mut obligations)) = merge_execution_pure_facts_and_obligations(
                 &target_facts,
                 &target_obligations,
                 &source_facts,
@@ -1237,12 +1281,24 @@ fn execute_program_aggregate_copy_paths(
                 ));
                 continue;
             }
-            if let Some(outcome) = memory_write_permission_outcome(
-                state,
-                target_pointer.pointer(),
-                layout.size_bytes(),
-                &assumptions_with_path_context(assumptions, &facts, &obligations),
-            ) {
+            let write_assumptions =
+                assumptions_with_path_context(assumptions, &facts, &obligations);
+            let write_refusal = match destination {
+                AggregateCopyDestination::Assignment => aggregate_assignment_write_outcome(
+                    state,
+                    &target_pointer,
+                    layout.size_bytes(),
+                    &write_assumptions,
+                    &mut obligations,
+                ),
+                AggregateCopyDestination::ResultTemporary => memory_write_permission_outcome(
+                    state,
+                    target_pointer.pointer(),
+                    layout.size_bytes(),
+                    &write_assumptions,
+                ),
+            };
+            if let Some(outcome) = write_refusal {
                 paths.push(StatementExecutionPath::new(outcome, facts, obligations));
                 continue;
             }
@@ -1250,7 +1306,7 @@ fn execute_program_aggregate_copy_paths(
                 state,
                 &target_pointer,
                 layout,
-                &assumptions_with_path_context(assumptions, &facts, &obligations),
+                &write_assumptions,
             ) {
                 paths.push(StatementExecutionPath::new(
                     StatementOutcome::RuntimeError(RuntimeError::MissingResource {
@@ -4259,6 +4315,7 @@ fn execute_execution_statement_leaf_paths(
             target,
             source,
             layout,
+            AggregateCopyDestination::Assignment,
             assumptions,
             budget,
         )?,
