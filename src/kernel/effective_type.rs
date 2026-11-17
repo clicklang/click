@@ -37,7 +37,6 @@ pub enum CPointeeBase {
     PlainChar,
     SignedChar,
     UnsignedChar,
-    Bool,
     Integer { class: CScalarClass, signed: bool },
     Float,
     Double,
@@ -273,7 +272,6 @@ impl CAccessClass {
             CPointeeBase::PlainChar | CPointeeBase::SignedChar | CPointeeBase::UnsignedChar => {
                 CScalarClass::Char
             }
-            CPointeeBase::Bool => CScalarClass::Bool,
             CPointeeBase::Integer { class, .. } => *class,
             CPointeeBase::Float => CScalarClass::Float,
             CPointeeBase::Double => CScalarClass::Double,
@@ -387,7 +385,6 @@ impl CPointeeBase {
             Self::PlainChar => "char".to_string(),
             Self::SignedChar => "signed char".to_string(),
             Self::UnsignedChar => "unsigned char".to_string(),
-            Self::Bool => "_Bool".to_string(),
             Self::Integer { class, signed } => {
                 let name = class.spelling();
                 if *signed {

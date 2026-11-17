@@ -46,17 +46,13 @@ pub struct CheckedExecutedScalarReferenceAccess<'a, 'e> {
 /// A completed borrow assignment and its checked store ending on one selected
 /// execution path. This is an execution record, not a loan-recovery right.
 #[derive(Debug)]
-pub struct CheckedExecutedScalarReferenceEnd<'a, 'e> {
-    certificate: &'a CheckedScalarReferenceEnd<'a>,
+pub struct CheckedExecutedScalarReferenceEnd<'e> {
     pointer: &'e crate::kernel::Pointer,
     ending: crate::kernel::ExecutedReferenceAccess<'e>,
     execution: &'e crate::kernel::SymbolicExecution,
     path_index: usize,
 }
-impl CheckedExecutedScalarReferenceEnd<'_, '_> {
-    pub fn source_certificate(&self) -> &CheckedScalarReferenceEnd<'_> {
-        self.certificate
-    }
+impl CheckedExecutedScalarReferenceEnd<'_> {
     pub fn pointer(&self) -> &crate::kernel::Pointer {
         self.pointer
     }
@@ -138,7 +134,7 @@ impl CheckedScalarReferenceEnd<'_> {
     pub fn bind_executed_endings<'a, 'e>(
         &'a self,
         execution: &'e crate::kernel::SymbolicExecution,
-    ) -> Vec<CheckedExecutedScalarReferenceEnd<'a, 'e>> {
+    ) -> Vec<CheckedExecutedScalarReferenceEnd<'e>> {
         use crate::kernel::ExecutedReferenceBoundary;
         #[derive(Default)]
         struct Candidate<'e> {
@@ -216,7 +212,6 @@ impl CheckedScalarReferenceEnd<'_> {
                 let (ending, end_order) = candidate.ending?;
                 (birth_order < end_order && pointer == ending.pointer()).then_some(
                     CheckedExecutedScalarReferenceEnd {
-                        certificate: self,
                         pointer,
                         ending,
                         execution,
@@ -225,9 +220,6 @@ impl CheckedScalarReferenceEnd<'_> {
                 )
             })
             .collect()
-    }
-    pub fn import_identity(&self) -> &str {
-        self.import_identity
     }
     pub fn function(&self) -> &Function {
         self.function

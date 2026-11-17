@@ -1815,12 +1815,6 @@ impl ProgramVerificationSession {
             .has_verified_function_termination(name)
     }
 
-    /// Identity of the immutable inputs and resource semantics used by this
-    /// reusable verification session.
-    pub fn environment_identity(&self) -> ProofArtifactIdentity {
-        self.environment_identity
-    }
-
     /// Refuses to reuse the retained environment once another verification
     /// on this thread has started fresh kernel tables. The environment's
     /// states name entries of the tables it was built under; against a

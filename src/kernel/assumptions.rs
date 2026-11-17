@@ -2593,39 +2593,6 @@ fn collect_term_memory_loads(
         Term::Algebraic(term) => {
             collect_algebraic_memory_loads(term, current_memory, loads, seen_integers)
         }
-        Term::ExpressionOutcome(outcome) => match outcome {
-            ExpressionOutcome::Value(value) => {
-                collect_cvalue_memory_loads(value, current_memory, loads, seen_integers)
-            }
-            ExpressionOutcome::UndefinedBehavior(_) | ExpressionOutcome::RuntimeError(_) => Ok(()),
-        },
-        Term::StatementOutcome(outcome) => match outcome.as_ref() {
-            StatementOutcome::Normal(state)
-            | StatementOutcome::LoopTestFalse(state)
-            | StatementOutcome::Break(state)
-            | StatementOutcome::Continue(state)
-            | StatementOutcome::Jump { state, .. } => {
-                let _ = state;
-                Ok(())
-            }
-            StatementOutcome::Return { value, state }
-            | StatementOutcome::Throw { value, state } => {
-                let _ = state;
-                collect_cvalue_memory_loads(&value.native(), current_memory, loads, seen_integers)
-            }
-            StatementOutcome::VerificationDiverges
-            | StatementOutcome::UndefinedBehavior(_)
-            | StatementOutcome::RuntimeError(_) => Ok(()),
-        },
-        Term::FunctionOutcome(outcome) => match outcome.as_ref() {
-            FunctionOutcome::Return { value, state } | FunctionOutcome::Throw { value, state } => {
-                let _ = state;
-                collect_cvalue_memory_loads(&value.native(), current_memory, loads, seen_integers)
-            }
-            FunctionOutcome::VerificationDiverges
-            | FunctionOutcome::UndefinedBehavior(_)
-            | FunctionOutcome::RuntimeError(_) => Ok(()),
-        },
         Term::Memory(_) | Term::ExecutionState(_) => Ok(()),
     }
 }
@@ -10370,23 +10337,6 @@ impl ProofObligation {
         Self::new(Proposition::ConditionIs(condition, value))
     }
 
-    pub fn memory_loadable_bytes(memory: Memory, pointer: Pointer, byte_width: u32) -> Self {
-        Self::new(Proposition::MemoryLoadable {
-            memory,
-            base: pointer,
-            bytes: MachineTerm::constant(byte_width),
-            wide: false,
-        })
-    }
-
-    pub fn memory_can_store_bytes(memory: Memory, pointer: Pointer, byte_width: u32) -> Self {
-        Self::new(Proposition::MemoryCanStore {
-            memory,
-            pointer,
-            byte_width,
-        })
-    }
-
     pub fn proposition(&self) -> &Proposition {
         &self.proposition
     }
@@ -10831,10 +10781,6 @@ impl SymbolicExecutionPath {
 
     pub fn facts(&self) -> &ExecutionFacts {
         &self.facts
-    }
-
-    pub fn effect_facts(&self) -> &ExecutionFacts {
-        &self.effect_facts
     }
 
     pub fn execution_facts(&self) -> ExecutionFacts {

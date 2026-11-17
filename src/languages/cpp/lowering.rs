@@ -75,11 +75,6 @@ impl LoweredCppFunction {
         &self.functions[0]
     }
 
-    /// Every selected function, lowered, in selection order.
-    pub fn kernel_functions(&self) -> &[ProgramFunction] {
-        &self.functions
-    }
-
     pub fn reachable_kernel_functions(&self) -> &[ProgramFunction] {
         &self.reachable_functions
     }

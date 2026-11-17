@@ -462,22 +462,13 @@ impl LazyReservedVariables {
 pub enum Sort {
     Condition,
     Bitvector32,
-    Bitvector64,
     Integer,
-    PointerOffset,
-    ProgramType,
     ProgramInt32,
     ProgramInt64,
     ProgramInteger(MachineIntegerType),
     ProgramPointer(ProgramType),
     ProgramObjectPointer(ProgramType, crate::kernel::effective_type::CAccessClass),
-    ProgramValue,
-    Sequence(Option<ProgramType>),
     Algebraic(AlgebraicType),
-    Memory,
-    ExecutionState,
-    StatementOutcome,
-    FunctionOutcome,
 }
 
 impl Sort {
@@ -5889,7 +5880,6 @@ pub enum LoopEffectOrigin {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum LoopEffect {
-    Immutable,
     Mutable(Vec<MemorySegment>),
 }
 
@@ -6403,10 +6393,6 @@ impl AggregateUnionField {
         }
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
     pub fn offset_bytes(&self) -> u32 {
         self.offset_bytes
     }
@@ -6437,10 +6423,6 @@ impl AggregateUnion {
             size_bytes,
             fields,
         }
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
     }
 
     pub fn offset_bytes(&self) -> u32 {
@@ -7340,12 +7322,7 @@ pub struct VerifiedFunctionRule {
     pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
 }
 
-impl VerifiedFunctionRule {
-    /// How the certification behind this rule ran the function's loops.
-    pub fn loop_semantics(&self) -> LoopSemantics {
-        self.loop_semantics
-    }
-}
+impl VerifiedFunctionRule {}
 
 /// A nominal, body-independent behavioral interface for an indirect call.
 ///
@@ -7612,10 +7589,6 @@ pub enum RankingMeasureKey {
 }
 
 impl FunctionTerminationPlan {
-    pub fn function_name(&self) -> &str {
-        &self.function_name
-    }
-
     pub fn extend_loop_measures(
         &mut self,
         measures: impl IntoIterator<Item = (usize, LoopTerminationMeasure)>,
@@ -7740,11 +7713,7 @@ pub struct TerminationError {
     pub(super) superfluous_recursive_measure: bool,
 }
 
-impl VerifiedFunctionTerminationRule {
-    pub fn function_name(&self) -> &str {
-        self.function.name()
-    }
-}
+impl VerifiedFunctionTerminationRule {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedFunctionContractClaim {
@@ -7783,11 +7752,7 @@ pub(crate) struct CheckedFunctionProposition {
     pub(super) claim: Option<FunctionContractClaimTarget>,
 }
 
-impl VerifiedFunctionContractClaim {
-    pub fn key(&self) -> &FunctionContractClaimKey {
-        &self.key
-    }
-}
+impl VerifiedFunctionContractClaim {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedLoopRule {
@@ -8106,7 +8071,6 @@ pub enum ExecutionLimit {
     /// A loop invariant's pass count, `iterations`, read where no loop
     /// phase binds it.
     LoopIterationsUnbound,
-    UnsupportedIntegerExistentialBody,
     UnsupportedPureFunctionResult(ProgramType),
     /// Stage 5 (`design/machine-integers.md`, decision D2): a `Bool`
     /// compared with an integer. `Bool` has no integer value.
@@ -8148,12 +8112,6 @@ pub enum ExecutionLimit {
     /// taken the instance away, and a reader needs to be told *that* rather
     /// than which counter the evaluation was holding at the time.
     ResourceFieldInstanceUnavailable,
-    /// A worker may still change this total. No current observation is
-    /// available until the checked completion right is joined.
-    ResourceCountPendingWorker,
-    /// Another tracked population of the family is neither proven equal to
-    /// nor proven different from the counted one, so no total is a count.
-    ResourceCountPossiblyAliased,
     /// A count names one concrete population anchor.
     AuthorityCountNeedsExactPointer,
     AuthorityCountNeedsResolvedMember,
@@ -8163,8 +8121,6 @@ pub enum ExecutionLimit {
     AuthorityCountLentToWorker,
     /// An outstanding locked worker changes the population before its join.
     AuthorityCountPendingLockedWorker,
-    /// The exact population total cannot be represented as C int32.
-    AuthorityCountOverflows,
     /// The right side of an `or` has no value wherever its left side is
     /// false, the only case in which it is read.
     DisjunctionRightUndefined,
@@ -8201,9 +8157,6 @@ impl ExecutionLimit {
             Self::UnsupportedPureFunctionResult(result_type) => {
                 format!("unsupported pure-function result type {result_type:?}")
             }
-            Self::UnsupportedIntegerExistentialBody => {
-                "an Integer existential body that must be pure and total".to_string()
-            }
             Self::BoolComparedWithInteger => "a `Bool` compared with an integer".to_string(),
             Self::BoolOrdered => "an order on `Bool`".to_string(),
             Self::BoolArithmetic => "arithmetic on a `Bool`".to_string(),
@@ -8216,12 +8169,6 @@ impl ExecutionLimit {
             }
             Self::ExecutionIdentityBesideLiveState => {
                 "an internal request for an execution identity beside a live state".to_string()
-            }
-            Self::ResourceCountPendingWorker => {
-                "count(...) requires joining its outstanding worker".to_string()
-            }
-            Self::ResourceCountPossiblyAliased => {
-                "count(...) of a population that may alias another tracked population of its family; state whether their arguments are equal or different".to_string()
             }
             Self::AuthorityCountNeedsExactPointer => {
                 "count(...) needs one exact base pointer".to_string()
@@ -8239,7 +8186,6 @@ impl ExecutionLimit {
             Self::AuthorityCountLentToWorker => {
                 "count(...) requires owning authority for that population, which an outstanding worker holds until its pthread_join".to_string()
             }
-            Self::AuthorityCountOverflows => "the population count exceeds int32".to_string(),
             Self::DisjunctionRightUndefined => {
                 "an `or` whose right side is undefined wherever its left side is false".to_string()
             }
@@ -12347,18 +12293,6 @@ impl ResourceTerm {
             _ => None,
         }
     }
-
-    pub fn declared_parameter_types(&self) -> Option<&[ProgramType]> {
-        match self {
-            Self::Composite {
-                parameter_types, ..
-            }
-            | Self::Token {
-                parameter_types, ..
-            } => Some(parameter_types),
-            _ => None,
-        }
-    }
 }
 
 impl ResourceSpec {
@@ -12816,10 +12750,6 @@ impl ResourceSpec {
         self.term.declared_argument_states()
     }
 
-    pub fn declared_parameter_types(&self) -> Option<&[ProgramType]> {
-        self.term.declared_parameter_types()
-    }
-
     pub fn composite(
         access: ResourceAccessMode,
         name: String,
@@ -13158,11 +13088,8 @@ pub enum Term {
     ProgramValue(ProgramValue),
     Sequence(SequenceTerm),
     Algebraic(AlgebraicTerm),
-    ExpressionOutcome(ExpressionOutcome),
     // Outcomes carry ExecutionState. Keep them out of Term's inline size so cloning
     // a deep pure proposition does not spend stack on unused C variants.
-    StatementOutcome(Box<StatementOutcome>),
-    FunctionOutcome(Box<FunctionOutcome>),
     Memory(Memory),
     ExecutionState(Box<ExecutionState>),
 }
@@ -15351,24 +15278,6 @@ impl FunctionContractExecution {
     pub fn reuse_diagnostic(&self) -> Option<&str> {
         self.reuse_diagnostic.as_deref()
     }
-
-    /// The entry premise behind [`Self::reuse_diagnostic`], for a caller that
-    /// can print it in the names the user wrote.
-    pub fn reuse_unauthorized_premise(&self) -> Option<&Proposition> {
-        self.reuse_unauthorized_premise.as_ref()
-    }
-
-    /// The contract entry resources [`Self::reuse_unauthorized_premise`] was
-    /// refused against.
-    pub fn reuse_entry_resources(&self) -> &[ResourceFact] {
-        &self.reuse_entry_resources
-    }
-
-    /// The contract context's pure facts [`Self::reuse_unauthorized_premise`]
-    /// was refused against.
-    pub fn reuse_context_facts(&self) -> &[Proposition] {
-        &self.reuse_context_facts
-    }
 }
 
 impl CheckedFunctionExecution {
@@ -15512,10 +15421,6 @@ impl CheckedFunctionExecution {
                 .map_err(|difference| format!("path {index}: {difference}"))?;
         }
         Ok(())
-    }
-
-    pub fn limit(&self) -> Option<ExecutionLimit> {
-        self.execution.limit()
     }
 }
 

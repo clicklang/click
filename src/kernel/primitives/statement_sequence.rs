@@ -101,11 +101,6 @@ impl ProgramStatementSequence {
         self.items.len() - self.start
     }
 
-    /// Always false: a sequence holds at least two statements.
-    pub fn is_empty(&self) -> bool {
-        false
-    }
-
     /// The statement at `index`, counting from the first.
     pub fn get(&self, index: usize) -> Option<&Arc<ProgramStatement>> {
         if index >= self.len() {
@@ -136,14 +131,6 @@ impl ProgramStatementSequence {
         &self,
     ) -> impl DoubleEndedIterator<Item = &Arc<ProgramStatement>> + ExactSizeIterator {
         self.items.focus().narrow(self.start..).into_iter()
-    }
-
-    /// The statements in execution order, to change in place. Each is
-    /// copied first if another sequence shares it. A change must not make
-    /// the last statement a `Seq`, which [`Self::with_statement`] would
-    /// splice in instead.
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Arc<ProgramStatement>> {
-        self.items.focus_mut().narrow(self.start..).into_iter()
     }
 
     /// This sequence with the statement at `index` replaced by `statement`,

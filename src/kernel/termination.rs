@@ -1491,22 +1491,6 @@ fn reject_address_escaped_measure(
     Ok(())
 }
 
-/// Rejects a loop `decreases` component naming a variable whose address
-/// escapes, before the back-edge bundle is built. A store through that
-/// pointer, here or inside a callee, could change the component without a
-/// ranked update, so the declaration is refused rather than proved.
-pub(super) fn program_reject_address_escaped_loop_measures(
-    function_name: &str,
-    measures: &[RankingComponent],
-    addressed: &BTreeSet<BindingName>,
-) -> Result<(), String> {
-    for measure in measures {
-        reject_address_escaped_ranking_component(function_name, measure, addressed)
-            .map_err(|error| error.message)?;
-    }
-    Ok(())
-}
-
 fn reject_address_escaped_expression_measure(
     function_name: &str,
     measure: &ProgramExpression,

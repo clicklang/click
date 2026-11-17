@@ -7130,43 +7130,11 @@ pub struct SpecializedCompositionPlan {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SpecialArithmeticNode {
-    IntegerProductBounds {
-        bounds: Vec<usize>,
-        result: ClickProposition,
-    },
-    IntegerDivisionBounds {
-        bounds: Vec<usize>,
-        result: ClickProposition,
-    },
-    IntegerMultiplyOrder {
-        bounds: Vec<usize>,
-        result: ClickProposition,
-    },
-    IntegerQuotientBound {
-        bounds: Vec<usize>,
-        result: ClickProposition,
-    },
-    IntegerBoundExclusion {
-        bounds: Vec<usize>,
-        result: ClickProposition,
-    },
-    IntegerRelationTransport {
-        bounds: Vec<usize>,
-        result: ClickProposition,
-    },
     IntegerPolynomialIdentity {
         bounds: Vec<usize>,
         result: ClickProposition,
     },
-    IntegerQuotientShift {
-        bounds: Vec<usize>,
-        result: ClickProposition,
-    },
     IntegerCastIdentity {
-        bounds: Vec<usize>,
-        result: ClickProposition,
-    },
-    IntegerOperationIdentity {
         bounds: Vec<usize>,
         result: ClickProposition,
     },
@@ -7462,7 +7430,6 @@ pub struct ProofChoice {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProofFactSource {
     Requirement(usize),
-    Invariant(usize),
 }
 
 /// A `.click` tactic that may search for a proof.
@@ -8785,15 +8752,7 @@ impl ClickFile {
     }
 }
 
-impl ImportDeclaration {
-    pub fn path(&self) -> &str {
-        &self.path
-    }
-
-    pub fn position(&self) -> &crate::source::SourcePosition {
-        &self.position
-    }
-}
+impl ImportDeclaration {}
 
 impl AlgebraicTypeDefinition {
     pub fn name(&self) -> &str {
@@ -9602,26 +9561,6 @@ impl FunctionSignature {
         name == function.source_name()
     }
 
-    pub fn new(
-        return_type: InterfaceType,
-        name: impl Into<String>,
-        parameters: Vec<FunctionParameter>,
-    ) -> Self {
-        Self {
-            return_type,
-            return_struct_name: None,
-            return_pointee_constant: false,
-            return_reference: false,
-            name: name.into(),
-            c_source: None,
-            parameters,
-            exceptional_type: None,
-            diverges: false,
-            declared_loadable_bytes: Vec::new(),
-            rust_spelling: RustSignatureSpelling::default(),
-        }
-    }
-
     /// The slice parameters of a signature written in Rust syntax; `None`
     /// for the C-shaped spelling.
     pub(crate) fn rust_slice_parameters(&self) -> Option<&[String]> {
@@ -9640,16 +9579,6 @@ impl FunctionSignature {
         iterators: &[Option<crate::languages::interface::RustLoopIterator>],
     ) -> Self {
         self.rust_spelling.1 = std::sync::Arc::from(iterators);
-        self
-    }
-
-    pub fn with_return_pointee_constant(mut self, return_pointee_constant: bool) -> Self {
-        self.return_pointee_constant = return_pointee_constant;
-        self
-    }
-
-    pub fn with_return_reference(mut self, reference: bool) -> Self {
-        self.return_reference = reference;
         self
     }
 
@@ -10107,14 +10036,6 @@ impl SourceProof {
             self,
             Self::Default | Self::Tactic(SmartTactic::ImplicitTail)
         )
-    }
-
-    pub fn tactic(&self) -> Option<&SmartTactic> {
-        match self {
-            Self::Default => None,
-            Self::Tactic(tactic) => Some(tactic),
-            Self::Script(_) => None,
-        }
     }
 
     pub fn tactics(&self) -> Option<&[ProofTactic]> {

@@ -5614,7 +5614,6 @@ fn evaluate_whole_loop_effect_ranges(
         }
 
         let ranges = match check.effect() {
-            LoopEffect::Immutable => Vec::new(),
             // A mutable clause is an upper bound. Without a memory-writing
             // body, it is not evidence of mutation and should not block an
             // enclosing immutable claim.
@@ -7556,7 +7555,6 @@ pub(super) fn collect_loop_effect_check_obligations(
     for check in effect_checks {
         let mut segment_evaluation_failed = false;
         let segments = match check.effect() {
-            LoopEffect::Immutable => Vec::new(),
             LoopEffect::Mutable(segments) => {
                 if let Some(validated) = check.validated_ranges() {
                     validated
