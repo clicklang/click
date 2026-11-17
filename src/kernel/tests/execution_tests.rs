@@ -14,7 +14,7 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
             state,
             statement,
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
         )
         .unwrap()
@@ -128,7 +128,7 @@ fn whole_function_execution_resumes_a_direct_forward_goto_target() {
     assert!(
         matches!(
             theorem.proposition(),
-            Proposition::ProgramFunctionExecutes {
+            Proposition::ProgramFunctionVerifies {
                 outcome: FunctionOutcome::Return {
                     value,
                     ..
@@ -218,7 +218,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
             declared_class: None,
         },
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("local declaration should execute");
@@ -240,7 +240,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
             prior_result: None,
         },
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("direct assignment should return a checked refusal");
@@ -260,7 +260,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
             declared_class: None,
         },
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("name reuse should return a checked refusal");
@@ -277,7 +277,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
             crate::kernel::program_expression::int32_literal(2),
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("alias store should return its loan obligation");
@@ -293,7 +293,7 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
             state,
             statement,
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
         )
         .unwrap()
@@ -353,7 +353,7 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
             declared_class: None,
         },
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("array declaration should execute");
@@ -375,7 +375,7 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
             crate::kernel::program_expression::int32_literal(3),
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("disjoint store should execute");
@@ -410,7 +410,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
         &bound,
         function.body(),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("volatile parameter body should execute");
@@ -441,7 +441,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
             &bound,
             function.body(),
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
             &mut exhausted,
         ),
         Err(ExecutionLimit::KernelVariables {
@@ -515,7 +515,7 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
             offset: PointerOffsetTerm::Constant(0),
         }))),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("test free should execute");
@@ -760,7 +760,7 @@ fn concrete_max_executes_without_list_encoding() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(program_max_body()),
             outcome: StatementOutcome::Return {
@@ -789,7 +789,7 @@ fn concrete_max_function_call_preserves_caller_locals() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramFunctionExecutes {
+        &Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -834,7 +834,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
         execution.paths()[0].theorem().proposition(),
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(condition.clone(), true)),
-            Box::new(Proposition::ProgramFunctionExecutes {
+            Box::new(Proposition::ProgramFunctionVerifies {
                 state: Box::new(state.clone()),
                 function: Box::new(function.clone()),
                 arguments: arguments.clone(),
@@ -858,7 +858,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
         execution.paths()[1].theorem().proposition(),
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(condition, false)),
-            Box::new(Proposition::ProgramFunctionExecutes {
+            Box::new(Proposition::ProgramFunctionVerifies {
                 state: Box::new(state.clone()),
                 function: Box::new(function),
                 arguments,
@@ -974,7 +974,7 @@ fn function_call_threads_memory_but_discards_callee_locals() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramFunctionExecutes {
+        &Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -983,163 +983,6 @@ fn function_call_threads_memory_but_discards_callee_locals() {
                 state: Box::new(final_state),
             },
         }
-    );
-}
-
-#[test]
-fn function_call_does_not_inherit_undeclared_resources() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let resources = own_memory_context(pointer.clone(), 0, 1);
-    let state = ExecutionState::new().with_resource_context(resources);
-    let helper = program_function(
-        ProgramType::Int32,
-        "store_and_load",
-        vec![program_parameter("p", ProgramType::Int32Pointer)],
-        program_seq(
-            program_store(
-                crate::kernel::program_expression::variable("p"),
-                crate::kernel::program_expression::int32_literal(9),
-            ),
-            program_return(crate::kernel::program_expression::load(
-                crate::kernel::program_expression::variable("p"),
-            )),
-        ),
-    );
-    let caller = program_function(
-        ProgramType::Int32,
-        "caller",
-        vec![program_parameter("p", ProgramType::Int32Pointer)],
-        program_call_then_assign(
-            0,
-            "result",
-            "store_and_load",
-            vec![crate::kernel::program_expression::variable("p")],
-        ),
-    );
-    let arguments = vec![crate::kernel::program_expression::pointer_value(
-        pointer.clone(),
-    )];
-    let theorem = prove_symbolic_program_function_execution_with_environment(
-        state.clone(),
-        caller.clone(),
-        arguments.clone(),
-        PureFactContext::new(),
-        ExecutionEnvironment::new().with_function(helper),
-        ExecutionSemantics::EXECUTE_BODIES,
-    )
-    .expect("call should report missing callee permission");
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::ProgramFunctionExecutes {
-            state: Box::new(state),
-            function: Box::new(caller),
-            arguments,
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::MissingResource {
-                resource: Box::new(own_memory_fact(pointer, 0, 1)),
-            }),
-        }
-    );
-}
-
-#[test]
-fn concrete_function_specification_is_native_theorem() {
-    let function = program_max_function();
-    let specification = program_function_specification(
-        ExecutionState::new(),
-        vec![
-            crate::kernel::program_expression::int32_literal(0),
-            crate::kernel::program_expression::int32_literal(1),
-        ],
-        Vec::new(),
-        FunctionOutcome::Return {
-            value: int32(1).into(),
-            state: Box::new(ExecutionState::new()),
-        },
-    );
-    let theorem = prove_program_function_satisfies_specification(
-        function.clone(),
-        specification.clone(),
-        PureFactContext::new(),
-    )
-    .expect("concrete max specification should prove");
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::ProgramFunctionSatisfiesSpecification {
-            function: Box::new(function),
-            specification: Box::new(specification)
-        }
-    );
-}
-
-#[test]
-fn symbolic_function_specification_uses_requirements_as_execution_pure_facts() {
-    let a = Variable(16);
-    let b = Variable(17);
-    let a_bits = MachineTerm::Variable(a);
-    let b_bits = MachineTerm::Variable(b);
-    let condition = program_max_lt_condition(a_bits.clone(), b_bits.clone());
-    let function = program_max_function();
-    let specification = program_function_specification(
-        ExecutionState::new(),
-        vec![
-            ProgramExpression::Value(int32(a_bits)),
-            ProgramExpression::Value(int32(b_bits)),
-        ],
-        vec![Proposition::ConditionIs(condition.clone(), true)],
-        FunctionOutcome::Return {
-            value: int32(MachineTerm::Variable(b)).into(),
-            state: Box::new(ExecutionState::new()),
-        },
-    );
-    let theorem = prove_program_function_satisfies_specification(
-        function.clone(),
-        specification.clone(),
-        PureFactContext::new(),
-    )
-    .expect("symbolic branch specification should prove under condition");
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition, true)),
-            Box::new(Proposition::ProgramFunctionSatisfiesSpecification {
-                function: Box::new(function),
-                specification: Box::new(specification)
-            }),
-        )
-    );
-}
-
-#[test]
-fn incomplete_symbolic_function_specification_does_not_prove() {
-    let a = Variable(18);
-    let b = Variable(19);
-    let function = program_max_function();
-    let specification = program_function_specification(
-        ExecutionState::new(),
-        vec![
-            ProgramExpression::Value(int32(MachineTerm::Variable(a))),
-            ProgramExpression::Value(int32(MachineTerm::Variable(b))),
-        ],
-        Vec::new(),
-        FunctionOutcome::Return {
-            value: int32(MachineTerm::Variable(b)).into(),
-            state: Box::new(ExecutionState::new()),
-        },
-    );
-
-    assert!(
-        prove_program_function_satisfies_specification(
-            function,
-            specification,
-            PureFactContext::new()
-        )
-        .is_none()
     );
 }
 
@@ -1154,7 +997,7 @@ fn call_result_then_assignment_uses_function_environment() {
             crate::kernel::program_expression::int32_literal(1),
         )),
     );
-    let environment = ExecutionEnvironment::new().with_function(increment);
+    let environment = ExecutionEnvironment::new().with_function((increment).with_inline_body());
     let state = ExecutionState::new().with_local("result", int32(0));
     let statement = program_seq(
         program_call_then_assign(
@@ -1171,13 +1014,13 @@ fn call_result_then_assignment_uses_function_environment() {
         statement.clone(),
         PureFactContext::new(),
         environment,
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("known function call should execute");
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -1197,7 +1040,7 @@ fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
         ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
     )
     .with_int32_exceptional_outcome();
-    let environment = ExecutionEnvironment::new().with_function(thrower);
+    let environment = ExecutionEnvironment::new().with_function((thrower).with_inline_body());
     let state = ExecutionState::new().with_local("result", int32(1));
     let statement = program_seq(
         program_call_then_assign(2, "result", "thrower", Vec::new()),
@@ -1208,13 +1051,13 @@ fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
         statement.clone(),
         PureFactContext::new(),
         environment,
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
-    .expect("an internal throw should cross a body-executed call");
+    .expect("an internal throw should cross an inline helper call");
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Throw {
@@ -1234,7 +1077,7 @@ fn int32_handler_receives_payload_and_thrown_state_across_a_call() {
         ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
     )
     .with_int32_exceptional_outcome();
-    let environment = ExecutionEnvironment::new().with_function(thrower);
+    let environment = ExecutionEnvironment::new().with_function((thrower).with_inline_body());
     let state = ExecutionState::new().with_local("x", int32(1));
     let statement = program_try_catch_int32(
         program_seq(
@@ -1252,10 +1095,10 @@ fn int32_handler_receives_payload_and_thrown_state_across_a_call() {
         statement,
         PureFactContext::new(),
         environment,
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("the checked handler should execute from the thrown state");
-    let Proposition::ProgramStatementExecutes {
+    let Proposition::ProgramStatementVerifies {
         outcome: StatementOutcome::Return { value, state },
         ..
     } = theorem.proposition()
@@ -1285,7 +1128,7 @@ fn int32_handler_does_not_run_on_normal_or_return_paths() {
         .expect("a normal try body should bypass the handler");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::Return {
                 value,
                 ..
@@ -1302,7 +1145,7 @@ fn int32_handler_does_not_run_on_normal_or_return_paths() {
         .expect("a return from the try body should bypass the handler");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::Return {
                 value,
                 ..
@@ -1324,7 +1167,7 @@ fn throw_from_int32_handler_escapes_instead_of_being_recaught() {
             .expect("a handler throw should escape the same handler");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::Throw {
                 value,
                 ..
@@ -1349,7 +1192,7 @@ fn int32_handler_rejects_a_binding_that_would_replace_a_live_local() {
     .expect("a colliding catch binding must be rejected, not overwrite the local");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
             ..
         } if message.contains("handler binding `live` is not fresh")
@@ -1377,7 +1220,7 @@ fn caught_throw_satisfies_a_nonthrowing_function_signature() {
     .expect("a fully caught body should be a nonthrowing function");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::ProgramFunctionExecutes {
+        Proposition::ProgramFunctionVerifies {
             outcome: FunctionOutcome::Return {
                 value,
                 ..
@@ -1431,8 +1274,8 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
             ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_002)))),
         ],
         PureFactContext::new(),
-        ExecutionEnvironment::new().with_function(helper),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionEnvironment::new().with_function((helper).with_inline_body()),
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     );
     assert!(execution.limit().is_none());
     assert_eq!(execution.paths().len(), 3);
@@ -1446,7 +1289,7 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
                 proposition = body;
             }
             match proposition {
-                Proposition::ProgramFunctionExecutes {
+                Proposition::ProgramFunctionVerifies {
                     outcome: FunctionOutcome::Return { value, .. },
                     ..
                 } => {
@@ -1523,7 +1366,7 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     .expect("a non-int32 throw should produce a checked type mismatch");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
             ..
         }
@@ -1547,7 +1390,7 @@ fn function_execution_rejects_an_undeclared_exceptional_outcome() {
     .expect("an undeclared throw should produce a checked contract error");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::ProgramFunctionExecutes {
+        Proposition::ProgramFunctionVerifies {
             outcome: FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
             ..
         } if message == "undeclared_throw produced an exceptional outcome not declared by its signature"
@@ -1589,7 +1432,7 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
             statement.clone(),
             assumptions.clone(),
             ExecutionEnvironment::new(),
-            ExecutionSemantics::EXECUTE_BODIES,
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         );
     let loop_rule = loop_rule.expect("loop verification should produce a rule");
     assert!(certified.paths().iter().all(|path| {
@@ -1621,7 +1464,7 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
         statement.clone(),
         assumptions.clone(),
         loop_environment,
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     );
     assert!(!verified_directly.paths().is_empty());
 
@@ -1674,7 +1517,7 @@ fn statement_checks_share_one_execution_environment_variable_index() {
             program_skip(),
             PureFactContext::new(),
             candidate,
-            ExecutionSemantics::EXECUTE_BODIES,
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         );
         assert_eq!(execution.paths().len(), 1);
     }
@@ -1783,7 +1626,7 @@ fn environment_variable_scans_do_not_multiply_by_statement_count() {
                 program_skip(),
                 PureFactContext::new(),
                 environment.clone(),
-                ExecutionSemantics::EXECUTE_BODIES,
+                ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
             );
             assert_eq!(execution.paths().len(), 1);
         }
@@ -1818,7 +1661,7 @@ fn perpetual_loop_verifies_safety_without_minting_a_concrete_exit() {
             statement.clone(),
             PureFactContext::new(),
             ExecutionEnvironment::new(),
-            ExecutionSemantics::EXECUTE_BODIES,
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         );
     assert!(rule.is_some());
     assert_eq!(verification.paths().len(), 1);
@@ -1870,7 +1713,7 @@ fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
         statement.clone(),
         assumptions.clone(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     );
     assert!(
         automatic
@@ -1960,13 +1803,13 @@ fn unknown_call_assign_is_runtime_error() {
         statement.clone(),
         PureFactContext::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("unknown function should produce a single runtime-error path");
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: StatementOutcome::RuntimeError(RuntimeError::UnknownFunction(
@@ -2058,7 +1901,7 @@ fn while_loop_executes_concrete_countdown() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -2213,7 +2056,7 @@ fn whole_function_default_budget_scales_with_selected_source() {
             arguments.clone(),
             PureFactContext::new(),
             ExecutionEnvironment::new(),
-            ExecutionSemantics::EXECUTE_BODIES,
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
             ExecutionBudget::default(),
         );
     assert_eq!(
@@ -2229,7 +2072,7 @@ fn whole_function_default_budget_scales_with_selected_source() {
             arguments,
             PureFactContext::new(),
             ExecutionEnvironment::new(),
-            ExecutionSemantics::EXECUTE_BODIES,
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         );
     assert_eq!(
         source_sized_execution.limit(),
@@ -2274,7 +2117,7 @@ fn while_invariant_is_proof_obligation() {
         theorem.proposition(),
         &Proposition::Implies(
             Box::new(invariant),
-            Box::new(Proposition::ProgramStatementExecutes {
+            Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: StatementOutcome::Normal(Box::new(state)),
@@ -2436,7 +2279,7 @@ fn prerequisite_loop_rule_fixture() -> (ProgramStatement, VerifiedLoopRule) {
             statement.clone(),
             PureFactContext::new(),
             ExecutionEnvironment::new(),
-            ExecutionSemantics::EXECUTE_BODIES,
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         );
     let rule = rule.expect("loop verification should produce a rule");
     assert!(!rule.paths.is_empty());
@@ -2839,7 +2682,7 @@ fn the_execution_identity_counter_refuses_at_the_first_reserved_range() {
     // (`4_000_000`) are above it by the same reasoning.
     for name in ["index", "accumulator", "item"] {
         assert!(
-            crate::kernel::spec::spec_fold_bound_variable(name, 0).0
+            crate::kernel::spec::spec_fold_bound_variable(&name.into(), 0).0
                 >= ExecutionBudget::KERNEL_VARIABLE_CEILING,
             "a spec fold binder must lie above everything an execution can issue"
         );
@@ -3117,7 +2960,7 @@ fn the_spec_fold_binder_range_is_disjoint_from_every_other_producer() {
     );
     for name in ["accumulator", "item", "index", "sum", "nested"] {
         for salt in [0, 1] {
-            let variable = crate::kernel::spec::spec_fold_bound_variable(name, salt);
+            let variable = crate::kernel::spec::spec_fold_bound_variable(&name.into(), salt);
             assert!(
                 fold_binders.contains(&variable.0),
                 "{name} salt {salt}: {variable:?}"
@@ -3362,7 +3205,7 @@ fn execute_declaration(state: &ExecutionState, statement: &ProgramStatement) -> 
             state,
             statement,
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
         )
         .expect("the declaration executes"),

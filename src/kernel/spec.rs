@@ -79,19 +79,19 @@ type SpecAlgebraicPath = LoweredTermPath<AlgebraicResult>;
 struct SpecScope<'a> {
     state: &'a ExecutionState,
     loop_entry_state: Option<&'a ExecutionState>,
-    algebraic_bindings: &'a BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &'a BTreeMap<BindingName, AlgebraicTerm>,
     /// Lexical machine values keep their shared producer identity. Native C
     /// locals remain in `state`; only explicitly selected native consumers export.
-    values: Option<&'a crate::persistent::PersistentMap<String, KernelTerm>>,
+    values: Option<&'a crate::persistent::PersistentMap<BindingName, KernelTerm>>,
 }
 
-static NO_ALGEBRAIC_BINDINGS: BTreeMap<String, AlgebraicTerm> = BTreeMap::new();
+static NO_ALGEBRAIC_BINDINGS: BTreeMap<BindingName, AlgebraicTerm> = BTreeMap::new();
 
 impl<'a> SpecScope<'a> {
     fn new(
         state: &'a ExecutionState,
         loop_entry_state: Option<&'a ExecutionState>,
-        algebraic_bindings: &'a BTreeMap<String, AlgebraicTerm>,
+        algebraic_bindings: &'a BTreeMap<BindingName, AlgebraicTerm>,
     ) -> Self {
         Self {
             state,
@@ -101,13 +101,13 @@ impl<'a> SpecScope<'a> {
         }
     }
 
-    fn without_values<'n>(
+    fn without_values(
         self,
-        names: impl IntoIterator<Item = &'n str>,
-    ) -> crate::persistent::PersistentMap<String, KernelTerm> {
+        names: impl IntoIterator<Item = impl Into<BindingName>>,
+    ) -> crate::persistent::PersistentMap<BindingName, KernelTerm> {
         let mut values = self.values.cloned().unwrap_or_default();
         for name in names {
-            values.remove(&name.to_string());
+            values.remove(&name.into());
         }
         values
     }
@@ -124,7 +124,7 @@ impl<'a> SpecScope<'a> {
             crate::kernel::loops::collect_variable_names(expression, &mut names);
             for name in names {
                 crate::instrumentation::record_deterministic_work(1);
-                if let Some(value) = name.named().and_then(|name| values.get(name)) {
+                if let Some(value) = values.get(&name) {
                     state
                         .to_mut()
                         .locals
@@ -414,7 +414,7 @@ pub(in crate::kernel) fn lower_spec_proposition_at_state_with_algebraic_bindings
     proposition: &SpecProposition,
     loop_entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     lower_spec_proposition_at_state_with_algebraic_bindings_in(
@@ -433,7 +433,7 @@ pub(in crate::kernel) fn lower_held_resource_body_clause(
     state: &ExecutionState,
     proposition: &SpecProposition,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let mut evaluation = SpecEvaluation::logical(budget);
@@ -476,7 +476,7 @@ pub(in crate::kernel) fn evaluate_spec_expression_paths_with_bindings(
     state: &ExecutionState,
     expression: &SpecExpression,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     evaluate_spec_expression_paths_with_bindings_in(
@@ -492,7 +492,7 @@ pub(in crate::kernel) fn evaluate_resource_child_argument_paths(
     state: &ExecutionState,
     expression: &SpecExpression,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     integer_bindings: &BTreeMap<Variable, IntegerTerm>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExpressionPath<SpecValue>>> {
@@ -1156,7 +1156,7 @@ fn lower_spec_conjunction_left_spine_in(
 
 #[derive(Clone)]
 struct SpecUniversalBinder {
-    name: String,
+    name: BindingName,
     variable: Variable,
     sort: Sort,
     pointer: bool,
@@ -1312,7 +1312,7 @@ fn wrap_spec_universal_path(
             var: binder.variable,
             sort: binder.sort.clone(),
             body: Box::new(body),
-            name: BinderName::written(&binder.name),
+            name: BinderName::binding(&binder.name),
         },
         facts: Vec::new().into(),
         obligations: path
@@ -1334,7 +1334,7 @@ fn wrap_spec_universal_path(
                 obligation.map_proposition(|proposition| Proposition::ForAll {
                     var: binder.variable,
                     sort: binder.sort.clone(),
-                    name: BinderName::written(&binder.name),
+                    name: BinderName::binding(&binder.name),
                     body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                 })
             })
@@ -1716,7 +1716,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             SpecPropositionPath {
                 proposition: Proposition::ForAll {
                     var: *variable,
-                    name: BinderName::written(name),
+                    name: BinderName::binding(name),
                     sort: Sort::Integer,
                     body: Box::new(body),
                 },
@@ -1727,7 +1727,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     .map(|obligation| {
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
-                            name: BinderName::written(name),
+                            name: BinderName::binding(name),
                             sort: Sort::Integer,
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
@@ -1763,7 +1763,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             SpecPropositionPath {
                 proposition: Proposition::ForAll {
                     var: *variable,
-                    name: BinderName::written(name),
+                    name: BinderName::binding(name),
                     sort: Sort::Algebraic(algebraic_type.clone()),
                     body: Box::new(body),
                 },
@@ -1774,7 +1774,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     .map(|obligation| {
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
-                            name: BinderName::written(name),
+                            name: BinderName::binding(name),
                             sort: Sort::Algebraic(algebraic_type.clone()),
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
@@ -1854,7 +1854,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             SpecPropositionPath {
                 proposition: Proposition::ForAll {
                     var: *variable,
-                    name: BinderName::written(name),
+                    name: BinderName::binding(name),
                     sort: Sort::ProgramPointer(*program_type),
                     body: Box::new(body),
                 },
@@ -1865,7 +1865,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     .map(|obligation| {
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
-                            name: BinderName::written(name),
+                            name: BinderName::binding(name),
                             sort: Sort::ProgramPointer(*program_type),
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
@@ -1983,6 +1983,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 )
                 .into_checked_path(),
             ])
+        }
+        SpecProposition::MutexHeld(mutex) => {
+            lower_mutex_held_at_state_in(scope, mutex, assumptions, budget)
         }
         SpecProposition::Predicate {
             name,
@@ -3217,8 +3220,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 schema,
                 budget,
             )?;
-            let mut body_scope =
-                bindings::Scope::new(scope, arm.bindings.iter().map(String::as_str));
+            let mut body_scope = bindings::Scope::new(scope, arm.bindings.iter());
             for (binding, value) in arm.bindings.iter().zip(&bindings) {
                 body_scope.bind_native_field(binding, value);
             }
@@ -3272,7 +3274,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
             )
             .ok_or(ExecutionLimit::Paths)?;
             lowered_arms.push(AlgebraicIntegerMatchArm {
-                binding_names: crate::kernel::BindingNames::written(&arm.bindings),
+                binding_names: crate::kernel::BindingNames::bindings(&arm.bindings),
                 variant: arm.variant.clone(),
                 bindings: bindings.clone(),
                 body: body.into(),
@@ -3706,7 +3708,7 @@ fn algebraic_match_reconstructs(
                             )),
                             AlgebraicValueType::Program(_)
                             | AlgebraicValueType::ObjectPointer(_, _),
-                        ) => name.is_named(binding),
+                        ) => name == binding,
                         (
                             SpecAlgebraicValue::Algebraic(SpecAlgebraicExpression {
                                 node: SpecAlgebraicExpressionNode::Binding(name),
@@ -3939,7 +3941,7 @@ fn evaluate_spec_algebraic_non_call_in(
             Ok(paths)
         }
         SpecAlgebraicExpressionNode::Binding(name) => {
-            if let Some(root) = scope.values.and_then(|values| values.get(name)) {
+            if let Some(root) = scope.values.and_then(|values| values.get(&name.into())) {
                 if root.ty() != &KernelType::Algebraic(expression.algebraic_type.clone()) {
                     return Err(ExecutionLimit::Paths);
                 }
@@ -4007,8 +4009,7 @@ fn evaluate_spec_algebraic_non_call_in(
                             schema,
                             budget,
                         )?;
-                        let mut body_scope =
-                            bindings::Scope::new(scope, arm.bindings.iter().map(String::as_str));
+                        let mut body_scope = bindings::Scope::new(scope, arm.bindings.iter());
                         for (binding, value) in arm.bindings.iter().zip(&bindings) {
                             body_scope.bind_native_field(binding, value);
                         }
@@ -4047,7 +4048,7 @@ fn evaluate_spec_algebraic_non_call_in(
                             &arm.variant,
                             &bindings,
                             body_path.value.into_kernel(),
-                            &crate::kernel::BindingNames::written(&arm.bindings),
+                            &crate::kernel::BindingNames::bindings(&arm.bindings),
                         ));
                     }
                     result.push(SpecAlgebraicPath {
@@ -4075,8 +4076,7 @@ fn evaluate_spec_algebraic_non_call_in(
                     if arm.bindings.len() != case.fields.len() {
                         return Err(ExecutionLimit::Paths);
                     }
-                    let mut body_scope =
-                        bindings::Scope::new(scope, arm.bindings.iter().map(String::as_str));
+                    let mut body_scope = bindings::Scope::new(scope, arm.bindings.iter());
                     for (binding, field) in arm.bindings.iter().zip(&case.fields) {
                         body_scope.bind_field(binding, field);
                     }
@@ -4476,7 +4476,7 @@ fn guard_scalar_match_obligation(
         };
         obligation = obligation.map_proposition(|body| Proposition::ForAll {
             var: *variable,
-            name: BinderName::written(name),
+            name: BinderName::binding(name),
             sort,
             body: Box::new(body),
         });
@@ -5699,6 +5699,69 @@ fn lower_spec_comparison_proposition_at_state_in(
     Ok(paths)
 }
 
+fn lower_mutex_held_at_state_in(
+    scope: SpecScope<'_>,
+    mutex: &SpecExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    let state = scope.state;
+    let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        scope,
+        mutex,
+        assumptions,
+        budget,
+    )?;
+    Ok(paths
+        .into_iter()
+        .map(|path| {
+            let ProgramValue::Pointer(mutex) = path.value.into_native() else {
+                return invalid_mutex_held_path(
+                    path.facts,
+                    path.obligations,
+                    "held expects one mutex pointer",
+                );
+            };
+            if state.preserves_mutex_protocols
+                && (state.mutex_ledger.is_none() || state.opaque_mutex_acquisitions.is_some())
+            {
+                let guard = super::mutexes::guard_resource(state, mutex.pointer(), true)
+                    .expect("abstract guard description");
+                // The guard is matched as written: the facts never make
+                // an aliased mutex held.
+                if state
+                    .resources
+                    .satisfies_fact(&guard, &PureFactContext::new())
+                {
+                    return SpecPropositionPath {
+                        introductions: Vec::new(),
+                        proposition: Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                        facts: path.facts,
+                        obligations: path.obligations,
+                    };
+                }
+                return invalid_mutex_held_path(
+                    path.facts,
+                    path.obligations,
+                    "held cannot inspect an opaque contract protocol",
+                );
+            }
+            let held = state
+                .mutex_ledger
+                .as_ref()
+                .map_or(ConditionTerm::Constant(false), |ledger| {
+                    ledger.held_condition(mutex.pointer())
+                });
+            SpecPropositionPath {
+                introductions: Vec::new(),
+                proposition: Proposition::ConditionIs(held, true),
+                facts: path.facts,
+                obligations: path.obligations,
+            }
+        })
+        .collect())
+}
+
 fn lower_spec_predicate_proposition_at_state_in(
     scope: SpecScope<'_>,
     name: &str,
@@ -5723,72 +5786,6 @@ fn lower_spec_predicate_proposition_at_state_in(
             facts: ExecutionFacts::new(),
             obligations: Vec::new(),
         }]);
-    }
-    if name == MUTEX_HELD_PREDICATE_NAME {
-        let [SpecPredicateArgument::Value(mutex)] = arguments else {
-            return Ok(vec![invalid_mutex_held_path(
-                Vec::new().into(),
-                Vec::new(),
-                "held expects one mutex pointer",
-            )]);
-        };
-        let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            scope,
-            mutex,
-            assumptions,
-            budget,
-        )?;
-        return Ok(paths
-            .into_iter()
-            .map(|path| {
-                let ProgramValue::Pointer(mutex) = path.value.into_native() else {
-                    return invalid_mutex_held_path(
-                        path.facts,
-                        path.obligations,
-                        "held expects one mutex pointer",
-                    );
-                };
-                if state.preserves_mutex_protocols
-                    && (state.mutex_ledger.is_none() || state.opaque_mutex_acquisitions.is_some())
-                {
-                    let guard = super::mutexes::guard_resource(state, mutex.pointer(), true)
-                        .expect("abstract guard description");
-                    // The guard is matched as written: the facts never make
-                    // an aliased mutex held.
-                    if state
-                        .resources
-                        .satisfies_fact(&guard, &PureFactContext::new())
-                    {
-                        return SpecPropositionPath {
-                            introductions: Vec::new(),
-                            proposition: Proposition::ConditionIs(
-                                ConditionTerm::Constant(true),
-                                true,
-                            ),
-                            facts: path.facts,
-                            obligations: path.obligations,
-                        };
-                    }
-                    return invalid_mutex_held_path(
-                        path.facts,
-                        path.obligations,
-                        "held cannot inspect an opaque contract protocol",
-                    );
-                }
-                let held = state
-                    .mutex_ledger
-                    .as_ref()
-                    .map_or(ConditionTerm::Constant(false), |ledger| {
-                        ledger.held_condition(mutex.pointer())
-                    });
-                SpecPropositionPath {
-                    introductions: Vec::new(),
-                    proposition: Proposition::ConditionIs(held, true),
-                    facts: path.facts,
-                    obligations: path.obligations,
-                }
-            })
-            .collect());
     }
     // A function-contract fact describes the behavior of its pointer value;
     // it is independent of the caller's current resource-population state.
@@ -5919,7 +5916,7 @@ fn evaluate_spec_expression_paths_with_bindings_in(
     state: &ExecutionState,
     expression: &SpecExpression,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -6825,8 +6822,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                 Ok(variable)
                             },
                         )?;
-                        let mut body_scope =
-                            bindings::Scope::new(scope, arm.bindings.iter().map(String::as_str));
+                        let mut body_scope = bindings::Scope::new(scope, arm.bindings.iter());
                         for (binding, value) in arm.bindings.iter().zip(&bindings) {
                             body_scope.bind_native_field(binding, value);
                         }
@@ -6875,7 +6871,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                     &arm.variant,
                                     &bindings,
                                     body_path.value.algebraic().ok_or(ExecutionLimit::Paths)?,
-                                    &crate::kernel::BindingNames::written(&arm.bindings),
+                                    &crate::kernel::BindingNames::bindings(&arm.bindings),
                                 ));
                                 continue;
                             }
@@ -6886,7 +6882,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             // A value of a Rust type parameter is a term of
                             // its type, so the match is one too.
                             parameter_arms.push(AlgebraicResultMatchArm {
-                                binding_names: crate::kernel::BindingNames::written(&arm.bindings),
+                                binding_names: crate::kernel::BindingNames::bindings(&arm.bindings),
                                 variant: arm.variant.clone(),
                                 bindings,
                                 body: *body,
@@ -6899,7 +6895,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             let body = program_value_bitvector_term(&body_path.value.native())
                                 .ok_or(ExecutionLimit::Paths)?;
                             compatibility_arms.push(AlgebraicBitvectorMatchArm {
-                                binding_names: crate::kernel::BindingNames::written(&arm.bindings),
+                                binding_names: crate::kernel::BindingNames::bindings(&arm.bindings),
                                 variant: arm.variant.clone(),
                                 bindings,
                                 body,
@@ -6912,7 +6908,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             &arm.variant,
                             &bindings,
                             body,
-                            &crate::kernel::BindingNames::written(&arm.bindings),
+                            &crate::kernel::BindingNames::bindings(&arm.bindings),
                         ));
                     }
                     let Some(result_type) = result_type else {
@@ -6982,8 +6978,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     if arm.bindings.len() != case.fields.len() {
                         return Err(ExecutionLimit::Paths);
                     }
-                    let mut body_scope =
-                        bindings::Scope::new(scope, arm.bindings.iter().map(String::as_str));
+                    let mut body_scope = bindings::Scope::new(scope, arm.bindings.iter());
                     for (binding, field) in arm.bindings.iter().zip(&case.fields) {
                         body_scope.bind_field(binding, field);
                     }
@@ -7032,19 +7027,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             paths
         }
         SpecExpression::ProgramExpression(ProgramExpression::Variable(name))
-            if scope
-                .values
-                .and_then(|values| name.named().and_then(|name| values.get(name)))
-                .is_some() =>
+            if scope.values.and_then(|values| values.get(name)).is_some() =>
         {
             vec![SpecExpressionPath {
-                value: scope
-                    .values
-                    .unwrap()
-                    .get(name.named().unwrap())
-                    .unwrap()
-                    .clone()
-                    .into(),
+                value: scope.values.unwrap().get(name).unwrap().clone().into(),
                 facts: ExecutionFacts::new(),
                 obligations: Vec::new(),
             }]
@@ -8972,17 +8958,49 @@ fn evaluate_spec_if_paths_in(
             &condition_path.facts,
             &condition_path.obligations,
         );
-        // A retained order guard is part of the conditional's syntax even
+        // A retained comparison guard is part of the conditional's syntax even
         // when its two literal operands determine its truth. Checking may
         // select an arm; logical lowering retains both guarded values.
-        let retained_order = !budget.machine_result_production_disabled
-            && matches!(&condition_path.proposition,
-                Proposition::ConditionIs(ConditionTerm::Compare { format, relation, left, right }, _)
-                if *relation != CompareRelation::Equal
-                    && matches!(format, MachineIntegerType::Int32 | MachineIntegerType::UInt32 | MachineIntegerType::Int64 | MachineIntegerType::UInt64)
-                    && format.constant_from_term(left).is_some()
-                    && format.constant_from_term(right).is_some());
-        let condition_truth = if retained_order {
+        let retained_comparison = !budget.machine_result_production_disabled
+            && match &condition_path.proposition {
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format,
+                        relation: CompareRelation::Equal,
+                        left,
+                        right,
+                    },
+                    _,
+                ) => {
+                    // Wide equality reads words, including unsigned literal
+                    // payloads filed under the native Int64 equality format.
+                    matches!(
+                        format,
+                        MachineIntegerType::Int64 | MachineIntegerType::UInt64
+                    ) && left.bitvector64_as_const().is_some()
+                        && right.bitvector64_as_const().is_some()
+                }
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format,
+                        left,
+                        right,
+                        ..
+                    },
+                    _,
+                ) => {
+                    matches!(
+                        format,
+                        MachineIntegerType::Int32
+                            | MachineIntegerType::UInt32
+                            | MachineIntegerType::Int64
+                            | MachineIntegerType::UInt64
+                    ) && format.constant_from_term(left).is_some()
+                        && format.constant_from_term(right).is_some()
+                }
+                _ => false,
+            };
+        let condition_truth = if retained_comparison {
             None
         } else {
             constant_spec_condition_value(&condition_path.proposition)
@@ -9028,7 +9046,7 @@ fn evaluate_spec_if_paths_in(
                         budget,
                     )
                 };
-                let (then_paths, else_paths) = if retained_order
+                let (then_paths, else_paths) = if retained_comparison
                     && let Some(truth) = constant_spec_condition_value(condition)
                 {
                     let selected = evaluate(if truth { then_branch } else { else_branch })?;
@@ -9051,7 +9069,7 @@ fn evaluate_spec_if_paths_in(
                     .first()
                     .zip(else_paths.first())
                     .is_some_and(|(left, right)| scalar(left) && scalar(right));
-                if retained_order
+                if retained_comparison
                     && !scalar_arms
                     && let Some(truth) = constant_spec_condition_value(condition)
                 {
@@ -9406,8 +9424,8 @@ fn evaluate_spec_range_fold_paths_in(
     start: &SpecExpression,
     end: &SpecExpression,
     initial: &SpecExpression,
-    accumulator: &str,
-    item: &str,
+    accumulator: &BindingName,
+    item: &BindingName,
     body: &SpecExpression,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
@@ -9493,8 +9511,8 @@ fn evaluate_spec_range_fold_body_path_in(
     start: SpecValue,
     end: SpecValue,
     initial: SpecValue,
-    accumulator: &str,
-    item: &str,
+    accumulator: &BindingName,
+    item: &BindingName,
     body: &SpecExpression,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -9615,24 +9633,34 @@ pub(super) fn concrete_spec_fold_range(start: i32, end: i32) -> std::ops::Range<
 pub(super) const SPEC_FOLD_BINDER_VARIABLE_BASE: u64 = 1 << 43;
 pub(super) const SPEC_FOLD_BINDER_VARIABLE_CEILING: u64 = 1 << 44;
 
-pub(super) fn spec_fold_bound_variable(name: &str, salt: u64) -> Variable {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64 ^ salt;
-    for byte in name.bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x1000_0000_01b3);
+pub(super) fn spec_fold_bound_variable(name: &BindingName, salt: u64) -> Variable {
+    type Bindings = (u64, BTreeMap<(BindingName, u64), Variable>);
+    static VARIABLES: std::sync::OnceLock<std::sync::Mutex<Bindings>> = std::sync::OnceLock::new();
+    crate::instrumentation::record_deterministic_work(1);
+    let mut bindings = VARIABLES
+        .get_or_init(|| std::sync::Mutex::new((SPEC_FOLD_BINDER_VARIABLE_BASE, BTreeMap::new())))
+        .lock()
+        .unwrap();
+    let key = (name.clone(), salt);
+    if let Some(variable) = bindings.1.get(&key) {
+        return *variable;
     }
-    Variable(
-        SPEC_FOLD_BINDER_VARIABLE_BASE
-            + (hash % (SPEC_FOLD_BINDER_VARIABLE_CEILING - SPEC_FOLD_BINDER_VARIABLE_BASE)),
-    )
+    assert!(
+        bindings.0 < SPEC_FOLD_BINDER_VARIABLE_CEILING,
+        "specification fold binder identity range exhausted"
+    );
+    let variable = Variable(bindings.0);
+    bindings.0 += 1;
+    bindings.1.insert(key, variable);
+    variable
 }
 
 pub(super) fn symbolic_spec_range_fold_value(
     start: SpecValue,
     end: SpecValue,
     initial: SpecValue,
-    accumulator: &str,
-    item: &str,
+    accumulator: &BindingName,
+    item: &BindingName,
     body_value: SpecValue,
 ) -> Option<SpecValue> {
     let read = |value: &SpecValue| {
@@ -10538,3 +10566,6 @@ mod execution_handoff_tests;
 
 #[cfg(test)]
 mod float_comparison_tests;
+
+#[cfg(test)]
+mod mutex_held_tests;

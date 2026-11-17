@@ -2,7 +2,7 @@
 
 After `a[i] = 5`, the Click expression `a[i]` lowers to the read of that cell
 at the store's version, not to the stored value `5`: every read lowers to its
-version name (`docs/internals/raise-lower.md`). The read-over-write authority
+version name (`docs/internals/raise-lower-principle.md`). The read-over-write authority
 relates the read to the value the store wrote, so `a[i] == 5` is a goal that
 holds by evaluation and `normalize` closes it, while the goal itself still
 names the read. A rewrite that moves a read to an equal address keeps it a

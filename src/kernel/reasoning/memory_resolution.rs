@@ -1302,7 +1302,7 @@ fn mixed_index_offsets_equal(
 /// comparison only.
 ///
 /// `(char *)p + i * 4` keeps its written byte offset when it is formed
-/// (`docs/internals/raise-lower.md#lowering-is-fact-stable`), while `p + i`
+/// (`docs/internals/raise-lower-principle.md#lowering-is-fact-stable`), while `p + i`
 /// over four-byte elements is the element index `i` at stride four. The two
 /// name one address exactly when the `int32` product does not wrap: the
 /// element form sign-extends `i` before scaling, the byte form sign-extends

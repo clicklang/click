@@ -2554,16 +2554,17 @@ fn checked_condition_evidence_rejects_a_different_source_condition() {
 fn a_summarized_loop_matches_only_a_less_annotated_source_loop() {
     fn loop_statement(invariant: Vec<Proposition>, body: ProgramStatement) -> ProgramStatement {
         ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                ProgramExpression::Variable(("c".to_string()).into()),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: ProgramExpression::Variable(("c".to_string()).into()),
             invariant,
             invariant_checks: Vec::new(),
             effect_checks: Vec::new(),
             resource_specs: Vec::new(),
             ranking_measures: Vec::new(),
             structural_measure: None,
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
             body: Box::new(body),
@@ -2596,13 +2597,22 @@ fn a_summarized_loop_matches_only_a_less_annotated_source_loop() {
         &bare
     ));
     let mut other_condition = bare.clone();
-    if let ProgramStatement::Loop { condition, .. } = &mut other_condition {
-        *condition = ProgramExpression::Variable(("d".to_string()).into());
+    if let ProgramStatement::Loop {
+        test: loop_test, ..
+    } = &mut other_condition
+    {
+        *loop_test = crate::kernel::LoopTestRegion::expression(
+            ProgramExpression::Variable(("d".to_string()).into()),
+            loop_test.position,
+        );
     }
     assert!(!checked_source_statement_matches(&other_condition, &bare));
     let mut do_while = bare.clone();
-    if let ProgramStatement::Loop { do_while: flag, .. } = &mut do_while {
-        *flag = true;
+    if let ProgramStatement::Loop {
+        test: loop_test, ..
+    } = &mut do_while
+    {
+        loop_test.position = crate::kernel::LoopTestPosition::AfterBody;
     }
     assert!(!checked_source_statement_matches(&do_while, &bare));
     // Only loops have proof clauses; nothing else relaxes.
@@ -3284,7 +3294,7 @@ fn opened_contract_entry_selects_premises_before_body_execution() {
             .filter(|(fact, _)| **fact == requirement)
             .map(|(_, origin)| *origin)
             .collect::<Vec<_>>(),
-        vec![Some(1)]
+        vec![Some(OpenedEntryFactSource::SourceFact(1))]
     );
     assert!(!opened.facts().contains(&foreign));
     assert!(opened.facts().contains(&environment.byte_order_fact()));

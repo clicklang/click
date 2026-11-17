@@ -67,7 +67,10 @@ impl NamedMutexAuthorities {
         if !matches!(
             fact,
             ResourceFact::Own(
-                Resource::MutexLive(_) | Resource::MutexUse(_) | Resource::MutexGuard(_),
+                Resource::MutexLive(_)
+                    | Resource::MutexUse(_)
+                    | Resource::ConditionalMutexGuard(_)
+                    | Resource::MutexGuard(_),
                 _
             )
         ) || fact

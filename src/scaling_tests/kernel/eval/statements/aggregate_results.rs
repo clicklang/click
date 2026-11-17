@@ -43,3 +43,61 @@ fn aggregate_step_results_cost_their_fields_instead_of_unrelated_state() {
         }
     }
 }
+
+#[test]
+fn opaque_exception_creation_ignores_unrelated_memory_and_types() {
+    let mut costs = Vec::new();
+    for size in [1, 32, 1024] {
+        let _session = VerificationSession::enter();
+        let mut state = ExecutionState::new();
+        for index in 0..size {
+            TypeParameterName::intern(&format!("Unrelated{index}"));
+            let pointer = Memory::local_pointer(format!("other{index}"));
+            state.set_memory(
+                state
+                    .memory
+                    .clone()
+                    .with_block(pointer.block.clone(), 4)
+                    .store(pointer, int32(index)),
+            );
+        }
+        let payload = TypeParameterName::intern("struct ParseError");
+        let statement = ProgramStatement::ThrowOpaque(payload);
+        let environment = ExecutionEnvironment::new();
+        let assumptions = PureFactContext::default();
+        let mut budget = ExecutionBudget::for_new_execution();
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            execute_execution_statement_paths(
+                &state,
+                &statement,
+                &assumptions,
+                ExecutionContext::verify_loops(&environment),
+                &mut budget,
+            )
+            .unwrap()
+        });
+        let StatementOutcome::Throw {
+            value,
+            state: thrown,
+        } = &paths[0].outcome
+        else {
+            panic!("expected opaque throw");
+        };
+        assert_eq!(value.program_type(), ProgramType::Parameter(payload));
+        assert_eq!(thrown.memory, state.memory);
+        let next = execute_execution_statement_paths(
+            &state,
+            &statement,
+            &assumptions,
+            ExecutionContext::verify_loops(&environment),
+            &mut budget,
+        )
+        .unwrap();
+        let StatementOutcome::Throw { value: other, .. } = &next[0].outcome else {
+            panic!("expected second throw");
+        };
+        assert_ne!(value, other, "each construction introduces a fresh value");
+        costs.push(work);
+    }
+    assert!(costs.iter().all(|work| *work == costs[0]), "{costs:?}");
+}

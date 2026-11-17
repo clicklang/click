@@ -1,10 +1,28 @@
 //! Discovery over Surface proof presentations; semantic state remains in ProofObject.
 use super::*;
 
+thread_local! {
+    static PREDICATE_SEARCH_PATH: std::cell::RefCell<BTreeSet<String>> = const { std::cell::RefCell::new(BTreeSet::new()) };
+}
+// Search cycle prevention belongs to the active search, never proof state.
+struct PredicateSearchGuard(String);
+impl PredicateSearchGuard {
+    fn enter(name: &str) -> Option<Self> {
+        PREDICATE_SEARCH_PATH
+            .with(|path| path.borrow_mut().insert(name.to_string()))
+            .then(|| Self(name.to_string()))
+    }
+}
+impl Drop for PredicateSearchGuard {
+    fn drop(&mut self) {
+        PREDICATE_SEARCH_PATH.with(|path| path.borrow_mut().remove(&self.0));
+    }
+}
+
 /// Premise citations must already be evaluable; a proposed `have` may
 /// carry evaluation requirements that its ordinary driver still must prove.
 #[derive(Clone, Copy)]
-enum SurfaceSpellingPurpose {
+enum SurfaceRaisingPurpose {
     AvailablePremise,
     ProposedGoal,
 }
@@ -658,10 +676,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// an available implication (or chain) whose antecedents are exactly
     /// available, such as a call guarantee `left_result == 0 implies X`
     /// inside the branch whose path condition is `left_result == 0`. The
-    /// indexed consequent lookup that the checked `extract` rule performs
-    /// decides it. For an order comparison, search also tries its mirrored
-    /// spelling with one additional probe. Expansion prints the selected
-    /// `extract` and, if needed, `known`.
+    /// consequent index selects the source implication. For an order
+    /// comparison, search also tries its mirrored spelling with one additional
+    /// probe. Expansion prints a `have` with explicit fact application and
+    /// closes the goal with `known`.
     pub(in crate::surface::proof) fn try_discharged_consequent_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
@@ -702,9 +720,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .facts()
                         .contains_discharged_implication_consequent(&kernel)
                         && let Some(extracted) = attempt::candidate_outcome(
-                            search_input
-                                .driver()
-                                .apply_step(ProofStep::Extract(mirrored)),
+                            Self::publish_selected_fact(search_input, &(mirrored)),
                         )?
                     {
                         if extracted.focused_discharged() {
@@ -723,17 +739,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 surface,
             );
         }
-        Ok(attempt::candidate_outcome(
-            search_input
-                .driver()
-                .apply_step(ProofStep::Extract(surface.clone())),
-        )?
+        Ok(attempt::candidate_outcome(Self::publish_selected_fact(
+            search_input,
+            &(surface.clone()),
+        ))?
         .filter(Proof::focused_discharged))
     }
 
     /// A goal that is one conjunct of a discharged implication's
-    /// consequent, `c` from `a` and `a implies (b and c)`: `extract` the
-    /// whole consequent, spelled as the implication fact is written, and
+    /// consequent, `c` from `a` and `a implies (b and c)`: apply the
+    /// implication to publish the whole consequent, spelled as the implication fact is written, and
     /// then the goal, now a proper conjunct of an available fact. The
     /// implication is selected by one probe of the conjunct index
     /// (`ProofFacts::discharged_implication_containing`); both steps are
@@ -782,23 +797,21 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             },
             None => spelled,
         };
-        let Some(extracted) = attempt::candidate_outcome(
-            search_input
-                .driver()
-                .apply_step(ProofStep::Extract(spelled)),
-        )?
+        let Some(extracted) =
+            attempt::candidate_outcome(Self::publish_selected_fact(search_input, &(spelled)))?
         else {
             return Ok(None);
         };
         if extracted.is_complete() || extracted.focused_discharged() {
             return Ok(Some(extracted));
         }
-        Ok(attempt::candidate_outcome(
-            extracted
-                .driver()
-                .apply_step(ProofStep::Extract(surface.clone())),
-        )?
-        .filter(Proof::focused_discharged))
+        Ok(
+            attempt::candidate_outcome(Self::publish_selected_fact(
+                &extracted,
+                &(surface.clone()),
+            ))?
+            .filter(Proof::focused_discharged),
+        )
     }
 
     /// Weakening a guarded universal by dropping conjuncts of its conclusion:
@@ -847,15 +860,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let mut scope = attempt::search_scope("quantified conjunct projection");
-        let steps = std::iter::repeat_n(ProofStep::Intro, guards + 1).chain([
-            ProofStep::InstantiateUsing {
+        let steps =
+            std::iter::repeat_n(ProofStep::Intro, guards + 1).chain([ProofStep::Instantiate {
                 quantified,
                 argument: ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     (binder).into(),
                 )),
-                premises: None,
-            },
-        ]);
+            }]);
         let mut proof = search_input.clone();
         for step in steps {
             let Some(next) = attempt::candidate_outcome(proof.driver().apply_step(step))? else {
@@ -2310,14 +2321,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let Some(witnessed) = attempt::candidate_outcome(search_input.driver().apply_step(
-            ProofStep::Witness(ProofWitness::single(
-                written_name.as_ref().unwrap_or(name).clone(),
-                ContractExpression::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::Int32(MachineTerm::constant(0)),
-                )),
-            )),
-        ))?
+        let Some(witnessed) = attempt::candidate_outcome(
+            search_input
+                .driver()
+                .apply_step(ProofStep::Witness(ProofWitness::single(
+                    written_name
+                        .as_deref()
+                        .or_else(|| name.written())
+                        .unwrap_or("value")
+                        .to_owned(),
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        ProgramValue::Int32(MachineTerm::constant(0)),
+                    )),
+                ))),
+        )?
         else {
             return Ok(None);
         };
@@ -2363,21 +2380,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
-            let ClickProposition::PredicateCall { name, .. } = &selection.source_proposition else {
+            let ClickProposition::PredicateCall { .. } = &selection.source_proposition else {
                 continue;
             };
-            let proof = if search_input.active_unfolded_predicates().contains(name) {
-                search_input.clone()
-            } else {
-                let Some(unfolded) = attempt::candidate_outcome(
-                    search_input
-                        .driver()
-                        .apply_step(ProofStep::UnfoldPredicate(name.clone())),
-                )?
-                else {
-                    continue;
-                };
-                unfolded
+            let Some(proof) = attempt::candidate_outcome(search_input.driver().apply_step(
+                ProofStep::UnfoldProposition(ClickProposition::At {
+                    selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                        region: CodeRegionRef::Function,
+                        kind: ProgramPointKind::Entry,
+                    }),
+                    proposition: Box::new(selection.source_proposition.clone()),
+                }),
+            ))?
+            else {
+                continue;
             };
             if let Some(closed) =
                 crate::kernel::search::ProofSearch::try_selected_entry_existential_closure(
@@ -2399,10 +2415,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let ProofContext::Execution(context) = search_input.context.as_ref() else {
             return Ok(None);
         };
-        let unfolded = unfold_structural_invariant_proposition(
+        let unfolded = unfold_surface_predicates(
             context.spec_definitions.predicates,
             &selection.source_proposition,
-            &search_input.active_unfolded_predicates(),
+            &[match &selection.source_proposition {
+                ClickProposition::PredicateCall { name, .. } => name,
+                _ => return Ok(None),
+            }
+            .to_string()],
         )
         .map_err(|message| search_input.step_error(message))?;
         let ClickProposition::Exists {
@@ -2414,12 +2434,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let candidate_names = std::iter::once(source_name.clone()).chain((0..4096).map(|suffix| {
-            format!(
-                "{}_witness_{}_{suffix}",
-                source_name, selection.source_id.outer_ordinal
-            )
-        }));
+        let source_name = source_name.written().unwrap_or("value");
+        let candidate_names =
+            std::iter::once(source_name.to_owned()).chain((0..4096).map(|suffix| {
+                format!(
+                    "{}_witness_{}_{suffix}",
+                    source_name, selection.source_id.outer_ordinal
+                )
+            }));
         let Some(choice_name) = candidate_names.into_iter().find(|candidate| {
             search_input.local_binding(candidate).is_none()
                 && !context
@@ -2457,7 +2479,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }),
             proposition: Box::new(ClickProposition::Exists {
                 click_type: click_type.clone(),
-                name: choice_name.clone(),
+                name: choice_name.clone().into(),
                 written_name: None,
                 body: Box::new(body),
             }),
@@ -2491,7 +2513,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let witness_name = written_name.as_ref().unwrap_or(name).clone();
+        let witness_name = written_name
+            .as_deref()
+            .or_else(|| name.written())
+            .unwrap_or("value")
+            .to_owned();
         let Some(witnessed) = attempt::candidate_outcome(chosen.driver().apply_step(
             ProofStep::Witness(ProofWitness::single(
                 witness_name,
@@ -2509,11 +2535,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if proof.focused_discharged() {
                 return Ok(Some(proof));
             }
-            let Some(extracted) = attempt::candidate_outcome(
-                proof
-                    .driver()
-                    .apply_step(ProofStep::Extract(source.clone())),
-            )?
+            let Some(extracted) =
+                attempt::candidate_outcome(Self::publish_selected_fact(&proof, &(source.clone())))?
             else {
                 return Ok(None);
             };
@@ -2586,18 +2609,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let steps = match conjunct {
             ClickProposition::ForAll { name, body, .. } => {
-                let ClickProposition::Implies(guard, consequent) = body.as_ref() else {
+                let ClickProposition::Implies(_, consequent) = body.as_ref() else {
                     return Ok(None);
                 };
                 vec![
-                    ProofStep::IntroAs(name.clone()),
+                    ProofStep::IntroBinder(name.clone()),
                     ProofStep::Intro,
-                    ProofStep::InstantiateUsing {
+                    ProofStep::Instantiate {
                         quantified: entry(conjunct),
                         argument: ContractExpression::ProgramExpression(
                             ProgramExpression::Variable((name.clone()).into()),
                         ),
-                        premises: Some(vec![guard.as_ref().clone()]),
                     },
                     transport(consequent),
                 ]
@@ -2680,9 +2702,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if matches!(search_input.context.as_ref(), ProofContext::Pure(_))
             && let Some(surface) = search_input.surface_goal()
-            && let Ok(proof) = search_input
-                .driver()
-                .apply_step(ProofStep::Extract(surface.clone()))
+            && let Ok(proof) = Self::publish_selected_fact(search_input, &(surface.clone()))
             && proof.focused_discharged()
         {
             scope.succeed();
@@ -2693,7 +2713,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             && let Some(surface_goal) = search_input.surface_goal()
             && let Ok(source) =
                 surface_at_program_point(surface_goal, &ProgramPointSelector::ProgramPoint(anchor))
-            && let Ok(proof) = search_input.driver().apply_step(ProofStep::Extract(source))
+            && let Ok(proof) = Self::publish_selected_fact(search_input, &(source))
             && proof.is_complete()
         {
             scope.succeed();
@@ -3996,7 +4016,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// variable's bounds the same way wherever it runs. A bound can also be
     /// the negation of a branch condition. A goal that is itself an available
     /// fact is left to `known`. Pre-return signed orders and population
-    /// bounds run before broad premise spelling, preferring named rules on
+    /// bounds run before broad premise raising, preferring named rules on
     /// the selected premises; other goals retain the final fallback.
     pub(in crate::surface::proof) fn try_execution_signed_arithmetic(
         search_input: &Proof<'a>,
@@ -4149,8 +4169,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         anchor.as_ref(),
                         fact,
                     )
-                    .or_else(|| search_input.spelled_comparison_surface(fact)),
-                    None => search_input.spelled_comparison_surface(fact),
+                    .or_else(|| search_input.raised_comparison_surface(fact)),
+                    None => search_input.raised_comparison_surface(fact),
                 })
                 .collect::<Option<Vec<_>>>();
             if let Some(spelled) = spelled {
@@ -4317,7 +4337,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// variable costs one O(log n) bucket lookup and one indexed membership
     /// test per bound it lists; a leaf conjunct of a fact is itself an
     /// indexed fact, so a bound written inside a conjunction needs no
-    /// `extract`. Literal bounds on the goal variables are tried first, so
+    /// `have`. Literal bounds on the goal variables are tried first, so
     /// unrelated relational claims do not crowd out those operands' ranges.
     /// The certificate is planned over the kernel facts before any
     /// of them is spelled, so a goal the bounds do not decide is declined
@@ -4396,7 +4416,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 anchor,
                 &fact,
             )
-            .or_else(|| (!is_pure).then(|| search_input.spelled_comparison_surface(&fact))?);
+            .or_else(|| (!is_pure).then(|| search_input.raised_comparison_surface(&fact))?);
             if let Some(source) = source {
                 pairs.push((fact, source));
             }
@@ -4458,7 +4478,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 anchor,
                 &fact,
             )
-            .or_else(|| search_input.spelled_comparison_surface(&fact));
+            .or_else(|| search_input.raised_comparison_surface(&fact));
             if let Some(source) = source {
                 pairs.push((fact, source));
             }
@@ -5224,7 +5244,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     substitute_click_proposition(
                         else_branch.surface_goal()?,
-                        &std::iter::once((name, right)).collect(),
+                        &std::iter::once((name, right)).collect::<BTreeMap<_, _>>(),
                     )
                     .ok()
                 });
@@ -5515,7 +5535,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // written through one alias of a cell whose fact was stated through
         // another, before a store the alias shows separate, is carried here
         // rather than renamed by lowering (lowering is fact-stable,
-        // `docs/internals/raise-lower.md`). Other goals keep their more
+        // `docs/internals/raise-lower-principle.md`). Other goals keep their more
         // local rewrite plans.
         if search_input.outcome_fixed_state_view().is_none() {
             let mut calls = BTreeSet::new();
@@ -5869,11 +5889,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 collect_surface_conjunct_leaves(&antecedent, &mut conjuncts);
             }
             for conjunct in &conjuncts {
-                let Some(extracted) = attempt::candidate_outcome(
-                    introduced
-                        .driver()
-                        .apply_step(ProofStep::Extract(conjunct.clone())),
-                )?
+                let Some(extracted) = attempt::candidate_outcome(Self::publish_selected_fact(
+                    &introduced,
+                    &(conjunct.clone()),
+                ))?
                 else {
                     return Ok(None);
                 };
@@ -5897,16 +5916,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             available_surfaces.extend(conjuncts.iter().cloned());
             // Introducing this guard can make a previously introduced
             // conditional premise usable. Select its written consequent
-            // and let the ordinary checked `extract` rule discharge the
+            // and let an ordinary checked implication application discharge the
             // guard; do not branch over possible guard values.
             for premise in available_surfaces.clone() {
                 let mut current = &premise;
                 while let ClickProposition::Implies(_, consequent) = current {
-                    let Some(extracted) = attempt::candidate_outcome(
-                        introduced
-                            .driver()
-                            .apply_step(ProofStep::Extract(consequent.as_ref().clone())),
-                    )?
+                    let Some(extracted) = attempt::candidate_outcome(Self::publish_selected_fact(
+                        &introduced,
+                        &(consequent.as_ref().clone()),
+                    ))?
                     else {
                         break;
                     };
@@ -6337,20 +6355,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     introduced_surfaces,
                 )
             }
-            (ClickProposition::ForAll { .. }, Proposition::ForAll { .. }) => {
-                crate::kernel::search::ProofSearch::try_structural_forall_solve_closure(
-                    search_input,
-                    surface_goal,
-                    introduced_surfaces,
-                )
-            }
+            (
+                ClickProposition::ForAll { .. } | ClickProposition::RangeAll { .. },
+                Proposition::ForAll { .. },
+            ) => crate::kernel::search::ProofSearch::try_structural_forall_solve_closure(
+                search_input,
+                surface_goal,
+                introduced_surfaces,
+            ),
             // A predicate-call goal unfolds to its body, which the
             // structural arms and logical closers then work over. Repeat
             // unfolds are refused so recursive predicate bodies cannot loop
             // the search.
-            (ClickProposition::PredicateCall { name, .. }, _)
-                if !search_input.focused_branch_unfolds().contains(name) =>
-            {
+            (ClickProposition::PredicateCall { name, .. }, _) => {
                 crate::kernel::search::ProofSearch::try_structural_predicate_solve_closure(
                     search_input,
                     name,
@@ -6369,7 +6386,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     #[inline(never)]
     pub(in crate::surface::proof) fn try_constructor_witness_exists_closure(
         search_input: &Proof<'a>,
-        name: &str,
+        name: &SurfaceBinder,
         var: Variable,
         body: &Proposition,
         introduced_surfaces: &[ClickProposition],
@@ -6474,7 +6491,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .values
                 .iter()
                 .find(|(_, value)| *value == field)
-                .map(|(name, _)| name.clone())
+                .map(|(name, _)| SurfaceBinder::from(name))
                 .or_else(|| {
                     variable.and_then(|variable| {
                         context
@@ -6523,7 +6540,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     #[inline(never)]
     pub(in crate::surface::proof) fn try_structural_exists_solve_closure(
         search_input: &Proof<'a>,
-        name: &str,
+        name: &SurfaceBinder,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
@@ -6627,17 +6644,54 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_structural_predicate_solve_closure");
-        match attempt::candidate_outcome(
+        let Some(_guard) = PredicateSearchGuard::enter(name) else {
+            return Ok(None);
+        };
+        let target = search_input
+            .surface_goal()
+            .expect("predicate goal has a Surface form")
+            .clone();
+        let Some(unfolded) = attempt::candidate_outcome(
             search_input
                 .driver()
-                .apply_step(ProofStep::UnfoldPredicate(name.to_string())),
-        )? {
-            Some(unfolded) => crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
-                &(unfolded),
-                introduced_surfaces,
-            ),
-            None => Ok(None),
+                .apply_step(ProofStep::UnfoldProposition(target)),
+        )?
+        else {
+            return Ok(None);
+        };
+        if let Some(closed) = Self::try_solve_closure_with_surfaces(&unfolded, introduced_surfaces)?
+        {
+            return Ok(Some(closed));
         }
+        // A premise at another snapshot is a separate application. Open it
+        // explicitly so both its body and its exact source spelling are
+        // available to ordinary instantiation and preservation search.
+        for source in search_input.facts().mentioning_predicate(&name.to_string()) {
+            check_verification_deadline()?;
+            let Proposition::Predicate { .. } = source else {
+                continue;
+            };
+            let surface = search_input
+                .structural_proposition_candidate(source)
+                .ok_or_else(|| {
+                    search_input
+                        .step_error("selected predicate premise has no structural Surface spelling")
+                })?;
+            let Some(opened) = attempt::candidate_outcome(
+                unfolded
+                    .driver()
+                    .apply_step(ProofStep::UnfoldProposition(surface)),
+            )?
+            else {
+                continue;
+            };
+            if let Some(closed) =
+                Self::try_solve_closure_with_surfaces(&opened, introduced_surfaces)?
+            {
+                return Ok(Some(closed));
+            }
+        }
+        Ok(None)
     }
 
     #[inline(never)]
@@ -6691,35 +6745,58 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(instances) = crate::kernel::finite_forall_goal_instances(goal, true) else {
             return Ok(None);
         };
-        // A goal stated as a predicate call binds through the predicate's
-        // body; unfold it at the surface to name the binders.
-        let predicate_environment = match search_input.context.as_ref() {
-            ProofContext::Pure(context) => context.spec_definitions.predicates,
-            ProofContext::FixedState(context) => context.spec_definitions.predicates,
-            ProofContext::Execution(context) => context.spec_definitions.predicates,
-        };
-        let all_predicates = predicate_environment
-            .definitions
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>();
-        let unfolded = unfold_click_predicates_in_proposition_with_active(
-            predicate_environment,
-            &all_predicates,
-            surface_goal,
-            &mut BTreeSet::new(),
-        )
-        .unwrap_or_else(|_| surface_goal.clone());
+        // Local unfolding has already made the quantifier explicit. Use
+        // its written binders, including the range syntax for universals.
         let mut binder_names = Vec::new();
-        let mut surface_body = &unfolded;
-        while let ClickProposition::ForAll { name, body, .. } = surface_body {
-            binder_names.push(name.clone());
-            surface_body = body;
+        let mut surface_body = surface_goal.clone();
+        loop {
+            match surface_body {
+                ClickProposition::ForAll { name, body, .. } => {
+                    binder_names.push(name);
+                    surface_body = *body;
+                }
+                ClickProposition::RangeAll {
+                    start,
+                    end,
+                    item,
+                    body,
+                    ..
+                } => {
+                    binder_names.push(item.clone());
+                    let bound = item.reference();
+                    surface_body = ClickProposition::Implies(
+                        Box::new(ClickProposition::And(
+                            Box::new(ClickProposition::Comparison {
+                                left: start,
+                                operator: ComparisonOperator::LessEqual,
+                                right: bound.clone(),
+                            }),
+                            Box::new(ClickProposition::Comparison {
+                                left: bound,
+                                operator: ComparisonOperator::LessThan,
+                                right: end,
+                            }),
+                        )),
+                        body,
+                    );
+                    break;
+                }
+                _ => break,
+            }
         }
         if binder_names.is_empty() {
             return Ok(None);
         }
 
+        let mut binder_types = Vec::new();
+        let mut kernel_body = goal;
+        while let Proposition::ForAll { sort, body, .. } = kernel_body {
+            let Some(ty) = sort.machine_integer_type() else {
+                return Ok(None);
+            };
+            binder_types.push(ty);
+            kernel_body = body;
+        }
         let mut proof = search_input.clone();
         for (values, instance) in instances {
             check_verification_deadline()?;
@@ -6732,23 +6809,28 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ) {
                 continue;
             }
-            let Some(value_expressions) = values
-                .iter()
-                .map(|value| {
-                    u32::try_from(*value).ok().map(|bits| {
-                        ContractExpression::ProgramExpression(ProgramExpression::Value(int32(bits)))
-                    })
-                })
-                .collect::<Option<Vec<_>>>()
-            else {
+            if values.len() != binder_types.len() {
                 return Ok(None);
-            };
+            }
+            let value_expressions = values
+                .iter()
+                .zip(&binder_types)
+                .map(|(value, ty)| {
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        ty.value_from_term(if *ty == MachineIntegerType::UInt64 {
+                            MachineTerm::uint64_constant(*value as u64)
+                        } else {
+                            MachineTerm::constant(*value as u32)
+                        }),
+                    ))
+                })
+                .collect::<Vec<_>>();
             let substitutions = binder_names
                 .iter()
                 .cloned()
                 .zip(value_expressions)
                 .collect::<BTreeMap<_, _>>();
-            let Ok(surface_instance) = substitute_click_proposition(surface_body, &substitutions)
+            let Ok(surface_instance) = substitute_click_proposition(&surface_body, &substitutions)
             else {
                 return Ok(None);
             };
@@ -6951,7 +7033,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 Some(Proposition::MemoryLoadable { .. })
             ) {
                 attempt::record_search_note(
-                    "solve view premise spelling",
+                    "solve view premise raising",
                     format!(
                         "budget exhausted: the selected view derivation contains {} premises; source spelling permits at most {MAX_SOLVE_SOURCE_PREMISES}",
                         premises.len()
@@ -6963,7 +7045,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::instrumentation::measure_operation(
             "surface",
             "solve closure",
-            "solve closure: premise spelling",
+            "solve closure: premise raising",
             || {
                 crate::kernel::search::ProofSearch::resolve_solve_premises_unmeasured(
                     search_input,
@@ -7143,9 +7225,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 search_input.goal(),
                 Some(Proposition::MemoryLoadable { .. })
             ) {
-                "solve view premise spelling"
+                "solve view premise raising"
             } else {
-                "solve premise spelling"
+                "solve premise raising"
             };
             attempt::record_search_premise_note(
                 strategy,
@@ -7291,7 +7373,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             surface_facts,
             premise_anchor,
             kernel,
-            SurfaceSpellingPurpose::AvailablePremise,
+            SurfaceRaisingPurpose::AvailablePremise,
         )
     }
 
@@ -7307,7 +7389,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             surface_facts,
             None,
             kernel,
-            SurfaceSpellingPurpose::ProposedGoal,
+            SurfaceRaisingPurpose::ProposedGoal,
         )
     }
 
@@ -7316,7 +7398,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface_facts: &SurfacePropositionMap,
         premise_anchor: Option<&ProgramPointRef>,
         kernel: &Proposition,
-        purpose: SurfaceSpellingPurpose,
+        purpose: SurfaceRaisingPurpose,
     ) -> Option<ClickProposition> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("surface_fact_raw_for_purpose");
@@ -7413,11 +7495,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .lower_surface_proposition_direct(candidate, "typed solve premise form")
                 };
                 match purpose {
-                    SurfaceSpellingPurpose::AvailablePremise => {
+                    SurfaceRaisingPurpose::AvailablePremise => {
                         super::super::execution_planning::without_open_obligation_probe(operation)
                             .ok()
                     }
-                    SurfaceSpellingPurpose::ProposedGoal => {
+                    SurfaceRaisingPurpose::ProposedGoal => {
                         // This private probe checks only the candidate's term identity.
                         // It publishes no proof/facts and cannot add debts to an outer
                         // operation. The selected Surface form must be lowered again by
@@ -7428,7 +7510,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     }
                 }
             };
-            if matches!(purpose, SurfaceSpellingPurpose::AvailablePremise)
+            if matches!(purpose, SurfaceRaisingPurpose::AvailablePremise)
                 && allow_recorded_pair
                 && search_input.focused_outcome_data().is_some()
                 && surface_facts
@@ -7491,6 +7573,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let lowered = lower(candidate)?;
             (lowered == *kernel
                 || condition_polarity_equivalent(&lowered, kernel)
+                // A compound fact can quote cached cell values through their
+                // explicit state reads. Match at the same read-over-write
+                // boundary the exact fact index already checks. Atomic source
+                // selection keeps its existing arithmetic spelling policy.
+                || (matches!(kernel,
+                    Proposition::And(..) | Proposition::Or(..) | Proposition::Implies(..)
+                ) && {
+                    let lowered_reading = crate::kernel::comparison_form(&lowered);
+                    let selected_reading = crate::kernel::comparison_form(kernel);
+                    crate::kernel::proof::propositions_are_alpha_equal(
+                        lowered_reading.as_ref().unwrap_or(&lowered),
+                        selected_reading.as_ref().unwrap_or(kernel),
+                    )
+                })
                 // This candidate spells one already-selected premise. Admit
                 // its native/shared equality reading at the same explicit
                 // boundary used when the generated certificate cites it.
@@ -7553,8 +7649,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .execution_proposition_fixed_state_view()
                 .and_then(|view| {
                     view.requirement_facts
-                        .as_slice()
-                        .iter()
+                        .propositions()
                         .zip(view.original_requirements)
                         .find(|(fact, _)| *fact == kernel)
                         .and_then(|(_, requirement)| requirement.proposition().cloned())
@@ -7600,7 +7695,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // read, which no single earlier state can spell. Try these named
         // states before walking history. New scalar candidates lower directly: a
         // recorded unanchored form may name an earlier value of the same local.
-        // The structural speller: values the current state and the proof's
+        // The structural raiser: values the current state and the proof's
         // binders name, entry reads as `old(..)`, and a read of any other
         // recorded memory at the point that recorded it, found by its memory
         // in one lookup.
@@ -7733,7 +7828,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // form used by the kernel while their recorded Surface form lowers to
         // a term carrying a check-equivalent memory state. Probe only the
         // persistent alpha/canonical-form bucket for this selected premise;
-        // `InstantiateUsing` validates the same equivalence on check.
+        // `Instantiate` validates the same equivalence on check.
         if matches!(kernel, Proposition::ForAll { .. }) {
             for candidate in search_input.facts().matching_quantified_facts(kernel) {
                 for surface in surface_facts.surfaces(&candidate) {
@@ -9094,8 +9189,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     continue;
                 }
             }
+            let driver = proof.driver();
+            if matches!(tactic, ProofTactic::Have(_)) {
+                let mut unfinished = None;
+                proof = driver
+                    .try_authoritative_linear_script_leaving_open(
+                        std::slice::from_ref(tactic),
+                        &mut unfinished,
+                    )
+                    .ok()?
+                    .or(unfinished)?;
+                continue;
+            }
             let step = SourceContext::PureGoal.leaf_step(tactic)?;
-            proof = proof.driver().apply_step(step).ok()?;
+            proof = driver.apply_step(step).ok()?;
         }
         proof.focused_discharged().then_some(proof)
     }
@@ -9103,7 +9210,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Tries available universal facts when the atomic decision cannot name
     /// an instantiated premise. Candidate
     /// discovery is read-only; a specialization is retained only after the
-    /// ordinary `InstantiateUsing` operation advances and closes this Proof.
+    /// ordinary `Instantiate` operation advances and closes this Proof.
     #[cfg(test)]
     pub(in crate::surface::proof) fn try_indexed_forall_instantiation(
         search_input: &Proof<'a>,
@@ -9296,70 +9403,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 surfaces.push(synthesized);
             }
-            // Unfolding retains the opaque predicate fact alongside its
-            // checked body. Reconstruct that body's exact surface form
-            // from only the active predicate indexes when generic synthesis
-            // cannot express it (notably byte-indexed loads).
-            if surfaces.is_empty() {
-                let click_function_environment = match search_input.context.as_ref() {
-                    ProofContext::Pure(context) => context.spec_definitions.functions,
-                    ProofContext::FixedState(context) => context.spec_definitions.functions,
-                    ProofContext::Execution(context) => context.spec_definitions.functions,
-                };
-                for name in search_input.focused_branch_unfolds().iter() {
-                    for opaque in search_input.facts().mentioning_predicate(name) {
-                        let opaque_surfaces = match search_input.context.as_ref() {
-                            ProofContext::Pure(context) => context
-                                .theorem_context
-                                .surface_requirements
-                                .surfaces(opaque)
-                                .cloned()
-                                .collect::<Vec<_>>(),
-                            ProofContext::FixedState(context) => context
-                                .surface_propositions
-                                .surfaces(opaque)
-                                .cloned()
-                                .collect::<Vec<_>>(),
-                            ProofContext::Execution(_) => execution_view?
-                                .surface_propositions
-                                .surfaces(opaque)
-                                .cloned()
-                                .collect::<Vec<_>>(),
-                        };
-                        for opaque_surface in opaque_surfaces {
-                            let ClickProposition::PredicateCall {
-                                name: surface_name,
-                                arguments,
-                            } = opaque_surface
-                            else {
-                                continue;
-                            };
-                            let Some(definition) = predicate_environment.get(&surface_name) else {
-                                continue;
-                            };
-                            let Ok(body_surface) =
-                                instantiate_click_predicate_definition(definition, &arguments)
-                            else {
-                                continue;
-                            };
-                            if unfold_predicates_in_proposition(
-                                SpecDefinitions::new(
-                                    predicate_environment,
-                                    click_function_environment,
-                                ),
-                                std::slice::from_ref(name),
-                                opaque,
-                                search_input.facts().assumptions(),
-                            )
-                            .is_ok_and(|kernel| kernel == quantified)
-                                && !surfaces.contains(&body_surface)
-                            {
-                                surfaces.push(body_surface);
-                            }
-                        }
-                    }
-                }
-            }
             for surface in surfaces {
                 for value in candidate_values.iter() {
                     let argument = match value {
@@ -9383,6 +9426,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                     binding,
                                     ContractExpression::ProgramExpression(ProgramExpression::Value(
                                         ProgramValue::Int32(MachineTerm::Variable(bound))
+                                        | ProgramValue::UInt64(MachineTerm::Variable(bound))
+                                        | ProgramValue::Int64(MachineTerm::Variable(bound))
                                     )) if bound == variable
                                 )
                                 .then(|| {
@@ -9450,25 +9495,33 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if !guards_available {
                         continue;
                     }
-                    let instantiated_proof =
-                        match search_input
-                            .driver()
-                            .apply_step(ProofStep::InstantiateUsing {
-                                quantified: surface.clone(),
-                                argument: argument.clone(),
-                                premises: Some(
-                                    guard_facts
-                                        .iter()
-                                        .map(|(_, surface)| surface.clone())
-                                        .collect(),
-                                ),
-                            }) {
-                            Ok(proof) => proof,
-                            Err(_) => continue,
-                        };
+                    let Some(mut tactics) = instantiation_guard_tactics(
+                        &surface,
+                        &argument,
+                        &instantiated,
+                        &guard_facts,
+                    ) else {
+                        continue;
+                    };
+                    tactics.push(ProofTactic::Instantiate {
+                        quantified: surface.clone(),
+                        argument: argument.clone(),
+                    });
                     let conclusion = current.clone();
-                    if &conclusion == goal || conclusion.clone() == goal.clone() {
-                        // The instantiation added the goal, so it closed it.
+                    if &conclusion == goal {
+                        tactics.push(ProofTactic::Known);
+                    }
+                    let mut unfinished = None;
+                    let Ok(completed) = search_input
+                        .driver()
+                        .try_authoritative_linear_script_leaving_open(&tactics, &mut unfinished)
+                    else {
+                        continue;
+                    };
+                    let Some(instantiated_proof) = completed.or(unfinished) else {
+                        continue;
+                    };
+                    if &conclusion == goal {
                         if instantiated_proof.is_complete() {
                             return Some(instantiated_proof);
                         }
@@ -9501,7 +9554,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             )
                             .is_some()
                         {
-                            // `InstantiateUsing` has already checked this
+                            // `Instantiate` has already checked this
                             // universal and published its selected conclusion.
                             // Do not feed the quantified source back into the
                             // following transport as an unrelated premise.
@@ -9624,10 +9677,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut guard_surfaces = Vec::new();
         collect_surface_conjunct_leaves(antecedent, &mut guard_surfaces);
         for guard in &guard_surfaces {
-            proof = proof
-                .driver()
-                .apply_step(ProofStep::Extract(guard.clone()))
-                .ok()?;
+            proof = Self::publish_selected_fact(&proof, &(guard.clone())).ok()?;
         }
         let target = proof.surface_goal()?.clone();
         let source = old_reflexive_transport_source(&target)?;
@@ -9728,7 +9778,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             crate::kernel::search::ProofSearch::selected_solve_derivation(search_input, false)?;
         // Resource unfolding records the body conjunction as one checked
         // fact.  Special derivations cite the exact relation leaf, so expose
-        // that leaf through the ordinary checked `extract` transition before
+        // that leaf through an ordinary checked `have` proof before
         // constructing a certificate.  This keeps certificate premises
         // top-level and preserves the source spelling/state that produced
         // the resource fact.
@@ -9824,20 +9874,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     })
                 })
                 .ok_or(())?;
-            let successor = proof
-                .driver()
-                .apply_step(ProofStep::Extract(source))
+            // Select the exact semantic premise before constructing its
+            // `have`: a cached historical spelling may read a newer cell.
+            let cited = proof
+                .lower_surface_proposition_direct(&source, "selected atomic premise")
                 .map_err(|_| ())?;
-            // `extract(source)` proves only the proposition to which `source`
+            if &cited != premise {
+                return Err(());
+            }
+            let successor = Self::publish_selected_fact(&proof, &source).map_err(|_| ())?;
+            // `have source` proves only the proposition to which `source`
             // lowers in this successor's context. A stale presentation record
             // can therefore make the step succeed without publishing the
             // exact premise selected above. Exact top-level membership is the
             // progress measure; polarity or state conversion requires its
             // own checked proof step rather than being assumed here.
-            if !successor.checked_facts().contains(premise) {
+            if !successor.is_complete() && !successor.facts().contains_top_level(premise) {
                 return Err(());
             }
-            // Extracting a premise can also discharge the goal. Its checked
+            // Establishing a premise can also discharge the goal. Its checked
             // completion is sufficient; later premises require an open goal.
             if successor.is_complete() {
                 return Ok(Some(successor));
@@ -10273,7 +10328,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         // A named restricted premise may be a leaf of one exact available
         // conjunction (commonly after `unfold(predicate)`). Materialize that
-        // leaf through the checked `extract` transition before
+        // leaf through an explicit `have`/`known` proof before
         // asking the restricted planner to use it. The returned descendant
         // therefore owns both the semantic fact and the Surface provenance;
         // expansion does not need to reconstruct and check a certificate to
@@ -10288,10 +10343,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && !normalizes_context_free(&kernel)
                 && proof.facts().contains_proper_conjunct(&kernel)
             {
-                proof = proof
-                    .driver()
-                    .apply_step(ProofStep::Extract(surface.clone()))
-                    .ok()?;
+                proof = Self::publish_selected_fact(&proof, &(surface.clone())).ok()?;
                 if proof.is_complete() {
                     return Some(proof);
                 }
@@ -10337,22 +10389,30 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // A listed implication and its listed antecedent justify extracting
         // the consequent. Keep this route explicitly tied to `using`, rather
         // than allowing an unrelated ambient implication to discharge it.
-        if premise_pairs.iter().any(|(premise, _)| {
-            matches!(premise, Proposition::Implies(antecedent, consequent)
-                if consequent.as_ref() == goal
-                    && premise_pairs.iter().any(|(selected, _)| selected == antecedent.as_ref()))
-        }) && let Some(surface_goal) = proof.surface_goal()
-            && let Ok(extracted) = proof
-                .driver()
-                .apply_step(ProofStep::Extract(surface_goal.clone()))
-        {
-            if extracted.is_complete() {
-                return Some(extracted);
-            }
-            if let Ok(closed) = extracted.driver().apply_step(ProofStep::Known)
-                && closed.is_complete()
+        for (premise, fact) in &premise_pairs {
+            let Proposition::Implies(antecedent, consequent) = premise else {
+                continue;
+            };
+            if consequent.as_ref() != goal
+                || !premise_pairs
+                    .iter()
+                    .any(|(selected, _)| selected == antecedent.as_ref())
             {
-                return Some(closed);
+                continue;
+            }
+            let (premises, _) = crate::surface::proof::driver::fact_application_parts(fact);
+            if let Ok(applied) = proof.driver().apply_step(ProofStep::ApplyFactUsing {
+                fact: fact.clone(),
+                premises,
+            }) {
+                if applied.is_complete() {
+                    return Some(applied);
+                }
+                if let Ok(closed) = applied.driver().apply_step(ProofStep::Known)
+                    && closed.is_complete()
+                {
+                    return Some(closed);
+                }
             }
         }
         let restricted = premise_pairs

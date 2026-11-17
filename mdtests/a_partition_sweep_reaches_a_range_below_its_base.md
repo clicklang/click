@@ -114,7 +114,7 @@ int32 write_then_read(int32* a, int32* b, int32 s, int32 e, int32 i) {
         normalize() using { separate(memory(a[0]), memory(b[i])); };
     }
     have a[0] == at(before, a[0]) by {
-        preserve(separate(statement(2).footprint, memory(a[0])));
+        preserve(memory(a[0]), statement(2));
     }
     have a[0] == 1 by { normalize() using { a[0] == at(before, a[0]); at(before, a[0]) == 1; }; }
     step(); step();

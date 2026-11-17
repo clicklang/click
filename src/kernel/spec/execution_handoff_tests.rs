@@ -426,8 +426,7 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
         start: Pointer::symbolic(Variable(999984)),
         width: MachineTerm::Variable(Variable(999985)),
     }))
-    .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(class, 3, 999986, false)))
-    .with_local_reference(crate::kernel::loans::LocalScalarReference::fresh_for_payload_test());
+    .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(class, 3, 999986, false)));
     let payload = SharedPointerValue::import(&source);
     let memory = intern_memory(Memory::new());
     let address = SharedPointerAddress::import(&Memory::global_pointer("pointer-slot"));

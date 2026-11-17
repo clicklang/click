@@ -31,6 +31,7 @@ struct Node<K, V> {
     left: Option<Arc<Node<K, V>>>,
     right: Option<Arc<Node<K, V>>>,
     height: u16,
+    subtree_len: usize,
 }
 
 impl<K, V> Default for PersistentMap<K, V> {
@@ -93,6 +94,24 @@ impl<K: Ord, V> PersistentMap<K, V> {
         K: Borrow<Q>,
     {
         self.get(key).is_some()
+    }
+
+    /// Select by ordinal without enumerating the prefix.
+    pub(crate) fn get_index(&self, mut index: usize) -> Option<(&K, &V)> {
+        let mut node = self.root.as_deref();
+        while let Some(current) = node {
+            record_persistent_work(1);
+            let left = current.left.as_ref().map_or(0, |node| node.subtree_len);
+            match index.cmp(&left) {
+                Ordering::Less => node = current.left.as_deref(),
+                Ordering::Equal => return Some((current.key.as_ref(), current.value.as_ref())),
+                Ordering::Greater => {
+                    index -= left + 1;
+                    node = current.right.as_deref();
+                }
+            }
+        }
+        None
     }
 
     /// Greatest entry, found by the tree's right spine.
@@ -485,6 +504,13 @@ impl<T: Ord> PersistentSet<T> {
         }
     }
 
+    pub(crate) fn get<Q: Ord + ?Sized>(&self, value: &Q) -> Option<&T>
+    where
+        T: Borrow<Q>,
+    {
+        self.map.get_key_value(value).map(|(key, ())| key)
+    }
+
     pub(crate) fn contains<Q: Ord + ?Sized>(&self, value: &Q) -> bool
     where
         T: Borrow<Q>,
@@ -827,6 +853,9 @@ fn make_node<K, V>(
         key,
         value,
         height: 1 + node_height(left.as_ref()).max(node_height(right.as_ref())),
+        subtree_len: 1
+            + left.as_ref().map_or(0, |node| node.subtree_len)
+            + right.as_ref().map_or(0, |node| node.subtree_len),
         left,
         right,
     })
@@ -848,6 +877,29 @@ pub(crate) fn measure_persistent_work<R>(operation: impl FnOnce() -> R) -> (R, u
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ordinal_lookup_tracks_rotations_removals_and_forks() {
+        let mut root = PersistentMap::default();
+        for key in (0..200).map(|n| (n * 37) % 200) {
+            root.insert(key, key * 2);
+        }
+        let mut child = root.clone();
+        for key in (0..200).step_by(3) {
+            child.remove(&key);
+        }
+        for key in 200..240 {
+            child.insert(key, key * 2);
+        }
+        for map in [&root, &child] {
+            for (index, pair) in map.iter().enumerate() {
+                assert_eq!(map.get_index(index), Some(pair));
+            }
+            assert_eq!(map.get_index(map.len()), None);
+        }
+        assert_eq!(root.len(), 200);
+        assert!(PersistentMap::<u32, u32>::default().get_index(0).is_none());
+    }
 
     fn expected_diff(
         left: &std::collections::BTreeMap<u32, u32>,

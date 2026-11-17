@@ -329,10 +329,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             // closer, leaves the goal closed.
             let retain_application = matches!(
                 tactic,
-                ProofTactic::ApplyTheoremUsing { .. }
+                ProofTactic::ApplyFact(_)
+                    | ProofTactic::ApplyFactUsing { .. }
+                    | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
-                    | ProofTactic::InstantiateUsing { .. }
+                    | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
                     | ProofTactic::TransportUsing { .. }
                     | ProofTactic::LetSatisfy(_)
@@ -340,12 +342,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 .get(index + 1)
                 .is_some_and(|next| !matches!(next, ProofTactic::Known | ProofTactic::Solve));
             let retain_application = retain_application
-                || (matches!(
-                    tactic,
-                    ProofTactic::Extract(_) | ProofTactic::ApplyTheorem(_)
-                ) && tactics
-                    .get(index + 1)
-                    .is_some_and(|next| !matches!(next, ProofTactic::Known | ProofTactic::Solve)));
+                || (matches!(tactic, ProofTactic::ApplyTheorem(_))
+                    && tactics.get(index + 1).is_some_and(|next| {
+                        !matches!(next, ProofTactic::Known | ProofTactic::Solve)
+                    }));
             let before_application = retain_application.then(|| proof.clone());
             match tactic {
                 ProofTactic::ApplyInduction {
@@ -357,6 +357,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         hypothesis,
                         arguments,
                     )?;
+                }
+                ProofTactic::ApplyFact(fact) => {
+                    proof = proof.driver().apply_fact_application(fact)?;
                 }
                 ProofTactic::ApplyTheorem(application) => {
                     proof = proof.driver().apply_theorem_application(application)?;
@@ -698,11 +701,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             // the goal open after such a step.
             if matches!(
                 tactic,
-                ProofTactic::ApplyTheorem(_)
+                ProofTactic::ApplyFact(_)
+                    | ProofTactic::ApplyFactUsing { .. }
+                    | ProofTactic::ApplyTheorem(_)
                     | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
-                    | ProofTactic::InstantiateUsing { .. }
+                    | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
                     | ProofTactic::TransportUsing { .. }
                     | ProofTactic::LetSatisfy(_)
@@ -714,15 +719,16 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             if let Some(before) = before_application
                 && proof.focused_discharged()
             {
-                // An application guarantees every conclusion of its theorem,
-                // and an `extract` the whole fact it extracted, not only the
-                // part that happened to be the goal.
+                // An application guarantees every conclusion, including the
+                // parts that were not needed for the current goal.
                 let conclusions = match tactic {
                     ProofTactic::ApplyTheorem(application)
                     | ProofTactic::ApplyTheoremUsing { application, .. } => {
                         before.theorem_application_surface_conclusions(application)
                     }
-                    ProofTactic::Extract(proposition) => vec![proposition.clone()],
+                    ProofTactic::ApplyFact(fact) | ProofTactic::ApplyFactUsing { fact, .. } => {
+                        vec![crate::surface::proof::driver::fact_application_parts(fact).1]
+                    }
                     _ => Vec::new(),
                 };
                 proof = before.retain_completed_goal(&proof, &conclusions)?;

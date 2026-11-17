@@ -20,8 +20,8 @@ predicate small(x: int32) {
 
 theorem two_bounds(x: int32) {
     requires small(x);
-    ensures x >= 0 by { unfold(small); solve(); }
-    ensures x <= 10 by { unfold(small); solve(); }
+    ensures x >= 0 by { unfold(small(x)); solve(); }
+    ensures x <= 10 by { unfold(small(x)); solve(); }
 }
 
 theorem needs_upper(x: int32) {

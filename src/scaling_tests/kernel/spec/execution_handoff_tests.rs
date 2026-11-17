@@ -162,6 +162,10 @@ fn algebraic_program_field_wrapping_does_not_walk_retained_prefixes() {
                 },
             };
         }
+        // A program field's native carrier is declared before it is read.
+        // Keep that registry context fixed: measure wrapping the retained
+        // value, independently of first-time carrier admission.
+        let _carrier = crate::kernel::TypeParameterName::of(&source.algebraic_type);
         let root = KernelTermImport::default().algebraic(&source);
         let exports = KernelTermExport::algebraic_export_count();
         let (field, work) = crate::instrumentation::measure_deterministic_work(|| {

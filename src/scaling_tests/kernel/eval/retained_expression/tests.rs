@@ -253,7 +253,7 @@ fn complete_c_and_rust_machine_handoffs_retain_roots_without_prefix_exports() {
                     &caller,
                     &statement,
                     &PureFactContext::new(),
-                    ExecutionContext::execute_bodies(&environment),
+                    ExecutionContext::verify_loops(&environment),
                     &mut ExecutionBudget::new(),
                 )
                 .unwrap()

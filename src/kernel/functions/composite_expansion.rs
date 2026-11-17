@@ -23,7 +23,7 @@ pub(super) fn composite_names_pointer_base(composite: &ResourceFact, pointer: &P
 pub(super) fn expand_composite_resource_context(
     context: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<ResourceFact>)> {
     let mut expanded = context.clone();
@@ -34,7 +34,7 @@ pub(super) fn expand_composite_resource_context(
             &expanded,
             &root,
             definitions,
-            memory,
+            at,
             assumptions,
             &[],
             &mut composites,
@@ -47,7 +47,7 @@ pub(super) fn expand_composite_resource_tree(
     context: &ResourceContext,
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
     ancestors: &[String],
     composites: &mut Vec<ResourceFact>,
@@ -71,7 +71,7 @@ pub(super) fn expand_composite_resource_tree(
         context,
         composite,
         definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
+        at,
         assumptions,
     )?;
     if expanded.facts().contains(composite) {
@@ -86,7 +86,7 @@ pub(super) fn expand_composite_resource_tree(
                 &expanded,
                 &child,
                 definitions,
-                memory,
+                at,
                 assumptions,
                 &child_ancestors,
                 composites,
@@ -105,7 +105,7 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
     expand_all_composite_resource_facts_and_propositions_with_state(
         context,
         definitions,
-        state.memory(),
+        &state.program_point(),
         assumptions,
         Some(state),
     )
@@ -114,17 +114,18 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
 pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
     context: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
     population_state: Option<&ExecutionState>,
 ) -> Option<(ResourceContext, Vec<Proposition>)> {
+    let memory = at.memory();
     let (prepared, mut controls) = if let Some(state) = population_state {
         expand_checked_authority_controls(context, definitions, state, assumptions)?
     } else {
         (context.clone(), Vec::new())
     };
     let (expanded, composites) =
-        expand_composite_resource_context(&prepared, definitions, memory, assumptions)?;
+        expand_composite_resource_context(&prepared, definitions, at, assumptions)?;
     controls.extend(composites);
     let mut propositions = Vec::new();
     // `assumptions` extended by `propositions[..extended]`: each composite's
@@ -211,6 +212,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
             Resource::Memory(_)
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)

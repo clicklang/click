@@ -32,8 +32,8 @@ theorem sized_model_unique(a: SizedTree, b: SizedTree) {
                     SizedTree::Node(bi, bp, bc, bv, bl, br) => {
                         unfold(sized_shape(SizedTree::Node(ai, ap, ac, av, al, ar))); unfold(sized_shape(SizedTree::Node(bi, bp, bc, bv, bl, br)));
                         have RbTree::Node(ai, ap, ac, sized_shape(al), sized_shape(ar)) == RbTree::Node(bi, bp, bc, sized_shape(bl), sized_shape(br)) by { known(); }
-                        extract(ai == bi); extract(ap == bp); extract(ac == bc);
-                        extract(sized_shape(al) == sized_shape(bl)); extract(sized_shape(ar) == sized_shape(br));
+                        have ai == bi; have ap == bp; have ac == bc;
+                        have sized_shape(al) == sized_shape(bl); have sized_shape(ar) == sized_shape(br);
                         apply(sized_valid_parts(ai, ap, ac, av, al, ar)); apply(sized_valid_parts(bi, bp, bc, bv, bl, br)) using { sized_counts_valid(SizedTree::Node(bi, bp, bc, bv, bl, br)) == 1; };
                         have bl == sized_left(b) by { rewrite(b, SizedTree::Node(bi, bp, bc, bv, bl, br)); unfold(sized_left(SizedTree::Node(bi, bp, bc, bv, bl, br))); normalize(); }
                         have br == sized_right(b) by { rewrite(b, SizedTree::Node(bi, bp, bc, bv, bl, br)); unfold(sized_right(SizedTree::Node(bi, bp, bc, bv, bl, br))); normalize(); }

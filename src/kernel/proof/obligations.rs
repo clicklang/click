@@ -564,6 +564,7 @@ impl OutcomeClaimGoals {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn open(
         claims: impl IntoIterator<
             Item = (
@@ -572,6 +573,19 @@ impl OutcomeClaimGoals {
             ),
         >,
         is_exceptional: bool,
+    ) -> Self {
+        Self::open_with_borrowed_resources(claims, is_exceptional, &[])
+    }
+
+    pub(crate) fn open_with_borrowed_resources(
+        claims: impl IntoIterator<
+            Item = (
+                FunctionContractClaimKey,
+                Option<FunctionContractClaimTarget>,
+            ),
+        >,
+        is_exceptional: bool,
+        resources: &[crate::kernel::ResourceSpec],
     ) -> Self {
         let mut result = Self {
             claims: Default::default(),
@@ -584,6 +598,11 @@ impl OutcomeClaimGoals {
                 (FunctionContractClaimKey::Ensure(_), true)
                     | (FunctionContractClaimKey::ExceptionalEnsure(_), false)
             );
+            let borrowed_resource = matches!(&target,
+                Some(FunctionContractClaimTarget::EnsureResource(index))
+                    if resources.get(*index).is_some_and(|resource|
+                        resource.role() == crate::kernel::ResourceTransferRole::Borrow));
+            let vacuous = vacuous && !borrowed_resource;
             if !vacuous {
                 result.open.insert(position, key.clone());
             }
@@ -1040,7 +1059,6 @@ mod outcome_claim_goal_tests {
                 ProofObligation::FunctionOutcome(goal),
                 super::super::ProofBranchState {
                     facts: super::super::ProofFacts::from_ordered(&[]),
-                    unfolded_predicates: super::super::PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),
@@ -1074,7 +1092,6 @@ mod outcome_claim_goal_tests {
                 ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
                     facts: ProofFacts::from_ordered(&[]),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             )

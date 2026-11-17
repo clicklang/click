@@ -457,7 +457,7 @@ This avoids normalization work during unrelated field-separation checks.
 These checks require no alias enumeration or cancellation rule.
 
 Checked cross-block pointer premises involving the shared external-argument
-block, concrete storage, or an inexpressible displacement also join their raw
+block, concrete storage, or an unraisable displacement also join their raw
 `address(block, offset)` applications. An address class retains one offset
 witness per exact block. Merging classes with a shared block joins those
 offsets: `address(A, x) == p` and `p == address(A, y)` establish `x == y`,
@@ -529,7 +529,7 @@ constant-size match and one keyed lookup per admission or registration; no node
 or fact is scanned. C
 pointer arithmetic over a `char`-width displacement `i * K` records this fact
 when the path's facts decide it, since lowering keeps the written byte offset
-(`docs/internals/raise-lower.md#lowering-is-fact-stable`). Regressions:
+(`docs/internals/raise-lower-principle.md#lowering-is-fact-stable`). Regressions:
 `a_byte_product_joins_its_element_offset_in_either_registration_order`,
 `a_byte_product_stays_apart_without_its_no_overflow_fact`, and the scaling
 test `a_byte_product_merge_is_keyed_and_ignores_unrelated_products`.
@@ -738,6 +738,25 @@ equality therefore gives equal reads at that state, even when its block
 relation has no affine form. Late address merges propagate through the
 same parent-use index as addition and scaling.
 
+Registering an 8-, 16-, 32-, or 64-bit integer read does not equate it
+with a value recovered from the memory cell cache. Native and shared raw
+read inputs for these widths use read identity selection rather than
+cached-value canonicalization at this graph boundary. A producer's retained
+store equation supplies the value equality; ordinary congruence then
+propagates it through address aliases and enclosing expressions. The equation
+remains scoped to its fact context. Signed-byte reinterpretation and exact
+projection links still relate read identities without fetching cached values.
+Scalar registration no longer retains an observation-origin memory for a
+cached-cell lookup. Function-pointer stores also retain an explicit typed
+read equation. Read registration has no pending cached-cell lookup queue,
+unresolved-cell retry index, or mirrored alias-class maps. Separate checked
+pointer-read authorities, memory-resolution APIs, and compound-term
+canonicalization remain outside this registration boundary.
+
+Cold scalar queries use address congruence and explicit equations instead of
+enumerating an address class to find a cached cell. Scaling tests cover growing
+alias classes and unrelated cells at each migrated width.
+
 Selected int32 operands prepare their pointer dependencies before registering
 the scalar read. A shifted raw pointer read imports only the exact definition
 retained by its typed producer; matching arithmetic without that metadata is
@@ -915,27 +934,25 @@ x == y
 The answer must survive extra facts and all insertion orders. Nested loads
 must obey the same rule without a fixed nesting-depth limit.
 
-A read also equals the value its state stores at an equal address under
-another form: after a store through `p`, a read through `id` equals the
-stored value once `p == id`. Lowering keeps the read's own term and does not
-rewrite the address through the equality (lowering is fact-stable,
-[raise and lower](raise-lower.md#lowering-is-fact-stable)); the graph supplies
-the equality. The rule is in `TermClasses::equate_read_with_aliased_cell`. It
-expresses the read's address in each member of its pointer block class, which the
-term classes mirror from the block union-find (`join_block_classes`), and looks
-up a cell at each form: one lookup per member, in the read's naming
-state. A load variable read in another value of that same state (an
-observed cell keeps the state identity) is also looked up there; an origin
-at another state is not. A read that finds no cell waits under its class
-root; a later block union looks again in the members it brings, so the answer
-does not depend on whether the read or the pointer equality came first.
-Integer and 64-bit reads take part, and a function pointer read meets a stored
-function pointer value. A data pointer read does not: a stored data pointer
-reaches its read only through checked read evidence, and pointer read
-registration does not visit alias classes. Regressions:
-`a_read_through_an_alias_equals_the_value_stored_at_the_other_spelling`, the
-scaling tests beside it, and
-`mdtests/load_through_a_pointer_alias_after_a_store.md`.
+For 8-, 16-, 32-, and 64-bit integer reads, a recorded store equation
+`load(M, p) == value` and the address equality `p == id` establish
+`load(M, id) == value` by ordinary congruence. Registering the read alone
+supplies no cached value. Lowering keeps the read's own term and does not
+respell the address through the equality (lowering is fact-stable,
+[raise-lower principle](raise-lower-principle.md#lowering-is-fact-stable)). Both equation-before-alias
+and alias-before-equation admission orders work, without enumerating aliases
+or reading the memory's cached values.
+
+Function-pointer stores retain the complete typed equality between the read at
+that store's state and its supplied function value. A function read registers
+its state/address application; ordinary congruence propagates the explicit
+fact through aliases, including aliases admitted later. It does not enumerate
+an address class, consult cached cells, or retry cached lookup after a union.
+The separate data-pointer checked-read/provenance machinery is unchanged.
+Regressions include `function_pointer_read_requires_explicit_store_equation`,
+`function_pointer_read_query_does_not_scan_aliases_or_cells`,
+`a_wide_read_requires_an_explicit_store_equation_even_through_aliases`, the four
+narrow `*_read_requires_store_equation` tests, and their scaling tests.
 
 A word that a recorded true 64-bit equality equates with an expression
 naming a pointer address is also filed by class

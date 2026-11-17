@@ -3,8 +3,7 @@
 A callee's conditional ensure reaches the caller as an implication fact.
 Once the caller's branch establishes the antecedent, `solve() using` with
 exactly the antecedent and the implication must prove the consequent, and
-its certificate must lower to the explicit bounded rule (`extract` of the
-discharged consequent, then `known`) rather than reporting a missing
+its certificate must lower to the explicit bounded rule (`apply(fact) using { ... }`, then `known`) rather than reporting a missing
 simple proof rule.
 
 ```c filename=set_five.c

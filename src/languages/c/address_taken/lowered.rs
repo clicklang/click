@@ -56,9 +56,8 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             ProgramStatement::DeclareAggregate { name, .. } => {
                 summary.taken.insert(name.clone().into());
             }
-            ProgramStatement::Skip
-            | ProgramStatement::EndScalarReference(_)
-            | ProgramStatement::ScalarReferenceScope(_)
+            ProgramStatement::ThrowOpaque(_)
+            | ProgramStatement::Skip
             | ProgramStatement::Break
             | ProgramStatement::Continue
             | ProgramStatement::Goto { .. }
@@ -109,7 +108,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
                 handler,
                 ..
             } => {
-                declare(summary, &binding.clone().into(), ProgramType::Int32);
+                declare(summary, &binding.clone(), ProgramType::Int32);
                 statements.extend([try_body.as_ref(), handler.as_ref()]);
             }
             ProgramStatement::If {
@@ -121,12 +120,12 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
                 statements.extend([then_branch.as_ref(), else_branch.as_ref()]);
             }
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
-                condition,
                 body,
                 ..
             } => {
+                let (condition, _, test) = loop_test.execution_parts();
                 expressions.push((condition, false));
                 statements.push(body);
                 if let Some(test) = test {

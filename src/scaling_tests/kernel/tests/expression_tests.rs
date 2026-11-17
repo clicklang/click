@@ -325,7 +325,7 @@ fn rust_bool_values_do_not_split_paths() {
                 &state,
                 &statement,
                 &PureFactContext::new(),
-                ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::new(),
             )
             .unwrap()

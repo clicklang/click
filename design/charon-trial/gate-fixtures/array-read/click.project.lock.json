@@ -13,7 +13,7 @@
           "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
           "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
           "schema": 8,
-          "semantic_profile": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb\n923c95cdf5ba65cea505aa2ea829f578e1506ed8\nflat-record-drop-v1\nunsigned-from-v2\ncompact-uniform-scalar-array-v1\nbyte-slice-metadata-v1\nshared-byte-chunks-exact-v1\nnested-natural-while-v1\nbyte-array-unsize-v1\nunsigned-checksum-operators-v1\nborrowed-scalar-array-fields-v1\ncompact-uniform-array-regions-v1,compact-scalar-array-snapshots-v1\nshared-scalar-array-iteration-v1\nresolved-source-assignment-operators-v1\nshared-scalar-slice-length-v1\nlocal-scalar-array-reference-assignment-v1\nexternal-scalar-array-snapshot-v1\nsplit-shared-slice-while-header-v1\nshared-scalar-slice-into-iteration-v1\nshared-byte-split-at-pair-v1\nborrowed-iterator-forwarding-v1\nstable-extraction-output-metadata-v1\nchecked-closed-arm-scalar-reference-scopes-v6",
+          "semantic_profile": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb\n923c95cdf5ba65cea505aa2ea829f578e1506ed8\nflat-record-drop-v1\nunsigned-from-v2\ncompact-uniform-scalar-array-v1\nbyte-slice-metadata-v1\nshared-byte-chunks-exact-v1\nnested-natural-while-v1\nbyte-array-unsize-v1\nunsigned-checksum-operators-v1\nborrowed-scalar-array-fields-v1\ncompact-uniform-array-regions-v1,compact-scalar-array-snapshots-v1\nshared-scalar-array-iteration-v1\nresolved-source-assignment-operators-v1\nshared-scalar-slice-length-v1\nlocal-scalar-array-reference-assignment-v1\nexternal-scalar-array-snapshot-v1\nsplit-shared-slice-while-header-v1\nshared-scalar-slice-into-iteration-v1\nshared-byte-split-at-pair-v1\nborrowed-iterator-forwarding-v1\nstable-extraction-output-metadata-v1\nrustc-checked-local-references-v1",
           "source": "2cc9afb99caeb348848302cfead702668b8382824e31e67c0f85dd103f0e19d9"
         },
         "sources": {
@@ -23,7 +23,7 @@
               "path": ".click/borrow/borrow.rs.ullbc",
               "sha256": "59c7974aa576e8c05b0403176691ac1f89380d5d6cdb5f60680f7b3fca7fb1ca"
             },
-            "identity": "9f20be7ceffb51775e717859aaefc16c957b1f5a6ec06794dbe145b452803030",
+            "identity": "da6c3f0ae10aaaf21f813ccef6d676d431126e776d3deddd83191d80b6de3ca3",
             "inputs": {
               "borrow.rs": "2cc9afb99caeb348848302cfead702668b8382824e31e67c0f85dd103f0e19d9"
             }

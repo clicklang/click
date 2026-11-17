@@ -2997,7 +2997,7 @@ fn upstream_getfee_modular_callers_cover_empty_negative_and_oversize_inputs() {
         let proof = if conclusion.is_empty() {
             "step_until(function.exit); solve();"
         } else {
-            "have this->m_feerate.base.size != 0 by { solve(); } step_until(function.exit); extract(result != 0i64); solve();"
+            "have this->m_feerate.base.size != 0 by { solve(); } step_until(function.exit); have result != 0i64; solve();"
         };
         let contract = root_contract.replacen(
             "views this->m_feerate.base.fee;",
@@ -5093,3 +5093,277 @@ bitcoin_read32_control_case!(
     "ensures stream.data == old(stream.data) + 4;",
     "ensures stream.data == old(stream.data) + 3;"
 );
+const STREAMS_SUPPLEMENT: &[u8] =
+    include_bytes!("../integrations/bitcoin-core-money-range/streams-input-supplement.tar.gz");
+const STREAMS_PROVENANCE: &str =
+    include_str!("../integrations/bitcoin-core-money-range/streams-input-provenance.json");
+const SPANREADER_IGNORE_CPP: &str =
+    include_str!("../integrations/bitcoin-core-money-range/SpanReaderIgnore.cpp");
+
+fn pinned_streams_fixture(name: &str) -> (PathBuf, PreparedCppImport) {
+    let root = std::env::temp_dir().join(format!(
+        "click-bitcoin-streams-{name}-{}",
+        std::process::id()
+    ));
+    fs::create_dir(&root).unwrap();
+    let provenance: serde_json::Value = serde_json::from_str(STREAMS_PROVENANCE).unwrap();
+    assert_eq!(
+        sha256(ARCHIVE),
+        provenance["base_input_closure_sha256"].as_str().unwrap()
+    );
+    assert_eq!(
+        sha256(STREAMS_SUPPLEMENT),
+        provenance["supplement_sha256"].as_str().unwrap()
+    );
+    for (name, bytes) in [
+        ("base.tar.gz", ARCHIVE),
+        ("supplement.tar.gz", STREAMS_SUPPLEMENT),
+    ] {
+        let archive = root.join(name);
+        fs::write(&archive, bytes).unwrap();
+        assert!(
+            Command::new("tar")
+                .args([
+                    "-xzf",
+                    archive.to_str().unwrap(),
+                    "-C",
+                    root.to_str().unwrap()
+                ])
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    for (path, digest) in provenance["files"].as_object().unwrap() {
+        assert_eq!(
+            sha256(&fs::read(root.join(path)).unwrap()),
+            digest.as_str().unwrap()
+        );
+    }
+    fs::create_dir_all(root.join("bitcoin-build/src")).unwrap();
+    fs::write(root.join("span-probe.cpp"), SPANREADER_IGNORE_CPP).unwrap();
+    let clang = pinned_clang();
+    // Explicitly select the same pinned Clang resource headers once. Adding
+    // a second resource directory alongside the exporter's own would break
+    // headers using include_next; the dedicated command disables defaults.
+    let database = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("integrations/bitcoin-core-money-range/SpanReaderIgnore-command.json.in"),
+    )
+    .unwrap()
+    .replace("@ROOT@", root.to_str().unwrap())
+    .replace("@CLANGXX@", clang.to_str().unwrap())
+    .replace(
+        "@RESOURCE_DIR@",
+        root.join("clang-resource").to_str().unwrap(),
+    );
+    fs::write(root.join("compile_commands.json"), database).unwrap();
+    let exporter = root.join("click-cpp-exporter");
+    fs::copy(std::env::var("CLICK_CPP_EXPORTER").unwrap(), &exporter).unwrap();
+    let header = "sysroot/usr/include/c++/12/bits/ios_base.h";
+    let config = serde_json::json!({
+        "schema": 6, "language": "c++", "standard": "c++20", "target": "x86_64-unknown-linux-gnu",
+        "exceptions": true, "rtti": true, "exception_behavior": "ios_failure", "exporter": exporter,
+        "compilation_database": "compile_commands.json", "working_directory": ".",
+        "source": "span-probe.cpp", "logical_source": "span-probe.cpp",
+        "dependencies": ["bitcoin-src/src/streams.h", "clang-resource/include/__stddef_size_t.h", header,
+            "sysroot/usr/include/c++/12/cstddef", "sysroot/usr/include/c++/12/span", "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h"],
+        "library_assertions": [{"kind": "opaque_exception_constructor", "function": "std::ios_base::failure::failure",
+            "header": header, "sha256": sha256(&fs::read(root.join(header)).unwrap())}],
+        "function": "probe", "artifact": "span.click-cpp.json"
+    });
+    let config_path = root.join("span.import-description.json");
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    refresh_import(&config_path).unwrap();
+    fs::remove_file(exporter).unwrap();
+    let import = load_import(&config_path).unwrap();
+    (root, import)
+}
+
+#[test]
+#[ignore = "nightly: pinned Bitcoin exception composition"]
+fn pinned_spanreader_ignore_verifies_both_outcomes_offline() {
+    let (root, import) = pinned_streams_fixture("ignore");
+    let path = root.join("ignore.click");
+    let source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("integrations/bitcoin-core-money-range/SpanReaderIgnore.click"),
+    )
+    .unwrap();
+    fs::write(&path, &source).unwrap();
+    let project = read_click_project(&path, &source).unwrap();
+    click::surface::with_proof_trace("SpanReader::ignore", || {
+        verify_program_prepared_project(&project, &import).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+    fs::remove_dir_all(root).unwrap();
+}
+
+fn spanreader_ignore_source() -> String {
+    fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("integrations/bitcoin-core-money-range/SpanReaderIgnore.click"),
+    )
+    .unwrap()
+}
+
+#[test]
+#[ignore = "nightly: Bitcoin exceptional contract expansion and replay"]
+fn pinned_spanreader_ignore_expands_and_replays_both_functions() {
+    let (root, import) = pinned_streams_fixture("ignore-replay");
+    let path = root.join("ignore.click");
+    let source = spanreader_ignore_source();
+    fs::write(&path, &source).unwrap();
+    let project = read_click_project(&path, &source).unwrap();
+    let ignore_label = format!(
+        "{}.contract",
+        click::languages::cpp::names::path_name(&["SpanReader".to_owned(), "ignore".to_owned(),])
+    );
+    for label in [ignore_label.as_str(), "probe.contract"] {
+        let expanded =
+            expand_project_claim_source_by_label(&project, &ProgramInputs::program(&import), label)
+                .unwrap();
+        let rewritten = project.with_entry_source(expanded.clone());
+        click::surface::without_implicit_solve_for_claim(label, || {
+            verify_program_prepared_project(&rewritten, &import)
+                .map_err(|error| error.message().to_string())
+        })
+        .unwrap();
+        // A cold verification replaces this thread's kernel state. Start the
+        // retained session afterwards, with no intervening verification.
+        let (session, _) =
+            ProgramVerificationSession::new_program_prepared_project(&project, &import).unwrap();
+        let site =
+            project_tactic_source_position(&rewritten, &ProgramInputs::program(&import), label, 0)
+                .unwrap();
+        session
+            .verify_at_project(&expanded, site.line, site.column)
+            .unwrap();
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: Bitcoin exceptional contract refusal controls"]
+fn pinned_spanreader_ignore_refuses_false_states_and_opaque_inspection() {
+    let (root, import) = pinned_streams_fixture("ignore-controls");
+    let path = root.join("ignore.click");
+    let source = spanreader_ignore_source();
+    let wrong_failure = source.replace(
+        "exceptional ensures old(std_span_size(this->m_data)) < n;",
+        "exceptional ensures n <= old(std_span_size(this->m_data));",
+    );
+    let wrong_unchanged = source.replace(
+        "exceptional ensures std_span_size(this->m_data) == old(std_span_size(this->m_data));",
+        "exceptional ensures std_span_size(this->m_data) != old(std_span_size(this->m_data));",
+    );
+    for (name, false_source) in [
+        ("wrong dynamic type", source.replace("throws std::ios_base::failure", "throws int32")),
+        ("wrong failure bound", wrong_failure),
+        ("changed failure descriptor", wrong_unchanged),
+        ("read-only descriptor", source.replace("owns this->m_data;", "views this->m_data;")),
+        ("missing caller ownership", source.replace("owns reader.m_data;", "views reader.m_data;")),
+        ("opaque message", source.replace("throws std::ios_base::failure {", "throws std::ios_base::failure {\n exceptional ensures exception.what() == 0;")),
+        ("opaque layout", source.replace("throws std::ios_base::failure {", "throws std::ios_base::failure {\n exceptional ensures sizeof(std::ios_base::failure) == 4;")),
+    ] {
+        fs::write(&path, &false_source).unwrap();
+        let accepted = read_click_project(&path, &false_source).ok().is_some_and(|project|
+            verify_program_prepared_project(&project, &import).is_ok());
+        assert!(!accepted, "accepted {name}");
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: pinned opaque constructor and const-byte artifact controls"]
+fn pinned_spanreader_ignore_refuses_forged_constructor_and_byte_metadata() {
+    let (root, _) = pinned_streams_fixture("ignore-artifacts");
+    let description = root.join("span.import-description.json");
+    let artifact_path = cpp_description::artifact(&description);
+    let lock_path = root.join(click::project::LOCK_NAME);
+    let original_artifact = fs::read(&artifact_path).unwrap();
+    let original_lock = fs::read(&lock_path).unwrap();
+    let artifact: serde_json::Value = serde_json::from_slice(&original_artifact).unwrap();
+    let lock: serde_json::Value = serde_json::from_slice(&original_lock).unwrap();
+    fn forge(value: &mut serde_json::Value, change: usize) -> usize {
+        match value {
+            serde_json::Value::Object(object) => {
+                let mut changed = 0;
+                if change == 5
+                    && object.get("name").and_then(|name| name.as_str())
+                        == Some("SpanReader_ignore")
+                    && object.contains_key("declared_noexcept")
+                {
+                    object.insert("declared_noexcept".into(), true.into());
+                    changed += 1;
+                }
+                if object.get("kind").and_then(|kind| kind.as_str()) == Some("throw_ios_failure")
+                    && change < 4
+                {
+                    match change {
+                        0 => {
+                            object.get_mut("constructor").unwrap()["function"] =
+                                "std::runtime_error::runtime_error".into()
+                        }
+                        1 => {
+                            object.get_mut("constructor").unwrap()["kind"] =
+                                "checked_boolean_statement".into()
+                        }
+                        2 => {
+                            object.insert("declaration_file".into(), "/unlocked/ios_base.h".into());
+                        }
+                        3 => {
+                            object.insert("message".into(), "hidden\0suffix".into());
+                        }
+                        _ => unreachable!(),
+                    }
+                    changed += 1;
+                }
+                if change == 4
+                    && let Some(arguments) = object
+                        .get_mut("byte_template_arguments")
+                        .and_then(|v| v.as_array_mut())
+                {
+                    for argument in arguments {
+                        if argument["value_type"]["is_const"] == true {
+                            argument["value_type"]["is_const"] = false.into();
+                            changed += 1;
+                        }
+                    }
+                }
+                changed
+                    + object
+                        .values_mut()
+                        .map(|child| forge(child, change))
+                        .sum::<usize>()
+            }
+            serde_json::Value::Array(values) => {
+                values.iter_mut().map(|child| forge(child, change)).sum()
+            }
+            _ => 0,
+        }
+    }
+    for change in 0..6 {
+        let mut forged = artifact.clone();
+        assert_eq!(forge(&mut forged, change), 1, "select exactly one node");
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        lock_source_mut(&mut forged_lock)["artifact"]["sha256"] = sha256(&bytes).into();
+        lock_source_mut(&mut forged_lock)["artifact"]["bytes"] = bytes.len().into();
+        fs::write(&artifact_path, bytes).unwrap();
+        fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
+        assert!(
+            load_import(&description).is_err(),
+            "accepted forged metadata {change}"
+        );
+    }
+    fs::write(&artifact_path, original_artifact).unwrap();
+    fs::write(&lock_path, original_lock).unwrap();
+    load_import(&description).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}

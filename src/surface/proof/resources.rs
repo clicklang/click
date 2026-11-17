@@ -570,7 +570,6 @@ fn dynamic_body_fact_dependency(
             Proposition::MemoryCanStore { .. }
             | Proposition::MemoryMutatesOnly { .. }
             | Proposition::MemoryEffectSummary { .. }
-            | Proposition::ProgramFunctionSatisfiesSpecification { .. }
             | Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. } => Ok(()),
             _ => Err("unsupported opaque proposition in current-load dependency".into()),
         }
@@ -623,6 +622,7 @@ fn materialize_folded_composite_resource_memory(
             Resource::Memory(_)
             | Resource::Token { .. }
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -1434,12 +1434,12 @@ pub(super) fn project_initial_resource_facts(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    available_pure_facts: &[Proposition],
+    available_pure_facts: &(impl PropositionSource + ?Sized),
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
-) -> Result<Vec<Proposition>, ClickError> {
+) -> Result<PureFactList, ClickError> {
     let result = ProgramValue::Int32(MachineTerm::constant(0));
-    let mut facts = ProofResourcePureFacts::new(ProofFacts::from_ordered(available_pure_facts));
+    let mut facts = ProofResourcePureFacts::new(available_pure_facts.indexed_proof_facts());
     append_state_resource_context_observable_facts_with_store(
         parameter_binding,
         state,
@@ -1456,7 +1456,7 @@ pub(super) fn project_initial_resource_facts(
         spec_definitions,
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
-    Ok(facts.facts.to_vec())
+    Ok(PureFactList::from_proof_facts(&facts.facts))
 }
 
 pub(super) fn project_outcome_resource_facts(
@@ -2336,6 +2336,7 @@ fn project_held_resource_observable_facts(
         Resource::Memory(_)
         | Resource::Token { .. }
         | Resource::Instance(_)
+        | Resource::ConditionalMutexGuard(_)
         | Resource::MutexGuard(_)
         | Resource::MutexLive(_)
         | Resource::MutexUse(_)
@@ -3244,6 +3245,29 @@ fn decided_by_kernel_condition_decision(
     }
 }
 
+thread_local! {
+    static UNFOLD_WITNESS_NAMES: std::cell::RefCell<Vec<(String, String)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Runs an unfold whose `let ... where` witnesses the proof names, as
+/// `(witness, proof name)` pairs, so its published body facts are spelled
+/// with those names.
+pub(super) fn with_unfold_witness_names<R>(
+    names: &[(String, String)],
+    operation: impl FnOnce() -> R,
+) -> R {
+    struct Restore(Vec<(String, String)>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = std::mem::take(&mut self.0);
+            UNFOLD_WITNESS_NAMES.with(|names| *names.borrow_mut() = previous);
+        }
+    }
+    let _restore = Restore(UNFOLD_WITNESS_NAMES.with(|current| current.replace(names.to_vec())));
+    operation()
+}
+
 fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
@@ -3289,6 +3313,20 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         claim_label,
         tactic_index,
     )?);
+    // A witness the proof names here, `let { w: name } = unfold(...)`, is
+    // written by that name in the body facts this unfold publishes.
+    UNFOLD_WITNESS_NAMES.with(|names| {
+        for (witness, name) in names.borrow().iter() {
+            if spelling_substitutions.contains_key(witness) {
+                spelling_substitutions.insert(
+                    witness.clone(),
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        name.as_str().into(),
+                    )),
+                );
+            }
+        }
+    });
     let body_active = composite_resource_body_is_active_with_assumptions(
         definition,
         &substitutions,
@@ -3380,6 +3418,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             }
             Resource::Memory(_) => unreachable!("a declared resource lowered to memory"),
             Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -3703,18 +3742,6 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                     parameter_binding,
                     &[]
                 )
-            ))
-        })?;
-        let lowered_fact = unfold_predicates_in_proposition(
-            spec_definitions,
-            &[],
-            &lowered_fact,
-            available_pure_facts.assumptions(),
-        )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: could not unfold `unfold({})` pure fact: {message}",
-                describe_resource_clause(resource)
             ))
         })?;
         let temporary_views = borrowed_parent_binding
@@ -4049,7 +4076,6 @@ fn fold_composite_resources_on_outcome_with_facts(
     pre_state: &ExecutionState,
     mut outcome: FunctionOutcome,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
 ) -> Result<FoldedOutcome, ClickError> {
@@ -4186,6 +4212,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 Resource::Composite { name, .. } | Resource::Token { name, .. } => name,
                 Resource::Memory(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -4288,6 +4315,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 }
                 Resource::Memory(_) => unreachable!("declared resource lowered to memory"),
                 Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -4415,18 +4443,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 if collecting {
                     lowered
                 } else {
-                    unfold_predicates_in_proposition(
-                    spec_definitions,
-                    unfolded_predicates,
-                    &lowered,
-                    pure_facts.assumptions(),
-                )
-                .map_err(|message| {
-                    ClickError::new(format!(
-                        "`{claim_label}` path {path_index}: could not unfold exact `fold({})` fact: {message}",
-                        describe_resource_clause(resource)
-                    ))
-                })?
+                    Proposition::clone(&lowered)
                 }
             };
             if let Some(binding) = dynamic_body_fact_dependency(
@@ -5043,7 +5060,6 @@ pub(super) fn fold_composite_resource_for_proof(
     pre_state: &ExecutionState,
     state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     family_reaches_population: bool,
 ) -> Result<CheckedResourceFold, ClickError> {
     fold_composite_resource_for_proof_with_closure(
@@ -5057,7 +5073,6 @@ pub(super) fn fold_composite_resource_for_proof(
         pre_state,
         state,
         spec_definitions,
-        unfolded_predicates,
         ResourceBodyClosure::Initialize,
         family_reaches_population,
     )
@@ -5079,7 +5094,6 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     pre_state: &ExecutionState,
     outcome: FunctionOutcome,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
 ) -> Result<CheckedOutcomeResourceFold, ClickError> {
@@ -5098,7 +5112,6 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
         pre_state,
         outcome,
         spec_definitions,
-        unfolded_predicates,
         closure,
         family_reaches_population,
     )?;
@@ -5158,7 +5171,6 @@ pub(super) fn close_open_resource_for_proof(
     pre_state: &ExecutionState,
     state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     preserve_exposed_body: bool,
 ) -> Result<CheckedResourceFold, ClickError> {
     fold_composite_resource_for_proof_with_closure(
@@ -5172,7 +5184,6 @@ pub(super) fn close_open_resource_for_proof(
         pre_state,
         state,
         spec_definitions,
-        unfolded_predicates,
         ResourceBodyClosure::CloseOpen {
             preserve_exposed_body,
         },
@@ -5192,7 +5203,6 @@ fn fold_composite_resource_for_proof_with_closure(
     pre_state: &ExecutionState,
     state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
 ) -> Result<CheckedResourceFold, ClickError> {
@@ -5213,7 +5223,6 @@ fn fold_composite_resource_for_proof_with_closure(
         pre_state,
         outcome,
         spec_definitions,
-        unfolded_predicates,
         closure,
         family_reaches_population,
     )?;

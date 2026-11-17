@@ -16,7 +16,7 @@ theorem carry_seed_returns_the_same_integer(n: int32, seed: Integer) {
     ensures carry_seed(n, seed) == seed by {
         induct(n) as ih;
         if n <= 0 {
-            peel(carry_seed(n, seed)) using { n <= 0; };
+            unfold(carry_seed(n, seed));
             normalize();
         } else {
             have 0 < n by solve();
@@ -24,10 +24,7 @@ theorem carry_seed_returns_the_same_integer(n: int32, seed: Integer) {
             have to_integer(n - 1) < 2147483647 by solve() using { 0 < n; };
             have to_integer(n - 1) < to_integer(n);
             apply(ih(n - 1));
-            peel(carry_seed(n, seed)) using {
-                0 <= to_integer(n - 1);
-                to_integer(n - 1) < 2147483647;
-            };
+            unfold(carry_seed(n, seed));
             solve();
         }
     }

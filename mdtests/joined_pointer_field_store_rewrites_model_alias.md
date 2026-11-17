@@ -130,7 +130,7 @@ void inspect(struct node* parent) {
                                         at(before_store, separate(memory(sibling->right), memory(pid->left)));
                                     };
                                 }
-                                preserve(separate(loop(0).statement(2).footprint, memory(pid->left)));
+                                preserve(memory(pid->left), loop(0).statement(2));
                             }
                             have pid->left == model;
                             have pid->right == at(before_store, pid->right) by {
@@ -139,7 +139,7 @@ void inspect(struct node* parent) {
                                         at(before_store, separate(memory(sibling->right), memory(pid->right)));
                                     };
                                 }
-                                preserve(separate(loop(0).statement(2).footprint, memory(pid->right)));
+                                preserve(memory(pid->right), loop(0).statement(2));
                             }
                             have pid->right == at(split, parent->right);
                             have sibling->right == parent;

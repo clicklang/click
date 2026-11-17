@@ -1154,7 +1154,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .iter()
                     .zip(&arguments)
                     .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
-                    .collect::<BTreeMap<_, _>>();
+                    .collect::<BinderMap<_>>();
                 let mut leaves = 0;
                 let mut meets_goal = false;
                 let Some(plan) = crate::kernel::search::ProofSearch::definition_condition_plan(
@@ -1285,7 +1285,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(super) fn definition_condition_plan(
         search_input: &Proof<'a>,
         body: &ContractExpression,
-        environment: &BTreeMap<String, ContractExpression>,
+        environment: &BinderMap<ContractExpression>,
         goal: &DefinitionGoal<'_>,
         value: i128,
         leaves: &mut usize,
@@ -1387,7 +1387,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .iter()
                     .zip(&arguments)
                     .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
-                    .collect::<BTreeMap<_, _>>();
+                    .collect::<BinderMap<_>>();
                 let mut unfolds = unfolds.to_vec();
                 unfolds.push(ClickFunctionApplication {
                     name: name.clone(),
@@ -1920,7 +1920,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         for candidate in candidates {
             // Select the operation structurally from either ordinary bound.
             // The private query supplies its format and operands, not evidence.
-            // Naming uses the same indexed states as structural goal spelling;
+            // Naming uses the same indexed states as structural goal raising;
             // it does not require a recorded `defined(...)` source. The actual
             // observation theorem still proves the complete ordinary domain.
             let query = crate::kernel::machine_integer::definedness::definedness_of_integer_bound(

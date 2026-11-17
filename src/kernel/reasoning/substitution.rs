@@ -450,6 +450,9 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
         .iter()
         .map(|resource| walk_resource_spec(resource, s))
         .collect();
+    interface.resource_transfer_rule = std::sync::Arc::new(
+        crate::kernel::functions::SummaryResourceTransferRule::compile(&interface),
+    );
     interface.resource_constructors = function
         .resource_constructors()
         .iter()
@@ -579,6 +582,7 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
         .predicate_unfoldings()
         .iter()
         .map(|unfolding| PredicateUnfolding {
+            requirement_source: unfolding.requirement_source.clone(),
             predicate: s.spec_proposition(&unfolding.predicate),
             body: s.spec_proposition(&unfolding.body),
         })
@@ -728,6 +732,11 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                 identity.mutex.clone()
             },
         }),
+        Resource::ConditionalMutexGuard(carrier) => {
+            let mut mapped = (**carrier).clone();
+            mapped.held = s.condition(&carrier.held);
+            Resource::ConditionalMutexGuard(std::sync::Arc::new(mapped))
+        }
         Resource::MutexGuard(identity) => Resource::MutexGuard(MutexIdentity {
             epoch: identity.epoch,
             mutex: if identity.epoch.is_none() {
@@ -938,9 +947,8 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
     s: &S,
 ) -> ProgramStatement {
     match statement {
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -1152,7 +1160,6 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
         ProgramStatement::Loop {
             test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
@@ -1160,19 +1167,17 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             ranking_measures,
             structural_measure,
             body,
-            do_while,
             backedge_target,
             natural_exit_target,
         } => ProgramStatement::Loop {
-            test: test.as_ref().map(|test| LoopTestRegion {
+            test: LoopTestRegion {
                 statement: std::sync::Arc::new(walk_execution_statement(&test.statement, s)),
                 position: test.position,
-            }),
+            },
             update: update
                 .as_ref()
                 .map(|step| std::sync::Arc::new(walk_execution_statement(step, s))),
             structural_measure: structural_measure.clone(),
-            condition: s.program_expression(condition),
             ranking_measures: ranking_measures
                 .iter()
                 .map(|measure| walk_ranking_component(measure, s))
@@ -1208,7 +1213,6 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
                     }),
                 })
                 .collect(),
-            do_while: *do_while,
             backedge_target: *backedge_target,
             natural_exit_target: *natural_exit_target,
             body: Box::new(walk_execution_statement(body, s)),
@@ -1315,44 +1319,16 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             condition: s.program_expression(condition),
             outcome: outcome.clone(),
         },
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
-        }
-        | Proposition::ProgramStatementVerifies {
-            state,
-            statement,
-            outcome,
-        } => {
-            let state = walk_execution_state(state, s);
-            let statement = walk_execution_statement(statement, s);
-            let outcome = walk_execution_statement_outcome(outcome, s);
-            match proposition {
-                Proposition::ProgramStatementExecutes { .. } => {
-                    Proposition::ProgramStatementExecutes {
-                        state: Box::new(state),
-                        statement: Box::new(statement),
-                        outcome,
-                    }
-                }
-                Proposition::ProgramStatementVerifies { .. } => {
-                    Proposition::ProgramStatementVerifies {
-                        state: Box::new(state),
-                        statement: Box::new(statement),
-                        outcome,
-                    }
-                }
-                _ => unreachable!("the combined statement proposition arm is exhaustive"),
-            }
-        }
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        }
-        | Proposition::ProgramFunctionVerifies {
+        } => Proposition::ProgramStatementVerifies {
+            state: Box::new(walk_execution_state(state, s)),
+            statement: Box::new(walk_execution_statement(statement, s)),
+            outcome: walk_execution_statement_outcome(outcome, s),
+        },
+        Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
@@ -1364,34 +1340,13 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
                 .iter()
                 .map(|argument| s.program_expression(argument))
                 .collect();
-            let outcome = walk_program_function_outcome(outcome, s);
-            match proposition {
-                Proposition::ProgramFunctionExecutes { .. } => {
-                    Proposition::ProgramFunctionExecutes {
-                        state: Box::new(state),
-                        function: Box::new(function),
-                        arguments,
-                        outcome,
-                    }
-                }
-                Proposition::ProgramFunctionVerifies { .. } => {
-                    Proposition::ProgramFunctionVerifies {
-                        state: Box::new(state),
-                        function: Box::new(function),
-                        arguments,
-                        outcome,
-                    }
-                }
-                _ => unreachable!("the combined function proposition arm is exhaustive"),
+            Proposition::ProgramFunctionVerifies {
+                state: Box::new(state),
+                function: Box::new(function),
+                arguments,
+                outcome: walk_program_function_outcome(outcome, s),
             }
         }
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function,
-            specification,
-        } => Proposition::ProgramFunctionSatisfiesSpecification {
-            function: Box::new(walk_program_function(function, s)),
-            specification: Box::new(walk_program_function_specification(specification, s)),
-        },
         Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
@@ -1971,9 +1926,11 @@ mod resource_frame_substitution_tests {
             ),
         );
         let statement = ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: vec![inherited_check(range)],
@@ -1981,7 +1938,6 @@ mod resource_frame_substitution_tests {
             ranking_measures: Vec::new(),
             structural_measure: None,
             body: Box::new(ProgramStatement::Skip),
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
         };
@@ -2017,9 +1973,11 @@ mod resource_frame_substitution_tests {
             MachineTerm::constant(1),
         );
         let statement = ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: vec![inherited_check(range)],
@@ -2027,7 +1985,6 @@ mod resource_frame_substitution_tests {
             ranking_measures: Vec::new(),
             structural_measure: None,
             body: Box::new(ProgramStatement::Skip),
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
         };
@@ -2171,7 +2128,7 @@ pub fn resolve_minted_load_variables(
                 right,
             },
             true,
-        ) = &fact.proposition
+        ) = fact.proposition()
         else {
             continue;
         };
@@ -2452,12 +2409,7 @@ fn collect_proposition_bound_variables_one(
             collect_execution_state_bound_variables(state, variables);
             collect_program_expression_bound_variables(condition, variables);
         }
-        Proposition::ProgramStatementExecutes {
-            state,
-            statement,
-            outcome,
-        }
-        | Proposition::ProgramStatementVerifies {
+        Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
@@ -2466,13 +2418,7 @@ fn collect_proposition_bound_variables_one(
             collect_execution_statement_bound_variables(statement, variables);
             collect_statement_outcome_bound_variables(outcome, variables);
         }
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        }
-        | Proposition::ProgramFunctionVerifies {
+        Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
@@ -2485,11 +2431,7 @@ fn collect_proposition_bound_variables_one(
             }
             collect_function_outcome_bound_variables(outcome, variables);
         }
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function,
-            specification,
-        }
-        | Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
         } => {
@@ -2745,9 +2687,8 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match statement {
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -2825,15 +2766,15 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
             collect_execution_statement_bound_variables(else_branch, variables);
         }
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
             body,
             ..
         } => {
+            let (condition, _, test) = loop_test.execution_parts();
             collect_program_expression_bound_variables(condition, variables);
             for proposition in invariant {
                 collect_proposition_bound_variables(proposition, variables);
@@ -3288,6 +3229,9 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
                 collect_pointer_bound_variables(&identity.mutex, variables);
             }
         }
+        Resource::ConditionalMutexGuard(carrier) => {
+            collect_condition_bound_variables(&carrier.held, variables)
+        }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
                 let pointer = &identity.mutex;
@@ -3399,6 +3343,7 @@ fn collect_scoped_leaf_bound_variables(
 
 fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         bits32_constant!(_) | MachineTerm::Variable(_) => {}
         crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
@@ -5899,6 +5844,7 @@ pub(crate) fn substitute_bitvector_variable(
     to: &MachineTerm,
 ) -> MachineTerm {
     match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         MachineTerm::Constant { .. } => term.clone(),
         MachineTerm::Variable(variable) if *variable == from => to.clone(),
         MachineTerm::Variable(variable) => {
@@ -8135,6 +8081,9 @@ fn substitute_pointer_variable_in_spec_proposition(
             end: substitute_pointer_variable_in_spec_expression(end, from, to),
             element_width: *element_width,
         },
+        SpecProposition::MutexHeld(expression) => SpecProposition::MutexHeld(Box::new(
+            substitute_pointer_variable_in_spec_expression(expression, from, to),
+        )),
         SpecProposition::Defined(expression) => SpecProposition::Defined(
             substitute_pointer_variable_in_spec_expression(expression, from, to),
         ),
@@ -9429,9 +9378,6 @@ mod integer_range_fold_substitution_tests {
             &pointer,
             crate::kernel::LoadKind::Int32,
         );
-        let (source_memory_state, _) =
-            crate::kernel::eval::registered_load_for_variable(&load_variable)
-                .expect("the source load must be registered");
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::Variable(load_variable),
@@ -9457,7 +9403,9 @@ mod integer_range_fold_substitution_tests {
                 .unwrap()
                 .1
         );
-        assert_eq!(retained_state, &source_memory_state);
+        // A new address retains the producer's live memory, rather than
+        // reusing the original address's empty version point.
+        assert_eq!(retained_state, &memory);
         assert_eq!(pointer.offset, PointerOffsetTerm::Constant(0));
     }
 
@@ -9480,9 +9428,6 @@ mod integer_range_fold_substitution_tests {
             &pointer,
             crate::kernel::LoadKind::Int32,
         );
-        let (source_memory_state, _) =
-            crate::kernel::eval::registered_load_for_variable(&load_variable)
-                .expect("the source load must be registered");
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::Variable(load_variable),
@@ -9508,7 +9453,9 @@ mod integer_range_fold_substitution_tests {
                 .unwrap()
                 .1
         );
-        assert_eq!(retained_state, &source_memory_state);
+        // A new address retains the producer's live memory, rather than
+        // reusing the original address's empty version point.
+        assert_eq!(retained_state, &memory);
         assert_eq!(pointer.offset, PointerOffsetTerm::Constant(4));
     }
 

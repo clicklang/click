@@ -9,7 +9,7 @@
 use super::*;
 
 pub(super) struct ScopedExistential {
-    name: String,
+    name: BindingName,
     variable: Variable,
     sort: Sort,
     branches: Vec<ScopedExistentialBranch>,
@@ -87,7 +87,7 @@ impl ScopedExistentialBranch {
 
 impl ScopedExistential {
     pub(super) fn new(
-        name: String,
+        name: BindingName,
         variable: Variable,
         sort: Sort,
         paths: Vec<SpecPropositionPath>,
@@ -115,7 +115,10 @@ impl ScopedExistential {
         );
         SpecPropositionPath {
             proposition: Proposition::Exists {
-                name: self.name,
+                name: BinderName::binding(&self.name)
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned(),
                 var: self.variable,
                 sort: self.sort,
                 body: Box::new(body),

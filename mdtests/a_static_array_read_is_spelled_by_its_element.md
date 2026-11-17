@@ -2,7 +2,7 @@
 
 A read of a function-local `static` array keeps its version name, so a smart
 step that cites the entry value of an element needs that read spelled
-(`docs/internals/raise-lower.md`). The speller writes an element of a
+(`docs/internals/raise-lower-principle.md`). The raiser writes an element of a
 `static` scalar array by its source name and declared subscripts,
 `old(batches[0][0])`, and a field of a `static` struct array as a typed read
 at the element's address. The closing `solve()` here cites the entry reads in an

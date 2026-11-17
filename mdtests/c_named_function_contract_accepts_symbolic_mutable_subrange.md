@@ -50,7 +50,7 @@ void increment_at(int32* state, int32 position, int32 count) {
 
 theorem increment_at_is_slice_step() {
     ensures SliceStep(&increment_at) by {
-        unfold(SliceStep);
+        unfold(SliceStep(&increment_at));
         solve();
     }
 }

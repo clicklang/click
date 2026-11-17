@@ -1,7 +1,7 @@
 mod computation;
 mod intervals;
 mod known_bridges;
-pub(crate) use computation::computes_leaf;
+pub(crate) use computation::{computes_leaf, trivial_condition_value};
 pub(crate) use known_bridges::known_bridge_leaf;
 
 use crate::kernel::CompareRelation;
@@ -895,29 +895,6 @@ pub(crate) fn instantiate_universal(
         }
         _ => Err(ForallInstantiationError::ArgumentSort),
     }
-}
-
-/// The guard conjuncts of `quantified` at `argument` that do not hold on
-/// their own: what an `instantiate` without a premise list must find as facts.
-pub(crate) fn instantiated_guard_conjuncts(
-    quantified: &Proposition,
-    argument: &InstanceArgument,
-) -> Result<Vec<Proposition>, ForallInstantiationError> {
-    let instantiated = instantiate_universal(quantified, argument)?;
-    let mut guards = Vec::new();
-    let mut current = &instantiated;
-    while let Proposition::Implies(guard, body) = current {
-        let mut conjuncts = Vec::new();
-        atomic_conjuncts(guard, &mut conjuncts);
-        guards.extend(
-            conjuncts
-                .into_iter()
-                .filter(|conjunct| !normalizes_context_free(conjunct))
-                .cloned(),
-        );
-        current = body;
-    }
-    Ok(guards)
 }
 
 /// The conclusion of `quantified` at `argument` once `premises` discharge
@@ -1904,9 +1881,9 @@ pub(crate) fn exactly_available_fact(
 
 pub(crate) fn directly_matching_separation_fact(
     required: &Proposition,
-    available: &[Proposition],
+    available: &(impl super::PropositionSource + ?Sized),
 ) -> Option<Proposition> {
-    let assumptions = assumptions_from_propositions(available);
+    let assumptions = available.pure_context();
     directly_matching_separation_fact_under(required, available, &assumptions)
 }
 
@@ -1918,7 +1895,7 @@ pub(crate) fn directly_matching_separation_fact(
 /// assumptions cannot make an unlisted fact available.
 pub(crate) fn directly_matching_separation_fact_under(
     required: &Proposition,
-    available: &[Proposition],
+    available: &(impl super::PropositionSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> Option<Proposition> {
     let Proposition::ResourceSeparate {
@@ -1928,7 +1905,7 @@ pub(crate) fn directly_matching_separation_fact_under(
     else {
         return None;
     };
-    available.iter().find_map(|fact| {
+    available.propositions().find_map(|fact| {
         let Proposition::ResourceSeparate { left, right } = fact else {
             return None;
         };
@@ -1942,10 +1919,10 @@ pub(crate) fn directly_matching_separation_fact_under(
 
 pub(crate) fn directly_covering_loadability_fact(
     required: &Proposition,
-    available: &[Proposition],
+    available: &(impl super::PropositionSource + ?Sized),
 ) -> Option<Proposition> {
     matches!(required, Proposition::MemoryLoadable { .. }).then_some(())?;
-    available.iter().find_map(|fact| {
+    available.propositions().find_map(|fact| {
         matches!(fact, Proposition::MemoryLoadable { .. })
             .then(|| {
                 assumptions_from_propositions(std::slice::from_ref(fact))
@@ -3338,7 +3315,7 @@ pub(crate) fn condition_bridged_fact_is_available(
 /// it already do.
 pub(crate) fn condition_bridged_fact_is_available_among(
     required: &Proposition,
-    facts: &[Proposition],
+    facts: &(impl super::PropositionSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> bool {
     if matches!(required, Proposition::ResourceSeparate { .. }) {
@@ -3346,7 +3323,7 @@ pub(crate) fn condition_bridged_fact_is_available_among(
     }
     let key = super::fact_keys::memory_erased_proposition_key(required);
     let candidates: Vec<Proposition> = facts
-        .iter()
+        .propositions()
         .filter(|fact| {
             *fact != required && super::fact_keys::memory_erased_proposition_key(fact) == key
         })

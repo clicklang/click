@@ -1197,16 +1197,17 @@ fn resource_derived_loop_frame_rejects_wrapper_range_disagreement() {
         Some("loop 0 inherited owned resource frame".into()),
     );
     let body = ProgramStatement::Loop {
-        test: None,
+        test: crate::kernel::LoopTestRegion::expression(
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::LoopTestPosition::BeforeBody,
+        ),
         update: None,
-        condition: crate::kernel::program_expression::int32_literal(0),
         invariant: vec![],
         invariant_checks: vec![],
         effect_checks: vec![wrong_loop_frame],
         resource_specs: vec![],
         ranking_measures: vec![],
         structural_measure: None,
-        do_while: false,
         backedge_target: None,
         natural_exit_target: None,
         body: Box::new(ProgramStatement::Skip),
@@ -1371,16 +1372,17 @@ fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
         "reject_loop_surface_fallback",
         vec![program_parameter("p", ProgramType::Int32Pointer)],
         ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: vec![],
             invariant_checks: vec![],
             effect_checks: vec![inherited],
             resource_specs: vec![],
             ranking_measures: vec![],
             structural_measure: None,
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
             body: Box::new(ProgramStatement::Skip),
@@ -1567,7 +1569,7 @@ fn requirement_capability_describes_the_complete_source_tree() {
     // reads memory, so a lowered arithmetic leaf must not advertise the
     // whole requirement as state independent.
     let stateful_exists = SpecProposition::ExistsInt32 {
-        name: "len".to_string(),
+        name: "len".to_string().into(),
         variable: Variable(900),
         body: Box::new(SpecProposition::MemoryLoadable {
             memory: SpecMemory::Current,

@@ -70,7 +70,7 @@ void clear(struct region* region) {
                 normalize() using { at(opened, separate(memory(region->start), memory(arena->occupied[i]))); };
             }
             have region->start == at(opened, region->start) by {
-                preserve(separate(loop(0).statement(0).footprint, memory(region->start)));
+                preserve(memory(region->start), loop(0).statement(0));
             }
             step();
         }

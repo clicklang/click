@@ -31,9 +31,6 @@ thread_local! {
     static FINALIZATION_VIEW_CONSTRUCTIONS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
-    static CHOSEN_PROJECTION_WALK_WORK: std::cell::Cell<(usize, usize)> = const {
-        std::cell::Cell::new((0, 0))
-    };
     static TERMINAL_PUBLICATION_VISITS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
     static TERMINAL_JOIN_MATERIALIZED_FACTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static CHECKED_HAVE_OPERATIONS: std::cell::Cell<usize> = const {
@@ -115,7 +112,6 @@ pub(super) struct ExecutionSplitData<'a> {
     base_executions: [Option<Arc<ExecutionProofState>>; 2],
     path_facts: [Option<Vec<Proposition>>; 2],
     parent_facts: ProofFacts,
-    parent_unfolds: PersistentOrderedSet<String>,
     parent_execution: Arc<ExecutionProofState>,
     statement_index: usize,
     continuation_index: usize,
@@ -217,7 +213,6 @@ pub(super) struct ExecutionProofCaseSplitData<'a> {
     base_executions: [Arc<ExecutionProofState>; 2],
     path_facts: [Vec<Proposition>; 2],
     common_facts: ProofFacts,
-    parent_unfolds: PersistentOrderedSet<String>,
     parent_execution: Arc<ExecutionProofState>,
     execution_start_state: ExecutionState,
     /// The lexical scope at the split. Each arm starts in it: a `match` arm
@@ -251,7 +246,6 @@ struct CheckedExecutionJoinArm<'v> {
     /// What the arm appended to `effect_base`, taken when first read.
     introduced_effect_facts: std::cell::OnceCell<crate::kernel::ExecutionFacts>,
     introduced_derivations: Vec<Theorem>,
-    introduced_unfolds: Vec<String>,
     /// Frontier-local loops the arm proved inside its region. They are
     /// checked function-proof state, so a join carries them like unfolds.
     introduced_loop_clauses: Vec<StructuralClause>,
@@ -299,7 +293,6 @@ struct CheckedExecutionJoinParts {
     execution: ExecutionProofState,
     facts: ProofFacts,
     common_added_facts: Vec<Proposition>,
-    unfolded_predicates: PersistentOrderedSet<String>,
     step: ProofStep,
     /// A terminal join's outcome paths per arm, counted only while tracing.
     trace_arm_paths: Option<[usize; 2]>,
@@ -428,8 +421,6 @@ enum ProofScopeStructure {
     Have {
         proposition: ClickProposition,
         kernel: Proposition,
-        /// The initial unfolded goal, published only after the body closes.
-        retained_body: Option<(ClickProposition, Proposition)>,
     },
     Open {
         resource: ResourceClause,
@@ -465,12 +456,11 @@ impl CheckedFocusedTransition {
         }
     }
 
-    fn clear_chosen_projection(&mut self) {
+    fn clear_existential_projection(&mut self) {
         if let Some(branch) = self.branch.as_mut()
             && let Some(execution) = branch.state.execution.as_deref()
         {
             let mut execution = execution.clone();
-            execution.presentation.chosen_projection = None;
             execution.presentation.existential_projection = None;
             branch.state.execution = Some(Arc::new(execution));
         }
@@ -482,10 +472,10 @@ impl CheckedFocusedTransition {
 /// the counter is branch-local scalar freshness state.
 #[derive(Clone)]
 struct ProofLocals {
-    values: PersistentMap<String, ContractExpression>,
+    values: PersistentBinderMap<ContractExpression>,
     value_names: binding_names::BindingNames,
-    integer_values: PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    algebraic_values: PersistentMap<String, crate::kernel::SpecAlgebraicExpression>,
+    integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+    algebraic_values: PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
     /// Authored spellings used for premise lookup and certificate printing.
     /// A recorded form is an index, not authority; lookups still validate it.
     surface_facts: SurfacePropositionMap,
@@ -500,14 +490,14 @@ struct ProofLocals {
 pub(in crate::surface::proof) mod binding_names;
 
 impl ProofLocals {
-    fn set_values(&mut self, values: PersistentMap<String, ContractExpression>) {
+    fn set_values(&mut self, values: PersistentBinderMap<ContractExpression>) {
         self.value_names.update_values(&self.values, &values);
         self.values = values;
     }
 
     fn set_integer_values(
         &mut self,
-        values: PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+        values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     ) {
         self.value_names
             .update_integers(&self.integer_values, &values);
@@ -516,7 +506,7 @@ impl ProofLocals {
 
     fn set_algebraic_values(
         &mut self,
-        values: PersistentMap<String, crate::kernel::SpecAlgebraicExpression>,
+        values: PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
     ) {
         self.value_names
             .update_algebraics(&self.algebraic_values, &values);
@@ -527,10 +517,10 @@ impl ProofLocals {
 impl Default for ProofLocals {
     fn default() -> Self {
         Self {
-            values: PersistentMap::default(),
+            values: PersistentBinderMap::default(),
             value_names: binding_names::BindingNames::default(),
-            integer_values: PersistentMap::default(),
-            algebraic_values: PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
+            algebraic_values: PersistentBinderMap::default(),
             surface_facts: SurfacePropositionMap::default(),
             checked_lowerings: SurfacePropositionMap::default(),
             termination_diagnostics: Default::default(),
@@ -643,17 +633,6 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// since the split root, just like generated-load binding observations.
     pub(in crate::surface::proof) generated_load_source_events:
         PersistentSequence<crate::kernel::GeneratedLoadSourceEvent>,
-    /// The one selected existential whose body leaves may still be cited by
-    /// an enclosing `extract`.  A later `choose` replaces this active record;
-    /// nested `have`/scope boundaries start without one. This is
-    /// presentation-only provenance: the kernel's exact conjunct index remains
-    /// the authority for extraction.
-    pub(in crate::surface::proof) chosen_projection: Option<ChosenProjection>,
-    /// The fact list the last `loop` tactic on this path copied from the
-    /// proof's facts, as it was copied. The next `loop` extends it by the
-    /// facts the proof gained since (`PureFactList::extended_to_proof_facts`)
-    /// instead of copying and indexing every fact again.
-    pub(in crate::surface::proof) loop_fact_list: Option<crate::surface::PureFactList>,
     /// The environment the last `loop` tactic on this path stepped its rule
     /// under, before that rule: its claim's environment holding the frontier
     /// loop rules of `rules`. The next `loop` adds the rules since instead
@@ -704,35 +683,6 @@ pub(in crate::surface::proof) struct ExistentialProjection {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface::proof) struct ExistentialProjectionLeaf {
     pub(in crate::surface::proof) connective_path: Vec<usize>,
-    pub(in crate::surface::proof) surface: ClickProposition,
-    pub(in crate::surface::proof) kernel: Proposition,
-}
-
-/// Surface spellings for the checked leaves of a selected existential body.
-/// The source requirement and state are retained alongside every checked
-/// leaf so a spelling cannot silently drift to the current heap after a C
-/// declaration.  This record is intentionally branch-local and is never a
-/// proof fact in its own right.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::surface::proof) struct ChosenProjection {
-    pub(in crate::surface::proof) source_id: RequirementSourceId,
-    pub(in crate::surface::proof) principal_fact_index: usize,
-    pub(in crate::surface::proof) source_token: ProjectionSourceToken,
-    pub(in crate::surface::proof) source_proposition: ClickProposition,
-    /// Exact source token selected before any checked predicate unfolding.
-    pub(in crate::surface::proof) source_requirement: Proposition,
-    /// The existential proposition after the active, checked unfolding path.
-    pub(in crate::surface::proof) checked_source: Proposition,
-    pub(in crate::surface::proof) chosen_name: String,
-    pub(in crate::surface::proof) chosen_variable: crate::kernel::Variable,
-    pub(in crate::surface::proof) source_memory_state: crate::kernel::MemoryStateIdentity,
-    pub(in crate::surface::proof) source_selector: ProgramPointSelector,
-    pub(in crate::surface::proof) leaves: Vec<ChosenProjectionLeaf>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::surface::proof) struct ChosenProjectionLeaf {
-    pub(in crate::surface::proof) source_token: ProjectionSourceToken,
     pub(in crate::surface::proof) surface: ClickProposition,
     pub(in crate::surface::proof) kernel: Proposition,
 }
@@ -915,10 +865,8 @@ impl ExecutionProofState {
                 generated_load_binding_events: PersistentSequence::default(),
                 generated_load_source_resolutions: PersistentMap::default(),
                 generated_load_source_events: PersistentSequence::default(),
-                chosen_projection: None,
                 existential_projection: None,
                 store_separation_misses: PersistentSequence::default(),
-                loop_fact_list: None,
                 loop_rule_environment: None,
                 loop_annotation: None,
             },
@@ -1160,7 +1108,6 @@ pub(super) struct ProofExecutionView<'p> {
     pub(super) frontier: &'p ExecutionFrontier,
     pub(super) execution: &'p ExecutionProofState,
     pub(super) context: &'p ExecutionProofContext<'p>,
-    pub(super) unfolded_predicates: &'p SharedVec<String>,
     pub(super) branch_path: &'p PersistentSequence<String>,
     outcome_provenance: &'p crate::kernel::proof::PersistentVector<OutcomeProvenance>,
 }
@@ -1483,11 +1430,11 @@ impl DiagnosticNaming {
 }
 
 /// The C values the proof's own binders name: `let`, `choose`, `obtain`
-/// and `unfold` bindings. Diagnostics and premise spelling both name values
+/// and `unfold` bindings. Diagnostics and premise raising both name values
 /// through these, so a report and a citation agree.
 fn proof_local_program_values(
     proof: &KernelProofHandle,
-) -> impl Iterator<Item = (&str, &ProgramValue)> {
+) -> impl Iterator<Item = (&SurfaceBinder, &ProgramValue)> {
     proof
         .state()
         .locals()
@@ -1495,7 +1442,7 @@ fn proof_local_program_values(
         .iter()
         .filter_map(|(name, expression)| match expression {
             ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
-                Some((name.as_str(), value))
+                Some((name, value))
             }
             _ => None,
         })
@@ -1505,7 +1452,7 @@ fn proof_local_program_values(
 /// shadows an outer name, an `outer.` entry spells that outer value.
 fn goal_binder_program_values(
     proof: &KernelProofHandle,
-) -> impl Iterator<Item = (&str, &ProgramValue)> {
+) -> impl Iterator<Item = (&SurfaceBinder, &ProgramValue)> {
     proof
         .state()
         .open_branches()
@@ -1518,7 +1465,7 @@ fn goal_binder_program_values(
         .flatten()
         .filter_map(|(name, expression)| match expression {
             ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
-                Some((name.as_str(), value))
+                Some((name, value))
             }
             _ => None,
         })
@@ -1531,7 +1478,7 @@ impl Proof<'_> {
     ) -> super::surface_synthesis::ProofBindingNamesScope {
         let shadows = match self.focused_obligation() {
             Some(Obligation::Proposition(goal)) => goal.surface_bindings.clone(),
-            _ => PersistentMap::default(),
+            _ => PersistentBinderMap::default(),
         };
         super::surface_synthesis::ProofBindingNamesScope::enter(
             self.state.locals().value_names.clone(),
@@ -1547,7 +1494,10 @@ impl Proof<'_> {
     /// value. A proof local an `intro` binder shadows is out of scope.
     pub(in crate::surface::proof) fn binder_variable_names(
         &self,
-    ) -> (BTreeMap<Variable, String>, BTreeMap<Variable, String>) {
+    ) -> (
+        BTreeMap<Variable, SurfaceBinder>,
+        BTreeMap<Variable, SurfaceBinder>,
+    ) {
         fn variable(value: &ProgramValue) -> Option<Variable> {
             match value.numeric_value() {
                 ProgramValue::Parameter(term) => match term.node {
@@ -1573,9 +1523,13 @@ impl Proof<'_> {
         // that local is out of scope, and its name now spells the binder.
         let shadowing = goal_binder_program_values(&self.state)
             .map(|(name, _)| name)
-            .filter(|name| !name.starts_with("outer."))
+            .filter(|name| {
+                !name
+                    .written()
+                    .is_some_and(|name| name.starts_with("outer."))
+            })
             .collect::<BTreeSet<_>>();
-        let named = |values: &mut dyn Iterator<Item = (&str, &ProgramValue)>| {
+        let named = |values: &mut dyn Iterator<Item = (&SurfaceBinder, &ProgramValue)>| {
             values
                 .filter_map(|(name, value)| Some((variable(value)?, name.to_owned())))
                 .collect::<BTreeMap<_, _>>()
@@ -1587,7 +1541,7 @@ impl Proof<'_> {
             if let crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::Variable(
                 variable,
             )) = value
-                && !shadowing.contains(name.as_str())
+                && !shadowing.contains(name)
             {
                 intro.entry(*variable).or_insert_with(|| name.clone());
             }
@@ -1598,7 +1552,7 @@ impl Proof<'_> {
             .locals()
             .values
             .iter()
-            .filter(|(name, _)| !shadowing.contains(name.as_str()))
+            .filter(|(name, _)| !shadowing.contains(name))
             .filter_map(|(name, expression)| {
                 let variable = match expression {
                     ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
@@ -1818,16 +1772,16 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         // user-chosen name wins over the synthesized C assignment target.
         for (name, value) in proof_local_program_values(&self.0) {
             if let ProgramValue::Pointer(pointer) = value {
-                labels.immutable_pointer_name(pointer.pointer(), name);
+                labels.immutable_pointer_name(pointer.pointer(), &name.to_string());
             }
             if let Some(variable) = diagnostic_value_variable(value) {
-                labels.immutable_source_name(variable, name.to_owned());
+                labels.immutable_source_name(variable, name.to_string());
                 labels.source_type(variable, value.program_type());
             }
         }
         for (name, value) in self.0.state().locals().algebraic_values.iter() {
             if let crate::kernel::SpecAlgebraicExpressionNode::Variable(variable) = value.node {
-                labels.source_name(variable, name.clone());
+                labels.source_name(variable, name.to_string());
             }
         }
         for (name, value) in self.0.state().locals().integer_values.iter() {
@@ -1835,17 +1789,19 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                 crate::kernel::IntegerTerm::Variable(variable),
             ) = value
             {
-                labels.integer_source_name(*variable, name.clone());
+                labels.integer_source_name(*variable, name.to_string());
             }
         }
         // `intro` names a universal's binder on the goal it refines, not in
         // the proof's locals.
         // A report names a shadowed outer value by its source name.
-        for (name, value) in
-            goal_binder_program_values(&self.0).filter(|(name, _)| !name.starts_with("outer."))
-        {
+        for (name, value) in goal_binder_program_values(&self.0).filter(|(name, _)| {
+            !name
+                .written()
+                .is_some_and(|name| name.starts_with("outer."))
+        }) {
             if let Some(variable) = diagnostic_value_variable(value) {
-                labels.source_name(variable, name.to_owned());
+                labels.source_name(variable, name.to_string());
                 labels.source_type(variable, value.program_type());
             }
         }
@@ -2550,7 +2506,7 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
 /// The arm a deferred `match` took on one outcome path, by the match's
 /// source occurrence: its index among the written arms and its bindings.
 pub(in crate::surface::proof) type OutcomeMatchArms =
-    PersistentMap<usize, (usize, PersistentMap<String, ContractExpression>)>;
+    PersistentMap<usize, (usize, PersistentBinderMap<ContractExpression>)>;
 
 pub(in crate::surface::proof) type OutcomeProofData =
     KernelOutcomeProofState<OutcomeProofPresentation>;
@@ -2572,7 +2528,7 @@ pub(in crate::surface::proof) struct PropositionPresentation {
     /// Surface names introduced while refining this exact proposition goal.
     /// Universal binders are goal-local: sibling goals share the persistent
     /// map root at a split, then refine independently without leaking names.
-    pub(in crate::surface::proof) surface_bindings: PersistentMap<String, ContractExpression>,
+    pub(in crate::surface::proof) surface_bindings: PersistentBinderMap<ContractExpression>,
     /// What the kernel lowering recorded about this goal's outermost nodes.
     /// An introduction reads it instead of inferring the Surface-to-kernel
     /// correspondence from a shape the written syntax happens to share.
@@ -2727,7 +2683,7 @@ impl OpenBranchConstruction for OpenBranch {
                 kernel,
                 PropositionPresentation {
                     surface: None,
-                    surface_bindings: PersistentMap::default(),
+                    surface_bindings: PersistentBinderMap::default(),
                     ..PropositionPresentation::default()
                 },
             )),
@@ -2753,7 +2709,7 @@ impl OpenBranchConstruction for OpenBranch {
                 kernel,
                 PropositionPresentation {
                     surface: Some(Arc::new(surface)),
-                    surface_bindings: PersistentMap::default(),
+                    surface_bindings: PersistentBinderMap::default(),
                     ..PropositionPresentation::default()
                 },
             )),
@@ -2774,7 +2730,7 @@ impl OpenBranchConstruction for OpenBranch {
                 kernel,
                 PropositionPresentation {
                     surface: Some(Arc::new(surface)),
-                    surface_bindings: PersistentMap::default(),
+                    surface_bindings: PersistentBinderMap::default(),
                     ..PropositionPresentation::default()
                 },
                 outcome,
@@ -2852,7 +2808,7 @@ impl<'a> Proof<'a> {
     /// binding its pass count as `loop(i).iterations`.
     pub(super) fn local_integer_values(
         &self,
-    ) -> PersistentMap<String, crate::kernel::SpecIntegerExpression> {
+    ) -> PersistentBinderMap<crate::kernel::SpecIntegerExpression> {
         let mut values = self.state().locals().integer_values.clone();
         let recorded_states = if let Some(outcome) = self.focused_outcome_data() {
             Some(&outcome.recorded_states)
@@ -2876,7 +2832,7 @@ impl<'a> Proof<'a> {
 
     pub(super) fn local_algebraic_values(
         &self,
-    ) -> &PersistentMap<String, crate::kernel::SpecAlgebraicExpression> {
+    ) -> &PersistentBinderMap<crate::kernel::SpecAlgebraicExpression> {
         &self.state().locals().algebraic_values
     }
 
@@ -2998,9 +2954,9 @@ impl<'a> Proof<'a> {
         }
     }
 
-    pub(in crate::surface::proof) fn local_binding(
+    pub(in crate::surface::proof) fn local_binding<Q: binders::BinderKey + ?Sized>(
         &self,
-        name: &String,
+        name: &Q,
     ) -> Option<&ContractExpression> {
         self.state().locals().values.get(name)
     }
@@ -3008,9 +2964,7 @@ impl<'a> Proof<'a> {
     /// Every proof local in scope at this point, by name: a proof `match`
     /// arm's bindings, `let { ... } = unfold(...)` names, call-result binders, loop
     /// binders. Loop clauses written in this scope are resolved through it.
-    pub(in crate::surface::proof) fn proof_local_values(
-        &self,
-    ) -> BTreeMap<String, ContractExpression> {
+    pub(in crate::surface::proof) fn proof_local_values(&self) -> BinderMap<ContractExpression> {
         self.state()
             .locals()
             .values
@@ -3036,17 +2990,6 @@ impl<'a> Proof<'a> {
         self.focused_branch()?.state.execution.as_ref()
     }
 
-    /// The focused branch branch's path-local unfold delta.
-    pub(in crate::surface::proof) fn focused_branch_unfolds(
-        &self,
-    ) -> &PersistentOrderedSet<String> {
-        &self
-            .focused_branch()
-            .expect("unfold queries require an open goal")
-            .state
-            .unfolded_predicates
-    }
-
     /// The focused branch goal's path-local fact context. Every caller is a
     /// checked operation or search query on an open goal: `apply_step` and
     /// the structural operations reject discharged proofs first.
@@ -3062,7 +3005,6 @@ impl<'a> Proof<'a> {
     fn refined_branch_state(&self, facts: ProofFacts) -> BranchState {
         BranchState {
             facts,
-            unfolded_predicates: self.focused_branch_unfolds().clone(),
             execution: self.branch_execution().cloned(),
         }
     }
@@ -3090,7 +3032,7 @@ impl<'a> Proof<'a> {
     }
 
     /// The spelling of a refined goal no written template carries over to:
-    /// the premise speller's, which lowers back to exactly `goal`. A goal is
+    /// the premise raiser's, which lowers back to exactly `goal`. A goal is
     /// stated at the current state, so it is spelled with no premise anchor
     /// and never searches recorded states. Smart refinements reconstruct
     /// their structural goal from indexed source names, without premise search.
@@ -3161,7 +3103,7 @@ impl<'a> Proof<'a> {
         let candidate = self.structural_proposition_candidate(goal)?;
         // This compares presentation, not proof authority: rewriting already
         // produced the successor. A spelling must retain its exact term.
-        self.lower_surface_proposition_direct(&candidate, "structural goal spelling")
+        self.lower_surface_proposition_direct(&candidate, "structural goal raising")
             .ok()
             .filter(|lowered| lowered == goal)
             .map(|_| candidate)
@@ -3301,7 +3243,7 @@ impl<'a> Proof<'a> {
                         goal,
                         PropositionPresentation {
                             surface: surface_goal.clone().map(Arc::new),
-                            surface_bindings: PersistentMap::default(),
+                            surface_bindings: PersistentBinderMap::default(),
                             ..PropositionPresentation::default()
                         },
                     )
@@ -3312,7 +3254,7 @@ impl<'a> Proof<'a> {
                         claim_goal,
                         PropositionPresentation {
                             surface: surface_goal.clone().map(Arc::new),
-                            surface_bindings: PersistentMap::default(),
+                            surface_bindings: PersistentBinderMap::default(),
                             ..PropositionPresentation::default()
                         },
                     )
@@ -3338,7 +3280,6 @@ impl<'a> Proof<'a> {
                 KernelProofObject::root(self.state().locals().clone(), {
                     let context = BranchState {
                         facts,
-                        unfolded_predicates: self.focused_branch_unfolds().clone(),
                         execution: match &outcome {
                             Some(_) => self.branch_execution().cloned(),
                             None => None,
@@ -3346,7 +3287,7 @@ impl<'a> Proof<'a> {
                     };
                     let presentation = PropositionPresentation {
                         surface: surface_goal.map(Arc::new),
-                        surface_bindings: PersistentMap::default(),
+                        surface_bindings: PersistentBinderMap::default(),
                         ..PropositionPresentation::default()
                     };
                     let obligation = match outcome.clone() {
@@ -3419,25 +3360,6 @@ impl<'a> Proof<'a> {
         self.state
             .completed_proposition()
             .ok_or_else(|| self.step_error("completed proof is not a proposition judgment"))
-    }
-
-    pub(in crate::surface::proof) fn active_unfolded_predicates(&self) -> Vec<String> {
-        let inherited = match self.context.as_ref() {
-            ProofContext::Pure(_) => &[][..],
-            ProofContext::FixedState(context) => context.unfolded_predicates,
-            ProofContext::Execution(_) => self
-                .execution()
-                .map(|execution| execution.core.unfolded_predicates.as_slice())
-                .unwrap_or(&[]),
-        };
-        let mut names = inherited.to_vec();
-        let mut seen = inherited.iter().cloned().collect::<BTreeSet<_>>();
-        for name in self.focused_branch_unfolds() {
-            if seen.insert(name.clone()) {
-                names.push(name.clone());
-            }
-        }
-        names
     }
 
     pub(super) fn certificate(&self) -> ProofCertificate {
@@ -3819,7 +3741,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::ArithmeticUsing(_) => "solve() using",
         ProofStep::Preserve(_) => "preserve",
 
-        ProofStep::Intro | ProofStep::IntroAs(_) => "intro()",
+        ProofStep::Intro | ProofStep::IntroAs(_) | ProofStep::IntroBinder(_) => "intro()",
         ProofStep::Enumerate => "enumerate()",
         ProofStep::Step
         | ProofStep::StepBind(_)
@@ -3827,12 +3749,12 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::StepCall(_)
         | ProofStep::StepProved { .. } => "step",
         ProofStep::UserTactic(_) => "tactic application",
-        ProofStep::ApplyTheoremUsing { .. } => "apply",
+        ProofStep::ApplyFactUsing { .. } | ProofStep::ApplyTheoremUsing { .. } => "apply",
         ProofStep::ApplyInductionUsing { .. } => "apply",
         ProofStep::Induct { .. } => "induct",
         ProofStep::StructuralInduct { .. } => "induct",
         ProofStep::TransportUsing { .. } => "transport",
-        ProofStep::InstantiateUsing { .. } => "instantiate",
+        ProofStep::Instantiate { .. } => "instantiate",
         ProofStep::Have { .. } => "have",
         ProofStep::Open { .. } => "open",
         ProofStep::If { .. } => "if",
@@ -3841,14 +3763,12 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::CallOutcomes { .. } => "outcomes",
         ProofStep::Loop(_) => "loop",
         ProofStep::Rewrite(_) => "rewrite",
-        ProofStep::Extract(_) => "extract",
         ProofStep::Contradiction(_) => "contradiction",
         ProofStep::Witness(_) => "witness",
         ProofStep::LetSatisfy(_) => "obtain",
         ProofStep::Choose(_) => "choose",
-        ProofStep::UnfoldPredicate(_)
+        ProofStep::UnfoldProposition(_)
         | ProofStep::UnfoldFunction(_)
-        | ProofStep::PeelFunction { .. }
         | ProofStep::UnfoldResource(_)
         | ProofStep::UnfoldWitnesses { .. } => "unfold",
         ProofStep::FoldResource(_) => "fold",
@@ -3878,6 +3798,7 @@ mod provenance;
 pub(in crate::surface::proof) use provenance::ProofCheckpoint;
 pub(in crate::surface::proof) use provenance::ProofStepSite;
 use provenance::{ProofNode, ProofStepBlock, ProofStepOrigin};
+mod local_predicate_unfold;
 mod resource_steps;
 mod scope;
 mod splits_and_scopes;
@@ -3953,7 +3874,7 @@ impl ExecutionProofPresentation {
         tactic_index: usize,
         source_index: usize,
         tactic: PostExecutionTactic,
-        lexical_bindings: Option<PersistentMap<String, ContractExpression>>,
+        lexical_bindings: Option<PersistentBinderMap<ContractExpression>>,
     ) {
         self.post_execution_tactics
             .push(DeferredPostExecutionTactic {

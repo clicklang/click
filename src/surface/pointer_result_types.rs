@@ -204,7 +204,7 @@ impl Analysis<'_> {
 
     fn program_expression(
         expression: &ProgramExpression,
-        bindings: &BTreeMap<String, Origins>,
+        bindings: &BinderMap<Origins>,
     ) -> Origins {
         match expression {
             ProgramExpression::Variable(name) => name.named_in(bindings).cloned().flatten(),
@@ -226,7 +226,7 @@ impl Analysis<'_> {
     fn expression(
         &mut self,
         expression: &ContractExpression,
-        bindings: &mut BTreeMap<String, Origins>,
+        bindings: &mut BinderMap<Origins>,
     ) -> Origins {
         // One lexical context per source expression. Reusing the origin when
         // validating enclosing calls avoids revisiting nested argument trees.
@@ -243,7 +243,7 @@ impl Analysis<'_> {
     fn expression_inner(
         &mut self,
         expression: &ContractExpression,
-        bindings: &mut BTreeMap<String, Origins>,
+        bindings: &mut BinderMap<Origins>,
     ) -> Origins {
         match expression {
             ContractExpression::IntegerLiteral(value) if value == "0" => Some(null_origins()),
@@ -323,9 +323,9 @@ impl Analysis<'_> {
     }
 }
 
-fn restore(bindings: &mut BTreeMap<String, Origins>, name: &str, previous: Option<Origins>) {
+fn restore(bindings: &mut BinderMap<Origins>, name: &SurfaceBinder, previous: Option<Origins>) {
     if let Some(previous) = previous {
-        bindings.insert(name.to_string(), previous);
+        bindings.insert(name, previous);
     } else {
         bindings.remove(name);
     }
@@ -364,7 +364,7 @@ impl Analysis<'_> {
         &mut self,
         expression: &ContractExpression,
         class: &CAccessClass,
-        bindings: &mut BTreeMap<String, Origins>,
+        bindings: &mut BinderMap<Origins>,
         definition: &ClickFunctionDefinition,
         place: &str,
     ) -> Result<(), String> {
@@ -394,11 +394,15 @@ impl Analysis<'_> {
     fn check_expression(
         &mut self,
         expression: &ContractExpression,
-        bindings: &mut BTreeMap<String, Origins>,
+        bindings: &mut BinderMap<Origins>,
         definition: &ClickFunctionDefinition,
     ) -> Result<(), String> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
+            ContractExpression::IntegerContext(value) => {
+                self.check_expression(value, bindings, definition)?;
+            }
+
             ContractExpression::Proposition(proposition) => {
                 self.check_proposition(proposition, bindings, definition)?
             }
@@ -596,7 +600,7 @@ impl Analysis<'_> {
     fn check_proposition(
         &mut self,
         proposition: &ClickProposition,
-        bindings: &mut BTreeMap<String, Origins>,
+        bindings: &mut BinderMap<Origins>,
         definition: &ClickFunctionDefinition,
     ) -> Result<(), String> {
         match proposition {

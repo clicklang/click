@@ -18,9 +18,7 @@ fn sum(bytes: &[u8]) -> i32 {
         }
     }
     have prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)) == 0 by {
-        peel(prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining))) using {
-            0 >= (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining);
-        } solve();
+        unfold(prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining))); solve();
     }
     have to_integer(total) == 0 by {
         solve();
@@ -201,10 +199,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1) == prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)) + to_integer((bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)) by {
-                peel(prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1)) using {
-                    0 <= (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1);
-                    ((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)) < 2147483647;
-                }
+                unfold(prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1));
                 solve();
             }
             have to_integer(total + (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)) == prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1) by {

@@ -21,7 +21,7 @@ void keep(uint8* bytes, int32 i, int32 k) {
         normalize() using { separate(memory(*(bytes + i)), memory(*(bytes + k))); };
     }
     have bytes[k] == at(before, bytes[k]) by {
-        preserve(separate(statement(0).footprint, memory(*(bytes + k))));
+        preserve(memory(*(bytes + k)), statement(0));
     }
     step_until(function.exit);
     known();

@@ -533,7 +533,7 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
 }
 
 #[test]
-fn structural_read_graph_keeps_native_only_stored_values() {
+fn structural_word_read_requires_its_explicit_store_equation() {
     use crate::kernel::{KernelTermImport, MachineIntegerType, MachineOperandView as V};
     let _session = crate::kernel::VerificationSession::enter();
     let value = MachineTerm::PureFunctionApplication {
@@ -547,6 +547,8 @@ fn structural_read_graph_keeps_native_only_stored_values() {
             .clone()
             .store(pointer.clone(), ProgramValue::Int32(value.clone())),
     );
+    // The typed word producer supplies its access width before graph queries.
+    crate::kernel::eval::record_load_access_width(retained_state.memory(), &pointer, 4);
     let read = MachineTerm::MemoryLoad(
         ProgramPoint::at(&retained_state),
         Box::new(pointer),
@@ -555,6 +557,30 @@ fn structural_read_graph_keeps_native_only_stored_values() {
     let shared = KernelTermImport::default()
         .machine_arithmetic(MachineIntegerType::Int32, &read)
         .unwrap();
-    assert!(EqualityGraph::default().are_int32_equal_views(V::Shared(&shared), V::Legacy(&value),));
+    let empty = PureFactContext::new();
+    assert!(
+        !empty
+            .equality_graph
+            .are_int32_equal_views(V::Shared(&shared), V::Legacy(&value)),
+        "registering a read must not import its cached value"
+    );
+    assert!(!empty.equality_graph.are_int32_equal(&read, &value));
+    let equation = crate::kernel::memory_provenance::store_value_equation(
+        retained_state.memory(),
+        &address(993185),
+        &ProgramValue::Int32(value.clone()),
+    )
+    .expect("word store equation");
+    let established = empty.clone().assume_proposition(equation);
+    assert!(
+        established
+            .equality_graph
+            .are_int32_equal_views(V::Shared(&shared), V::Legacy(&value))
+    );
+    assert!(
+        !empty
+            .equality_graph
+            .are_int32_equal_views(V::Shared(&shared), V::Legacy(&value))
+    );
     assert_eq!(shared.machine_read_leaf(), Some(&read));
 }

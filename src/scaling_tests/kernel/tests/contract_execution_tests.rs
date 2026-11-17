@@ -267,7 +267,7 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
                 &state,
                 &statement,
                 &PureFactContext::new(),
-                ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::new(),
             )
             .unwrap()

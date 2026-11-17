@@ -19,7 +19,7 @@ verifying "cstr_dynamic_indexed_read_requires_permission.c";
 int32 read_terminator_without_permission(uint8 bytes[]) {
     requires click::cstr::readable(bytes);
     ensures result == '\0' by {
-        unfold(click::cstr::readable);
+        unfold(click::cstr::readable(bytes));
     }
 }
 ```

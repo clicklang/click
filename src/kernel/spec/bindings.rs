@@ -1,20 +1,23 @@
 //! Iterative lexical binding chains with retained machine values.
 use super::*;
 
-type Values = crate::persistent::PersistentMap<String, KernelTerm>;
+type Values = crate::persistent::PersistentMap<BindingName, KernelTerm>;
 
 /// Fold and match bodies share one lexical handoff. Program-local fold
 /// bindings keep their existing C state semantics; selected match fields keep
 /// their common roots. Integer binders remain in the evaluator's typed stack.
 pub(super) struct Scope<'a> {
     state: ExecutionState,
-    algebraic: std::borrow::Cow<'a, BTreeMap<String, AlgebraicTerm>>,
+    algebraic: std::borrow::Cow<'a, BTreeMap<BindingName, AlgebraicTerm>>,
     values: Values,
     loop_entry_state: Option<&'a ExecutionState>,
 }
 
 impl<'a> Scope<'a> {
-    pub(super) fn new<'n>(parent: SpecScope<'a>, names: impl IntoIterator<Item = &'n str>) -> Self {
+    pub(super) fn new<'n>(
+        parent: SpecScope<'a>,
+        names: impl IntoIterator<Item = &'n BindingName>,
+    ) -> Self {
         Self {
             state: parent.state.clone(),
             algebraic: std::borrow::Cow::Borrowed(parent.algebraic_bindings),
@@ -23,7 +26,7 @@ impl<'a> Scope<'a> {
         }
     }
 
-    pub(super) fn bind_field(&mut self, name: &str, value: &AlgebraicFieldResult) {
+    pub(super) fn bind_field(&mut self, name: &BindingName, value: &AlgebraicFieldResult) {
         match value {
             AlgebraicFieldResult::Shared(root)
                 if matches!(root.node(), KernelTermNode::Legacy(_)) =>
@@ -38,10 +41,15 @@ impl<'a> Scope<'a> {
         }
     }
 
-    pub(super) fn bind_native_field(&mut self, name: &str, value: &AlgebraicValue) {
+    pub(super) fn bind_native_field(&mut self, name: &BindingName, value: &AlgebraicValue) {
         match value {
             AlgebraicValue::Program(value) => {
-                self.state.locals.set(name.to_owned(), value.clone());
+                bind_value(
+                    name,
+                    value.clone().into(),
+                    &mut self.state,
+                    &mut self.values,
+                );
             }
             AlgebraicValue::Algebraic(value) => {
                 self.algebraic
@@ -52,7 +60,11 @@ impl<'a> Scope<'a> {
         }
     }
 
-    pub(super) fn bind_program_local(&mut self, name: &str, value: SpecValue) {
+    pub(super) fn bind_program_local(&mut self, name: &BindingName, value: SpecValue) {
+        if matches!(name, BindingName::Generated(_)) {
+            bind_value(name, value, &mut self.state, &mut self.values);
+            return;
+        }
         let ty = value.program_type();
         self.state.locals.set_retained_typed_with_all_qualifiers(
             name.to_owned(),
@@ -87,21 +99,15 @@ struct Path {
 
 #[derive(Clone)]
 struct ReturnBinding<'a> {
-    name: &'a String,
+    name: &'a BindingName,
     body: &'a SpecExpression,
     state: ExecutionState,
     values: Values,
 }
 
 impl Path {
-    fn bind(&mut self, name: &String, value: SpecValue) {
-        match value {
-            SpecValue::Shared(value) => self.values.insert(name.clone(), value),
-            SpecValue::Native(value) => {
-                self.values.remove(name);
-                self.state.locals.set(name.clone(), value);
-            }
-        }
+    fn bind(&mut self, name: &BindingName, value: SpecValue) {
+        bind_value(name, value, &mut self.state, &mut self.values);
     }
     fn append(&mut self, path: &mut SpecExpressionPath, base: &PureFactContext) -> bool {
         let next_context =
@@ -129,6 +135,26 @@ impl Path {
         self.mandatory_only &= mandatory;
         self.context = next_context;
         true
+    }
+}
+
+/// Logical binders retain values without allocating C storage or pseudo-slots.
+pub(super) fn bind_value(
+    name: &BindingName,
+    value: SpecValue,
+    state: &mut ExecutionState,
+    values: &mut Values,
+) {
+    match value {
+        SpecValue::Shared(root) => values.insert(name.clone(), root),
+        SpecValue::Native(value) if matches!(name, BindingName::Generated(_)) => values.insert(
+            name.clone(),
+            KernelTermImport::default().argument(&PureFunctionArgument::Value(value)),
+        ),
+        SpecValue::Native(value) => {
+            values.remove(name);
+            state.locals.set(name.clone(), value);
+        }
     }
 }
 

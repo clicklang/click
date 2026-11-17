@@ -126,7 +126,7 @@ fn private_local_copy_ignores_unrelated_resources() {
                         state,
                         &program_declare(name, interface_type),
                         &PureFactContext::new(),
-                        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                         &mut ExecutionBudget::default(),
                     )
                     .expect("the private local declares");
@@ -169,7 +169,7 @@ fn private_local_copy_ignores_unrelated_resources() {
                         &state,
                         &program_assign("target", expression.clone()),
                         &PureFactContext::new(),
-                        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                         &mut ExecutionBudget::default(),
                     )
                     .expect("the scalar assignment executes")

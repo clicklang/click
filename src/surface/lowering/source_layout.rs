@@ -58,8 +58,12 @@ pub(in crate::surface) fn count_loop_regions(
                 try_body, handler, ..
             } => pending.extend([try_body.as_ref(), handler.as_ref()]),
             ProgramStatement::Loop {
-                test, update, body, ..
+                test: loop_test,
+                update,
+                body,
+                ..
             } => {
+                let (_, _, test) = loop_test.execution_parts();
                 count += 1;
                 pending.push(body);
                 if let Some(test) = test {
@@ -263,10 +267,6 @@ fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
             condition: expression,
             ..
         }
-        | ProgramStatement::Loop {
-            condition: expression,
-            ..
-        }
         | ProgramStatement::Switch { expression, .. }
         | ProgramStatement::HeapAllocate {
             bytes: expression, ..
@@ -274,6 +274,7 @@ fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
         | ProgramStatement::HeapFree {
             pointer: expression,
         } => expression_reads(expression),
+        ProgramStatement::Loop { test, .. } => expression_reads(test.execution_parts().0),
         ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallConstruct { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => arguments.iter().any(expression_reads),
@@ -337,7 +338,14 @@ fn syntax_statement_reads(statement: &syntax::CStatement) -> bool {
     }
 }
 
-fn record_assignment(layout: &mut SourceExecutionLayoutData, local: &str, index: usize) {
+fn record_assignment(
+    layout: &mut SourceExecutionLayoutData,
+    binding: &crate::kernel::BindingName,
+    index: usize,
+) {
+    let Some(local) = binding.source_spelling() else {
+        return;
+    };
     crate::instrumentation::record_deterministic_work(1);
     layout
         .assignments
@@ -513,8 +521,12 @@ impl SourceExecutionLayout {
                     Ok(statement_index)
                 }
                 ProgramStatement::Loop {
-                    test, update, body, ..
+                    test: loop_test,
+                    update,
+                    body,
+                    ..
                 } => {
+                    let (_, _, test) = loop_test.execution_parts();
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
                     let loop_index = layout.loop_bodies.len();
@@ -673,7 +685,7 @@ impl SourceExecutionLayout {
                         ..
                     } = statement
                     {
-                        record_assignment(layout, name.source_name(), statement_index);
+                        record_assignment(layout, name, statement_index);
                     }
                     *next_statement_index += 1;
                     layout.statements.insert(
@@ -1165,7 +1177,7 @@ impl SourceExecutionLayout {
                         ..
                     } = statement
                     {
-                        record_assignment(layout, name.source_name(), statement_index);
+                        record_assignment(layout, name, statement_index);
                     }
                     *next_statement_index += 1;
                     layout.statements.insert(
@@ -1835,6 +1847,9 @@ pub(in crate::surface) fn collect_resource_subject_referenced_names(
     names: &mut BTreeSet<String>,
 ) {
     match resource {
+        ResourceSubject::At { resource, .. } => {
+            collect_resource_subject_referenced_names(resource, names)
+        }
         ResourceSubject::Emp => (),
         ResourceSubject::Star(left, right) => {
             collect_resource_subject_referenced_names(left, names);
@@ -2109,8 +2124,12 @@ fn collect_kernel_automatic_exits(
                 tails
             }
             ProgramStatement::Loop {
-                test, update, body, ..
+                test: loop_test,
+                update,
+                body,
+                ..
             } => {
+                let (_, _, test) = loop_test.execution_parts();
                 if let Some(test) = test
                     .as_ref()
                     .filter(|test| test.position == crate::kernel::LoopTestPosition::BeforeBody)

@@ -34,11 +34,11 @@ pub(super) fn negate_click_proposition(proposition: &ClickProposition) -> ClickP
 
 pub(in crate::surface) fn describe_condition_search_miss(
     proposition: &Proposition,
-    available: &[Proposition],
+    available: &(impl PropositionSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let candidates = available
-        .iter()
+        .propositions()
         .filter(|fact| matches!(fact, Proposition::ConditionIs(_, _)))
         .cloned()
         .collect::<Vec<_>>();
@@ -59,7 +59,7 @@ pub(in crate::surface) fn describe_condition_search_miss(
 /// locals of `state`, the state the statement runs from.
 pub(super) fn describe_derivation_failure(
     proposition: &Proposition,
-    available: &[Proposition],
+    available: &(impl PropositionSource + ?Sized),
     state: &ExecutionState,
     environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
@@ -70,10 +70,7 @@ pub(super) fn describe_derivation_failure(
         // underived: a narrowing bound the facts contradict, say. The
         // search's miss is then not the news, and neither smaller steps nor
         // listed premises would supply the condition.
-        let consulted = available
-            .iter()
-            .cloned()
-            .fold(PureFactContext::new(), PureFactContext::assume_proposition);
+        let consulted = available.pure_context();
         if consulted.decide(condition) == Some(!*value) {
             return crate::surface::diagnostics::describe_refuted_condition(
                 proposition,
@@ -121,7 +118,7 @@ const PREREQUISITE_FACT_LIMIT: usize = 6;
 /// what it asserts). Every other prerequisite keeps the generic sentence.
 pub(super) fn describe_statement_prerequisite_failure(
     proposition: &Proposition,
-    available: &[Proposition],
+    available: &(impl PropositionSource + ?Sized),
     path_facts: &[Proposition],
     state: &ExecutionState,
     statement: &ProgramStatement,
@@ -138,7 +135,7 @@ pub(super) fn describe_statement_prerequisite_failure(
         })
         .pure_facts();
     let consulted = available
-        .iter()
+        .propositions()
         .filter(|fact| !path_facts.contains(fact) && !derived.contains(fact))
         .cloned()
         .collect::<Vec<_>>();

@@ -5,7 +5,7 @@
 itself an available fact, so the conjunction provides both bounds exactly as
 separate `requires` lines would, and solve finds them through `x`'s indexed
 bound bucket at function exit. `inc_extracted` shows that an explicit
-`extract` of a leaf conjunct is accepted after execution but adds nothing.
+`have` of a leaf conjunct is accepted after execution but adds nothing.
 
 ```c filename=solve_reads_a_bound_inside_a_requires_conjunction.c
 int32 inc(int32 x) {
@@ -30,7 +30,7 @@ int32 inc_extracted(int32 x) {
     ensures result >= 0;
 } by {
     step_until(function.exit);
-    extract(x <= 100);
+    have x <= 100;
     solve();
 }
 ```

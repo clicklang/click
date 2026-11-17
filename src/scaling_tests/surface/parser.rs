@@ -120,3 +120,111 @@ fn static_declaration_preparation_is_linear_and_selector_lookup_is_indexed() {
         assert_eq!(lookup, 9, "selector work changed at size {size}");
     }
 }
+
+/// Parenthesized field expressions recover nominal types from the selected
+/// path. Record width and unrelated declarations do not enter that query.
+#[test]
+fn embedded_field_identity_uses_only_its_explicit_path() {
+    use crate::languages::interface::RecordLayout;
+    fn fixture(depth: usize, unrelated: usize) -> (Parser, ContractExpression) {
+        let leaf = RecordLayout::from_explicit_fields(
+            vec![("data".into(), InterfaceType::Int32Pointer, 0, 8)],
+            8,
+            8,
+        )
+        .unwrap();
+        let mut layouts = BTreeMap::from([("Leaf".to_string(), leaf.clone())]);
+        let mut previous = "Leaf".to_string();
+        let mut bytes = 8;
+        for level in 0..depth {
+            let name = format!("Level{level}");
+            let mut fields = vec![(
+                "inner".into(),
+                InterfaceType::Int32,
+                Some(previous),
+                0,
+                bytes,
+            )];
+            for index in 0..unrelated {
+                fields.push((
+                    format!("unrelated{index}"),
+                    InterfaceType::Int32,
+                    None,
+                    bytes + index as u32 * 4,
+                    4,
+                ));
+            }
+            bytes = (bytes + unrelated as u32 * 4).div_ceil(8) * 8;
+            let layout =
+                RecordLayout::from_explicit_fields_with_structs(fields, bytes, 8, &layouts)
+                    .unwrap();
+            layouts.insert(name.clone(), layout);
+            previous = name;
+        }
+        for index in 0..unrelated {
+            layouts.insert(format!("Unrelated{index}"), leaf.clone());
+        }
+        let mut parser = Parser::new_with_layouts("", layouts, BTreeMap::new()).unwrap();
+        parser.names.struct_params.insert("object".into(), previous);
+        let mut expression = ContractExpression::Binding("object".into());
+        for _ in 0..depth {
+            expression = ContractExpression::Field {
+                pointee_struct: None,
+                base: Box::new(expression),
+                field: "inner".into(),
+                lowered: ProgramExpression::Value(ProgramValue::Void),
+                offset_bytes: 0,
+            };
+        }
+        (parser, expression)
+    }
+    let mut fixed = Vec::new();
+    for unrelated in [0, 16, 64, 256] {
+        let (parser, expression) = fixture(2, unrelated);
+        let (identity, work) = crate::instrumentation::measure_deterministic_work(|| {
+            parser.contract_expression_struct_name(&expression)
+        });
+        assert_eq!(identity.as_deref(), Some("Leaf"));
+        fixed.push(work);
+        let layout = parser.struct_layouts.get("Level1").unwrap();
+        let (path, lookup) = crate::instrumentation::measure_deterministic_work(|| {
+            layout.embedded_struct_field(0, "Level0")
+        });
+        assert_eq!(path.unwrap(), "inner");
+        assert_eq!(lookup, 1, "embedded receiver lookup at width {unrelated}");
+        assert!(layout.embedded_struct_field(8, "Level0").is_none());
+        assert!(layout.embedded_struct_field(0, "Unrelated0").is_none());
+    }
+    assert!(
+        fixed[0] > 0 && fixed.iter().all(|work| *work == fixed[0]),
+        "unrelated input: {fixed:?}"
+    );
+    for depth in [1, 4, 16, 64] {
+        let (parser, expression) = fixture(depth, 0);
+        let (identity, work) = crate::instrumentation::measure_deterministic_work(|| {
+            parser.contract_expression_struct_name(&expression)
+        });
+        assert_eq!(identity.as_deref(), Some("Leaf"));
+        let layout = parser
+            .struct_layouts
+            .get(&format!("Level{}", depth - 1))
+            .unwrap();
+        let (_, lookup) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut layout = layout;
+            for level in (0..depth).rev() {
+                let target = if level == 0 {
+                    "Leaf".to_owned()
+                } else {
+                    format!("Level{}", level - 1)
+                };
+                assert_eq!(layout.embedded_struct_field(0, &target), Some("inner"));
+                layout = parser.struct_layouts.get(&target).unwrap();
+            }
+        });
+        assert_eq!(lookup, depth, "embedded receiver path at depth {depth}");
+        assert!(
+            work >= depth && work <= 8 * (depth + 1),
+            "depth {depth}: {work}"
+        );
+    }
+}

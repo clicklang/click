@@ -11,9 +11,14 @@ loops and checked natural cycles. Source ASTs retain their language-specific
 `While` forms; `program_while` and `program_do_while` construct the corresponding
 pre-test and post-test forms of the shared node.
 
-A loop owns its optional update once. An effectful condition owns one
-`LoopTestRegion`, with its calls, decision, temporary cleanup and placement
-before or after the body. A pure condition stays directly on the loop.
+A loop owns its optional update and one mandatory `LoopTestRegion`. Every
+test has a placement before or after the body and a shared code region. A
+pure test contains just `LoopTest`, which owns its condition and temporary
+cleanup. A prepared test prefixes that same decision with its calls or other
+preparation. The loop has no separate condition or `do_while` flag.
+A borrowed execution view reads a preparation-free decision directly; prepared
+tests enter their code region before the decision is available. This keeps
+existing proof-step numbering without storing a second test on the loop.
 `program_loop_pass` assembles the shared phase references for checked source
 execution; `program_loop_continuation` selects the update and post-test owed
 by a continuing edge. Normal body completion and `continue` leave the body
@@ -155,7 +160,7 @@ exceptional unwinding edges. The language frontends decide which edges are
 legal; the kernel does not infer cleanup or loan recovery from lexical scope
 alone.
 
-The selected C++ exception profile is deliberately closed: C++20 on the pinned
+The `scalar_int32` C++ exception profile is deliberately closed: C++20 on the pinned
 Clang/LLVM 19.1.7 `x86_64-unknown-linux-gnu` profile, exceptions enabled,
 RTTI disabled, one `int32` exceptional payload, a matching `catch (int)`, and
 non-throwing constructors and destructors. `throws int32` is part of the
@@ -164,6 +169,53 @@ separate claim families; a missing exceptional declaration is non-throwing,
 not an unconstrained promise. The locked exporter artifact records the
 compiler profile and semantic input, so an exporter change cannot silently
 broaden a normal-only import.
+
+The separate `ios_failure` profile propagates the exact opaque
+`std::ios_base::failure` class, without handlers or user cleanup. Its pinned
+standard-library constructor lowers to a fresh abstract value from a catalog
+factory; the runtime owns storage and destruction, and allocation failure is
+assumed to terminate. Direct exceptional interfaces can borrow raw memory:
+normal and throwing call successors share footprint-bounded havoc, but receive
+only their own postcondition family. Both successors use the existing joint
+resource-return and loan-recovery operations. Outcome claim cells keep borrowed
+resource ensures open on throws instead of marking every normal-family cell
+vacuous. Named callback refinement remains pure `int32`.
+
+The `typed` profile also admits ordinary trivial aggregate prvalues and
+empty exception tags. It evaluates explicit scalar field initializers in
+source order through ordinary value steps, then `ThrowOpaque` allocates a
+fresh value of the imported nominal type and returns the current state.
+Class types use an elaborated `struct Name` identity distinct from generic
+type parameters. Construction has no trusted user-constructor contract;
+nontrivial copying, destruction and class handlers remain refused.
+
+C++ record-reference locals reuse the parameter carrier (`&name`) and retain
+the record layout in the imported function's local struct-pointer metadata.
+Surface therefore resolves `name.field` as a record place, without treating the
+alias as a new object or granting memory authority. Binding through a record
+pointer uses checked address formation on a byte-array lvalue of the complete
+record size, followed by the adapter's existing record-pointer representation.
+The address rule validates storage without reading the array or its fields.
+Automatic destructor cleanup emits the existing storage-lifetime-end operation
+after the destructor returns, so an alias cannot keep a scoped record alive.
+
+C++ `declared_noexcept` is retained in the shared imported declaration as
+`requires_nonthrowing_contract`, including dispatch aliases. Signature
+checking refuses `throws` on that interface; the existing nonthrowing body
+judgment proves that all reachable exits are normal. A guarded call may use
+its callee's exceptional guarantees to refute the exceptional path. Modular
+eligibility depends on the interface, while checked body safety establishes
+that internal throws are caught or excluded by its preconditions. No
+termination behavior is assumed from a `noexcept` spelling. Opaque exception
+profiles still refuse automatic destruction in potentially throwing functions;
+the already-built lifetime plan detects that restriction in nested scopes too.
+A caught scalar throw retains the after-try continuation in both the Surface
+frontier and checked statement-evidence cursor, so a normally completing
+handler resumes the enclosing function.
+
+C++ void fallthrough lowers to an explicit kernel return, as C void fallthrough
+does. This gives a final maybe-throwing call a normal continuation for `outcomes`
+without adding a statement to the original source.
 
 The C++ exporter uses Clang's typed AST and checked source CFG to identify the
 throw, handler, payload, and constructed objects. It emits destructor calls as

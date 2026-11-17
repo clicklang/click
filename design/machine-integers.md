@@ -1343,7 +1343,7 @@ and refining the 2026-10-26 entry:
 Maintainer direction, 2026-10-29 (every format its own nodes), superseding
 the word identity of K1, K2, K5's naming, K6 and K8 as each step lands:
 
-- **Lowering keeps a term's structure** (`docs/internals/raise-lower.md`,
+- **Lowering keeps a term's structure** (`docs/internals/raise-lower-principle.md`,
   "Lowering is structural"). Every format has its own nodes: `+` at
   `uint32` is `Binary { Add, UInt32 }` over `uint32` operands, and likewise
   at 8, 16 and 64 bits; constants keep their format. A cast appears only

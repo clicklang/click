@@ -4109,7 +4109,6 @@ impl CStatement {
         match self {
             Self::StepValue {
                 aggregate_layout,
-
                 steps,
                 expression,
                 interface_type,
@@ -4205,7 +4204,6 @@ impl CStatement {
             },
             Self::CallResult {
                 aggregate_layout,
-
                 call,
                 function_name,
                 arguments,
@@ -9426,6 +9424,7 @@ impl Parser {
             name: header.name,
             inline_body,
             requires_read_only_contract: false,
+            requires_nonthrowing_contract: false,
             positional_parameters: false,
             closure_captures: 0,
             trait_interface: None,
@@ -9441,6 +9440,7 @@ impl Parser {
             ),
             control_targets,
             structs: self.structs.clone(),
+            prepared_record_layouts: std::sync::Arc::default(),
             enums: self.enums.clone(),
             unions: self.unions.clone(),
             globals: self.globals.clone(),
@@ -11075,9 +11075,6 @@ impl Parser {
         if self.peek() != Some(&Token::LBracket) {
             return Ok((parsed_type.interface_type, None));
         }
-        if parsed_type.enum_name.is_some() {
-            return Err(self.error_here("local arrays of enum type are not supported"));
-        }
         let (element_width, element_name, struct_array) = if is_plain_struct_type(parsed_type) {
             let struct_name = parsed_type
                 .struct_name
@@ -12414,6 +12411,7 @@ impl Parser {
                 if matches!(
                     interface_type,
                     InterfaceType::Int32Array(_)
+                        | InterfaceType::UInt32Array(_)
                         | InterfaceType::CharArray(_, _)
                         | InterfaceType::UInt8Array(_)
                         | InterfaceType::Float32Array(_)
@@ -14930,7 +14928,6 @@ impl Parser {
             }
             CStatement::StepValue {
                 aggregate_layout,
-
                 steps,
                 expression,
                 interface_type,
@@ -14943,7 +14940,6 @@ impl Parser {
                     prefix,
                     CStatement::StepValue {
                         aggregate_layout,
-
                         steps,
                         expression,
                         interface_type,

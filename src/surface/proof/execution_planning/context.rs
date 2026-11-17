@@ -13,7 +13,7 @@ pub(in crate::surface::proof) fn explicit_loop_preservation_tactics(
     };
     (!tactics
         .iter()
-        .all(|tactic| matches!(tactic, ProofTactic::UnfoldPredicate(_))))
+        .all(|tactic| matches!(tactic, ProofTactic::UnfoldProposition(_))))
     .then_some(tactics)
 }
 
@@ -40,7 +40,7 @@ pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
     /// `match` arm's bindings, `let { ... } = unfold(...)` names, call-result binders.
     /// The planners resolve them into the loop's written clauses before
     /// lowering, as a `have` goal at that point would.
-    pub(in crate::surface::proof) proof_locals: BTreeMap<String, ContractExpression>,
+    pub(in crate::surface::proof) proof_locals: BinderMap<ContractExpression>,
 }
 
 #[derive(Clone, Default)]

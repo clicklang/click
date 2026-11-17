@@ -24,7 +24,7 @@ void beside_call(int *p, int *q, int *r) {
         };
     }
     have *r == at(statement(0).entry, *r) by {
-        preserve(separate(statement(0).footprint, memory(*r)));
+        preserve(memory(*r), statement(0));
     }
     step();
     known(); known(); known();

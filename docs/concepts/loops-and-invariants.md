@@ -255,7 +255,7 @@ loop {
 ```
 
 `initialize` is a pure proof of all invariants at the actual loop entry. Its
-script may use exactly `unfold(predicate)`, `apply(theorem(args))`, `have`,
+script may use exactly `unfold(predicate(args))`, `apply(theorem(args))`, `have`,
 `known()`, `normalize()`, `rewrite(...)`, `solve()`, `both`, `cases`, and
 proof-level `if`;
 anything else is rejected with `` `initialize` is a pure proof and cannot use
@@ -300,7 +300,7 @@ as in ``loop 0 invariant 1 entry, owing `defined((i + 1))` ``.
 Each invariant gets its own entry goal, so an `initialize by { ... }` script is
 read as three parts, in this order:
 
-- a leading run of `unfold(predicate)` and `have` steps that name something
+- a leading run of `unfold(predicate(args))` and `have` steps that name something
   other than an invariant. These are *helpers*: each is proved once, where it
   is written, and its fact is available to everything below it.
 - one `have` per declared invariant, in declaration order, naming the

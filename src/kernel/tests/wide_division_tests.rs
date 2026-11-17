@@ -498,7 +498,7 @@ fn wide_division_checked_function_artifacts_recheck_exactly() {
                     arguments.clone(),
                     assumptions.clone(),
                     ExecutionEnvironment::new(),
-                    ExecutionSemantics::EXECUTE_BODIES,
+                    ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
                     FunctionContractExecutionMode::VerifyLoops,
                 )
             };
@@ -520,7 +520,7 @@ fn wide_division_checked_function_artifacts_recheck_exactly() {
                 arguments,
                 PureFactContext::new(),
                 ExecutionEnvironment::new(),
-                ExecutionSemantics::EXECUTE_BODIES,
+                ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
                 FunctionContractExecutionMode::VerifyLoops,
             );
             assert!(first.agrees_with(&unsafe_entry).is_err());

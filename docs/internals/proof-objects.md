@@ -51,9 +51,9 @@ availability and logical shape, refine or close the obligation, and return an
 opaque successor directly. `intro` accepts a callback only to derive new
 opaque presentation from the checked introduction kind; the callback cannot
 choose the kernel proposition, introduced fact, or successor state.
-Conjunction extraction and explicit universal instantiation likewise accept
-lowered inputs, then let the kernel validate availability, guards, and the
-resulting fact before it publishes a successor.
+Explicit implication application and universal instantiation likewise accept
+lowered inputs, then let the kernel establish availability and guards before
+it constructs and publishes the resulting fact.
 The raw persistent fact insertion and focused-state replacement operations are
 scoped to `src/kernel`; their `with_kernel_checked_fact` and
 `publish_checked_result` language adapters are carry-only seams for results

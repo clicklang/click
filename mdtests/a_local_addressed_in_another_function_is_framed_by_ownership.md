@@ -79,7 +79,7 @@ int32 read_literal() {
         normalize() using { separate(memory(guard), memory(message[1])); };
     }
     have message[1] == at(before, message[1]) by {
-        preserve(separate(statement(3).footprint, memory(message[1])));
+        preserve(memory(message[1]), statement(3));
     }
     have message[1] == 'k' by { normalize() using { message[1] == at(before, message[1]); at(before, message[1]) == 'k'; }; }
     step();

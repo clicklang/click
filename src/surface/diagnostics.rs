@@ -525,7 +525,7 @@ pub(super) fn diagnostic_item_limit() -> usize {
 }
 
 fn describe_context_pure_and_execution_facts(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
@@ -533,7 +533,7 @@ fn describe_context_pure_and_execution_facts(
 }
 
 fn describe_context_facts_with_result(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
     result: Option<&ProgramValue>,
@@ -548,14 +548,14 @@ fn describe_context_facts_with_result(
 }
 
 fn describe_context_facts_labeled(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
 ) -> String {
     let item_limit = diagnostic_item_limit();
     let mut total = 0;
     let mut entries = Vec::new();
-    for fact in pure_facts.iter().chain(
+    for fact in pure_facts.propositions().chain(
         execution_pure_facts
             .fact_iter()
             .map(ExecutionPureFact::proposition),
@@ -962,7 +962,7 @@ pub(super) fn describe_execution_pure_facts(facts: &(impl ExecutionFactSource + 
 }
 
 pub(super) fn describe_available_facts(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -995,7 +995,7 @@ pub(super) fn describe_required_pure_fact(
 
 pub(super) fn describe_missing_pure_fact(
     required: &Proposition,
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -1018,7 +1018,7 @@ pub(super) fn describe_missing_pure_fact(
 
 fn describe_missing_fact_context(
     requirement: &str,
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
@@ -1036,7 +1036,7 @@ fn describe_missing_fact_context(
 
 pub(super) fn describe_missing_resource_fact(
     required: &ResourceFact,
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -1276,7 +1276,7 @@ pub(super) fn describe_goal_proof_context(
 }
 
 pub(super) fn describe_proof_context(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -1585,12 +1585,12 @@ pub(super) fn describe_missing_proof_obligations(
 /// [x == 300]".
 pub(super) fn describe_refuted_condition(
     required: &Proposition,
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let variables = crate::kernel::proposition_variables(required);
     let about = pure_facts
-        .iter()
+        .propositions()
         .filter(|fact| {
             matches!(fact, Proposition::ConditionIs(_, _))
                 && (variables.is_empty()
@@ -2183,6 +2183,11 @@ pub(in crate::surface) fn describe_iterated_memory(
 
 pub(super) fn describe_resource_subject(resource: &ResourceSubject) -> String {
     match resource {
+        ResourceSubject::At { selector, resource } => format!(
+            "at({}, {})",
+            describe_program_point_selector(selector),
+            describe_resource_subject(resource)
+        ),
         ResourceSubject::Emp => "separation::emp".into(),
         ResourceSubject::Star(a, b) => format!(
             "({} * {})",
@@ -3896,7 +3901,7 @@ fn describe_model_field_version_stop(
     stop: &resource_tracker::Stop,
     since: &str,
 ) -> Option<String> {
-    let field = crate::kernel::model_fields::instance_field_spelling(identity, field_index)?;
+    let field = crate::kernel::model_fields::instance_field_surface(identity, field_index)?;
     // A parent-qualified path is not what the registry names, so it has no
     // spelling of its own and this says nothing rather than the parent's.
     if !children.is_empty() {
@@ -4357,7 +4362,7 @@ pub(in crate::surface) fn diagnostic_source_load_cell(
     if let PointerOffsetTerm::Constant(offset) = &pointer.offset
         && let Ok(offset) = u32::try_from(*offset)
         && let Some(field) =
-            object_fields::object_field_spelling(&pointer.block, offset, kind.byte_width())
+            object_fields::object_field_surface(&pointer.block, offset, kind.byte_width())
     {
         return Some(field);
     }
@@ -4827,7 +4832,7 @@ fn describe_source_cell_of_width(
     let declared = describe_memory_block(&pointer.block, parameter_binding)?;
     if let (Some(width), PointerOffsetTerm::Constant(offset)) = (width, &pointer.offset)
         && let Ok(offset) = u32::try_from(*offset)
-        && let Some(field) = object_fields::object_field_spelling(&pointer.block, offset, width)
+        && let Some(field) = object_fields::object_field_surface(&pointer.block, offset, width)
     {
         return Some(SourceCell {
             object: field,
@@ -6838,8 +6843,6 @@ const MAX_STATEMENT_HEAD_BYTES: usize = 512;
 /// successors it is complaining about.
 pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) -> String {
     let head = match statement {
-        ProgramStatement::EndScalarReference(_) => "borrow end".to_string(),
-        ProgramStatement::ScalarReferenceScope(_) => "borrow scope".to_string(),
         ProgramStatement::Skip => ";".to_string(),
         ProgramStatement::Break => "break;".to_string(),
         ProgramStatement::Continue => "continue;".to_string(),
@@ -6922,6 +6925,9 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         ProgramStatement::Return(expression) => {
             format!("return {};", describe_program_expression(expression))
         }
+        ProgramStatement::ThrowOpaque(payload_type) => {
+            format!("throw opaque {}", payload_type.name())
+        }
         ProgramStatement::Throw(expression) => {
             format!("throw {};", describe_program_expression(expression))
         }
@@ -6955,11 +6961,10 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
             format!("the loop's test ({})", describe_c_guard(condition))
         }
         ProgramStatement::Loop {
-            condition,
-            do_while,
-            ..
+            test: loop_test, ..
         } => {
-            if *do_while {
+            let (condition, direct_post_test, _) = loop_test.execution_parts();
+            if direct_post_test {
                 format!("do ... while ({})", describe_c_guard(condition))
             } else {
                 format!("while ({})", describe_c_guard(condition))
@@ -7116,6 +7121,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         return describe_add_contract_expression(expression);
     }
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            format!("({} : Integer)", describe_contract_expression(value))
+        }
         ContractExpression::Proposition(proposition) => {
             format!(
                 "prop {{ {} }}",
@@ -7224,9 +7232,8 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 arguments.join(", ")
             )
         }
-        ContractExpression::AlgebraicVariable { name, .. } | ContractExpression::Binding(name) => {
-            name.clone()
-        }
+        ContractExpression::AlgebraicVariable { name, .. } => name.to_string(),
+        ContractExpression::Binding(name) => name.clone(),
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
             let scrutinee = describe_contract_expression(scrutinee);
             let arms = arms
@@ -7236,7 +7243,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                         "{}::{}({}) => {}",
                         arm.type_name,
                         arm.variant,
-                        arm.bindings.join(", "),
+                        arm.bindings
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", "),
                         describe_contract_expression(&arm.body)
                     )
                 })
@@ -7900,6 +7911,7 @@ pub(super) fn describe_bitvector_with_context(
         return name;
     }
     match term {
+        MachineTerm::ThreadHandle(_) => format!("{term:?}"),
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
@@ -7946,9 +7958,9 @@ pub(super) fn describe_bitvector_with_context(
         // stored inside the instance fact, so there is nothing in the term to
         // recover it from; the mint registered it.
         MachineTerm::Variable(variable)
-            if crate::kernel::model_fields::model_field_spelling(*variable).is_some() =>
+            if crate::kernel::model_fields::model_field_surface(*variable).is_some() =>
         {
-            crate::kernel::model_fields::model_field_spelling(*variable)
+            crate::kernel::model_fields::model_field_surface(*variable)
                 .expect("checked registered above")
         }
         MachineTerm::Variable(variable) => lowering_only_variable("v", variable.0),
@@ -8228,7 +8240,7 @@ fn describe_storage_write_outside_footprint(
             if let PointerOffsetTerm::Constant(offset) = &pointer.offset
                 && let Ok(offset) = u32::try_from(*offset)
                 && let Some(field) =
-                    object_fields::object_field_spelling(&pointer.block, offset, *bytes)
+                    object_fields::object_field_surface(&pointer.block, offset, *bytes)
             {
                 return format!("the {bytes}-byte store to `{field}`");
             }

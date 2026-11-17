@@ -3,7 +3,7 @@
 `o->in->cells[2]` reads memory at an address that is itself read from
 memory. The read of `o->in` keeps its own name: only the precondition
 `o->in == a` relates it to `a`, and lowering never rewrites through a fact
-(`docs/internals/raise-lower.md`). `rewrite(o->in, a)` moves the nested
+(`docs/internals/raise-lower-principle.md`). `rewrite(o->in, a)` moves the nested
 read to `a->cells[2]`, named as lowering names it, and `normalize()` closes
 the resulting reflexive goal. `solve()` checks the adjacent cell through the
 same relationship.

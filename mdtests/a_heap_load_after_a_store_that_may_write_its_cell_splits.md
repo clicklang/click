@@ -91,7 +91,7 @@ int32 read_back(int32 u) {
                 normalize() using { separate(memory(buf[u]), memory(buf[0])); };
             }
             have buf[0] == at(before_store, buf[0]) by {
-                preserve(separate(statement(5).footprint, memory(buf[0])));
+                preserve(memory(buf[0]), statement(5));
             }
             have buf[0] == 3 by solve();
             step_until(function.exit);
@@ -147,7 +147,7 @@ int32 read_back_stepped(int32 u) {
                 normalize() using { separate(memory(buf[u]), memory(buf[0])); };
             }
             have buf[0] == at(before_store, buf[0]) by {
-                preserve(separate(statement(5).footprint, memory(buf[0])));
+                preserve(memory(buf[0]), statement(5));
             }
             have buf[0] == 3 by solve();
             step_until(function.exit);

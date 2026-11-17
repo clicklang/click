@@ -1822,3 +1822,67 @@ the final answer there is open.
   The remaining *disagrees* entry is the difference between plain range
   disjointness and the rule's typed range evidence plus `_for_frame` composite
   expansion.
+
+## Remaining ownership compatibility inventory
+
+The ownership-return migration is incomplete. The source inventory in
+`build_support/ownership_fallback_edges.tsv` freezes references to the APIs in
+`ownership_fallback_targets.txt`, using the existing proof-search AST walker.
+Both kernel and Surface production modules are checked on every Cargo build;
+test-only modules are excluded. Calls, method references, imports and macro
+identifiers are counted by file, owning type and function. New references,
+changed counts and stale records fail the build. The inventory includes older
+full-composition APIs and generic expansion so indirect routes remain visible.
+It is a dependency inventory, not a list of bugs or a complexity proof. An
+invocation of a compatibility wrapper can complete entirely in its fast path.
+
+The automatic call-return checklist is:
+
+| Route | Remaining evidence gap | Condition for removing compatibility |
+| --- | --- | --- |
+| `EvaluatedReturnResources::admit_clause` | Independently evaluated raw output clauses lack a checked partition between their new ownership occurrences. | Construct the output partition incrementally from producer evidence; unsupported geometry refuses promptly or requires explicit separation. |
+| `construct_composite_resource_body` | Constructed child IDs and witnesses survive, but child composition still uses incremental legacy admission; the unselected expansion route uses full composition. | Carry the internal partition with the selected body, using bounded checks only for genuinely new child relationships. |
+| `PreparedReturnComposition::finish` | Transfers restore supported borrows/consumed memory, but pending descriptions still need admission against the retained frame. | Every pending output has an explicit origin and a bounded boundary check, or a bounded refusal. |
+| `produced_composite_frontier_conflict` | Maintained indexes do not cover every symbolic/alias geometry against retained owners. Unsupported checks call `returned_boundary_conflict_with_legacy_discovery`. | Define the supported geometry and evidence; accept via indexed coordinates/separation, otherwise refuse without searching. |
+| `recover_candidate_stable_view_resources` | Selected loan backing survives, but composing the recovered escrow still calls legacy admission. | Retain the partition/restoration relationship of the withheld occurrences through escrow recovery. |
+| `project_return_resource_cores` and the legacy arm of `produced_composite_frontier_conflict` | Unconstructed families are expanded from descriptions again. The classifier records `legacy`, rather than a reusable checked body. | Each classifier outcome carries a reusable body/frontier, deliberately opaque ownership, or a bounded refusal. Unsupported language shapes do not all need implementation. |
+
+`try_compose_with_legacy_discovery_and_occurrences` first calls
+`admit_without_discovery`. Only `Unsupported` resumes discovery; indexed
+conflicts already refuse. `PendingOwnershipAdmission::resume_legacy_discovery`
+and `returned_boundary_conflict_with_legacy_discovery` converge on
+`legacy_memory_boundary_conflict`, which can enumerate ownership candidates
+and reason along aliases. These internal dispatch edges are frozen too.
+
+A concrete remaining gap is an ordinary valid partition `p[0..n]` beside
+`p[n..16]`, with direct facts `1 <= n <= 8`: a held symbolic range is outside
+the constant-owner index fragment. The raw-output and pending-return probes in
+`src/kernel/functions/mixed_return_resources/fallback_inventory_tests.rs`
+first check successful compatibility admission, then demonstrate the
+`ownership_validity_candidates` discovery entry under `FastOperationScope`.
+A constant adjacent-range control runs successfully inside that scope. These
+are deliberately dependency probes, to be replaced with no-discovery
+regressions as the routes migrate; they do not authorize new discovery.
+
+The wider dependency perimeter must stay separate from that call-return
+checklist. `ExecutionState::local_scalar_access_resources` and
+`ReservedLocalScalarOwner::restore_into` still admit withheld owners through
+the legacy wrapper. The generic incremental facade also serves exchange
+restoration, certified groups, stable-view recovery, function resource
+context evaluation, instance rewriting, contract refinement, iterated steps,
+loop guards, proof-interface joins and thread joins. The manifest names every
+caller and reference count. Older `try_compose_with_fact(s)` and delaying
+normalization variants still reach `validity_error` over the combined context;
+some also call full normalization. Their presence must not be reported as
+incremental admission merely because an outer operation carries identities.
+Generic expansion also serves contract entry/certification, folding and
+observations. Removing those general APIs requires auditing these users;
+finishing automatic call returns alone does not justify deleting them.
+
+The source tests in `tests/search_boundary.rs` pin the perimeter, including
+new/hidden references and duplicate caller edges. Runtime probes exercise
+raw-output admission and pending-return admission; the other rows are source
+pinned, not independently runtime-probed by this increment. Existing migrated
+fragment tests provide their own no-discovery/scaling evidence. The guard
+observes registered discovery calls, not arbitrary loops: each future migration
+still needs an operation audit and deterministic scaling checks.

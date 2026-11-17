@@ -2030,6 +2030,40 @@ fn split_constant_displacement(
     (base, displacement)
 }
 
+/// The signed value denoted by an explicitly selected unsigned 32-bit operand.
+/// Recover a signed source only from an actual int32-to-uint32 conversion;
+/// otherwise retain an explicit uint32-to-int32 conversion. No facts are read.
+enum SignedUint32Reading<'a> {
+    Existing(MachineOperandView<'a>),
+    Convert(MachineOperandView<'a>),
+}
+
+fn signed_uint32_reading(operand: MachineOperandView<'_>) -> SignedUint32Reading<'_> {
+    match operand.cast() {
+        Some((
+            MachineCastSpelling::Generic,
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            source,
+        )) => SignedUint32Reading::Existing(source),
+        _ => SignedUint32Reading::Convert(operand),
+    }
+}
+
+/// Native admission retains native terms; shared decision queries below use
+/// the same root-selection rule without exporting their operand DAG.
+pub(in crate::kernel) fn signed_uint32_term(term: MachineTerm) -> MachineTerm {
+    match signed_uint32_reading(MachineOperandView::Legacy(&term)) {
+        SignedUint32Reading::Existing(MachineOperandView::Legacy(source)) => source.clone(),
+        SignedUint32Reading::Convert(_) => {
+            MachineTerm::sign_cast32(MachineIntegerType::UInt32, MachineIntegerType::Int32, term)
+        }
+        SignedUint32Reading::Existing(MachineOperandView::Shared(_)) => {
+            unreachable!("a native cast has a native operand")
+        }
+    }
+}
+
 /// The operand, inclusive bound, and source strictness of a `uint32` upper
 /// bound `x <=u c` (or `x <u c + 1`) held with `value`, in either
 /// orientation or polarity, whose bound `c` lies below the sign bit.
@@ -2041,10 +2075,10 @@ fn split_constant_displacement(
 /// a context that assumes it files those two beside it
 /// (`PureFactContext::assume_condition`), so every reader of signed order
 /// facts sees the range an unsigned test established. The returned operand
-/// is `x`'s bits read through one σ (`MachineTerm::sign_cast32_bits`):
-/// the signed reading of `σ(y) <=u c` is a range of `y` itself, never a
-/// signed comparison of the `uint32` term `σ(y)`. The recognizer is a
-/// constant-size match on the condition's own shape.
+/// remains unsigned here. Admission and decision construct its signed reading
+/// through `signed_uint32_reading`, preserving an explicit conversion for a
+/// native unsigned value. The recognizer is a constant-size match on the
+/// condition's own shape.
 pub(in crate::kernel) fn unsigned_upper_bound_below_sign_bit(
     condition: &ConditionTerm,
     value: bool,
@@ -2055,7 +2089,7 @@ pub(in crate::kernel) fn unsigned_upper_bound_below_sign_bit(
     }
     let bound = right.as_const()?;
     let bound = if strict { bound.checked_sub(1)? } else { bound };
-    (bound <= i32::MAX as u32).then_some((left.sign_cast32_bits(), bound, strict))
+    (bound <= i32::MAX as u32).then_some((left, bound, strict))
 }
 
 /// The operand, inclusive bound, and source strictness of a sixty-four-bit
@@ -2174,7 +2208,7 @@ impl PureFactContext {
             Relation::LessEqual => false,
             _ => return None,
         };
-        let [mut term, bound] = view
+        let [term, bound] = view
             .operands
             .each_ref()
             .map(|operand| operand.operand_view());
@@ -2186,11 +2220,13 @@ impl PureFactContext {
         if bound > i32::MAX as u32 {
             return None;
         }
-        if let Some((MachineCastSpelling::Generic, source, destination, bits)) = term.cast()
-            && crate::kernel::is_sign_cast32(source, destination)
-        {
-            term = bits;
-        }
+        let signed = match signed_uint32_reading(term) {
+            SignedUint32Reading::Existing(source) => source.retain(MachineIntegerType::Int32),
+            SignedUint32Reading::Convert(source) => source
+                .retain(MachineIntegerType::UInt32)
+                .checking_cast_operand(MachineIntegerType::Int32),
+        };
+        let term = signed.operand_view();
         let zero = MachineTerm::constant(0);
         let maximum = MachineTerm::constant(bound);
         let nonnegative = self.decide_written_operand_comparison(
@@ -4227,5 +4263,62 @@ mod shared_byte_rebuild_tests {
         assert!(!empty.rebuilt_offset_is_exact(&offset, 4, true));
         assert!(!lower_only.rebuilt_offset_is_exact(&offset, 4, true));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
+
+#[cfg(test)]
+mod unsigned_signed_range_tests {
+    use super::*;
+
+    #[test]
+    fn unsigned_small_bound_decision_uses_the_typed_signed_reading() {
+        for converted_source in [false, true] {
+            let word = MachineTerm::Variable(Variable(730_010));
+            let unsigned = if converted_source {
+                MachineTerm::sign_cast32(
+                    MachineIntegerType::Int32,
+                    MachineIntegerType::UInt32,
+                    word.clone(),
+                )
+            } else {
+                word.clone()
+            };
+            let signed = signed_uint32_term(unsigned.clone());
+            let query =
+                ConditionTerm::unsigned_less_equal(unsigned.clone(), MachineTerm::constant(256));
+            let parent = PureFactContext::new();
+            assert_eq!(parent.decide_unsigned_small_bound(&query), None);
+            let bounds = parent
+                .clone()
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), signed.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(signed.clone(), MachineTerm::constant(256)),
+                    true,
+                );
+            assert_eq!(bounds.decide_unsigned_small_bound(&query), Some(true));
+            assert_eq!(parent.decide_unsigned_small_bound(&query), None);
+            let negative = parent.assume_condition(
+                ConditionTerm::signed_less_than(signed, MachineTerm::constant(0)),
+                true,
+            );
+            assert_eq!(negative.decide_unsigned_small_bound(&query), Some(false));
+            let admitted = PureFactContext::new().assume_condition(query, true);
+            let expected = ConditionTerm::signed_less_equal(
+                MachineTerm::constant(0),
+                signed_uint32_term(unsigned),
+            );
+            assert!(admitted.contains_assumed_exact(&Proposition::ConditionIs(expected, true)));
+        }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../../scaling_tests/kernel/assumptions/condition_reasoning/order_paths/unsigned_signed_range_tests.rs"
+        );
     }
 }

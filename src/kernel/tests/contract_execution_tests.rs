@@ -584,10 +584,10 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
         arguments,
         PureFactContext::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("an owner-authorized aggregate copy over a lent field has a checked outcome");
-    let Proposition::ProgramFunctionExecutes { outcome, .. } = theorem.proposition() else {
+    let Proposition::ProgramFunctionVerifies { outcome, .. } = theorem.proposition() else {
         panic!("expected a function execution proposition");
     };
     let FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)) = outcome else {
@@ -659,7 +659,7 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
         arguments,
         PureFactContext::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("an owner-authorized write into a lent range has a checked outcome");
     let Proposition::Implies(requirement, execution) = theorem.proposition() else {
@@ -675,7 +675,7 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
     );
     assert!(matches!(
         execution.as_ref(),
-        Proposition::ProgramFunctionExecutes {
+        Proposition::ProgramFunctionVerifies {
             outcome: FunctionOutcome::Return { .. },
             ..
         }
@@ -744,7 +744,7 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
         arguments,
         PureFactContext::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("a same-value store into a lent range has a checked outcome");
     let Proposition::Implies(requirement, execution) = theorem.proposition() else {
@@ -760,7 +760,7 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
     );
     assert!(matches!(
         execution.as_ref(),
-        Proposition::ProgramFunctionExecutes {
+        Proposition::ProgramFunctionVerifies {
             outcome: FunctionOutcome::Return { .. },
             ..
         }
@@ -789,7 +789,7 @@ fn certified_program_entry_claims_do_not_authorize_ordinary_calls() {
         vec![],
         vec![],
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     let claims = program_verified_function_contract_claims(&function, &execution).unwrap();
@@ -842,7 +842,7 @@ fn local_declaration_allocates_stack_object_for_address_of() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -948,7 +948,7 @@ fn symbolic_execution_reports_branch_facts() {
         execution.paths()[0].theorem().proposition(),
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(condition.clone(), true)),
-            Box::new(Proposition::ProgramStatementExecutes {
+            Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(program_max_body()),
                 outcome: StatementOutcome::Return {
@@ -971,7 +971,7 @@ fn symbolic_execution_reports_branch_facts() {
         execution.paths()[1].theorem().proposition(),
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(condition, false)),
-            Box::new(Proposition::ProgramStatementExecutes {
+            Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(program_max_body()),
                 outcome: StatementOutcome::Return {
@@ -1021,7 +1021,7 @@ fn symbolic_execution_reports_overflow_facts() {
         execution.paths()[0].theorem().proposition(),
         &Proposition::Implies(
             Box::new(domain.clone()),
-            Box::new(Proposition::ProgramStatementExecutes {
+            Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement.clone()),
                 outcome: StatementOutcome::Return {
@@ -1052,7 +1052,7 @@ fn symbolic_execution_reports_overflow_facts() {
         execution.paths()[1].theorem().proposition(),
         &Proposition::Implies(
             Box::new(Proposition::Not(Box::new(domain))),
-            Box::new(Proposition::ProgramStatementExecutes {
+            Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: StatementOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow),
@@ -1083,7 +1083,7 @@ fn symbolic_execution_uses_no_overflow_fact() {
         theorem.proposition(),
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(no_overflow, false)),
-            Box::new(Proposition::ProgramStatementExecutes {
+            Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: StatementOutcome::Return {
@@ -1171,7 +1171,7 @@ fn symbolic_increment_uses_int_max_bound_to_rule_out_overflow() {
         theorem.proposition(),
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(x_lt_int_max, true)),
-            Box::new(Proposition::ProgramStatementExecutes {
+            Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: StatementOutcome::Return {
@@ -1379,7 +1379,7 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(ExecutionState::new()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -1664,25 +1664,27 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         )
     ));
 
-    let body_execution = prove_symbolic_program_execution_paths_with_environment(
+    // Verifying loops directly does not change how calls run: the rule is
+    // still the call, and the body's `99` never reaches the caller.
+    let loop_verifying = prove_symbolic_program_execution_paths_with_environment(
         ExecutionState::new()
             .with_population_creation_tracking()
             .with_local("result", int32(0)),
         statement,
         PureFactContext::new(),
         environment,
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     );
-    let mut proposition = body_execution.paths()[0].theorem().proposition();
+    let mut proposition = loop_verifying.paths()[0].theorem().proposition();
     while let Proposition::Implies(_, body) = proposition {
         proposition = body;
     }
     assert!(matches!(
         proposition,
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::Return { value, .. },
             ..
-        } if *value.native() == int32(99)
+        } if *value.native() != int32(99)
     ));
 }
 
@@ -2135,7 +2137,7 @@ fn verified_function_rule_requires_every_contract_claim_certificate() {
         Vec::new(),
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
 
@@ -2151,7 +2153,7 @@ fn verified_function_rule_requires_every_contract_claim_certificate() {
         Vec::new(),
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
 
@@ -2211,7 +2213,7 @@ fn verified_function_rule_rejects_unclaimed_contract_obligations() {
         Vec::new(),
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
 
@@ -2268,7 +2270,7 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
         Vec::new(),
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
 
@@ -2356,7 +2358,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
         ))],
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     let proofs = program_verified_function_contract_claims(&function, &execution)
@@ -2601,7 +2603,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         Vec::new(),
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     let proofs = program_verified_function_contract_claims(&function, &execution)
@@ -2708,7 +2710,7 @@ fn declared_exceptional_channel_does_not_vanish_without_an_exceptional_ensure() 
         Vec::new(),
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     let proofs = program_verified_function_contract_claims(&function, &certification)
@@ -2794,7 +2796,7 @@ fn exceptional_postconditions_apply_only_to_throw_outcomes() {
         Vec::new(),
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
 
@@ -2835,7 +2837,7 @@ fn false_or_missing_exceptional_postconditions_do_not_certify() {
         Vec::new(),
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     assert_eq!(
@@ -2865,7 +2867,7 @@ fn false_or_missing_exceptional_postconditions_do_not_certify() {
         Vec::new(),
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     assert_eq!(
@@ -2960,7 +2962,7 @@ fn exceptional_postconditions_observe_the_throw_state() {
         vec![crate::kernel::program_expression::pointer_value(pointer)],
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
 
@@ -3018,7 +3020,7 @@ fn contract_certification_does_not_accept_injected_opaque_predicate_facts() {
         Vec::new(),
         vec![injected],
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
 
@@ -3087,7 +3089,7 @@ fn contract_effect_claim_rejects_an_undecidable_guard() {
         ],
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
 
@@ -3164,7 +3166,7 @@ fn contract_effect_claim_rejects_interior_entry_live_heap_pointer_as_fresh() {
         )],
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     assert!(
@@ -3199,7 +3201,7 @@ fn contract_certification_reuses_a_matching_kernel_checked_execution() {
     );
     let state = ExecutionState::new();
     let environment = ExecutionEnvironment::new();
-    let semantics = ExecutionSemantics::EXECUTE_BODIES;
+    let semantics = ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS;
     let mode = FunctionContractExecutionMode::VerifyLoops;
     let _ = crate::kernel::api::take_checked_function_body_execution_count();
     let checked = prove_checked_program_function_execution_with_environment(
@@ -3316,7 +3318,7 @@ fn checked_view_certificate_initializes_a_pristine_loan_authority() {
         arguments.clone(),
         PureFactContext::new(),
         environment.clone(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     assert_eq!(checked.paths().len(), 1);
@@ -3325,7 +3327,7 @@ fn checked_view_certificate_initializes_a_pristine_loan_authority() {
         function,
         arguments,
         environment,
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
         &[checked],
     );
@@ -3365,7 +3367,7 @@ fn contract_certification_refuses_split_entry_artifacts() {
     let state = ExecutionState::new();
     let arguments = vec![ProgramExpression::Value(int32(input))];
     let environment = ExecutionEnvironment::new();
-    let semantics = ExecutionSemantics::EXECUTE_BODIES;
+    let semantics = ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS;
     let mode = FunctionContractExecutionMode::VerifyLoops;
     let _ = crate::kernel::api::take_checked_function_body_execution_count();
     let checked_true = prove_checked_program_function_execution_with_environment(
@@ -3469,7 +3471,7 @@ fn contract_certification_reuses_definitionally_equal_entry_resources() {
     let proof_state = ExecutionState::new().with_resource_context(proof_resources.clone());
     let contract_state = ExecutionState::new().with_resource_context(contract_resources.clone());
     let environment = ExecutionEnvironment::new();
-    let semantics = ExecutionSemantics::EXECUTE_BODIES;
+    let semantics = ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS;
     let mode = FunctionContractExecutionMode::VerifyLoops;
     let _ = crate::kernel::api::take_checked_function_body_execution_count();
     let checked = prove_checked_program_function_execution_with_environment(
@@ -3569,7 +3571,7 @@ fn contract_claim_rejects_same_source_function_with_a_different_contract() {
         Vec::new(),
         Vec::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     let stronger = program_function(ProgramType::Int32, "contract_identity", Vec::new(), body)
@@ -3617,7 +3619,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
         ConditionTerm::Constant(false),
         true,
     ));
-    let proposition = Proposition::ProgramFunctionExecutes {
+    let proposition = Proposition::ProgramFunctionVerifies {
         state: Box::new(state.clone()),
         function: Box::new(function.clone()),
         arguments: Vec::new(),
@@ -3699,7 +3701,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
         true,
     );
     let state = ExecutionState::new();
-    let proposition = Proposition::ProgramFunctionExecutes {
+    let proposition = Proposition::ProgramFunctionVerifies {
         state: Box::new(state.clone()),
         function: Box::new(function.clone()),
         arguments: Vec::new(),
@@ -3825,7 +3827,7 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
     );
     let fact = ExecutionPureFact::new(guard.clone());
     let obligation = ProofObligation::verification_condition(guard);
-    let proposition = Proposition::ProgramFunctionExecutes {
+    let proposition = Proposition::ProgramFunctionVerifies {
         state: Box::new(state.clone()),
         function: Box::new(function.clone()),
         arguments: Vec::new(),
@@ -4004,7 +4006,7 @@ fn contract_claim_rejects_caller_supplied_false_entry_fact() {
             true,
         )],
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
 
@@ -5560,7 +5562,7 @@ fn a_called_frames_declaration_does_not_take_the_callers_block() {
     );
     let theorem = prove_symbolic_program_execution(state, statement, PureFactContext::new())
         .expect("a called frame declares its own local");
-    let Proposition::ProgramStatementExecutes {
+    let Proposition::ProgramStatementVerifies {
         outcome: StatementOutcome::Return { state: after, .. },
         ..
     } = theorem.proposition()
@@ -5593,7 +5595,7 @@ fn a_declaration_does_not_take_a_block_whose_lifetime_ended() {
     );
     let theorem = prove_symbolic_program_execution(state, statement, PureFactContext::new())
         .expect("a declaration after an ended lifetime executes");
-    let Proposition::ProgramStatementExecutes {
+    let Proposition::ProgramStatementVerifies {
         outcome: StatementOutcome::Return { state: after, .. },
         ..
     } = theorem.proposition()
@@ -5653,7 +5655,7 @@ fn an_if_arms_local_stops_existing_when_the_arm_is_left() {
         ExecutionState::new().with_local("c", ProgramValue::Int32(MachineTerm::constant(1)));
     let theorem = prove_symbolic_program_execution(state, statement, PureFactContext::new())
         .expect("the taken arm is the only path");
-    let Proposition::ProgramStatementExecutes { outcome, .. } = theorem.proposition() else {
+    let Proposition::ProgramStatementVerifies { outcome, .. } = theorem.proposition() else {
         panic!("expected an execution: {:?}", theorem.proposition());
     };
     assert!(
@@ -5726,7 +5728,7 @@ fn a_loop_bodys_local_stops_existing_at_the_back_edge() {
     let theorem =
         prove_symbolic_program_execution(ExecutionState::new(), statement, PureFactContext::new())
             .expect("a concrete loop has one path");
-    let Proposition::ProgramStatementExecutes { outcome, .. } = theorem.proposition() else {
+    let Proposition::ProgramStatementVerifies { outcome, .. } = theorem.proposition() else {
         panic!("expected an execution: {:?}", theorem.proposition());
     };
     assert!(
@@ -5780,7 +5782,7 @@ fn a_loop_bodys_local_stops_existing_on_break() {
     let theorem =
         prove_symbolic_program_execution(ExecutionState::new(), statement, PureFactContext::new())
             .expect("the loop breaks on its first iteration");
-    let Proposition::ProgramStatementExecutes { outcome, .. } = theorem.proposition() else {
+    let Proposition::ProgramStatementVerifies { outcome, .. } = theorem.proposition() else {
         panic!("expected an execution: {:?}", theorem.proposition());
     };
     assert!(
@@ -5836,7 +5838,7 @@ fn a_switch_bodys_local_stops_existing_when_the_switch_is_left() {
     let theorem =
         prove_symbolic_program_execution(ExecutionState::new(), statement, PureFactContext::new())
             .expect("a constant selector picks one case");
-    let Proposition::ProgramStatementExecutes { outcome, .. } = theorem.proposition() else {
+    let Proposition::ProgramStatementVerifies { outcome, .. } = theorem.proposition() else {
         panic!("expected an execution: {:?}", theorem.proposition());
     };
     assert!(
@@ -5882,7 +5884,7 @@ fn an_outer_locals_address_survives_an_inner_scope() {
         ExecutionState::new().with_local("c", ProgramValue::Int32(MachineTerm::constant(1)));
     let theorem = prove_symbolic_program_execution(state, statement, PureFactContext::new())
         .expect("the taken arm is the only path");
-    let Proposition::ProgramStatementExecutes { outcome, .. } = theorem.proposition() else {
+    let Proposition::ProgramStatementVerifies { outcome, .. } = theorem.proposition() else {
         panic!("expected an execution: {:?}", theorem.proposition());
     };
     let StatementOutcome::Return { value, .. } = outcome else {
@@ -6169,10 +6171,10 @@ fn aggregate_copy_requires_write_authority_for_each_destination_field() {
             ],
             PureFactContext::new(),
             ExecutionEnvironment::new(),
-            ExecutionSemantics::EXECUTE_BODIES,
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         )
         .unwrap();
-        let Proposition::ProgramFunctionExecutes { outcome, .. } = theorem.proposition() else {
+        let Proposition::ProgramFunctionVerifies { outcome, .. } = theorem.proposition() else {
             panic!("expected function execution");
         };
         if complete {
@@ -6282,7 +6284,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
         )))],
         vec![],
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     let claims = program_verified_function_contract_claims(&function, &execution)
@@ -6401,7 +6403,6 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                     &arguments,
                     outcome,
                     &assumptions,
-                    &[],
                 )
                 .expect("forwarded ensure goals");
                 assert_eq!(goals.len(), 1);
@@ -6429,7 +6430,6 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                             )),
                             ProofBranchState {
                                 facts: ProofFacts::from_ordered(&goal_facts),
-                                unfolded_predicates: PersistentOrderedSet::default(),
                                 execution: None,
                             },
                         ),
@@ -6639,7 +6639,7 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
         ],
         vec![],
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     let claims = program_verified_function_contract_claims(&function, &execution)
@@ -6749,8 +6749,7 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
     else {
         let conclusion = crate::kernel::api::proof_evidence_conclusion(path.theorem());
         match conclusion {
-            Proposition::ProgramStatementVerifies { outcome, .. }
-            | Proposition::ProgramStatementExecutes { outcome, .. } => match outcome {
+            Proposition::ProgramStatementVerifies { outcome, .. } => match outcome {
                 StatementOutcome::RuntimeError(error) => panic!("constructor summary: {error:?}"),
                 StatementOutcome::UndefinedBehavior(error) => {
                     panic!("constructor summary: {error:?}")
@@ -6849,7 +6848,7 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
         ],
         vec![live],
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     let claims = program_verified_function_contract_claims(&function, &execution)
@@ -6940,7 +6939,7 @@ fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
         &ExecutionState::new(),
         &program_declare("word", ProgramType::UInt32),
         &assumptions,
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
@@ -6999,7 +6998,7 @@ fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
             &empty,
             &statement,
             &assumptions,
-            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
@@ -7105,7 +7104,7 @@ fn a_produced_composite_is_certified_only_when_the_exit_establishes_its_body_fac
             arguments.clone(),
             Vec::new(),
             ExecutionEnvironment::new(),
-            ExecutionSemantics::EXECUTE_BODIES,
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
             FunctionContractExecutionMode::VerifyLoops,
         );
         let claims = program_unverified_function_contract_claims(&function, &execution)
@@ -7118,16 +7117,11 @@ fn a_produced_composite_is_certified_only_when_the_exit_establishes_its_body_fac
         while let Proposition::Implies(_, body) = proposition {
             proposition = body;
         }
-        let (Proposition::ProgramFunctionExecutes {
+        let Proposition::ProgramFunctionVerifies {
             state: caller_state,
             outcome,
             ..
-        }
-        | Proposition::ProgramFunctionVerifies {
-            state: caller_state,
-            outcome,
-            ..
-        }) = proposition
+        } = proposition
         else {
             panic!("a contract path concludes a function execution: {proposition:?}");
         };
@@ -7184,4 +7178,201 @@ fn cloned_functions_and_specifications_share_their_contracts() {
     let copy = specification.clone();
     assert!(Arc::ptr_eq(&specification.arguments, &copy.arguments));
     assert!(Arc::ptr_eq(&specification.requires, &copy.requires));
+}
+
+/// An allocator's produced resources are checked against what its body
+/// actually allocated, whether they are listed directly or wrapped in a
+/// composite: claiming eight cells of a sixteen-byte allocation is refused.
+#[test]
+fn allocator_certification_checks_the_body_allocation_against_produced_resources() {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    for cells in [4u32, 8] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let specs = |base: crate::kernel::BindingName| {
+            vec![
+                ResourceSpec::owned_memory(
+                    MemorySegment::new(
+                        variable(base.clone()),
+                        int32_literal(0),
+                        int32_literal(cells),
+                    )
+                    .with_uninitialized(true),
+                )
+                .with_role(ResourceTransferRole::Produce)
+                .with_state_source(ResourceStateSource::Post),
+                ResourceSpec::token(
+                    ResourceAccessMode::Own,
+                    ResourceFact::ALLOCATION_RESOURCE_NAME.into(),
+                    vec![variable(base), int32_literal(16)],
+                    vec![ProgramType::Int32Pointer, ProgramType::Int32],
+                )
+                .with_role(ResourceTransferRole::Produce)
+                .with_state_source(ResourceStateSource::Post),
+            ]
+        };
+        let body = program_seq(
+            program_declare("p", ProgramType::Int32Pointer),
+            program_seq(
+                ProgramStatement::HeapAllocate {
+                    target: "p".into(),
+                    bytes: int32_literal(16),
+                    zeroed: false,
+                    object_type: None,
+                    ends_program_on_failure: true,
+                },
+                program_return(variable("p")),
+            ),
+        );
+        for composite in [false, true] {
+            let mut function = program_function(
+                ProgramType::Int32Pointer,
+                "allocate_return",
+                vec![],
+                body.clone(),
+            );
+            function = if composite {
+                function
+                    .with_resource_summary(
+                        vec![],
+                        vec![
+                            ResourceSpec::declared(
+                                ResourceFamily::Composite,
+                                ResourceAccessMode::Own,
+                                "allocated_body".into(),
+                                vec![variable(CONTRACT_RESULT)],
+                                vec![ProgramType::Int32Pointer],
+                                ResourceTransferRole::Produce,
+                                ResourceStateSource::Post,
+                            )
+                            .unwrap(),
+                        ],
+                    )
+                    .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
+                        "allocated_body",
+                        vec![program_parameter("p", ProgramType::Int32Pointer)],
+                        None,
+                        false,
+                        specs("p".into()),
+                        vec![],
+                    )])
+            } else {
+                function.with_resource_summary(vec![], specs(CONTRACT_RESULT))
+            };
+            let claims_list = if composite {
+                vec![
+                    FunctionContractClaim::body_safety(),
+                    FunctionContractClaim::ensure_resource(0, 0),
+                ]
+            } else {
+                vec![
+                    FunctionContractClaim::body_safety(),
+                    FunctionContractClaim::ensure_resource(0, 0),
+                    FunctionContractClaim::ensure_resource(1, 1),
+                ]
+            };
+            let function = function.with_contract(vec![], vec![], vec![], claims_list, true);
+            let execution = certify_contract_with_kernel_artifacts(
+                ExecutionState::new().with_population_creation_tracking(),
+                function.clone(),
+                vec![],
+                vec![],
+                ExecutionEnvironment::new(),
+                ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
+                FunctionContractExecutionMode::VerifyLoops,
+            );
+            let claims = program_verified_function_contract_claims(&function, &execution);
+            let rule = claims
+                .as_ref()
+                .and_then(|claims| program_verified_function_rule(function.clone(), claims));
+            assert_eq!(
+                rule.is_some(),
+                cells == 4,
+                "cells={cells} composite={composite}: claims {claims:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn allocator_certification_splits_joint_custody_and_refuses_duplicate_or_overrun_units() {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    let produced = |spec: ResourceSpec| {
+        spec.with_role(ResourceTransferRole::Produce)
+            .with_state_source(ResourceStateSource::Post)
+    };
+    let cells = |start: u32, end: u32| {
+        produced(ResourceSpec::owned_memory(
+            MemorySegment::new(
+                variable(CONTRACT_RESULT),
+                int32_literal(start),
+                int32_literal(end),
+            )
+            .with_uninitialized(true),
+        ))
+    };
+    let body = program_seq(
+        program_declare("p", ProgramType::Int32Pointer),
+        program_seq(
+            ProgramStatement::HeapAllocate {
+                target: "p".into(),
+                bytes: int32_literal(16),
+                zeroed: false,
+                object_type: None,
+                ends_program_on_failure: true,
+            },
+            program_return(variable("p")),
+        ),
+    );
+    // One fresh allocation is jointly held by the body; its returned units
+    // must partition it: a split certifies, a duplicate or overrun does not.
+    for (second, certifies) in [((1, 4), true), ((0, 1), false), ((1, 5), false)] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let specs = vec![
+            cells(0, 1),
+            cells(second.0, second.1),
+            produced(ResourceSpec::token(
+                ResourceAccessMode::Own,
+                ResourceFact::ALLOCATION_RESOURCE_NAME.into(),
+                vec![variable(CONTRACT_RESULT), int32_literal(16)],
+                vec![ProgramType::Int32Pointer, ProgramType::Int32],
+            )),
+        ];
+        let function = program_function(
+            ProgramType::Int32Pointer,
+            "allocate_return",
+            vec![],
+            body.clone(),
+        )
+        .with_resource_summary(vec![], specs)
+        .with_contract(
+            vec![],
+            vec![],
+            vec![],
+            vec![
+                FunctionContractClaim::body_safety(),
+                FunctionContractClaim::ensure_resource(0, 0),
+                FunctionContractClaim::ensure_resource(1, 1),
+                FunctionContractClaim::ensure_resource(2, 2),
+            ],
+            true,
+        );
+        let execution = certify_contract_with_kernel_artifacts(
+            ExecutionState::new().with_population_creation_tracking(),
+            function.clone(),
+            vec![],
+            vec![],
+            ExecutionEnvironment::new(),
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
+            FunctionContractExecutionMode::VerifyLoops,
+        );
+        let claims = program_verified_function_contract_claims(&function, &execution);
+        let rule = claims
+            .as_ref()
+            .and_then(|claims| program_verified_function_rule(function.clone(), claims));
+        assert_eq!(
+            rule.is_some(),
+            certifies,
+            "second unit {second:?}: claims {claims:?}"
+        );
+    }
 }

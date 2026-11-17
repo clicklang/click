@@ -33,7 +33,7 @@ predicate byte_permutation(a: uint8[], b: uint8[], lo: int32, hi: int32) {
 int32 swap_bytes(uint8 p[2]) {
     consumes p[0..2];
     ensures pair_permutation: byte_permutation(p, old(p), 0, 2) by {
-        unfold(byte_permutation);
+        unfold(byte_permutation(p, old(p), 0, 2));
     }
 }
 ```

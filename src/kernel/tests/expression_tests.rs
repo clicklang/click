@@ -1223,7 +1223,7 @@ fn void_local_declaration_is_an_explicit_type_error() {
         &ExecutionState::new(),
         &program_declare("invalid", ProgramType::Void),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("invalid void declarations should execute to a type error");
@@ -1242,7 +1242,7 @@ fn void_local_declaration_is_an_explicit_type_error() {
             ProgramStatement::Skip,
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("a void condition should execute to a type error");
@@ -1296,7 +1296,7 @@ fn int32_subtraction_is_native() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -2131,7 +2131,7 @@ fn symbolic_pointer_equality_reports_branch_facts() {
             .theorem()
             .proposition()
             .peel_implications(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement.clone()),
             outcome: StatementOutcome::Return {
@@ -2149,7 +2149,7 @@ fn symbolic_pointer_equality_reports_branch_facts() {
             .theorem()
             .proposition()
             .peel_implications(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -2174,7 +2174,7 @@ fn if_uses_c_int32_truthiness() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -2196,7 +2196,7 @@ fn if_uses_c_int32_truthiness() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -2221,7 +2221,7 @@ fn assignment_and_sequence_update_native_state() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -2260,7 +2260,7 @@ fn store_then_load_threads_native_memory() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -2293,7 +2293,7 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
     assert_eq!(execution.paths()[0].obligations(), &[]);
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -2342,7 +2342,7 @@ fn block_backed_store_then_load_needs_no_memory_obligation() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -2373,7 +2373,7 @@ fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -2419,7 +2419,7 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -3196,7 +3196,7 @@ fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
     assert_eq!(execution.paths()[0].obligations(), &[]);
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -3298,7 +3298,7 @@ fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
     );
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {

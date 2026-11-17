@@ -90,7 +90,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
             } by {
                 intro();
                 intro();
-                extract(to_integer(i + 1) <= to_integer(k));
+                have to_integer(i + 1) <= to_integer(k);
                 have i < i + 1;
                 have i < k;
                 have i <= k;
@@ -100,19 +100,13 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 }
                 instantiate(forall (k: int32) {
                     n <= k and k < end implies occupied[k] == 0
-                }, k) using {
-                    n <= k;
-                    k < end;
-                };
+                }, k);
                 known();
             }
             have occupied[i] == 0 by {
                 instantiate(forall (k: int32) {
                     n <= k and k < end implies occupied[k] == 0
-                }, i) using {
-                    n <= i;
-                    i < end;
-                };
+                }, i);
                 known();
             }
             take(data[i..i + 1]);
@@ -127,14 +121,11 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
             } by {
                 intro();
                 intro();
-                extract(to_integer(at(opened, i) + 1) <= to_integer(k));
+                have to_integer(at(opened, i) + 1) <= to_integer(k);
                 have at(opened, occupied[k]) == 0 by {
                     instantiate(forall (k: int32) {
                         to_integer(at(opened, i) + 1) <= to_integer(k) and k < end implies at(opened, occupied[k]) == 0
-                    }, k) using {
-                        to_integer(at(opened, i) + 1) <= to_integer(k);
-                        k < end;
-                    };
+                    }, k);
                     known();
                 }
                 have at(opened, i) < end;
@@ -153,7 +144,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
                 }
                 have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
-                    preserve(separate(loop(0).statement(0).footprint, memory(occupied[k])));
+                    preserve(memory(occupied[k]), loop(0).statement(0));
                 }
                 have contains(memory(data[0..capacity]), memory(data[i])) by {
                     apply(click::separation::contains_element(data, 0, capacity, i)) using { 0 <= i; i < capacity; };
@@ -177,7 +168,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     normalize() using { separate(memory(data[i]), memory(occupied[k])); };
                 }
                 have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
-                    preserve(separate(loop(0).statement(1).footprint, memory(occupied[k])));
+                    preserve(memory(occupied[k]), loop(0).statement(1));
                 }
                 known();
             }

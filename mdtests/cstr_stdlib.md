@@ -47,7 +47,7 @@ int32 cstr_stdlib(uint8 p[], uint64 len, uint64 max) {
 
     ensures bounded_has_terminator: exists (k: uint64) { k < max and p[k] == '\0' } by {
         step_until(function.exit);
-        unfold(cstr::bounded);
+        unfold(cstr::bounded(p, max));
         solve();
     }
 }
@@ -59,7 +59,7 @@ int32 plain_cstr(uint8 p[]) {
         cstr::len(p, len)
     } by {
         step_until(function.exit);
-        unfold(cstr::cstr);
+        unfold(cstr::cstr(p));
         obtain (found_len: uint64) {
             at(function.entry, cstr::len(p, found_len))
         }

@@ -49,13 +49,13 @@ pub(in crate::surface) mod program_termination;
 mod pure_theorems;
 pub(in crate::surface) use pure_theorems::kernel_law_index_types;
 mod raise_lower_audit;
+mod raise_lower_census;
 mod resources;
 mod selected_arithmetic;
 mod signed_definedness;
 mod smart_closures;
 mod smart_execution;
 mod source_context;
-mod spellability_census;
 mod structural;
 mod surface_certificates;
 mod surface_construction;
@@ -68,7 +68,7 @@ use crate::kernel::fresh_int32_variable_for_propositions;
 use crate::kernel::proof::{
     ExceptionalContinuation, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,
     FrontierPosition, LoopControlExit, PersistentOrderedSet, PersistentSequence,
-    ProofExecutionContinuation, ProofFacts, SharedVec, old_reference_state,
+    ProofExecutionContinuation, ProofFacts, old_reference_state,
 };
 
 pub(in crate::surface) use crate::kernel::proof::{
@@ -1781,22 +1781,20 @@ impl<'a> FunctionClaimRef<'a> {
     }
 
     pub(super) fn applies_to(self, outcome: &FunctionOutcome) -> bool {
-        matches!(
-            (self, outcome),
+        match (self, outcome) {
             (Self::Ensure(_, _), FunctionOutcome::Return { .. })
-                | (Self::ExceptionalEnsure(_, _), FunctionOutcome::Throw { .. })
-        )
+            | (Self::ExceptionalEnsure(_, _), FunctionOutcome::Throw { .. }) => true,
+            (Self::Ensure(_, clause), FunctionOutcome::Throw { .. }) => clause.borrowed(),
+            _ => false,
+        }
     }
 
     pub(super) fn is_vacuous_for(self, outcome: &FunctionOutcome) -> bool {
-        matches!(
-            (self, outcome),
-            (Self::Ensure(_, _), FunctionOutcome::Throw { .. })
-                | (
-                    Self::ExceptionalEnsure(_, _),
-                    FunctionOutcome::Return { .. }
-                )
-        )
+        match (self, outcome) {
+            (Self::Ensure(_, clause), FunctionOutcome::Throw { .. }) => !clause.borrowed(),
+            (Self::ExceptionalEnsure(_, _), FunctionOutcome::Return { .. }) => true,
+            _ => false,
+        }
     }
 
     fn verified_claim(self) -> VerifiedClaim {
@@ -1846,7 +1844,7 @@ impl PartialEq for ProofEntryContext {
     fn eq(&self, other: &Self) -> bool {
         self.state == other.state
             && self.arguments == other.arguments
-            && *self.pure_facts == *other.pure_facts
+            && self.pure_facts == other.pure_facts
     }
 }
 
@@ -2103,7 +2101,27 @@ pub(super) fn initial_claim_context_with_caller_owner(
         )?;
     let mut requirement_pure_facts = Vec::with_capacity(lowered_requirement_facts.len());
     let mut entry_fact_origins = Vec::with_capacity(lowered_requirement_facts.len());
+    let mut surface_propositions = SurfacePropositionMap::default();
     for lowered in lowered_requirement_facts {
+        // Retain the producer's exact principal, including its captured count
+        // state. Re-lowering the source would allocate a different lineage.
+        if matches!(
+            lowered.role,
+            crate::surface::lowering::LoweredRequirementFactRole::Principal
+        ) {
+            let surface = match &function_block.requires()[lowered.source_ordinal] {
+                Requirement::Proposition(proposition) => Some(proposition.clone()),
+                Requirement::LoadableSegment { segment } => Some(ClickProposition::Loadable {
+                    segment: segment.clone(),
+                }),
+                Requirement::Resource(_) => None,
+            };
+            if let Some(surface) = surface
+                && !click_proposition_mentions_defined(&surface)
+            {
+                surface_propositions.record_lowering(&surface, &lowered.proposition)?;
+            }
+        }
         requirement_pure_facts.push(lowered.proposition);
         entry_fact_origins.push(match caller_owner {
             Some(owner) => EntryFactOrigin::Requirement {
@@ -2209,45 +2227,15 @@ pub(super) fn initial_claim_context_with_caller_owner(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    let mut surface_propositions = SurfacePropositionMap::default();
     for (surface, kernel) in &bool_range_facts {
         surface_propositions.record_lowering(surface, kernel)?;
     }
-    for requirement in function_block.requires() {
-        let surface = match requirement {
-            Requirement::Proposition(proposition) => Some(proposition.clone()),
-            Requirement::LoadableSegment { segment } => Some(ClickProposition::Loadable {
-                segment: segment.clone(),
-            }),
-            Requirement::Resource(_) => None,
-        };
-        let Some(surface) = surface else {
-            continue;
-        };
-        // Recorded below at the definedness state instead.
-        if click_proposition_mentions_defined(&surface) {
-            continue;
-        }
-        let lowered = lower_one(requirement)?;
-        if let Some(kernel) = lowered.first() {
-            surface_propositions.record_lowering(&surface, kernel)?;
-        }
-    }
-    let unfolded_requirement_facts = requirements_with_structural_unfolds(
-        spec_definitions,
-        function_block,
-        &PureFactList::from(requirement_pure_facts),
-    )
-    .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
-    // Structural setup only appends checked unfoldings. They are useful entry
-    // facts, but Phase 1 keeps the written requirement's unique principal
-    // fact as the selection authority; an appended unfolding is derived.
-    entry_fact_origins.resize(unfolded_requirement_facts.len(), EntryFactOrigin::Derived);
+    let requirement_facts = PureFactList::from(requirement_pure_facts);
     state = project_initial_composite_resource_cores(
         resource_environment,
         parameter_binding,
         state,
-        &unfolded_requirement_facts,
+        &requirement_facts,
         claim_label,
         include_owned_composite_cores,
         spec_definitions,
@@ -2256,10 +2244,11 @@ pub(super) fn initial_claim_context_with_caller_owner(
         resource_environment,
         parameter_binding,
         &state,
-        &unfolded_requirement_facts,
+        &requirement_facts,
         spec_definitions,
         claim_label,
-    )?;
+    )?
+    .into_vec();
     entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
     let definedness_state = project_initial_composite_resource_cores(
         resource_environment,
@@ -3191,3 +3180,11 @@ pub(in crate::surface) use proof_object::take_outcome_fact_reads;
 pub(in crate::surface) use proof_object::take_terminal_join_materialized_facts;
 #[cfg(test)]
 pub(in crate::surface) use proof_object::take_terminal_publication_visits;
+
+/// What closing an `open` scope adds to its source form: the `by` proving
+/// the one body fact its closing fold leaves open, or `have`s proving
+/// several at the end of its block.
+pub(in crate::surface::proof) enum ScopeCloseProof {
+    By(Box<crate::surface::ProofCertificate>),
+    BlockTail(Box<crate::surface::ProofCertificate>),
+}

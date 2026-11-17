@@ -101,18 +101,17 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             Ok(joined)
         }
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant_checks,
             effect_checks,
             resource_specs,
             ranking_measures,
             structural_measure,
             body,
-            do_while,
             ..
         } => {
+            let (condition, direct_post_test, test) = loop_test.execution_parts();
             let statement_index = *next_statement_index;
             let _site_scope = crate::surface::diagnostics::StatementSiteScope::enter(
                 environment.source_layout,
@@ -207,9 +206,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 // The loop head invents identities for everything the body can
                 // change, from this execution's counter rather than from the
                 // base of the identity range.
-                let pass_body =
-                    crate::kernel::program_loop_pass(body, update.as_deref(), test.as_ref());
-                let preservation_contexts = if *do_while {
+                let pass_body = crate::kernel::program_loop_pass(body, update.as_deref(), test);
+                let preservation_contexts = if direct_post_test {
                     program_do_while_preservation_contexts(
                         &context.state,
                         condition,
@@ -267,7 +265,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                                     &context.recorded_states,
                                     body,
                                     update.as_ref(),
-                                    test.as_ref(),
+                                    test,
                                     environment,
                                 )
                                 .map_err(|error| {
@@ -284,7 +282,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                                     .unwrap_or_default()
                                     .iter()
                                     .filter(|tactic| {
-                                        matches!(tactic, ProofTactic::UnfoldPredicate(_))
+                                        matches!(tactic, ProofTactic::UnfoldProposition(_))
                                     })
                                     .cloned()
                                     .collect::<Vec<_>>();
@@ -318,8 +316,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                             condition,
                             body,
                             update.as_ref(),
-                            test.as_ref(),
-                            *do_while,
+                            test,
+                            direct_post_test,
                             environment,
                         )
                         .map_err(|error| {
@@ -822,7 +820,11 @@ fn advance_execution_proof_statement(
                             loop_index,
                         )?;
                     }
-                    if let ProgramStatement::Loop { condition, .. } = statement {
+                    if let ProgramStatement::Loop {
+                        test: loop_test, ..
+                    } = statement
+                    {
+                        let (condition, _, _) = loop_test.execution_parts();
                         let exit_condition = ClickProposition::Not(Box::new(
                             surface_program_condition(condition, exit_state)?,
                         ));

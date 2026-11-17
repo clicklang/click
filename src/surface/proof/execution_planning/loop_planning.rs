@@ -12,7 +12,7 @@ use std::sync::Arc;
 /// map the clause re-annotation uses.
 fn phase_proof_scope(
     environment: &ExecutionProofEnvironment<'_>,
-) -> PersistentMap<String, ContractExpression> {
+) -> PersistentBinderMap<ContractExpression> {
     environment
         .proof_locals
         .iter()
@@ -215,7 +215,7 @@ fn initialize_script_layout<'a>(
     let helper_end = tactics
         .iter()
         .position(|tactic| match tactic {
-            ProofTactic::UnfoldPredicate(_) => false,
+            ProofTactic::UnfoldProposition(_) | ProofTactic::UnfoldFunction(_) => false,
             ProofTactic::Have(_) => names_an_invariant(tactic),
             _ => true,
         })
@@ -435,7 +435,6 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         environment.spec_definitions,
         environment.theorem_environment,
         &[],
-        &[],
     )
     .with_surface_local_scope(&phase_proof_scope(environment))
     // The entry checks the invariants before the first pass.
@@ -452,9 +451,12 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         phase = phase.at_source_tactic(*source_index);
         let checkpoint = phase.checkpoint();
         phase = match helper {
-            ProofTactic::UnfoldPredicate(name) => phase
+            ProofTactic::UnfoldProposition(target) => phase
                 .driver()
-                .apply_step(ProofStep::UnfoldPredicate(name.clone()))?,
+                .apply_step(ProofStep::UnfoldProposition(target.clone()))?,
+            ProofTactic::UnfoldFunction(application) => phase
+                .driver()
+                .apply_step(ProofStep::UnfoldFunction(application.clone()))?,
             ProofTactic::Have(have) => {
                 let scope = phase.driver().open_have(have.proposition.clone())?;
                 check_initialization_body(&scope, &have.checking_proof(), None)?.join()?
@@ -931,7 +933,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     body: &ProgramStatement,
     update: Option<&Arc<ProgramStatement>>,
     test: Option<&crate::kernel::LoopTestRegion>,
-    do_while: bool,
+    direct_post_test: bool,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<LoopPreservationProofResult, ClickError> {
     // A `cases` that rejoins its arms is noted for the rest of this proof's
@@ -1039,7 +1041,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 // The head's pass count is spelled `iterations`.
                 let mut names = written_invariant_binder_names(invariant_checks);
                 if let crate::kernel::IntegerTerm::Variable(count) = preservation.iterations() {
-                    names.insert(*count, crate::surface::LOOP_ITERATIONS_NAME.to_string());
+                    names.insert(
+                        *count,
+                        SurfaceBinder::from(crate::surface::LOOP_ITERATIONS_NAME),
+                    );
                 }
                 names
             }),
@@ -1086,7 +1091,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         preservation,
         loop_body_statement_index,
     )?);
-    if !do_while
+    if !direct_post_test
         && let Ok(lowered) = lower_fixed_state_proposition(
             &loop_condition,
             pure_facts,
@@ -1416,7 +1421,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     &invariant_surfaces,
                     preservation.binders(),
                     environment.function.composite_resource_definitions(),
-                    do_while,
+                    direct_post_test,
                 )
                 .and_then(|prepared| match prepared {
                     Some(proof) => {
@@ -1459,10 +1464,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 return Err(ClickError::new("nested loop return has no returned value"));
             };
             return_exits.push(
-                LoopReturnExit::new(
+                LoopReturnExit::from_proof_facts(
                     value.clone(),
                     (**state).clone(),
-                    pending.pure_facts.to_vec(),
+                    &pending.pure_facts,
                 )
                 .with_loan_evidence(pending.loan_evidence.clone()),
             );
@@ -1495,7 +1500,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 checked.facts(),
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = LoopReturnExit::new(value, state, exit_facts)
+            let exit = LoopReturnExit::from_proof_facts(value, state, &exit_facts)
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             // Equal semantic exits may carry different written proofs. Keep
             // each arm so no source proof disappears through deduplication.
@@ -1553,7 +1558,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 checked.facts(),
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = LoopFinalExitCandidate::new(state, exit_facts)
+            let exit = LoopFinalExitCandidate::from_proof_facts(state, &exit_facts)
                 .with_jump_target(match context_frontier.loop_control {
                     crate::kernel::proof::LoopControlExit::NaturalExit(target) => target,
                     _ => unreachable!("the checked frontier is a natural exit jump"),
@@ -1612,7 +1617,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             // it only when the back edge fails to close exported no exit at
             // all for a body that does close it, and every claim after the
             // loop was then vacuous.
-            if do_while || back_edge_fails {
+            if direct_post_test || back_edge_fails {
                 // The guard-false exit exports the loop's named instances at
                 // their final arguments, just as the checked kernel back edge
                 // does. Keeping a body-local fold name here loses the binder's
@@ -1624,7 +1629,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     checked.facts(),
                     &join_assumptions,
                 );
-                let candidate = LoopFinalExitCandidate::new(state, exit_facts)
+                let candidate = LoopFinalExitCandidate::from_proof_facts(state, &exit_facts)
                     .with_loan_evidence(checked_execution.core.loan_evidence().clone());
                 if seen_final_exits.is_new(
                     candidate.state(),
@@ -1753,15 +1758,18 @@ impl SeenLoopExits {
     fn is_new<T: PartialEq>(
         &mut self,
         state: &ExecutionState,
-        facts: &[Proposition],
+        facts: &crate::kernel::LoopExitFacts,
         recorded: &[T],
         exit: &T,
     ) -> bool {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         state.hash(&mut hasher);
-        facts.hash(&mut hasher);
-        crate::instrumentation::record_deterministic_work(1 + facts.len());
+        for fact in facts.iter() {
+            fact.hash(&mut hasher);
+            crate::instrumentation::record_deterministic_work(1);
+        }
+        crate::instrumentation::record_deterministic_work(1);
         let bucket = self.by_hash.entry(hasher.finish()).or_default();
         if bucket.iter().any(|index| {
             crate::instrumentation::record_deterministic_work(1);

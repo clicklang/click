@@ -84,8 +84,8 @@ pub(super) fn statement_expressions<'a>(
         | ProgramStatement::StepValue { expression, .. } => expressions.push((expression, false)),
         ProgramStatement::Assert { condition, .. }
         | ProgramStatement::LoopTest { condition, .. }
-        | ProgramStatement::If { condition, .. }
-        | ProgramStatement::Loop { condition, .. } => expressions.push((condition, true)),
+        | ProgramStatement::If { condition, .. } => expressions.push((condition, true)),
+        ProgramStatement::Loop { test, .. } => expressions.push((test.execution_parts().0, true)),
         ProgramStatement::CallConstruct { arguments, .. } => {
             expressions.extend(arguments.iter().map(|argument| (argument, false)));
         }
@@ -111,9 +111,8 @@ pub(super) fn statement_expressions<'a>(
         ProgramStatement::Update { operand, .. } => expressions.push((operand, false)),
 
         ProgramStatement::Seq(statements) => statement_expressions(statements.first(), expressions),
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }

@@ -21,12 +21,10 @@ int32 iterator_read(const uint8* bytes, uint64 bytes_len, int32 remaining) {
 } by {
     have 0 <= bytes_len as uint32 as int32;
     have defined(bytes[remaining - 1]) by {
+        have 0 <= (remaining - 1) and (remaining - 1) < bytes_len as uint32 as int32;
         instantiate(forall (k: int32) {
             0 <= k and k < bytes_len as uint32 as int32 implies defined(bytes[k])
-        }, remaining - 1) using {
-            0 <= to_integer(remaining - 1);
-            to_integer(remaining - 1) < to_integer(bytes_len as uint32 as int32);
-        };
+        }, remaining - 1);
         known();
     }
 }

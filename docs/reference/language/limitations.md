@@ -262,7 +262,7 @@ Predicate calls are not unfolded automatically. Exact predicate facts can be
 reused, but proving a predicate body or using its consequences generally needs:
 
 ```text
-unfold(predicate_name);
+unfold(predicate(args));
 ```
 
 For small concrete bounded `.all` facts, the prover can instantiate the

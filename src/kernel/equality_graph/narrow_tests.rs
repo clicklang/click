@@ -148,3 +148,189 @@ fn narrow_operator_chains_intern_with_constant_work_per_node() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/narrow_tests.rs");
 }
+
+fn narrow_stored_value(format: Ty, bits: u128) -> ProgramValue {
+    let value = constant(format, bits);
+    match format {
+        Ty::Int8 => ProgramValue::Int8(value),
+        Ty::UInt8 => ProgramValue::UInt8(value),
+        Ty::Int16 => ProgramValue::Int16(value),
+        Ty::UInt16 => ProgramValue::UInt16(value),
+        _ => unreachable!(),
+    }
+}
+
+fn narrow_equal(
+    graph: &EqualityGraph,
+    format: Ty,
+    left: &MachineTerm,
+    right: &MachineTerm,
+) -> bool {
+    graph.knows_condition(
+        &ConditionTerm::machine_compare(
+            format,
+            CompareRelation::Equal,
+            left.clone(),
+            right.clone(),
+        ),
+        true,
+    )
+}
+
+fn narrow_equal_views(
+    graph: &EqualityGraph,
+    format: Ty,
+    left: crate::kernel::MachineOperandView<'_>,
+    right: crate::kernel::MachineOperandView<'_>,
+) -> bool {
+    graph.are_integer_equal(
+        &crate::kernel::IntegerTerm::Machine(left.retain(format)),
+        &crate::kernel::IntegerTerm::Machine(right.retain(format)),
+    )
+}
+
+fn check_narrow_store_equation(format: Ty) {
+    use crate::kernel::{KernelTermImport, MachineOperandView as V, VerificationSession};
+    let _session = VerificationSession::enter();
+    for aliased in [false, true] {
+        let pointer = Pointer {
+            block: "narrow".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let query = if aliased {
+            Pointer::symbolic(Variable(993201))
+        } else {
+            pointer.clone()
+        };
+        let bits = if format.format().bits() == 8 {
+            0xf1
+        } else {
+            0xff01
+        };
+        let value = narrow_stored_value(format, bits);
+        let stored = constant(format, bits);
+        let kind = LoadKind::of_value(&value).unwrap();
+        let memory = intern_memory(
+            Memory::new()
+                .with_block("narrow", 8)
+                .store(pointer.clone(), value.clone()),
+        );
+        let read =
+            MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(query.clone()), kind);
+        let shared = KernelTermImport::default()
+            .machine_arithmetic(format, &read)
+            .unwrap();
+        let empty = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(pointer.clone(), query.clone()),
+            true,
+        );
+        assert!(
+            !narrow_equal_views(
+                &empty.equality_graph,
+                format,
+                V::Shared(&shared),
+                V::Legacy(&stored)
+            ),
+            "shared {format:?}, alias={aliased}: a read must not import its cached value"
+        );
+        assert!(
+            !narrow_equal(&empty.equality_graph, format, &read, &stored),
+            "native {format:?}, alias={aliased}: a read must not import its cached value"
+        );
+        let equation = crate::kernel::memory_provenance::store_value_equation(
+            memory.memory(),
+            &pointer,
+            &value,
+        )
+        .unwrap();
+        let established = empty.clone().assume_proposition(equation.clone());
+        assert!(
+            narrow_equal(&established.equality_graph, format, &read, &stored),
+            "{format:?}, alias={aliased}: explicit equation"
+        );
+        assert!(narrow_equal_views(
+            &established.equality_graph,
+            format,
+            V::Shared(&shared),
+            V::Legacy(&stored)
+        ));
+        assert!(!narrow_equal(&empty.equality_graph, format, &read, &stored));
+        assert_eq!(shared.machine_read_leaf(), Some(&read));
+        if aliased {
+            let before_alias = PureFactContext::new().assume_proposition(equation);
+            assert!(!narrow_equal(
+                &before_alias.equality_graph,
+                format,
+                &read,
+                &stored
+            ));
+            let after_alias = before_alias.assume_condition(
+                ConditionTerm::pointer_equal(pointer.clone(), query.clone()),
+                true,
+            );
+            assert!(narrow_equal(
+                &after_alias.equality_graph,
+                format,
+                &read,
+                &stored
+            ));
+        }
+        let new_value = narrow_stored_value(format, 4);
+        let after = intern_memory(
+            memory
+                .memory()
+                .clone()
+                .store(pointer.clone(), new_value.clone()),
+        );
+        let new_read = MachineTerm::MemoryLoad(ProgramPoint::at(&after), Box::new(query), kind);
+        assert!(!narrow_equal(
+            &established.equality_graph,
+            format,
+            &new_read,
+            &constant(format, 4)
+        ));
+        let updated = established.assume_proposition(
+            crate::kernel::memory_provenance::store_value_equation(
+                after.memory(),
+                &pointer,
+                &new_value,
+            )
+            .unwrap(),
+        );
+        assert!(narrow_equal(
+            &updated.equality_graph,
+            format,
+            &new_read,
+            &constant(format, 4)
+        ));
+        assert!(!narrow_equal(
+            &updated.equality_graph,
+            format,
+            &new_read,
+            &stored
+        ));
+        assert!(narrow_equal(
+            &updated.equality_graph,
+            format,
+            &read,
+            &stored
+        ));
+    }
+}
+
+#[test]
+fn int8_read_requires_store_equation() {
+    check_narrow_store_equation(Ty::Int8);
+}
+#[test]
+fn uint8_read_requires_store_equation() {
+    check_narrow_store_equation(Ty::UInt8);
+}
+#[test]
+fn int16_read_requires_store_equation() {
+    check_narrow_store_equation(Ty::Int16);
+}
+#[test]
+fn uint16_read_requires_store_equation() {
+    check_narrow_store_equation(Ty::UInt16);
+}

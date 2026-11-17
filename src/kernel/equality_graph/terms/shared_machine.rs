@@ -423,10 +423,10 @@ impl TermClasses {
                         W::Bits128 => MachineIntegerType::UInt128,
                     };
                     if width == W::Bits64 {
-                        self.intern_typed_machine(
+                        let selected = crate::kernel::equality_graph::exact_read_comparison_input(
                             term.machine_read_leaf().expect("read leaf"),
-                            width,
-                        )
+                        );
+                        self.intern_typed_machine(&selected, width)
                     } else if width != W::Bits128 && {
                         let (memory, pointer, kind) =
                             crate::kernel::MachineOperandView::Shared(term)
@@ -447,7 +447,7 @@ impl TermClasses {
                         // The graph uses the same assumption-free read identity
                         // as its native entry point. Keep the written descriptor
                         // intact; only its graph class follows that identity.
-                        let canonical = crate::kernel::canonical_term(
+                        let canonical = crate::kernel::equality_graph::exact_read_comparison_input(
                             term.machine_read_leaf().expect("read leaf"),
                         );
                         let shared = crate::kernel::KernelTermImport::default()
@@ -474,7 +474,8 @@ impl TermClasses {
                         }
                     }
                 }
-                N::IntegerToMachine { .. }
+                N::ThreadHandle(_)
+                | N::IntegerToMachine { .. }
                 | N::BoolCast { .. }
                 | N::PointerAddress { .. }
                 | N::Legacy(_)

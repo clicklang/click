@@ -572,7 +572,7 @@ fn exceptional_contract_bindings_are_family_specific() {
                     exceptional ensures exception == 7;
                 }
             "#,
-            "requires `throws int32`",
+            "requires `throws`",
         ),
         (
             r#"
@@ -599,7 +599,7 @@ fn exceptional_contract_bindings_are_family_specific() {
                     ensures result == x;
                 }
             "#,
-            "payload type must be `int32`",
+            "exceptional payload",
         ),
         (
             r#"
@@ -610,7 +610,7 @@ fn exceptional_contract_bindings_are_family_specific() {
                     exceptional ensures exception == 7;
                 }
             "#,
-            "with resources or mutable effects",
+            "not resource transitions",
         ),
     ] {
         let error = verify_c_sources(source, &[("identity.c", c_source)])
@@ -1916,7 +1916,7 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
         expanded.contains("have nonnegative(result) by {"),
         "{expanded}"
     );
-    assert!(expanded.contains("unfold(same);"), "{expanded}");
+    assert!(expanded.contains("unfold(same("), "{expanded}");
     assert!(
         !expanded.contains("step_until(function.exit);"),
         "{expanded}"
@@ -1925,7 +1925,7 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
     verify_c_sources(&expanded, sources)
         .expect("the rewritten predicate proof should verify normally");
 
-    let corrupted = expanded.replacen("unfold(same);", "unfold(nonnegative);", 1);
+    let corrupted = expanded.replacen("unfold(same(", "unfold(nonnegative(", 1);
     assert_ne!(
         corrupted, expanded,
         "expansion should expose the predicate unfold"
@@ -2625,7 +2625,7 @@ fn source_have_failures_keep_the_written_operation_in_each_execution_phase() {
     ] {
         for (body, diagnostic) in [
             ("apply(missing()); known();", "unknown theorem `missing`"),
-            ("unfold(missing); known();", "missing"),
+            ("unfold(missing(0)); known();", "missing"),
             ("step(); known();", "unsupported proof operation `step`"),
         ] {
             let source = format!(

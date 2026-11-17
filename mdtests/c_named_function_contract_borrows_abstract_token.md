@@ -52,7 +52,7 @@ int32 spend_token(int32 key) {
 
 theorem inspect_token_satisfies_Inspect() {
     ensures Inspect(&inspect_token) by {
-        unfold(Inspect);
+        unfold(Inspect(&inspect_token));
         solve();
     }
 }

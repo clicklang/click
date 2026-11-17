@@ -287,6 +287,7 @@ impl Metadata<'_> {
             CppExpression::LogicalNot { value, span, .. }
             | CppExpression::IntegralCast { value, span, .. }
             | CppExpression::EnumCast { value, span, .. }
+            | CppExpression::PointerQualification { value, span, .. }
             | CppExpression::BytePointerCast { value, span, .. } => {
                 self.expression(value)?;
                 span
@@ -565,7 +566,20 @@ impl Metadata<'_> {
                     self.cleanups(cleanups)?;
                     span
                 }
-                CppStatement::Unreachable { span } => span,
+                CppStatement::Unreachable { span } | CppStatement::ThrowIosFailure { span, .. } => {
+                    span
+                }
+                CppStatement::ThrowAggregate {
+                    value_type,
+                    fields,
+                    span,
+                } => {
+                    self.value_type(value_type)?;
+                    for field in fields {
+                        self.expression(&field.value)?;
+                    }
+                    span
+                }
                 CppStatement::Throw { value, span }
                 | CppStatement::Assume {
                     condition: value,

@@ -557,7 +557,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     }
                 }
             }
-            extract(not (1024u64 <= size) or not (1000u64 <= size));
+            have not (1024u64 <= size) or not (1000u64 <= size);
             have size < 1024u64 by {
                 cases {
                     not (1024u64 <= size) => { solve() using { not (1024u64 <= size); }; }
@@ -746,11 +746,11 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         normalize() using { j == 1; separate(memory(tmp[j + 1]), memory(tmp[0u64])); };
                     }
                     have tmp[0u64] == at(fmt, tmp[0u64]) by {
-                        preserve(separate(statement(22).statement(1).footprint, memory(tmp[0u64])));
+                        preserve(memory(tmp[0u64]), statement(22).statement(1));
                     }
                     have tmp[0u64] != 0u8 by { known(); }
                     have defined(tmp[0u64]) by {
-                        preserve(separate(statement(22).statement(1).footprint, memory(tmp[0u64])));
+                        preserve(memory(tmp[0u64]), statement(22).statement(1));
                     }
                     have ((j + 1) as int32) != 1 by { rewrite(j, 1); normalize(); }
                     have separate(memory(tmp[j + 1]), memory(tmp[1u64])) by {
@@ -760,11 +760,11 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         normalize() using { j == 1; separate(memory(tmp[j + 1]), memory(tmp[1u64])); };
                     }
                     have tmp[1u64] == at(fmt, tmp[1u64]) by {
-                        preserve(separate(statement(22).statement(1).footprint, memory(tmp[1u64])));
+                        preserve(memory(tmp[1u64]), statement(22).statement(1));
                     }
                     have tmp[1u64] != 0u8 by { known(); }
                     have defined(tmp[1u64]) by {
-                        preserve(separate(statement(22).statement(1).footprint, memory(tmp[1u64])));
+                        preserve(memory(tmp[1u64]), statement(22).statement(1));
                     }
                     have defined(tmp[2u64]) by { normalize() using { j == 1; }; }
                     have tmp[2u64] == 0u8 by { normalize() using { j == 1; }; }
@@ -802,11 +802,11 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[0u64])); };
                     }
                     have tmp[0u64] == at(fmt, tmp[0u64]) by {
-                        preserve(separate(statement(22).statement(1).footprint, memory(tmp[0u64])));
+                        preserve(memory(tmp[0u64]), statement(22).statement(1));
                     }
                     have tmp[0u64] != 0u8 by { known(); }
                     have defined(tmp[0u64]) by {
-                        preserve(separate(statement(22).statement(1).footprint, memory(tmp[0u64])));
+                        preserve(memory(tmp[0u64]), statement(22).statement(1));
                     }
                     have ((j + 1) as int32) != 1 by { rewrite(j, 2); normalize(); }
                     have separate(memory(tmp[j + 1]), memory(tmp[1u64])) by {
@@ -816,11 +816,11 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[1u64])); };
                     }
                     have tmp[1u64] == at(fmt, tmp[1u64]) by {
-                        preserve(separate(statement(22).statement(1).footprint, memory(tmp[1u64])));
+                        preserve(memory(tmp[1u64]), statement(22).statement(1));
                     }
                     have tmp[1u64] != 0u8 by { known(); }
                     have defined(tmp[1u64]) by {
-                        preserve(separate(statement(22).statement(1).footprint, memory(tmp[1u64])));
+                        preserve(memory(tmp[1u64]), statement(22).statement(1));
                     }
                     have ((j + 1) as int32) != 2 by { rewrite(j, 2); normalize(); }
                     have separate(memory(tmp[j + 1]), memory(tmp[2u64])) by {
@@ -830,11 +830,11 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[2u64])); };
                     }
                     have tmp[2u64] == at(fmt, tmp[2u64]) by {
-                        preserve(separate(statement(22).statement(1).footprint, memory(tmp[2u64])));
+                        preserve(memory(tmp[2u64]), statement(22).statement(1));
                     }
                     have tmp[2u64] != 0u8 by { known(); }
                     have defined(tmp[2u64]) by {
-                        preserve(separate(statement(22).statement(1).footprint, memory(tmp[2u64])));
+                        preserve(memory(tmp[2u64]), statement(22).statement(1));
                     }
                     have defined(tmp[3u64]) by { normalize() using { j == 2; }; }
                     have tmp[3u64] == 0u8 by { normalize() using { j == 2; }; }

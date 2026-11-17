@@ -864,6 +864,7 @@ impl FunctionContractInterface {
             value_parameters: Vec::new(),
             resource_requires: Vec::new(),
             resource_ensures: Vec::new(),
+            resource_transfer_rule: Default::default(),
             resource_constructors: Vec::new(),
             contract_requires: Vec::new(),
             contract_requirement_sources: ContractRequirementSources::default(),
@@ -1067,21 +1068,24 @@ impl FunctionContractInterface {
     /// Whether this interface can be applied as a modular call: a direct
     /// call, an external declaration, or a named contract a call through a
     /// pointer is made under. A throwing interface is narrower than an
-    /// ordinary one: only the checked scalar channel and pure clauses cross
-    /// the boundary, with no resource or mutable-effect transfer.
+    /// ordinary one: it returns borrowed memory authority on either exit,
+    /// with no consuming, producing, or construction transition.
     pub(crate) fn verified_direct_contract_supported(&self) -> bool {
         if self.exceptional_signature.is_empty() {
             return self.opaque_contract_supported();
         }
         self.opaque_contract_supported
-            && self.exceptional_signature == ExceptionalSignature::Int32
             && self.proof_parameters.is_empty()
-            && self.resource_requires.is_empty()
-            && self.resource_ensures.is_empty()
+            && self.resource_requires.iter().all(|resource| {
+                resource.role() == ResourceTransferRole::Borrow
+                    && matches!(resource.term(), ResourceTerm::Memory(_))
+            })
+            && self.resource_ensures.iter().all(|resource| {
+                resource.role() == ResourceTransferRole::Borrow
+                    && matches!(resource.term(), ResourceTerm::Memory(_))
+            })
             && self.resource_constructors.is_empty()
-            && self.contract_mutable.is_empty()
-            && !self.contract_effect_claim_required
-            && !self.resource_derived_mutable_frame
+            && (self.contract_mutable.is_empty() || self.resource_derived_mutable_frame)
             && !self.resource_derived_frame_mixed
             && self.composite_resource_definitions.is_empty()
             && self.predicate_unfoldings.is_empty()
@@ -1385,6 +1389,9 @@ impl ProgramFunction {
     ) -> Self {
         Arc::make_mut(&mut self.contract_interface).resource_requires = requires;
         Arc::make_mut(&mut self.contract_interface).resource_ensures = ensures;
+        let rule =
+            super::super::functions::SummaryResourceTransferRule::compile(&self.contract_interface);
+        Arc::make_mut(&mut self.contract_interface).resource_transfer_rule = Arc::new(rule);
         self
     }
 
@@ -1395,9 +1402,19 @@ impl ProgramFunction {
 
     /// Internal staging hook for importers and tests. No source frontend opts
     /// into the exceptional channel yet.
+    #[cfg(test)]
     pub(crate) fn with_int32_exceptional_outcome(mut self) -> Self {
         Arc::make_mut(&mut self.contract_interface).exceptional_signature =
             ExceptionalSignature::Int32;
+        self
+    }
+
+    pub(crate) fn with_exceptional_outcome(mut self, payload_type: ProgramType) -> Self {
+        Arc::make_mut(&mut self.contract_interface).exceptional_signature = match payload_type {
+            ProgramType::Int32 => ExceptionalSignature::Int32,
+            ProgramType::Parameter(name) => ExceptionalSignature::Opaque(name),
+            _ => panic!("unsupported exceptional payload type"),
+        };
         self
     }
 
@@ -1728,19 +1745,13 @@ impl ProgramFunction {
 
     pub fn opaque_contract_supported(&self) -> bool {
         self.contract_interface.opaque_contract_supported()
-            && !statement_contains_internal_throw(&self.body)
     }
 
     pub(crate) fn verified_direct_contract_supported(&self) -> bool {
+        // Eligibility depends on the interface. A reusable rule still needs
+        // checked body safety; an internal throw may be caught or excluded
+        // by the contract's preconditions.
         self.contract_interface.verified_direct_contract_supported()
-            && (self.exceptional_signature().is_empty()
-                || self.exceptional_signature() == ExceptionalSignature::Int32)
-            && (!self.has_internal_exceptional_outcome()
-                || !self.exceptional_signature().is_empty())
-    }
-
-    pub(crate) fn has_internal_exceptional_outcome(&self) -> bool {
-        statement_contains_internal_throw(&self.body)
     }
 
     pub fn composite_resource_definitions(&self) -> &[CompositeResourceDefinition] {
@@ -1769,7 +1780,20 @@ impl PredicateUnfolding {
             *resource_state_dependent |=
                 super::super::spec::predicate_dependencies::observes_resource_state(&body);
         }
-        Self { predicate, body }
+        Self {
+            predicate,
+            body,
+            requirement_source: PredicateRequirementSource::default(),
+        }
+    }
+
+    pub(crate) fn with_requirement_source(mut self, source: usize) -> Self {
+        self.requirement_source = PredicateRequirementSource(Some(source));
+        self
+    }
+
+    pub(crate) fn requirement_source(&self) -> Option<usize> {
+        self.requirement_source.0
     }
 
     pub fn predicate(&self) -> &SpecProposition {
@@ -3438,6 +3462,11 @@ impl FunctionContract {
         // A throwing interface is supported when its exceptional channel is
         // the checked scalar one with pure clauses.
         (interface.verified_direct_contract_supported()
+            && (interface.exceptional_signature() == ExceptionalSignature::None
+                || (interface.exceptional_signature() == ExceptionalSignature::Int32
+                    && interface.resource_requires().is_empty()
+                    && interface.resource_ensures().is_empty()
+                    && interface.contract_mutable().is_empty()))
             && interface.aggregate_return_mode() == AggregateReturnMode::Copy
             && interface.construction_parameter().is_none()
             && interface.resource_constructors().is_empty()
@@ -3541,7 +3570,7 @@ impl FunctionContract {
     /// Automatic concrete-pointer formation may cross a proof-parameter
     /// contract, but only after it has separately established that the
     /// binding between the two declarations is forced. The explicit
-    /// `unfold(Name)` route keeps refusing proof parameters: its proof block
+    /// `unfold(Name(callback))` route keeps refusing proof parameters: its proof block
     /// has no way to introduce the instances.
     pub(crate) fn has_compatible_signature_and_composite_vocabulary(
         &self,
@@ -3561,68 +3590,6 @@ impl FunctionContract {
     /// The body-independent interface selected by this nominal contract.
     pub fn interface(&self) -> &FunctionContractInterface {
         &self.interface
-    }
-}
-
-fn statement_contains_internal_throw(statement: &ProgramStatement) -> bool {
-    match statement {
-        ProgramStatement::Throw(_) => true,
-
-        ProgramStatement::Seq(statements) => statements
-            .iter()
-            .any(|statement| statement_contains_internal_throw(statement)),
-        ProgramStatement::TryCatchInt32 {
-            try_body, handler, ..
-        } => {
-            statement_contains_internal_throw(try_body)
-                || statement_contains_internal_throw(handler)
-        }
-        ProgramStatement::If {
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            statement_contains_internal_throw(then_branch)
-                || statement_contains_internal_throw(else_branch)
-        }
-        ProgramStatement::Loop {
-            test, update, body, ..
-        } => {
-            statement_contains_internal_throw(body)
-                || test
-                    .as_ref()
-                    .is_some_and(|test| statement_contains_internal_throw(&test.statement))
-                || update
-                    .as_ref()
-                    .is_some_and(|update| statement_contains_internal_throw(update))
-        }
-        ProgramStatement::Switch { cases, .. } => cases
-            .iter()
-            .any(|case| statement_contains_internal_throw(&case.body)),
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
-        | ProgramStatement::EndAutomaticLifetimes { .. }
-        | ProgramStatement::Break
-        | ProgramStatement::Continue
-        | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare { .. }
-        | ProgramStatement::DeclareAggregate { .. }
-        | ProgramStatement::CopyAggregate { .. }
-        | ProgramStatement::InitializeScalarArray { .. }
-        | ProgramStatement::Assign { .. }
-        | ProgramStatement::CallConstruct { .. }
-        | ProgramStatement::Call { .. }
-        | ProgramStatement::CallResult { .. }
-        | ProgramStatement::HeapAllocate { .. }
-        | ProgramStatement::HeapFree { .. }
-        | ProgramStatement::Assert { .. }
-        | ProgramStatement::StepValue { .. }
-        | ProgramStatement::LoopTest { .. }
-        | ProgramStatement::Return(_)
-        | ProgramStatement::Store { .. }
-        | ProgramStatement::TypedStore { .. }
-        | ProgramStatement::Update { .. } => false,
     }
 }
 

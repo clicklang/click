@@ -54,6 +54,7 @@ impl<T: Clone> SharedVec<T> {
     /// storage is recognized without a scan; otherwise the prefix is
     /// compared element-wise in every build profile, because the suffix is
     /// what a join publishes as the exact arm delta.
+    #[cfg(test)]
     pub(crate) fn suffix_since(&self, ancestor: &Self) -> Option<&[T]>
     where
         T: PartialEq,
@@ -698,10 +699,6 @@ impl<T: Clone + Ord> PersistentOrderedSet<T> {
 
     pub(crate) fn iter(&self) -> PersistentSequenceIter<'_, T> {
         self.ordered.iter()
-    }
-
-    pub(crate) fn to_vec(&self) -> Vec<T> {
-        self.iter().cloned().collect()
     }
 
     #[cfg(test)]

@@ -45,7 +45,7 @@ int32 apply_bundle(int32 (*callback)(int32), int32 key) {
 
 theorem proposed_consume_bundle_contract() {
     ensures PreserveBundle(&consume_bundle) by {
-        unfold(PreserveBundle);
+        unfold(PreserveBundle(&consume_bundle));
         solve();
     }
 }

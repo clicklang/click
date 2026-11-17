@@ -217,7 +217,7 @@ at unchanged function entry, after executed statements, and inside a loop's
 `preserve` body.
 
 An arm's bindings are in scope in every term the arm writes: `have` goals,
-theorem arguments and `using` premises, `instantiate`, `extract`, `rewrite`,
+theorem arguments and `using` premises, `instantiate`, `have`, `rewrite`,
 `normalize() using`, the premises of a `solve() using` or `normalize() using`
 inside a `have` body (`mdtests/have_body_solve_using_names_an_arm_binding.md`),
 the clauses of a `loop` written inside the arm
@@ -321,7 +321,7 @@ and splits, and each path's closing proof in that path's own arm. Each proof
 stays in the branch where it was checked, so a loop's earlier guards are not
 evaluated again at function exit.
 A post-execution `have` retains its established fact for later tactics. Smart
-proofs recheck `at(...)`-qualified premise forms, so when a loop records a
+proofs recheck `at(...)`-qualified premise raisings, so when a loop records a
 statement's point again, the new state cannot substitute a different fact for
 an earlier one.
 A back-edge closure shared by several preservation paths can likewise

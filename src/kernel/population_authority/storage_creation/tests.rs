@@ -7,7 +7,7 @@ fn pending_malloc(state: &ExecutionState) -> ExecutionState {
         state,
         &program_heap_allocate("p", 16),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("actual malloc statement executes");
@@ -137,7 +137,7 @@ fn only_successful_real_malloc_records_creation() {
         &succeeded,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("free executes");
@@ -191,7 +191,7 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
         &callee,
         helper.body(),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("helper decides caller's pending malloc result");
@@ -235,7 +235,7 @@ fn actual_stack_declaration_grants_one_lifetime_creation_event() {
         &entry,
         &program_declare("x", ProgramType::Int32),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("declaration executes");
@@ -261,7 +261,7 @@ fn actual_stack_declaration_grants_one_lifetime_creation_event() {
         &ended,
         &program_declare("x", ProgramType::Int32),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("re-enter declaration");

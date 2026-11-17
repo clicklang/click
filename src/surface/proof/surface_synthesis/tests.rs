@@ -1773,7 +1773,7 @@ fn forall_loadable_range_call_requirement_is_spellable() {
 /// `exists_loadable_range` calls `need_cells`, whose precondition wraps the
 /// same range in an existential over the length. The witness name and the
 /// binder identities a fresh lowering allocates are its own, so only
-/// spellability is asserted here; the range shape itself round-trips in the
+/// raise-lower principle is asserted here; the range shape itself round-trips in the
 /// universal test above.
 #[test]
 fn exists_loadable_range_call_requirement_is_spellable() {
@@ -1845,7 +1845,7 @@ fn function_array_synthesis_requires_the_exact_named_state() {
         pointer,
         element_type: ProgramType::Int32,
     }];
-    let bindings = BTreeMap::new();
+    let bindings = BTreeMap::<Variable, SurfaceBinder>::new();
     // An unnamed historical memory cannot be silently printed as current.
     assert!(
         synthesize_surface_call(
@@ -2841,7 +2841,10 @@ fn a_local_indexes_only_addresses_formed_from_it() {
         Box::new(scaled(arena)),
         Box::new(scaled(index)),
     ));
-    let bound = BTreeMap::from([(Variable(index), "k".to_string())]);
+    let bound = (BTreeMap::<_, String>::from([(Variable(index), "k".to_string())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     let Some(ContractExpression::Index(base, _)) = synthesize_local_indexed_load(
         &own_cell,
         crate::kernel::LoadKind::Int32,
@@ -4129,9 +4132,12 @@ fn unified_certificate_terms_raise_and_lower_by_identity() {
     use crate::surface::lowering::lower_surface_integer_term;
     let variable = Variable(99003);
     let a = KernelTerm::variable(KernelType::Integer, variable);
-    let names = BTreeMap::from([(variable, "a".into())]);
-    let bindings = crate::persistent::PersistentMap::default().with_inserted(
-        "a".into(),
+    let names = (BTreeMap::<_, String>::from([(variable, "a".into())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
+    let bindings = PersistentBinderMap::default().with_inserted(
+        "a",
         crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::Variable(variable)),
     );
     let one = KernelTerm::integer_literal(1.into());
@@ -4585,7 +4591,8 @@ fn range_fold_surface_preserves_scope_and_alpha_identity() {
                 ParameterBinding::default(),
                 &state
             ),
-            "{expression}: {spelled:?}"
+            "{expression}: {spelled:?}; restored: {:?}; original: {lowered:?}",
+            relower_written_proposition(spelled, &state)
         );
     }
 }
@@ -4633,7 +4640,7 @@ fn range_fold_surface_separates_integer_and_machine_binder_ids() {
 }
 
 #[test]
-fn common_match_surface_preserves_written_binders_and_relowers_nested_results() {
+fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
     use crate::kernel::{AlgebraicValueType, KernelMatch};
     let _session = crate::kernel::VerificationSession::enter();
     let scrutinee =
@@ -4686,7 +4693,7 @@ fn common_match_surface_preserves_written_binders_and_relowers_nested_results() 
             FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
             SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::with_algebraic_types(file.click_function_definitions(), file.algebraic_type_definitions())),
             FixedStateLoweringOptions { algebraic_values: Some(&algebraic_values), ..Default::default() },
-        ).unwrap().0
+        ).unwrap_or_else(|error| panic!("{requirement}: {proposition:?}: {error}")).0
         };
         let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
             panic!()
@@ -4697,7 +4704,7 @@ fn common_match_surface_preserves_written_binders_and_relowers_nested_results() 
                 .unwrap_or_else(|| panic!("match spelling: {original:?}"));
         let text = crate::surface::printing::source_click_proposition(&spelled);
         if text.contains("match ") {
-            assert!(text.contains("Arm(item)"), "{requirement}: {text}");
+            assert!(text.contains("Arm(binder("), "{requirement}: {text}");
         }
         assert!(!text.contains('\0'));
         let parsed = parser::parse(&format!(
@@ -4803,7 +4810,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
         let root = common(pointer);
         let names = values
             .iter()
-            .map(|(name, value)| (value.clone(), name.clone()))
+            .map(|(name, value)| (value.clone(), SurfaceBinder::from(name)))
             .collect();
         let raised = with_proof_local_value_names(names, || {
             raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
@@ -5006,13 +5013,16 @@ fn common_float_atoms_round_trip_printed_surface_bits() {
         let state = ExecutionState::new();
         // Scoped float binders already have their source names. Execution-local
         // name/storage handoffs are the later 8aa boundary.
-        let bindings = match &value {
+        let bindings = (match &value {
             ProgramValue::Float32(MachineTerm::Variable(variable))
             | ProgramValue::Float64(MachineTerm::Variable(variable)) => {
                 BTreeMap::from([(*variable, "value".to_string())])
             }
             _ => BTreeMap::new(),
-        };
+        })
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
         let root = crate::kernel::KernelTermImport::default()
             .argument(&crate::kernel::PureFunctionArgument::Value(value.clone()));
         let surface =
@@ -5498,7 +5508,10 @@ fn common_float_arithmetic_round_trips_existing_operators() {
     ] {
         let variable = MachineTerm::Variable(Variable(999936));
         let state = ExecutionState::new().with_local("x", format.value(variable.clone()));
-        let names = BTreeMap::from([(Variable(999936), "x".to_string())]);
+        let names = (BTreeMap::<_, String>::from([(Variable(999936), "x".to_string())]))
+            .into_iter()
+            .map(|(var, name)| (var, SurfaceBinder::from(name)))
+            .collect::<BTreeMap<_, _>>();
         let literal = match format {
             KernelFloatType::Float32 => MachineTerm::constant(0x80000000),
             KernelFloatType::Float64 => MachineTerm::uint64_constant(0x8000000000000000),
@@ -5750,7 +5763,10 @@ fn common_float_conversions_round_trip_existing_casts() {
     use crate::kernel::KernelFloatType;
     let _session = crate::kernel::VerificationSession::enter();
     let variable = MachineTerm::Variable(Variable(999963));
-    let names = BTreeMap::from([(Variable(999963), "x".to_string())]);
+    let names = (BTreeMap::<_, String>::from([(Variable(999963), "x".to_string())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     for (source_spelling, source_type) in [
         ("int8", ProgramType::Int8),
         ("uint8", ProgramType::UInt8),
@@ -5839,7 +5855,10 @@ fn common_float_conversions_round_trip_existing_casts() {
 fn common_float_to_integer_conversions_round_trip_with_definedness() {
     let _session = crate::kernel::VerificationSession::enter();
     let variable = MachineTerm::Variable(Variable(999963));
-    let names = BTreeMap::from([(Variable(999963), "x".to_string())]);
+    let names = (BTreeMap::<_, String>::from([(Variable(999963), "x".to_string())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     for (source_spelling, source_type) in [
         ("float", ProgramType::Float32),
         ("double", ProgramType::Float64),
@@ -5921,7 +5940,10 @@ fn common_float_to_integer_conversions_round_trip_with_definedness() {
 fn common_float_predicates_round_trip_existing_spelling() {
     let _session = crate::kernel::VerificationSession::enter();
     let variable = MachineTerm::Variable(Variable(999977));
-    let names = BTreeMap::from([(Variable(999977), "x".to_string())]);
+    let names = (BTreeMap::<_, String>::from([(Variable(999977), "x".to_string())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     for (spelling, value) in [
         ("float", ProgramValue::Float32(variable.clone())),
         ("double", ProgramValue::Float64(variable.clone())),
@@ -6006,7 +6028,10 @@ fn common_float_calls_round_trip_existing_function_syntax() {
         (crate::kernel::KernelFloatType::Float64, "double"),
     ] {
         let variable = MachineTerm::Variable(Variable(1008204));
-        let names = BTreeMap::from([(Variable(1008204), "x".to_string())]);
+        let names = (BTreeMap::<_, String>::from([(Variable(1008204), "x".to_string())]))
+            .into_iter()
+            .map(|(var, name)| (var, SurfaceBinder::from(name)))
+            .collect::<BTreeMap<_, _>>();
         let state = ExecutionState::new().with_local("x", format.value(variable.clone()));
         let source = MachineTerm::ClickFunctionApplication {
             name: "step".into(),
@@ -6062,7 +6087,10 @@ fn common_float_calls_round_trip_existing_function_syntax() {
 fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
     let _session = crate::kernel::VerificationSession::enter();
     let variable = MachineTerm::Variable(Variable(1008516));
-    let names = BTreeMap::from([(Variable(1008516), "x".to_string())]);
+    let names = (BTreeMap::<_, String>::from([(Variable(1008516), "x".to_string())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     let state = ExecutionState::new().with_local("x", ProgramValue::Float32(variable.clone()));
     let condition =
         crate::kernel::ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
@@ -6141,7 +6169,7 @@ fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
     let argument = crate::kernel::PureFunctionArgument::Value(value.clone());
     let root = crate::kernel::KernelTermImport::default().argument(&argument);
     let state = ExecutionState::new().with_local("p", value.clone());
-    let bound = BTreeMap::new();
+    let bound = BTreeMap::<Variable, SurfaceBinder>::new();
     for names in [vec![], vec![(value.clone(), "exact_p".into())]] {
         with_proof_local_value_names(names, || {
             let native = synthesize_legacy_call_argument(
@@ -6170,6 +6198,124 @@ fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
     }
 }
 
+/// Reduced from the inclusive-range loop's signed `0 <= total` premise.
+/// There is one named word, no program execution, and no recorded snapshot.
+fn comparison_over_named_word_round_trip(
+    local_type: MachineIntegerType,
+    comparison_type: MachineIntegerType,
+) {
+    let word = MachineTerm::Variable(Variable(730_001));
+    let state = ExecutionState::new().with_local(
+        "x",
+        match local_type {
+            MachineIntegerType::Int32 => ProgramValue::Int32(word.clone()),
+            MachineIntegerType::UInt32 => ProgramValue::UInt32(word.clone()),
+            _ => unreachable!(),
+        },
+    );
+    let original = Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: comparison_type,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(MachineTerm::constant(0)),
+            right: Box::new(word),
+        },
+        true,
+    );
+    let surface = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+        .expect("one current local names the only variable");
+    let text = crate::surface::printing::source_click_proposition(&surface);
+    let lowered = relower_written_proposition(&surface, &state).unwrap();
+    assert_eq!(lowered, original, "raised source: {text}");
+}
+
+#[test]
+fn signed_comparison_over_a_signed_local_round_trips() {
+    comparison_over_named_word_round_trip(MachineIntegerType::Int32, MachineIntegerType::Int32);
+}
+
+#[test]
+fn unsigned_comparison_over_an_unsigned_local_round_trips() {
+    comparison_over_named_word_round_trip(MachineIntegerType::UInt32, MachineIntegerType::UInt32);
+}
+
+fn raw_signed_nonnegative(word: MachineTerm) -> Proposition {
+    Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(MachineTerm::constant(0)),
+            right: Box::new(word),
+        },
+        true,
+    )
+}
+
+#[test]
+fn unsigned_small_bound_produces_round_tripping_signed_facts() {
+    let word = MachineTerm::Variable(Variable(730_002));
+    let raw_signed_bound = raw_signed_nonnegative(word.clone());
+    let converted_signed_bound = raw_signed_nonnegative(MachineTerm::sign_cast32(
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int32,
+        word.clone(),
+    ));
+    let parent = PureFactContext::new();
+    assert!(!parent.contains_assumed_exact(&raw_signed_bound));
+    let small = parent.clone().assume_condition(
+        ConditionTerm::unsigned_less_equal(word.clone(), MachineTerm::constant(256)),
+        true,
+    );
+    assert!(!small.contains_assumed_exact(&raw_signed_bound));
+    let state = ExecutionState::new().with_local("x", ProgramValue::UInt32(word.clone()));
+    let signed_word = MachineTerm::sign_cast32(
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int32,
+        word.clone(),
+    );
+    let upper = Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(signed_word),
+            right: Box::new(MachineTerm::constant(256)),
+        },
+        true,
+    );
+    for fact in [&converted_signed_bound, &upper] {
+        assert!(small.contains_assumed_exact(fact));
+        let surface = synthesize_surface_proposition(fact, ParameterBinding::default(), &state)
+            .expect("the derived signed bound has a typed Surface form");
+        let text = crate::surface::printing::source_click_proposition(&surface);
+        assert_eq!(
+            relower_written_proposition(&surface, &state).unwrap(),
+            *fact,
+            "{text}"
+        );
+    }
+    let beyond_sign_bit = parent.assume_condition(
+        ConditionTerm::unsigned_less_equal(word, MachineTerm::constant(0x8000_0000)),
+        true,
+    );
+    assert!(!beyond_sign_bit.contains_assumed_exact(&raw_signed_bound));
+    assert!(!beyond_sign_bit.contains_assumed_exact(&converted_signed_bound));
+}
+
+#[test]
+fn unsigned_small_bound_recovers_an_already_converted_signed_source() {
+    let signed = MachineTerm::Variable(Variable(730_003));
+    let unsigned = MachineTerm::sign_cast32(
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        signed.clone(),
+    );
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::unsigned_less_equal(unsigned, MachineTerm::constant(256)),
+        true,
+    );
+    assert!(facts.contains_assumed_exact(&raw_signed_nonnegative(signed)));
+}
+
 #[test]
 fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
     use crate::kernel::{
@@ -6177,7 +6323,10 @@ fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
     };
     let _session = crate::kernel::VerificationSession::enter();
     let variable = Variable(999981);
-    let names = BTreeMap::from([(variable, "item".into())]);
+    let names = (BTreeMap::<_, String>::from([(variable, "item".into())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     let state = ExecutionState::new();
     let word = MachineTerm::Variable(variable);
     for value in [
@@ -6233,7 +6382,10 @@ fn shared_algebraic_reads_and_variables_raise_without_tree_exports() {
     ))];
     let binding = ParameterBinding::new(&parameters, &arguments);
     let variable = Variable(999984);
-    let names = BTreeMap::from([(variable, "value".into())]);
+    let names = (BTreeMap::<_, String>::from([(variable, "value".into())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     for node in [
         AlgebraicTermNode::Variable(variable),
         AlgebraicTermNode::MemoryLoad {
@@ -6264,7 +6416,10 @@ fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
     };
     let _session = crate::kernel::VerificationSession::enter();
     let variable = Variable(999986);
-    let names = BTreeMap::from([(variable, "x".into())]);
+    let names = (BTreeMap::<_, String>::from([(variable, "x".into())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     let mut conditions = vec![];
     for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
         for op in [
@@ -6336,7 +6491,7 @@ fn shared_pointer_comparisons_preserve_native_spelling() {
         .map(|value| ProgramExpression::Value(ProgramValue::Pointer(value)));
     let binding = ParameterBinding::new(&parameters, &arguments);
     let state = ExecutionState::new();
-    let names = BTreeMap::new();
+    let names = BTreeMap::<Variable, SurfaceBinder>::new();
     for native in [
         ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())),
         ConditionTerm::PointerEqual(
@@ -6784,6 +6939,52 @@ fn narrow_symbolic_comparisons_keep_their_existing_normal_forms() {
     }
 }
 
+#[test]
+#[ignore = "nightly: retained pthread value parse/lower round trip"]
+fn pthread_handle_words_use_c_names_and_retained_states() {
+    use crate::kernel::{KernelTermImport, ThreadHandleId};
+    let _session = crate::kernel::VerificationSession::enter();
+    let native = MachineTerm::ThreadHandle(ThreadHandleId(1008820));
+    let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
+    let saved = ExecutionState::new().with_local("h", ProgramValue::UInt64(native));
+    let now = saved
+        .clone()
+        .with_local("h", ProgramValue::UInt64(MachineTerm::uint64_constant(0)));
+    let current =
+        raise_kernel_term(&root, ParameterBinding::default(), &saved, &BTreeMap::new()).unwrap();
+    assert_eq!(diagnostics::describe_contract_expression(&current), "h");
+    let selector = ProgramPointSelector::Mark("created".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), saved);
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let retained =
+        raise_kernel_term(&root, ParameterBinding::default(), &now, &BTreeMap::new()).unwrap();
+    assert!(matches!(&retained, SurfaceTerm::At { selector: actual, .. } if *actual == selector));
+    let text = diagnostics::describe_contract_expression(&retained);
+    assert_eq!(text, "at(created, h)");
+    let parsed = parser::parse(&format!(
+        "theorem probe() {{ requires {text} == 0; ensures true; }}"
+    ))
+    .unwrap();
+    let Requirement::Proposition(claim) = &parsed.theorem_definitions()[0].requires()[0] else {
+        panic!("comparison")
+    };
+    let lowered = relower_written_proposition_with_states(claim, &now, &now, &points).unwrap();
+    let Proposition::ConditionIs(condition, true) = lowered else {
+        panic!("comparison")
+    };
+    let view =
+        crate::kernel::machine_integer::comparison::structural_comparison_view(&condition).unwrap();
+    assert_eq!(view.format, MachineIntegerType::Int64);
+    assert_eq!(
+        crate::kernel::KernelTerm::retained_machine_operand(
+            view.format,
+            view.operands[0].operand_view()
+        ),
+        root.with_machine_observation_type(view.format)
+    );
+}
+
 fn check_int64_literal_comparison_round_trips(values: &[i64]) {
     use crate::kernel::proof::ProofFacts;
     for value in values {
@@ -6902,98 +7103,125 @@ fn negative_int64_comparisons_round_trip_under_point_selectors() {
     }
 }
 
-fn check_order_guard_conditional_round_trips(
+fn check_comparison_guard_conditional_round_trips(
     format: crate::kernel::MachineIntegerType,
     spelling: &str,
-    guards: &[(&str, i32)],
+    guards: &[(&str, u64)],
+    operators: &[&str],
+    replacement: u64,
 ) {
-    use crate::kernel::proof::ProofFacts;
-    for operator in ["<", "<=", ">", ">="] {
+    for operator in operators {
         for &(guard, bound) in guards {
+            let guard = format!("{guard} {operator} ({bound} as {spelling})");
             for reverse in [false, true] {
-                let _session = crate::kernel::VerificationSession::enter();
-                let state = ExecutionState::new()
-                    .with_local(
-                        "x",
-                        format.value_from_term(MachineTerm::Variable(Variable(999708))),
-                    )
-                    .with_local(
-                        "y",
-                        format.value_from_term(MachineTerm::Variable(Variable(999709))),
-                    );
-                let parse = |text: &str| {
-                    let file = parser::parse(&format!(
-                        "theorem probe() {{ requires {text}; ensures true; }}"
-                    ))
-                    .unwrap();
-                    let Requirement::Proposition(p) = &file.theorem_definitions()[0].requires()[0]
-                    else {
-                        panic!("expected a proposition")
-                    };
-                    p.clone()
-                };
-                let equality =
-                    relower_written_proposition(&parse(&format!("x == (9 as {spelling})")), &state)
-                        .unwrap();
-                let value = format!(
-                    "to_integer(if {guard} {operator} ({bound} as {spelling}) {{ x }} else {{ 3 as {spelling} }})"
-                );
-                let goal = if reverse {
-                    format!("100 <= {value}")
-                } else {
-                    format!("{value} <= 100")
-                };
-                let original = relower_written_proposition(&parse(&goal), &state).unwrap();
-                let rewritten = ProofFacts::from_ordered(std::slice::from_ref(&equality))
-                    .check_equality_rewrite(&original, &equality)
-                    .unwrap()
-                    .proposition()
-                    .clone();
-                let Proposition::ConditionIs(condition, true) = rewritten else {
-                    panic!("expected a comparison")
-                };
-                for truth in [true, false] {
-                    let produced = Proposition::ConditionIs(condition.clone(), truth);
-                    let raised = synthesize_surface_proposition(
-                        &produced,
-                        ParameterBinding::default(),
-                        &state,
-                    )
-                    .unwrap();
-                    let text = crate::surface::printing::source_click_proposition(&raised);
-                    let restored = relower_written_proposition(&parse(&text), &state).unwrap();
-                    assert_eq!(
-                        restored, produced,
-                        "{spelling}, {operator}, bound={bound}, reverse={reverse}, truth={truth}: {text}"
-                    );
-                }
+                check_conditional_round_trip(format, spelling, &guard, reverse, replacement);
             }
         }
     }
 }
 
+fn check_conditional_round_trip(
+    format: crate::kernel::MachineIntegerType,
+    spelling: &str,
+    guard: &str,
+    reverse: bool,
+    replacement: u64,
+) {
+    use crate::kernel::proof::ProofFacts;
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = ExecutionState::new()
+        .with_local(
+            "x",
+            format.value_from_term(MachineTerm::Variable(Variable(999708))),
+        )
+        .with_local(
+            "y",
+            format.value_from_term(MachineTerm::Variable(Variable(999709))),
+        )
+        .with_local(
+            "z",
+            format.value_from_term(MachineTerm::Variable(Variable(999710))),
+        )
+        .with_local(
+            "flag",
+            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999711))),
+        );
+    let parse = |text: &str| {
+        let file = parser::parse(&format!(
+            "theorem probe() {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(p) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!("expected a proposition")
+        };
+        p.clone()
+    };
+    let equality = relower_written_proposition(
+        &parse(&format!("x == ({replacement} as {spelling})")),
+        &state,
+    )
+    .unwrap();
+    let value = format!("to_integer(if {guard} {{ x }} else {{ 3 as {spelling} }})");
+    let goal = if reverse {
+        format!("100 <= {value}")
+    } else {
+        format!("{value} <= 100")
+    };
+    let original = relower_written_proposition(&parse(&goal), &state).unwrap();
+    let rewritten = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+        .check_equality_rewrite(&original, &equality)
+        .unwrap()
+        .proposition()
+        .clone();
+    let Proposition::ConditionIs(condition, true) = rewritten else {
+        panic!("expected a comparison")
+    };
+    for truth in [true, false] {
+        let produced = Proposition::ConditionIs(condition.clone(), truth);
+        let raised =
+            synthesize_surface_proposition(&produced, ParameterBinding::default(), &state).unwrap();
+        assert_eq!(
+            relower_written_proposition(&raised, &state).unwrap(),
+            produced,
+            "Surface AST: {spelling}, guard={guard}, reverse={reverse}, truth={truth}"
+        );
+        let text = crate::surface::printing::source_click_proposition(&raised);
+        let restored = relower_written_proposition(&parse(&text), &state).unwrap();
+        assert_eq!(
+            restored, produced,
+            "{spelling}, guard={guard}, reverse={reverse}, truth={truth}: {text}"
+        );
+    }
+}
+
 #[test]
 fn closed_uint32_order_guard_conditionals_round_trip_after_rewrite() {
-    check_order_guard_conditional_round_trips(
+    check_comparison_guard_conditional_round_trips(
         crate::kernel::MachineIntegerType::UInt32,
         "uint32",
         &[("x", 8), ("x", 10)],
+        &["<", "<=", ">", ">="],
+        9,
     );
 }
 #[test]
 fn closed_int64_order_guard_conditionals_round_trip_after_rewrite() {
-    check_order_guard_conditional_round_trips(
+    check_comparison_guard_conditional_round_trips(
         crate::kernel::MachineIntegerType::Int64,
         "int64",
         &[("x", 8), ("x", 10)],
+        &["<", "<=", ">", ">="],
+        9,
     );
 }
 #[test]
 fn closed_uint64_order_guard_conditionals_round_trip_after_rewrite() {
-    check_order_guard_conditional_round_trips(
+    check_comparison_guard_conditional_round_trips(
         crate::kernel::MachineIntegerType::UInt64,
         "uint64",
         &[("x", 8), ("x", 10)],
+        &["<", "<=", ">", ">="],
+        9,
     );
 }
 
@@ -7006,6 +7234,97 @@ fn symbolic_order_guard_conditionals_round_trip_after_rewrite() {
         (T::Int64, "int64"),
         (T::UInt64, "uint64"),
     ] {
-        check_order_guard_conditional_round_trips(format, spelling, &[("y", 8)]);
+        check_comparison_guard_conditional_round_trips(
+            format,
+            spelling,
+            &[("y", 8)],
+            &["<", "<=", ">", ">="],
+            9,
+        );
+    }
+}
+
+#[test]
+fn closed_wide_equality_guard_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [(T::Int64, "int64"), (T::UInt64, "uint64")] {
+        check_comparison_guard_conditional_round_trips(
+            format,
+            spelling,
+            &[("x", 8), ("x", 9)],
+            &["==", "!="],
+            9,
+        );
+    }
+}
+
+#[test]
+fn closed_unsigned_equality_guards_keep_high_bit_literals() {
+    check_comparison_guard_conditional_round_trips(
+        crate::kernel::MachineIntegerType::UInt64,
+        "uint64",
+        &[("x", u64::MAX)],
+        &["==", "!="],
+        u64::MAX,
+    );
+}
+
+#[test]
+fn symbolic_equality_guard_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for op in ["==", "!="] {
+            for guard in [
+                format!("y {op} (8 as {spelling})"),
+                format!("(8 as {spelling}) {op} y"),
+                format!("y {op} z"),
+            ] {
+                for reverse in [false, true] {
+                    check_conditional_round_trip(format, spelling, &guard, reverse, 9);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn symbolic_unsigned_equality_guards_keep_high_bit_literals() {
+    for op in ["==", "!="] {
+        for guard in [
+            format!("y {op} {}u64", u64::MAX),
+            format!("{}u64 {op} y", u64::MAX),
+        ] {
+            for reverse in [false, true] {
+                check_conditional_round_trip(
+                    crate::kernel::MachineIntegerType::UInt64,
+                    "uint64",
+                    &guard,
+                    reverse,
+                    9,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn boolean_variable_guard_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for guard in ["flag", "not flag"] {
+            for reverse in [false, true] {
+                check_conditional_round_trip(format, spelling, guard, reverse, 9);
+            }
+        }
     }
 }

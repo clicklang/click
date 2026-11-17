@@ -1,6 +1,6 @@
 # an unfolded last cell is about the state it was unfolded at
 
-`peel(icount(a, 0, i + 1)) using { ... }` reads the written cell out of the
+`unfold(icount(a, 0, i + 1))` reads the written cell out of the
 state the store produced, so its equation is about that state. A second
 store to the same cell makes a new one, and the equation does not carry over.
 
@@ -30,10 +30,7 @@ void mark_twice(int32 a[], int32 n, int32 i) {
         solve() using { i < n; n <= 1073741823; };
     }
     have icount(a, 0, i + 1) == icount(a, 0, i) + 1 by {
-        peel(icount(a, 0, i + 1)) using {
-            0 <= i;
-            i < 2147483647;
-        };
+        unfold(icount(a, 0, i + 1));
         solve();
     }
     step();

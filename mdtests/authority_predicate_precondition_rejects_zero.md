@@ -25,7 +25,7 @@ void inspect(struct pool* pool) {
     requires 0 < count(pool_object(pool, _));
     ensures pool->checked_out == 0;
 } by {
-    unfold(valid_pool);
+    unfold(valid_pool(pool));
 }
 ```
 

@@ -28,3 +28,67 @@ fn charon_inclusive_range_loops_yield_their_end_once() {
     let rendered = format!("{error:?} {error}");
     assert!(rendered.contains("every_byte"), "{rendered}");
 }
+
+#[test]
+fn charon_inclusive_range_exhaustion_uses_typed_signed_bounds() {
+    let p = Project::from_fixture("design/charon-trial/inclusive-ranges");
+    let sidecar = r#"verifying "inclusive.rs";
+fn every_byte() -> u32 {
+    ensures result == 256u32;
+} by {
+    step_until(loop(0));
+    loop {
+        decreases 256u32 - total;
+        invariant iter_end == 255u8;
+        invariant total <= 256u32;
+        invariant iter_done == 0 implies total == (iter_start as u32);
+        invariant iter_done != 0 implies iter_start == 255u8 and total == 256u32;
+        preserve by {
+            mark iteration;
+            have total == (iter_start as u32);
+            if at(iteration, iter_start) < 255u8 {
+                step_until(back_edge());
+                have iter_done == 0;
+                have to_integer(total) == to_integer(at(iteration, total)) + 1;
+                have to_integer(iter_start) == to_integer(at(iteration, iter_start)) + 1;
+                have to_integer(total) == to_integer(iter_start);
+                have total == (iter_start as u32);
+            } else {
+                have iter_start == 255u8;
+                step_until(back_edge());
+                have iter_done == 1;
+                have iter_start == 255u8;
+                have to_integer(total) == to_integer(at(iteration, total)) + 1;
+                have to_integer(at(iteration, total)) == 255;
+                have to_integer(total) == 256;
+                have total == 256u32;
+            }
+        }
+    }
+}
+"#;
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    let prepared = p.prepared().unwrap();
+    let (verified, events) = click::instrumentation::collect(|| {
+        ProgramVerificationSession::new_program_prepared(sidecar, &prepared)
+    });
+    verified.unwrap_or_else(|error| panic!("{error:?}"));
+    let raising_work: usize =
+        events
+            .iter()
+            .filter_map(|event| match event {
+                click::instrumentation::VerificationEvent::OperationFinished {
+                    name, work, ..
+                } if name == "solve closure: premise raising" => Some(*work),
+                _ => None,
+            })
+            .sum();
+    assert!(
+        raising_work > 0,
+        "the regression must measure premise raising"
+    );
+    assert!(
+        raising_work < 1_500_000,
+        "the small proof must not repeat the old multi-million-unit recovery search: {raising_work}"
+    );
+}

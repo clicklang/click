@@ -14,7 +14,7 @@ fn arm(
     SpecIntegerMatchArm {
         variant: "Case".into(),
         bindings: (0..binding_types.len())
-            .map(|index| format!("binding{index}"))
+            .map(|index| format!("binding{index}").into())
             .collect(),
         binding_types,
         binding_variables,

@@ -13,7 +13,7 @@ would admit this.
 
 The read stays a read through the pointer it was written with: lowering
 does not respell it through the pointer equality (lowering is fact-stable,
-`docs/internals/raise-lower.md`). Carrying the earlier fact across the store
+`docs/internals/raise-lower-principle.md`). Carrying the earlier fact across the store
 needs that store separated from the read, and it is not, so the claim is
 refused with the store named.
 

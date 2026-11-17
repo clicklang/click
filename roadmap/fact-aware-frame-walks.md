@@ -106,5 +106,5 @@ exact complete-pointer equations.
 Discovery belongs in budgeted, expandable planning. Applying a certificate
 must cost approximately its explicit size, independent of unrelated history.
 Coordinate with [Smart tactics](smart-tactics.md) and
-[Raise and lower](../docs/internals/raise-lower.md). Keep the compact-run store
+[Raise-lower principle](../docs/internals/raise-lower-principle.md). Keep the compact-run store
 experiment separate.

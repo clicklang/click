@@ -22,7 +22,7 @@ pub(in crate::surface::proof) struct PureProofContext<'a> {
     /// Indexed parameter values for reconstructing a refined source goal.
     /// Built once at the root and shared by every proof successor.
     pub(in crate::surface::proof) source_state: ExecutionState,
-    pub(in crate::surface::proof) source_names: BTreeMap<Variable, String>,
+    pub(in crate::surface::proof) source_names: BTreeMap<Variable, SurfaceBinder>,
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'a>,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
     pub(in crate::surface::proof) induction_setup: Option<PureInductionSetup>,
@@ -39,11 +39,49 @@ pub(in crate::surface::proof) enum FixedStateFacts<'a> {
     List(&'a crate::surface::PureFactList),
 }
 
-impl<'a> FixedStateFacts<'a> {
-    pub(in crate::surface::proof) fn as_slice(self) -> &'a [Proposition] {
+impl FixedStateFacts<'_> {
+    pub(in crate::surface::proof) fn len(&self) -> usize {
         match self {
-            Self::Slice(facts) => facts,
-            Self::List(facts) => facts.as_slice(),
+            Self::Slice(facts) => facts.len(),
+            Self::List(facts) => facts.len(),
+        }
+    }
+    pub(in crate::surface::proof) fn get(&self, index: usize) -> Option<&Proposition> {
+        match self {
+            Self::Slice(facts) => facts.get(index),
+            Self::List(facts) => facts.get(index),
+        }
+    }
+}
+impl PropositionSource for FixedStateFacts<'_> {
+    fn exact_available(&self, required: &Proposition) -> bool {
+        match self {
+            Self::Slice(facts) => facts.exact_available(required),
+            Self::List(facts) => facts.exact_available(required),
+        }
+    }
+    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
+        match self {
+            Self::Slice(facts) => Box::new(facts.iter()) as Box<dyn Iterator<Item = &Proposition>>,
+            Self::List(facts) => facts.iter(),
+        }
+    }
+    fn pure_context(&self) -> PureFactContext {
+        match self {
+            Self::Slice(facts) => facts.pure_context(),
+            Self::List(facts) => facts.context(),
+        }
+    }
+    fn indexed_proof_facts(&self) -> ProofFacts {
+        match self {
+            Self::Slice(facts) => facts.indexed_proof_facts(),
+            Self::List(facts) => facts.proof_facts(),
+        }
+    }
+    fn ordered_proof_facts(&self) -> ProofFacts {
+        match self {
+            Self::Slice(facts) => facts.ordered_proof_facts(),
+            Self::List(facts) => facts.ordered_proof_facts(),
         }
     }
 }
@@ -58,7 +96,6 @@ pub(in crate::surface::proof) struct FixedStateProofContext<'a> {
     pub(in crate::surface::proof) surface_propositions: &'a SurfacePropositionMap,
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'a>,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
-    pub(in crate::surface::proof) unfolded_predicates: &'a [String],
     pub(in crate::surface::proof) effect_facts: ExecutionFacts,
     /// The facts a recorded surface lowering must name to be reused here:
     /// the phase's facts with its state's observable resource facts.
@@ -125,7 +162,8 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     /// to. A bundle member synthesized from such an invariant, such as the
     /// extent guard a quantified `viewable` invariant owes, spells its binder
     /// with the written name, so a proof focused on it can name it.
-    pub(in crate::surface::proof) binder_names: Arc<BTreeMap<crate::kernel::Variable, String>>,
+    pub(in crate::surface::proof) binder_names:
+        Arc<BTreeMap<crate::kernel::Variable, SurfaceBinder>>,
 }
 
 /// The written `int32` quantifier binders of `checks`, keyed by the kernel
@@ -134,7 +172,7 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
 /// invariants.
 pub(in crate::surface::proof) fn written_invariant_binder_names(
     checks: &[LoopInvariantCheck],
-) -> BTreeMap<crate::kernel::Variable, String> {
+) -> BTreeMap<crate::kernel::Variable, SurfaceBinder> {
     use crate::kernel::SpecProposition;
     let mut names = BTreeMap::new();
     let mut pending = checks
@@ -165,7 +203,7 @@ pub(in crate::surface::proof) fn written_invariant_binder_names(
                 variable,
                 body,
             } => {
-                names.entry(*variable).or_insert_with(|| name.clone());
+                names.entry(*variable).or_insert_with(|| name.into());
                 pending.push(body);
             }
             SpecProposition::And(left, right)

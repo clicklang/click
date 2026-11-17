@@ -3,7 +3,7 @@
 //! Facts may decide whether lowering succeeds, discharge its obligations,
 //! and add side facts, but they never change the term it produces: when
 //! lowering succeeds under facts and under no facts, the two terms are the
-//! same up to the names of bound variables (`docs/internals/raise-lower.md`).
+//! same up to the names of bound variables (`docs/internals/raise-lower-principle.md`).
 //! A lowering that rewrites through a fact, such as `f(a)` to `g(b)` because
 //! `f(a) == g(b)` is known, yields a term no other context lowers to, so the
 //! fact holding it cannot be spelled.

@@ -665,7 +665,7 @@ kernel `MemoryRange`.
 ### Modus ponens
 
 The rule that derives `Q` from exact facts `P` and `P implies Q`. Click uses
-this rule in explicit extraction and selected simplification paths.
+this rule in `apply(fact) using { ... }` and solver expansion.
 
 ## N
 
@@ -1181,7 +1181,7 @@ path assumption.
 The [point](#point) a memory read is lowered to. A read of `*p` lowers to a
 load at its version point, written `at(V, *p)`. Choosing it does not depend on
 facts ([fact-stable
-lowering](../internals/raise-lower.md#lowering-is-fact-stable)); facts relate
+lowering](../internals/raise-lower-principle.md#lowering-is-fact-stable)); facts relate
 reads at different version points as ordinary equalities. Reads of one cell
 connected without a possible write share a version point and therefore lower
 to one term. A version point is never earlier than `function.entry`: the

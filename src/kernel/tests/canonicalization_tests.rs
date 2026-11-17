@@ -83,6 +83,7 @@ fn collect_offset_load_variables_from_term(
     load_variables: &mut BTreeSet<Variable>,
 ) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
         MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::PointerAddress(pointer, _) => {
             collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
@@ -158,6 +159,7 @@ fn assert_scaled_index_free_of_raw_loads(
     load_variables: &mut BTreeSet<Variable>,
 ) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } => {}
         MachineTerm::Variable(variable) => {
             if crate::kernel::is_load_variable(variable) {
@@ -229,7 +231,7 @@ fn assert_load_variables_have_defining_facts(
         let defined = facts.fact_iter().any(|fact| {
             crate::kernel::is_load_variable_defining_fact(&fact.proposition)
                 && matches!(
-                    &fact.proposition,
+                    fact.proposition(),
                     Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right: _ }, true)
                         if matches!(left.as_ref(), MachineTerm::Variable(variable) if variable == load_variable)
                 )
@@ -276,7 +278,7 @@ fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
     assert!(!execution.paths().is_empty());
     let mut saw_a_canonical_offset = false;
     for path in execution.paths() {
-        let Proposition::ProgramStatementExecutes { outcome, .. } =
+        let Proposition::ProgramStatementVerifies { outcome, .. } =
             path.theorem().proposition().peel_implications()
         else {
             panic!("execution should prove a statement judgment");
@@ -323,7 +325,7 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
     assert!(!execution.paths().is_empty());
     let mut saw_a_named_read = false;
     for path in execution.paths() {
-        let Proposition::ProgramStatementExecutes { outcome, .. } = path.theorem().proposition()
+        let Proposition::ProgramStatementVerifies { outcome, .. } = path.theorem().proposition()
         else {
             panic!("execution should prove a statement judgment");
         };

@@ -10,17 +10,11 @@ pub mod program_expression;
 mod region_footprint;
 pub use region_footprint::RegionFootprint;
 mod source_access;
-mod source_loans;
 pub(crate) use source_access::{
     ExecutedReferenceAccess, ExecutedReferenceBoundary, ReferenceAccessKind,
     ReferenceAccessSourceId, ReferenceBorrowSourceId,
 };
 pub use source_access::{StatementAssignSource, StatementStoreSource};
-pub use source_loans::{ScalarReferenceEnd, ScalarReferenceScope};
-pub(crate) use source_loans::{
-    ScalarReferencePlanFamily, ScalarReferencePlanKey, ScalarReferenceScopeKey,
-    ScalarReferenceScopePlan, ScalarReferenceSourcePlan,
-};
 
 /// Version of the resource and stable-view semantics used by proof
 /// artifacts.  This is deliberately separate from source and compiler
@@ -391,6 +385,7 @@ impl VerificationSession {
             // Structural operand identities read no registry or proof state;
             // retain them across function epochs and state restores.
             proof::signed_arithmetic::clear_shared_operand_keys();
+            execution_value::storage_keys::clear_session_key_memos();
             proof::clear_selected_atom_cache();
             proof::clear_rewritten_load_syntax_cache();
             proof::equality_rewrite::clear_shared_exact_rewrite_cache();

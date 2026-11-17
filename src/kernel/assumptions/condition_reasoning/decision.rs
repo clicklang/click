@@ -2185,6 +2185,7 @@ impl PureFactContext {
             return MachineTerm::constant(value);
         }
         match term {
+            MachineTerm::ThreadHandle(_) => term.clone(),
             MachineTerm::Constant { .. } => term.clone(),
             MachineTerm::Variable(variable) => MachineTerm::Variable(*variable),
             cast_term!(UInt32From64, value) => match self.wide_constant_from_equalities(value) {

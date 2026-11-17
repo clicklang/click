@@ -46,7 +46,7 @@ void probe(struct node *p, struct node *q) {
                 normalize() using { separate(memory(p->other), memory(q->tag)); };
             }
             have p->other == at(before, p->other) by {
-                preserve(separate(statement(1).footprint, memory(p->other)));
+                preserve(memory(p->other), statement(1));
             }
             mark after_call;
             step();
@@ -54,7 +54,7 @@ void probe(struct node *p, struct node *q) {
                 normalize() using { separate(memory(p->other), memory(q->other)); };
             }
             have p->other == at(after_call, p->other) by {
-                preserve(separate(statement(2).footprint, memory(p->other)));
+                preserve(memory(p->other), statement(2));
             }
             have p->other == at(before, p->other) by {
                 rewrite(p->other, at(after_call, p->other));
