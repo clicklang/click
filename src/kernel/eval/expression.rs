@@ -3512,7 +3512,7 @@ fn read_retained_lvalue_paths_without_ranges(
                 if let Some(source) = source.and_then(|source| source.reference_access.as_ref())
                     && source.kind == crate::kernel::ReferenceAccessKind::Read
                 {
-                    let at = state.program_point().id();
+                    let at = state.observation_point_id();
                     for path in &mut paths {
                         if matches!(path.outcome, ExpressionOutcome::Value(_)) {
                             let mut fact =

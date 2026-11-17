@@ -7744,7 +7744,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     obligations.push(ProofObligation::new(Proposition::MemoryReadDefined {
                         at: match memory {
                             SpecPoint::At(point) => point.id(),
-                            _ => selected_state.and_then(|state| state.program_point().id()),
+                            _ => selected_state.and_then(ExecutionState::observation_point_id),
                         },
                         memory: memory_view.clone(),
                         pointer: pointer.clone(),

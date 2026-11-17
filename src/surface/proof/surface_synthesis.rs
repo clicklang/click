@@ -2601,7 +2601,7 @@ fn synthesize_surface_atomic_proposition(
     } = proposition
     {
         let matches_point = |candidate: &ExecutionState| match at {
-            Some(id) => candidate.program_point().id() == Some(*id),
+            Some(id) => candidate.observation_point_id() == Some(*id),
             None => candidate.memory() == memory,
         };
         let historical = if matches_point(state) {
