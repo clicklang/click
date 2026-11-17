@@ -801,6 +801,7 @@ pub(in crate::kernel) struct ConstructedReturnBody {
 }
 
 impl ConstructedReturnBody {
+    #[cfg(test)]
     pub(in crate::kernel) fn owned_memory_frontier(&self) -> impl Iterator<Item = &ResourceFact> {
         self.boundary
             .iter()

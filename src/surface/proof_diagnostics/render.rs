@@ -1589,12 +1589,7 @@ impl Renderer<'_> {
                 self.condition_outcome(outcome);
                 self.push(")");
             }
-            Proposition::ProgramStatementExecutes {
-                state,
-                statement: _,
-                outcome,
-            }
-            | Proposition::ProgramStatementVerifies {
+            Proposition::ProgramStatementVerifies {
                 state,
                 statement: _,
                 outcome,
@@ -1613,13 +1608,7 @@ impl Renderer<'_> {
                 self.statement_outcome(outcome);
                 self.push(")");
             }
-            Proposition::ProgramFunctionExecutes {
-                state,
-                function: _,
-                arguments,
-                outcome,
-            }
-            | Proposition::ProgramFunctionVerifies {
+            Proposition::ProgramFunctionVerifies {
                 state,
                 function: _,
                 arguments,
@@ -1633,9 +1622,6 @@ impl Renderer<'_> {
                 ));
                 self.function_outcome(outcome);
                 self.push(")");
-            }
-            Proposition::ProgramFunctionSatisfiesSpecification { .. } => {
-                self.push("function-satisfies(<C function specification>)")
             }
             Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. } => {
                 self.push("function-partially-satisfies(<C function specification>)")

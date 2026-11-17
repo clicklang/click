@@ -1605,6 +1605,7 @@ fn complete_void_fallthrough(
     }
 }
 
+#[cfg(test)]
 pub(super) fn execute_program_function_paths(
     state: &ExecutionState,
     function: &ProgramFunction,
@@ -1632,8 +1633,8 @@ pub(super) fn execute_program_function_paths(
 /// executes the body in that frame; the contract routes cross the resource
 /// boundary, so the views the contract declares become loans of this
 /// application and recovery returns them.
+/// The body runs under the concrete judgment, which unrolls loops.
 #[allow(clippy::too_many_arguments)]
-/// `ProgramFunctionExecutes` for `function` applied to `arguments`.
 pub(super) fn execute_program_function_paths_with_contract_resources(
     state: &ExecutionState,
     function: &ProgramFunction,

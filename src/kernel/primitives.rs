@@ -13247,23 +13247,12 @@ pub enum Proposition {
         condition: ProgramExpression,
         outcome: ConditionOutcome,
     },
-    ProgramStatementExecutes {
-        state: Box<ExecutionState>,
-        statement: Box<ProgramStatement>,
-        outcome: StatementOutcome,
-    },
-    /// An abstract verification transition. Unlike `ProgramStatementExecutes`, this
-    /// does not assert that the represented outcome is concretely reachable.
+    /// An abstract verification transition: the outcome is one a checked
+    /// run admits, not a claim that it is concretely reachable.
     ProgramStatementVerifies {
         state: Box<ExecutionState>,
         statement: Box<ProgramStatement>,
         outcome: StatementOutcome,
-    },
-    ProgramFunctionExecutes {
-        state: Box<ExecutionState>,
-        function: Box<ProgramFunction>,
-        arguments: Vec<ProgramExpression>,
-        outcome: FunctionOutcome,
     },
     /// A return branch admitted by modular verification. This is conditional
     /// on the function returning and is not a termination or reachability
@@ -13274,15 +13263,11 @@ pub enum Proposition {
         arguments: Vec<ProgramExpression>,
         outcome: FunctionOutcome,
     },
-    ProgramFunctionSatisfiesSpecification {
-        function: Box<ProgramFunction>,
-        // Large C payloads stay out of every pure proposition clone frame.
-        specification: Box<FunctionSpecification>,
-    },
     /// The specification describes one allowed return branch and makes no
     /// claim that the branch is reachable or that the function terminates.
     ProgramFunctionPartiallySatisfiesSpecification {
         function: Box<ProgramFunction>,
+        // Large C payloads stay out of every pure proposition clone frame.
         specification: Box<FunctionSpecification>,
     },
     MemoryLoads {
@@ -13497,12 +13482,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             condition.hash(state);
             outcome.hash(state);
         }
-        Proposition::ProgramStatementExecutes {
-            state: c_state,
-            statement,
-            outcome,
-        }
-        | Proposition::ProgramStatementVerifies {
+        Proposition::ProgramStatementVerifies {
             state: c_state,
             statement,
             outcome,
@@ -13511,13 +13491,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             statement.hash(state);
             outcome.hash(state);
         }
-        Proposition::ProgramFunctionExecutes {
-            state: c_state,
-            function,
-            arguments,
-            outcome,
-        }
-        | Proposition::ProgramFunctionVerifies {
+        Proposition::ProgramFunctionVerifies {
             state: c_state,
             function,
             arguments,
@@ -13528,11 +13502,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             arguments.hash(state);
             outcome.hash(state);
         }
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function,
-            specification,
-        }
-        | Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
         } => {
@@ -13792,15 +13762,6 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             condition: condition.clone(),
             outcome: outcome.clone(),
         },
-        Proposition::ProgramStatementExecutes {
-            state,
-            statement,
-            outcome,
-        } => Proposition::ProgramStatementExecutes {
-            state: state.clone(),
-            statement: statement.clone(),
-            outcome: outcome.clone(),
-        },
         Proposition::ProgramStatementVerifies {
             state,
             statement,
@@ -13808,17 +13769,6 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
         } => Proposition::ProgramStatementVerifies {
             state: state.clone(),
             statement: statement.clone(),
-            outcome: outcome.clone(),
-        },
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        } => Proposition::ProgramFunctionExecutes {
-            state: state.clone(),
-            function: function.clone(),
-            arguments: arguments.clone(),
             outcome: outcome.clone(),
         },
         Proposition::ProgramFunctionVerifies {
@@ -13831,13 +13781,6 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             function: function.clone(),
             arguments: arguments.clone(),
             outcome: outcome.clone(),
-        },
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function,
-            specification,
-        } => Proposition::ProgramFunctionSatisfiesSpecification {
-            function: function.clone(),
-            specification: specification.clone(),
         },
         Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,

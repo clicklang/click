@@ -6449,8 +6449,7 @@ fn checked_evidence_conclusion(theorem: &Theorem) -> &Proposition {
 
 fn statement_call_havoc_views(theorem: &Theorem) -> Vec<crate::kernel::SharedMemory> {
     let (before, outcome) = match checked_evidence_conclusion(theorem) {
-        Proposition::ProgramStatementExecutes { state, outcome, .. }
-        | Proposition::ProgramStatementVerifies { state, outcome, .. } => (state.memory(), outcome),
+        Proposition::ProgramStatementVerifies { state, outcome, .. } => (state.memory(), outcome),
         _ => return Vec::new(),
     };
     let after = match outcome {
@@ -6546,8 +6545,7 @@ fn collect_checked_callees<'e>(
         match event {
             CheckedExecutionEvent::Statement(theorem) => {
                 match checked_evidence_conclusion(theorem) {
-                    Proposition::ProgramStatementExecutes { statement, .. }
-                    | Proposition::ProgramStatementVerifies { statement, .. } => {
+                    Proposition::ProgramStatementVerifies { statement, .. } => {
                         crate::kernel::termination::checked_statement_calls(
                             statement, seen, callees,
                         );
@@ -7001,12 +6999,7 @@ fn checked_statement_event(
     statement: &ProgramStatement,
 ) -> Option<StatementOutcome> {
     let (proved_state, proved_statement, outcome) = match checked_evidence_conclusion(theorem) {
-        Proposition::ProgramStatementExecutes {
-            state,
-            statement,
-            outcome,
-        }
-        | Proposition::ProgramStatementVerifies {
+        Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
@@ -7266,8 +7259,7 @@ fn check_evidence_events(
         if let CheckedExecutionEvent::Statement(theorem) = event
             && matches!(
                 checked_evidence_conclusion(theorem),
-                Proposition::ProgramStatementExecutes { statement, .. }
-                | Proposition::ProgramStatementVerifies { statement, .. }
+                Proposition::ProgramStatementVerifies { statement, .. }
                     if matches!(**statement, ProgramStatement::Skip)
             )
             && !remaining.as_ref().is_some_and(|source| {
@@ -8139,8 +8131,7 @@ fn validate_checked_event_shapes_after<'e>(
         let right_shape = if statement {
             matches!(
                 checked_evidence_conclusion(theorem),
-                Proposition::ProgramStatementExecutes { .. }
-                    | Proposition::ProgramStatementVerifies { .. }
+                Proposition::ProgramStatementVerifies { .. }
             )
         } else {
             matches!(
@@ -8502,8 +8493,7 @@ impl ExecutionProofCore {
             .map(|view| self.checked_call_events.new_event(view))
             .collect::<Vec<_>>();
         let before = match checked_evidence_conclusion(&theorem) {
-            Proposition::ProgramStatementExecutes { state, .. }
-            | Proposition::ProgramStatementVerifies { state, .. } => Some(state.as_ref()),
+            Proposition::ProgramStatementVerifies { state, .. } => Some(state.as_ref()),
             _ => None,
         };
         let after = match &outcome {
@@ -8555,8 +8545,7 @@ impl ExecutionProofCore {
         {
             let at_loop_test = matches!(
                 checked_evidence_conclusion(&theorem),
-                Proposition::ProgramStatementExecutes { statement, .. }
-                    | Proposition::ProgramStatementVerifies { statement, .. }
+                Proposition::ProgramStatementVerifies { statement, .. }
                     if matches!(statement.as_ref(), ProgramStatement::LoopTest { .. })
             );
             match &outcome {
@@ -10100,7 +10089,7 @@ impl ExecutionProofCore {
             );
             if let Some(entry) = self.function_entry.as_ref() {
                 reserved.extend(crate::kernel::proposition_variables(
-                    &Proposition::ProgramFunctionExecutes {
+                    &Proposition::ProgramFunctionVerifies {
                         state: Box::new(entry.caller_state.clone()),
                         function: Box::new(entry.function.as_ref().clone()),
                         arguments: entry.arguments.clone(),

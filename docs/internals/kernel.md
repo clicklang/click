@@ -1771,15 +1771,15 @@ available to an execution; it does not select between these semantics. In
 particular, rule lookup is not a fallback mechanism: applying verified rules
 without a matching rule fails.
 
-Concrete execution judgments and modular verification transitions are
-deliberately different propositions. `ProgramStatementExecutes` and
-`ProgramFunctionExecutes` describe outcomes produced by direct operational
-execution. `ProgramStatementVerifies` and `ProgramFunctionVerifies` describe abstract
+Every execution theorem the kernel produces is a verification transition:
+`ProgramStatementVerifies` and `ProgramFunctionVerifies` describe abstract
 branches admitted while checking partial correctness with loop or function
-summaries. A verification return branch means “if this computation returns,
-this is an allowed post-state”; it is not evidence that the return is
-reachable. Verified contract and loop rules cannot be converted into concrete
-execution or termination theorems.
+summaries, and a checked path proves only
+`ProgramFunctionPartiallySatisfiesSpecification`. A verification return branch
+means “if this computation returns, this is an allowed post-state”; it is not
+evidence that the return is reachable. Verified contract and loop rules cannot
+be converted into concrete execution or termination theorems; termination is
+the separate `VerifiedFunctionTerminationRule`.
 
 One driver steps statements and functions for both judgments
 (`execute_statement_paths` in `src/kernel/eval/statements.rs`, and

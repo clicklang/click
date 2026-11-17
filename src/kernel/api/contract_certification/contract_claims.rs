@@ -108,11 +108,7 @@ pub(crate) fn program_checked_function_proposition_with_reason(
         proposition
     }
     match conclusion(theorem) {
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function: proved_function,
-            specification: proved_specification,
-        }
-        | Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function: proved_function,
             specification: proved_specification,
         } if **proved_function == *function && proved_specification.as_ref() == specification => {}
@@ -307,10 +303,12 @@ mod cached_read_completion_tests {
             }),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         };
-        let theorem = Theorem::new(Proposition::ProgramFunctionSatisfiesSpecification {
-            function: Box::new(function.clone()),
-            specification: Box::new(specification.clone()),
-        });
+        let theorem = Theorem::new(
+            Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+                function: Box::new(function.clone()),
+                specification: Box::new(specification.clone()),
+            },
+        );
         let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
             ProofObject::root(
                 (),
@@ -3933,7 +3931,7 @@ mod checked_proposition_index_tests {
             true,
         );
         let state = ExecutionState::new();
-        let proposition = Proposition::ProgramFunctionExecutes {
+        let proposition = Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function.clone()),
             arguments: Vec::new(),

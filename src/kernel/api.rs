@@ -6586,22 +6586,6 @@ fn checked_execution_at_definitionally_equal_entry_state(
             conclusion = body;
         }
         let proposition = match conclusion {
-            Proposition::ProgramFunctionExecutes {
-                state: proved_state,
-                function: proved_function,
-                arguments,
-                outcome,
-            } if **proved_state == checked.state
-                && **proved_function == *function
-                && arguments == &checked.arguments =>
-            {
-                Proposition::ProgramFunctionExecutes {
-                    state: Box::new(state.clone()),
-                    function: Box::new(function.clone()),
-                    arguments: arguments.clone(),
-                    outcome: outcome.clone(),
-                }
-            }
             Proposition::ProgramFunctionVerifies {
                 state: proved_state,
                 function: proved_function,
@@ -6827,8 +6811,7 @@ pub(super) fn path_function_outcome(path: &SymbolicExecutionPath) -> Option<&Fun
         proposition = body;
     }
     match proposition {
-        Proposition::ProgramFunctionExecutes { outcome, .. }
-        | Proposition::ProgramFunctionVerifies { outcome, .. } => Some(outcome),
+        Proposition::ProgramFunctionVerifies { outcome, .. } => Some(outcome),
         _ => None,
     }
 }
@@ -7336,64 +7319,6 @@ pub(crate) fn prove_prepared_function_contract_execution_paths(
     }
 }
 
-pub fn prove_program_function_satisfies_specification(
-    function: ProgramFunction,
-    specification: FunctionSpecification,
-    assumptions: PureFactContext,
-) -> Option<Theorem> {
-    prove_program_function_satisfies_specification_with_environment(
-        function,
-        specification,
-        assumptions,
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-    )
-}
-
-pub fn prove_program_function_satisfies_specification_with_environment(
-    function: ProgramFunction,
-    specification: FunctionSpecification,
-    assumptions: PureFactContext,
-    environment: ExecutionEnvironment,
-    execution_semantics: ExecutionSemantics,
-) -> Option<Theorem> {
-    let specification_assumptions =
-        assumptions_with_propositions(&assumptions, specification.requires());
-    let paths = execute_program_function_paths(
-        specification.state(),
-        &function,
-        specification.arguments(),
-        &specification_assumptions,
-        ExecutionContext::new(&environment, execution_semantics),
-        &mut ExecutionBudget::for_new_execution(),
-    )
-    .ok()?;
-    let mut paths = paths.into_iter();
-    let path = paths.next()?;
-    if paths.next().is_some()
-        || path.facts.iter().any(ExecutionPureFact::is_public)
-        || !path.obligations.is_empty()
-        || &path.outcome != specification.outcome()
-    {
-        return None;
-    }
-
-    let requires = specification.requires().to_vec();
-    let proposition = requires.iter().rev().fold(
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function: Box::new(function),
-            specification: Box::new(specification),
-        },
-        |body, requirement| Proposition::Implies(Box::new(requirement.clone()), Box::new(body)),
-    );
-    Some(Theorem::new(wrap_proof_facts(
-        proposition,
-        &assumptions,
-        &[],
-        &[],
-    )))
-}
-
 #[cfg(test)]
 pub fn prove_program_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem> {
     let a_bits = MachineTerm::Variable(a);
@@ -7420,7 +7345,7 @@ pub fn prove_program_max_lt_returns_right(a: Variable, b: Variable) -> Option<Th
             b,
             Proposition::Implies(
                 Box::new(Proposition::ConditionIs(condition, true)),
-                Box::new(Proposition::ProgramStatementExecutes {
+                Box::new(Proposition::ProgramStatementVerifies {
                     state: Box::new(state),
                     statement: Box::new(program_max_body()),
                     outcome,
@@ -7456,7 +7381,7 @@ pub fn prove_program_max_not_lt_returns_left(a: Variable, b: Variable) -> Option
             b,
             Proposition::Implies(
                 Box::new(Proposition::ConditionIs(condition, false)),
-                Box::new(Proposition::ProgramStatementExecutes {
+                Box::new(Proposition::ProgramStatementVerifies {
                     state: Box::new(state),
                     statement: Box::new(program_max_body()),
                     outcome,
