@@ -2483,6 +2483,31 @@ pub(in crate::surface) fn collect_contract_expression_referenced_bindings<N: Ref
     expression: &ContractExpression,
     names: &mut BTreeSet<N>,
 ) {
+    // A lexical let chain is a sequence of scopes, not recursive syntax work.
+    // Save each entry dependency so shadowing restores exactly its former set.
+    if matches!(expression, ContractExpression::Let { .. }) {
+        let mut current = expression;
+        let mut scopes = Vec::new();
+        while let ContractExpression::Let {
+            name, value, body, ..
+        } = current
+        {
+            collect_contract_expression_referenced_bindings(value, names);
+            let previous = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
+            scopes.push((name, previous));
+            current = body;
+        }
+        collect_contract_expression_referenced_bindings(current, names);
+        for (name, previous) in scopes.into_iter().rev() {
+            if let Some(name) = N::binder(name) {
+                N::leave_scope(names, &name);
+                if previous {
+                    names.insert(name);
+                }
+            }
+        }
+        return;
+    }
     let mut depth = 0;
     let mut current = expression;
     while let ContractExpression::Add(left, _) = current {
@@ -3609,7 +3634,52 @@ pub(in crate::surface) fn substitute_contract_expression_in(
         return substitute_contract_expression_in(expression, &selected);
     }
 
+    if matches!(expression, ContractExpression::Let { .. }) {
+        return substitute_contract_let_chain(expression, substitutions);
+    }
     substitute_contract_expression_node(expression, substitutions)
+}
+
+/// Retain scope snapshots and rebuild from the tail, preserving the original
+/// order of capture renaming and initializer substitution without recursive
+/// frames for every declaration. Persistent binding maps share each prefix.
+fn substitute_contract_let_chain(
+    expression: &ContractExpression,
+    substitutions: &ContractSubstitutions<'_>,
+) -> Result<ContractExpression, String> {
+    let mut current = expression;
+    let mut scoped = substitutions.clone();
+    let mut frames = Vec::new();
+    while let ContractExpression::Let {
+        name,
+        click_type,
+        value,
+        body,
+    } = current
+    {
+        let mut inside = scoped.without_binding(name);
+        let renamed = if substitutions_reference_name(&inside, name) {
+            let fresh = SurfaceBinder::fresh();
+            inside.insert_value(name.clone(), fresh.reference());
+            fresh
+        } else {
+            name.clone()
+        };
+        frames.push((renamed, click_type.clone(), value.as_ref(), scoped));
+        scoped = inside;
+        current = body;
+    }
+    let mut result = substitute_contract_expression_in(current, &scoped)?;
+    for (name, click_type, value, before) in frames.into_iter().rev() {
+        let value = substitute_contract_expression_in(value, &before)?;
+        result = ContractExpression::Let {
+            name,
+            click_type,
+            value: Box::new(value),
+            body: Box::new(result),
+        };
+    }
+    Ok(result)
 }
 
 // Keep the large ordinary expression match out of the frame of each fold.
