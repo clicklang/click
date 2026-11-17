@@ -1180,14 +1180,14 @@ enum AggregateCopyDestination {
 
 fn aggregate_assignment_write_outcome(
     state: &ExecutionState,
-    target: &PointerValue,
+    target: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
 ) -> Option<StatementOutcome> {
     #[cfg(test)]
     let _fast = crate::kernel::search::FastOperationScope::enter("aggregate copy loan check");
-    let pointer = target.pointer();
+    let pointer = target.address();
     let storage =
         MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes);
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &storage, assumptions)
@@ -1306,7 +1306,7 @@ fn execute_program_aggregate_copy_paths(
                 ),
                 AggregateCopyDestination::ResultTemporary => memory_write_permission_outcome(
                     state,
-                    target_pointer.pointer(),
+                    target_pointer.address(),
                     layout.size_bytes(),
                     &write_assumptions,
                 ),
