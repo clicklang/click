@@ -418,7 +418,9 @@ impl Words<'_, '_> {
         }
         if matches!(
             e,
-            E::Binding(_) | E::CBinding(_) | E::ProgramExpression(ProgramExpression::Variable(_))
+            E::Binding(_)
+                | E::ProgramBinding(_)
+                | E::ProgramExpression(ProgramExpression::Variable(_))
         ) && let ProgramValue::UInt64(word) = native.numeric_value()
         {
             let mut atoms = Vec::new();
@@ -818,7 +820,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         fn leaf(e: &E) -> bool {
             match e {
                 E::Binding(_)
-                | E::CBinding(_)
+                | E::ProgramBinding(_)
                 | E::Field { .. }
                 | E::Index(..)
                 | E::ArrayIndex { .. }
