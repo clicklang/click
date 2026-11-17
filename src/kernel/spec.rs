@@ -57,7 +57,9 @@ impl<T> LoweredTermPath<T> {
 }
 
 pub(super) type SpecExpressionPath = LoweredTermPath<SpecValue>;
-pub(super) type SpecIntegerPath = LoweredTermPath<IntegerTerm>;
+mod integer_result;
+use integer_result::IntegerResult;
+pub(super) type SpecIntegerPath = LoweredTermPath<IntegerResult>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecSequencePath {
@@ -893,7 +895,7 @@ fn capture_spec_integer_argument(
         .map(|fact| fact.proposition().clone())
         .chain(path.obligations.iter().map(|o| o.proposition().clone()))
         .collect();
-    Ok((path.value.clone(), guards))
+    Ok((path.value.clone().into_native_compat(), guards))
 }
 
 /// Which written subterm contributed `proposition` to a capture path.
@@ -2189,7 +2191,7 @@ fn evaluate_spec_integer_expression_paths_in(
                 return Err(ExecutionLimit::ResourceFieldInstanceUnavailable);
             };
             Ok(vec![SpecIntegerPath {
-                value: value.clone(),
+                value: value.clone().into(),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
@@ -2200,7 +2202,7 @@ fn evaluate_spec_integer_expression_paths_in(
                 return Err(ExecutionLimit::Deadline);
             }
             Ok(vec![SpecIntegerPath {
-                value: term,
+                value: term.into(),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
@@ -2284,30 +2286,31 @@ fn evaluate_spec_integer_expression_paths_in(
                         domain.clone(),
                     );
                     Ok(SpecIntegerPath {
-                        value,
+                        value: value.into(),
                         facts: path.facts,
                         obligations,
                     })
                 })
                 .collect()
         }
-        SpecIntegerExpression::Negate(inner) => {
-            evaluate_spec_integer_expression_paths_in(scope, inner, assumptions, budget).and_then(
-                |paths| {
-                    let mut result = Vec::new();
-                    for mut path in paths {
-                        if crate::instrumentation::numeric_operation_work_exceeded(
-                            integer_term_bits(&path.value),
-                        ) {
-                            return Err(ExecutionLimit::Deadline);
-                        }
-                        path.value = IntegerTerm::Negate(path.value.into());
-                        result.push(path);
-                    }
-                    Ok(result)
-                },
-            )
-        }
+        SpecIntegerExpression::Negate(inner) => evaluate_spec_integer_expression_paths_in(
+            scope,
+            inner,
+            assumptions,
+            budget,
+        )
+        .and_then(|paths| {
+            let mut result = Vec::new();
+            for mut path in paths {
+                if crate::instrumentation::numeric_operation_work_exceeded(path.value.bits()) {
+                    return Err(ExecutionLimit::Deadline);
+                }
+                path.value =
+                    IntegerResult::operation(KernelIntegerOperator::Negate, vec![path.value]);
+                result.push(path);
+            }
+            Ok(result)
+        }),
         SpecIntegerExpression::Add(left, right) => evaluate_integer_binary_paths_in(
             scope,
             left,
@@ -2421,13 +2424,14 @@ fn evaluate_spec_integer_expression_paths_in(
                         };
                         if let Some(body_value) = body_value {
                             result.push(SpecIntegerPath {
-                                value: IntegerTerm::range_fold(
+                                value: (IntegerTerm::range_fold(
                                     index.clone(),
-                                    initial_path.value.clone(),
+                                    initial_path.value.clone().into_native_compat(),
                                     *accumulator,
                                     *item,
-                                    body_value,
-                                ),
+                                    body_value.into_native_compat(),
+                                ))
+                                .into(),
                                 facts,
                                 obligations,
                             });
@@ -2514,13 +2518,14 @@ fn evaluate_spec_integer_expression_paths_in(
                             continue;
                         };
                         result.push(SpecIntegerPath {
-                            value: IntegerTerm::range_fold(
+                            value: (IntegerTerm::range_fold(
                                 index.clone(),
-                                initial_path.value.clone(),
+                                initial_path.value.clone().into_native_compat(),
                                 *accumulator,
                                 *item,
-                                body_path.value.clone(),
-                            ),
+                                body_path.value.clone().into_native_compat(),
+                            ))
+                            .into(),
                             facts,
                             obligations,
                         });
@@ -3275,7 +3280,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 }
             }
             let body = rewrite_integer_match_typed_body(
-                body_path.value,
+                body_path.value.into_native_compat(),
                 &BTreeMap::new(),
                 &integer_replacements,
                 &BTreeMap::new(),
@@ -3314,7 +3319,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
             ),
         };
         result.push(SpecIntegerPath {
-            value,
+            value: value.into(),
             facts: std::mem::take(&mut facts),
             obligations: std::mem::take(&mut obligations),
         });
@@ -3519,8 +3524,8 @@ fn evaluate_integer_binary_paths_in(
             ) else {
                 continue;
             };
-            let left_bits = integer_term_bits(&left_path.value);
-            let right_bits = integer_term_bits(&right_path.value);
+            let left_bits = left_path.value.bits();
+            let right_bits = right_path.value.bits();
             let work = match operation {
                 IntegerBinaryOperation::Multiply
                 | IntegerBinaryOperation::TruncatingQuotient
@@ -3540,7 +3545,7 @@ fn evaluate_integer_binary_paths_in(
                     | IntegerBinaryOperation::TruncatingRemainder
             ) {
                 let nonzero = ConditionTerm::integer_not_equal(
-                    right_path.value.clone(),
+                    right_path.value.clone().into_native_compat(),
                     IntegerTerm::constant_i64(0),
                 );
                 retain_required_integer_obligation(
@@ -3549,25 +3554,19 @@ fn evaluate_integer_binary_paths_in(
                     Proposition::ConditionIs(nonzero, true),
                 );
             }
-            let value = match operation {
-                IntegerBinaryOperation::Add => {
-                    IntegerTerm::Add(left_path.value.clone().into(), right_path.value.into())
+            let operator = match operation {
+                IntegerBinaryOperation::Add => KernelIntegerOperator::Add,
+                IntegerBinaryOperation::Subtract => KernelIntegerOperator::Subtract,
+                IntegerBinaryOperation::Multiply => KernelIntegerOperator::Multiply,
+                IntegerBinaryOperation::TruncatingQuotient => {
+                    KernelIntegerOperator::TruncatingQuotient
                 }
-                IntegerBinaryOperation::Subtract => {
-                    IntegerTerm::Subtract(left_path.value.clone().into(), right_path.value.into())
+                IntegerBinaryOperation::TruncatingRemainder => {
+                    KernelIntegerOperator::TruncatingRemainder
                 }
-                IntegerBinaryOperation::Multiply => {
-                    IntegerTerm::Multiply(left_path.value.clone().into(), right_path.value.into())
-                }
-                IntegerBinaryOperation::TruncatingQuotient => IntegerTerm::TruncatingQuotient(
-                    left_path.value.clone().into(),
-                    right_path.value.into(),
-                ),
-                IntegerBinaryOperation::TruncatingRemainder => IntegerTerm::TruncatingRemainder(
-                    left_path.value.clone().into(),
-                    right_path.value.into(),
-                ),
             };
+            let value =
+                IntegerResult::operation(operator, vec![left_path.value.clone(), right_path.value]);
             result.push(SpecIntegerPath {
                 value,
                 facts,
@@ -4369,7 +4368,7 @@ fn evaluate_spec_algebraic_value_at_state_in(
                 evaluate_spec_integer_expression_paths_in(scope, expression, assumptions, budget)?
                     .into_iter()
                     .map(|path| SpecAlgebraicValuePath {
-                        value: AlgebraicFieldResult::Native(AlgebraicValue::Integer(path.value)),
+                        value: AlgebraicFieldResult::Shared(path.value.into_kernel()),
                         facts: path.facts,
                         obligations: path.obligations,
                     })
@@ -5489,10 +5488,11 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
     Ok(paths
         .into_iter()
         .map(|(arguments, facts, obligations)| SpecIntegerPath {
-            value: IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
+            value: (IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 name.to_string(),
                 call_arguments(arguments),
-            )),
+            )))
+            .into(),
             facts,
             obligations,
         })
@@ -6706,11 +6706,17 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 }
                 let mut obligations = path.obligations;
                 let lower_bound = Proposition::ConditionIs(
-                    ConditionTerm::integer_greater_equal(path.value.clone(), lower.clone()),
+                    ConditionTerm::integer_greater_equal(
+                        path.value.clone().into_native_compat(),
+                        lower.clone(),
+                    ),
                     true,
                 );
                 let upper_bound = Proposition::ConditionIs(
-                    ConditionTerm::integer_less_equal(path.value.clone(), upper.clone()),
+                    ConditionTerm::integer_less_equal(
+                        path.value.clone().into_native_compat(),
+                        upper.clone(),
+                    ),
                     true,
                 );
                 retain_required_integer_obligation(&mut obligations, assumptions, lower_bound);
@@ -6726,12 +6732,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     .ok_or(ExecutionLimit::Paths)?
                     .into()
                 } else {
-                    KernelTerm::integer_to_machine(
-                        *destination,
-                        KernelTermImport::default().integer(&path.value.into()),
-                    )
-                    .expect("typed Integer conversion operand")
-                    .into()
+                    KernelTerm::integer_to_machine(*destination, path.value.into_kernel())
+                        .expect("typed Integer conversion operand")
+                        .into()
                 };
                 paths.push(SpecExpressionPath {
                     value,
@@ -8365,7 +8368,7 @@ pub(in crate::kernel) fn program_value_bitvector_term(value: &ProgramValue) -> O
 }
 
 fn integer_constant_to_machine(
-    value: &IntegerTerm,
+    value: &IntegerResult,
     destination: MachineIntegerType,
 ) -> Option<ProgramValue> {
     let value = MachineIntegerConstant::from_integer(destination.format(), value.as_const()?)?;
@@ -9413,11 +9416,12 @@ fn evaluate_spec_integer_if_paths_in(
                             (else_path.value.clone(), then_path.value.clone())
                         };
                         branch_paths.push(SpecIntegerPath {
-                            value: IntegerTerm::if_then_else(
+                            value: (IntegerTerm::if_then_else(
                                 condition.clone(),
-                                then_value,
-                                else_value,
-                            ),
+                                then_value.into_native_compat(),
+                                else_value.into_native_compat(),
+                            ))
+                            .into(),
                             facts,
                             obligations,
                         });

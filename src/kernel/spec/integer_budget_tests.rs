@@ -195,9 +195,12 @@ fn from_machine_keeps_signed_and_unsigned_values_distinct() {
         .value
     };
 
-    assert_eq!(evaluate(signed), IntegerTerm::constant_i64(-1));
     assert_eq!(
-        evaluate(unsigned),
+        evaluate(signed).into_native_compat(),
+        IntegerTerm::constant_i64(-1)
+    );
+    assert_eq!(
+        evaluate(unsigned).into_native_compat(),
         IntegerTerm::constant(BigInt::from(u32::MAX))
     );
 }
@@ -240,7 +243,10 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
         &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
     )
     .unwrap();
-    assert_eq!(paths[0].value, IntegerTerm::constant_i64(7));
+    assert_eq!(
+        paths[0].value.clone().into_native_compat(),
+        IntegerTerm::constant_i64(7)
+    );
 }
 
 #[test]
@@ -798,7 +804,8 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
     )
     .expect("an empty range still typechecks its body");
     assert_eq!(paths.len(), 1);
-    let IntegerTerm::RangeFold { body, .. } = &paths[0].value else {
+    let value = paths[0].value.native_compat();
+    let IntegerTerm::RangeFold { body, .. } = value.as_ref() else {
         panic!("empty fold capture lost the fold shape");
     };
     let IntegerTerm::Machine(machine) = body.as_ref() else {
