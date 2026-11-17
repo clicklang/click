@@ -82,7 +82,7 @@ mod tests {
             vec![],
             vec![SpecProposition::Comparison {
                 left: SpecExpression::Let {
-                    name: local.to_string(),
+                    name: local.to_string().into(),
                     value: Box::new(SpecExpression::ProgramExpression(
                         crate::kernel::program_expression::variable(parameter),
                     )),
@@ -248,6 +248,33 @@ impl Names {
             self.bindings.remove(&name);
         }
     }
+    fn bind_program(&mut self, name: &mut BindingName) -> (BindingName, Option<BindingName>) {
+        let original = name.clone();
+        if let BindingName::Named(name) = name {
+            self.bind(name);
+            return (original, None);
+        }
+        *name = BindingName::from(format!("bound:{}", self.next));
+        self.next += 1;
+        let previous = self.program_bindings.insert(original.clone(), name.clone());
+        (original, previous)
+    }
+    fn unbind_program(&mut self, (name, previous): (BindingName, Option<BindingName>)) {
+        if let BindingName::Named(name) = name {
+            self.unbind(name);
+        } else if let Some(previous) = previous {
+            self.program_bindings.insert(name, previous);
+        } else {
+            self.program_bindings.remove(&name);
+        }
+    }
+    fn program_reference(&self, name: &mut BindingName) {
+        if let BindingName::Named(name) = name {
+            self.reference(name);
+        } else if let Some(bound) = self.program_bindings.get(name) {
+            *name = bound.clone();
+        }
+    }
     fn c(&mut self, expression: &mut ProgramExpression) {
         self.visit();
         use ProgramExpression::*;
@@ -255,6 +282,7 @@ impl Names {
             Variable(name) => match name {
                 BindingName::Named(source) => self.reference(source),
                 BindingName::Local(_)
+                | BindingName::Generated(_)
                 | BindingName::Static(_)
                 | BindingName::ContractResult
                 | BindingName::ContractException => {
@@ -400,7 +428,8 @@ impl Names {
                     BindingName::Local(_)
                     | BindingName::Static(_)
                     | BindingName::ContractResult
-                    | BindingName::ContractException => {
+                    | BindingName::ContractException
+                    | BindingName::Generated(_) => {
                         if let Some(bound) = self.program_bindings.get(parameter) {
                             *parameter = bound.clone();
                         }
@@ -457,9 +486,9 @@ impl Names {
             }
             Let { name, value, body } => {
                 self.expression(value);
-                let original = self.bind(name);
+                let original = self.bind_program(name);
                 self.expression(body);
-                self.unbind(original);
+                self.unbind_program(original);
             }
             RangeFold {
                 start,
@@ -472,11 +501,11 @@ impl Names {
                 self.expression(start);
                 self.expression(end);
                 self.expression(initial);
-                let a = self.bind(accumulator);
-                let b = self.bind(item);
+                let a = self.bind_program(accumulator);
+                let b = self.bind_program(item);
                 self.expression(body);
-                self.unbind(b);
-                self.unbind(a);
+                self.unbind_program(b);
+                self.unbind_program(a);
             }
             PureFunctionApplication { arguments, .. } => {
                 for a in arguments {
@@ -486,10 +515,14 @@ impl Names {
             AlgebraicMatch { scrutinee, arms } => {
                 self.algebraic(scrutinee);
                 for arm in arms {
-                    let bound: Vec<_> = arm.bindings.iter_mut().map(|n| self.bind(n)).collect();
+                    let bound: Vec<_> = arm
+                        .bindings
+                        .iter_mut()
+                        .map(|n| self.bind_program(n))
+                        .collect();
                     self.expression(&mut arm.body);
                     for n in bound.into_iter().rev() {
-                        self.unbind(n);
+                        self.unbind_program(n);
                     }
                 }
             }
@@ -499,7 +532,7 @@ impl Names {
         use SpecAlgebraicExpressionNode::*;
         match &mut expression.node {
             Variable(_) | ResourceField(_) => {}
-            Binding(name) => self.reference(name),
+            Binding(name) => self.program_reference(name),
             ProgramValue(value) => self.expression(value),
             Constructor { fields, .. } => {
                 for field in fields {
@@ -527,10 +560,14 @@ impl Names {
             Match { scrutinee, arms } => {
                 self.algebraic(scrutinee);
                 for arm in arms {
-                    let bound: Vec<_> = arm.bindings.iter_mut().map(|n| self.bind(n)).collect();
+                    let bound: Vec<_> = arm
+                        .bindings
+                        .iter_mut()
+                        .map(|n| self.bind_program(n))
+                        .collect();
                     self.algebraic(&mut arm.body);
                     for n in bound.into_iter().rev() {
-                        self.unbind(n);
+                        self.unbind_program(n);
                     }
                 }
             }
@@ -606,6 +643,7 @@ impl Names {
                 self.expression(left);
                 self.expression(right);
             }
+            MutexHeld(e) => self.expression(e),
             Defined(e) | FloatClassification { expression: e, .. } => self.expression(e),
             And(a, b) | Or(a, b) | Implies(a, b) => {
                 self.proposition(a);
@@ -622,9 +660,9 @@ impl Names {
             | ExistsAlgebraic { name, body, .. }
             | ForAllPointer { name, body, .. }
             | ExistsPointer { name, body, .. } => {
-                let original = self.bind(name);
+                let original = self.bind_program(name);
                 self.proposition(body);
-                self.unbind(original);
+                self.unbind_program(original);
             }
             Predicate { arguments, .. } => {
                 for a in arguments {

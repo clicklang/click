@@ -9,10 +9,7 @@ theorem far_index(a: uint8[], n: uint64) {
     requires (0..n).all(|k| { a[k] == 0u8 });
     requires 4294967296u64 < n;
     ensures a[4294967296u64] == 0u8 by {
-        instantiate((0..n).all(|k| { a[k] == 0u8 }), 4294967296u64) using {
-            0u64 <= 4294967296u64;
-            4294967296u64 < n;
-        };
+        instantiate((0..n).all(|k| { a[k] == 0u8 }), 4294967296u64);
         known();
     }
 }
@@ -21,7 +18,7 @@ theorem far_witness(a: uint8[], n: uint64) {
     requires 4294967296u64 < n;
     requires a[4294967296u64] == 7u8;
     ensures (0u64..n).any(|k| { a[k] == 7u8 }) by {
-        witness { k: 4294967296u64 };
+        witness(4294967296u64);
         solve();
     }
 }

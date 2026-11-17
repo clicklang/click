@@ -41,7 +41,7 @@ void traverse(int32 *next, int32 *visited) diverges {
             have cur == 0;
             have next[0] == 0;
             have exists (fuel: Nat) { walk(next, 0, fuel) == cur } by {
-                witness { fuel: Nat::Zero };
+                witness(Nat::Zero);
                 unfold(walk(next, 0, Nat::Zero));
             }
             solve();
@@ -60,12 +60,12 @@ void traverse(int32 *next, int32 *visited) diverges {
                         at(before_visit, separate(memory(visited[cur]), memory(next[0])));
                     };
                 }
-                preserve(separate(loop(0).statement(0).footprint, memory(next[0])));
+                preserve(memory(next[0]), loop(0).statement(0));
             }
             have next[0] == 0;
             step();
             have exists (fuel: Nat) { walk(next, 0, fuel) == cur } by {
-                witness { fuel: Nat::Succ(Nat::Zero) };
+                witness(Nat::Succ(Nat::Zero));
                 unfold(walk(next, 0, Nat::Zero));
                 unfold(walk(next, 0, Nat::Succ(Nat::Zero)));
                 solve();

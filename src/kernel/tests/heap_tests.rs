@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::VerificationSession;
 use crate::kernel::loans::LoanLedger;
 
 #[test]
@@ -99,7 +100,7 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
         &state,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
@@ -204,7 +205,7 @@ fn heap_allocation_paths() -> Vec<StatementExecutionPath> {
         &state,
         &program_heap_allocate("p", 16),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("fixed-size allocation should execute")
@@ -239,7 +240,7 @@ fn checked_object_address_rejects_freed_backing_without_reading_it() {
         &success,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
@@ -465,7 +466,7 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
             true,
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("calloc-shaped allocation should execute");
@@ -521,7 +522,7 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
             crate::kernel::program_expression::int32_literal(7),
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("store into zeroed allocation should execute");
@@ -563,7 +564,7 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
             true,
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("calloc-shaped allocation should execute");
@@ -598,7 +599,7 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
             ],
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("realloc of zeroed storage should execute");
@@ -710,7 +711,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
         &state,
         &program_heap_allocate("p", 16),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("allocation statement should produce a pending result");
@@ -829,7 +830,7 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
         &state,
         &program_heap_allocate("q", 16),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         // Deliberately reset the generator: existing heap identities still
         // have to prevent reuse.
         &mut ExecutionBudget::default(),
@@ -956,7 +957,7 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
         &success,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("free should execute");
@@ -982,17 +983,11 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
     assert!(freed.resources().facts().is_empty());
     assert!(matches!(
         free_facts.to_vec().as_slice(),
-        [ExecutionPureFact {
-            proposition: Proposition::HeapAllocationFreed {
-                after,
-                allocation_base,
-                bytes,
-                ..
-            },
-            ..
-        }] if after == freed.memory()
+        [fact] if matches!(fact.proposition(), Proposition::HeapAllocationFreed {
+            after, allocation_base, bytes, ..
+        } if after == freed.memory()
             && allocation_base == pointer.pointer()
-            && *bytes == HeapExtent::int32(MachineTerm::constant(16))
+            && *bytes == HeapExtent::int32(MachineTerm::constant(16)))
     ));
     let derivation = intern_memory_ref(freed.memory())
         .derivation()
@@ -1007,7 +1002,7 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
         freed,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("double free should execute to a diagnostic");
@@ -1138,7 +1133,7 @@ fn standalone_view_cannot_authorize_free() {
         &state,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("a standalone view should fail locally at free");
@@ -1188,7 +1183,7 @@ fn persistent_composite_view_blocks_free_and_realloc_locally() {
             &state,
             &statement,
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
         )
         .expect("a persistent stale view should produce a local diagnostic");
@@ -1226,7 +1221,7 @@ fn separated_persistent_view_survives_free() {
         &state,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("a view of a distinct allocation should survive free");
@@ -1270,7 +1265,7 @@ fn free_of_external_allocation_forgets_cells_without_separation() {
         &state,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("freeing an imported allocation should execute");
@@ -1363,7 +1358,7 @@ fn free_requires_allocation_authority_not_just_write_access() {
         &success,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("missing-authority free should execute to a diagnostic");
@@ -1388,7 +1383,7 @@ fn heap_storage_becomes_readable_only_after_a_store() {
             crate::kernel::program_expression::int32_literal(37),
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("an owned fresh heap cell should be writable");
@@ -1435,7 +1430,7 @@ fn active_stable_loan_rejects_overlapping_heap_free_and_realloc() {
         &state,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("free should return a checked refusal");
@@ -1454,7 +1449,7 @@ fn active_stable_loan_rejects_overlapping_heap_free_and_realloc() {
             ],
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("realloc should return a checked refusal");
@@ -1471,7 +1466,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
             crate::kernel::program_expression::int32_literal(37),
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("the old allocation should be writable");
@@ -1499,7 +1494,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
             ],
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("realloc should leave one pending result");
@@ -1600,7 +1595,7 @@ fn free_null_needs_no_allocation_resources() {
         &state,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("free(NULL) should execute");
@@ -1647,7 +1642,7 @@ fn free_preserves_a_separate_recursive_tail_with_the_same_symbolic_block() {
         &state,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("freeing a separated parent should execute");
@@ -1911,6 +1906,79 @@ fn conditional_resource_certification_checks_the_unsafe_case_too() {
 }
 
 #[test]
+fn free_resolves_an_owned_return_alias_without_losing_its_offset() {
+    for interior in [false, true] {
+        let _session = VerificationSession::enter();
+        let success = successful_heap_allocation_state();
+        let local = success.locals().get_native("p").unwrap();
+        let ProgramValue::Pointer(base) = local.as_ref() else {
+            panic!("allocation pointer")
+        };
+        let alias = Pointer::symbolic(Variable(984_100));
+        let bytes = success
+            .memory()
+            .live_heap_block_extent(base.pointer())
+            .unwrap()
+            .clone();
+        let facts = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(
+                alias.clone(),
+                base.pointer().offset_by_bytes(if interior { 4 } else { 0 }),
+            ),
+            true,
+        );
+        let resources = ResourceContext::new()
+            .unchecked_with_fact(ResourceFact::own_allocation(
+                alias.clone(),
+                bytes.bytes().clone(),
+            ))
+            .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                alias.clone(),
+                0u32.into(),
+                4u32.into(),
+            )));
+        let state = success
+            .clone()
+            .with_resource_context(resources)
+            .with_local("q", ProgramValue::pointer(alias));
+        let paths = execute_execution_statement_paths(
+            &state,
+            &program_heap_free(crate::kernel::program_expression::variable("q")),
+            &facts,
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        if interior {
+            assert!(matches!(
+                paths.as_slice(),
+                [StatementExecutionPath {
+                    outcome: StatementOutcome::RuntimeError(RuntimeError::InvalidFree(
+                        InvalidFree::InteriorPointer
+                    )),
+                    ..
+                }]
+            ));
+        } else {
+            let [
+                StatementExecutionPath {
+                    outcome: StatementOutcome::Normal(freed),
+                    ..
+                },
+            ] = paths.as_slice()
+            else {
+                panic!("base alias must free: {paths:?}")
+            };
+            assert!(
+                freed
+                    .memory()
+                    .is_deallocated_heap_address(base.pointer(), &facts)
+            );
+        }
+    }
+}
+
+#[test]
 fn interior_free_and_store_after_free_are_rejected() {
     let success = successful_heap_allocation_state();
     let interior = execute_execution_statement_paths(
@@ -1920,7 +1988,7 @@ fn interior_free_and_store_after_free_are_rejected() {
             crate::kernel::program_expression::int32_literal(1),
         )),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("interior free should produce a diagnostic");
@@ -1938,7 +2006,7 @@ fn interior_free_and_store_after_free_are_rejected() {
         &success,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("valid free should execute");
@@ -1958,7 +2026,7 @@ fn interior_free_and_store_after_free_are_rejected() {
             crate::kernel::program_expression::int32_literal(1),
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("store-after-free should produce undefined behavior");
@@ -1982,7 +2050,7 @@ fn returning_malloc_result_resolves_null_and_success_outcomes() {
         &state,
         &statement,
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("returning a malloc result should split its outcomes");
@@ -2036,7 +2104,7 @@ fn unreturned_unresolved_malloc_result_cannot_cross_a_return() {
         &state,
         &statement,
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("unresolved allocation should execute to a diagnostic");
@@ -2129,7 +2197,7 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
             true,
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("calloc-shaped allocation should execute");
@@ -2576,7 +2644,7 @@ fn fresh_heap_struct_binding_checks_extent_alignment_and_resolution() {
                     ends_program_on_failure: false,
                 },
                 &PureFactContext::new(),
-                ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::default(),
             )
             .unwrap();
@@ -2637,7 +2705,7 @@ fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
             ends_program_on_failure: true,
         },
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
@@ -2709,7 +2777,7 @@ fn size_t_heap_allocation_with_zeroed(
             zeroed,
         ),
         &assumptions,
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("a size_t allocation should execute");
@@ -2929,7 +2997,7 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
             ],
         ),
         &assumptions,
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("a 64-bit realloc should execute");

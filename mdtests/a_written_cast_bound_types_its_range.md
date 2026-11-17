@@ -21,11 +21,11 @@ int32 a_written_cast_range_bound(uint8 p[], int32 n) {
     requires bytes::contains(p, 0, n as uint64, 'x');
     ensures bytes::contains(p, 0, n as uint64, 'x') by {
         step_until(function.exit);
-        unfold(bytes::contains);
+        unfold(bytes::contains(p, 0, n as uint64, 'x'));
         obtain (found: uint64) {
             0u64 <= found and found < n as uint64 and p[found] == 'x'
         }
-        witness { k: found };
+        witness(found);
         solve();
     }
 }

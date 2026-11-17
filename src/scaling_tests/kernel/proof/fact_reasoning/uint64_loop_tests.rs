@@ -35,7 +35,7 @@ fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_f
                 true,
             )
         }));
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             normalize_using_conditions(&successor, std::slice::from_ref(&guard), &facts)?;
             normalize_using_conditions(&descent, std::slice::from_ref(&guard), &facts)
@@ -54,10 +54,10 @@ fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_f
     );
     let weak =
         Proposition::ConditionIs(ConditionTerm::uint64_less_equal(i.clone(), n.clone()), true);
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&weak));
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&weak));
     assert!(normalize_using_conditions(&successor, std::slice::from_ref(&weak), &facts).is_err());
     assert!(normalize_using_conditions(&descent, std::slice::from_ref(&weak), &facts).is_err());
-    let missing = crate::kernel::proof::ProofFacts::from_ordered(&[]);
+    let missing = crate::kernel::proof::PureFactStore::from_ordered(&[]);
     assert!(matches!(
         normalize_using_conditions(&successor, &[guard], &missing),
         Err(ConditionalNormalizationError::UnavailablePremise(0))
@@ -93,7 +93,7 @@ fn uint64_truncation_certificates_require_full_width_bounds() {
                 true,
             )
         }));
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&available);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&available);
         let premises = [guard.clone(), bound.clone()];
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             normalize_using_conditions(&goal, &premises, &facts)
@@ -117,18 +117,20 @@ fn uint64_truncation_certificates_require_full_width_bounds() {
         ConditionTerm::uint64_less_equal(n.clone(), MachineTerm::uint64_constant(1u64 << 32)),
         true,
     );
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&[guard.clone(), too_wide.clone()]);
+    let facts =
+        crate::kernel::proof::PureFactStore::from_ordered(&[guard.clone(), too_wide.clone()]);
     assert!(normalize_using_conditions(&goal, &[guard, too_wide], &facts).is_err());
 
     let full_equal = Proposition::ConditionIs(ConditionTerm::int64_equal(i.clone(), n), true);
     let low_equal = Proposition::ConditionIs(ConditionTerm::equal(low_i.clone(), low_n), true);
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&full_equal));
+    let facts =
+        crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&full_equal));
     normalize_using_conditions(&low_equal, &[full_equal], &facts).unwrap();
     let bound = Proposition::ConditionIs(
         ConditionTerm::uint64_less_equal(i.clone(), MachineTerm::uint64_constant(1000)),
         true,
     );
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&bound));
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&bound));
     for goal in [
         ConditionTerm::signed_less_equal(MachineTerm::constant(0), low_i.clone()),
         ConditionTerm::signed_less_equal(low_i, MachineTerm::constant(1000)),
@@ -143,7 +145,7 @@ fn uint64_truncation_certificates_require_full_width_bounds() {
         );
         normalize_using_conditions(&signed_bound, std::slice::from_ref(&bound), &facts).unwrap();
         let premises = [bound.clone(), signed_bound];
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
         normalize_using_conditions(&Proposition::ConditionIs(goal, true), &premises, &facts)
             .unwrap();
     }
@@ -152,7 +154,7 @@ fn uint64_truncation_certificates_require_full_width_bounds() {
 #[test]
 fn retained_conditional_sums_normalize_from_selected_conditions() {
     use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     let selected_index = MachineTerm::Variable(Variable(994_001));
     let guard = Proposition::ConditionIs(
         ConditionTerm::uint64_equal(selected_index.clone(), MachineTerm::uint64_constant(19)),
@@ -175,7 +177,7 @@ fn retained_conditional_sums_normalize_from_selected_conditions() {
         }
         let native = ConditionTerm::uint64_equal(sum, MachineTerm::uint64_constant(high));
         let retained = retained_arithmetic_comparison(&native).unwrap();
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&guard));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&guard));
         let goal = Proposition::ConditionIs(retained, true);
         let exports = KernelTermExport::machine_export_count();
         let (result, cost) = crate::instrumentation::measure_deterministic_work(|| {
@@ -194,7 +196,7 @@ fn retained_conditional_sums_normalize_from_selected_conditions() {
             normalize_using_conditions(
                 &goal,
                 std::slice::from_ref(&guard),
-                &ProofFacts::from_ordered(&[])
+                &PureFactStore::from_ordered(&[])
             )
             .is_err()
         );
@@ -202,7 +204,7 @@ fn retained_conditional_sums_normalize_from_selected_conditions() {
             ConditionTerm::uint64_equal(selected_index.clone(), MachineTerm::uint64_constant(18)),
             true,
         );
-        let wrong_facts = ProofFacts::from_ordered(std::slice::from_ref(&wrong_guard));
+        let wrong_facts = PureFactStore::from_ordered(std::slice::from_ref(&wrong_guard));
         assert!(normalize_using_conditions(&goal, &[wrong_guard], &wrong_facts).is_err());
         costs.push(cost);
     }

@@ -51,10 +51,7 @@ int32 write_zero(struct buffer* buffer) {
             have buffer->data[0] == 0 by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < end implies buffer->data[k] == 0
-                }, 0) using {
-                    0 <= 0;
-                    0 < end;
-                };
+                }, 0);
                 known();
             }
             unfold(prefix);

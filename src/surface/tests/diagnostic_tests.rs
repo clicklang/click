@@ -677,8 +677,8 @@ fn concise_error_context_preserves_click_binder_colons() {
         ["foo", "exists (path: Path) { x: y }", "qux"]
     );
     assert_eq!(
-        concise_error_segments("foo: `witness { path: value }`: bar"),
-        ["foo", "`witness { path: value }`", "bar"]
+        concise_error_segments("foo: `witness(value)`: bar"),
+        ["foo", "`witness(value)`", "bar"]
     );
     assert_eq!(
         concise_error_segments("can't close: current goal is exists (path: Path)"),
@@ -2716,7 +2716,7 @@ fn fold_over_a_hidden_record_names_the_failed_fact() {
     let error = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
     let report = error.concise_report();
     // The instance reads the field the body stored to; the read keeps its
-    // name rather than the stored `-1` (`docs/internals/spellability.md`).
+    // name rather than the stored `-1` (`docs/internals/raise-lower-principle.md`).
     assert!(report.contains("goal: p->n == "), "{report}");
     assert!(!report.contains("first.v == first.v"), "{report}");
 }

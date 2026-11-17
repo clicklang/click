@@ -135,8 +135,8 @@ contract), `C library`, `allocator`, `snprintf` (by format), `C++ std`,
 whole verification, so it is one `every function` line, printed first, when
 the sidecar selects one. The other families come from the same call closure
 targeted verification computes; a C++ or Rust function's closure follows the
-calls of its imported body, and imported names are spelled as their source
-language spells them (`slice::len<u8>`). Directory verification also prints
+calls of its imported body, and imported names are printed as their source
+language writes them (`slice::len<u8>`). Directory verification also prints
 these lines alongside its progress.
 
 An external assumption is one about a function the project does not verify.
@@ -181,7 +181,7 @@ out a signed overflow, or a missing resource. A statement's goal is followed by
 a `help:` line naming the explicit form that proves it; see
 [Tracing a failed proof](../../concepts/tracing.md). Premises that are
 verifier bookkeeping no proof can cite are counted rather than listed.
-The ordinary error spells facts, goals, and rejected requirements in Click or
+The ordinary error prints facts, goals, and rejected requirements in Click or
 C syntax, with each constant in its checked type (`-56` for an `int32`,
 `4294967240u32` for a `uint32`): a read of the entry memory is `old(...)`, a read at a recorded point
 is `at(point, ...)`, and a read of any other memory is `at(<state A>, ...)`,
@@ -230,20 +230,20 @@ reads the selected history delta without searching older facts.
 
 Call memory origins list the recorded caller-owned ranges retained
 beside the write footprint and their placement premises. Each list shows up to
-128 entries and explicitly counts any omitted entries. A source spelling is not printed in place of a fact that depends on which memory it reads.
+128 entries and explicitly counts any omitted entries. Source text is not printed in place of a fact that depends on which memory it reads.
 Fresh model-field values also keep distinct value labels: a field hint such as
 `c.value` alone cannot distinguish its values before and after a call.
 A call refused because a named resource argument does not match prints its
 held and required resource facts with the shared typed resource formatter and
 one value/memory legend. Pointer arguments retain their checked types, distinct
 identities, and read memory labels, including unnamed components that have no C
-spelling. The error identifies the rejected argument ordinal without guessing
+form. The error identifies the rejected argument ordinal without guessing
 which premise was missing.
 Resource facts elsewhere use the proposition printer's source/typed display
 policy. Resource arguments use the same value printer as proposition operands,
 including model values and `at(...)`-qualified reads. A resource list shares one label table
 and construction legend across its entries. Source place helpers retain field,
-mutex-storage, and iterated-ownership spellings.
+mutex-storage, and iterated-ownership forms.
 A call refused at stable-view recovery prints each pending checked goal and
 its recorded obligation context. Required call clauses also identify the
 callee and source input clause when lowering retained that identity. These goals
@@ -264,9 +264,9 @@ and the report's memory legend. Up to twelve allowed facts are displayed;
 any further entries are explicitly counted. This comparison is diagnostic
 only and does not turn the rejected proposition into an assumption.
 An `known()` failure on an existential goal suggests the
-`witness { name: value }` tactic. A trace reports facts introduced into the
+`witness(value)` tactic. A trace reports facts introduced into the
 focused proof context and changes to exact resource representations, using
-Click spelling where it represents the checked fact. It follows only the
+Click syntax where it represents the checked fact. It follows only the
 branch relevant to the selected tactic and does not print whole memory
 states. It retains the complete checked path and does not cap the total
 number of steps or output bytes. Individual fact, resource, and label previews

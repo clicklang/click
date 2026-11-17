@@ -208,13 +208,11 @@ pub(in crate::surface) fn solve_proposition(
         Proposition::ForAll { .. }
         | Proposition::Exists { .. }
         | Proposition::Predicate { .. }
+        | Proposition::VolatileAccess(_)
         | Proposition::ProgramExpressionEvaluates { .. }
         | Proposition::ProgramConditionEvaluates { .. }
-        | Proposition::ProgramStatementExecutes { .. }
         | Proposition::ProgramStatementVerifies { .. }
-        | Proposition::ProgramFunctionExecutes { .. }
         | Proposition::ProgramFunctionVerifies { .. }
-        | Proposition::ProgramFunctionSatisfiesSpecification { .. }
         | Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. }
         | Proposition::MemoryLoads { .. }
         | Proposition::MemoryReadDefined { .. }
@@ -494,6 +492,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
 
 pub(in crate::surface) fn evaluate_bitvector_constant(term: &MachineTerm) -> Option<u32> {
     match term {
+        MachineTerm::ThreadHandle(_) => None,
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             ..
@@ -607,6 +606,7 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &MachineTerm) -> Opt
 
 pub(in crate::surface) fn normalize_bitvector(term: &MachineTerm) -> MachineTerm {
     match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => term.clone(),
         MachineTerm::IntegerToMachine { .. } => term.clone(),
         MachineTerm::BoolCast { value, .. } => {

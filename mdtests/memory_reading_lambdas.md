@@ -72,13 +72,13 @@ int32 unchanged(int32* p, int32 lo, int32 hi) {
             instantiate((lo..hi).all(|i: int32| -> Prop { p[i] == 0 }), lo);
             solve();
         }
-        witness { item: lo };
+        witness(lo);
         solve();
     }
     ensures (|i: int32| -> Prop { is_zero(p, i) })(lo) by {
         step_until(function.exit);
         have is_zero(p, lo) by {
-            unfold(is_zero);
+            unfold(is_zero(p, lo));
             instantiate((lo..hi).all(|i: int32| -> Prop { p[i] == 0 }), lo);
             solve();
         }

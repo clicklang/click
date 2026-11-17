@@ -271,7 +271,10 @@ pub(crate) fn canonical_value_load_memory(
     named
 }
 
-fn canonical_projected_load_memory(source: &SharedMemory, pointer: &Pointer) -> SharedMemory {
+pub(crate) fn canonical_projected_load_memory(
+    source: &SharedMemory,
+    pointer: &Pointer,
+) -> SharedMemory {
     let projected =
         crate::kernel::intern_memory(canonical_program_memory_for_pointer_load(source, pointer));
     record_canonical_load_projection(source, &projected, pointer);
@@ -5000,6 +5003,7 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &MachineTerm) -> bool {
         }
         match node {
             Node::Term(term, depth) => match term {
+                MachineTerm::ThreadHandle(_) => {}
                 bits32_constant!(_)
                 | MachineTerm::Variable(_)
                 | int64_constant!(_)
@@ -5553,6 +5557,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                 #[cfg(test)]
                 ATOMIC_CANONICALIZATION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
+                    MachineTerm::ThreadHandle(_) => results.push(term.clone()),
                     bits32_constant!(_)
                     | MachineTerm::Variable(_)
                     | int64_constant!(_)
@@ -6236,6 +6241,21 @@ pub(super) fn store_value_equation(
     pointer: &Pointer,
     value: &ProgramValue,
 ) -> Option<Proposition> {
+    if let ProgramValue::Pointer(value) = value
+        && matches!(value.program_type(), ProgramType::FunctionPointer(_))
+    {
+        // The producer knows this exact store's value. Retain its read equation;
+        // registration relates aliases by congruence, without looking in cells.
+        let memory = crate::kernel::intern_memory(after.clone());
+        let read = PointerValue::new(
+            Pointer::loaded_value(&memory, pointer),
+            value.program_type(),
+        );
+        return Some(Proposition::ConditionIs(
+            ConditionTerm::pointer_value_equal(read, value.clone()),
+            true,
+        ));
+    }
     let stored_bits = match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
         ProgramValue::Int8(term) => term.clone(),
@@ -6566,6 +6586,7 @@ fn collect_operand_memories(
 
 fn collect_bitvector_memories(term: &MachineTerm, memories: &mut Vec<SharedMemory>) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
         MachineTerm::PointerAddress(_, _) => {}
         MachineTerm::MemoryLoad(memory, _, _) => {
@@ -6916,6 +6937,7 @@ fn transport_framed_atomic_bitvector(
         return None;
     }
     Some(match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         MachineTerm::Constant { .. } => term.clone(),
         MachineTerm::PointerAddress(_, _) => term.clone(),
         MachineTerm::Variable(variable) => {
@@ -7212,6 +7234,7 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                     continue;
                 }
                 match term {
+                    MachineTerm::ThreadHandle(_) => results.push(term),
                     MachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         value,

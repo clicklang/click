@@ -129,13 +129,13 @@ implementation:
   - header destructor bodies;
   - omitted default arguments.
 
-  Record (struct) reference locals are refused today. Admitting one must
-  also let a proof name it as a scalar reference local is named: a field
-  read through `r` is `r.field`, or the local is refused by name with the
-  spelling to use ([place-based resource clauses](../design/place-based-resource-clauses.md#reference-locals),
-  step 6). Regression: a C++ mdtest with a struct reference local whose
-  proof reads a field through it as `r.field`. Broader cleanup and unwinding belong to
-  [control-flow.md](control-flow.md).
+  Record (struct/class) reference locals now bind existing objects and keep
+  mutable/const aliases, permissions, and storage lifetimes distinct. Proofs
+  name their fields as `r.field` and their addresses as `&r`; the named
+  `cpp_record_reference_locals_*` regressions cover source admission, ordinary
+  verification, expansion, cold checking and retained sessions. Reference call
+  results and temporary lifetime extension remain separate coverage work.
+  Broader cleanup and unwinding belong to [control-flow.md](control-flow.md).
 - **Scalar and import coverage.** Select source before widening a profile
   for any of these:
   - further native wide arithmetic (wide addition, subtraction and
@@ -160,9 +160,13 @@ implementation:
   checking, plus bounds, permission, byte-value, result and cursor controls.
   The [modular byte-output](../design/object-model-current-audit.md#modular-byte-output-composition)
   and [writable-byte span](../design/object-model-current-audit.md#writable-byte-span-composition)
-  witnesses remain the smaller initializer/authority checks. The next
-  application step is the real cursor's exception behavior; the fixture reader
-  does not model Bitcoin's `SpanReader` or malformed input.
+  witnesses remain the smaller initializer/authority checks. The real cursor's
+  unchanged `SpanReader::ignore` now proves its normal advance and exact
+  `std::ios_base::failure` path, returning borrowed authority and preserving
+  backing bytes on both exits. Its modular caller also expands and replays.
+  The next application step is `SpanReader::read`, followed by serialization
+  through that real reader and typed catches; the earlier fixture reader
+  still does not model malformed input.
   Plain `owns` still requires initialized input and does not express an
   initializer.
 

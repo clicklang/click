@@ -239,14 +239,15 @@ fn closed_comparison_for_operand_views(
     } else {
         [left, right]
     };
-    // Wide equality reads no sign: like `ConditionTerm::int64_equal`, it is
-    // filed at the signed format.
-    let format = match (format, relation) {
-        (MachineIntegerType::UInt64, crate::kernel::CompareRelation::Equal) => {
+    // Wide equality compares words, and its established native filing
+    // format is Int64 even when the literal operands are unsigned
+    // (`ConditionTerm::int64_equal`). Narrower equality keeps its format.
+    let format =
+        if relation == crate::kernel::CompareRelation::Equal && format.format().bits() == 64 {
             MachineIntegerType::Int64
-        }
-        _ => format,
-    };
+        } else {
+            format
+        };
     Some(ConditionTerm::Compare {
         format,
         relation,
@@ -255,9 +256,9 @@ fn closed_comparison_for_operand_views(
     })
 }
 
-/// An order-guard conditional over literal or variable roots is a fixed-size
-/// native comparison atom. Read only these roots, never an arithmetic DAG.
-fn order_conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
+/// A conditional with a Boolean variable or atomic comparison guard is a
+/// fixed-size native comparison atom. Never traverse an arithmetic DAG.
+fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
     use crate::kernel::{KernelTermNode as N, MachineOperandView as V};
     let N::MachineIf { arguments } = root.node() else {
         return None;
@@ -274,37 +275,35 @@ fn order_conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTer
         return None;
     }
     crate::instrumentation::record_deterministic_work(1);
-    let N::BoolCompare {
-        format,
-        relation,
-        arguments: guard,
-    } = arguments[0].node()
-    else {
-        return None;
-    };
-    if *relation == crate::kernel::CompareRelation::Equal
-        || !matches!(format.format().bits(), 32 | 64)
-    {
-        return None;
-    }
     let atom = |root| {
         let view = V::Shared(root);
         view.literal()
             .or_else(|| view.variable().copied().map(MachineTerm::Variable))
     };
-    let mut left = atom(&guard[0])?;
-    let mut right = atom(&guard[1])?;
-    if format.format().bits() == 32 {
-        left = left.into_word32();
-        right = right.into_word32();
-    }
+    let condition = match arguments[0].node() {
+        N::Variable(variable) => ConditionTerm::Variable(*variable),
+        N::BoolCompare {
+            format,
+            relation,
+            arguments: guard,
+        } if matches!(format.format().bits(), 32 | 64) => {
+            let mut left = atom(&guard[0])?;
+            let mut right = atom(&guard[1])?;
+            if format.format().bits() == 32 {
+                left = left.into_word32();
+                right = right.into_word32();
+            }
+            ConditionTerm::Compare {
+                format: *format,
+                relation: *relation,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+        _ => return None,
+    };
     Some(MachineTerm::If {
-        condition: Box::new(ConditionTerm::Compare {
-            format: *format,
-            relation: *relation,
-            left: Box::new(left),
-            right: Box::new(right),
-        }),
+        condition: Box::new(condition),
         then_term: Box::new(atom(&arguments[1])?),
         else_term: Box::new(atom(&arguments[2])?),
     })
@@ -399,7 +398,7 @@ pub(crate) fn condition_for_operand_views(
                     MachineTerm::Variable(*variable),
                 ))
             })
-            .or_else(|| order_conditional_atom(root)),
+            .or_else(|| conditional_atom(root)),
         V::Legacy(_) => None,
     });
     let operands: [V<'_>; 2] = std::array::from_fn(|index| {

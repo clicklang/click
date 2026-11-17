@@ -107,3 +107,84 @@ fn common_call_import_keeps_growing_shared_arguments_without_exporting() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn pthread_handle_leaf_lookup_is_independent_of_other_handles() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut import = KernelTermImport::default();
+        let unrelated = (0..size)
+            .map(|id| {
+                import.machine(
+                    MachineIntegerType::UInt64,
+                    &MachineTerm::ThreadHandle(ThreadHandleId(id)),
+                )
+            })
+            .collect::<Vec<_>>();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let native = MachineTerm::ThreadHandle(ThreadHandleId(999001));
+            let root = import.machine(MachineIntegerType::UInt64, &native);
+            assert!(root.children().is_empty());
+            assert_eq!(KernelTermExport::machine(&root).unwrap(), native);
+            assert_eq!(import.machine(MachineIntegerType::UInt64, &native), root);
+        });
+        assert_eq!(unrelated.len(), size as usize);
+        samples.push(work);
+    }
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: growing pthread handle equality stars and chains"]
+fn forwarded_handle_lookup_ignores_equality_class_and_context_population() {
+    use crate::kernel::{ConditionTerm, Proposition, PureFactContext};
+    let mut samples = Vec::new();
+    for chain in [false, true] {
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let handle = ThreadHandleId(998001);
+            let word = MachineTerm::ThreadHandle(handle);
+            let variable = |index| MachineTerm::Variable(Variable(1009000 + index));
+            let equality = |left, right| {
+                Proposition::ConditionIs(ConditionTerm::uint64_equal(left, right), true)
+            };
+            let mut facts =
+                PureFactContext::new().assume_proposition(equality(variable(0), word.clone()));
+            for index in 1..size {
+                let source = if chain {
+                    variable(index - 1)
+                } else {
+                    word.clone()
+                };
+                facts = facts.assume_proposition(equality(variable(index), source));
+                facts = facts.assume_proposition(equality(
+                    variable(size + index),
+                    MachineTerm::ThreadHandle(ThreadHandleId(index)),
+                ));
+            }
+            let value = ProgramValue::UInt64(variable(size - 1));
+            let missing = ProgramValue::UInt64(variable(4 * size));
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert_eq!(
+                    ThreadHandleId::resolve_program_value(&value, &facts),
+                    Some(handle)
+                );
+                assert_eq!(
+                    ThreadHandleId::resolve_program_value(&missing, &facts),
+                    None
+                );
+            });
+            samples.push(work);
+        }
+    }
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
+}

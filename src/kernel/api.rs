@@ -15,6 +15,7 @@ use crate::instrumentation::ArtifactReuseRejection;
 use crate::kernel::ResourceDescription;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
+use crate::kernel::proof::PropositionSource;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
@@ -478,6 +479,113 @@ pub struct LoopPreservationContext {
     next_kernel_variable: u64,
 }
 
+/// Facts retained by a checked loop exit. Explicit constructor inputs have
+/// their own scope; existing proof scopes retain their store and its context.
+#[derive(Clone)]
+pub(crate) enum LoopExitFacts {
+    Explicit(std::sync::Arc<[Proposition]>),
+    Retained(std::sync::Arc<crate::kernel::proof::PureFactStore>),
+}
+impl std::fmt::Debug for LoopExitFacts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+impl PartialEq for LoopExitFacts {
+    fn eq(&self, other: &Self) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+impl Eq for LoopExitFacts {}
+impl From<Vec<Proposition>> for LoopExitFacts {
+    fn from(facts: Vec<Proposition>) -> Self {
+        Self::Explicit(facts.into())
+    }
+}
+impl LoopExitFacts {
+    pub(crate) fn iter(&self) -> Box<dyn Iterator<Item = &Proposition> + '_> {
+        match self {
+            Self::Explicit(facts) => Box::new(facts.iter()),
+            Self::Retained(facts) => Box::new(facts.propositions()),
+        }
+    }
+    /// Add only this retained scope's delta to the incoming context. An
+    /// opposite truth is still admitted and records the original contradiction.
+    pub(crate) fn context_with(&self, ambient: &PureFactContext) -> PureFactContext {
+        let facts = match self {
+            Self::Retained(facts) => facts,
+            Self::Explicit(facts) => {
+                return super::reasoning::path_facts::assumptions_with_propositions(ambient, facts);
+            }
+        };
+        let mut context = ambient.clone();
+        for change in ambient
+            .execution_fact_projection
+            .diff(&facts.assumptions().execution_fact_projection)
+        {
+            match change {
+                imbl::ordmap::DiffItem::Add(_, fact)
+                | imbl::ordmap::DiffItem::Update { new: (_, fact), .. } => {
+                    context = context.assume_execution_pure_fact(fact);
+                }
+                imbl::ordmap::DiffItem::Remove(..) => {}
+            }
+        }
+        for (composition, in_ambient) in ambient
+            .resource_compositions
+            .diff(&facts.assumptions().resource_compositions)
+        {
+            if !in_ambient {
+                context = context
+                    .assume_proposition(Proposition::ResourceComposition(composition.clone()));
+            }
+        }
+        context
+    }
+    pub(crate) fn certified_facts(&self) -> ExecutionFacts {
+        match self {
+            Self::Explicit(facts) => facts
+                .iter()
+                .cloned()
+                .map(ExecutionPureFact::certified)
+                .collect(),
+            Self::Retained(facts) => facts
+                .shared_presented_propositions()
+                .map(|fact| ExecutionPureFact::from_shared(fact).into_certified())
+                .collect(),
+        }
+    }
+}
+impl crate::kernel::proof::PropositionSource for LoopExitFacts {
+    fn exact_available(&self, required: &Proposition) -> bool {
+        match self {
+            Self::Explicit(facts) => facts.as_ref().exact_available(required),
+            Self::Retained(facts) => facts.exact_available(required),
+        }
+    }
+    fn ordered_fact_store(&self) -> crate::kernel::proof::PureFactStore {
+        match self {
+            Self::Explicit(facts) => facts.as_ref().ordered_fact_store(),
+            Self::Retained(facts) => facts.ordered_fact_store(),
+        }
+    }
+    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
+        self.iter()
+    }
+    fn pure_context(&self) -> PureFactContext {
+        match self {
+            Self::Explicit(facts) => facts.as_ref().pure_context(),
+            Self::Retained(facts) => facts.assumptions().clone(),
+        }
+    }
+    fn fact_store(&self) -> crate::kernel::proof::PureFactStore {
+        match self {
+            Self::Explicit(facts) => facts.as_ref().fact_store(),
+            Self::Retained(facts) => (**facts).clone(),
+        }
+    }
+}
+
 /// A body state produced by a checked preservation proof that may be the
 /// final loop iteration. A guard-exit candidate requires an independently
 /// checked false post-body condition. A natural cycle's checked forward jump
@@ -487,11 +595,24 @@ pub(crate) struct LoopFinalExitCandidate {
     state: ExecutionState,
     jump_target: Option<ControlTargetId>,
     /// A checked exit is copied into the loop rule; its facts stay shared.
-    pure_facts: std::sync::Arc<[Proposition]>,
+    pure_facts: LoopExitFacts,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
 }
 
 impl LoopFinalExitCandidate {
+    pub(crate) fn from_store(
+        state: ExecutionState,
+        facts: &crate::kernel::proof::PureFactStore,
+    ) -> Self {
+        Self {
+            state,
+            jump_target: None,
+            pure_facts: LoopExitFacts::Retained(Arc::new(facts.clone())),
+            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn new(state: ExecutionState, pure_facts: Vec<Proposition>) -> Self {
         crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
@@ -523,7 +644,7 @@ impl LoopFinalExitCandidate {
         &self.state
     }
 
-    pub(crate) fn pure_facts(&self) -> &[Proposition] {
+    pub(crate) fn pure_facts(&self) -> &LoopExitFacts {
         &self.pure_facts
     }
 
@@ -543,8 +664,7 @@ impl LoopFinalExitCandidate {
 pub(crate) struct LoopBreakExit {
     state: ExecutionState,
     /// A checked exit is copied into the loop rule; its facts stay shared.
-    pure_facts: std::sync::Arc<[Proposition]>,
-    fact_context: Option<PureFactContext>,
+    pure_facts: LoopExitFacts,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
 }
 
@@ -562,24 +682,28 @@ impl LoopBreakExit {
         crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
             state,
-            fact_context: None,
             pure_facts: pure_facts.into(),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
     }
 
     /// Retain the checked context alongside the exact facts it indexed.
-    pub(crate) fn from_proof_facts(
+    pub(crate) fn from_store(
         state: ExecutionState,
-        facts: &crate::kernel::proof::ProofFacts,
+        facts: &crate::kernel::proof::PureFactStore,
     ) -> Self {
-        let mut exit = Self::new(state, facts.to_vec());
-        exit.fact_context = Some(facts.assumptions().clone());
-        exit
+        Self {
+            state,
+            pure_facts: LoopExitFacts::Retained(Arc::new(facts.clone())),
+            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        }
     }
 
     pub(crate) fn fact_context(&self) -> Option<&PureFactContext> {
-        self.fact_context.as_ref()
+        match &self.pure_facts {
+            LoopExitFacts::Retained(facts) => Some(facts.assumptions()),
+            LoopExitFacts::Explicit(_) => None,
+        }
     }
 
     pub(crate) fn with_loan_evidence(
@@ -594,7 +718,7 @@ impl LoopBreakExit {
         &self.state
     }
 
-    pub(crate) fn pure_facts(&self) -> &[Proposition] {
+    pub(crate) fn pure_facts(&self) -> &LoopExitFacts {
         &self.pure_facts
     }
 
@@ -620,21 +744,20 @@ pub(crate) struct LoopReturnExit {
     value: StoredExecutionValue,
     state: ExecutionState,
     /// A checked exit is copied into the loop rule; its facts stay shared.
-    pure_facts: std::sync::Arc<[Proposition]>,
+    pure_facts: LoopExitFacts,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
 }
 
 impl LoopReturnExit {
-    pub(crate) fn new(
+    pub(crate) fn from_store(
         value: impl Into<StoredExecutionValue>,
         state: ExecutionState,
-        pure_facts: Vec<Proposition>,
+        facts: &crate::kernel::proof::PureFactStore,
     ) -> Self {
-        crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
             value: value.into(),
             state,
-            pure_facts: pure_facts.into(),
+            pure_facts: LoopExitFacts::Retained(Arc::new(facts.clone())),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
     }
@@ -655,7 +778,7 @@ impl LoopReturnExit {
         &self.state
     }
 
-    pub(crate) fn pure_facts(&self) -> &[Proposition] {
+    pub(crate) fn pure_facts(&self) -> &LoopExitFacts {
         &self.pure_facts
     }
 
@@ -667,6 +790,26 @@ impl LoopReturnExit {
 #[cfg(test)]
 mod loop_exit_sharing_tests {
     use super::*;
+
+    #[test]
+    fn retained_exit_context_records_opposite_truth_without_changing_parent() {
+        use crate::kernel::proof::PureFactStore;
+        let condition = ConditionTerm::equal(
+            MachineTerm::Variable(Variable(9_901_100)),
+            MachineTerm::constant(0),
+        );
+        let before = Proposition::ConditionIs(condition.clone(), true);
+        let after = Proposition::ConditionIs(condition, false);
+        let ambient = PureFactStore::from_ordered(std::slice::from_ref(&before));
+        let path = PureFactStore::from_ordered(std::slice::from_ref(&after));
+        let exit = LoopFinalExitCandidate::from_store(ExecutionState::new(), &path);
+        let joined = exit.pure_facts().context_with(ambient.assumptions());
+        assert!(joined.is_inconsistent());
+        assert!(!ambient.assumptions().is_inconsistent());
+        assert!(!path.assumptions().is_inconsistent());
+        assert!(ambient.contains(&before));
+        assert!(!ambient.contains(&after));
+    }
 
     #[test]
     fn natural_forward_exit_is_a_jump_and_only_absent_exits_diverge() {
@@ -729,10 +872,10 @@ impl LoopPreservationContext {
     pub(crate) fn restored_exit(
         &self,
         state: &ExecutionState,
-        facts: &crate::kernel::proof::ProofFacts,
+        facts: &crate::kernel::proof::PureFactStore,
         assumptions: &PureFactContext,
-    ) -> (ExecutionState, Vec<Proposition>) {
-        (self.restored_exit_state(state, assumptions), facts.to_vec())
+    ) -> (ExecutionState, crate::kernel::proof::PureFactStore) {
+        (self.restored_exit_state(state, assumptions), facts.clone())
     }
 
     pub(crate) fn restored_exit_state(
@@ -765,9 +908,9 @@ impl LoopPreservationContext {
     pub(crate) fn restored_return(
         &self,
         state: &ExecutionState,
-        facts: &crate::kernel::proof::ProofFacts,
+        facts: &crate::kernel::proof::PureFactStore,
         assumptions: &PureFactContext,
-    ) -> (ExecutionState, Vec<Proposition>) {
+    ) -> (ExecutionState, crate::kernel::proof::PureFactStore) {
         let restored = self.exit_frame.as_ref().map_or_else(
             || state.clone(),
             |frame| {
@@ -779,7 +922,7 @@ impl LoopPreservationContext {
                 )
             },
         );
-        let facts = facts.to_vec();
+        let facts = facts.clone();
         (restored, facts)
     }
 
@@ -928,7 +1071,7 @@ fn loop_preservation_contexts_with_mode(
     body: &ProgramStatement,
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
-    do_while: bool,
+    direct_post_test: bool,
 ) -> Result<Vec<LoopPreservationContext>, LoopHeadRefusal> {
     // The head inherits the execution's counter instead of restarting at the
     // base of the identity range. Restarting it in the middle of an execution
@@ -1025,7 +1168,7 @@ fn loop_preservation_contexts_with_mode(
             error,
         )
     })? {
-        let condition_contexts = if do_while {
+        let condition_contexts = if direct_post_test {
             vec![ConditionAssumption {
                 branch: ConditionBranch::Decided(true),
                 facts: invariant_facts.clone(),
@@ -2588,23 +2731,37 @@ pub fn program_if(
 /// the caught path. Normal and other terminal outcomes bypass the handler.
 pub fn program_try_catch_int32(
     try_body: ProgramStatement,
-    binding: impl Into<String>,
+    binding: impl Into<BindingName>,
     handler: ProgramStatement,
-) -> ProgramStatement {
-    program_try_catch_int32_with_cleanup(try_body, binding, handler, false)
-}
-
-pub fn program_try_catch_int32_with_cleanup(
-    try_body: ProgramStatement,
-    binding: impl Into<String>,
-    handler: ProgramStatement,
-    cleanup_unwind: bool,
 ) -> ProgramStatement {
     ProgramStatement::TryCatchInt32 {
         try_body: Box::new(try_body),
         binding: binding.into(),
         handler: Box::new(handler),
-        cleanup_unwind,
+    }
+}
+
+/// The statements an int32 exceptional exit from an
+/// [`ProgramStatement::UnwindCleanup`] runs: its cleanup, then the same
+/// exception continuing with `payload`. Execution, the proof cursor, and
+/// the source layout all step this one shape, so the point where the
+/// exception continues is a statement of its own.
+pub fn program_unwind_continuation(
+    cleanup: &ProgramStatement,
+    payload: ProgramExpression,
+) -> ProgramStatement {
+    program_seq(cleanup.clone(), ProgramStatement::Throw(payload))
+}
+
+/// `body` with the cleanup an int32 exceptional exit from it runs before
+/// propagating ([`ProgramStatement::UnwindCleanup`]).
+pub fn program_unwind_cleanup(
+    body: ProgramStatement,
+    cleanup: ProgramStatement,
+) -> ProgramStatement {
+    ProgramStatement::UnwindCleanup {
+        body: Box::new(body),
+        cleanup: Box::new(cleanup),
     }
 }
 
@@ -2645,19 +2802,68 @@ pub fn program_while_with_invariant_and_effect_checks(
     body: ProgramStatement,
 ) -> ProgramStatement {
     ProgramStatement::Loop {
-        test: None,
+        test: crate::kernel::LoopTestRegion::expression(
+            condition,
+            crate::kernel::LoopTestPosition::BeforeBody,
+        ),
         update: None,
-        condition,
         invariant,
         invariant_checks,
         effect_checks,
         resource_specs: Vec::new(),
         ranking_measures: Vec::new(),
         structural_measure: None,
-        do_while: false,
         backedge_target: None,
         natural_exit_target: None,
         body: Box::new(body),
+    }
+}
+
+impl LoopTestRegion {
+    /// A test with no preparation or temporary cleanup.
+    pub fn expression(condition: ProgramExpression, position: LoopTestPosition) -> Self {
+        Self {
+            statement: std::sync::Arc::new(ProgramStatement::LoopTest {
+                condition,
+                aggregate_steps: Vec::new(),
+            }),
+            position,
+        }
+    }
+
+    /// The direct post-test's first body has already run. Subsequent entries
+    /// use its guard directly; a prepared test keeps its own phase placement.
+    pub(crate) fn for_repeated_iteration(&self) -> Self {
+        let position = if self.execution_parts().1 {
+            LoopTestPosition::BeforeBody
+        } else {
+            self.position
+        };
+        Self {
+            statement: self.statement.clone(),
+            position,
+        }
+    }
+
+    /// Borrow the executable entry guard without storing another condition or
+    /// placement on the loop. A preparation-free test can be decided directly;
+    /// an explicit test region is entered before its decision is available.
+    pub(crate) fn execution_parts(&self) -> (&ProgramExpression, bool, Option<&Self>) {
+        if let ProgramStatement::LoopTest {
+            condition,
+            aggregate_steps,
+        } = self.statement.as_ref()
+            && aggregate_steps.is_empty()
+        {
+            return (
+                condition,
+                self.position == LoopTestPosition::AfterBody,
+                None,
+            );
+        }
+        static REGION_ENTRY: std::sync::LazyLock<ProgramExpression> =
+            std::sync::LazyLock::new(|| crate::kernel::program_expression::int32_literal(1));
+        (&REGION_ENTRY, false, Some(self))
     }
 }
 
@@ -2715,35 +2921,37 @@ pub(crate) fn program_loop_pass(
     update: Option<&ProgramStatement>,
     test: Option<&LoopTestRegion>,
 ) -> ProgramStatement {
+    program_loop_pass_and_continuation(body, update, test).0
+}
+
+/// Assemble a pass and retain its shared continuation from the same source.
+/// A checked entry can use this code directly as its continue destination.
+pub(crate) fn program_loop_pass_and_continuation(
+    body: &ProgramStatement,
+    update: Option<&ProgramStatement>,
+    test: Option<&LoopTestRegion>,
+) -> (ProgramStatement, Option<std::sync::Arc<ProgramStatement>>) {
     let body = program_loop_body_region(body, test);
-    match program_loop_continuation(update, test) {
-        Some(tail) => ProgramStatement::seq(std::sync::Arc::new(body), tail),
+    let continuation = program_loop_continuation(update, test);
+    let pass = match &continuation {
+        Some(tail) => ProgramStatement::seq(std::sync::Arc::new(body), tail.clone()),
         None => body,
-    }
+    };
+    (pass, continuation)
 }
 
 impl ProgramStatement {
-    /// Retain an effectful test once, outside the body and its scopes.
+    /// Set the loop's one test region, outside the body and its scopes.
     pub fn with_loop_test(
         mut self,
         statement: ProgramStatement,
         position: LoopTestPosition,
     ) -> Self {
-        if let Self::Loop {
-            test,
-            condition,
-            do_while,
-            ..
-        } = &mut self
-        {
-            *test = Some(LoopTestRegion {
+        if let Self::Loop { test, .. } = &mut self {
+            *test = LoopTestRegion {
                 statement: std::sync::Arc::new(statement),
                 position,
-            });
-            // The shared region owns the test and its placement. The shell
-            // has an unconditional guard, including on its initial visit.
-            *do_while = false;
-            *condition = crate::kernel::program_expression::int32_literal(1);
+            };
         }
         self
     }
@@ -2863,16 +3071,17 @@ pub fn program_do_while_with_invariant_and_effect_checks(
     body: ProgramStatement,
 ) -> ProgramStatement {
     ProgramStatement::Loop {
-        test: None,
+        test: crate::kernel::LoopTestRegion::expression(
+            condition,
+            crate::kernel::LoopTestPosition::AfterBody,
+        ),
         update: None,
-        condition,
         invariant: Vec::new(),
         invariant_checks,
         effect_checks,
         resource_specs: Vec::new(),
         ranking_measures: Vec::new(),
         structural_measure: None,
-        do_while: true,
         backedge_target: None,
         natural_exit_target: None,
         body: Box::new(body),
@@ -4593,7 +4802,7 @@ pub fn prove_symbolic_program_execution_with_budget(
         statement,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         budget,
     )
 }
@@ -4663,7 +4872,7 @@ pub fn prove_symbolic_program_execution_paths_with_budget(
         statement,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         budget,
     )
 }
@@ -4722,18 +4931,13 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
             }
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
-            let proposition = if execution_semantics == ExecutionSemantics::EXECUTE_BODIES {
-                Proposition::ProgramStatementExecutes {
-                    state: Box::new(state.clone()),
-                    statement: Box::new(statement.clone()),
-                    outcome: path.outcome,
-                }
-            } else {
-                Proposition::ProgramStatementVerifies {
-                    state: Box::new(state.clone()),
-                    statement: Box::new(statement.clone()),
-                    outcome: path.outcome,
-                }
+            // Calls apply their callees' verified rules, which describe a
+            // returning callee only, so the outcome is a verification
+            // transition rather than a concretely reachable execution.
+            let proposition = Proposition::ProgramStatementVerifies {
+                state: Box::new(state.clone()),
+                statement: Box::new(statement.clone()),
+                outcome: path.outcome,
             };
             let theorem = Theorem::new(wrap_proof_facts(
                 proposition,
@@ -4933,7 +5137,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     } = statement.into();
     let loop_evidence =
         loop_evidence.map(|evidence| evidence.executed_under(LoopSemantics::ApplyVerifiedRules));
-    let Some(program_loop) = crate::kernel::loops::ProgramLoop::of(&statement) else {
+    let Some(program_loop) = crate::kernel::loops::LoopExecutionView::of(&statement) else {
         return (
             SymbolicExecution {
                 paths: Vec::new(),
@@ -5095,7 +5299,7 @@ pub fn prove_symbolic_program_function_execution_with_budget(
         arguments,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         budget,
     )
 }
@@ -5180,7 +5384,7 @@ pub fn prove_symbolic_program_function_execution_paths_with_budget(
         arguments,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         budget,
     )
 }
@@ -5269,20 +5473,13 @@ fn prove_symbolic_program_function_execution_paths_with_contract_resources(
         .map(|path| {
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
-            let proposition = if execution_semantics == ExecutionSemantics::EXECUTE_BODIES {
-                Proposition::ProgramFunctionExecutes {
-                    state: Box::new(state.clone()),
-                    function: Box::new(function.clone()),
-                    arguments: arguments.clone(),
-                    outcome: path.outcome,
-                }
-            } else {
-                Proposition::ProgramFunctionVerifies {
-                    state: Box::new(state.clone()),
-                    function: Box::new(function.clone()),
-                    arguments: arguments.clone(),
-                    outcome: path.outcome,
-                }
+            // As for statements: applied callee rules make this a
+            // verification transition.
+            let proposition = Proposition::ProgramFunctionVerifies {
+                state: Box::new(state.clone()),
+                function: Box::new(function.clone()),
+                arguments: arguments.clone(),
+                outcome: path.outcome,
             };
             let theorem = Theorem::new(wrap_proof_facts(
                 proposition,
@@ -5642,11 +5839,11 @@ mod proof_case_evidence_tests {
     use super::*;
     use crate::kernel::proof::{
         CheckedProofCasePartition, ExecutionFrontier, ExecutionProofCore, OutcomeEvidenceFork,
-        OutcomeForkArm, ProofFacts,
+        OutcomeForkArm, PureFactStore,
     };
 
     fn case_partition(
-        root: &ProofFacts,
+        root: &PureFactStore,
     ) -> (Arc<CheckedProofCasePartition>, Proposition, Proposition) {
         let then_fact = Proposition::Predicate {
             name: "case".to_string(),
@@ -5733,7 +5930,7 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn proof_case_family_requires_both_arms_once_per_path() {
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
         let mut then_core =
             ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
@@ -5767,11 +5964,11 @@ mod proof_case_evidence_tests {
     /// A core at function entry and its two arms, each having entered its
     /// case of `partition` and then established `shared` and its own fact.
     fn joinable_arms(
-        root: &ProofFacts,
+        root: &PureFactStore,
         partition: &Arc<CheckedProofCasePartition>,
         case_facts: [&Proposition; 2],
         shared: &Proposition,
-    ) -> (ExecutionProofCore, [(ExecutionProofCore, ProofFacts); 2]) {
+    ) -> (ExecutionProofCore, [(ExecutionProofCore, PureFactStore); 2]) {
         let parent =
             ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
         let arms = [0, 1].map(|index| {
@@ -5798,7 +5995,7 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn case_join_rejoins_the_arms_with_only_the_facts_they_share() {
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
         let shared = Proposition::Predicate {
             name: "shared".to_string(),
@@ -5828,7 +6025,7 @@ mod proof_case_evidence_tests {
 
         // A successor may keep only what every arm established: not a case
         // fact, and not one arm's own fact.
-        let refused = |successor: ProofFacts| {
+        let refused = |successor: PureFactStore| {
             parent
                 .clone()
                 .record_proof_case_join(&parent, &arms, &function, &[], &successor)
@@ -5845,7 +6042,7 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn case_join_refuses_arms_that_do_not_belong_together() {
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
         let shared = Proposition::Predicate {
             name: "shared".to_string(),
@@ -5854,7 +6051,7 @@ mod proof_case_evidence_tests {
         let (parent, [(then_core, then_facts), (else_core, else_facts)]) =
             joinable_arms(&root, &partition, [&then_fact, &else_fact], &shared);
         let function = join_test_function();
-        let refused = |arms: &[(&ExecutionProofCore, &ProofFacts)]| {
+        let refused = |arms: &[(&ExecutionProofCore, &PureFactStore)]| {
             parent
                 .clone()
                 .record_proof_case_join(&parent, arms, &function, &[], &root)
@@ -5891,7 +6088,7 @@ mod proof_case_evidence_tests {
     /// the cases it left out still need paths of their own.
     #[test]
     fn a_join_of_some_cases_leaves_the_others_owed() {
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
         let mut then_core =
             ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
@@ -5911,7 +6108,7 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn outcome_evidence_fork_splits_traces_in_candidate_order() {
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
         let mut core =
             ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
@@ -6014,7 +6211,7 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn nested_outcome_evidence_is_exhaustive_and_rejects_corrupt_inner_arms() {
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (outer, positive, negative) = case_partition(&root);
         let outer_facts = [root.with_fact(positive), root.with_fact(negative)];
         let inner_positive = Proposition::Predicate {
@@ -6230,6 +6427,7 @@ pub fn checked_owned_resource_count_lower_bound(
         Resource::Memory(_)
         | Resource::PopulationAuthority(_)
         | Resource::Instance(_)
+        | Resource::ConditionalMutexGuard(_)
         | Resource::MutexGuard(_)
         | Resource::MutexLive(_)
         | Resource::MutexUse(_)
@@ -6415,22 +6613,6 @@ fn checked_execution_at_definitionally_equal_entry_state(
             conclusion = body;
         }
         let proposition = match conclusion {
-            Proposition::ProgramFunctionExecutes {
-                state: proved_state,
-                function: proved_function,
-                arguments,
-                outcome,
-            } if **proved_state == checked.state
-                && **proved_function == *function
-                && arguments == &checked.arguments =>
-            {
-                Proposition::ProgramFunctionExecutes {
-                    state: Box::new(state.clone()),
-                    function: Box::new(function.clone()),
-                    arguments: arguments.clone(),
-                    outcome: outcome.clone(),
-                }
-            }
             Proposition::ProgramFunctionVerifies {
                 state: proved_state,
                 function: proved_function,
@@ -6656,8 +6838,7 @@ pub(super) fn path_function_outcome(path: &SymbolicExecutionPath) -> Option<&Fun
         proposition = body;
     }
     match proposition {
-        Proposition::ProgramFunctionExecutes { outcome, .. }
-        | Proposition::ProgramFunctionVerifies { outcome, .. } => Some(outcome),
+        Proposition::ProgramFunctionVerifies { outcome, .. } => Some(outcome),
         _ => None,
     }
 }
@@ -6865,7 +7046,7 @@ pub(crate) fn prove_prepared_function_contract_execution_paths(
                         crate::kernel::functions::evaluate_composite_resource_relation_propositions(
                             &composite,
                             definitions,
-                            entry_state.memory(),
+                            &entry_state.program_point(),
                             &reuse_assumptions,
                         )
                     else {
@@ -7165,64 +7346,6 @@ pub(crate) fn prove_prepared_function_contract_execution_paths(
     }
 }
 
-pub fn prove_program_function_satisfies_specification(
-    function: ProgramFunction,
-    specification: FunctionSpecification,
-    assumptions: PureFactContext,
-) -> Option<Theorem> {
-    prove_program_function_satisfies_specification_with_environment(
-        function,
-        specification,
-        assumptions,
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
-    )
-}
-
-pub fn prove_program_function_satisfies_specification_with_environment(
-    function: ProgramFunction,
-    specification: FunctionSpecification,
-    assumptions: PureFactContext,
-    environment: ExecutionEnvironment,
-    execution_semantics: ExecutionSemantics,
-) -> Option<Theorem> {
-    let specification_assumptions =
-        assumptions_with_propositions(&assumptions, specification.requires());
-    let paths = execute_program_function_paths(
-        specification.state(),
-        &function,
-        specification.arguments(),
-        &specification_assumptions,
-        ExecutionContext::new(&environment, execution_semantics),
-        &mut ExecutionBudget::for_new_execution(),
-    )
-    .ok()?;
-    let mut paths = paths.into_iter();
-    let path = paths.next()?;
-    if paths.next().is_some()
-        || path.facts.iter().any(ExecutionPureFact::is_public)
-        || !path.obligations.is_empty()
-        || &path.outcome != specification.outcome()
-    {
-        return None;
-    }
-
-    let requires = specification.requires().to_vec();
-    let proposition = requires.iter().rev().fold(
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function: Box::new(function),
-            specification: Box::new(specification),
-        },
-        |body, requirement| Proposition::Implies(Box::new(requirement.clone()), Box::new(body)),
-    );
-    Some(Theorem::new(wrap_proof_facts(
-        proposition,
-        &assumptions,
-        &[],
-        &[],
-    )))
-}
-
 #[cfg(test)]
 pub fn prove_program_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem> {
     let a_bits = MachineTerm::Variable(a);
@@ -7249,7 +7372,7 @@ pub fn prove_program_max_lt_returns_right(a: Variable, b: Variable) -> Option<Th
             b,
             Proposition::Implies(
                 Box::new(Proposition::ConditionIs(condition, true)),
-                Box::new(Proposition::ProgramStatementExecutes {
+                Box::new(Proposition::ProgramStatementVerifies {
                     state: Box::new(state),
                     statement: Box::new(program_max_body()),
                     outcome,
@@ -7285,7 +7408,7 @@ pub fn prove_program_max_not_lt_returns_left(a: Variable, b: Variable) -> Option
             b,
             Proposition::Implies(
                 Box::new(Proposition::ConditionIs(condition, false)),
-                Box::new(Proposition::ProgramStatementExecutes {
+                Box::new(Proposition::ProgramStatementVerifies {
                     state: Box::new(state),
                     statement: Box::new(program_max_body()),
                     outcome,
@@ -7800,6 +7923,32 @@ pub fn substitute_integer_term_in_proposition(
         &mut std::collections::HashMap::new(),
     );
     changed.then_some(rewritten)
+}
+
+/// The append law's predecessor-range guard, constructed without touching
+/// its body. Ordinary unfold can select a written guard before instantiating
+/// that law; all of its guards still become ordinary checked obligations.
+pub(crate) fn integer_range_fold_predecessor_guard(
+    index: &IntegerRangeFoldIndex,
+) -> Option<ConditionTerm> {
+    let (prior, _) = integer_range_fold_predecessor_index(index)?;
+    Some(match prior {
+        IntegerRangeFoldIndex::Int32 { start, end } => fold_endpoint_order(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            &start,
+            &end,
+        ),
+        IntegerRangeFoldIndex::UInt64 { start, end } => fold_endpoint_order(
+            MachineIntegerType::UInt64,
+            CompareRelation::LessEqual,
+            &start,
+            &end,
+        ),
+        IntegerRangeFoldIndex::Integer { start, end } => {
+            ConditionTerm::integer_less_equal(start.as_ref().clone(), end.as_ref().clone())
+        }
+    })
 }
 
 /// The opaque application `f(args)` with the int32 or uint64 argument at `position`
@@ -8629,6 +8778,7 @@ fn rewrite_int32_term_by_exact_equality(
         )
     };
     match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             ..

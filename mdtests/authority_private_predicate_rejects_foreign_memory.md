@@ -17,7 +17,7 @@ void wrap(int32* p, int32* other) {
     owns other[0..1];
     produces zero_cell(p, other);
 } by {
-    unfold(is_zero);
+    unfold(is_zero(other));
     fold(zero_cell(p, other));
 }
 ```

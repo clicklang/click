@@ -240,8 +240,7 @@ pub(super) struct PureTheoremContext {
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
     pub(super) memory: Memory,
     pub(super) values: BTreeMap<String, ProgramValue>,
-    pub(super) integer_values:
-        crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    pub(super) integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     pub(super) array_refs: ClickArrayRefs,
     pub(super) requires: Vec<Proposition>,
     pub(super) surface_requirements: SurfacePropositionMap,
@@ -281,7 +280,7 @@ impl PureTheoremContext {
             let promoted = super::surface_lowering::promote_integer_expression(
                 &value,
                 &context.integer_values,
-                &crate::persistent::PersistentMap::default(),
+                &PersistentBinderMap::default(),
             );
             let is_integer = match click_type.as_ref() {
                 Some(ClickType::Integer) => true,
@@ -315,10 +314,9 @@ impl PureTheoremContext {
                                     .get(&name)
                                     .map(|value| (name, value.clone()))
                             })
-                            .fold(
-                                crate::persistent::PersistentMap::default(),
-                                |values, (name, value)| values.with_inserted(name, value),
-                            );
+                            .fold(PersistentBinderMap::default(), |values, (name, value)| {
+                                values.with_inserted(name, value)
+                            });
                         let spec = crate::surface::lowering::elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
                             &ClickProposition::Comparison {
                                 left: promoted,
@@ -356,7 +354,7 @@ impl PureTheoremContext {
                 // A narrow typed `let` names its native sum (G2), as the
                 // clauses read it; the bare value would be C's promoted one.
                 ContractExpression::Let {
-                    name: name.clone(),
+                    name: name.clone().into(),
                     click_type: click_type.clone(),
                     value: Box::new(value),
                     body: Box::new(ContractExpression::ProgramExpression(
@@ -411,10 +409,10 @@ pub(super) struct PureStructuralInductionBranchSetup {
 pub(super) fn induction_argument_name(argument: &ContractExpression) -> Option<&str> {
     match argument {
         ContractExpression::Binding(name)
-        | ContractExpression::AlgebraicVariable { name, .. }
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name),
+        ContractExpression::AlgebraicVariable { name, .. } => name.written(),
         _ => None,
     }
 }
@@ -647,19 +645,18 @@ fn prepare_pure_induction_tactics(
     goal: &ClickProposition,
     tactics: &[ProofTactic],
 ) -> Result<(Vec<ProofTactic>, Option<PureInductionSetup>), ClickError> {
-    let Some(ProofTactic::Induct {
-        parameter,
-        hypothesis,
-    }) = tactics.first()
-    else {
-        if tactics
+    let Some((induction_index, parameter, hypothesis)) =
+        tactics
             .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::Induct { .. }))
-        {
-            return Err(ClickError::new(
-                "`induct` must be the first tactic in a pure theorem proof",
-            ));
-        }
+            .enumerate()
+            .find_map(|(index, tactic)| match tactic {
+                ProofTactic::Induct {
+                    parameter,
+                    hypothesis,
+                } => Some((index, parameter, hypothesis)),
+                _ => None,
+            })
+    else {
         return Ok((tactics.to_vec(), None));
     };
     if !theorem.parameters().iter().any(|candidate| {
@@ -678,6 +675,7 @@ fn prepare_pure_induction_tactics(
     fn transform(
         tactics: &[ProofTactic],
         hypothesis: &str,
+        active: bool,
     ) -> Result<Vec<ProofTactic>, ClickError> {
         tactics
             .iter()
@@ -685,7 +683,9 @@ fn prepare_pure_induction_tactics(
                 ProofTactic::Induct { .. } => Err(ClickError::new(
                     "a pure theorem proof may contain only one top-level `induct` tactic",
                 )),
-                ProofTactic::ApplyTheorem(application) if application.name == hypothesis => {
+                ProofTactic::ApplyTheorem(application)
+                    if active && application.name == hypothesis =>
+                {
                     // Measure induction quantifies one scalar variable, so
                     // its hypothesis names only the replacement measure.
                     let [argument] = application.arguments.as_slice() else {
@@ -701,7 +701,7 @@ fn prepare_pure_induction_tactics(
                 ProofTactic::ApplyTheoremUsing {
                     application,
                     premises,
-                } if application.name == hypothesis => {
+                } if active && application.name == hypothesis => {
                     let [argument] = application.arguments.as_slice() else {
                         return Err(ClickError::new(format!(
                             "induction hypothesis `{hypothesis}` expects one argument"
@@ -716,23 +716,24 @@ fn prepare_pure_induction_tactics(
                 ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
                     condition: proof_if.condition.clone(),
                     ensuring: proof_if.ensuring.clone(),
-                    then_tactics: transform(&proof_if.then_tactics, hypothesis)?,
-                    else_tactics: transform(&proof_if.else_tactics, hypothesis)?,
+                    then_tactics: transform(&proof_if.then_tactics, hypothesis, active)?,
+                    else_tactics: transform(&proof_if.else_tactics, hypothesis, active)?,
                 })),
                 ProofTactic::Both(both) => Ok(ProofTactic::Both(ProofBoth {
-                    left_tactics: transform(&both.left_tactics, hypothesis)?,
-                    right_tactics: transform(&both.right_tactics, hypothesis)?,
+                    left_tactics: transform(&both.left_tactics, hypothesis, active)?,
+                    right_tactics: transform(&both.right_tactics, hypothesis, active)?,
                 })),
                 ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(
-                    proof_cases.try_map_tactics(|tactics| transform(tactics, hypothesis))?,
+                    proof_cases
+                        .try_map_tactics(|tactics| transform(tactics, hypothesis, active))?,
                 )),
-                // The hypothesis is in scope in every nested proof of the
-                // script, a `have` body and a `match` arm included.
+                // Once declared, the hypothesis is in scope in every nested
+                // proof, a `have` body and a `match` arm included.
                 ProofTactic::Have(have) => Ok(ProofTactic::Have(ProofHave {
                     proposition: have.proposition.clone(),
                     proof: match &have.proof {
                         SourceProof::Script(tactics) => {
-                            SourceProof::Script(transform(tactics, hypothesis)?)
+                            SourceProof::Script(transform(tactics, hypothesis, active)?)
                         }
                         proof => proof.clone(),
                     },
@@ -749,7 +750,7 @@ fn prepare_pure_induction_tactics(
                                     type_name: arm.type_name.clone(),
                                     variant: arm.variant.clone(),
                                     bindings: arm.bindings.clone(),
-                                    tactics: transform(&arm.tactics, hypothesis)?,
+                                    tactics: transform(&arm.tactics, hypothesis, active)?,
                                 })
                             })
                             .collect::<Result<_, ClickError>>()?,
@@ -765,8 +766,15 @@ fn prepare_pure_induction_tactics(
             .collect()
     }
 
-    let mut prepared = vec![tactics[0].clone()];
-    prepared.extend(transform(&tactics[1..], hypothesis)?);
+    // Keep calls before the declaration as ordinary theorem applications.
+    // The checked `induct` step introduces the hypothesis at its source site.
+    let mut prepared = transform(&tactics[..induction_index], hypothesis, false)?;
+    prepared.push(tactics[induction_index].clone());
+    prepared.extend(transform(
+        &tactics[induction_index + 1..],
+        hypothesis,
+        true,
+    )?);
     Ok((
         prepared,
         Some(PureInductionSetup {
@@ -952,7 +960,7 @@ fn check_pure_structural_induction(
     };
     let parameter_expression = ContractExpression::AlgebraicVariable {
         // Arbitrary types have no exhaustive constructor schema.
-        name: parameter.clone(),
+        name: parameter.clone().into(),
         algebraic_type: parameter_type.clone(),
         binder_index: parameter_index,
     };
@@ -1093,7 +1101,7 @@ fn check_pure_structural_induction(
                         unreachable!("algebraic field conversion preserves its family")
                     };
                     let symbolic = ContractExpression::AlgebraicVariable {
-                        name: binding.clone(),
+                        name: binding.clone().into(),
                         algebraic_type,
                         binder_index: theorem.parameters().len()
                             + 1
@@ -1444,7 +1452,7 @@ pub(super) fn pure_theorem_context(
                 Some((
                     name.clone(),
                     ContractExpression::AlgebraicVariable {
-                        name,
+                        name: name.into(),
                         algebraic_type: algebraic_type.clone(),
                         binder_index,
                     },
@@ -1536,13 +1544,13 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
 
 fn pure_theorem_parameter_integer_values(
     parameters: &[FunctionParameter],
-) -> crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression> {
+) -> PersistentBinderMap<crate::kernel::SpecIntegerExpression> {
     parameters
         .iter()
         .enumerate()
         .filter(|(_, parameter)| matches!(parameter.click_type(), ClickType::Integer))
         .fold(
-            crate::persistent::PersistentMap::default(),
+            PersistentBinderMap::default(),
             |values, (index, parameter)| {
                 values.with_inserted(
                     parameter.name().to_string(),
@@ -2326,40 +2334,49 @@ fn verify_contract_refinement_theorem(
             "`{claim_label}`: proving `{name}({subject})` requires an explicit contract-refinement proof"
         )));
     };
-    let proof_tactics = if let Some((source_name, _, _)) = &source_contract {
-        let Some((first_two, remainder)) = tactics.split_at_checked(2) else {
+    // Contract refinement opens explicitly selected contract applications.
+    // Compare the lowered applications, including callback and value arguments.
+    let selected_application = |tactic: &ProofTactic| -> Result<Option<Proposition>, ClickError> {
+        let target = match tactic {
+            ProofTactic::UnfoldProposition(target) => target.clone(),
+            ProofTactic::UnfoldFunction(application) => ClickProposition::PredicateCall {
+                name: application.name.clone(),
+                arguments: application.arguments.clone(),
+            },
+            _ => return Ok(None),
+        };
+        lower(&target).map(Some)
+    };
+    let count = if source_contract.is_some() { 2 } else { 1 };
+    let Some((prefix, proof_tactics)) = tactics.split_at_checked(count) else {
+        return Err(ClickError::new(format!(
+            "`{claim_label}`: contract refinement must begin by unfolding its selected contract applications"
+        )));
+    };
+    let mut expected = vec![goal.clone()];
+    if source_contract.is_some() {
+        expected.push(lower(
+            theorem.requires()[0]
+                .proposition()
+                .expect("source contract requirement"),
+        )?);
+    }
+    for tactic in prefix {
+        let Some(selected) = selected_application(tactic)? else {
             return Err(ClickError::new(format!(
-                "`{claim_label}`: abstract refinement must begin by unfolding `{source_name}` and `{name}`"
+                "`{claim_label}`: contract refinement requires explicit `unfold(contract(callback))` applications"
             )));
         };
-        let unfolded = first_two
+        let Some(index) = expected
             .iter()
-            .map(|tactic| match tactic {
-                ProofTactic::UnfoldPredicate(unfolded) => Some(unfolded.as_str()),
-                _ => None,
-            })
-            .collect::<Option<BTreeSet<_>>>();
-        let expected = BTreeSet::from([*source_name, name.as_str()]);
-        if unfolded.as_ref() != Some(&expected) {
-            return Err(ClickError::new(format!(
-                "`{claim_label}`: abstract refinement must begin by unfolding `{source_name}` and `{name}`"
-            )));
-        }
-        remainder
-    } else {
-        let Some((ProofTactic::UnfoldPredicate(unfolded), remainder)) = tactics.split_first()
+            .position(|value| crate::kernel::proof::propositions_are_alpha_equal(value, &selected))
         else {
             return Err(ClickError::new(format!(
-                "`{claim_label}`: contract-refinement proof must begin with `unfold({name});`"
+                "`{claim_label}`: unfold selects a different contract application"
             )));
         };
-        if unfolded != name {
-            return Err(ClickError::new(format!(
-                "`{claim_label}`: expected `unfold({name});`, got `unfold({unfolded});`"
-            )));
-        }
-        remainder
-    };
+        expected.remove(index);
+    }
     let function_environment = function_environment.ok_or_else(|| {
         ClickError::new(format!(
             "`{claim_label}`: contract-refinement theorems require the C function environment"
@@ -3241,6 +3258,10 @@ pub(super) fn click_function_applications(
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match term {
+            ContractExpression::IntegerContext(value) => {
+                expression(value, known_facts, applications)
+            }
+
             ContractExpression::Proposition(proposition) => {
                 proposition_inner(proposition, known_facts, applications)
             }
@@ -3477,7 +3498,7 @@ pub(super) fn lower_pure_theorem_proposition_with_integer_values(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
@@ -3498,7 +3519,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
@@ -3525,7 +3546,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
@@ -3559,7 +3580,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_values(
         proposition,
         contract_environment,
         algebraic_values,
-        &crate::persistent::PersistentMap::default(),
+        &PersistentBinderMap::default(),
         memory,
         spec_definitions,
     )
@@ -3876,7 +3897,7 @@ mod tests {
             }
             theorem extraction(x: int32) {
                 requires x == 0 and x <= 1;
-                ensures x == 0 by { extract(x == 0); rewrite(x, 0); normalize(); }
+                ensures x == 0 by { have x == 0 by known(); rewrite(x, 0); normalize(); }
             }
         "#;
         let verified = crate::surface::verify_click_theorems(source).unwrap();
@@ -3898,6 +3919,7 @@ mod tests {
     #[test]
     #[ignore = "nightly: 1.0s in the parallel gate"]
     fn ordinary_pure_numeric_induction_expands_and_reverifies() {
+        let library = TheoremEnvironment::with_standard_library(&[]).unwrap();
         for fixture in [
             include_str!("../../../mdtests/pure_induction_countdown.md"),
             include_str!("../../../mdtests/pure_induction_two_step.md"),
@@ -3910,7 +3932,7 @@ mod tests {
                 .split_once("\n```")
                 .unwrap()
                 .0;
-            let result = verify_instantiation_theorem(source);
+            let result = verify_instantiation_theorem_in_environment(source, &library);
             let verified = result.unwrap();
             assert!(matches!(
                 verified.checked_completion,
@@ -3927,6 +3949,72 @@ mod tests {
                 crate::surface::expand_c_claim_source_by_label(&expanded, &[], &label).unwrap()
             );
         }
+    }
+
+    #[test]
+    #[ignore = "nightly: induction prefix scope and cold expansion replay"]
+    fn scalar_induction_prefixes_preserve_scope_and_cold_replay() {
+        let fixture = include_str!("../../../mdtests/scalar_induction_after_helper_facts.md");
+        let source = fixture
+            .split_once("```click\n")
+            .unwrap()
+            .1
+            .split_once("\n```")
+            .unwrap()
+            .0;
+        let global_before_local = format!(
+            "theorem ih(n: int32) {{ ensures n == n by known(); }}\n{}",
+            source.replace("have n == n;", "have n == n by { apply(ih(n)); }")
+        );
+        for source in [source.to_string(), global_before_local] {
+            crate::surface::verify_c_sources(&source, &[]).unwrap();
+            let expanded = crate::surface::expand_c_claim_source_by_label(
+                &source,
+                &[],
+                "countdown_is_zero.ensures_0",
+            )
+            .unwrap();
+            crate::surface::proof::without_implicit_solve(|| {
+                crate::surface::verify_c_sources(&expanded, &[])
+            })
+            .unwrap();
+        }
+        crate::surface::verify_c_sources(
+            "theorem unsigned_prefix(n: uint64) { ensures n == n by { have 0u64 <= n; induct(n) as ih; known(); } }", &[],
+        ).unwrap();
+        for (invalid, diagnostic) in [
+            (
+                source.replace(
+                    "have n == n;",
+                    "have n == n by { if n > 0 { apply(ih(0)); known(); } else { known(); } }",
+                ),
+                "ih",
+            ),
+            (
+                source.replace("induct(n) as ih;", "induct(n) as ih; induct(n) as another;"),
+                "only one top-level",
+            ),
+            (
+                source.replace(
+                    "have n == n;",
+                    "have n == n by { induct(n) as ih; known(); }",
+                ),
+                "only one top-level",
+            ),
+        ] {
+            let error = crate::surface::verify_c_sources(&invalid, &[])
+                .expect_err("invalid induction scope must be refused");
+            assert!(error.message().contains(diagnostic), "{}", error.report());
+            assert!(!error.message().contains("budget"), "{}", error.report());
+        }
+        let changed_goal = "theorem changed_goal(n: int32) { requires n >= 0; ensures n >= 0 implies n >= 0 by { intro(); induct(n) as ih; known(); } }";
+        let error = crate::surface::verify_c_sources(changed_goal, &[])
+            .expect_err("induction still targets the original theorem goal");
+        assert!(
+            error.message().contains("original theorem goal"),
+            "{}",
+            error.report()
+        );
     }
 
     #[test]
@@ -3992,20 +4080,27 @@ mod tests {
             ensures x <= upper by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < limit implies k <= upper
-                }, x) using { 0 <= x; x < limit; }
+                }, x);
                 known();
             }
         }
     "#;
 
     fn verify_instantiation_theorem(source: &str) -> Result<VerifiedPureTheorem, ClickError> {
+        verify_instantiation_theorem_in_environment(source, &TheoremEnvironment::new(&[]))
+    }
+
+    fn verify_instantiation_theorem_in_environment(
+        source: &str,
+        theorems: &TheoremEnvironment,
+    ) -> Result<VerifiedPureTheorem, ClickError> {
         let file = crate::surface::parse(source)?;
         let predicates = PredicateEnvironment::new(file.predicate_definitions());
         let functions = ClickFunctionEnvironment::new(file.click_function_definitions());
         let mut verified = verify_concrete_theorem_definition(
             &file.theorem_definitions()[0],
             SpecDefinitions::new(&predicates, &functions),
-            &TheoremEnvironment::new(&[]),
+            theorems,
             None,
         )?;
         Ok(verified.remove(0))
@@ -4018,7 +4113,7 @@ mod tests {
         assert!(verified.kernel_authority.is_some());
         assert!(matches!(
             verified.proof.as_ref().unwrap().steps(),
-            [ProofStep::InstantiateUsing { .. }]
+            [ProofStep::Instantiate { .. }, ProofStep::Known]
         ));
     }
 
@@ -4042,31 +4137,17 @@ mod tests {
     }
 
     #[test]
-    fn pure_instantiate_rejects_omitted_guard_and_preserves_checked_error() {
-        let missing =
-            INSTANTIATE_BOUND.replace("using { 0 <= x; x < limit; }", "using { 0 <= x; }");
+    fn pure_instantiate_preserves_a_missing_guard_until_known() {
+        let missing = INSTANTIATE_BOUND.replace("requires x < limit;", "");
         let error = verify_instantiation_theorem(&missing)
-            .expect_err("ambient guards cannot fill a missing citation");
+            .expect_err("the guarded conclusion needs its missing bound");
         assert!(
-            error
-                .message()
-                .contains("does not follow from the listed evidence"),
+            error.message().contains("`known` requires"),
             "{}",
             error.message()
         );
         assert!(
             !error.message().contains("round-trip"),
-            "{}",
-            error.message()
-        );
-        let unavailable = INSTANTIATE_BOUND.replace("requires x < limit;", "");
-        let error = verify_instantiation_theorem(&unavailable)
-            .expect_err("a named guard must be available");
-        // Named by its position and as written, not as a kernel term.
-        assert!(
-            error
-                .message()
-                .contains("premise 2 `x < limit` is not an available exact fact"),
             "{}",
             error.message()
         );
@@ -4104,8 +4185,7 @@ mod tests {
                 ensures forall (x: int32) { x <= 10 implies x <= 20 } by {
                     intro(); intro();
                     have x <= 20 by {
-                        instantiate(forall (x: int32) { x <= 10 implies x <= 20 }, x)
-                            using { x <= 10; }
+                        instantiate(forall (x: int32) { x <= 10 implies x <= 20 }, x);
                         known();
                     }
                     known();
@@ -4115,7 +4195,7 @@ mod tests {
         let verified = verify_instantiation_theorem(source)
             .expect("intro bindings must shadow theorem parameters");
         assert!(verified.kernel_authority.is_some());
-        let invalid = source.replace("using { x <= 10; }", "using { x == 0; }");
+        let invalid = source.replace("intro(); intro();", "intro();");
         assert!(
             verify_instantiation_theorem(&invalid).is_err(),
             "the outer x cannot supply evidence for the introduced x"
@@ -4128,7 +4208,7 @@ mod tests {
             theorem nested() {
                 requires forall (k: int32) { forall (k: int32) { k == k } };
                 ensures forall (x: int32) { x == x } by {
-                    instantiate(forall (k: int32) { forall (k: int32) { k == k } }, 0) using {}
+                    instantiate(forall (k: int32) { forall (k: int32) { k == k } }, 0);
                     known();
                 }
             }
@@ -4151,6 +4231,10 @@ mod tests {
         let source = INSTANTIATE_BOUND.replace("0 <= x", "x >= 0").replace(
             "ensures x <= upper by {",
             "ensures x <= upper by { induct(x) as ih;",
+        );
+        let source = source.replace(
+            "instantiate(forall",
+            "have 0 <= x by known(); instantiate(forall",
         );
         let verified = verify_instantiation_theorem(&source);
         assert!(verified.unwrap().kernel_authority.is_some());
@@ -4209,11 +4293,18 @@ mod tests {
                 .apply_step(certificate.steps()[0].clone())
                 .unwrap();
             allocations.push(crate::persistent::persistent_node_allocations() - before);
-            // The instantiation adds the goal, which closes it.
-            assert!(instantiated.is_complete());
+            // Instantiation retains the guarded body; propagation exposes the
+            // consequence and an explicit known closes it.
+            assert!(!instantiated.is_complete());
+            assert!(instantiated.facts().pure_known_available(&goal));
             assert!(root.certificate().steps().is_empty());
             assert!(!root.facts().contains(&goal));
-            instantiated.completed_proposition().unwrap();
+            instantiated
+                .driver()
+                .apply_step(ProofStep::Known)
+                .unwrap()
+                .completed_proposition()
+                .unwrap();
         }
         for pair in allocations.windows(2) {
             assert!(
@@ -4258,7 +4349,7 @@ mod tests {
                 requires forall (k: int32) { k == k };
                 ensures forall (x: Integer) { x == x } by {
                     intro();
-                    instantiate(forall (k: int32) { k == k }, x) using {}
+                    instantiate(forall (k: int32) { k == k }, x);
                     normalize();
                 }
             }
@@ -4279,9 +4370,11 @@ mod tests {
                 requires flag == 0 or flag != 0;
                 ensures x <= 0 by {
                     if flag == 0 {
-                        instantiate(forall (k: int32) { k <= 0 }, x) using {}
+                        instantiate(forall (k: int32) { k <= 0 }, x);
+                        known();
                     } else {
-                        instantiate(forall (k: int32) { k <= 0 }, x) using {}
+                        instantiate(forall (k: int32) { k <= 0 }, x);
+                        known();
                     }
                     known();
                 }
@@ -4291,8 +4384,8 @@ mod tests {
             .replace("if flag == 0 {", "cases {\n flag == 0 => {")
             .replace("} else {", "}\n flag != 0 => {")
             .replace(
-                "using {}\n                    }\n                    known();",
-                "using {}\n                    }\n }\n                    known();",
+                "                    }\n                    known();",
+                "                    }\n }\n                    known();",
             );
         for source in [source, cases.as_str()] {
             let verified = verify_instantiation_theorem(source).unwrap();
@@ -4311,7 +4404,7 @@ mod tests {
                 _ => panic!("the checked certificate must retain both branches"),
             };
             for arm in arms {
-                assert!(matches!(arm.steps(), [ProofStep::InstantiateUsing { .. }]));
+                assert!(matches!(arm.steps(), [ProofStep::Instantiate { .. }]));
             }
             let prefix = source.split_once(" by {").unwrap().0;
             let expanded = format!(
@@ -4324,11 +4417,8 @@ mod tests {
                     .kernel_authority
                     .is_some()
             );
-            let wrong_sibling = source.replacen(
-                "instantiate(forall (k: int32) { k <= 0 }, x) using {}",
-                "",
-                1,
-            );
+            let wrong_sibling =
+                source.replacen("instantiate(forall (k: int32) { k <= 0 }, x);", "", 1);
             let error = verify_instantiation_theorem(&wrong_sibling).unwrap_err();
             assert!(error.message().contains("known"), "{}", error.message());
         }
@@ -4683,6 +4773,9 @@ mod tests {
                 assert!(verify_standard_declaration(&forged).is_err(), "{forged}");
             }
         }
+    }
+    mod scaling_tests {
+        include!("../../scaling_tests/surface/proof/pure_theorems/tests.rs");
     }
 }
 

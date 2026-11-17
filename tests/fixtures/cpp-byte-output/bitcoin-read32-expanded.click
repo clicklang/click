@@ -628,6 +628,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step() by {
         known();
     }
+    step();
     have separate(memory(this->data), memory(old(dst->_M_ptr)[0])) by {
         known();
     }

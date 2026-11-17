@@ -22,22 +22,63 @@ fn checked_loop_exit_copies_share_their_fact_storage() {
         for _ in 0..16 {
             let copied_break = break_exit.clone();
             let copied_final = final_exit.clone();
-            assert!(std::ptr::eq(
-                break_exit.pure_facts(),
-                copied_break.pure_facts()
-            ));
-            assert!(std::ptr::eq(
-                final_exit.pure_facts(),
-                copied_final.pure_facts()
-            ));
-            assert_eq!(copied_break.pure_facts(), facts);
-            assert_eq!(copied_final.pure_facts(), facts);
+            let (LoopExitFacts::Explicit(original), LoopExitFacts::Explicit(copied)) =
+                (break_exit.pure_facts(), copied_break.pure_facts())
+            else {
+                unreachable!()
+            };
+            assert!(Arc::ptr_eq(original, copied));
+            let (LoopExitFacts::Explicit(original), LoopExitFacts::Explicit(copied)) =
+                (final_exit.pure_facts(), copied_final.pure_facts())
+            else {
+                unreachable!()
+            };
+            assert!(Arc::ptr_eq(original, copied));
+            assert!(copied_break.pure_facts().iter().eq(facts.iter()));
+            assert!(copied_final.pure_facts().iter().eq(facts.iter()));
             let copied_jump = jump_exit.clone();
             assert_eq!(copied_jump.jump_target(), Some(ControlTargetId(2)));
-            assert!(std::ptr::eq(
-                jump_exit.pure_facts(),
-                copied_jump.pure_facts()
-            ));
+            let (LoopExitFacts::Explicit(original), LoopExitFacts::Explicit(copied)) =
+                (jump_exit.pure_facts(), copied_jump.pure_facts())
+            else {
+                unreachable!()
+            };
+            assert!(Arc::ptr_eq(original, copied));
         }
+    }
+}
+
+#[test]
+fn checked_loop_exit_retains_the_store_and_publishes_shared_propositions() {
+    use crate::kernel::proof::{PropositionSource, PureFactStore};
+    for size in [32, 128, 512] {
+        let source = (0..size)
+            .map(|index| Proposition::Predicate {
+                name: format!("exit_{index}"),
+                arguments: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        let root = PureFactStore::from_ordered(&source);
+        let _ = crate::kernel::proof::take_fact_entry_counts();
+        let (exit, work) = crate::instrumentation::measure_deterministic_work(|| {
+            LoopBreakExit::from_store(ExecutionState::new(), &root)
+        });
+        assert!(work <= 32, "size {size}: {work}");
+        assert_eq!(crate::kernel::proof::take_fact_entry_counts(), (0, 0));
+        assert!(
+            exit.pure_facts()
+                .fact_store()
+                .shares_exact_index_with(&root)
+        );
+        let published = exit.pure_facts().certified_facts();
+        for (stored, fact) in root.shared_presented_propositions().zip(published.iter()) {
+            assert!(Arc::ptr_eq(&stored, &fact.shared_proposition()));
+            assert!(fact.is_certified());
+        }
+        assert!(
+            exit.pure_facts()
+                .context_with(root.assumptions())
+                .shares_fact_storage_with(root.assumptions())
+        );
     }
 }

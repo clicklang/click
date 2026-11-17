@@ -13,7 +13,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     written_assertions: &[ProofAssertion],
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut ProofFacts,
+    available_pure_facts: &mut PureFactStore,
     sibling_join_states: Option<&[&ExecutionState]>,
     // `join_next_kernel_variable` is the counter every sibling arm abstracts
     // from: the highest of the arms' own. The arms' abstractions are compared
@@ -65,7 +65,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                         describe_click_proposition(written_fact),
                         describe_missing_pure_fact(
                             &fact,
-                            &concrete_facts.to_vec(),
+                            &concrete_facts,
                             state.resources().facts(),
                             parameter_binding,
                             &[]
@@ -103,7 +103,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                         "`{claim_label}` tactic {tactic_index}: `branch ensuring` did not establish resource fact: {}",
                         describe_missing_resource_fact(
                             &expected,
-                            &concrete_facts.to_vec(),
+                            &concrete_facts,
                             state.resources().facts(),
                             parameter_binding,
                             &[]
@@ -160,7 +160,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     // Extend one indexed context as the interface publishes each fact.
     // Rebuilding the growing prefix for every assertion is quadratic even
     // though the interface itself is explicit output.
-    let mut exported_pure_facts = ProofFacts::default();
+    let mut exported_pure_facts = PureFactStore::default();
     for assertion in assertions {
         if let ProofAssertion::Resource(resource) = assertion {
             // A named instance may carry a different model in each arm. The
@@ -480,11 +480,15 @@ fn resource_is_direct_observed_core(
 /// so listing the slice alone shows `pure facts: []` beside a `requires` the
 /// step did see. List the context the kernel checked against.
 fn listed_context_pure_facts(
-    delta: &[Proposition],
+    delta: &(impl PropositionSource + ?Sized),
     context: Option<&PureFactContext>,
 ) -> Vec<Proposition> {
     const LIMIT: usize = 32;
-    let mut facts = delta.iter().take(LIMIT).cloned().collect::<Vec<_>>();
+    let mut facts = delta
+        .propositions()
+        .take(LIMIT)
+        .cloned()
+        .collect::<Vec<_>>();
     if let Some(context) = context {
         facts.extend(context.diagnostic_fact_sample(LIMIT - facts.len(), 0).0);
     }
@@ -494,7 +498,7 @@ fn listed_context_pure_facts(
 }
 
 fn describe_step_proof_context(
-    delta: &[Proposition],
+    delta: &(impl PropositionSource + ?Sized),
     context: Option<&PureFactContext>,
     resources: &[ResourceFact],
     binding: ParameterBinding<'_>,
@@ -510,7 +514,7 @@ fn describe_step_proof_context(
         let (conditions, propositions) = context.fact_counts();
         conditions + propositions
     });
-    if total.saturating_add(delta.len()) > 32 {
+    if total.saturating_add(delta.propositions().take(33).count()) > 32 {
         description.push_str(
             "\n  pure facts shown are a bounded sample of the context and statement facts",
         );
@@ -826,22 +830,21 @@ fn execute_concrete_loop_head_step(
 
     execution.core.concrete_loop_execution = true;
     let ProgramStatement::Loop {
-        test,
+        test: loop_test,
         update,
-        condition,
         invariant,
         invariant_checks,
         effect_checks,
         resource_specs,
         ranking_measures,
         structural_measure,
-        do_while,
         body,
         ..
     } = loop_statement.clone()
     else {
         unreachable!("concrete loop stepping requires a loop statement");
     };
+    let (condition, direct_post_test, test) = loop_test.execution_parts();
 
     record_statement_program_state(
         &mut execution.presentation.recorded_states,
@@ -859,16 +862,14 @@ fn execute_concrete_loop_head_step(
     );
 
     let loop_head = ProgramStatement::Loop {
-        test: test.clone(),
+        test: loop_test.for_repeated_iteration(),
         update: update.clone(),
-        condition: condition.clone(),
         invariant: invariant.clone(),
         invariant_checks: invariant_checks.clone(),
         effect_checks: effect_checks.clone(),
         resource_specs: resource_specs.clone(),
         ranking_measures: ranking_measures.clone(),
         structural_measure: structural_measure.clone(),
-        do_while: false,
         backedge_target: None,
         natural_exit_target: None,
         body: body.clone(),
@@ -877,9 +878,8 @@ fn execute_concrete_loop_head_step(
     let body = Box::new(crate::kernel::program_loop_pass(
         &body,
         update.as_deref(),
-        test.as_ref(),
+        test,
     ));
-    let update = crate::kernel::program_loop_continuation(update.as_deref(), test.as_ref());
     let update_index = proof_context
         .constants
         .source_layout
@@ -891,7 +891,7 @@ fn execute_concrete_loop_head_step(
     // C's `do ... while` enters its body before evaluating the condition. The
     // continuation is an ordinary while head: after the first body, every
     // iteration checks the condition before re-entering the body.
-    if do_while {
+    if direct_post_test {
         // Entering the body records no evidence of its own. When the loop is
         // the first thing this trace executes, the proof object would start
         // matching evidence from the frontier position set below, which
@@ -942,24 +942,31 @@ fn execute_concrete_loop_head_step(
                 .recorded_states
                 .record_effect(execution.core.last_footprint.as_ref());
         }
-        let loop_head = match remaining {
-            Some(remaining) => program_seq(loop_head, remaining),
+        let loop_sources =
+            execution
+                .core
+                .enter_post_test_loop_body(function)
+                .map_err(|refusal| {
+                    ClickError::new(describe_evidence_refusal(&refusal, parameter_binding))
+                })?;
+        let after_loop = remaining.map(Arc::new);
+        let loop_head = match &after_loop {
+            Some(remaining) => ProgramStatement::seq(Arc::new(loop_head), remaining.clone()),
             None => loop_head,
         };
-        execution
-            .core
-            .frontier
-            .continuations
-            .push(ProofExecutionContinuation {
-                continue_region: update
-                    .as_ref()
-                    .zip(update_index)
-                    .map(|(update, index)| (update.clone(), index)),
-                remaining: Some(loop_head.into()),
-                next_statement_index: statement_index,
-                loop_exit_statement_index: continuation_node,
-                exceptional: None,
-            });
+        execution.core.frontier.continuations.push(
+            ProofExecutionContinuation::loop_body(
+                loop_head.into(),
+                statement_index,
+                after_loop,
+                continuation_node,
+                update_index,
+                loop_sources,
+            )
+            .map_err(|refusal| {
+                ClickError::new(describe_evidence_refusal(&refusal, parameter_binding))
+            })?,
+        );
         execution.core.frontier.next_statement_index = proof_context.constants.source_layout
             .loop_body_entry(loop_index)
             .ok_or_else(|| {
@@ -985,7 +992,7 @@ fn execute_concrete_loop_head_step(
     let condition_transitions = certified_condition_transitions(
         &current_state,
         available_pure_facts,
-        &condition,
+        condition,
         &transition_label,
         prerequisite_policy,
         // A step decides the loop condition from the same whole proof
@@ -995,7 +1002,7 @@ fn execute_concrete_loop_head_step(
     if condition_transitions.len() != 1 {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not prove one exact truth value for loop({loop_index}) condition `{}`; got {} feasible condition paths\n{}",
-            describe_program_expression(&condition),
+            describe_program_expression(condition),
             condition_transitions.len(),
             describe_proof_context(
                 available_pure_facts,
@@ -1009,9 +1016,9 @@ fn execute_concrete_loop_head_step(
         .into_iter()
         .next()
         .expect("one condition transition was required");
-    execution
+    let loop_sources = execution
         .core
-        .record_condition_transition(
+        .record_loop_condition_transition(
             function,
             arguments,
             condition_transition.theorem.clone(),
@@ -1027,25 +1034,25 @@ fn execute_concrete_loop_head_step(
         })?;
     *available_pure_facts = condition_transition.pure_facts;
 
-    if condition_transition.is_true {
-        let loop_head = match remaining {
-            Some(remaining) => program_seq(loop_head, remaining),
+    if let Some(loop_sources) = loop_sources {
+        let after_loop = remaining.map(Arc::new);
+        let loop_head = match &after_loop {
+            Some(remaining) => ProgramStatement::seq(Arc::new(loop_head), remaining.clone()),
             None => loop_head,
         };
-        execution
-            .core
-            .frontier
-            .continuations
-            .push(ProofExecutionContinuation {
-                continue_region: update
-                    .as_ref()
-                    .zip(update_index)
-                    .map(|(update, index)| (update.clone(), index)),
-                remaining: Some(loop_head.into()),
-                next_statement_index: statement_index,
-                loop_exit_statement_index: continuation_node,
-                exceptional: None,
-            });
+        execution.core.frontier.continuations.push(
+            ProofExecutionContinuation::loop_body(
+                loop_head.into(),
+                statement_index,
+                after_loop,
+                continuation_node,
+                update_index,
+                loop_sources,
+            )
+            .map_err(|refusal| {
+                ClickError::new(describe_evidence_refusal(&refusal, parameter_binding))
+            })?,
+        );
         execution.core.frontier.next_statement_index = proof_context.constants.source_layout
             .loop_body_entry(loop_index)
             .ok_or_else(|| {
@@ -1567,12 +1574,16 @@ pub(super) fn route_throw_to_handler(
     context: Option<&PureFactContext>,
     throw_value: &ProgramValue,
     thrown_state: &ExecutionState,
-    throw_facts: &[Proposition],
+    throw_facts: &PureFactList,
 ) -> Result<bool, ClickError> {
     let handler = loop {
         match execution.core.frontier.continuations.pop() {
-            Some(continuation) => {
-                if let Some(exceptional) = continuation.exceptional {
+            Some(mut continuation) => {
+                if let Some(exceptional) = continuation.exceptional.take() {
+                    // The handler replaces the abandoned try body, but its
+                    // normal completion must still resume after the try.
+                    // Clear this handler so a rethrow cannot catch itself.
+                    execution.core.frontier.continuations.push(continuation);
                     break Some(exceptional);
                 }
                 // Non-handler continuations in the abandoned region are
@@ -1585,18 +1596,23 @@ pub(super) fn route_throw_to_handler(
         return Ok(false);
     };
     let transition_label = format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
-    // Bind the payload exactly as the kernel's own `try` execution does:
-    // declare the handler binding, then assign the thrown value. The
-    // handler binding is always `int32` by `TryCatchInt32` semantics.
+    // A `try` binds the payload exactly as the kernel's own `try` execution
+    // does: declare the handler binding, then assign the thrown value, which
+    // is always `int32` by `TryCatchInt32` semantics. An unwind cleanup binds
+    // nothing: its cleanup runs and then the same exception continues.
     let mut state = thrown_state.clone();
-    let mut facts = PureFactList::from(throw_facts.to_vec());
-    for statement in [
-        program_declare(handler.binding.clone(), crate::kernel::ProgramType::Int32),
-        program_assign(
-            handler.binding.clone(),
-            ProgramExpression::Value(throw_value.clone()),
-        ),
-    ] {
+    let mut facts = throw_facts.clone();
+    let binding_steps = match &handler.entry {
+        ExceptionalEntry::Catch(binding) => vec![
+            program_declare(binding.clone(), crate::kernel::ProgramType::Int32),
+            program_assign(
+                binding.clone(),
+                ProgramExpression::Value(throw_value.clone()),
+            ),
+        ],
+        ExceptionalEntry::Unwind(_) => Vec::new(),
+    };
+    for statement in binding_steps {
         let mut kernel_variable = execution.core.kernel_variable_mark();
         let (transitions, _) = certified_statement_transitions(
             &state,
@@ -1655,7 +1671,13 @@ pub(super) fn route_throw_to_handler(
     }
     *available_pure_facts = facts;
     execution.core.state = state.clone().into();
-    let mut handler_source = handler.handler.clone();
+    let mut handler_source = match &handler.entry {
+        ExceptionalEntry::Catch(_) => handler.handler.clone(),
+        ExceptionalEntry::Unwind(cleanup) => Arc::new(crate::kernel::program_unwind_continuation(
+            cleanup,
+            ProgramExpression::Value(throw_value.clone()),
+        )),
+    };
     loop {
         let (head, tail) = split_next_source_operation(&handler_source).map_err(|message| {
             ClickError::new(format!(
@@ -1812,13 +1834,7 @@ pub(super) fn prepare_call_outcome_split(
             tactic_name,
         )?;
 
-    while let ProgramStatement::TryCatchInt32 {
-        try_body,
-        binding,
-        handler,
-        cleanup_unwind,
-    } = &statement
-    {
+    while let Some((try_body, entry, handler)) = exceptional_region(&statement) {
         let SourceStatementKind::Try {
             try_statement_index,
             handler_statement_index,
@@ -1833,18 +1849,16 @@ pub(super) fn prepare_call_outcome_split(
             .frontier
             .continuations
             .push(ProofExecutionContinuation {
-                continue_region: None,
+                loop_control: None,
                 remaining: remaining.map(Arc::new),
                 next_statement_index: after_try_statement_index,
-                loop_exit_statement_index: after_try_statement_index,
                 exceptional: Some(ExceptionalContinuation {
-                    binding: binding.clone(),
-                    handler: Arc::new((**handler).clone()),
+                    entry,
+                    handler,
                     handler_first_index: handler_statement_index,
-                    cleanup_unwind: *cleanup_unwind,
                 }),
             });
-        remaining = Some((**try_body).clone());
+        remaining = Some(try_body.clone());
         statement_index = try_statement_index;
         source_region = proof_context
             .constants
@@ -2310,13 +2324,7 @@ fn execute_step_from_frontier_position_selecting_path(
     // path; normal completion pops it with the tail like any other
     // continuation.
     let mut descended_try = false;
-    while let ProgramStatement::TryCatchInt32 {
-        try_body,
-        binding,
-        handler,
-        cleanup_unwind,
-    } = &source_statement
-    {
+    while let Some((try_body, entry, handler)) = exceptional_region(&source_statement) {
         let (try_first, handler_first, after_try) = match source_region.kind {
             SourceStatementKind::Try {
                 try_statement_index,
@@ -2336,18 +2344,16 @@ fn execute_step_from_frontier_position_selecting_path(
             .frontier
             .continuations
             .push(ProofExecutionContinuation {
-                continue_region: None,
+                loop_control: None,
                 remaining: remaining.map(Arc::new),
                 next_statement_index: after_try,
-                loop_exit_statement_index: after_try,
                 exceptional: Some(ExceptionalContinuation {
-                    binding: binding.clone(),
-                    handler: Arc::new((**handler).clone()),
+                    entry,
+                    handler,
                     handler_first_index: handler_first,
-                    cleanup_unwind: *cleanup_unwind,
                 }),
             });
-        remaining = Some((**try_body).clone());
+        remaining = Some(try_body.clone());
         statement_index = try_first;
         source_region = proof_context
             .constants
@@ -3241,7 +3247,7 @@ fn execute_step_from_frontier_position_selecting_path(
             let mut returned_facts = loop_index
                 .and_then(|index| execution.presentation.loop_return_proofs.get(&index))
                 .map(|planned| planned.entry_facts.clone())
-                .unwrap_or_else(|| ProofFacts::from_source(&*available_pure_facts));
+                .unwrap_or_else(|| available_pure_facts.fact_store());
             for fact in returned.pure_facts.iter() {
                 if !returned_facts.contains(fact) {
                     returned_facts = returned_facts.with_kernel_checked_fact(fact.clone());
@@ -4341,8 +4347,6 @@ fn describe_call_bindings(
 pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
     match statement {
         ProgramStatement::Seq(statements) => describe_statement_head(statements.first()),
-        ProgramStatement::EndScalarReference(_) => "borrow end".to_string(),
-        ProgramStatement::ScalarReferenceScope(_) => "borrow scope".to_string(),
         ProgramStatement::Skip => "skip".to_string(),
         ProgramStatement::Break => "break".to_string(),
         ProgramStatement::Continue => "continue".to_string(),
@@ -4421,10 +4425,14 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         ProgramStatement::Return(expression) => {
             format!("return {}", describe_program_expression(expression))
         }
+        ProgramStatement::ThrowOpaque(payload_type) => {
+            format!("throw opaque {}", payload_type.name())
+        }
         ProgramStatement::Throw(expression) => {
             format!("throw {}", describe_program_expression(expression))
         }
         ProgramStatement::TryCatchInt32 { binding, .. } => format!("try ... catch (int {binding})"),
+        ProgramStatement::UnwindCleanup { body, .. } => describe_statement_head(body),
         ProgramStatement::Store { pointer, value }
         | ProgramStatement::TypedStore { pointer, value, .. } => {
             format!(
@@ -4471,7 +4479,10 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
                 describe_program_expression(condition)
             )
         }
-        ProgramStatement::Loop { condition, .. } => {
+        ProgramStatement::Loop {
+            test: loop_test, ..
+        } => {
+            let (condition, _, _) = loop_test.execution_parts();
             format!("while ({})", describe_program_expression(condition))
         }
         ProgramStatement::Switch { expression, .. } => {

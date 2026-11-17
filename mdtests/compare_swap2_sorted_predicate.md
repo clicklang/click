@@ -27,7 +27,7 @@ predicate sorted_pair(p: int32[2]) {
 int32 compare_swap2_sorted_predicate(int32 p[2]) {
     consumes p[0..2];
     ensures sorted: sorted_pair(p) by {
-        unfold(sorted_pair);
+        unfold(sorted_pair(p));
     }
 }
 ```

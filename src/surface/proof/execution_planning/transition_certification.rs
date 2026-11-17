@@ -216,7 +216,7 @@ fn proof_condition_runtime_error(
 #[derive(Clone)]
 pub(in crate::surface::proof) struct CertifiedProofConditionTransition {
     pub(in crate::surface::proof) is_true: bool,
-    pub(in crate::surface::proof) pure_facts: ProofFacts,
+    pub(in crate::surface::proof) pure_facts: PureFactStore,
     pub(in crate::surface::proof) path_facts: Vec<Proposition>,
     pub(in crate::surface::proof) theorem: Theorem,
 }
@@ -230,7 +230,7 @@ pub(in crate::surface::proof) struct CertifiedProofConditionTransition {
 #[cfg(test)]
 pub(in crate::surface::proof) fn certified_proof_condition_transitions(
     state: &ExecutionState,
-    pure_facts: &ProofFacts,
+    pure_facts: &PureFactStore,
     condition: &ProgramExpression,
     context_label: &str,
 ) -> Result<Vec<CertifiedProofConditionTransition>, ClickError> {
@@ -245,7 +245,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_transitions(
 
 pub(in crate::surface::proof) fn certified_proof_condition_split(
     state: &ExecutionState,
-    pure_facts: &ProofFacts,
+    pure_facts: &PureFactStore,
     branch_statement: &ProgramStatement,
     continuation: Option<&ProgramStatement>,
     context_label: &str,
@@ -603,6 +603,10 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
             .any(|statement| statement_contains_call(statement)),
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => statement_contains_call(try_body) || statement_contains_call(handler),
         ProgramStatement::If {
             then_branch,
@@ -610,8 +614,12 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
             ..
         } => statement_contains_call(then_branch) || statement_contains_call(else_branch),
         ProgramStatement::Loop {
-            test, update, body, ..
+            test: loop_test,
+            update,
+            body,
+            ..
         } => {
+            let (_, _, test) = loop_test.execution_parts();
             statement_contains_call(body)
                 || test
                     .as_ref()
@@ -623,10 +631,8 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
         ProgramStatement::Switch { cases, .. } => {
             cases.iter().any(|case| statement_contains_call(&case.body))
         }
-
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }

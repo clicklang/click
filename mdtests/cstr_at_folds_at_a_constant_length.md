@@ -28,6 +28,7 @@ int32 one(const uint8* p) {
 } by {
     have forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(1u64 + 1u64) implies defined(p[k]) } by {
         intro(); intro();
+        have 0u64 <= k and k < 1u64 + 1u64;
         instantiate(forall (j: uint64) { 0u64 <= j and j < 1u64 + 1u64 implies defined(p[j]) }, k);
         known();
     }

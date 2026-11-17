@@ -134,8 +134,8 @@ int32 vector_copy(
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < i);
+                have 0 <= k;
+                have k < i;
                 contradiction(0 <= k);
             }
         }
@@ -150,31 +150,8 @@ int32 vector_copy(
             have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {
                 intro();
                 intro();
-                instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry, src[k]) == old(src[k]) }, k) using {
-                    0 <= k and k < length;
-                    at(region(3).entry, i) < at(region(3).entry, length);
-                    at(function.entry, 0) <= at(function.entry, length);
-                    at(function.entry, 0) <= at(function.entry, dst_capacity);
-                    at(function.entry, 0) <= at(function.entry, src_capacity);
-                    at(region(3).entry, 0) <= at(region(3).entry, i);
-                    at(function.entry, 1) <= at(function.entry, dst_capacity);
-                    at(function.entry, 1) <= at(function.entry, src_capacity);
-                    at(function.entry, length) <= at(function.entry, 1073741823);
-                    at(function.entry, length) <= at(function.entry, dst_capacity);
-                    at(function.entry, length) <= at(function.entry, src_capacity);
-                    at(function.entry, dst_capacity) <= at(function.entry, 1073741823);
-                    at(function.entry, src_capacity) <= at(function.entry, 1073741823);
-                    at(region(3).entry, i) <= at(region(3).entry, length);
-                    at(function.entry, (length as uint32)) <= at(function.entry, 1073741823u32);
-                    at(function.entry, (dst_capacity as uint32)) <= at(function.entry, 1073741823u32);
-                    at(function.entry, (src_capacity as uint32)) <= at(function.entry, 1073741823u32);
-                    little_endian();
-                    at(function.entry, viewable((src as (int32 *))[0..src_capacity]));
-                    at(function.entry, viewable((dst as (int32 *))[0..dst_capacity]));
-                    at(function.entry, separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity])));
-                    forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry,
-                        k) < at(region(3).entry, i) implies at(region(3).entry, dst[k]) == old(src[k]) };
-                };
+                have at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length);
+                instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry, src[k]) == old(src[k]) }, k);
                 have at(region(3).entry, src[k]) == src[k] by {
                     have k < src_capacity by { solve() using { k < length; length <= src_capacity; }; }
                     have contains(memory(dst[i]), memory(dst[i])) by { normalize(); }
@@ -192,7 +169,7 @@ int32 vector_copy(
                         normalize() using { separate(memory(dst[i]), memory(src[k])); };
                     }
                     have at(loop(0).statement(0).exit, src[k]) == at(loop(0).statement(0).entry, src[k]) by {
-                        preserve(separate(loop(0).statement(0).footprint, memory(src[k])));
+                        preserve(memory(src[k]), loop(0).statement(0));
                     }
                     known();
                 }
@@ -213,8 +190,8 @@ int32 vector_copy(
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < i);
+                have 0 <= k;
+                have k < i;
                 if at(region(4).entry, k) < at(region(4).entry, (i as int32)) {
                     have at(region(4).entry, k) != at(region(4).entry, (i as int32)) by {
                         have at(region(4).entry, k) < at(region(4).entry, (i as int32)) by {
@@ -223,9 +200,8 @@ int32 vector_copy(
                         intro();
                         solve() using { at(region(4).entry, k) < at(region(4).entry, (i as int32)); at(region(4).entry, k) == at(region(4).entry, (i as int32)); };
                     }
-                    instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k) using {
-                        0 <= k; k < at(region(3).entry, i);
-                    };
+                    have 0 <= k and k < i;
+                    instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k);
                     have at(region(3).entry, separate(memory(dst[k]), memory(dst[i]))) by {
                         apply(separation::separate_elements(dst, k, at(region(3).entry, i))) using { k != at(region(3).entry, i); };
                     }
@@ -233,7 +209,7 @@ int32 vector_copy(
                         normalize() using { at(region(3).entry, separate(memory(dst[k]), memory(dst[i]))); };
                     }
                     have at(loop(0).statement(0).exit, dst[k]) == at(loop(0).statement(0).entry, dst[k]) by {
-                        preserve(separate(loop(0).statement(0).footprint, memory(dst[k])));
+                        preserve(memory(dst[k]), loop(0).statement(0));
                     }
                     known();
                 } else {
@@ -249,44 +225,10 @@ int32 vector_copy(
                         solve() using { at(region(4).entry, k) <= at(region(4).entry, (i as int32)); not k < at(region(3).entry, i); };
                     }
                     rewrite(at(region(4).entry, k), at(region(4).entry, (i as int32)));
-                    instantiate(forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }, k) using {
-                        at(region(3).entry, i) < at(region(3).entry, length);
-                        not k < at(region(3).entry, i);
-                        k < i;
-                        at(function.entry, 0) <= at(function.entry, length);
-                        at(function.entry, 0) <= at(function.entry, dst_capacity);
-                        at(function.entry, 0) <= at(function.entry, src_capacity);
-                        at(region(3).entry, 0) <= at(region(3).entry, i);
-                        0 <= k;
-                        at(function.entry, 0) <= at(function.entry, i);
-                        at(function.entry, 1) <= at(function.entry, dst_capacity);
-                        at(function.entry, 1) <= at(function.entry, src_capacity);
-                        at(function.entry, length) <= at(function.entry, 1073741823);
-                        at(function.entry, length) <= at(function.entry, dst_capacity);
-                        at(function.entry, length) <= at(function.entry, src_capacity);
-                        at(function.entry, dst_capacity) <= at(function.entry, 1073741823);
-                        at(function.entry, src_capacity) <= at(function.entry, 1073741823);
-                        at(region(3).entry, i) <= at(region(3).entry, length);
-                        at(function.entry, i) <= at(function.entry, length);
-                        at(region(4).entry, k) == at(region(4).entry, (i as int32));
-                        at(function.entry, (length as uint32)) <= at(function.entry, 1073741823u32);
-                        at(function.entry, (dst_capacity as uint32)) <= at(function.entry, 1073741823u32);
-                        at(function.entry, (src_capacity as uint32)) <= at(function.entry, 1073741823u32);
-                        little_endian();
-                        at(function.entry, viewable((src as (int32 *))[0..src_capacity]));
-                        at(function.entry, viewable((dst as (int32 *))[0..dst_capacity]));
-                        at(function.entry, separate(memory(dst[0..dst_capacity]),
-                            memory(src[0..src_capacity])));
-                        forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and
-                            at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry,
-                            src[k]) == old(src[k]) };
-                        forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and
-                            at(region(3).entry, k) < at(region(3).entry, i) implies at(region(3).entry, dst[k])
-                            == old(src[k]) };
-                    };
-                    instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), at(region(3).entry, i)) using {
-                        0 <= at(region(3).entry, i); at(region(3).entry, i) < length;
-                    };
+                    have 0 <= k and k < length;
+                    instantiate(forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }, k);
+                    have 0 <= (at(region(3).entry, i)) and (at(region(3).entry, i)) < length;
+                    instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), at(region(3).entry, i));
                     known();
                 }
             }
@@ -327,15 +269,13 @@ int32 vector_copy(
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
         intro();
         intro();
-        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, k) using {
-            0 <= k and k < length;
-            i == length;
-        };
+        have at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i);
+        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, k);
         known();
     }
     have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {
         intro(); intro();
-        instantiate(at(loop(0).exit, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), k) using { 0 <= k and k < length; };
+        instantiate(at(loop(0).exit, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), k);
         known();
     }
     step();
@@ -392,8 +332,8 @@ int32 vector_grow(struct vector* owner) {
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
             intro();
             intro();
-            extract(0 <= k);
-            extract(k < old(owner->len));
+            have 0 <= k;
+            have k < old(owner->len);
             have owner->data[k] == old(owner->data[k]) by { known(); }
             known();
         }
@@ -430,10 +370,8 @@ int32 vector_grow(struct vector* owner) {
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
             intro();
             intro();
-            instantiate(forall (__click_q0: int32) { at(region(14).entry, 0) <= at(region(14).entry, __click_q0) and at(region(14).entry, __click_q0) < at(region(14).entry, owner->len) implies at(region(14).entry, new_data[__click_q0]) == at(region(14).entry, old_data[__click_q0]) }, k) using {
-                0 <= k and k < old(owner->len);
-                owner->data == owner->data;
-            };
+            have at(region(14).entry, 0) <= at(region(14).entry, k) and at(region(14).entry, k) < at(region(14).entry, owner->len);
+            instantiate(forall (__click_q0: int32) { at(region(14).entry, 0) <= at(region(14).entry, __click_q0) and at(region(14).entry, __click_q0) < at(region(14).entry, owner->len) implies at(region(14).entry, new_data[__click_q0]) == at(region(14).entry, old_data[__click_q0]) }, k);
             have &owner->data[k] == at(region(14).entry, &new_data[k]) by {
                 normalize() using { owner->data == at(region(14).entry, new_data); };
             }
@@ -460,19 +398,19 @@ int32 vector_grow(struct vector* owner) {
                 normalize() using { separate(memory(owner->data), memory(new_data[k])); };
             }
             have at(statement(11).exit, new_data[k]) == at(statement(11).entry, new_data[k]) by {
-                preserve(separate(statement(11).footprint, memory(new_data[k])));
+                preserve(memory(new_data[k]), statement(11));
             }
             have separate(statement(12).footprint, memory(new_data[k])) by {
                 normalize() using { separate(memory(owner->cap), memory(new_data[k])); };
             }
             have at(statement(12).exit, new_data[k]) == at(statement(12).entry, new_data[k]) by {
-                preserve(separate(statement(12).footprint, memory(new_data[k])));
+                preserve(memory(new_data[k]), statement(12));
             }
             have separate(statement(13).footprint, memory(new_data[k])) by {
                 normalize() using { separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)])); owner->data == new_data; };
             }
             have at(statement(13).exit, new_data[k]) == at(statement(13).entry, new_data[k]) by {
-                preserve(separate(statement(13).footprint, memory(new_data[k])));
+                preserve(memory(new_data[k]), statement(13));
             }
             have owner->data == new_data by { known(); }
             have new_data[k] == at(region(14).entry, new_data[k]) by { known(); }
@@ -573,8 +511,8 @@ int32 vector_push(struct vector* owner, int32 value) {
     have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < old(owner->len));
+        have 0 <= k;
+        have k < old(owner->len);
         // The append writes at the old length, beyond this prefix element.
         have old(owner->len) != k by {
             intro();
@@ -591,7 +529,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             normalize() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
         }
         have at(statement(4).exit, owner->data[k]) == at(statement(4).entry, owner->data[k]) by {
-            preserve(separate(statement(4).footprint, memory(old(owner->data)[k])));
+            preserve(memory(old(owner->data)[k]), statement(4));
         }
         // Restrict the struct/array separation to the length field and element.
         have k < old(owner->cap) by {
@@ -612,7 +550,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             normalize() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
         }
         have at(statement(5).exit, owner->data[k]) == at(statement(5).entry, owner->data[k]) by {
-            preserve(separate(statement(5).footprint, memory(old(owner->data)[k])));
+            preserve(memory(old(owner->data)[k]), statement(5));
         }
         known();
     }
@@ -651,12 +589,12 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             step();
             have separate(statement(0).footprint, memory(owner->data)) by { normalize() using {}; }
             have owner->data == at(statement(0).entry, owner->data) by {
-                preserve(separate(statement(0).footprint, memory(owner->data)));
+                preserve(memory(owner->data), statement(0));
             }
             step();
             have separate(statement(1).footprint, memory(owner->data)) by { normalize() using {}; }
             have owner->data == at(statement(1).entry, owner->data) by {
-                preserve(separate(statement(1).footprint, memory(owner->data)));
+                preserve(memory(owner->data), statement(1));
             }
             step();
         }
@@ -669,11 +607,11 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             normalize() using { separate(memory(grown), memory(owner->data)); };
         }
         have owner->data == at(after_grow, owner->data) by {
-            preserve(separate(statement(2).statement(0).assignment(grown, 0).footprint, memory(owner->data)));
+            preserve(memory(owner->data), statement(2).statement(0).assignment(grown, 0));
         }
         have c(grown) == 0 implies owner->data == at(before_grow, owner->data) by {
             intro();
-            extract(at(after_grow, owner->data) == at(before_grow, owner->data));
+            have at(after_grow, owner->data) == at(before_grow, owner->data);
             known();
         }
         if c(grown) == 0 {
@@ -696,12 +634,12 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have result == 0 implies owner->cap == old(owner->cap) by {
                 intro();
-                extract(at(region(5).entry, owner->cap) == at(region(3).entry, owner->cap));
+                have at(region(5).entry, owner->cap) == at(region(3).entry, owner->cap);
                 known();
             }
             have result == 0 implies owner->data == old(owner->data) by {
                 intro();
-                extract(at(region(5).entry, owner->data) == at(region(3).entry, owner->data));
+                have at(region(5).entry, owner->data) == at(region(3).entry, owner->data);
                 known();
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
@@ -755,10 +693,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have owner->len == old(owner->len) by {
                 known();
             }
-            have owner->cap == (old(owner->cap) + 1) by {
-                extract(owner->cap == (old(owner->cap) + 1));
-                known();
-            }
+            have owner->cap == (old(owner->cap) + 1) by solve();
             have owner->len < owner->cap;
             fold(vector_storage(owner));
             step();
@@ -845,17 +780,14 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < old(owner->len));
+                have 0 <= k;
+                have k < old(owner->len);
                 instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(region(5).entry, owner->data[j]) == old(owner->data[j]) }, k);
                 have k < at(statement(3).entry, owner->len) by {
                     rewrite(at(statement(3).entry, owner->len), old(owner->len));
                     known();
                 }
-                instantiate(forall (j: int32) { 0 <= j and j < at(statement(3).entry, owner->len) implies at(statement(3).exit, owner->data[j]) == at(statement(3).entry, owner->data[j]) }, k) using {
-                    0 <= k;
-                    k < at(statement(3).entry, owner->len);
-                };
+                instantiate(forall (j: int32) { 0 <= j and j < at(statement(3).entry, owner->len) implies at(statement(3).exit, owner->data[j]) == at(statement(3).entry, owner->data[j]) }, k);
                 have owner->data[k] == at(statement(3).entry, owner->data[k]) by {
                     normalize() using {
                         at(statement(3).exit, owner->data[k]) == at(statement(3).entry, owner->data[k]);
@@ -905,10 +837,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         have not owner->len == owner->cap by {
             known();
         }
-        have owner->len < owner->cap by {
-            have owner->len < owner->cap;
-            known();
-        }
+        have owner->len < owner->cap by solve();
         have old(owner->len) < old(owner->cap) by {
             known();
         }
@@ -1119,7 +1048,7 @@ int32 vector_fill(struct vector* owner, int32 value) {
                 };
             }
             have owner->data == at(before_fill, owner->data) by {
-                preserve(separate(loop(0).statement(0).footprint, memory(owner->data)));
+                preserve(memory(owner->data), loop(0).statement(0));
             }
             have owner->data == old(owner->data) by {
                 normalize() using {
@@ -1131,7 +1060,7 @@ int32 vector_fill(struct vector* owner, int32 value) {
                 normalize() using { at(before_fill, separate(memory(owner->len), memory(owner->data[i]))); };
             }
             have owner->len == at(before_fill, owner->len) by {
-                preserve(separate(loop(0).statement(0).footprint, memory(owner->len)));
+                preserve(memory(owner->len), loop(0).statement(0));
             }
             have owner->len == old(owner->len) by { known(); }
             step();

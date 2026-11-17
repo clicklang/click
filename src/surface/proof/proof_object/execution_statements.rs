@@ -1133,16 +1133,19 @@ impl<'a> Proof<'a> {
                     FrontierPosition::StatementEntry { remaining } => Some(remaining.as_ref()),
                     _ => None,
                 });
-        // C++ cleanup wrappers do not introduce an executable step. Select
-        // the same first operation that ordinary `step()` will execute, while
-        // leaving the wrapper intact for the kernel's exception continuation.
-        // Borrow only the leading source path. Splitting/cloning each try
-        // wrapper here would also copy its unrelated cleanup handler.
+        // A `try` or an unwind cleanup does not introduce an executable step.
+        // Select the same first operation that ordinary `step()` will execute,
+        // leaving the statement intact for the kernel's exception
+        // continuation. Borrow only the leading source path: splitting or
+        // cloning each one here would also copy its handler or cleanup.
         let mut operation = remaining;
         loop {
             operation = match operation {
                 Some(ProgramStatement::Seq(statements)) => Some(statements.first()),
-                Some(ProgramStatement::TryCatchInt32 { try_body, .. }) => Some(try_body.as_ref()),
+                Some(
+                    ProgramStatement::TryCatchInt32 { try_body, .. }
+                    | ProgramStatement::UnwindCleanup { body: try_body, .. },
+                ) => Some(try_body.as_ref()),
                 _ => break,
             };
             crate::instrumentation::record_deterministic_work(1);
@@ -1705,7 +1708,7 @@ impl<'a> Proof<'a> {
         // cells the condition read.
         let c_branch_condition =
             program_branch_condition_at_frontier(&base_execution, context, condition)?;
-        let mut arms: [Option<(ProofFacts, ExecutionProofState, Vec<Proposition>)>; 2] =
+        let mut arms: [Option<(PureFactStore, ExecutionProofState, Vec<Proposition>)>; 2] =
             [None, None];
         let lowering_condition = self.substitute_fixed_state_locals_in_proposition(condition)?;
         for value in [true, false] {
@@ -1890,17 +1893,7 @@ impl<'a> Proof<'a> {
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
         let source_facts = self.facts().clone();
-        let mut facts = execution
-            .presentation
-            .loop_fact_list
-            .as_ref()
-            .and_then(|base| PureFactList::extended_to_proof_facts(base, &source_facts))
-            .unwrap_or_else(|| PureFactList::from_proof_facts(&source_facts));
-        // The next loop extends this copy; the indexes it builds here are
-        // the ones every copy of it shares.
-        facts.prepare_indexes();
-        execution.presentation.loop_fact_list = Some(facts.clone());
-        let base_facts = facts.len();
+        let mut facts = PureFactList::from_store(&source_facts);
         let capture_this_tactic = begin_tactic_expansion_capture(
             expansion_capture.as_deref_mut(),
             source_index,
@@ -1919,7 +1912,7 @@ impl<'a> Proof<'a> {
         // before lowering them, as a `have` goal at this point would.
         let proof_locals = self.proof_local_values();
         let trace_lineage = self.trace_lineage(context.claim_label);
-        let expanded_loop =
+        let (expanded_loop, added) =
             crate::surface::proof_trace::with_loop_parent_lineage(trace_lineage, || {
                 execute_frontier_local_loop(
                     expansion_capture.as_deref_mut(),
@@ -1945,8 +1938,6 @@ impl<'a> Proof<'a> {
             };
             finish_tactic_expansion_capture(expansion_capture, &expansion, false);
         }
-        debug_assert!(facts.len() >= base_facts);
-        let added = facts.facts_after(base_facts);
         let mut proof_facts = source_facts;
         for fact in &added {
             proof_facts = proof_facts.with_kernel_checked_fact(fact.clone());

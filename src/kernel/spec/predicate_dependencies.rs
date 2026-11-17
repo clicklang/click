@@ -15,6 +15,7 @@ pub(in crate::kernel) fn observes_resource_state(proposition: &SpecProposition) 
                     resource_state_dependent: true,
                     ..
                 }
+                | SpecProposition::MutexHeld(_)
                 | SpecProposition::ResourceSeparate { .. }
                 | SpecProposition::ResourceViewable { .. }
                 | SpecProposition::ResourceContains { .. },
@@ -70,7 +71,11 @@ mod tests {
                 count(),
             )))),
         };
-        for body in [nested, predicate(true)] {
+        for body in [
+            nested,
+            predicate(true),
+            SpecProposition::MutexHeld(Box::new(literal())),
+        ] {
             let registered = PredicateUnfolding::new(predicate(false), body);
             assert!(matches!(
                 registered.predicate(),

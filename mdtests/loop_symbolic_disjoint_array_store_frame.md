@@ -36,7 +36,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
     step();
     step();
     have exists (fuel: Nat) { fuel == Nat::Zero } by {
-        witness { fuel: Nat::Zero };
+        witness(Nat::Zero);
         normalize();
     }
     loop diverges {
@@ -58,7 +58,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
             have 0 <= next[cur] and next[cur] < n by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies 0 <= next[k] and next[k] < n
-                }, cur) using { 0 <= cur; cur < n; };
+                }, cur);
                 known();
             }
             if cur == to {

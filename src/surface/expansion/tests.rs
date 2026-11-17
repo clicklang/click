@@ -422,7 +422,7 @@ void dummy_rotate(struct root* root) {
 } by { step_until(function.exit); normalize(); }
 
 theorem dummy_rotate_contract() {
-    ensures Rotate(&dummy_rotate) by { unfold(Rotate); solve(); }
+    ensures Rotate(&dummy_rotate) by { unfold(Rotate(&dummy_rotate)); solve(); }
 }
 
 int produce(struct root* root, const struct callbacks* augment) {
@@ -1997,7 +1997,7 @@ int32 inspect(struct box* owner) {
     ensures result == 0;
 } by {
     unfold(owned_box(owner));
-    unfold(terminated_at);
+    unfold(terminated_at(owner->data, owner->len));
     step();
     step_until(function.exit);
     solve();
@@ -2064,11 +2064,11 @@ int32 contains(uint8 p[], int32 n) {
     requires bytes::contains(p, 0, n as uint64, 'x');
     ensures bytes::contains(p, 0, n as uint64, 'x') by {
         step_until(function.exit);
-        unfold(bytes::contains);
+        unfold(bytes::contains(p, 0, n as uint64, 'x'));
         obtain (found: uint64) {
             0u64 <= found and found < n as uint64 and p[found] == 'x'
         };
-        witness { k: found };
+        witness(found);
         solve();
     }
 }"#;
@@ -2087,7 +2087,7 @@ int32 contains(uint8 p[], int32 n) {
     // The `solve` closes the proof the `witness` opened, so it expands to
     // that one step rather than restating the claim.
     assert!(
-        expanded.contains("witness { k: found };\n        known();"),
+        expanded.contains("witness(found);\n        known();"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &[("contains.c", c_source)])
@@ -2887,7 +2887,7 @@ void set_one_if_active(int32 active, int32* cell) {
 
 theorem set_one_is_make_positive() {
     ensures MakePositive(&set_one_if_active) by {
-        unfold(MakePositive);
+        unfold(MakePositive(&set_one_if_active));
         if active != 0 {
             solve();
         } else {
@@ -2905,7 +2905,7 @@ theorem set_one_is_make_positive() {
         .find("theorem set_one_is_make_positive")
         .expect("expanded source should retain the theorem")..];
     assert!(theorem.contains("intro();"), "{theorem}");
-    assert!(theorem.contains("extract("), "{theorem}");
+    assert!(!theorem.contains("extract("), "{theorem}");
     assert!(!theorem.contains("solve();"), "{theorem}");
     verify_c_sources(&expanded, &sources)
         .expect("expanded contract-refinement theorem should re-verify with its C target");
@@ -2922,7 +2922,7 @@ fn pure_mixed_linear_smart_script_expands_the_retained_proof_object_path() {
         theorem applied_then_solve(x: int32) {
             requires (x >= 0) and (x <= 10);
             ensures (x >= 0) and (x >= 0) by {
-                extract(x >= 0);
+                have x >= 0 by known();
                 apply(required(x));
                 solve();
             }
@@ -2938,7 +2938,7 @@ fn pure_mixed_linear_smart_script_expands_the_retained_proof_object_path() {
         "{selected}"
     );
     assert!(selected.contains("x >= 0;"), "{selected}");
-    assert!(selected.contains("extract(x >= 0);"), "{selected}");
+    assert!(selected.contains("have x >= 0 by {"), "{selected}");
     assert!(selected.contains("known();"), "{selected}");
     assert!(!selected.contains("apply(required(x));"), "{selected}");
     assert!(!selected.contains("solve();"), "{selected}");
@@ -3114,7 +3114,7 @@ fn smart_inventory_keeps_refinement_proofs_named_like_arithmetic_axioms() {
     let source = r#"
 contract int32 Identity(int32 x) { ensures result == x; }
 theorem int32_le_antisymmetric() {
-    ensures Identity(&identity) by { unfold(Identity); solve(); }
+    ensures Identity(&identity) by { unfold(Identity(&identity)); solve(); }
 }
 "#;
     let sites = c_smart_tactic_source_sites(source, &[]).unwrap();
@@ -3786,7 +3786,6 @@ fn a_caught_call_can_bypass_its_branch_return() {
         try_body: Box::new(body),
         binding: "error".into(),
         handler: Box::new(program_skip()),
-        cleanup_unwind: false,
     };
     assert!(
         returning_then_arms(&caught).is_empty(),
@@ -3927,6 +3926,148 @@ fn string_literal_source_references_raise_expand_and_recheck() {
 }
 
 #[test]
+fn apply_fact_expands_antecedent_proofs_without_extract_or_search() {
+    let source = r#"
+        theorem demo(x: int32, y: int32) {
+            requires x > 1;
+            requires x > 0 implies y > 0;
+            ensures y > 0 by {
+                have h: x > 0 implies y > 0 by known();
+                apply(h);
+            }
+        }
+    "#;
+    verify_click_theorems(source).expect("bare fact application proves its antecedent");
+    let expanded =
+        expand_pure_theorem_source(source, &[], "demo", 0).expect("fact application expands");
+    assert!(
+        expanded.contains("apply(x > 0 implies y > 0) using {"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("extract("), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded))
+        .expect("expanded fact application checks without search");
+    for invalid in [
+        expanded.replace("requires x > 1;", ""),
+        expanded.replace("requires x > 0 implies y > 0;", ""),
+    ] {
+        assert!(without_implicit_solve(|| verify_click_theorems(&invalid)).is_err());
+    }
+}
+
+#[test]
+fn apply_fact_c_frontier_and_outcome_expansion_rechecks_without_search() {
+    let c = "int32 identity(int32 x) { return x; }";
+    let template = r#"
+        verifying "identity.c";
+        int32 identity(int32 x) {
+            requires x > 1;
+            requires x > 0 implies x != 0;
+            ensures result != 0;
+        } by { BODY }
+    "#;
+    for body in [
+        "apply(x > 0 implies x != 0); step();",
+        "step(); apply(x > 0 implies x != 0);",
+    ] {
+        let source = template.replace("BODY", body);
+        let sources = [("identity.c", c)];
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{body}: {error}"));
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "identity.contract")
+            .unwrap_or_else(|error| panic!("{body}: {error}"));
+        assert!(expanded.contains("apply("), "{expanded}");
+        assert!(expanded.contains("using {"), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{body}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+fn solve_expands_disjunction_projection_to_cases_without_extract() {
+    let source = r#"
+        theorem demo(x: int32, y: int32) {
+            requires (x > 0 and y == 1) or ((x > 0 and y == 2) or (x > 0 and y == 3));
+            ensures x > 0 by solve();
+        }
+    "#;
+    verify_click_theorems(source).unwrap();
+    let expanded = expand_pure_theorem_source(source, &[], "demo", 0).unwrap();
+    assert!(expanded.contains("cases {"), "{expanded}");
+    assert!(!expanded.contains("extract("), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let invalid = expanded.replace("x > 0 and y == 3", "x < 0 and y == 3");
+    assert!(without_implicit_solve(|| verify_click_theorems(&invalid)).is_err());
+}
+
+#[test]
+fn solve_expands_propagated_partial_implication_to_known() {
+    let source = r#"
+        theorem demo(x: int32, y: int32, z: int32) {
+            requires x > 0;
+            requires x > 0 implies y > 0 implies z > 0;
+            ensures y > 0 implies z > 0 by solve();
+        }
+    "#;
+    verify_click_theorems(source).unwrap();
+    let expanded = expand_pure_theorem_source(source, &[], "demo", 0).unwrap();
+    assert!(expanded.contains("known()"), "{expanded}");
+    assert!(!expanded.contains("extract("), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let missing = expanded.replace("requires x > 0;", "");
+    assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+}
+
+#[test]
+fn solve_expands_excluded_middle_to_if_without_extract() {
+    let source = "theorem demo(make: Bool) { ensures make or not make by solve(); }";
+    verify_click_theorems(source).unwrap();
+    let expanded = expand_pure_theorem_source(source, &[], "demo", 0).unwrap();
+    assert!(expanded.contains("if make"), "{expanded}");
+    assert!(!expanded.contains("extract("), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: memory disjunction expansion and cold replay"]
+fn solve_expands_refuted_memory_disjunction_without_extract() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/sequence-transform");
+    let source = std::fs::read_to_string(root.join("sequence_transform.click")).unwrap();
+    let c = std::fs::read_to_string(root.join("sequence_transform.c")).unwrap();
+    let sources = [("sequence_transform.c", c.as_str())];
+    verify_c_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c_claim_source_by_label(&source, &sources, "sequence_contains3.ensures_1").unwrap();
+    assert!(!expanded.contains("extract("), "{expanded}");
+    without_implicit_solve_for_claim("sequence_contains3.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: loop exit projection expansion and cold replay"]
+fn solve_expands_loop_exit_projection_without_extract() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/authority_loop_exit_disjunction_ignores_a_closed_guard.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c_sources(source, &sources).unwrap();
+    let expanded = expand_c_claim_source_by_label(source, &sources, "paint.ensures_0").unwrap();
+    assert!(!expanded.contains("extract("), "{expanded}");
+    without_implicit_solve_for_claim("paint.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .unwrap();
+}
+
+#[test]
 #[ignore = "nightly: C declaration references expand and independently recheck"]
 fn c_declaration_references_raise_expand_and_recheck() {
     for (fixture, label) in [
@@ -3951,5 +4092,192 @@ fn c_declaration_references_raise_expand_and_recheck() {
         assert!(!expanded.contains("#static"), "{expanded}");
         assert!(!expanded.contains("#file-static"), "{expanded}");
         verify_c_sources(&expanded, &sources).expect("declaration reference expansion");
+    }
+}
+
+#[test]
+fn ordinary_fold_unfold_expands_with_replayable_guard_proofs() {
+    let source = r#"
+function tally(lo: int32, hi: int32) -> Integer {
+    (lo..hi).fold(0, |acc, k| { acc + 1 })
+}
+theorem append_tally(lo: int32, hi: int32) {
+    requires 0 <= lo;
+    requires lo < hi;
+    ensures tally(lo, hi) == tally(lo, hi - 1) + 1 by {
+        unfold(tally(lo, hi));
+        normalize();
+    }
+}
+"#;
+    let expanded = expand_c_claim_source_by_label(source, &[], "append_tally.ensures_0")
+        .expect("ordinary unfolding proves its fold guards");
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+        .expect("the generated guard proofs replay without search");
+    let invalid = expanded.replacen(
+        "ensures tally(lo, hi) == tally(lo, hi - 1) + 1",
+        "ensures tally(lo, hi) == tally(lo, hi - 1) + 2",
+        1,
+    );
+    assert_ne!(expanded, invalid);
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&invalid, &[]))
+        .expect_err("a different last-step value must be rejected");
+}
+
+#[test]
+fn ordinary_fold_cases_expand_and_replay_without_implicit_solving() {
+    for source in [
+        r#"
+function tally(end: int32) -> Integer { (0..end).fold(0, |acc, k| { acc + 1 }) }
+theorem fold_case(end: int32) {
+    requires end <= 0;
+    ensures tally(end) == 0 by {
+        unfold(tally(end));
+        normalize();
+    }
+}
+"#,
+        r#"
+function tally(lo: int32, hi: int32) -> Integer { (lo..hi).fold(0, |acc, k| { acc + 1 }) }
+theorem fold_case(lo: int32, hi: int32) {
+    requires lo <= hi;
+    requires hi < 2147483647;
+    ensures tally(lo, hi + 1) == tally(lo, hi) + 1 by {
+        unfold(tally(lo, hi + 1));
+        solve();
+    }
+}
+"#,
+        r#"
+function tally(lo: uint64, hi: uint64) -> Integer { (lo..hi).fold(0, |acc, k| { acc + 1 }) }
+theorem fold_case(lo: uint64, hi: uint64) {
+    requires lo <= hi;
+    requires hi < 18446744073709551615u64;
+    ensures tally(lo, hi + 1u64) == tally(lo, hi) + 1 by {
+        unfold(tally(lo, hi + 1u64));
+        solve();
+    }
+}
+"#,
+        r#"
+function tally(step: fn(Integer, Integer) -> Integer, lo: Integer, hi: Integer) -> Integer {
+    (lo..hi).fold(0, step)
+}
+theorem fold_case(lo: Integer, hi: Integer) {
+    requires lo <= hi;
+    ensures tally(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi + 1)
+        == tally(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi) + hi by {
+        have hi + 1 - 1 == hi by solve();
+        have lo <= hi + 1 - 1 by solve();
+        have tally(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi + 1)
+            == tally(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi) + hi by {
+            unfold(tally(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi + 1));
+            solve();
+        }
+        known();
+    }
+}
+"#,
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, &[], "fold_case.ensures_0")
+            .expect("ordinary fold should expand");
+        assert!(expanded.contains("unfold(tally("), "{expanded}");
+        crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+            .expect("ordinary unfold must replay using the established guards");
+        // Expanding an expanded certificate must keep the ordinary form.
+        let repeated = expand_c_claim_source_by_label(&expanded, &[], "fold_case.ensures_0")
+            .expect("ordinary expansion should remain expandable");
+        assert!(repeated.contains("unfold(tally("), "{repeated}");
+    }
+}
+
+#[test]
+fn ordinary_fold_expansion_requires_the_empty_range_guard() {
+    let source = r#"
+function tally(end: int32) -> Integer { (0..end).fold(0, |acc, k| { acc + 1 }) }
+theorem fold_case(end: int32) {
+    requires end <= 0;
+    ensures tally(end) == 0 by {
+        unfold(tally(end));
+        normalize();
+    }
+}
+"#;
+    let expanded = expand_c_claim_source_by_label(source, &[], "fold_case.ensures_0").unwrap();
+    let invalid = expanded.replacen("requires end <= 0;", "requires end <= 1;", 1);
+    assert_ne!(invalid, expanded);
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&invalid, &[]))
+        .expect_err("unfold cannot retain the empty law without its range guard");
+    let nested = source.replace(
+        "unfold(tally(end));\n        normalize();",
+        "have tally(end) == 0 by { unfold(tally(end)); solve(); }\n        known();",
+    );
+    assert_ne!(nested, source);
+    let position = position_at_offset(&nested, nested.find("have tally").unwrap());
+    let selected = expand_c_tactic_source_at(&nested, &[], position.line, position.column)
+        .expect("a selected smart have expands its nested fold");
+    assert!(selected.contains("unfold(tally(end));"), "{selected}");
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&selected, &[]))
+        .expect("selected expansion replays without implicit solving");
+}
+
+#[test]
+fn ordinary_fold_expansion_keeps_array_reads_at_the_execution_frontier() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/unfold_fold_function_appends_last_cell.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    let expanded =
+        expand_c_claim_source_by_label(source, &sources, "prefix_sum_equation.ensures_0").unwrap();
+    assert!(expanded.contains("unfold(icount(a, 0, n));"), "{expanded}");
+    without_implicit_solve_for_claim("prefix_sum_equation.ensures_0", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .expect("the memory-reading fold and its guard proofs replay without search");
+}
+
+#[test]
+fn ordinary_fold_expansion_in_both_replays_without_implicit_solving() {
+    let source = r#"
+function tally(end: int32) -> Integer { (0..end).fold(0, |acc, k| { acc + 1 }) }
+theorem fold_case(end: int32) {
+    requires end <= 0;
+    ensures tally(end) == 0 and 0 <= tally(end) by {
+        both {
+            unfold(tally(end));
+            normalize();
+        } and {
+            unfold(tally(end));
+            normalize();
+        }
+    }
+}
+"#;
+    let expanded = expand_c_claim_source_by_label(source, &[], "fold_case.ensures_0").unwrap();
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+        .expect("both checked branches replay with ordinary unfolds");
+}
+
+#[test]
+fn exact_proposition_propagation_replays_without_search() {
+    let source = r#"
+        theorem propagated(a: int32, b: int32) {
+            requires a == 0 or b == 0;
+            requires not (a == 0);
+            ensures b == 0 by solve();
+        }
+    "#;
+    verify_click_theorems(source).expect("solver uses propagated fact");
+    let expanded = expand_pure_theorem_source(source, &[], "propagated", 0)
+        .expect("propagated closure expands");
+    assert!(expanded.contains("known()"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded))
+        .expect("exact propagation needs no solver");
+    for invalid in [
+        expanded.replace("requires a == 0 or b == 0;", ""),
+        expanded.replace("requires not (a == 0);", ""),
+    ] {
+        assert!(without_implicit_solve(|| verify_click_theorems(&invalid)).is_err());
     }
 }

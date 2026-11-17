@@ -91,7 +91,7 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   with scalar leaves have ordinary expansion coverage. They do not settle
   non-scalar leaves, binders, other proof contexts or legacy retirement.
 - **Separate owners:** the representation split in
-  [unspellable facts](unspellable-facts.md) owns the remaining shared-term
+  [unraisable facts](raise-lower-principle.md) owns the remaining shared-term
   migration boundaries. Its original R1–R7 reproductions are closed; use its
   current closure checklist for remaining work. Those identifiers are local to
   that document, not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
@@ -127,7 +127,7 @@ fact-context parameter and expansion writes a step proof that replays without
 implicit solve. Other arithmetic operators still decide some safety conditions
 before emitting any obligation. Replacing those decisions needs
 round-trippable goals and flat generation/publication costs. The earlier, unlanded arithmetic-migration prototype failed `struct_array_element_expands_with_its_subscript`
-(the initialized-global sum has no round-tripping overflow-goal spelling) and
+(the initialized-global sum has no round-tripping overflow-goal raising) and
 `straight_line_assignments_cost_the_same_at_every_position` (work grows from
 2765 to 2885 across twelve assignments). These are prototype findings, not
 current failing tests; reproduce them when revisiting that migration. Retain
@@ -195,12 +195,12 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 21 | 43 |
-| `examples/` | 26 | 321 |
+| `mdtests/` | 16 | 33 |
+| `examples/` | 19 | 132 |
 | `library/` | 0 | 0 |
-| Total | 47 | 364 |
+| Total | 35 | 165 |
 
-The 12 mdtests with failure expectations still require migration while retaining
+The 9 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text
 to expansion/mutation tests; migrate those inputs together with their tests,
 rather than replacing a smart test input with an already-expanded proof. Positive fixtures also need full-file verification:
@@ -396,10 +396,50 @@ publication and reinsertion together are also flat (248 units for the adjacent
 case, 190 for the contradictory case). These are bounds for this fixed body,
 not all unfolding routes or Surface materialization.
 
-The ignored `raw_ownership_admission_must_not_search_ambient_pointer_aliases`
-diagnostic retains the separate raw-admission growth and overlap-refusal control.
-Raw ownership admission and output-description validation remain callers to
-diagnose and migrate.
+`raw_ownership_admission_must_not_search_ambient_pointer_aliases` is now an
+active regression. Fresh measurements at `da5639eb1d` are flat at 228 units
+for adjacent constant intervals and 74 for overlap refusal with 4/16/64
+aliases; its former "still grows" annotation was stale for that shape.
+Early return-group admission is also flat for constant endpoints (261 and
+93 units respectively). The separate diagnostic
+`symbolic_return_group_admission_work` measures two fixed output descriptions
+with a symbolic upper endpoint: work is 337 / 349 / 397 for adjacency and
+382 / 550 / 1222 for overlap refusal at the same alias counts. It retains
+correct-result controls without claiming a fast bound. These are admission
+measurements, not a complete source-call curve. See
+[early return-group evidence](../docs/internals/verification-efficiency.md#early-return-group-evidence).
+
+Executed-body returns now construct their group by consuming each output from
+the actual body's remaining ownership, then install that group in the captured
+caller frame. They no longer run early description-group admission or repeat
+the Boolean custody pass afterward. Folded-head post-memory boundary checks
+remain. Summary application now retains a clause-level rule for unchanged flat
+footprints, including parameter bounds, and binds it to the selected entry
+reservation. Justified outputs and checked entry borrows avoid early group
+admission; unmatched and description-only outputs retain compatibility
+admission. Keep those paths separate when measuring the symbolic
+diagnostic above. The executed-body regressions cover alias/body/frame growth,
+selected splits and duplicate refusal; this does not close every raw-admission
+or consumption route.
+
+The retained summary rule now also binds literal/parameter footprints of
+one-level composite children to consumed input clauses. Unguarded parameter-only borrowed
+children keep entry provenance; conversions, loads, and unmatched footprints
+retain their boundary checks. Composite scaling grows selected body parts as
+well as retained same-block owners and both alias shapes at 4/16/64.
+Iterated `take`/`scatter` now construct their exposed ownership from the checked
+hole/guard exchange without admission or block normalization; their exposure
+regression grows retained owners and aliases and retains occurrence support.
+Scatter guard preparation now selects an indexed whole-range equality source
+without enumerating universals or replaying its conclusion. Its regression
+bounds preparation as well as installation while growing aliases, owners and
+same-cell premises with other bounds. Call recovery constructs directly in
+the return residual and carries recovered hold occurrence IDs to publication;
+worker completion retains its checked output group and support metadata, and
+loop-frame exchange retains its admitted successor with the exit identities.
+These constructors still establish missing relationships against their actual
+destination frames; unsupported memory geometry retains compatibility discovery. See the
+caller audit in [verification efficiency](../docs/internals/verification-efficiency.md#iterated-exposure-and-the-remaining-callers).
 
 Hold one inserted owner and one relevant neighbor fixed. Independently grow
 same-block owners, owned blocks, coordinate origins and exact/offset aliases;

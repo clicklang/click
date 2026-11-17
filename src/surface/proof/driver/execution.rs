@@ -63,13 +63,13 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
     matches!(
         tactic,
         ProofTactic::Have(_)
-            | ProofTactic::Extract(_)
             | ProofTactic::UnfoldResource(_)
             | ProofTactic::UnfoldWitnesses { .. }
-            | ProofTactic::UnfoldPredicate(_)
+            | ProofTactic::UnfoldProposition(_)
             | ProofTactic::UnfoldFunction(_)
-            | ProofTactic::PeelFunction { .. }
             | ProofTactic::ObserveResource(_)
+            | ProofTactic::ApplyFact(_)
+            | ProofTactic::ApplyFactUsing { .. }
             | ProofTactic::ObserveSavedMemory { .. }
             | ProofTactic::ApplyTheorem(_)
             | ProofTactic::ApplyTheoremUsing { .. }
@@ -403,10 +403,10 @@ fn checked_execution_arm_tactics_end(
             && !closes_loop_invariants(tactic)
             && !matches!(
                 tactic,
-                ProofTactic::ApplyTheorem(_)
+                ProofTactic::ApplyFact(_)
+                    | ProofTactic::ApplyTheorem(_)
                     | ProofTactic::Transport { .. }
                     | ProofTactic::Have(_)
-                    | ProofTactic::Extract(_)
                     | ProofTactic::LetSatisfy(_)
             )
         {
@@ -859,23 +859,10 @@ pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
     }
 }
 
-/// A written `extract(P)` adds `P` exactly as `have P by { extract(P); }`
-/// does, through the same checked scope, in every context that admits it.
-fn extract_as_have(proposition: &ClickProposition) -> ProofHave {
-    ProofHave {
-        proposition: proposition.clone(),
-        proof: SourceProof::Script(vec![ProofTactic::Extract(proposition.clone())]),
-    }
-}
-
-/// The `have` a frontier tactic proves: a written `have`, or the one a bare
-/// `extract` stands for.
-fn frontier_have(tactic: &ProofTactic) -> Option<std::borrow::Cow<'_, ProofHave>> {
+/// The written fact proved at an execution frontier.
+fn frontier_have(tactic: &ProofTactic) -> Option<&ProofHave> {
     match tactic {
-        ProofTactic::Have(have) => Some(std::borrow::Cow::Borrowed(have)),
-        ProofTactic::Extract(proposition) => {
-            Some(std::borrow::Cow::Owned(extract_as_have(proposition)))
-        }
+        ProofTactic::Have(have) => Some(have),
         _ => None,
     }
 }
@@ -914,13 +901,14 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
         {
             Some(PostExecutionTactic::FoldProved(tactic.clone()))
         }
+        ProofTactic::ApplyFact(fact) => Some(PostExecutionTactic::Have(ProofHave {
+            proposition: crate::surface::proof::driver::fact_application_parts(fact).1,
+            proof: SourceProof::Script(vec![ProofTactic::ApplyFact(fact.clone())]),
+        })),
         ProofTactic::ApplyTheorem(application) => {
             Some(PostExecutionTactic::Apply(application.clone()))
         }
         ProofTactic::Have(have) => Some(PostExecutionTactic::Have(have.clone())),
-        ProofTactic::Extract(proposition) => {
-            Some(PostExecutionTactic::Have(extract_as_have(proposition)))
-        }
         ProofTactic::Both(both) => Some(PostExecutionTactic::Both(both.clone())),
         ProofTactic::Transport { source, target } => Some(PostExecutionTactic::Transport {
             source: source.clone(),
@@ -1172,6 +1160,8 @@ fn apply_frontier_source_tactic<'a>(
         proof
             .driver()
             .apply_step_at(ProofStep::LetSatisfy(binding.clone()), indexed.source_index)?
+    } else if let ProofTactic::ApplyFact(fact) = &indexed.tactic {
+        proof.driver().apply_fact_application(fact)?
     } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
         apply_written_theorem(&proof, application)?
     } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
@@ -1192,7 +1182,6 @@ fn apply_frontier_source_tactic<'a>(
             }
         }
     } else if let Some(have) = frontier_have(&indexed.tactic) {
-        let have = have.as_ref();
         let nested = proof.driver().open_source_have(have)?;
         let goal = nested.goal().cloned();
         let mut failed_check = None;
@@ -4963,6 +4952,25 @@ fn advance_linear_open_scope<'a>(
             })?;
             continue;
         }
+        if let ProofTactic::ApplyFact(fact) = &indexed.tactic {
+            let checkpoint = scope.checkpoint();
+            let Some(applied) = scope.driver().apply_fact_application(fact)? else {
+                return decline();
+            };
+            scope = applied;
+            if indexed.source_index != owning_source_index
+                && let Some(site) = proof_site
+            {
+                let certificate = scope.certificate_since(&checkpoint)?;
+                record_proof_site_tactic_expansion(
+                    expansion_capture.as_deref_mut(),
+                    site,
+                    indexed.source_index,
+                    &certificate.to_proof_tactics(),
+                );
+            }
+            continue;
+        }
         if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
             let checkpoint = scope.checkpoint();
             let Some(applied) = scope.driver().apply_theorem_application(application)? else {
@@ -5307,7 +5315,7 @@ fn advance_checked_open_scope<'a>(
 pub(in crate::surface::proof) fn introduce_proof_case_assumption(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available: &ProofFacts,
+    available: &PureFactStore,
     structured_branch_history: bool,
     condition: &ClickProposition,
     lowering_condition: &ClickProposition,
@@ -5447,7 +5455,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
 /// Whether `available` holds a fact that `propositions_are_exact_negations`
 /// pairs with `fact`, read from the exact index by the spellings that relation
 /// accepts rather than by comparing every fact.
-fn holds_exact_negation(available: &ProofFacts, fact: &Proposition) -> bool {
+fn holds_exact_negation(available: &PureFactStore, fact: &Proposition) -> bool {
     let negated = Proposition::Not(Box::new(fact.clone()));
     let mut spellings = vec![negated];
     match fact {

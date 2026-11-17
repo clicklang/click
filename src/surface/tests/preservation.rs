@@ -28,6 +28,34 @@ fn preserve_checks_byte_reads_without_search() {
     let expanded =
         expand_c_claim_source(&source, &sources, "keep", ContractProofClaim::Grouped).unwrap();
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    assert!(
+        expanded.contains("preserve(memory(q[0..1]), statement(0));"),
+        "{expanded}"
+    );
+    // The new argument order still accepts evidence written in either order.
+    let reversed = source.replace(
+        "separate(statement(0).footprint, memory(*q))",
+        "separate(memory(*q), statement(0).footprint)",
+    );
+    without_implicit_solve(|| verify_c_sources(&reversed, &sources)).unwrap();
+    let historical = source
+        .replace("    step() by", "    mark saved;\n    step() by")
+        .replace(
+            "have separate(statement(0).footprint, memory(*q))",
+            "have at(saved, separate(statement(0).footprint, memory(*q)))",
+        )
+        .replace(
+            "preserve(memory(*q), statement(0))",
+            "preserve(((at(saved, (memory(*q))))), statement(0))",
+        );
+    without_implicit_solve(|| verify_c_sources(&historical, &sources)).unwrap();
+    let expanded_historical =
+        expand_c_claim_source(&historical, &sources, "keep", ContractProofClaim::Grouped).unwrap();
+    assert!(
+        expanded_historical.contains("preserve(at(saved, memory(q[0..1])), statement(0));"),
+        "{expanded_historical}"
+    );
+    without_implicit_solve(|| verify_c_sources(&expanded_historical, &sources)).unwrap();
     // Separation of q cannot carry a read of the cell actually written.
     let overlapping = source.replace(
         "*q == at(statement(0).entry, *q)",
@@ -109,14 +137,14 @@ fn preserve_checks_signed_and_unsigned_64_bit_reads() {
                 mark after;
                 have *kept == at(before, *kept) by {{
                     have separate(statement(0).footprint, memory(*kept)) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
-                    preserve(separate(statement(0).footprint, memory(*kept)));
+                    preserve(memory(*kept), statement(0));
                 }}
                 step() by {{ known(); }}
                 mark final;
                 have *kept == at(before, *kept) by {{
                     have *kept == at(after, *kept) by {{
                         have separate(statement(1).footprint, memory(*kept)) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
-                        preserve(separate(statement(1).footprint, memory(*kept)));
+                        preserve(memory(*kept), statement(1));
                     }}
                     rewrite(*kept, at(after, *kept));
                     known();
@@ -467,7 +495,7 @@ fn preserve_step_carries_a_fact_with_ordinary_rewriting() {
     without_implicit_solve(|| verify_c_sources(&source, &sources)).unwrap();
     let expanded =
         expand_c_claim_source(&source, &sources, "keep", ContractProofClaim::Grouped).unwrap();
-    assert!(expanded.contains("preserve(separate("), "{expanded}");
+    assert!(expanded.contains("preserve("), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();

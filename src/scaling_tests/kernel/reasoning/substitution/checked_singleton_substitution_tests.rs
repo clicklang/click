@@ -25,3 +25,25 @@ fn checked_singleton_substitution_scales_with_shared_integer_dags() {
     });
     assert!(samples[3] <= samples[0] * 10, "{samples:?}");
 }
+
+#[test]
+fn pointer_witness_substitution_scales_with_the_explicit_proposition() {
+    let from = Variable(70_112);
+    let target = Variable(70_113);
+    let leaf = Proposition::Equal(pointer_term(from), pointer_term(target));
+    let samples = [8, 16, 32, 64].map(|size| {
+        let mut source = leaf.clone();
+        for _ in 1..size {
+            source = Proposition::And(Box::new(leaf.clone()), Box::new(source));
+        }
+        let (result, work) = instrumentation::measure_deterministic_work(|| {
+            substitute_pointer_value_in_proposition(&source, from, &pointer_value(target))
+        });
+        assert!(result.is_ok(), "size {size}: {result:?}");
+        assert!(work <= 200 * size, "size {size}: {work}");
+        work
+    });
+    for pair in samples.windows(2) {
+        assert!(pair[1] <= pair[0] * 3, "{samples:?}");
+    }
+}

@@ -50,7 +50,7 @@ int32 read_first(int32 m) {
             normalize() using { separate(memory(q[m - 1]), memory(q[0])); };
         }
         have q[0] == at(before_store, q[0]) by {
-            preserve(separate(statement(3).footprint, memory(q[0])));
+            preserve(memory(q[0]), statement(3));
         }
         have q[0] == 7 by solve();
         step_until(function.exit);

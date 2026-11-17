@@ -178,7 +178,7 @@ Click sets the standard, target, exception and RTTI modes, the project's
 [optimization level](#optimization-level), and at an optimizing level
 `-fno-strict-aliasing`, as for C. A unit's or source's `args` may not name
 them, except that, as for C, they may repeat the project's level. Each other argument must be one of these, and any other is refused with
-its position and spelling:
+its position and text:
 
 | Arguments | Class | Reason |
 | --- | --- | --- |
@@ -352,13 +352,70 @@ check its normal behavior without inventing an exceptional proof outcome.
 An RTTI-enabled profile also permits those borrowed records; this does not add
 `typeid` or `dynamic_cast` semantics.
 
+A source may instead select `"exception_behavior": "ios_failure"`, with
+`"exceptions": true`, for propagation of an opaque
+`std::ios_base::failure`. It accepts the exact external narrow-string
+constructor with its default `std::error_code` argument, using an ordinary
+nonzero ASCII string literal of at most 4096 bytes. Configure a
+`library_assertions` entry with `kind: "opaque_exception_constructor"`,
+`function: "std::ios_base::failure::failure"`, and the declaration header's
+relative `header` and `sha256`. The artifact records the resolved constructor,
+canonical declaration file, literal and source span; loading checks them
+against that configured pin and the locked input closure.
+
+The constructor model returns a fresh opaque value, with no observable memory
+effects. Exception storage and destruction belong to the C++ runtime.
+**This profile assumes allocation failure terminates**, as with Bitcoin's
+installed new-handler; it does not model propagation of `std::bad_alloc`
+([trust](../../concepts/trust.md#library-models)). Direct `throws` contracts
+may borrow memory with `owns` and `views`, and must establish their footprint
+and exceptional guarantees after a throw. The pinned `SpanReader::ignore`
+fixture verifies the real `streams.h` through this boundary. Nontrivial
+opaque-exception unwinding, typed class catches, base-class matching,
+rethrow, message inspection and general class exceptions remain refused.
+The existing `normal_only` and `scalar_int32` profiles retain their rules.
+
+A source may select `"exception_behavior": "typed"`, with `"exceptions": true`,
+for ordinary user-defined exception aggregates. `throw Error{code}` constructs
+an opaque value of that exact imported class; `throws Error` (including a
+qualified name such as `errors::ParseError`) names it in the sidecar. The
+class must be a trivially copyable aggregate with trivial destruction, no
+bases, and supported scalar fields. Empty tags such as `struct End {};` are
+also supported. Every field must have an explicit initializer; its reads and
+arithmetic definedness are checked in source order even though the payload
+fields cannot be inspected. Construction and copying need no user-constructor
+axiom. Scalar `int32` throws also work in this profile. A pinned
+`std::ios_base::failure` construction still requires its library assertion.
+User exception constructors, lvalue throws, nontrivial exception objects, class catches
+and rethrow remain refused.
+
+Exception-enabled profiles also admit user `noexcept` definitions, including
+`noexcept(true)`, ordinary methods and supported constructors/destructors.
+Their sidecars omit `throws`: the imported declaration requires a nonthrowing
+contract, and the ordinary body proof must establish that no exception escapes.
+The declaration is not an assumption that a throwing body is safe. The
+exporter defers Clang's specific explicit-throw-in-noexcept warning to this
+proof check; other compiler diagnostics retain their admission policy. A call to
+a potentially throwing function is valid when the caller's preconditions and
+the callee's exceptional guarantees exclude that outcome. Scalar exceptions
+caught inside a `noexcept` function may also be verified. `noexcept(false)`
+retains the ordinary potentially throwing interface. No additional sidecar
+syntax is needed.
+
+Normal cleanup stays checked in `noexcept` functions. `typed` and
+`ios_failure` still refuse potentially throwing functions with automatic
+destruction; general class unwinding and `std::terminate` paths are not
+modeled. An escaping exception remains a proof refusal, even if a sidecar
+tries to admit it with `throws`.
+
 A source's separate `"exception_behavior": "scalar_int32"` requires
 `"exceptions": true`. Its locked artifact may contain a source `throw` of a
 typed `int` payload in an object-free function; the importer lowers that node
-to Click's checked exceptional statement outcome. A Click `throws int32`
-signature must still declare the exception, and normal and exceptional
-postconditions are proved separately. Reachable direct calls can propagate
-that exception while normal scalar statements continue. One object-free
+to Click's checked exceptional statement outcome. The contract uses
+`throws int32` when it permits an escaping exception; a nonthrowing contract
+must prove that outcome unreachable. Normal and exceptional postconditions
+are proved separately. Reachable direct calls can propagate that exception
+while normal scalar statements continue. One object-free
 `try` with exactly one named by-value `catch (int name)` is also supported.
 The handler binds the thrown payload and resumes from the thrown state, so a
 caller can catch a verified helper's exception without declaring `throws`.
@@ -373,8 +430,7 @@ from the checked execution state. The `cpp_one_guard_unwind` and
 the guards are destroyed in reverse construction order.
 The importer still rejects nested handlers, catch-all or non-`int` handlers,
 other local declarations inside either block, guards constructed after the call, returns
-from a guarded `try`, `noexcept` free functions (whose termination behavior is
-not modeled), and broader exceptional resource transfer. This is not general
+from a guarded `try`, and consuming or producing exceptional resources. This is not general
 C++ unwinding support or an exception-ABI proof. Clang's typed
 source semantics and the compiler/runtime implementation remain the trust
 boundary. The config, artifact, and lock keep
@@ -413,7 +469,7 @@ int32 increment(int32& value) {
 for a contract that says two references alias (`requires &a == &b;`) or that a
 stored pointer points at one. A struct reference names its fields as
 `state.field`. Writing `int32* value` for an `int&` is a signature mismatch
-that names both spellings; a C++ `int*` parameter stays a pointer. A member
+that names both types; a C++ `int*` parameter stays a pointer. A member
 function's receiver is the pointer `this`, as in C++: `this->fee`,
 `owns *this`.
 
@@ -481,7 +537,7 @@ writes its referent; it does not rebind the alias.
 
 Native element references are `int&`, `unsigned int&`, `unsigned char&` and
 `std::byte&`, each possibly `const`, written `int32&`, `uint32&` and `uint8&`
-in the sidecar. A C++ sidecar may also spell `std::byte` itself, in a head,
+in the sidecar. A C++ sidecar may also write `std::byte` itself, in a head,
 contract or `sizeof`: it is `uint8`, and `const std::byte` is `const uint8`. They are admitted as parameters, results and locals. A call
 that returns one can also be read or written directly, as in `return s[0];`
 and `s[0] = v;`. A read is a typed load of the returned address and needs a
@@ -489,13 +545,27 @@ resource for the referent. A write needs a mutable referent and owns it; its
 value must be free of calls and is read before the call, as C++17 sequences
 an assignment's right operand first. Compound assignment through a returned
 reference remains unsupported. Ending the local binding does
-not end the backing object's lifetime. References to local objects, temporary
-lifetime extension, rvalue references and nested reference declarations remain
-unsupported.
+not end the backing object's lifetime. Scalar references to local objects,
+temporary lifetime extension, rvalue references and nested reference
+declarations remain unsupported.
+
+Struct/class reference locals also bind existing objects: a record reference
+parameter or alias, a local record object, a nested record member, or a
+record-pointer dereference. `auto&` and `const auto&` retain Clang's resolved
+record identity and const qualification. A proof reads `ref.field` and names
+its address as `&ref`; the alias grants no memory permissions. Writes through
+a mutable alias need ownership, and const aliases continue to observe writes
+through a separately authorized mutable alias. Ending a reference binding does
+not destroy its backing object. Pointer-based binding checks the complete
+record's live byte footprint without reading or initializing its fields.
+Record-reference call results, rvalue references and temporary lifetime
+extension remain outside this slice. A record-reference name shared with a
+different record layout or a non-reference object in another scope is refused,
+rather than assigning its proof fields an ambiguous layout.
 
 A proof names a reference local as it names a reference parameter. For
 `int& r = value;`, `r` is the referent, as in `have r == 1;`, and `&r` is its
-address, as in `have &r == &value;`. `r[0]` is refused with the spelling to
+address, as in `have &r == &value;`. `r[0]` is refused with the form to
 write. Binding a reference is not an assignment, so `assignment(r, N)` is
 refused; a store through `r` is selected by its statement.
 
@@ -520,7 +590,7 @@ reads through an aliased `const int&`, using one explicit `owns` resource.
 C++ `const` restricts access through that reference; it does not create a Click
 `views` resource or imply that aliases cannot write. Supported parameters are
 currently by-value `bool` or signed/unsigned 32/64/128-bit integers, native element references,
-mutable `int*`, `unsigned int*` or `unsigned char*`, one `const` signed-64 reference, and mutable or const references
+`int*`, `unsigned int*` or `unsigned char*` (also pointers to const elements), one `const` signed-64 reference, and mutable or const references
 to supported simple record types with distinct proof-facing names. Selected functions return `int`,
 signed/unsigned 64/128-bit integers, `unsigned int`, `unsigned char`, `bool`, mutable `int*`, `unsigned int*` or `unsigned char*`,
 native element references, or `void`.
@@ -797,6 +867,18 @@ kernel's existing address, typed-load, and typed-store operations, so the
 sidecar must provide ordinary memory authority. Removing that authority or
 claiming the wrong pointer-mediated memory effect fails verification.
 
+Native pointer parameters, local aliases, returned pointers and callback
+signatures retain pointee const qualification. `const int*`, `const unsigned
+int*` and `const unsigned char*` use `const int32*`, `const uint32*` and
+`const uint8*` sidecar types. Reads require `views` or `owns`; const does not
+create permission or freeze a mutable alias. Implicit qualification and
+`static_cast<const T*>(p)` add const without changing the address or native
+element type, including converted call results. Null returns retain the
+same qualification. Source and artifact checks refuse const removal,
+mutable sidecar substitutions and stores through const pointers. Volatile
+pointees, other character types and top-level const pointer variables remain
+outside this profile.
+
 The bounded native object-pointer profile also admits mutable `unsigned int*`
 and `unsigned char*`, using `uint32*` and `uint8*` contracts. Loads, stores,
 resolved calls and pointer fields retain their exact pointee type; pointer
@@ -812,7 +894,7 @@ record and field declaration identities plus the exact LP64 size, alignment,
 field offsets, and field widths. A function may receive an existing object by
 mutable reference and read or write those fields with `object.field`; a pointer
 loaded from a field may use the already-supported checked dereference rules.
-The proof interface spells that reference as `struct Name*` and uses ordinary
+The proof interface writes that reference as `struct Name*` and uses ordinary
 field resources such as `owns state->saved`. Click does not reconstruct the
 layout from C++ source or create a synthetic C body.
 
@@ -1170,7 +1252,7 @@ guards but do not demand that a certified result definition be supplied as
 another assumption. False product claims and missing guards remain refused.
 
 The `wide-contracts` fixture adds by-value wide parameters, results, and
-matching-width call captures. Contracts spell these types `int128` and
+matching-width call captures. Contracts write these types as `int128` and
 `uint128`; `to_integer(value)` observes their full mathematical value.
 `to_int128(z)` and `to_uint128(z)` require both exact destination bounds;
 these proof conversions remain distinct from C++ modulo casts. Identities,
@@ -1343,7 +1425,7 @@ block and read at the instance's own Clang layout: `Cell<int>`'s `value` is a
 contract; `void Cell<int>::set(int v) { ... }` is refused. An instance's
 parameters take the instance's own names, by position: if Clang names
 `Cell<int>::set`'s parameter `value`, the written-out contract reads `value`
-where the template wrote `v`, so a template need not spell an implementation's
+where the template wrote `v`, so a template need not write an implementation's
 reserved names (libstdc++'s `__count`). A non-template head restates its one
 declaration and keeps its names exactly. A record holding a
 value of an abstract type is laid out at a word for each such value, which no
@@ -1379,7 +1461,7 @@ listed template takes exactly the type parameters it is named with, without
 defaults, packs or non-type parameters, and its written constructors are
 outside the slice.
 
-A sidecar template also takes a non-type parameter, an extent spelled
+A sidecar template also takes a non-type parameter, an extent written
 `std::size_t N`, `size_t N` or `unsigned long N`:
 `template<class T, std::size_t N> unsigned long Buf<T, N>::size() const {
 ensures result == N; }`. Each instance writes the extent as a `uint64`
@@ -2113,7 +2195,7 @@ the repository's fixtures does; `design/adler32/project/zlib/` uses Click's head
 
 Configured forced includes and ordered `-D` and `-U` options select additional
 preprocessing inputs. Other compiler options are rejected unless a named option
-profile, described below, lists their exact spelling. Response files, plugins,
+profile, described below, lists their exact text. Response files, plugins,
 and execution hooks are always rejected. The compiler runs with a cleared environment;
 only the configuration's supported variables are supplied. Use explicit
 `SOURCE_DATE_EPOCH` when source depends on date/time macros.
@@ -2154,7 +2236,7 @@ import. An option is accepted only where ignoring it cannot make Click accept
 a program the compiler treats differently: the option affects only
 preprocessing, whose result is the locked artifact, or only diagnostics, or
 only code generation, or it makes the compiler's semantics stricter than
-Click's or no weaker. The list is closed and keyed to exact spellings. A
+Click's or no weaker. The list is closed and keyed to exact option text. A
 different value, an unlisted sibling, or an unknown option is refused with its
 source and argument position, for example
 ``source `lib/rbtree.c`: unsupported compiler argument 50 `-O3`; ...``. Some
@@ -2164,7 +2246,7 @@ option is refused with the missing one named.
 Besides `-E` and the source operand, which the importer supplies itself, the
 recorded vector has 102 options: 15 base preprocessing options, 4 that the
 target fixes, 2 that the project's `-O2` level fixes, and 81 others with 77
-distinct spellings. All 77 are accepted, `-mno-sse` and `-mno-sse2` only
+distinct forms. All 77 are accepted, `-mno-sse` and `-mno-sse2` only
 beside `-mno-80387`. The optimizer promises below are refused in the imported
 source.
 
@@ -2481,7 +2563,7 @@ const and mutable overloads, require an index below `N` and return
 `views std_array_data(a)[1];`, and a write requires
 `owns std_array_data(a)[1];`. Owning a neighboring element or viewing the
 written element does not authorize the write. Resource clauses also accept
-the imported field spelling, such as `views a._M_elems[1];`, on a record
+the imported field name, such as `views a._M_elems[1];`, on a record
 reference. Expansion retains the field and its subscripts, and a failed
 resource-clause evaluation names that place.
 

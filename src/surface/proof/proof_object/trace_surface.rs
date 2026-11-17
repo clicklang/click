@@ -78,7 +78,7 @@ impl Proof<'_> {
                 });
             if let Some(text) = immutable_name {
                 return Some(PointerTraceView {
-                    text,
+                    text: text.to_string(),
                     retained_state: None,
                 });
             }
@@ -105,7 +105,7 @@ impl Proof<'_> {
             for hint in &hints {
                 if let Some(text) = immutable_field_hint(hint, &address, &locals) {
                     return Some(PointerTraceView {
-                        text,
+                        text: text.to_string(),
                         retained_state: Some((memory.into_shared_memory(), point)),
                     });
                 }
@@ -119,7 +119,7 @@ impl Proof<'_> {
                     None,
                 ) {
                     return Some(PointerTraceView {
-                        text,
+                        text: text.to_string(),
                         retained_state: Some((
                             memory.into_shared_memory(),
                             Some(
@@ -153,7 +153,7 @@ impl Proof<'_> {
                     Some(&base_point),
                 ) {
                     return Some(PointerTraceView {
-                        text,
+                        text: text.to_string(),
                         retained_state: Some((memory.into_shared_memory(), point)),
                     });
                 }
@@ -167,7 +167,7 @@ impl Proof<'_> {
 fn immutable_field_hint(
     expression: &ContractExpression,
     address: &Pointer,
-    locals: &BTreeMap<String, ContractExpression>,
+    locals: &BinderMap<ContractExpression>,
 ) -> Option<String> {
     let mut expression = expression;
     for _ in 0..MAX_TRACE_FACT_DEPTH {
@@ -206,7 +206,7 @@ fn immutable_field_hint(
             else {
                 return None;
             };
-            (name, base)
+            (SurfaceBinder::from(name), base)
         }
         // Checked surface forms substitute model binders with their exact
         // values. Recover the immutable binder before spelling the field.
@@ -214,14 +214,14 @@ fn immutable_field_hint(
             base,
         ))) => {
             let (name, _) = locals.iter().find(|(_, value)| matches!(value, ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(candidate))) if candidate == base))?;
-            (name, base)
+            (name.clone(), base)
         }
         _ => return None,
     };
     let expected = base.pointer().offset_by_bytes(*offset_bytes);
     (expected.block == address.block
         && crate::kernel::offsets_have_same_canonical_form(&expected.offset, &address.offset))
-    .then(|| crate::surface::diagnostics::describe_field_place(name, field))
+    .then(|| crate::surface::diagnostics::describe_field_place(&name.to_string(), field))
 }
 
 #[cfg(test)]
@@ -233,7 +233,7 @@ mod pointer_trace_tests {
         let base = Pointer::symbolic(Variable(990001));
         let value = ProgramValue::typed_pointer(base.clone(), ProgramType::Int32Pointer);
         let local = ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone()));
-        let locals = BTreeMap::from([("zid".to_string(), local.clone())]);
+        let locals: BinderMap<_> = (BTreeMap::from([("zid".to_string(), local.clone())])).into();
         let hint = |base_expression, value_type| ContractExpression::Field {
             pointee_struct: None,
             base: Box::new(base_expression),
@@ -263,10 +263,10 @@ mod pointer_trace_tests {
             None
         );
         assert_eq!(
-            immutable_field_hint(&substituted, &address, &BTreeMap::new()),
+            immutable_field_hint(&substituted, &address, &BinderMap::new()),
             None
         );
-        let reassigned = BTreeMap::from([(
+        let reassigned: BinderMap<_> = (BTreeMap::from([(
             "zid".to_string(),
             ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::typed_pointer(
@@ -274,7 +274,8 @@ mod pointer_trace_tests {
                     ProgramType::Int32Pointer,
                 ),
             )),
-        )]);
+        )]))
+        .into();
         assert_eq!(
             immutable_field_hint(&substituted, &address, &reassigned),
             None

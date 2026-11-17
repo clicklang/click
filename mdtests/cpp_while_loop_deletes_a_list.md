@@ -94,6 +94,7 @@ void destroy(Node* p) {
         }
     }
     unfold(list);
+    step();
     solve();
 }
 ```

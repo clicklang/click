@@ -1092,7 +1092,7 @@ fn direct_constant_lookup_declines_chains_until_the_endpoint_is_stated() {
 /// by the consequent's operands: a goal naming `a` finds the one guarded
 /// equality about `a`, and the lookup's work does not grow with unrelated
 /// guarded equalities. An implication under an ordinary condition is not
-/// indexed: applying it stays an explicit `extract`.
+/// indexed: applying it stays an explicit `apply(fact)`.
 #[test]
 fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
     for shared in [false, true] {
@@ -1148,7 +1148,7 @@ fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
             .map(|size| {
                 let mut facts = vec![guarded(0), ordinary_guard.clone()];
                 facts.extend((1..size).map(guarded));
-                let facts = crate::kernel::proof::ProofFacts::from_ordered(&facts);
+                let facts = crate::kernel::proof::PureFactStore::from_ordered(&facts);
                 let exports = crate::kernel::KernelTermExport::machine_export_count();
                 let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
                     facts.guarded_implications_mentioning(&goal)
@@ -1357,7 +1357,7 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
                 true,
             )
         }));
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&ambient);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&ambient);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::proof::fact_reasoning::normalize_using_conditions(
                 &goal,
@@ -1435,7 +1435,7 @@ fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
                     )
                 }
             }));
-            let facts = crate::kernel::proof::ProofFacts::from_ordered(&ambient);
+            let facts = crate::kernel::proof::PureFactStore::from_ordered(&ambient);
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::proof::fact_reasoning::normalize_using_conditions(
                     &goal,
@@ -2161,7 +2161,7 @@ fn integer_match_rewrite_lookup_scales_with_its_selected_sources() {
                     )
                 })
                 .collect::<Vec<_>>();
-            let facts = crate::kernel::proof::ProofFacts::from_ordered(&sources);
+            let facts = crate::kernel::proof::PureFactStore::from_ordered(&sources);
             let matched = crate::kernel::IntegerTerm::AlgebraicMatch {
                 scrutinee: Box::new(model(90_000)),
                 arms: vec![

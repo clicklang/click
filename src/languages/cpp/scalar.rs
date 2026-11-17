@@ -125,6 +125,24 @@ pub(super) fn record_pointee(value: &CppType) -> Option<(&str, &str)> {
     }
 }
 
+/// Nominal record behind an object address or reference, retaining const.
+/// Source admission separately selects which pointer/reference forms it accepts.
+pub(super) fn record_referent(value: &CppType) -> Option<(&str, &str, bool)> {
+    match value {
+        CppType::Pointer { pointee } | CppType::LvalueReference { pointee } => {
+            match pointee.as_ref() {
+                CppType::Record {
+                    declaration_id,
+                    name,
+                    is_const,
+                } => Some((declaration_id, name, *is_const)),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Nominal candidate only: the importer separately authenticates the declaration
 /// span against the pinned standard header before any lowering can use it.
 pub(super) fn is_standard_byte(value: &CppType) -> bool {
@@ -269,6 +287,21 @@ pub(super) fn scalar_value_type(value: &CppType) -> CppType {
 /// A native reference binds an object of its own type, possibly adding const
 /// but never removing it.
 pub(super) fn reference_binds(object: &CppType, referent: &CppType) -> bool {
+    if let (
+        CppType::Record {
+            declaration_id: source,
+            name: source_name,
+            is_const: source_const,
+        },
+        CppType::Record {
+            declaration_id: target,
+            name: target_name,
+            is_const: target_const,
+        },
+    ) = (object, referent)
+    {
+        return source == target && source_name == target_name && (!source_const || *target_const);
+    }
     same_scalar_type(&scalar_value_type(object), &scalar_value_type(referent))
         && (Scalar::of(referent).is_some_and(|scalar| scalar.is_const)
             || !Scalar::of(object).is_some_and(|scalar| scalar.is_const))
@@ -280,6 +313,18 @@ pub(super) fn reference_element(value: &CppType) -> Option<Scalar> {
     match value {
         CppType::LvalueReference { pointee } => Scalar::pointer_element(pointee, true),
         _ => None,
+    }
+}
+
+/// A native pointer may add pointee const without changing its element type.
+pub(super) fn pointer_qualification(source: &CppType, target: &CppType) -> bool {
+    match (source, target) {
+        (CppType::Pointer { pointee: source }, CppType::Pointer { pointee: target }) => {
+            Scalar::pointer_element(source, true).is_some_and(|element| !element.is_const)
+                && Scalar::pointer_element(target, true).is_some_and(|element| element.is_const)
+                && same_scalar_type(&scalar_value_type(source), &scalar_value_type(target))
+        }
+        _ => false,
     }
 }
 
@@ -331,6 +376,34 @@ pub(super) fn same_scalar_type(left: &CppType, right: &CppType) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pointer_qualification_preserves_native_identity_and_only_adds_const() {
+        let pointer = |bits, signed, is_const| CppType::Pointer {
+            pointee: Box::new(CppType::Integer {
+                bits,
+                signed,
+                is_const,
+                source_aliases: Vec::new(),
+            }),
+        };
+        for (bits, signed) in [(32, true), (32, false), (8, false)] {
+            let mutable = pointer(bits, signed, false);
+            let constant = pointer(bits, signed, true);
+            assert!(pointer_qualification(&mutable, &constant));
+            assert!(!pointer_qualification(&constant, &mutable));
+            assert!(!pointer_qualification(&mutable, &mutable));
+            assert!(!pointer_qualification(&constant, &constant));
+            for (other_bits, other_signed) in [(32, true), (32, false), (8, false), (64, true)] {
+                if (bits, signed) != (other_bits, other_signed) {
+                    assert!(!pointer_qualification(
+                        &mutable,
+                        &pointer(other_bits, other_signed, true)
+                    ));
+                }
+            }
+        }
+    }
 
     #[test]
     fn scalar_classification_preserves_qualification_and_rejects_unsupported_widths() {

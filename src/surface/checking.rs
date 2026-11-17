@@ -165,24 +165,24 @@ pub(super) fn prove_ensure_resource<'e>(
                 "resource claim has no checked execution path",
             ));
         }
-        let FunctionOutcome::Return {
-            value: result,
-            state: post_state,
-        } = outcome
-        else {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` failed on path {path_index}: {}\n{}",
-                describe_function_outcome(outcome, parameter_binding),
-                describe_proof_context(
-                    &available_pure_facts
-                        .propositions()
-                        .cloned()
-                        .collect::<Vec<_>>(),
-                    pre_state.resources().facts(),
-                    parameter_binding,
-                    &execution_pure_facts()
-                )
-            )));
+        let (result, post_state) = match outcome {
+            FunctionOutcome::Return { value, state } => (value, state),
+            FunctionOutcome::Throw { value, state } if borrowed => (value, state),
+            _ => {
+                return Err(ClickError::new(format!(
+                    "`{claim_label}` failed on path {path_index}: {}\n{}",
+                    describe_function_outcome(outcome, parameter_binding),
+                    describe_proof_context(
+                        &available_pure_facts
+                            .propositions()
+                            .cloned()
+                            .collect::<Vec<_>>(),
+                        pre_state.resources().facts(),
+                        parameter_binding,
+                        &execution_pure_facts()
+                    )
+                )));
+            }
         };
         if guard_deferred {
             return Ok(CheckedResourceClaim::deferred(
@@ -357,15 +357,13 @@ pub(super) fn evaluate_witness_tactic_value(
     )
     .map_err(|message| {
         ClickError::new(format!(
-            "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: could not evaluate witness value for `{}`: {message}",
-            witness.name()
+            "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: could not evaluate witness value: {message}"
         ))
     })?;
     Ok(value)
 }
 
 pub(super) fn apply_witness_tactic(
-    witness: &ProofWitness,
     witness_value: ProgramValue,
     goal: Proposition,
     claim_label: &str,
@@ -383,13 +381,6 @@ pub(super) fn apply_witness_tactic(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: goal is not an existential proposition"
         )));
     };
-    if name != witness.name() {
-        return Err(ClickError::new(format!(
-            "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: goal binds `{name}`, but proof provided witness `{}`",
-            witness.name()
-        )));
-    }
-
     let expected = match &sort {
         sort if sort.machine_integer_type().is_some() => {
             Some(sort.machine_integer_type().unwrap().program_type())
@@ -423,7 +414,7 @@ pub(super) fn apply_witness_tactic(
         };
         return Err(ClickError::new(format!(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: witness `{}` has the wrong type: expected {}, got {}",
-            witness.name(),
+            name,
             describe_interface_type(super::generics::interface_type_from_program_type(expected)),
             describe_interface_type(super::generics::interface_type_from_program_type(actual)),
         )));
@@ -455,7 +446,7 @@ pub(super) fn apply_witness_tactic(
         _ => {
             return Err(ClickError::new(format!(
                 "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: unsupported existential witness sort for `{}`",
-                witness.name()
+                name
             )));
         }
     };

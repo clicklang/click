@@ -95,7 +95,7 @@ pub(super) struct SurfaceRecord {
     /// execution path. This separate persistent index lets a strict statement
     /// retry recognize an explicitly retained prerequisite leaf without
     /// scanning the ambient proof context.
-    pub(super) retained_have_facts: ProofFacts,
+    pub(super) retained_have_facts: PureFactStore,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -588,15 +588,30 @@ fn attach_deferred_close_proof(steps: &mut [ProofStep], step: &ProofStep) -> boo
     else {
         return false;
     };
-    if let Some(ProofStep::Open {
+    let Some(ProofStep::Open {
         resource: scope,
+        proof: scope_body,
         close_proof: slot @ None,
-        ..
     }) = steps.last_mut()
-        && proof.steps().is_empty()
-        && scope == resource
-    {
+    else {
+        return false;
+    };
+    if scope != resource {
+        return false;
+    }
+    if proof.steps().is_empty() {
         *slot = Some(close_proof.clone());
+        return true;
+    }
+    // A deferred block tail (`ProofOpen::deferred_block_tail`): its `have`s
+    // end the scope's block, which keeps no `by`.
+    if close_proof.steps().is_empty() {
+        let mut body = scope_body.steps().to_vec();
+        body.extend(proof.steps().iter().cloned());
+        let Ok(body) = ProofCertificate::from_steps(body) else {
+            return false;
+        };
+        **scope_body = body;
         return true;
     }
     false
@@ -1470,7 +1485,7 @@ impl PostExecutionTactic {
 #[derive(Clone)]
 pub(super) struct PlannedLoopReturns {
     pub(super) paths: Arc<Vec<Arc<LoopReturnProof>>>,
-    pub(super) entry_facts: ProofFacts,
+    pub(super) entry_facts: PureFactStore,
 }
 
 /// Surface ownership of one returned loop path. It grants no proof authority:
@@ -1487,8 +1502,7 @@ pub(super) struct LoopReturnProof {
 
 #[derive(Clone)]
 pub(super) struct DeferredPostExecutionTactic {
-    pub(super) lexical_bindings:
-        Option<crate::persistent::PersistentMap<String, ContractExpression>>,
+    pub(super) lexical_bindings: Option<PersistentBinderMap<ContractExpression>>,
     pub(super) tactic_index: usize,
     pub(super) source_index: usize,
     pub(super) tactic: PostExecutionTactic,
@@ -1654,10 +1668,9 @@ mod proof_fact_store_tests {
                 ..ExecutionFrontier::default()
             };
             frontier.continuations.push(ProofExecutionContinuation {
-                continue_region: None,
+                loop_control: None,
                 remaining: Some(remaining.clone()),
                 next_statement_index: 1,
-                loop_exit_statement_index: 2,
                 exceptional: None,
             });
             let ancestor = frontier.clone();
@@ -1682,10 +1695,9 @@ mod proof_fact_store_tests {
             );
 
             frontier.continuations.push(ProofExecutionContinuation {
-                continue_region: None,
+                loop_control: None,
                 remaining: Some(remaining.clone()),
                 next_statement_index: 2,
-                loop_exit_statement_index: 3,
                 exceptional: None,
             });
             assert!(
@@ -1762,7 +1774,7 @@ mod proof_fact_store_tests {
 
     #[test]
     fn shared_vec_suffix_since_reports_the_appended_entries() {
-        let mut history = SharedVec::from(vec![1u32, 2]);
+        let mut history = crate::kernel::proof::SharedVec::from(vec![1u32, 2]);
         let ancestor = history.clone();
         history.push(3);
         history.push(4);
@@ -1781,7 +1793,7 @@ pub(super) fn post_execution_tactic_timing(
         PostExecutionTactic::Apply(_) => ("apply", "smart"),
         PostExecutionTactic::Have(have) => (
             "have",
-            if smart_solve_unfold_prefix(&have.proof).is_some() {
+            if super::surface_construction::have_proof_is_smart_solve(&have.proof) {
                 "smart"
             } else {
                 "control"
@@ -1817,7 +1829,7 @@ pub(super) struct ExecutionView<'a> {
     function_entry_state: Option<&'a ExecutionState>,
     /// Lexical names available where this certificate is emitted. They are
     /// presentation hints, never proof authority.
-    pub(super) proof_bindings: Option<&'a PersistentMap<String, ContractExpression>>,
+    pub(super) proof_bindings: Option<&'a PersistentBinderMap<ContractExpression>>,
 }
 
 impl<'a> ExecutionView<'a> {

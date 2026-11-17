@@ -229,7 +229,7 @@ fn cited_pointer_context_construction_scales_with_selected_conditions() {
                 true,
             ));
         }
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&selected);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&selected);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::proof::fact_reasoning::normalize_using_conditions(
                 &goal, &selected, &facts,

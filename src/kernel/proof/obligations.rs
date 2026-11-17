@@ -245,7 +245,7 @@ impl AsRef<crate::kernel::ExecutionFacts> for OutcomeExecutionFacts {
 #[derive(Clone)]
 pub(crate) struct CheckedProposition {
     proposition: Arc<Proposition>,
-    root_assumptions: super::ProofFacts,
+    root_assumptions: super::PureFactStore,
     outcome: Option<OutcomeProofCore>,
     claim: Option<crate::kernel::FunctionContractClaimTarget>,
     source_claim: Option<FunctionContractClaimKey>,
@@ -254,7 +254,7 @@ pub(crate) struct CheckedProposition {
 impl CheckedProposition {
     pub(super) fn new(
         proposition: Proposition,
-        root_assumptions: super::ProofFacts,
+        root_assumptions: super::PureFactStore,
         outcome: Option<OutcomeProofCore>,
         claim: Option<crate::kernel::FunctionContractClaimTarget>,
         source_claim: Option<FunctionContractClaimKey>,
@@ -314,7 +314,7 @@ impl CheckedProposition {
     /// The exact facts the root branch assumed. A constructor that turns this
     /// completion into an implication must check them against its own
     /// explicit premises.
-    pub(crate) fn root_assumptions(&self) -> &super::ProofFacts {
+    pub(crate) fn root_assumptions(&self) -> &super::PureFactStore {
         &self.root_assumptions
     }
 
@@ -564,6 +564,7 @@ impl OutcomeClaimGoals {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn open(
         claims: impl IntoIterator<
             Item = (
@@ -572,6 +573,19 @@ impl OutcomeClaimGoals {
             ),
         >,
         is_exceptional: bool,
+    ) -> Self {
+        Self::open_with_borrowed_resources(claims, is_exceptional, &[])
+    }
+
+    pub(crate) fn open_with_borrowed_resources(
+        claims: impl IntoIterator<
+            Item = (
+                FunctionContractClaimKey,
+                Option<FunctionContractClaimTarget>,
+            ),
+        >,
+        is_exceptional: bool,
+        resources: &[crate::kernel::ResourceSpec],
     ) -> Self {
         let mut result = Self {
             claims: Default::default(),
@@ -584,6 +598,11 @@ impl OutcomeClaimGoals {
                 (FunctionContractClaimKey::Ensure(_), true)
                     | (FunctionContractClaimKey::ExceptionalEnsure(_), false)
             );
+            let borrowed_resource = matches!(&target,
+                Some(FunctionContractClaimTarget::EnsureResource(index))
+                    if resources.get(*index).is_some_and(|resource|
+                        resource.role() == crate::kernel::ResourceTransferRole::Borrow));
+            let vacuous = vacuous && !borrowed_resource;
             if !vacuous {
                 result.open.insert(position, key.clone());
             }
@@ -769,7 +788,7 @@ mod outcome_claim_goal_tests {
                 name: "done".into(),
                 arguments: Vec::new(),
             },
-            super::super::ProofFacts::default(),
+            super::super::PureFactStore::default(),
             Some(outcome.clone()),
             claim.clone(),
             claim
@@ -1039,8 +1058,7 @@ mod outcome_claim_goal_tests {
             super::super::ProofBranch::new(
                 ProofObligation::FunctionOutcome(goal),
                 super::super::ProofBranchState {
-                    facts: super::super::ProofFacts::from_ordered(&[]),
-                    unfolded_predicates: super::super::PersistentOrderedSet::default(),
+                    facts: super::super::PureFactStore::from_ordered(&[]),
                     execution: None,
                 },
             ),
@@ -1073,8 +1091,7 @@ mod outcome_claim_goal_tests {
             ProofBranch::new(
                 ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
-                    facts: ProofFacts::from_ordered(&[]),
-                    unfolded_predicates: PersistentOrderedSet::default(),
+                    facts: PureFactStore::from_ordered(&[]),
                     execution: None,
                 },
             )
@@ -1098,7 +1115,7 @@ mod outcome_claim_goal_tests {
                     .unwrap()
                     .obligation
                     .clone(),
-                ProofFacts::from_ordered(std::slice::from_ref(&case_local)),
+                PureFactStore::from_ordered(std::slice::from_ref(&case_local)),
             )
             .unwrap_or_else(|_| panic!("first case is open"));
         let after_first = first
@@ -1169,7 +1186,7 @@ mod outcome_claim_goal_tests {
         let routed = owner
             .replace_focused_obligation_and_facts(
                 ProofObligation::FunctionOutcome(goal),
-                ProofFacts::from_ordered(std::slice::from_ref(&false_fact)),
+                PureFactStore::from_ordered(std::slice::from_ref(&false_fact)),
             )
             .unwrap_or_else(|_| panic!("expected an open owned outcome"));
         assert!(
@@ -1244,7 +1261,7 @@ mod outcome_claim_goal_tests {
                 specification.specification(),
                 &core,
                 goal.claims.as_ref().unwrap(),
-                &super::super::ProofFacts::from_ordered(&[]),
+                &super::super::PureFactStore::from_ordered(&[]),
             )
             .unwrap();
         goal.closing = Some(transitioned.clone());
@@ -1272,7 +1289,7 @@ mod outcome_claim_goal_tests {
                     specification.specification(),
                     &core,
                     goal.claims.as_ref().unwrap(),
-                    &super::super::ProofFacts::from_ordered(&[]),
+                    &super::super::PureFactStore::from_ordered(&[]),
                 )
                 .unwrap();
         }

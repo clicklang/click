@@ -180,3 +180,72 @@ fn joining_one_of_many_shared_readers_touches_only_its_share_branch() {
         "joining a fixed shared reader scanned unrelated children: {samples:?}"
     );
 }
+
+#[test]
+fn joining_one_worker_keeps_the_current_frame_as_owners_and_aliases_grow() {
+    for aliases in [false, true] {
+        let mut samples = Vec::new();
+        for size in [4_usize, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (worker, termination) = worker();
+            let mut assumptions = PureFactContext::new();
+            if aliases {
+                for index in 0..size {
+                    assumptions = assumptions.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            pointer(0),
+                            Pointer::symbolic(Variable(8_796_000 + index as u64)),
+                        ),
+                        true,
+                    );
+                }
+            }
+            let state = parent(if aliases { 1 } else { size + 1 });
+            state
+                .resources()
+                .synchronize_memory_equalities(&assumptions);
+            let context = ThreadContext::new(state).unwrap();
+            let (context, handle, _) = context
+                .spawn(
+                    &worker,
+                    Some(&termination),
+                    ProgramValue::pointer(pointer(0)),
+                    &assumptions,
+                    &ExecutionEnvironment::new(),
+                    &mut ExecutionBudget::new(),
+                )
+                .unwrap()
+                .unwrap();
+            let ((joined, _), work) = crate::instrumentation::measure_deterministic_work(|| {
+                context
+                    .join(
+                        handle,
+                        JoinRuntimeAssumption::ValidJoinSucceeds,
+                        &assumptions,
+                    )
+                    .unwrap()
+            });
+            assert!(
+                joined
+                    .parent()
+                    .resources()
+                    .satisfies_fact(&ResourceFact::own_memory(range(0, 0, 1)), &assumptions)
+            );
+            assert!(
+                joined
+                    .join(
+                        handle,
+                        JoinRuntimeAssumption::ValidJoinSucceeds,
+                        &assumptions
+                    )
+                    .is_err()
+            );
+            samples.push(work);
+        }
+        eprintln!("worker join aliases={aliases}: {samples:?}");
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 64),
+            "{aliases}: {samples:?}"
+        );
+    }
+}

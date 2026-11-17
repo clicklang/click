@@ -41,5 +41,5 @@ int32 walk(int32 n) {
 ```
 
 ```expect
-fail: `(let integer_value: Integer = to_integer((i as int32)) + 1; integer_value) <= 2147483647` remained open
+fail: `((to_integer((i as int32)) + 1) : Integer) <= 2147483647` remained open
 ```

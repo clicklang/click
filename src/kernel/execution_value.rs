@@ -1,6 +1,11 @@
 //! Values retained between evaluation and execution boundaries.
 //! Compatibility reads are explicit; a shared value owns only its common root.
 use super::prelude::*;
+pub(in crate::kernel) mod storage_keys;
+use storage_keys::{
+    AlgebraicStorageKey, BooleanStorageKey, FloatStorageKey, NativeStorageIdentity,
+    PointerStorageKey,
+};
 
 #[derive(Clone, Debug, Eq)]
 pub enum ExecutionValue {
@@ -467,12 +472,69 @@ pub struct StoredExecutionValue(std::sync::Arc<StoredValueData>);
 #[derive(Debug)]
 struct StoredValueData {
     value: ExecutionValue,
-    identity: std::sync::OnceLock<Option<SharedMachineIntegerTerm>>,
+    identity: std::sync::OnceLock<StoredKey>,
 }
 #[derive(Eq, PartialEq, Hash, Ord, PartialOrd)]
 enum StoredIdentity<'a> {
     Machine(&'a SharedMachineIntegerTerm),
-    Native(&'a ProgramValue),
+    Native(NativeStorageIdentity<'a>),
+}
+/// A machine key owns only its shared observation handle. Families awaiting
+/// migration select their existing native descriptor at the consumer boundary.
+#[derive(Debug)]
+enum StoredKey {
+    Machine(SharedMachineIntegerTerm),
+    Algebraic(AlgebraicStorageKey),
+    Pointer(PointerStorageKey),
+    Boolean(BooleanStorageKey),
+    Float32(FloatStorageKey),
+    Float64(FloatStorageKey),
+    Native,
+}
+impl StoredKey {
+    fn for_value(value: &ExecutionValue) -> Self {
+        match value {
+            ExecutionValue::Native(ProgramValue::Pointer(pointer)) => {
+                return Self::Pointer(PointerStorageKey::native(pointer));
+            }
+            ExecutionValue::Shared(root) if root.pointer_payload().is_some() => {
+                return Self::Pointer(storage_keys::pointer_for_root(root));
+            }
+            _ => {}
+        }
+        if let Some(root) = value.algebraic() {
+            return Self::Algebraic(storage_keys::algebraic_for_root(&root));
+        }
+        if let Some(view) = value.float() {
+            let key = match view {
+                FloatOperandView::Native(_, term) => FloatStorageKey::native(term),
+                FloatOperandView::Shared(root) => root.float_storage_key(),
+            };
+            return match view.format() {
+                KernelFloatType::Float32 => Self::Float32(key),
+                KernelFloatType::Float64 => Self::Float64(key),
+            };
+        }
+        if value.program_type() == ProgramType::Bool {
+            return Self::Boolean(match value {
+                ExecutionValue::Shared(root) => BooleanStorageKey::shared(root),
+                ExecutionValue::Native(ProgramValue::Bool(word)) => BooleanStorageKey::native(word),
+                _ => unreachable!("Boolean value"),
+            });
+        }
+        let Some((format, view)) = value.machine() else {
+            return Self::Native;
+        };
+        Self::Machine(match view {
+            MachineOperandView::Shared(root) => {
+                SharedMachineIntegerTerm::observe_shared(format, root.clone())
+                    .expect("retained machine storage")
+            }
+            MachineOperandView::Legacy(term) => {
+                SharedMachineIntegerTerm::intern(format, term.clone())
+            }
+        })
+    }
 }
 impl StoredExecutionValue {
     fn same_retained_root(&self, other: &Self) -> bool {
@@ -480,40 +542,25 @@ impl StoredExecutionValue {
             || matches!((self.shared(), other.shared()), (Some(a), Some(b)) if a == b)
     }
     fn identity(&self) -> StoredIdentity<'_> {
-        match self.0.identity.get_or_init(|| match &self.0.value {
-            ExecutionValue::Shared(root)
-                if root.pointer_payload().is_some()
-                    || root.ty() == &KernelType::Bool
-                    || matches!(root.ty(), KernelType::Algebraic(_))
-                    || FloatOperandView::from_shared(root).is_some() =>
-            {
-                None
+        match self
+            .0
+            .identity
+            .get_or_init(|| StoredKey::for_value(&self.0.value))
+        {
+            StoredKey::Machine(identity) => StoredIdentity::Machine(identity),
+            StoredKey::Algebraic(key) => {
+                StoredIdentity::Native(NativeStorageIdentity::Algebraic(key))
             }
-            ExecutionValue::Shared(root) => Some(
-                SharedMachineIntegerTerm::observe_shared(
-                    MachineIntegerType::from_program_type(self.program_type())
-                        .expect("machine storage"),
-                    root.clone(),
-                )
-                .expect("retained machine storage"),
-            ),
-            ExecutionValue::Native(value) => {
-                let (crate::kernel::integer_c_value!(term)) = value else {
-                    return None;
-                };
-                Some(SharedMachineIntegerTerm::intern(
-                    MachineIntegerType::from_program_type(value.program_type()).unwrap(),
-                    term.clone(),
-                ))
-            }
-        }) {
-            Some(identity) => StoredIdentity::Machine(identity),
-            None => StoredIdentity::Native(
+            StoredKey::Pointer(key) => StoredIdentity::Native(NativeStorageIdentity::Pointer(key)),
+            StoredKey::Boolean(key) => StoredIdentity::Native(NativeStorageIdentity::Boolean(key)),
+            StoredKey::Float32(key) => StoredIdentity::Native(NativeStorageIdentity::Float32(key)),
+            StoredKey::Float64(key) => StoredIdentity::Native(NativeStorageIdentity::Float64(key)),
+            StoredKey::Native => StoredIdentity::Native(NativeStorageIdentity::Value(
                 self.native_payload()
                     .or_else(|| self.shared()?.algebraic_native_value())
                     .or_else(|| self.shared()?.float_native_value())
                     .expect("native storage"),
-            ),
+            )),
         }
     }
     /// Preserve an exact native-payload comparison at a compatibility consumer.
@@ -596,6 +643,9 @@ impl Ord for StoredExecutionValue {
         }
     }
 }
+
+#[cfg(test)]
+mod storage_contract_tests;
 
 #[cfg(test)]
 mod tests {

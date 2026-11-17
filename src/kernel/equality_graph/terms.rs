@@ -28,57 +28,6 @@ mod machine_relations;
 mod shared_machine;
 pub(super) use congruence::has_machine_operands;
 
-/// The sort of a read that may meet a stored cell under an aliased address.
-/// A stored data pointer is not: it reaches its read only through checked
-/// read evidence (`checked_pointer_read_stored_value`). A stored function
-/// pointer value has no object provenance to check, so a function pointer
-/// read meets a function pointer cell directly.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum CellRead {
-    Int32,
-    UInt64,
-    FunctionPointer,
-    /// An 8- or 16-bit read, equal to a stored value of its width.
-    Narrow(crate::kernel::CarrierWidth),
-}
-
-/// Shallow registration key: the read, its exact state and observation
-/// source, and the graph's address application before class normalization.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct WideReadSource {
-    read: u64,
-    retained_state: (u32, u32),
-    origin: Option<(u32, u32)>,
-    address: u64,
-}
-
-/// A read to look up, and the blocks to look in: all of its block class, or
-/// only the members a union just brought to it.
-#[derive(Clone)]
-pub(super) struct PendingCellRead {
-    pub(super) read: u64,
-    pub(super) memory: crate::kernel::SharedMemory,
-    // The memory a load variable was read in, at its naming state.
-    pub(super) origin: Option<crate::kernel::SharedMemory>,
-    pub(super) pointer: Pointer,
-    pub(super) kind: CellRead,
-    pub(super) only: Option<Arc<[(PointerBlock, AffineOffset)]>>,
-}
-
-/// The memory a load variable was read in, when it is the naming state
-/// under another value: an observed cell names a value without changing
-/// memory, so it keeps the state identity and may hold cells the naming
-/// value lacks. An origin at another state is not consulted; the graph
-/// does not equate distinct states.
-fn load_origin(
-    term: &crate::kernel::MachineTerm,
-    named: &crate::kernel::SharedMemory,
-) -> Option<crate::kernel::SharedMemory> {
-    crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(term))
-        .and_then(|read| read.origin)
-        .filter(|origin| origin.read_identity() == named.read_identity())
-}
-
 /// The producer distinguishes affine definitions from assumed equalities.
 /// Keep that distinction on each edge through iterative congruence closure.
 #[derive(Default)]
@@ -670,12 +619,6 @@ pub(super) struct TermClasses {
     // detects divergent query registrations without scanning that prefix.
     markers: PersistentMap<u64, Arc<()>>,
     address_uses: PersistentMap<PointerBlock, PersistentMap<u64, Arc<PointerOffsetTerm>>>,
-    // The pointer block classes, mirrored from the graph's block union-find
-    // as `relabel` reports each union: every member's base relative to its
-    // class root, as in `EqualityGraphState::members`. A read looks for a
-    // stored cell at its address spelled in each member.
-    block_roots: PersistentMap<PointerBlock, (PointerBlock, AffineOffset)>,
-    block_members: PersistentMap<PointerBlock, PersistentMap<PointerBlock, AffineOffset>>,
     address_nodes: PersistentSet<u64>,
     // A displacement definition is permanent for one raw address spelling.
     // Repeated queries reuse it without re-registering its base or closure.
@@ -738,18 +681,9 @@ pub(super) struct TermClasses {
     load_blocks: PersistentMap<PointerBlock, u64>,
     // The load nodes, four-byte and narrow, already queued for registration.
     registered_int32_loads: PersistentSet<u64>,
-    // An observed word may name its own read. Register each exact source
-    // once, before interning its stored value, to close that cycle. Keep
-    // distinct states, origins and address spellings as separate sources.
-    registered_uint64_cell_reads: PersistentSet<WideReadSource>,
     // Registration dependencies are drained before any public answer. Keeping
     // this worklist iterative handles loads used as indices of further loads.
-    pending_loads: Vec<(
-        u64,
-        crate::kernel::SharedMemory,
-        crate::kernel::Pointer,
-        Option<crate::kernel::SharedMemory>,
-    )>,
+    pending_loads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Pointer)>,
     // Signed byte reads still to be related to their unsigned read (R-mem).
     pending_signed_byte_reads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Pointer)>,
     // `uint32` reads still to be related to their cell's `int32` read by σ
@@ -762,21 +696,12 @@ pub(super) struct TermClasses {
         crate::kernel::SharedMemory,
         crate::kernel::Pointer,
         crate::kernel::LoadKind,
-        Option<crate::kernel::SharedMemory>,
     )>,
-    // Reads whose stored cell under another spelling of their address is
-    // still to be looked up; drained with the other registration work.
-    pending_cell_reads: Vec<PendingCellRead>,
     // The endpoints of recorded true 64-bit equality facts, by class. A
     // consumer that needs a recorded fact about a word (a pointer recovered
     // from `word == address(p)`) finds the facts of every word equal to it.
     // A merge moves the smaller set.
     wide_equation_endpoints: PersistentMap<u64, PersistentSet<crate::kernel::MachineTerm>>,
-    // Reads that found no stored cell, by the root of their block class. A
-    // later union of that class looks again, so the answer does not depend
-    // on whether the read or the pointer equality came first. A read leaves
-    // once found.
-    unresolved_cell_reads: PersistentMap<PointerBlock, PersistentMap<u64, Arc<PendingCellRead>>>,
     pending_pointer_calls: Vec<(u64, crate::kernel::SharedPureApplication)>,
     pending_pointer_identities: Vec<(u64, crate::kernel::SharedPureApplication)>,
     registering_dependencies: bool,
@@ -791,6 +716,9 @@ pub(super) struct TermClasses {
     weights: PersistentMap<u64, usize>,
     int32_constants: PersistentMap<u64, i32>,
     uint64_constants: PersistentMap<u64, u64>,
+    /// A typed creation identity witnessed in a word class. `None` records
+    /// multiple identities: numeric equality alone cannot choose between them.
+    thread_handles: PersistentMap<u64, Option<crate::kernel::ThreadHandleId>>,
     /// The bits of the constant an 8- or 16-bit class holds. A class has
     /// one width, so its bits name its value at either signedness.
     pub(super) narrow_constants: PersistentMap<u64, u32>,
@@ -996,23 +924,11 @@ impl TermClasses {
         kind: crate::kernel::LoadKind,
         value: u64,
         block: PointerBlock,
-        cell: Option<(crate::kernel::SharedMemory, Pointer)>,
     ) {
         let address = self.read_address(address);
         let read = self.intern_node(Node::PointerRead(retained_state, address, kind));
         self.close_with_affine_definition(vec![(value, read)], true);
         self.retain_pointer_value_witness(self.root(value), block);
-        if let Some((memory, pointer)) = cell {
-            self.pending_cell_reads.push(PendingCellRead {
-                read: value,
-                memory,
-                origin: None,
-                pointer,
-                kind: CellRead::FunctionPointer,
-                only: None,
-            });
-            self.register_pending_loads();
-        }
     }
 
     /// The operand of a read: the numeric address of `address`, not the
@@ -1874,6 +1790,18 @@ impl TermClasses {
                 None
             }
             Node::UInt64(value) => {
+                use crate::kernel::{KernelTermNode, MachineOperandView, MachineTerm};
+                let handle = match value.operand_view() {
+                    MachineOperandView::Legacy(MachineTerm::ThreadHandle(id)) => Some(*id),
+                    MachineOperandView::Shared(root) => match root.node() {
+                        KernelTermNode::ThreadHandle(id) => Some(*id),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some(handle) = handle {
+                    self.thread_handles.insert(id, Some(handle));
+                }
                 let literal = match value.operand_view().literal() {
                     Some(uint64_constant!(value)) => Some(constant_u64(value)),
                     Some(int64_constant!(value)) => Some(constant_i64(value) as u64),
@@ -1915,11 +1843,7 @@ impl TermClasses {
                 .push((id, read.memory, read.pointer));
             return;
         }
-        let origin = read
-            .origin
-            .filter(|origin| origin.read_identity() == read.memory.read_identity());
-        self.pending_loads
-            .push((id, read.memory, read.pointer, origin));
+        self.pending_loads.push((id, read.memory, read.pointer));
     }
 
     fn enqueue_narrow_load(&mut self, id: u64, node: &Node) {
@@ -1942,11 +1866,8 @@ impl TermClasses {
             return;
         }
         self.registered_int32_loads = self.registered_int32_loads.with_value(id);
-        let origin = read
-            .origin
-            .filter(|origin| origin.read_identity() == read.memory.read_identity());
         self.pending_narrow_loads
-            .push((id, read.memory, read.pointer, read.kind, origin));
+            .push((id, read.memory, read.pointer, read.kind));
     }
 
     fn enqueue_signed_byte_read(&mut self, id: u64, node: &Node) {
@@ -2035,7 +1956,7 @@ impl TermClasses {
                 self.close(vec![(signed, cast)]);
                 continue;
             }
-            if let Some((id, memory, pointer, kind, origin)) = self.pending_narrow_loads.pop() {
+            if let Some((id, memory, pointer, kind)) = self.pending_narrow_loads.pop() {
                 crate::instrumentation::record_deterministic_work(1);
                 let address = self
                     .address(pointer.block.clone(), pointer.offset.clone())
@@ -2054,24 +1975,10 @@ impl TermClasses {
                         self.intern_node(Node::NarrowRead(source.read_identity(), address, kind));
                     self.close_with_affine_definition(vec![(id, source_read)], true);
                 }
-                // The value a store left in the read's cell, as for a
-                // four-byte read.
-                let width = if kind.byte_width() == 1 {
-                    crate::kernel::CarrierWidth::Bits8
-                } else {
-                    crate::kernel::CarrierWidth::Bits16
-                };
-                self.pending_cell_reads.push(PendingCellRead {
-                    read: id,
-                    memory,
-                    origin,
-                    pointer,
-                    kind: CellRead::Narrow(width),
-                    only: None,
-                });
+                // Value equalities come from explicit producer equations.
                 continue;
             }
-            let Some((id, memory, pointer, origin)) = self.pending_loads.pop() else {
+            let Some((id, memory, pointer)) = self.pending_loads.pop() else {
                 break;
             };
             crate::instrumentation::record_deterministic_work(1);
@@ -2094,181 +2001,11 @@ impl TermClasses {
                     self.intern_node(Node::Int32Read(source.read_identity(), address));
                 self.close_with_affine_definition(vec![(id, source_read)], true);
             }
-            self.pending_cell_reads.push(PendingCellRead {
-                read: id,
-                memory,
-                origin,
-                pointer,
-                kind: CellRead::Int32,
-                only: None,
-            });
-        }
-        while let Some(pending) = self.pending_cell_reads.pop() {
-            self.equate_read_with_aliased_cell(pending);
+            // The store's explicit equation supplies a word read's value.
+            // Registering a read only establishes its address/state application;
+            // it must not import additional equalities from cached memory.
         }
         self.registering_dependencies = false;
-    }
-
-    /// A read of a state at an address equals the value the state
-    /// stores at an equal address under another spelling: a store through
-    /// `p` read through `id` once `p == id`. The read keeps its own term,
-    /// fact-free; the equality of the two addresses is this context's, so
-    /// the union is too (`docs/internals/spellability.md`). The spellings
-    /// are the read's address in each member of its block class, one cell
-    /// lookup each, as `EqualityGraph::pointer_spellings` spells them.
-    fn equate_read_with_aliased_cell(&mut self, pending: PendingCellRead) {
-        let PendingCellRead {
-            read,
-            ref memory,
-            ref origin,
-            ref pointer,
-            kind,
-            ref only,
-        } = pending;
-        let (root, own) = self
-            .block_roots
-            .get(&pointer.block)
-            .cloned()
-            .unwrap_or_else(|| (pointer.block.clone(), AffineOffset::default()));
-        let members: Arc<[(PointerBlock, AffineOffset)]> = only.clone().unwrap_or_else(|| {
-            std::iter::once((root.clone(), AffineOffset::default()))
-                .chain(
-                    self.block_members
-                        .get(&root)
-                        .into_iter()
-                        .flat_map(|members| members.iter())
-                        .map(|(member, delta)| (member.clone(), delta.clone())),
-                )
-                .collect()
-        });
-        let offset = AffineOffset::of(&pointer.offset);
-        let mut found = None;
-        for (member, delta) in members.iter() {
-            crate::instrumentation::record_deterministic_work(1);
-            let spelling = if *member == pointer.block {
-                Some(pointer.offset.clone())
-            } else {
-                offset
-                    .as_ref()
-                    .and_then(|offset| offset.checked_add(&own.checked_sub(delta)?))
-                    .and_then(|offset| offset.to_offset_term())
-            };
-            let Some(spelling) = spelling else {
-                continue;
-            };
-            let cell = Pointer {
-                block: member.clone(),
-                offset: spelling,
-            };
-            let stored = std::iter::once(memory)
-                .chain(origin)
-                .find_map(|memory| memory.known_value(&cell));
-            use crate::kernel::ProgramValue as V;
-            found = match (stored, kind) {
-                (Some(V::Int64(value) | V::UInt64(value)), CellRead::UInt64)
-                | (Some(V::Int32(value)), CellRead::Int32) => Some(Ok(value)),
-                // The `int32` read of a cell storing a `uint32` value is σ of
-                // that value (rule K5's reinterpretation, σ a node).
-                (Some(V::UInt32(value)), CellRead::Int32) => {
-                    Some(Ok(crate::kernel::MachineTerm::sign_cast32(
-                        crate::kernel::MachineIntegerType::UInt32,
-                        crate::kernel::MachineIntegerType::Int32,
-                        value,
-                    )))
-                }
-                (
-                    Some(V::Bool(value) | V::Int8(value) | V::UInt8(value)),
-                    CellRead::Narrow(crate::kernel::CarrierWidth::Bits8),
-                )
-                | (
-                    Some(V::Int16(value) | V::UInt16(value)),
-                    CellRead::Narrow(crate::kernel::CarrierWidth::Bits16),
-                ) => Some(Ok(value)),
-                (Some(V::Pointer(value)), CellRead::FunctionPointer)
-                    if matches!(
-                        value.program_type(),
-                        crate::kernel::ProgramType::FunctionPointer(_)
-                    ) =>
-                {
-                    Some(Err(value.pointer().clone()))
-                }
-                _ => continue,
-            };
-            break;
-        }
-        let value = match found {
-            Some(Ok(value)) => match kind {
-                CellRead::Narrow(width) => self.intern_typed_machine(&value, width),
-                _ => self.intern_machine(&value, kind == CellRead::UInt64),
-            },
-            // The read's value is a pointer; its address is the designator's.
-            Some(Err(stored)) => self.address(stored.block, stored.offset).0,
-            None => {
-                let mut reads = self
-                    .unresolved_cell_reads
-                    .get(&root)
-                    .cloned()
-                    .unwrap_or_default();
-                if !reads.contains_key(&read) {
-                    reads.insert(
-                        read,
-                        Arc::new(PendingCellRead {
-                            only: None,
-                            ..pending
-                        }),
-                    );
-                    self.unresolved_cell_reads.insert(root, reads);
-                }
-                return;
-            }
-        };
-        self.close(vec![(read, value)]);
-    }
-
-    /// Mirrors one block union of the graph: `moved` (its class's root) and
-    /// its members, each with its new base relative to `kept`, join `kept`'s
-    /// class. Each side's unresolved reads then look in the members the
-    /// other side brings. Work is in the moved members and those reads.
-    pub(super) fn join_block_classes(
-        &mut self,
-        moved: &PointerBlock,
-        kept: &PointerBlock,
-        moved_members: &[(PointerBlock, AffineOffset)],
-    ) {
-        let kept_members: Arc<[(PointerBlock, AffineOffset)]> =
-            std::iter::once((kept.clone(), AffineOffset::default()))
-                .chain(
-                    self.block_members
-                        .get(kept)
-                        .into_iter()
-                        .flat_map(|members| members.iter())
-                        .map(|(member, delta)| (member.clone(), delta.clone())),
-                )
-                .collect();
-        let moved_members: Arc<[(PointerBlock, AffineOffset)]> = moved_members.into();
-        let mut members = self.block_members.get(kept).cloned().unwrap_or_default();
-        for (member, delta) in moved_members.iter() {
-            crate::instrumentation::record_deterministic_work(1);
-            self.block_roots
-                .insert(member.clone(), (kept.clone(), delta.clone()));
-            members.insert(member.clone(), delta.clone());
-        }
-        self.block_members.remove(moved);
-        self.block_members.insert(kept.clone(), members);
-        let moved_reads = self.unresolved_cell_reads.get(moved).cloned();
-        let kept_reads = self.unresolved_cell_reads.get(kept).cloned();
-        self.unresolved_cell_reads.remove(moved);
-        self.unresolved_cell_reads.remove(kept);
-        for (reads, other) in [(moved_reads, kept_members), (kept_reads, moved_members)] {
-            for entry in reads.iter().flat_map(|reads| reads.values()) {
-                crate::instrumentation::record_deterministic_work(1);
-                self.pending_cell_reads.push(PendingCellRead {
-                    only: Some(other.clone()),
-                    ..(**entry).clone()
-                });
-            }
-        }
-        self.register_pending_loads();
     }
 
     pub(super) fn record_wide_equation_endpoint(&mut self, term: &crate::kernel::MachineTerm) {
@@ -2330,6 +2067,19 @@ impl TermClasses {
 
     fn intern_uint64(&mut self, term: &crate::kernel::MachineTerm) -> u64 {
         self.intern_machine(term, true)
+    }
+
+    pub(super) fn thread_handle(
+        &mut self,
+        term: &crate::kernel::MachineTerm,
+    ) -> Option<crate::kernel::ThreadHandleId> {
+        let id = self.intern_uint64(term);
+        self.register_pending_loads();
+        let root = self.root(id);
+        if self.scalar_conflicts.contains(&root) {
+            return None;
+        }
+        self.thread_handles.get(&root).copied().flatten()
     }
 
     pub(super) fn uint64_constant(&mut self, term: &crate::kernel::MachineTerm) -> Option<u64> {
@@ -3368,6 +3118,15 @@ impl TermClasses {
                         self.mark_scalar_conflict(*id);
                     }
                 }
+            }
+            if let Some(moved_handle) = self.thread_handles.get(&moved).copied() {
+                let joined = match self.thread_handles.get(&kept).copied() {
+                    None => moved_handle,
+                    Some(kept_handle) if kept_handle == moved_handle => kept_handle,
+                    Some(_) => None,
+                };
+                self.thread_handles.insert(kept, joined);
+                self.thread_handles.remove(&moved);
             }
             if let Some(value) = self.uint64_constants.get(&moved).copied() {
                 if let Some(previous) = self.uint64_constants.get(&kept) {

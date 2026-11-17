@@ -146,7 +146,7 @@ Proof tooling:
 
 - [Smart tactics: fast checking and enforceable search boundaries](smart-tactics.md)
 - [One fact-aware frame query instead of scattered history walks](fact-aware-frame-walks.md)
-- [KernelTerm / SurfaceTerm: finish the representation split](unspellable-facts.md)
+- [KernelTerm / SurfaceTerm: finish the representation split](raise-lower-principle.md)
 
 ## P2: after launch (15)
 

@@ -235,12 +235,12 @@ valid without it and never manufactures a return frontier for a diverging
 callee. Clients that need a total-correctness or reachability fact must request
 the separate evidence explicitly.
 
-This is an explicit execution mode, not behavior inferred from which entries
-happen to be present in the execution environment. Click selects
-`ExecutionSemantics::APPLY_VERIFIED_RULES`, so a missing function or loop rule
-fails the proof and never falls back to body execution. The kernel's low-level
-evaluator can instead select `ExecutionSemantics::EXECUTE_BODIES`; that mode
-ignores verified rules even when they are available.
+This is the only call semantics, not behavior inferred from which entries
+happen to be present in the execution environment: a missing function rule
+fails the proof and never falls back to body execution. Only a contract-less
+`static inline` helper runs its body, at the call site. Click also selects
+`ExecutionSemantics::APPLY_VERIFIED_RULES`, so a missing loop rule fails the
+same way.
 
 Each loop-rule premise can be automatic or explicit. Explicit `initialize` is a
 pure proof of the invariants at the actual loop entry. Explicit `preserve` is an

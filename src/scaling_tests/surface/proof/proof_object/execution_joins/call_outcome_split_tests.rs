@@ -42,7 +42,7 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         helper_arguments.clone(),
         PureFactContext::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     let certified = prove_program_function_contract_execution_paths_with_checked_artifacts(
@@ -50,7 +50,7 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         helper.clone(),
         helper_arguments,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
         &[artifacts],
     );

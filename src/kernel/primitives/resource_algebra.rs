@@ -569,6 +569,21 @@ impl ResourceContextIndex {
                     insert_resource_index_entry(&result.observed_publications, (), entry);
             }
         }
+        if let Resource::ConditionalMutexGuard(carrier) = fact.resource() {
+            result.instances =
+                insert_resource_index_entry(&result.instances, carrier.identity, entry);
+            if !fact.has_valid_exclusive_access() {
+                let count = result
+                    .invalid_instance_access
+                    .get(&carrier.identity)
+                    .copied()
+                    .unwrap_or(0);
+                result.invalid_instance_access = result
+                    .invalid_instance_access
+                    .with_inserted(carrier.identity, count + 1);
+            }
+            result.refresh_suspect_instance(carrier.identity);
+        }
         if let Resource::Instance(instance) = fact.resource() {
             result.instances =
                 insert_resource_index_entry(&result.instances, instance.identity, entry);
@@ -852,6 +867,26 @@ impl ResourceContextIndex {
                 result.observed_publications =
                     remove_resource_index_entry(&result.observed_publications, &(), entry);
             }
+        }
+        if let Resource::ConditionalMutexGuard(carrier) = fact.resource() {
+            result.instances =
+                remove_resource_index_entry(&result.instances, &carrier.identity, entry);
+            if !fact.has_valid_exclusive_access() {
+                let count = *result
+                    .invalid_instance_access
+                    .get(&carrier.identity)
+                    .expect("indexed invalid access");
+                result.invalid_instance_access = if count == 1 {
+                    result
+                        .invalid_instance_access
+                        .without_key(&carrier.identity)
+                } else {
+                    result
+                        .invalid_instance_access
+                        .with_inserted(carrier.identity, count - 1)
+                };
+            }
+            result.refresh_suspect_instance(carrier.identity);
         }
         if let Resource::Instance(instance) = fact.resource() {
             result.instances =
@@ -1375,6 +1410,7 @@ fn collect_memory_load_work<'a>(
                     continue;
                 }
                 match term {
+                    MachineTerm::ThreadHandle(_) => {}
                     MachineTerm::MemoryLoad(memory, pointer, kind) => {
                         // The checked source state's cell gives the loaded
                         // scalar's ABI width, and the read is never narrower
@@ -1440,6 +1476,37 @@ impl MemorySplitOrigins {
 }
 
 impl ResourceContext {
+    /// Install transferred guard custody using its exact authority key.
+    /// The owning rule has consumed its supplier; this checks exclusivity
+    /// before updating the normal resource indexes.
+    pub(in crate::kernel) fn insert_transferred_mutex_guard(
+        mut self,
+        guard: MutexIdentity,
+    ) -> Result<Self, ResourceContextValidityError> {
+        let fact = ResourceFact::own(Resource::MutexGuard(guard));
+        if self.storage.index.by_resource.contains_key(fact.resource()) {
+            return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                fact,
+            ));
+        }
+        self.insert_fact(fact);
+        Ok(self)
+    }
+
+    /// Restore one checked loop occurrence, selecting by its nominal identity.
+    pub(in crate::kernel) fn insert_transferred_conditional_guard(
+        mut self,
+        guard: Arc<ConditionalMutexGuard>,
+    ) -> Result<Self, ResourceContextValidityError> {
+        if self.storage.index.instances.contains_key(&guard.identity) {
+            return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                ResourceFact::own(Resource::ConditionalMutexGuard(guard)),
+            ));
+        }
+        self.insert_fact(ResourceFact::own(Resource::ConditionalMutexGuard(guard)));
+        Ok(self)
+    }
+
     fn exclusive_validity_error(
         &self,
         fact: &ResourceFact,
@@ -1465,6 +1532,7 @@ impl ResourceContext {
         }
         let identity = match fact.resource() {
             Resource::Instance(instance) => instance.identity,
+            Resource::ConditionalMutexGuard(carrier) => carrier.identity,
             _ => return None,
         };
         if !fact.has_valid_exclusive_access() {
@@ -2233,35 +2301,29 @@ impl ResourceContext {
                 }
             }
         }
-        // Check the new authority against the withheld frame before publishing
-        // it. Applying an exchange must never duplicate or overlap ownership.
-        restored
-            .clone()
-            .try_compose_into_valid_context_delaying_normalization(
-                additions.iter().map(|(fact, _)| fact.clone()),
-                assumptions,
-            )
-            .ok()?;
-        for (fact, occurrence) in additions {
-            if restored
+        // A changed description still needs separation from the withheld frame.
+        // Construct that successor once, retaining the exit's occurrence IDs.
+        if additions.iter().any(|(_, occurrence)| {
+            restored
                 .storage
                 .entry_by_occurrence
-                .contains_key(&occurrence)
-            {
-                return None;
-            }
-            restored.insert_fact_with_support_occurrence_and_metadata_at(
-                fact,
-                None,
-                None,
-                None,
-                Some(occurrence),
-            );
-            if let Some(binding) = self.loan_dependency(occurrence) {
-                restored = restored.with_loan_dependency(occurrence, binding.clone());
-            }
+                .contains_key(occurrence)
+        }) {
+            return None;
         }
-        restored.advance_prepared_memory_equalities(assumptions);
+        let dependencies = additions
+            .iter()
+            .filter_map(|(_, occurrence)| {
+                self.loan_dependency(*occurrence)
+                    .map(|binding| (*occurrence, binding.clone()))
+            })
+            .collect::<Vec<_>>();
+        restored = restored
+            .compose_selected_occurrences(additions, assumptions)
+            .ok()?;
+        for (occurrence, binding) in dependencies {
+            restored = restored.with_loan_dependency(occurrence, binding);
+        }
         Some(restored)
     }
 
@@ -5835,25 +5897,6 @@ impl ResourceContext {
         self
     }
 
-    /// Withhold one direct owned occurrence, retaining its identity in a private
-    /// scalar-reference reservation. Derived views of that occurrence expire.
-    pub(in crate::kernel) fn reserve_local_scalar_owner(
-        self,
-        occurrence: ResourceOccurrenceId,
-    ) -> Option<(Self, ReservedLocalScalarOwner)> {
-        let entry = *self.storage.entry_by_occurrence.get(&occurrence)?;
-        if self.storage.supported_by.contains_key(&entry)
-            || self.loan_dependency(occurrence).is_some()
-        {
-            return None;
-        }
-        let fact = self.owned_fact_for_occurrence(occurrence)?.clone();
-        let residual = self
-            .without_memory_views_supported_by_occurrence(occurrence)
-            .without_exact_representation_for_occurrence(occurrence)?;
-        Some((residual, ReservedLocalScalarOwner { fact, occurrence }))
-    }
-
     pub(crate) fn without_exact_representation_for_occurrence(
         mut self,
         occurrence: ResourceOccurrenceId,
@@ -6032,6 +6075,29 @@ impl ResourceContext {
         };
         frame.advance_prepared_memory_equalities(assumptions);
         (frame, transfer)
+    }
+
+    /// Install outputs consumed jointly from an executed body's partition.
+    /// The producer retains the call's frame relationship; no overlap or
+    /// exclusive-identity discovery is repeated at publication.
+    pub(in crate::kernel) fn return_constructed_body(
+        transfer: crate::kernel::functions::ConstructedBodyReturn,
+        assumptions: &PureFactContext,
+    ) -> (Self, Vec<(ResourceFact, ResourceOccurrenceId)>) {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("constructed body return");
+        let (mut frame, outputs) = transfer.into_parts();
+        if frame.storage.facts.is_empty() {
+            frame.synchronize_memory_equalities(assumptions);
+        }
+        let mut inserted = Vec::new();
+        for fact in outputs.facts() {
+            let entry = frame.storage.next_entry_id;
+            frame.insert_fact(fact.clone());
+            inserted.push((fact.clone(), frame.occurrence(entry)));
+        }
+        frame.advance_prepared_memory_equalities(assumptions);
+        (frame, inserted)
     }
 
     /// Apply allocator-established separation to one returned owned piece.
@@ -6234,17 +6300,123 @@ impl ResourceContext {
         if self.storage.facts.is_empty() {
             self.synchronize_memory_equalities(assumptions);
         }
-        let facts = facts.into_iter().collect::<Vec<_>>();
-        for fact in &facts {
-            self.clone()
-                .try_compose_into_valid_context_delaying_normalization(
-                    std::iter::once(fact.clone()),
-                    assumptions,
-                )?;
+        let frame = self.clone();
+        let mut context = self;
+        let mut inserted = Vec::new();
+        for fact in facts {
+            // This group's internal composition is already established. Only
+            // its boundary with the captured destination is a new obligation.
+            frame.admit_certified_memory_boundary(&fact, assumptions)?;
+            let entry = context.storage.next_entry_id;
+            context.insert_fact(fact.clone());
+            if let Some(error) = context.exclusive_validity_error(&fact) {
+                return Err(error);
+            }
+            inserted.push((fact, context.occurrence(entry)));
         }
-        let (context, inserted) = self.unchecked_with_facts_and_occurrences(facts);
         context.advance_prepared_memory_equalities(assumptions);
         Ok((context, inserted))
+    }
+
+    fn admit_certified_memory_boundary(
+        &self,
+        fact: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Result<(), ResourceContextValidityError> {
+        // Absence of retained memory owners establishes this boundary even
+        // when the group's certified quantity or bounds are symbolic. Do not
+        // ask geometry discovery to prove separation from an empty partition.
+        if self.storage.index.owned_memory_by_block.is_empty() {
+            return Ok(());
+        }
+        match self.constant_owned_overlap(fact, assumptions) {
+            crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap::Clear => {}
+            crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap::Overlap(
+                entry,
+            ) => {
+                return Err(
+                    ResourceContextValidityError::OverlappingOwnedMemoryResources {
+                        left: self
+                            .fact(entry)
+                            .memory_own_range()
+                            .expect("indexed owner")
+                            .clone(),
+                        right: fact.memory_own_range().expect("queried owner").clone(),
+                    },
+                );
+            }
+            crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap::Unsupported => {
+                if let Some((error, _)) = self.legacy_memory_boundary_conflict(
+                    fact,
+                    self.storage.next_entry_id,
+                    assumptions,
+                ) {
+                    return Err(error);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Join a constructed output partition with today's frame, preserving
+    /// its occurrence identities, dependencies and cached projections. Only
+    /// the boundary with that frame needs memory admission.
+    pub(crate) fn compose_checked_outputs(
+        mut self,
+        outputs: &Self,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, ResourceContextValidityError> {
+        if self.storage.facts.is_empty() {
+            self.synchronize_memory_equalities(assumptions);
+        }
+        let frame = self.clone();
+        for (entry, fact) in outputs.storage.facts.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            frame.admit_certified_memory_boundary(fact, assumptions)?;
+            let occurrence = outputs.occurrence(*entry);
+            if self.storage.entry_by_occurrence.contains_key(&occurrence) {
+                return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                    fact.clone(),
+                ));
+            }
+            if let Resource::Instance(instance) = fact.resource() {
+                self.record_instance_consumption(
+                    instance.identity(),
+                    outputs.instance_consumption(instance.identity()).cloned(),
+                );
+            }
+            self.insert_fact_with_support_occurrence_and_metadata_at(
+                fact.clone(),
+                outputs.storage.supported_by.get(entry).cloned(),
+                outputs
+                    .storage
+                    .support_occurrence_by_projection
+                    .get(entry)
+                    .copied(),
+                outputs
+                    .storage
+                    .support_metadata_by_projection
+                    .get(&occurrence)
+                    .cloned(),
+                Some(occurrence),
+            );
+            if let Some(error) = self.exclusive_validity_error(fact) {
+                return Err(error);
+            }
+            if let Some(binding) = outputs.loan_dependency(occurrence) {
+                self = self.with_loan_dependency(occurrence, binding.clone());
+            }
+            if let Some(expansion) = outputs
+                .storage
+                .expansions_by_support_occurrence
+                .get(&occurrence)
+            {
+                self =
+                    self.with_cached_supported_expansion_arc(occurrence, fact, expansion.clone());
+            }
+        }
+        self.advance_prepared_memory_equalities(assumptions);
+        Ok(self)
     }
 
     /// The held facts' combined written-syntax ceiling, cached on the
@@ -6948,34 +7120,6 @@ impl ResourceContext {
             return Some(aligned);
         }
         None
-    }
-
-    /// Select only a unique direct whole scalar owner from the indexed access
-    /// candidates. Larger ranges and cached projections require another protocol.
-    pub(in crate::kernel) fn exact_scalar_owner_occurrence(
-        &self,
-        pointer: &Pointer,
-        bytes: u32,
-        assumptions: &PureFactContext,
-    ) -> Option<ResourceOccurrenceId> {
-        let entries = self.unique_write_access(pointer, bytes, assumptions)?;
-        let entry = entries.entry();
-        crate::instrumentation::record_deterministic_work(1);
-        let fact = self.fact(entry);
-        let range = fact.memory_own_range()?;
-        if self.storage.supported_by.contains_key(&entry)
-            || range.start_pointer() != *pointer
-            || range
-                .signed_constant_end()
-                .zip(range.signed_constant_start())
-                .and_then(|(end, start)| end.checked_sub(start))
-                .and_then(|count| count.checked_mul(i64::from(range.element_width())))
-                != Some(i64::from(bytes))
-            || fact.owned_quantity_term().and_then(|q| q.as_const()) != Some(1)
-        {
-            return None;
-        }
-        Some(self.occurrence(entry))
     }
 
     pub(in crate::kernel) fn memory_write_range(
@@ -8328,6 +8472,9 @@ impl ResourceNormalizationIndex {
             Resource::Instance(instance) => {
                 keys.push(ResourceNormalizationKey::Instance(instance.identity))
             }
+            Resource::ConditionalMutexGuard(carrier) => {
+                keys.push(ResourceNormalizationKey::Instance(carrier.identity))
+            }
             Resource::PopulationAuthority(_)
             | Resource::Iterated(_)
             | Resource::MutexGuard(_)
@@ -8514,6 +8661,9 @@ impl ResourceNormalizationIndex {
             }
             Resource::Instance(instance) => {
                 keys.push(ResourceNormalizationKey::Instance(instance.identity))
+            }
+            Resource::ConditionalMutexGuard(carrier) => {
+                keys.push(ResourceNormalizationKey::Instance(carrier.identity))
             }
             Resource::PopulationAuthority(_)
             | Resource::Iterated(_)
@@ -8747,6 +8897,7 @@ impl OwnedMemberKey {
             | Resource::Star(_)) => Self::TrackedResource(resource.clone()),
             Resource::Memory(_) => return None,
             resource @ (Resource::PopulationAuthority(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -9847,6 +9998,13 @@ impl ResourceFamilyAlgebra for MutexGuardResourceAlgebra {
         _: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
         match (left.resource(), right.resource()) {
+            (Resource::ConditionalMutexGuard(a), Resource::ConditionalMutexGuard(b))
+                if a.identity == b.identity =>
+            {
+                Some(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                    right.clone(),
+                ))
+            }
             (Resource::MutexGuard(a), Resource::MutexGuard(b)) if a == b => Some(
                 ResourceContextValidityError::DuplicateOwnedResourceFact(right.clone()),
             ),
@@ -10146,6 +10304,7 @@ pub(super) fn resource_fact_read_core_range(resource: &ResourceFact) -> Option<M
             | Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -10208,6 +10367,7 @@ fn memory_resource_fact_permits_write(
             | Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -11205,6 +11365,7 @@ fn memory_resource_fact_range(fact: &ResourceFact) -> Option<&MemoryRange> {
             | Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -11217,6 +11378,7 @@ fn memory_resource_fact_range(fact: &ResourceFact) -> Option<&MemoryRange> {
             | Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -12056,7 +12218,7 @@ impl Resource {
             Self::Token { .. } => ResourceFamily::Token,
             Self::Instance(_) => ResourceFamily::Instance,
 
-            Self::MutexGuard(_) => ResourceFamily::MutexGuard,
+            Self::ConditionalMutexGuard(_) | Self::MutexGuard(_) => ResourceFamily::MutexGuard,
             Self::MutexLive(_) => ResourceFamily::MutexLive,
             Self::MutexUse(_) => ResourceFamily::MutexUse,
             Self::Iterated(_) => ResourceFamily::Iterated,
@@ -12083,6 +12245,7 @@ impl ResourceFact {
             self.resource(),
             Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -12232,7 +12395,7 @@ impl ResourceFact {
             ),
             Resource::Iterated(iterated) => iterated.blocks().contains(&block),
             Resource::Token { .. } | Resource::PopulationAuthority(_)
-            | Resource::Instance(_) | Resource::MutexGuard(_) | Resource::MutexLive(_) | Resource::MutexUse(_) | Resource::Publication(_) => false,
+            | Resource::Instance(_) | Resource::ConditionalMutexGuard(_) | Resource::MutexGuard(_) | Resource::MutexLive(_) | Resource::MutexUse(_) | Resource::Publication(_) => false,
         }
     }
 
@@ -12308,6 +12471,7 @@ impl ResourceFact {
             self.resource(),
             Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -12337,6 +12501,7 @@ impl ResourceFact {
                 | Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -12359,6 +12524,7 @@ impl ResourceFact {
                 | Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -12386,6 +12552,7 @@ impl ResourceFact {
                 | Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -12398,6 +12565,7 @@ impl ResourceFact {
                 | Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -13037,57 +13205,6 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
         &required(distant, 8u32.into()),
         &first
     ));
-}
-
-impl ReservedLocalScalarOwner {
-    pub(in crate::kernel) fn matches(
-        &self,
-        occurrence: ResourceOccurrenceId,
-        fact: &ResourceFact,
-    ) -> bool {
-        self.occurrence == occurrence && self.fact == *fact
-    }
-
-    /// Return the withheld occurrence, preserving call-receipt support identity.
-    pub(in crate::kernel) fn restore_into(
-        &self,
-        resources: ResourceContext,
-        assumptions: &PureFactContext,
-    ) -> Option<ResourceContext> {
-        if resources
-            .storage
-            .entry_by_occurrence
-            .contains_key(&self.occurrence)
-        {
-            return None;
-        }
-        let (resources, mut inserted) = resources
-            .try_compose_with_legacy_discovery_and_occurrences([self.fact.clone()], assumptions)
-            .ok()?;
-        let mut resources =
-            resources.without_exact_representation_for_occurrence(inserted.pop()?.1)?;
-        resources.insert_fact_with_support_occurrence_and_metadata_at(
-            self.fact.clone(),
-            None,
-            None,
-            None,
-            Some(self.occurrence),
-        );
-        Some(resources)
-    }
-
-    /// Materialize only the selected owner for an ordinary memory producer.
-    pub(in crate::kernel) fn resources(&self, assumptions: &PureFactContext) -> ResourceContext {
-        let mut resources = ResourceContext::new_with_equalities(assumptions);
-        resources.insert_fact_with_support_occurrence_and_metadata_at(
-            self.fact.clone(),
-            None,
-            None,
-            None,
-            Some(self.occurrence),
-        );
-        resources
-    }
 }
 
 #[cfg(test)]

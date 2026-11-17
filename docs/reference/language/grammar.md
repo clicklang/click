@@ -18,7 +18,7 @@ letters, decimal digits, or underscores. Keywords cannot be identifiers.
 Whitespace separates tokens. Line comments start with `//`; block comments
 start with `/*` and end with `*/`. Block comments do not nest; an unclosed
 block comment is a syntax error. `#` does not start a comment and is refused
-with the `//` spelling. Comments preserve source locations and are ignored when
+with the `//` form. Comments preserve source locations and are ignored when
 loading imports or selecting proof steps.
 
 Integer literals are decimal in the default grammar, except within the
@@ -68,7 +68,7 @@ theorem float_bits() {
 ## Word index
 
 Surface Click uses contextual words rather than a separate token kind for
-keywords. A spelling can be an ordinary identifier where the surrounding
+keywords. Such a word can be an ordinary identifier where the surrounding
 grammar doesn't give it a special meaning. The implementation registry and
 documentation inventory keep the following accepted words synchronized.
 
@@ -81,39 +81,38 @@ documentation inventory keep the following accepted words synchronized.
 | `executes` | Gives a contract-refinement theorem an explicit one-call execution frontier, over the theorem's callback parameter or a named project function. |
 | `spec`, `enum`, `match` | Specification-only algebraic datatype declarations and exhaustive elimination. |
 | `abstract`, `resource`, `authorized` | Abstract and composite resource declarations. `authorized resource` (or `authorized abstract resource`) marks a family that takes part in population accounting, so `authority(...)` and `count(...)` may name it. |
-| `int8`, `int16`, `int32`, `uint8`, `uint16`, `uint32`, `int64`, `uint64`, `short`, `int`, `signed int`, `long`, `long long`, `int8_t`, `int16_t`, `int32_t`, `int64_t`, `ssize_t`, `signed char`, `unsigned char`, `unsigned short`, `unsigned int`, `unsigned long`, `unsigned long long`, `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t`, `size_t`, `void`, `struct` | Type words. The standard spellings alias the modeled Click's C types; `void` is available only where the detailed type rules allow it. |
+| `int8`, `int16`, `int32`, `uint8`, `uint16`, `uint32`, `int64`, `uint64`, `short`, `int`, `signed int`, `long`, `long long`, `int8_t`, `int16_t`, `int32_t`, `int64_t`, `ssize_t`, `signed char`, `unsigned char`, `unsigned short`, `unsigned int`, `unsigned long`, `unsigned long long`, `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t`, `size_t`, `void`, `struct` | Type words. The standard names alias the modeled Click's C types; `void` is available only where the detailed type rules allow it. |
 | `let`, `where` | Value abbreviation and existential-binding forms. |
-| `requires`, `ensures`, `exceptional`, `throws`, `decreases` | Contract, theorem, function-totality, exceptional-postcondition, and loop-termination clauses. The initial exceptional signature is `throws int32`, with clauses spelled `exceptional ensures`; a `decreases` clause is one expression, classified after name resolution as a numeric (int32, unsigned, or `Integer`) measure, a resource application, or a resource binder; there is no `decreases resource` spelling. |
+| `requires`, `ensures`, `exceptional`, `throws`, `decreases` | Contract, theorem, function-totality, exceptional-postcondition, and loop-termination clauses. The initial exceptional signature is `throws int32`, with clauses written `exceptional ensures`; a `decreases` clause is one expression, classified after name resolution as a numeric (int32, unsigned, or `Integer`) measure, a resource application, or a resource binder; there is no `decreases resource` form. |
 | `diverges` | Signature and `loop`-head marker declaring that the function or loop may not return. It follows the parameter list, after `throws` when a signature carries both, and excludes a `decreases` clause on the same function or loop. |
-| `owns`, `views`, `consumes`, `produces` | Resource transfer clauses, in a contract and in a loop header. In a resource body, `owns` and `views` state what the resource holds, memory and child resources alike. `consumes X; produces X;` for one fixed `X` is refused: it is spelled `owns X;`. |
+| `owns`, `views`, `consumes`, `produces` | Resource transfer clauses, in a contract and in a loop header. In a resource body, `owns` and `views` state what the resource holds, memory and child resources alike. `consumes X; produces X;` for one fixed `X` is refused: it is written `owns X;`. |
 | `uninitialized` | `owns uninitialized(p[a..b])`, and the same in `consumes` and `produces`: memory held with no claim that its bytes are initialized. Only a function contract's owning clauses accept it; see [Uninitialized owned memory](index.md#uninitialized-owned-memory). |
 | `constructs` | Authorizes one function to create an abstract resource token. |
 | `invariant`, `initialize`, `preserve` | Loop structural items and phase proofs; a loop header also takes `owns` and `views` clauses of its own. |
 | `contains`, `fact`, `field`, `if` | The containment proposition `contains(parent, child)`, resource facts, pure field declarations, and optional resource guard. A resource holds a child resource with `owns`, as it holds memory. `if` also forms expressions and proof splits. |
 | `object`, `memory`, `of`, `count` | Memory-resource forms, quantified resources, and resource-population expressions. `count(r(args))` is the population operator when its one argument is a resource call; otherwise `count` names the prelude function. |
 | `read`, `write` | Reserved: no resource may be named either. `read(N)` is also an execution target, below. |
-| `true`, `false` | The specification `bool` literals, the C `bool` values `1` and `0`. A C name of either spelling in scope keeps its C meaning; a Click binder may not use them. See [Booleans](index.md#booleans). |
+| `true`, `false` | The specification `bool` literals, the C `bool` values `1` and `0`. A C name of either word in scope keeps its C meaning; a Click binder may not use them. See [Booleans](index.md#booleans). |
 | `and`, `or`, `implies`, `not`, `in` | Proposition connectives and sequence membership. `and`, `or`, and `implies` have increasing precedence except right-associative `implies`; `in` has comparison precedence. |
 | `forall`, `exists` | Universal and existential quantifiers; `exists (x: T, y: U) { P }` binds multiple variables. |
 | `all`, `any`, `fold` | Range proposition and expression methods. |
 | `prop` | Proposition value: `prop { P }`. |
 | `defined`, `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Definedness, readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
-| `old`, `at`, `c`, `rust` | Point-reading and program-binding forms: `c(name)` names a C binding where a Click name has the same spelling, and `rust(name)` a Rust one. |
+| `old`, `at`, `c`, `rust` | Point-reading and program-binding forms: `c(name)` names a C binding where a Click name has the same name, and `rust(name)` a Rust one. |
 | `float32_from_bits`, `float64_from_bits` | Literal-only IEEE bit-pattern expressions; see [exact float bit literals](#exact-float-bit-literals). |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
-| `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source spelling is available. |
+| `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source form is available. |
 | `by`, `using` | Proof introduction and exact-premise syntax. |
 | `mark`, `step`, `step_until` | Execution tactics. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
-| `peel` | Range-fold tactic: `peel(f(args)) using { ... }` opens the range-fold law of an `Integer`-valued pure function whose body is a range fold, selected by the listed guards. |
 | `take`, `give`, `gather`, `scatter` | Iterated guarded-ownership tactics: move one element out of or into an iterated fact, and form or dissolve the whole fact. `forall` inside a resource body starts the iterated clause itself. |
 | `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
-| `known`, `extract`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
+| `known`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
 | `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |
-| `assumption`, `auto`, `arithmetic`, `execute`, `execute_until` | Removed tactic spellings. The parser refuses each with a diagnostic that names its replacement: `known()` for `assumption()`; the omitted proof for `by auto();` and `solve();` for a written `auto();`; `solve() using { ... }` for `arithmetic() using { ... }` and `solve() using {}` for bare `arithmetic()`; the implicit tail, or `step_until(function.exit)` to work at function exit, for `execute()`; and `step_until` for `execute_until`. |
+| `assumption`, `auto`, `arithmetic`, `execute`, `execute_until` | Removed tactic names. The parser refuses each with a diagnostic that names its replacement: `known()` for `assumption()`; the omitted proof for `by auto();` and `solve();` for a written `auto();`; `solve() using { ... }` for `arithmetic() using { ... }` and `solve() using {}` for bare `arithmetic()`; the implicit tail, or `step_until(function.exit)` to work at function exit, for `execute()`; and `step_until` for `execute_until`. |
 | `close_invariants` | Retired loop tactic, still reserved. The parser rejects it with `` `close_invariants` is retired ``; a loop's back edge now closes each bundle member with `solve()`, helped by `have` facts proved before it. |
-| `split`, `left`, `right` | Retired tactic spellings. Unless a user-defined tactic has the name, the parser rejects each with a diagnostic that names `known()`. |
+| `split`, `left`, `right` | Retired tactic names. Unless a user-defined tactic has the name, the parser rejects each with a diagnostic that names `known()`. |
 | `preserve` | Preserve a selected read or its definedness across an explicitly separated region footprint; also introduces a loop preservation proof. |
 | `rewrite`, `transport`, `instantiate`, `solve`, `induct` | Equality, transport, quantifier, closing, and induction tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also writes numeric and pointer casts (including `as float` and `as double`) and introduces the target contract's proof instances on an `executes` conclusion. |
@@ -444,7 +443,7 @@ a contradiction. Equality of every corresponding field proves equality of
 two applications of one constructor (congruence), and an exact equality of
 such applications exposes equality only at the same field position
 (injectivity). `solve` can select these rules, expanding congruence to explicit
-`rewrite` steps and injectivity to checked `extract` steps.
+`rewrite` steps and injectivity to checked `have ... by known();` steps.
 
 Pattern arms must name every variant exactly once, use the declared field
 arity, and keep field bindings local to the arm. Generic arguments and fields
@@ -563,7 +562,7 @@ C fragments use C-like precedence. From lowest to highest:
 | 9 | calls, indexing, member access | Left, postfix |
 
 Conjunction and disjunction are the proposition connectives `and` and `or`.
-The C logical operators `&&` and binary `||` are refused with those spellings.
+The C logical operators `&&` and binary `||` are refused in that syntax.
 A nullary specification lambda uses `||` for its empty parameter list.
 
 This table describes the parser, not all of ISO C. The normative set of types,
@@ -579,7 +578,7 @@ so a parameter never captures a name in another argument. A nullary lambda
 can be applied as `(|| -> Integer { 7 })()`.
 
 Expression-local `let` bindings can name and alias lambdas. A local annotation
-uses `fn` to spell the function signature, as `fn(Integer) -> Integer`;
+uses `fn` to write the function signature, as `fn(Integer) -> Integer`;
 otherwise the literal determines its type. Captures retain their lexical binding across
 later shadowing. Lambdas are nonrecursive values: the name a `let` introduces
 is not in scope in its initializer.
@@ -641,7 +640,7 @@ theorem direct_proposition_lambda(x: Integer) {
 }
 ```
 
-`fn(Integer) -> Prop` spells a proposition-valued lambda's signature.
+`fn(Integer) -> Prop` denotes a proposition-valued lambda's signature.
 `prop { P }` constructs a proposition value directly; local `let` bindings
 can name that value or a proposition application. Lambda arguments remain
 scalar or `Integer` values: lambda parameters of proposition or function type
@@ -716,7 +715,7 @@ theorem existential_range_lambda(lo: int32, hi: int32) {
     let same = |x: int32| -> Prop { x == lo };
     requires lo < hi;
     ensures (lo..hi).any(same) by {
-        witness { item: lo };
+        witness(lo);
         solve();
     }
 }
@@ -768,6 +767,20 @@ exists (x: int32) { x == value }
 Binder scope is the body between braces. Renaming a bound variable doesn't
 change the proposition or expression it denotes.
 
+Expansion spells generated specification binders as `binder(N)`. This is a
+structured binder identity in a namespace separate from source identifiers;
+it is not a C object and has no address. Quantifiers, specification lambdas,
+lexical lets, match patterns, and range operations accept this binder form.
+`intro() as binder(N)` names an introduced universal value. References use the
+same `binder(N)` form within the binder's scope. An introduction uses an
+identity not already introduced in the active proof scope. Numeric spellings survive
+printing and reparsing; the elaborator allocates fresh identities without
+probing source names.
+
+`(expression : Integer)` supplies mathematical integer context without a
+binding. It is also used by expansion when an integer result has lost the
+operand that originally supplied its type context.
+
 ## Proof syntax
 
 Binary proof splits follow one rule: `then` appears exactly when there is an
@@ -778,7 +791,7 @@ Binary proof splits follow one rule: `then` appears exactly when there is an
 
 A proof is omitted, written as a single tactic call such as `by solve();`, or
 written as a `by { ... }` block of tactic statements. Tactic
-arguments use the expression and proposition forms documented for that tactic. The exhaustive surface-spelling inventory is in
+arguments use the expression and proposition forms documented for that tactic. The exhaustive surface-syntax inventory is in
 [Tactics](../tactics/index.md).
 
 One tactic carries syntax beyond an argument list. A `step` on an ordinary C

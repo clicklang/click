@@ -60,8 +60,8 @@ int32 vector_push(struct vector* owner, int32 value) {
     have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < old(owner->len));
+        have 0 <= k;
+        have k < old(owner->len);
         // The append writes at the old length, beyond this prefix element.
         have old(owner->len) != k by {
             intro();
@@ -78,7 +78,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             normalize() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
         }
         have at(statement(4).exit, owner->data[k]) == at(statement(4).entry, owner->data[k]) by {
-            preserve(separate(statement(4).footprint, memory(old(owner->data)[k])));
+            preserve(memory(old(owner->data)[k]), statement(4));
         }
         // Restrict the struct/array separation to the length field and element.
         have k < old(owner->cap) by {
@@ -99,7 +99,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             normalize() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
         }
         have at(statement(5).exit, owner->data[k]) == at(statement(5).entry, owner->data[k]) by {
-            preserve(separate(statement(5).footprint, memory(old(owner->data)[k])));
+            preserve(memory(old(owner->data)[k]), statement(5));
         }
         known();
     }

@@ -11,6 +11,7 @@ mod shared_simplification;
 pub(in crate::kernel) use narrowed_casts::narrowed_cast_identity;
 mod order_paths;
 pub(in crate::kernel) use order_paths::cancel_common_offset_addends;
+pub(in crate::kernel) use order_paths::signed_uint32_term;
 pub(in crate::kernel) use order_paths::{WIDE_ORDER_FORMATS, order_view_at_format};
 pub(in crate::kernel) use order_paths::{
     uint64_upper_bound_below_sign_bit, unsigned_upper_bound_below_sign_bit,

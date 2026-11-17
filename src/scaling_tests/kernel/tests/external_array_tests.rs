@@ -88,7 +88,7 @@ fn external_array_execution_requires_full_authority_and_mutability() {
                 assert_eq!(
                     matches!(
                         theorem.proposition(),
-                        Proposition::ProgramStatementExecutes {
+                        Proposition::ProgramStatementVerifies {
                             outcome: StatementOutcome::Normal(_),
                             ..
                         }

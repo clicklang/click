@@ -124,7 +124,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let mut reason = fact_transport_planning_failure(
                     surface_source,
                     surface_target,
-                    view.unfolded_predicates,
                     &error,
                     source_refusal,
                 );
@@ -169,7 +168,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Err(search_input.step_error("`transport` requires an execution proof"));
         };
         let claim_label = context.claim_label;
-        let (Some(data), Some(execution)) = (
+        let (Some(data), Some(_)) = (
             search_input.focused_outcome_data(),
             search_input.execution(),
         ) else {
@@ -183,12 +182,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
         .is_none()
         {
-            let facts = search_input.facts().to_vec();
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `transport` requires a source derivable from its ambient facts: {}",
                 describe_missing_pure_fact(
                     &source,
-                    &facts,
+                    search_input.facts(),
                     data.core.state.resources().facts(),
                     context.parameter_binding(),
                     &*data.core.effect_facts,
@@ -215,7 +213,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let reason = fact_transport_planning_failure(
                 surface_source,
                 surface_target,
-                &execution.core.unfolded_predicates,
                 &error,
                 source_refusal,
             );

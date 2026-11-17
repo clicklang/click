@@ -41,6 +41,16 @@ impl Clone for ProgramStatement {
                     pending.push((handler, handler_target));
                     pending.push((try_body, try_target));
                 }
+                (
+                    Self::UnwindCleanup { body, cleanup },
+                    Self::UnwindCleanup {
+                        body: body_target,
+                        cleanup: cleanup_target,
+                    },
+                ) => {
+                    pending.push((cleanup, cleanup_target));
+                    pending.push((body, body_target));
+                }
                 (Self::Switch { cases, .. }, Self::Switch { cases: targets, .. }) => {
                     for (case, target) in cases.iter().zip(targets) {
                         pending.push((&case.body, &mut target.body));
@@ -60,6 +70,7 @@ impl ProgramStatement {
     fn clone_shell(&self) -> Self {
         match self {
             Self::Skip => Self::Skip,
+            Self::ThrowOpaque(payload) => Self::ThrowOpaque(*payload),
             Self::Break => Self::Break,
             Self::Continue => Self::Continue,
             Self::Goto { target } => Self::Goto { target: *target },
@@ -218,19 +229,19 @@ impl ProgramStatement {
                 try_body: _,
                 binding,
                 handler: _,
-                cleanup_unwind,
             } => Self::TryCatchInt32 {
                 try_body: Box::new(Self::Skip),
                 binding: binding.clone(),
                 handler: Box::new(Self::Skip),
-                cleanup_unwind: *cleanup_unwind,
+            },
+            Self::UnwindCleanup { .. } => Self::UnwindCleanup {
+                body: Box::new(Self::Skip),
+                cleanup: Box::new(Self::Skip),
             },
             Self::Store { pointer, value } => Self::Store {
                 pointer: pointer.clone(),
                 value: value.clone(),
             },
-            Self::EndScalarReference(value) => Self::EndScalarReference(value.clone()),
-            Self::ScalarReferenceScope(value) => Self::ScalarReferenceScope(value.clone()),
             Self::TypedStore {
                 pointer,
                 value,
@@ -269,28 +280,24 @@ impl ProgramStatement {
             Self::Loop {
                 test,
                 update,
-                condition,
                 invariant,
                 invariant_checks,
                 effect_checks,
                 resource_specs,
                 ranking_measures,
                 structural_measure,
-                do_while,
                 backedge_target,
                 natural_exit_target,
                 body: _,
             } => Self::Loop {
                 test: test.clone(),
                 update: update.clone(),
-                condition: condition.clone(),
                 invariant: invariant.clone(),
                 invariant_checks: invariant_checks.clone(),
                 effect_checks: effect_checks.clone(),
                 resource_specs: resource_specs.clone(),
                 ranking_measures: ranking_measures.clone(),
                 structural_measure: structural_measure.clone(),
-                do_while: *do_while,
                 backedge_target: *backedge_target,
                 natural_exit_target: *natural_exit_target,
                 body: Box::new(Self::Skip),

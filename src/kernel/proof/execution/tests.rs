@@ -215,7 +215,7 @@ fn constructor_partition_fixture_with_type(
 fn constructor_partition_checks_complete_coverage_and_exact_scopes() {
     for width in [1, 2, 4, 16] {
         let (core, value) = constructor_partition_fixture(width);
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (partition, fields, _) = core
             .algebraic_case_partition(
                 &root,
@@ -284,7 +284,7 @@ fn constructor_partition_exclusion_requires_its_exact_contradiction() {
         variant: "C0".into(),
         fields: vec![crate::kernel::AlgebraicValue::Program(int32(11))],
     };
-    let root = ProofFacts::default();
+    let root = PureFactStore::default();
     let (partition, _, _) = core
         .algebraic_case_partition(
             &root,
@@ -340,7 +340,7 @@ fn constructor_partition_exclusion_requires_its_exact_contradiction() {
 fn constructor_partition_witnesses_avoid_source_facts_and_previous_matches() {
     let (core, value) = constructor_partition_fixture(2);
     let occupied = Variable(4_065_536);
-    let root = ProofFacts::from_ordered(&[Proposition::Equal(
+    let root = PureFactStore::from_ordered(&[Proposition::Equal(
         crate::kernel::Term::ProgramValue(ProgramValue::Int32(MachineTerm::Variable(occupied))),
         crate::kernel::Term::ProgramValue(int32(0)),
     )]);
@@ -376,7 +376,7 @@ fn constructor_partition_witnesses_avoid_the_region_state_and_issued_variables()
         ProgramValue::Int32(MachineTerm::Variable(occupied)),
     );
     let core = ExecutionProofCore::at_entry(state, ExecutionFrontier::default());
-    let root = ProofFacts::default();
+    let root = PureFactStore::default();
     let env = crate::kernel::ExecutionEnvironment::new();
     let (_, fields, _) = core
         .algebraic_case_partition(&root, &value, &env, &[], None, 4_000_000, 65_536)
@@ -454,7 +454,7 @@ fn constructor_partition_reserves_algebraic_variables_in_opaque_environment_term
     value.node = AlgebraicTermNode::Variable(Variable(8));
     let (_, fields, _) = core
         .algebraic_case_partition(
-            &ProofFacts::default(),
+            &PureFactStore::default(),
             &value,
             &environment,
             &[],
@@ -470,7 +470,7 @@ fn constructor_partition_reserves_algebraic_variables_in_opaque_environment_term
 fn constructor_partition_freshness_is_indexed_and_output_linear() {
     for size in [16, 64, 256] {
         let (core, value) = constructor_partition_fixture(2);
-        let mut facts = ProofFacts::from_ordered(
+        let mut facts = PureFactStore::from_ordered(
             &(0..size)
                 .map(|index| Proposition::Predicate {
                     name: format!("ambient{index}"),
@@ -581,7 +581,7 @@ fn instance_rewrite_refusal_retains_rejected_and_allowed_facts() {
     let selected = ResourceFact::own(Resource::Instance(instance.clone()));
     let before = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let function = program_function(
         crate::kernel::ProgramType::Int32,
         "refusal",
@@ -649,7 +649,7 @@ fn instance_rewrite_refusal_retains_rejected_and_allowed_facts() {
 
 fn returned_proposition_trace(
     state: &ExecutionState,
-    facts: &ProofFacts,
+    facts: &PureFactStore,
 ) -> (ProgramFunction, Vec<CheckedExecutionEvent>) {
     let statement = ProgramStatement::Return(ProgramExpression::Value(int32(0)));
     let function = program_function(ProgramType::Int32, "test", vec![], statement.clone());
@@ -741,8 +741,8 @@ fn returned_proposition_context(state: &ExecutionState) -> Arc<CheckedReturnCont
 fn returned_proposition_event(
     context: &Arc<CheckedReturnContext>,
     state: &ExecutionState,
-    base: &ProofFacts,
-    roots: &ProofFacts,
+    base: &PureFactStore,
+    roots: &PureFactStore,
     proposition: Proposition,
 ) -> CheckedExecutionEvent {
     CheckedExecutionEvent::ReturnProposition(Box::new(CheckedReturnProposition {
@@ -776,7 +776,7 @@ fn return_proposition_rejects_sibling_assumptions_and_other_memory() {
         true,
     );
     let state = ExecutionState::new();
-    let empty = ProofFacts::default();
+    let empty = PureFactStore::default();
     let sibling = empty.clone().with_fact(fact.clone());
     let (function, original) = returned_proposition_trace(&state, &empty);
     let context = returned_proposition_context(&state);
@@ -828,7 +828,7 @@ fn return_proposition_rejects_sibling_assumptions_and_other_memory() {
 #[test]
 fn return_proposition_checks_resource_compositions_without_granting_ownership() {
     let state = ExecutionState::new();
-    let base = ProofFacts::default();
+    let base = PureFactStore::default();
     let context = returned_proposition_context(&state);
     for overlaps in [false, true] {
         let pointer = crate::kernel::Pointer::symbolic(Variable(42));
@@ -869,7 +869,7 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
     let pointer = Pointer::symbolic(Variable(42));
     let memory = Memory::new().store(pointer.clone(), int32(7));
     let state = ExecutionState::new().with_memory(memory.clone());
-    let empty = ProofFacts::default();
+    let empty = PureFactStore::default();
     let (function, original) = returned_proposition_trace(&state, &empty);
     let context = returned_proposition_context(&state);
     let read = |memory, base, bytes| Proposition::MemoryLoadable {
@@ -939,7 +939,7 @@ fn return_proposition_accepts_the_store_loadability_of_a_pointer_cell() {
     let value = ProgramValue::pointer(Pointer::symbolic(Variable(43)));
     let memory = Memory::new().store(pointer.clone(), value.clone());
     let state = ExecutionState::new().with_memory(memory.clone());
-    let empty = ProofFacts::default();
+    let empty = PureFactStore::default();
     let store = crate::kernel::ExecutionPureFact::certified_store(
         Memory::new(),
         memory,
@@ -1000,7 +1000,7 @@ fn return_argument_facts_require_an_ordinary_positive_or_viewed_resource() {
                 r.unchecked_with_fact(fact)
             });
         let state = ExecutionState::new().with_resource_context(resources);
-        let empty = ProofFacts::default();
+        let empty = PureFactStore::default();
         let roots = empty.with_fact(fact.clone());
         let (function, mut events) = returned_proposition_trace(&state, &empty);
         let function = function.with_composite_resource_definitions(vec![
@@ -1067,7 +1067,7 @@ fn return_argument_facts_do_not_project_mutable_memory_invariants() {
     let state = ExecutionState::new()
         .with_memory(Memory::new().store(pointer, int32(9)))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(held));
-    let empty = ProofFacts::default();
+    let empty = PureFactStore::default();
     let false_fact = Proposition::ConditionIs(
         crate::kernel::ConditionTerm::equal(9.into(), 7.into()),
         true,
@@ -1089,7 +1089,7 @@ fn return_composite_presentations_reject_other_execution_paths() {
     let after = before
         .clone()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let definition = CompositeResourceDefinition::new("empty", vec![], None, false, vec![], vec![]);
     let (function, events) = returned_proposition_trace(&before, &facts);
     let function = function.with_composite_resource_definitions(vec![definition]);
@@ -1125,9 +1125,9 @@ fn return_composite_presentations_reject_other_execution_paths() {
     );
 }
 
-pub(super) fn bound_return_producer() -> (ExecutionProofCore, ProgramFunction, ProofFacts) {
+pub(super) fn bound_return_producer() -> (ExecutionProofCore, ProgramFunction, PureFactStore) {
     let state = ExecutionState::new();
-    let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+    let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
         crate::kernel::ConditionTerm::Constant(true),
         true,
     )]);
@@ -1169,7 +1169,7 @@ pub(super) fn bound_return_producer() -> (ExecutionProofCore, ProgramFunction, P
 #[test]
 fn return_producer_rejects_foreign_fact_lineage_at_the_operation() {
     let (mut core, _, facts) = bound_return_producer();
-    let sibling = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+    let sibling = PureFactStore::from_ordered(&[Proposition::ConditionIs(
         crate::kernel::ConditionTerm::Constant(false),
         true,
     )]);
@@ -1206,7 +1206,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     let selected = ResourceFact::own(Resource::Instance(instance.clone()));
     let before = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let (after, _) = crate::kernel::rewrite_resource_instance(
         &before,
         &instance,
@@ -1280,7 +1280,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     let observation = constructed.return_observation.clone().unwrap();
     assert_eq!(observation.after, produced.state);
     assert_eq!(observation.semantic_facts, produced.semantic_facts);
-    let check = |after_facts: &ProofFacts, observation| {
+    let check = |after_facts: &PureFactStore, observation| {
         CheckedResourceRewrite::check_with_return_observation(
             &function,
             &before,
@@ -1368,7 +1368,7 @@ fn return_exchange_keeps_the_published_body_state() {
     let published = physical
         .clone()
         .with_memory(physical.memory().clone().store(pointer, int32(7)));
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     assert!(
         crate::kernel::rewrite_resource_instance(
             &physical,
@@ -1515,12 +1515,12 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
                 }),
             )
         };
-        let left = ProofFacts::default().with_fact(if matched {
+        let left = PureFactStore::default().with_fact(if matched {
             case_fact("Left")
         } else {
             Proposition::ConditionIs(guard.clone(), true)
         });
-        let right = ProofFacts::default().with_fact(if matched {
+        let right = PureFactStore::default().with_fact(if matched {
             case_fact("Right")
         } else {
             Proposition::ConditionIs(guard.clone(), false)
@@ -1697,7 +1697,7 @@ fn interface_pointer_congruence_preserves_scope_and_read_obligations() {
     let equal = |a: Pointer, b: Pointer| {
         Proposition::ConditionIs(crate::kernel::ConditionTerm::pointer_equal(a, b), true)
     };
-    let parent = ProofFacts::from_ordered(&[equal(a.clone(), b.clone())]);
+    let parent = PureFactStore::from_ordered(&[equal(a.clone(), b.clone())]);
     let arm = parent.with_fact(equal(b, c.clone()));
     let goal = equal(a.clone(), c.clone());
     assert!(checked_interface_pointer_equality(&arm, &goal));
@@ -1888,7 +1888,7 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
     let child_view = ResourceFact::view_token("child".to_string(), Vec::new());
     let before = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
 
     let observed = before.clone().with_resource_context(
         before
@@ -2125,7 +2125,7 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
     )
     .expect("alternative memories should have one deterministic abstraction")
     .state;
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let summaries = checked_interface_effect_facts(
         &before,
         &joined,
@@ -2171,7 +2171,7 @@ fn checked_interface_effects_reject_uncertified_memory_effects() {
             &before,
             &after,
             [&changed_core, &parent],
-            [&ProofFacts::default(), &ProofFacts::default()],
+            [&PureFactStore::default(), &PureFactStore::default()],
             [std::slice::from_ref(&effect), &[]],
         ),
         Err("an interface arm contains an uncertified memory effect")
@@ -2210,7 +2210,7 @@ fn checked_interface_effects_require_memory_diff_coverage() {
             &before,
             &after,
             [&mutation_core, &parent],
-            [&ProofFacts::default(), &ProofFacts::default()],
+            [&PureFactStore::default(), &PureFactStore::default()],
             [std::slice::from_ref(&mutation), &[]],
         ),
         Err("an interface arm memory effect does not cover its memory diff")
@@ -2233,7 +2233,7 @@ fn checked_interface_effects_require_memory_diff_coverage() {
             &before,
             &after,
             [&summary_core, &parent],
-            [&ProofFacts::default(), &ProofFacts::default()],
+            [&PureFactStore::default(), &PureFactStore::default()],
             [std::slice::from_ref(&summary), &[]],
         ),
         Err("an interface arm memory effect does not cover its memory diff")
@@ -2266,7 +2266,7 @@ fn checked_interface_effects_require_memory_diff_coverage() {
             &erased_before,
             &erased_after,
             [&erased_core, &erased_parent],
-            [&ProofFacts::default(), &ProofFacts::default()],
+            [&PureFactStore::default(), &PureFactStore::default()],
             [std::slice::from_ref(&erased_summary), &[]],
         ),
         Err("an interface arm memory effect does not cover its memory diff")
@@ -2311,7 +2311,7 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
         crate::kernel::abstract_execution_state_for_interface_join_across(&freed, &siblings, 0)
             .expect("the conditional heap states should abstract")
             .state;
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let summaries = checked_interface_effect_facts(
         &before,
         &joined,
@@ -2462,7 +2462,7 @@ fn checked_event_premises_require_exact_facts_or_ground_comparisons() {
         },
         true,
     );
-    let empty = ProofFacts::default();
+    let empty = PureFactStore::default();
     assert!(!checked_evidence_premises_hold(
         &theorem(required.clone()),
         &empty
@@ -2554,16 +2554,17 @@ fn checked_condition_evidence_rejects_a_different_source_condition() {
 fn a_summarized_loop_matches_only_a_less_annotated_source_loop() {
     fn loop_statement(invariant: Vec<Proposition>, body: ProgramStatement) -> ProgramStatement {
         ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                ProgramExpression::Variable(("c".to_string()).into()),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: ProgramExpression::Variable(("c".to_string()).into()),
             invariant,
             invariant_checks: Vec::new(),
             effect_checks: Vec::new(),
             resource_specs: Vec::new(),
             ranking_measures: Vec::new(),
             structural_measure: None,
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
             body: Box::new(body),
@@ -2596,13 +2597,22 @@ fn a_summarized_loop_matches_only_a_less_annotated_source_loop() {
         &bare
     ));
     let mut other_condition = bare.clone();
-    if let ProgramStatement::Loop { condition, .. } = &mut other_condition {
-        *condition = ProgramExpression::Variable(("d".to_string()).into());
+    if let ProgramStatement::Loop {
+        test: loop_test, ..
+    } = &mut other_condition
+    {
+        *loop_test = crate::kernel::LoopTestRegion::expression(
+            ProgramExpression::Variable(("d".to_string()).into()),
+            loop_test.position,
+        );
     }
     assert!(!checked_source_statement_matches(&other_condition, &bare));
     let mut do_while = bare.clone();
-    if let ProgramStatement::Loop { do_while: flag, .. } = &mut do_while {
-        *flag = true;
+    if let ProgramStatement::Loop {
+        test: loop_test, ..
+    } = &mut do_while
+    {
+        loop_test.position = crate::kernel::LoopTestPosition::AfterBody;
     }
     assert!(!checked_source_statement_matches(&do_while, &bare));
     // Only loops have proof clauses; nothing else relaxes.
@@ -2638,7 +2648,7 @@ fn checked_branch_join_accepts_empty_arms_only_at_the_artifact_tail() {
         CheckedExecutionEvent::Condition(theorem) => theorem,
         _ => unreachable!(),
     };
-    let root_facts = ProofFacts::default();
+    let root_facts = PureFactStore::default();
     let split = CheckedBranchSplit {
         state: state.clone(),
         branch_statement,
@@ -2745,7 +2755,7 @@ fn branch_split_obligations_require_evidence_on_each_named_arm() {
         ConditionTerm::signed_greater_equal(x, MachineTerm::constant(0)),
         true,
     );
-    let root = ProofFacts::default().with_fact(strong);
+    let root = PureFactStore::default().with_fact(strong);
     let theorems = [true, false].map(|value| match condition_event(&state, &condition, value) {
         CheckedExecutionEvent::Condition(theorem) => theorem,
         _ => unreachable!(),
@@ -2798,7 +2808,7 @@ fn branch_split_obligations_require_evidence_on_each_named_arm() {
         !validate([Some(&exact), None]),
         "an omitted arm is not exhaustive"
     );
-    let unrelated = ProofFacts::default().with_fact(Proposition::ConditionIs(
+    let unrelated = PureFactStore::default().with_fact(Proposition::ConditionIs(
         ConditionTerm::Constant(true),
         true,
     ));
@@ -2833,7 +2843,7 @@ fn interface_logical_read_does_not_establish_validity() {
         .remove(0);
     assert!(path.facts.is_empty());
     assert!(path.obligations.is_empty());
-    let mut facts = ProofFacts::default().with_fact(path.proposition.clone());
+    let mut facts = PureFactStore::default().with_fact(path.proposition.clone());
     for fact in &path.facts {
         facts = facts.with_fact(fact.proposition().clone());
     }
@@ -2892,7 +2902,7 @@ fn interface_assertion_requires_an_available_proof_not_derivability() {
         ConditionTerm::signed_greater_equal(term.clone(), MachineTerm::constant(0)),
         true,
     );
-    let facts = ProofFacts::default().with_fact(Proposition::ConditionIs(
+    let facts = PureFactStore::default().with_fact(Proposition::ConditionIs(
         ConditionTerm::signed_greater_than(term, MachineTerm::constant(0)),
         true,
     ));
@@ -3013,7 +3023,7 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
         CheckedExecutionEvent::Condition(theorem) => theorem,
         _ => unreachable!(),
     };
-    let root_facts = ProofFacts::default();
+    let root_facts = PureFactStore::default();
     let split = CheckedBranchSplit {
         state: state.clone(),
         branch_statement,
@@ -3284,7 +3294,7 @@ fn opened_contract_entry_selects_premises_before_body_execution() {
             .filter(|(fact, _)| **fact == requirement)
             .map(|(_, origin)| *origin)
             .collect::<Vec<_>>(),
-        vec![Some(1)]
+        vec![Some(OpenedEntryFactSource::SourceFact(1))]
     );
     assert!(!opened.facts().contains(&foreign));
     assert!(opened.facts().contains(&environment.byte_order_fact()));
@@ -3371,7 +3381,7 @@ fn branch_interface_comparisons_retain_exact_shared_source_authority() {
                     truth,
                 );
                 let goal = Proposition::ConditionIs(observed(relation), truth);
-                let empty = ProofFacts::default();
+                let empty = PureFactStore::default();
                 let facts = empty.with_fact(source.clone());
                 let exports = KernelTermExport::machine_export_count();
                 assert!(checked_branch_fact_is_available(&facts, &goal));

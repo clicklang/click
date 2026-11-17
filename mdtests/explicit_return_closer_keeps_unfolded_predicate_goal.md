@@ -1,7 +1,7 @@
 # An explicit return closer keeps the unfolded predicate goal
 
 The contract names the predicate, while the proof establishes its body.
-Return-claim lowering must retain both forms after an explicit unfold.
+The local unfold must refine the current claim, so its closer sees the body.
 
 ```c filename=echo.c
 int32 echo(int32 x) { return x; }
@@ -16,7 +16,7 @@ int32 echo(int32 x) {
     ensures same(result, x);
 } by {
     step();
-    unfold(same);
+    unfold(same(result, x));
     known();
 }
 ```

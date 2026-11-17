@@ -253,38 +253,102 @@ mod scaling_tests {
 }
 
 #[test]
-fn a_read_through_an_alias_equals_the_value_stored_at_the_other_spelling() {
+fn a_wide_read_requires_an_explicit_store_equation_even_through_aliases() {
     let _session = VerificationSession::enter();
     let memory = intern_memory(Memory::new().with_block("cells", 32));
     let stored_at = Pointer {
         block: "cells".into(),
         offset: PointerOffsetTerm::Constant(8),
     };
-    let after = intern_memory(memory.memory().clone().store(
-        stored_at.clone(),
-        ProgramValue::UInt64(MachineTerm::uint64_constant(5)),
-    ));
+    let value = ProgramValue::UInt64(MachineTerm::uint64_constant(5));
+    let after = intern_memory(
+        memory
+            .memory()
+            .clone()
+            .store(stored_at.clone(), value.clone()),
+    );
     let alias_of = Pointer::symbolic(Variable(960_101));
     let read = word(&after, &alias_of, 8);
     let five = MachineTerm::uint64_constant(5);
     let base = PureFactContext::new();
     assert!(!base.equality_graph.are_uint64_equal(&read, &five));
-    // The read keeps its own term; the alias equates it with the cell.
     let aliased = base
         .clone()
         .assume_proposition(alias(&alias_of, &stored_at));
-    assert!(aliased.equality_graph.are_uint64_equal(&read, &five));
-    // Registered before the alias is known, the read still meets the cell.
-    let mut graph = EqualityGraph::default();
+    assert!(
+        !aliased.equality_graph.are_uint64_equal(&read, &five),
+        "an address equality must not import a cached value"
+    );
+    let equation =
+        crate::kernel::memory_provenance::store_value_equation(after.memory(), &stored_at, &value)
+            .expect("wide store equation");
+    let established = aliased.clone().assume_proposition(equation.clone());
+    assert!(established.equality_graph.are_uint64_equal(&read, &five));
+    assert!(!aliased.equality_graph.are_uint64_equal(&read, &five));
+    // Also exercise a read registered before the address equality arrives.
+    let mut graph = base.clone().assume_proposition(equation).equality_graph;
     assert!(!graph.are_uint64_equal(&read, &five));
     graph.add_equality(&alias_of, &stored_at);
     assert!(graph.are_uint64_equal(&read, &five));
-    // Another state's read is not this cell's value.
     assert!(
-        !aliased
+        !established
             .equality_graph
             .are_uint64_equal(&word(&memory, &alias_of, 8), &five)
     );
+}
+
+#[test]
+fn raw_wide_read_requires_its_explicit_store_equation() {
+    use crate::kernel::{KernelTermImport, MachineOperandView as V};
+    let _session = VerificationSession::enter();
+    let pointer = Pointer {
+        block: "wide".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let value = MachineTerm::uint64_constant(0xfedc_ba98_7654_3210);
+    let stored = ProgramValue::UInt64(value.clone());
+    let after = intern_memory(
+        Memory::new()
+            .with_block("wide", 8)
+            .store(pointer.clone(), stored.clone()),
+    );
+    let read = MachineTerm::MemoryLoad(
+        ProgramPoint::at(&after),
+        Box::new(pointer.clone()),
+        LoadKind::Bits64,
+    );
+    let shared = KernelTermImport::default()
+        .machine_arithmetic(MachineIntegerType::UInt64, &read)
+        .unwrap();
+    let empty = PureFactContext::new();
+    assert_eq!(
+        empty
+            .equality_graph
+            .uint64_constant_view(V::Shared(&shared)),
+        None
+    );
+    assert!(
+        !empty.equality_graph.are_uint64_equal(&read, &value),
+        "raw reads must not recover cached values"
+    );
+    let equation =
+        crate::kernel::memory_provenance::store_value_equation(after.memory(), &pointer, &stored)
+            .unwrap();
+    let established = empty.clone().assume_proposition(equation);
+    assert!(established.equality_graph.are_uint64_equal(&read, &value));
+    assert_eq!(
+        established
+            .equality_graph
+            .uint64_constant_view(V::Shared(&shared)),
+        Some(0xfedc_ba98_7654_3210)
+    );
+    assert_eq!(
+        empty
+            .equality_graph
+            .uint64_constant_view(V::Shared(&shared)),
+        None
+    );
+    assert_eq!(shared.machine_read_leaf(), Some(&read));
 }
 
 #[test]

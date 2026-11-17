@@ -75,12 +75,12 @@ impl<'a> Proof<'a> {
         let state = (*goal.data.core.state).clone();
         Ok(if goal.data.core.is_exceptional {
             FunctionOutcome::Throw {
-                value: value.into(),
+                value,
                 state: Box::new(state),
             }
         } else {
             FunctionOutcome::Return {
-                value: value.into(),
+                value,
                 state: Box::new(state),
             }
         })
@@ -399,10 +399,7 @@ impl<'a> Proof<'a> {
         }
         let mut goal = goal.clone();
         goal.closing = Some(closing_context.open(goal.path_index, &goal.data.core));
-        goal.claims = Some(OutcomeClaimGoals::open(
-            claims,
-            goal.data.core.is_exceptional,
-        ));
+        goal.claims = Some(closing_context.open_claims(claims, goal.data.core.is_exceptional));
         self.with_focused_outcome_obligation(goal)
     }
 
@@ -904,7 +901,7 @@ impl<'a> Proof<'a> {
             .filter(|edges| edges.len() == checked.paths().len());
         let branch_state = &self.focused_branch().expect("focused branch exists").state;
         let frontier_state = branch_state.execution.clone();
-        let frontier_unfolds = branch_state.unfolded_predicates.clone();
+
         let frontier_anchor = frontier_state
             .as_ref()
             .and_then(|execution| frontier_premise_anchor(execution));
@@ -1097,7 +1094,6 @@ impl<'a> Proof<'a> {
                 ),
                 BranchState {
                     facts,
-                    unfolded_predicates: frontier_unfolds.clone(),
                     execution: outcome_execution,
                 },
             ));
@@ -1220,7 +1216,9 @@ impl<'a> Proof<'a> {
                         !callee.exceptional_signature().is_empty()
                     }));
             }
-            let ProgramStatement::TryCatchInt32 { try_body, .. } = statement else {
+            let (ProgramStatement::TryCatchInt32 { try_body, .. }
+            | ProgramStatement::UnwindCleanup { body: try_body, .. }) = statement
+            else {
                 return Ok(false);
             };
             let SourceStatementKind::Try {

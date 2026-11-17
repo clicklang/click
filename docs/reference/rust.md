@@ -190,7 +190,7 @@ implementation, signature, and associated-item checks across module paths.
 Crate units support by-value returns of supported flat records, including owned
 array fields and records with `Drop`. The concrete return layout enters the
 kernel's aggregate-return interface: field values copy into fresh caller
-storage, and Rust live flags transfer ownership once. Reference, array, and
+storage. Reference, array, and
 nested-record returns remain unsupported. By-value flat-record parameters use
 the kernel aggregate-parameter interface: each callee receives independent
 storage. Compiler moves consume the caller’s live value; compiler copies
@@ -258,7 +258,7 @@ fn reduce(value: u32) -> u32 {
 ```
 
 A Rust source's function contracts require this form. A C-shaped signature
-is refused with a suggestion of the `fn` spelling. A field through a
+is refused with a suggestion of the `fn` form. A field through a
 reference is `p.f`; `p->f` is refused. The
 sidecar parser accepts every Rust integer and float type name, `bool`, `()`,
 and a struct by name, but the importer admits only the types in
@@ -268,19 +268,28 @@ scalar type and binds as in Rust, tighter than a binary operator.
 A parameter may be a reference, `&T` or `&mut T`, to a scalar or a struct.
 The contract names what it refers to as Rust does: `*value` for the
 referent and `parent.left` for a field. The type grants the authority a
-safe caller holds: `value: &mut T` owns `*value` and `value: &T` views it,
-a slice `bytes: &mut [T]` or `bytes: &[T]` owns or views
-`bytes[0..bytes.len()]`, and an array `bytes: &[T; N]` owns or views
-`bytes[0..N]`, with no clause written. The derived clause is the
-one a sidecar would write, so the callee is checked against it and each
-caller must hold it. A sidecar that writes an `owns`, `views`, `consumes` or
-`produces` clause naming the parameter states its authority itself, and
-nothing is derived for it: `views parent.right` on a `&mut Pair` promises
-the caller the field is not written. `owns` through a shared reference is
-refused. The rule covers free functions and inherent methods whose referent
-is a scalar, a slice or array of scalars or a struct of scalar fields; a
-receiver, a trait method, a generic function, an `extern` or `contract`
-declaration, an enum and any other referent keep only their written clauses.
+safe caller holds, with no clause written:
+
+- `value: &mut T` owns `*value` and `value: &T` views it, for a scalar, an
+  `Option` of one, a crate enum, or a struct whose fields are scalars or
+  such structs; an inherent method's `&mut self` and `&self` do the same for
+  the `impl` block's type;
+- a slice `bytes: &mut [T]` or `bytes: &[T]` owns or views
+  `bytes[0..bytes.len()]`, and an array `bytes: &[T; N]` owns or views
+  `bytes[0..N]`;
+- a box moved in, `b: Box<R>` for such a struct `R`, consumes
+  `allocation(b, sizeof(R))` and `*b`, and a box moved out, `-> Box<R>`,
+  produces `allocation(result, sizeof(R))` and `*result`.
+
+The derived clause is the one a sidecar would write, so the callee is checked
+against it and each caller must hold it. A sidecar that writes an `owns`,
+`views`, `consumes` or `produces` clause naming the parameter (or `result`)
+states its authority itself, and nothing is derived for it: `views
+parent.right` on a `&mut Pair` promises the caller the field is not written.
+`owns` through a shared reference is refused. A trait method, a generic
+function, an `extern` or `contract` declaration, an option of a box, a struct
+holding a box, pointer or array, and any other type keep only their written
+clauses.
 Lifetimes may be written or
 left out, `fn pick<'a>(value: &'a u32) -> u32`; the contract does not use
 them. Type parameters are limited to the supported
@@ -289,7 +298,7 @@ them. Type parameters are limited to the supported
 named by its position, `self.0`.
 
 A diagnostic about a function whose signature is written this way, and the
-proof `click expand` writes for it, spell its places the same way: a
+proof `click expand` writes for it, write its places the same way: a
 slice's length `bytes.len()`, a cast `(x as u32)`, and a field through a
 reference `p.field`.
 
@@ -427,7 +436,7 @@ and `let` binders, and algebraic datatype fields take Rust types too: the
 scalars (`u8`, `i32`, `u32`, `u64`, `usize`, `bool`, ...) and a raw pointer
 to one or to a crate struct, `*const T` or `*mut T`. Such a function takes values, not borrows,
 and a reference `&T` is refused there. `x as T` casts in a body as in a
-contract. The C spellings (`uint8`, `const uint8*`, `x as int32`) still read
+contract. The C forms (`uint8`, `const uint8*`, `x as int32`) still read
 the same types.
 
 A pure function may take a slice of scalars, `bytes: &[u8]`. The body reads
@@ -441,7 +450,7 @@ the length as two arguments is refused. Printed proofs write a call the same
 way, `size(old(bytes))`. The library's `Slice<T>`
 (`library/rust/slice.click`) is the slice as one value, with `slice::len` and
 `slice::as_ptr`; a slice parameter is lowered as its pointer and its length,
-and the two spellings are the same slice.
+and the two forms are the same slice.
 
 A slice in a value position is one `Slice<T>` value: the result of a pure
 function, `fn half(bytes: &[u8]) -> &[u8]`, a type argument, `Option<&[u8]>`,
@@ -450,12 +459,12 @@ and an enum field, `Window(&[u8], usize)`. Rust's methods read it:
 `half(bytes).as_ptr()`. They reduce without an `unfold` when the slice is
 built, so `half(bytes).len() == bytes.len() / 2u64` closes by `solve`. A
 slice value passes to a slice parameter as one argument,
-`size(half(bytes))`. Failures print these spellings, each reading back as
+`size(half(bytes))`. Failures print these forms, each reading back as
 the same term: a written subslice as `bytes[1..3]` and its length as
 `bytes[2..].len()`, a slice argument built from a pointer and a length as
 `click::rust::slice::from_raw_parts(p, n)`. In a goal, a slice built as a
 subslice prints as that subslice, `bytes[1..3]`: the kernel records it where
-it is constructed, the same place its bounds are owed, so the spelling owes
+it is constructed, the same place its bounds are owed, so the printed form owes
 nothing new when it is read back. A slice built any other way, such as the
 body of `half` unfolded, prints as its constructor at its element type,
 `Slice<u8>::Slice(&bytes[1], 2u64)`. In a theorem
@@ -553,7 +562,7 @@ tactics) are the same in every language.
 ### Function pointers and named contracts
 
 A sidecar callable parameter must match the source signature. A mismatch
-reports both types in C spelling, such as `uint32 (*)(uint32)` against
+reports both types in C syntax, such as `uint32 (*)(uint32)` against
 `int32 (*)(int32)`.
 
 A parameter of a safe Rust-ABI function-pointer type of scalar parameters and
@@ -567,7 +576,7 @@ contract, which Click checks at the call from `twice`'s own contract. When
 the two contracts agree only by a proof, a refinement theorem shows it,
 naming the crate function as a value by its path, as Rust passes it:
 `theorem twice_is_doubling() { ensures Doubling(function_pointers::twice) by
-{ unfold(Doubling); solve(); } }`, and the caller's proof applies it,
+{ unfold(Doubling(function_pointers::twice)); solve(); } }`, and the caller's proof applies it,
 `apply(twice_is_doubling());`. The diagnostic that refuses the call suggests
 that theorem. The importer reads Charon's `CastKind::FnPtr` of a
 crate function item and its `FnOperand::Dynamic` call through a local, and
@@ -740,7 +749,7 @@ generic struct's field is: `fn peek<T: Copy>(value: &T) -> T { views
 
 A generic struct, `struct Cell<T> { value: T, count: u32 }`, holds values of
 its type parameters in memory. Each instance a type names is a record of its
-own, spelled with its arguments in the sidecar, `generic_structs::Cell<T>` in
+own, written with its arguments in the sidecar, `generic_structs::Cell<T>` in
 generic code and `generic_structs::Cell<i32>` in a caller. Rust fixes no
 layout for a generic struct and safe code reads none, so Click lays each
 instance out in declaration order: a scalar field at its size and alignment,
@@ -1418,7 +1427,7 @@ loop over `0..bytes.len()` reads, and nested ranges.
 An inclusive range `a..=b`, which the compiler builds with
 `RangeInclusive::new`, is read through `RangeInclusive`'s own `iter.start()`
 and `iter.end()`; its state also holds `iter_done`, whether it has yielded
-`b`, which its proofs still name while it awaits a Rust spelling.
+`b`, which its proofs still name while it awaits a Rust form.
 It yields while `iter_done == 0 and iter_start <= iter_end`; each iteration
 yields `iter_start` and then, as an ordinary branch of the loop body,
 advances it while `iter_start < iter_end` and sets `iter_done` at
@@ -1439,7 +1448,7 @@ implementation, signature, and concrete types before constructing Click's
 `IntegerFrom` operation;
 lowering preserves the value and evaluates its argument once in source order.
 These pinned standard-library primitive conversions are interpreted builtins;
-their library bodies are not imported. Matching a method's spelling alone does
+their library bodies are not imported. Matching a method's name alone does
 not authorize a conversion. User conversion implementations, `.into()`, bool
 conversions, and general trait dispatch remain unsupported. The same adapter
 rule applies inside supported owned-record functions.
@@ -1580,12 +1589,14 @@ implementation. The compiler selects drop order and drop flags through its
 ULLBC control flow; Click does not reconstruct cleanup
 from source scopes. Destructor bodies require verified sidecar contracts.
 
-Private checked live flags require a live source and dead destination for a
-move, and consume the source. Reads and drops require a live value. Cleanup
-must consume every destructor-bearing local before return. The flags prevent
-stale struct bytes from justifying duplicate moves, duplicate drops, or omitted
-cleanup. Struct storage uses existing checked stack allocation and typed field
-loads/stores. Moving a reference field carries the same borrowed address; it
+The imported MIR is drop-elaborated, so rustc has already decided which
+values are live at each move, read and drop. A move copies the struct's fields
+into its destination and a drop runs its destructor; Click adds no live flags
+of its own, so no generated name appears in a proof's state or a step's
+frontier. The compiler places each drop on the paths where its value is
+still live, as in a branch that moves a guard and one that keeps it.
+Struct storage uses
+existing checked stack allocation and typed field loads/stores. Moving a reference field carries the same borrowed address; it
 does not create allocation or deallocation authority.
 
 Borrowing fields of local owned structs is supported. In
@@ -1987,57 +1998,27 @@ covers construction, field reads, a requirement instantiated per arm,
 
 ## Borrow and proof boundary
 
-rustc establishes source type and borrow legality. Click checks the functional
-contract and memory access obligations of the extracted execution. `&mut T`
-parameters use pointer-shaped sidecar parameters with explicit `owns` clauses;
-shared references use explicit `views` where access is required. Borrowed
-references carry no allocation or deallocation authority.
+rustc establishes source type and borrow legality, and Click trusts it: the
+importer admits only safe Rust (it refuses `unsafe` functions, unsafe calls and
+raw pointers other than a `Box`'s), so every imported function's borrows have
+already been checked. Click checks the functional contract and the memory
+access obligations of the extracted execution. Borrowed references carry no
+allocation or deallocation authority.
 
 A reference parameter's type grants authority over its referent (see
 [Signatures in Rust syntax](#signatures-in-rust-syntax)); every other resource
-a contract uses is written. Reborrows of caller storage retain the
-same modeled pointer: writes through the child are observed through its parent.
-The compiler establishes when parent reuse is legal; the kernel establishes
-that each modeled access is justified by the supplied resources.
+a contract uses is written. At a call, the caller lends what the callee's
+contract names, and that lending is also how the caller knows the callee
+writes nothing else it holds.
 
-For supported scalar functions, locked lowering issues checked local lease
-births and explicit borrow-end operations. Straight-line code and structured
-acyclic branches with a shared continuation are supported.
-The supported pointees are `i32`, `u8`, `u16` and `u32`, with exact direct owned
-footprints. Local copies or moves retain the same lease identity; a reborrow
-creates a child that suspends its parent. Reads and writes use the ordinary
-memory producers and their authority checks.
-
-Ending frontiers follow scalar reads, writes, calculations and reference copies.
-An indexed source pass propagates descendant uses to parents and emits nested
-endings innermost first, including when several borrows end at one statement.
-The kernel resolves each ending through its current invocation's live handle;
-recovery does not depend on which alias name survives. Missing births, foreign
-source identities, duplicate endings and parent endings with live children are
-refused. Closing the outermost lease returns the original owned occurrence and
-preserves current memory. Expired aliases cannot use that returned owner.
-
-Across an `if`, scalar reads, writes and calculations can keep a borrow live
-through the common continuation. A use in a deeper arm extends that borrow to
-the corresponding common continuation; later uses can extend it further.
-Nested borrows end innermost first.
-
-Arm-local reborrows and reference copies are also supported when every such
-reference stays inside its defining arm. Each branch scope checkpoints the
-entry ledger, ends all references born there, verifies restoration of the exact
-original owned occurrences, and clears the private arm-local reference slots
-before restoring the exact entry ledger. Current writes are retained. Nested
-scopes may borrow an entry reference temporarily, preserving it at scope exit.
-The existing join still requires identical live loan state. Reference IDs are
-never reused, and old copies remain invalid after scope reconciliation.
-
-The source and sidecars require no additional lifetime annotations. Source
-observations remain read-only. Reference assignments to an existing outer
-binding, references escaping an arm, conditionally live borrow recovery,
-early returns, shared borrow graphs, aggregate or addressable reference
-transport, calls and loops still need source integration. Functions outside
-the activated subset retain their existing lowering and have no local lease
-coverage.
+Inside a body, a reference is the address of the place it borrows: `&mut x`
+and `&x` are pointers to `x`'s storage, a reborrow `&mut *r` is the same
+pointer, and reads and writes through any of them are reads and writes of that
+storage. Writes through a child are observed through its parent. Click does
+not re-check when a borrow ends or whether a parent is reused while a child is
+live; rustc has. A reference may stay live across calls, loops, branches and
+returns
+(`design/charon-trial/gate-fixtures/reference-across-call`).
 
 The trusted boundary includes the pinned compiler, exporter, semantic artifact,
 and its translator. The lock detects stale or changed inputs; it is not an

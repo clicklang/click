@@ -143,6 +143,8 @@ fn collect_signed_surface_terms<'a>(
     while let Some(expression) = pending.pop() {
         terms.push(expression);
         match expression {
+            ContractExpression::IntegerContext(value) => pending.push(value),
+
             ContractExpression::Proposition(proposition) => {
                 collect_signed_surface_proposition_terms(proposition, terms)
             }
@@ -549,7 +551,8 @@ pub(super) fn observed_native_surface_comparison(
     // by that arithmetic; only an observation makes it Integer arithmetic.
     fn written_integer(operand: &ContractExpression) -> bool {
         match operand {
-            // Synthesis retains mathematical sort with this lexical alias.
+            ContractExpression::IntegerContext(_) => true,
+            // An authored Integer let can supply the same sort context.
             // Observing it again would place an Integer inside a machine cast.
             ContractExpression::Let {
                 name,
@@ -3041,7 +3044,7 @@ impl<'a> Proof<'a> {
         Some(bounds)
     }
 
-    /// The premise speller's spelling of a goal a search states, as
+    /// The premise raiser's spelling of a goal a search states, as
     /// `Proof::spelled_goal` spells a refined one, without its exemption for
     /// a smart tactic: the search writes a `have` of it.
     fn spelled_goal_for_search(&self, goal: &Proposition) -> Option<ClickProposition> {
@@ -3072,7 +3075,7 @@ impl<'a> Proof<'a> {
     /// The fixed state premises are spelled against. Every proof state has
     /// one: an outcome, a proposition judged mid-execution, the execution
     /// frontier itself, or a fixed-state proof
-    /// (`docs/internals/spellability.md`).
+    /// (`docs/internals/raise-lower-principle.md`).
     pub(super) fn premise_fixed_state_view(&self) -> Option<FixedStateOperationView<'_>> {
         self.outcome_fixed_state_view()
             .or_else(|| self.execution_proposition_fixed_state_view())
@@ -3433,7 +3436,7 @@ impl<'a> Proof<'a> {
             return Ok(Some(spelling));
         }
         // Fixed-state and focused-outcome requirements can refer to reads
-        // retained from an intermediate statement. Give their speller the
+        // retained from an intermediate statement. Give their raiser the
         // same indexed historical names as ordinary facts and goals.
         let _binder_names = self.requirement_binder_name_scope();
         let spelling_view = self.premise_fixed_state_view();
@@ -3479,12 +3482,12 @@ impl<'a> Proof<'a> {
         };
         if let Some(surface) = non_execution_surface {
             let surface = surface.ok_or_else(|| self.step_error(
-                "a generated prerequisite has no Surface spelling; this is a spellability defect",
+                "a generated prerequisite has no Surface spelling; this is a raise-lower principle defect",
             ).with_unresolved_requirement(&ProofObligation::verification_condition(requirement.proposition.clone())))?;
             let lowered = self.lower_surface_goal(&surface, "proof definedness requirement")?;
             if !lowered_states_requirement(&lowered, requirement) {
                 return Err(self.step_error(
-                    "a proof definedness requirement does not round-trip; this is a spellability defect",
+                    "a proof definedness requirement does not round-trip; this is a raise-lower principle defect",
                 ));
             }
             return Ok(Some(RequirementSpelling { surface }));
@@ -3534,9 +3537,8 @@ impl<'a> Proof<'a> {
                 source_backed_direct_caller_requirement(requirement, step, execution, context);
             let candidate = match &direct_caller {
                 Some((predicate_name, _)) => {
-                    let mut unfolded = self.active_unfolded_predicates();
-                    unfolded.push(predicate_name.clone());
-                    unfold_structural_invariant_proposition(
+                    let unfolded = vec![predicate_name.clone()];
+                    unfold_surface_predicates(
                         context.spec_definitions.predicates,
                         &registry_surface.proposition,
                         &unfolded,
@@ -4211,6 +4213,12 @@ fn source_backed_call_requirement_surface(
         "smart retained-have call source",
     )
     .ok()?;
+    // A call made while a C++ local with a destructor lives carries that
+    // destructor for its exceptional exit; the call is its body.
+    let mut statement = &statement;
+    while let ProgramStatement::UnwindCleanup { body, .. } = statement {
+        statement = body;
+    }
     let (callee, arguments) = match statement {
         ProgramStatement::Call {
             function_name,
@@ -4386,9 +4394,12 @@ fn source_backed_call_requirement_surface(
                     &context.parsed_function.parameters()[slot],
                     *parameter_type,
                 ),
-                None => ContractExpression::ProgramExpression(
-                    super::surface_synthesis::source_c_argument(argument),
-                ),
+                None => caller_embedded_record_argument(argument, context.parsed_function)
+                    .unwrap_or_else(|| {
+                        ContractExpression::ProgramExpression(
+                            super::surface_synthesis::source_c_argument(argument),
+                        )
+                    }),
             };
             (parameter.clone(), argument)
         })
@@ -4616,9 +4627,87 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
     Some((predicate_name, selection))
 }
 
-/// A caller parameter passed where a value of kernel type `expected` is read:
-/// the parameter itself, or, for a signed character pointer read as
-/// `uint8` bytes, its explicit byte view.
+/// Resolve a nominal embedded-reference cast through its declared offset/type
+/// index. A zero-offset child retains its own field path and receiver type.
+fn caller_embedded_record_argument(
+    argument: &ProgramExpression,
+    function: &crate::languages::interface::ImportedFunction,
+) -> Option<ContractExpression> {
+    let mut root = argument;
+    let mut projections = Vec::new();
+    while let ProgramExpression::Cast {
+        expression,
+        pointee_struct: Some(target),
+        ..
+    } = root
+    {
+        crate::instrumentation::record_deterministic_work(1);
+        let (parent, offset) = match expression.as_ref() {
+            ProgramExpression::PointerOffsetBytes { pointer, bytes } => (pointer.as_ref(), *bytes),
+            parent => (parent, 0),
+        };
+        projections.push((offset, target.as_str()));
+        root = parent;
+    }
+    if projections.is_empty() {
+        return None;
+    }
+    let ProgramExpression::Variable(binding) = root else {
+        return None;
+    };
+    let parameter = function
+        .parameters()
+        .iter()
+        .find(|parameter| parameter.matches_binding(binding));
+    let nominal = parameter
+        .and_then(|parameter| parameter.struct_name())
+        .or_else(|| {
+            function
+                .local_struct_pointers()
+                .get(binding)
+                .map(String::as_str)
+        })
+        .or_else(|| {
+            function
+                .local_struct_values()
+                .get(binding)
+                .map(String::as_str)
+        })?;
+    let mut layout = function.record_layout(nominal)?;
+    let mut result = match parameter {
+        Some(parameter) => caller_parameter_as_argument(parameter, None),
+        None => {
+            ContractExpression::ProgramExpression(super::surface_synthesis::source_c_argument(root))
+        }
+    };
+    let source_root = crate::surface::lowering::contract_expression_as_program_expression(&result)
+        .expect("declared object source is a program expression");
+    let mut accumulated_offset = 0;
+    for (offset, target) in projections.into_iter().rev() {
+        crate::instrumentation::record_deterministic_work(1);
+        let name = layout.embedded_struct_field(offset, target)?;
+        let field = layout.field(name).expect("indexed embedded field");
+        let nominal = field.struct_name().expect("indexed embedded record");
+        accumulated_offset += field.offset_bytes();
+        result = ContractExpression::Field {
+            base: Box::new(result),
+            field: name.to_owned(),
+            pointee_struct: None,
+            lowered: crate::kernel::program_expression::pointer_offset_bytes(
+                source_root.clone(),
+                accumulated_offset,
+            ),
+            offset_bytes: field.offset_bytes(),
+        };
+        layout = function
+            .record_layout(nominal)
+            .expect("indexed record layout");
+    }
+    Some(result)
+}
+
+/// A caller parameter, with its explicit byte view when the expected type
+/// reads unsigned bytes through a signed character pointer.
 fn caller_parameter_as_argument(
     parameter: &crate::languages::interface::ImportedParameter,
     expected: Option<crate::kernel::ProgramType>,
@@ -4649,15 +4738,18 @@ fn caller_parameter_through_identity_cast(
     parameters: &[crate::languages::interface::ImportedParameter],
     state: &crate::kernel::ExecutionState,
 ) -> Option<usize> {
-    let (name, cast_type) = match argument {
-        ProgramExpression::Variable(name) => (name, None),
+    let (name, cast_type, cast_struct) = match argument {
+        ProgramExpression::Variable(name) => (name, None, None),
         ProgramExpression::Cast {
             expression,
             target_type,
+            pointee_struct,
             pointee_volatile: false,
             ..
         } => match expression.as_ref() {
-            ProgramExpression::Variable(name) => (name, Some(*target_type)),
+            ProgramExpression::Variable(name) => {
+                (name, Some(*target_type), pointee_struct.as_deref())
+            }
             _ => return None,
         },
         _ => return None,
@@ -4678,6 +4770,11 @@ fn caller_parameter_through_identity_cast(
                 _ => None,
             }
         })?;
+    // Equal numeric addresses do not erase a projected object's record type.
+    // Its fields may differ from the enclosing parameter's, even at offset zero.
+    if cast_struct.is_some_and(|name| parameters[slot].struct_name() != Some(name)) {
+        return None;
+    }
     // A cast between character pointer types also names the same storage:
     // one byte has one value, read through either signedness.
     match cast_type {
@@ -5435,7 +5532,7 @@ pub(in crate::surface::proof) fn describe_recorded_store_separation_miss(
     )
 }
 
-mod multiplication;
-
 mod division;
+mod fact_projection;
 mod machine_bridges;
+mod multiplication;

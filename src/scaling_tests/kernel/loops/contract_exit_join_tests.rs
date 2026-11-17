@@ -145,3 +145,40 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
         "reconciliation assumed exit facts the join already indexed: {reused:?}"
     );
 }
+
+#[test]
+fn loop_exit_cell_pins_use_indexed_constants() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let held = int32(MachineTerm::Variable(Variable(1)));
+    let missing = int32(MachineTerm::Variable(Variable(2)));
+    let equation = |left: &ProgramValue, right: &ProgramValue| {
+        program_value_comparison_proposition(left, ComparisonOperator::Equal, right).unwrap()
+    };
+    let mut samples = Vec::new();
+    for size in [4u32, 16, 64, 256] {
+        let mut context = PureFactContext::new().assume_proposition(equation(&held, &int32(1)));
+        for index in 0..size {
+            context = context.assume_proposition(equation(
+                &held,
+                &int32(MachineTerm::Variable(Variable(100 + u64::from(index)))),
+            ));
+            context = context.assume_proposition(equation(
+                &int32(MachineTerm::Variable(Variable(1000 + u64::from(index)))),
+                &int32(7),
+            ));
+        }
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(loop_exit_cell_pin_value(&held, &context), int32(1));
+            assert_eq!(loop_exit_cell_pin_value(&missing, &context), missing);
+            assert_eq!(
+                loop_exit_cell_pin_value(&held, &PureFactContext::new()),
+                held
+            );
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] * 2 + 32),
+        "{samples:?}"
+    );
+}

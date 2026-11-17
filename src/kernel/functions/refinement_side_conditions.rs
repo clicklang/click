@@ -163,7 +163,7 @@ pub(super) fn refinement_route_proves(
 /// planning: it chose an index alignment, an arm, and a rewrite
 /// representative, and issued refinement authority from that choice with no
 /// record of it. Those choices now belong to the refinement theorem's proof,
-/// where `both`, `left`/`right`, `intro`, `extract`, and `rewrite` spell them
+/// where `both`, `left`/`right`, `intro`, `have`, and `rewrite` spell them
 /// and `click expand` prints them. See `prepare_contract_refinement_obligations`,
 /// which emits the refinement implication, and
 /// `api.rs::prove_program_function_contract_refinement`, which issues authority only
@@ -317,7 +317,8 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecProposition::ExistsAlgebraic { .. }
             | SpecProposition::ExistsPointer { .. }
             | SpecProposition::IntegerComparison { .. } => Visit::Descend,
-            SpecProposition::Predicate { .. }
+            SpecProposition::MutexHeld(_)
+            | SpecProposition::Predicate { .. }
             | SpecProposition::ResourceSeparate { .. }
             | SpecProposition::ResourceViewable { .. }
             | SpecProposition::ResourceContains { .. }
@@ -1029,14 +1030,22 @@ pub(super) fn statement_writes_aggregate_parameter(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             statement_writes_aggregate_parameter(try_body, parameter_name, writes, unknown_write);
             statement_writes_aggregate_parameter(handler, parameter_name, writes, unknown_write);
         }
 
         ProgramStatement::Loop {
-            test, update, body, ..
+            test: loop_test,
+            update,
+            body,
+            ..
         } => {
+            let (_, _, test) = loop_test.execution_parts();
             statement_writes_aggregate_parameter(body, parameter_name, writes, unknown_write);
             if let Some(test) = test {
                 statement_writes_aggregate_parameter(
@@ -1060,9 +1069,8 @@ pub(super) fn statement_writes_aggregate_parameter(
                 );
             }
         }
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue

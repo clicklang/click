@@ -115,7 +115,7 @@ pub enum LoweringIntroduction {
     /// `name` is the written binder spelling and `variable` is the exact
     /// kernel variable the lowering bound it to.
     WrittenUniversal {
-        name: String,
+        name: BindingName,
         variable: Variable,
         pointer: bool,
         integer: bool,
@@ -1232,7 +1232,7 @@ fn add_path_fact_with_visibility_after_effect(
     // the fact instead costs one fact-store entry and keeps the path's public
     // post-state exact.
     if assumptions.proves_exact(&proposition)
-        || facts.iter().any(|fact| fact.proposition == proposition)
+        || facts.iter().any(|fact| fact.proposition() == &proposition)
     {
         return Some(());
     }
@@ -2240,7 +2240,7 @@ pub(crate) fn contract_path_context_entries() -> usize {
 
 /// Counts, in test builds, the entries a fact context built from a list
 /// assumes (`assumptions_with_path_context`, `assumptions_with_propositions`,
-/// `PropositionSource::pure_context`, `ProofFacts::from_ordered`, and the
+/// `PropositionSource::pure_context`, `PureFactStore::from_ordered`, and the
 /// contexts a `PureFactList` extends). The work itself is charged where
 /// every context is built, one unit per fact
 /// (`PureFactContext::assume_proposition`), so a caller that rebuilds a

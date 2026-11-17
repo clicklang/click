@@ -1221,6 +1221,11 @@ fn execute_modeled_pthread_join_paths(
         budget,
         Some(environment),
     )? {
+        let current = super::reasoning::path_facts::assumptions_with_path_context(
+            assumptions,
+            &path.facts,
+            &path.obligations,
+        );
         let outcome = if let Some(outcome) = path.outcome {
             match outcome {
                 FunctionOutcome::UndefinedBehavior(error) => {
@@ -1232,13 +1237,8 @@ fn execute_modeled_pthread_join_paths(
         } else if !matches!(&path.values[1], ProgramValue::Pointer(pointer) if pointer.is_null()) {
             refusal("modeled-pthread join requires a null result slot")
         } else if let Some(handle) =
-            super::threads::ThreadHandle::from_program_value(&path.values[0])
+            super::threads::ThreadHandle::resolve_program_value(&path.values[0], &current)
         {
-            let current = super::reasoning::path_facts::assumptions_with_path_context(
-                assumptions,
-                &path.facts,
-                &path.obligations,
-            );
             let joined = super::threads::ThreadContext::new(state.clone()).and_then(|context| {
                 context
                     .join(
@@ -1583,7 +1583,7 @@ pub(in crate::kernel) fn abstract_loop_paths(
     // to be synchronized across this boundary.
     let paths = execute_program_loop_exit_paths(
         state,
-        ProgramLoop::of(statement).expect("matched a loop statement"),
+        LoopExecutionView::of(statement).expect("matched a loop statement"),
         assumptions,
         execution_context.environment,
         Some(execution_context.environment),
@@ -1971,7 +1971,7 @@ fn loop_state_components_match_at_back_edge_inner(
 
 /// The parts of one program loop the loop rule reads, borrowed from it.
 #[derive(Clone, Copy)]
-pub(super) struct ProgramLoop<'a> {
+pub(super) struct LoopExecutionView<'a> {
     pub(super) condition: &'a ProgramExpression,
     pub(super) invariant: &'a [Proposition],
     pub(super) invariant_checks: &'a [LoopInvariantCheck],
@@ -1982,18 +1982,17 @@ pub(super) struct ProgramLoop<'a> {
     pub(super) body: &'a ProgramStatement,
     pub(super) update: Option<&'a ProgramStatement>,
     pub(super) test: Option<&'a LoopTestRegion>,
-    pub(super) do_while: bool,
+    pub(super) direct_post_test: bool,
     pub(super) backedge_target: Option<ControlTargetId>,
     pub(super) natural_exit_target: Option<ControlTargetId>,
 }
 
-impl<'a> ProgramLoop<'a> {
+impl<'a> LoopExecutionView<'a> {
     /// The loop a program statement states, or `None` for any other statement.
     pub(super) fn of(statement: &'a ProgramStatement) -> Option<Self> {
         let ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
@@ -2001,15 +2000,15 @@ impl<'a> ProgramLoop<'a> {
             ranking_measures,
             structural_measure,
             body,
-            do_while,
             backedge_target,
             natural_exit_target,
         } = statement
         else {
             return None;
         };
+        let (condition, direct_post_test, test) = loop_test.execution_parts();
         Some(Self {
-            test: test.as_ref(),
+            test,
             update: update.as_deref(),
             condition,
             invariant,
@@ -2019,7 +2018,7 @@ impl<'a> ProgramLoop<'a> {
             ranking_measures,
             structural_measure: structural_measure.as_deref(),
             body,
-            do_while: *do_while,
+            direct_post_test,
             backedge_target: *backedge_target,
             natural_exit_target: *natural_exit_target,
         })
@@ -2029,7 +2028,7 @@ impl<'a> ProgramLoop<'a> {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn execute_program_loop_exit_paths_with_proven_phases(
     state: &ExecutionState,
-    program_loop: ProgramLoop<'_>,
+    program_loop: LoopExecutionView<'_>,
     assumptions: &PureFactContext,
     execution_context: ExecutionContext<'_>,
     initialization_proven: bool,
@@ -2468,7 +2467,6 @@ fn join_loop_exits(
         outcome: StatementOutcome::Normal(Box::new(exit_state)),
         facts,
         obligations,
-
         loan_evidence,
     })
 }
@@ -2631,6 +2629,7 @@ fn abstract_loop_exit_states(
         binders.is_empty(),
         &declared_memory,
         assumptions,
+        &contexts,
         &mut restatements,
         variables,
         budget,
@@ -2873,6 +2872,10 @@ struct LoopExitRestatement {
     /// The held value is a term, not only a symbol: one exit may hold the
     /// head's own model variable and another a constructor it folded.
     replacements: Vec<(AlgebraicTerm, AlgebraicTerm)>,
+    /// The first successor name for a selected symbolic resource value.
+    /// Further fields holding that same value pin to this name directly,
+    /// without exporting the private exit variable or walking other pins.
+    symbolic_resource_pins: BTreeMap<Variable, AlgebraicTerm>,
 }
 
 impl LoopExitRestatement {
@@ -2905,13 +2908,26 @@ impl LoopExitRestatement {
             self.pin(fresh, held);
             return;
         }
+        if let (AlgebraicValue::Algebraic(fresh), AlgebraicValue::Algebraic(held)) = (fresh, held) {
+            self.replacements.push((held.clone(), fresh.clone()));
+            if let AlgebraicTermNode::Variable(variable) = held.node {
+                let representative = self
+                    .symbolic_resource_pins
+                    .entry(variable)
+                    .or_insert_with(|| fresh.clone());
+                if representative != fresh {
+                    self.equations.push(Proposition::Equal(
+                        Term::Algebraic(fresh.clone()),
+                        Term::Algebraic(representative.clone()),
+                    ));
+                }
+                return;
+            }
+        }
         self.equations.push(Proposition::Equal(
             resource_value_term(fresh),
             resource_value_term(held),
         ));
-        if let (AlgebraicValue::Algebraic(fresh), AlgebraicValue::Algebraic(held)) = (fresh, held) {
-            self.replacements.push((held.clone(), fresh.clone()));
-        }
     }
 
     /// One stated fact with this exit's value for each renamed binder
@@ -2961,7 +2977,7 @@ impl LoopExitRestatement {
         obligations: Vec<ProofObligation>,
         loan_evidence: CheckedLoanCallEvidenceSequence,
     ) -> LoopExitFacts {
-        if self.renamings.is_empty() && self.equations.is_empty() {
+        if self.renamings.is_empty() && self.equations.is_empty() && self.replacements.is_empty() {
             return LoopExitFacts::unabstracted(facts, obligations, loan_evidence);
         }
         let rename = |proposition: &Proposition| {
@@ -3104,6 +3120,31 @@ fn abstract_loop_exit_binders(
                 binder.name
             ));
         };
+        // Joined fields are fresh values just as call-return fields are.
+        // Retain their declared names at the mint so explicit branch proofs
+        // can cite the exported disjunction through this binder.
+        for (field_index, ((name, _), value)) in joined
+            .schema()
+            .fields()
+            .iter()
+            .zip(joined.fields())
+            .enumerate()
+        {
+            if base.fields().get(field_index) == Some(value) {
+                continue;
+            }
+            if let Some(variable) = crate::kernel::model_fields::algebraic_value_variable(value) {
+                crate::kernel::model_fields::register_model_field_variable(
+                    variable,
+                    crate::kernel::model_fields::ModelFieldOrigin {
+                        identity: binder.identity,
+                        field: std::sync::Arc::from(name.as_str()),
+                        field_index,
+                        minted_by: crate::kernel::model_fields::ModelMint::Join,
+                    },
+                );
+            }
+        }
         let Some(resources) = successor.resources().clone().without_fact_incrementally(
             &ResourceFact::own(Resource::Instance(base)),
             &PureFactContext::new(),
@@ -3592,6 +3633,7 @@ fn abstract_loop_exit_memory(
     no_binders: bool,
     declared_memory: &[MemoryRange],
     assumptions: &PureFactContext,
+    contexts: &[PureFactContext],
     restatements: &mut [LoopExitRestatement],
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
@@ -3647,8 +3689,10 @@ fn abstract_loop_exit_memory(
                 pointer.block
             ));
         };
-        for (restatement, held) in restatements.iter_mut().zip(held) {
-            restatement.pin(&fresh, &held);
+        for (index, (restatement, held)) in restatements.iter_mut().zip(held).enumerate() {
+            let context = contexts.get(index).unwrap_or(assumptions);
+            let named = loop_exit_cell_pin_value(&held, context);
+            restatement.pin(&fresh, &named);
         }
         havoced.push((pointer, fresh));
     }
@@ -3719,6 +3763,24 @@ fn abstract_loop_exit_memory(
         *successor = successor.clone().with_memory(memory);
     }
     Ok(abstracted)
+}
+
+/// Export a proved scalar constant instead of a private loop-body read.
+/// The selected cell supplies the literal index key; no fact or equality class is
+/// enumerated, and this changes a produced equation rather than lowering.
+fn loop_exit_cell_pin_value(value: &ProgramValue, context: &PureFactContext) -> ProgramValue {
+    match value {
+        ProgramValue::Int32(term) | ProgramValue::UInt32(term) => {
+            match crate::kernel::assumptions::exact_signed_constant(term, context) {
+                Some(constant) => match value {
+                    ProgramValue::Int32(_) => int32(MachineTerm::constant(constant as u32)),
+                    _ => uint32(MachineTerm::constant(constant as u32)),
+                },
+                None => value.clone(),
+            }
+        }
+        _ => value.clone(),
+    }
 }
 
 /// The memory ranges a loop's own header declared, rather than folded into one
@@ -4134,7 +4196,7 @@ fn loop_exit_state_difference(
 #[allow(clippy::too_many_arguments)]
 fn execute_program_loop_exit_paths(
     state: &ExecutionState,
-    program_loop: ProgramLoop<'_>,
+    program_loop: LoopExecutionView<'_>,
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     preservation_environment: Option<&ExecutionEnvironment>,
@@ -4146,7 +4208,7 @@ fn execute_program_loop_exit_paths(
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    let ProgramLoop {
+    let LoopExecutionView {
         condition,
         invariant,
         invariant_checks,
@@ -4155,7 +4217,7 @@ fn execute_program_loop_exit_paths(
         body,
         update,
         test,
-        do_while,
+        direct_post_test,
         backedge_target,
         natural_exit_target,
         ..
@@ -4212,7 +4274,7 @@ fn execute_program_loop_exit_paths(
             let summary = collect_loop_preservation_summary(
                 state,
                 &head,
-                ProgramLoop {
+                LoopExecutionView {
                     effect_checks: &head.effect_checks,
                     ..program_loop
                 },
@@ -4258,7 +4320,7 @@ fn execute_program_loop_exit_paths(
         .map(ExecutionPureFact::new)
         .collect::<Vec<_>>();
 
-    let (initial_may_continue, initial_may_exit) = if do_while {
+    let (initial_may_continue, initial_may_exit) = if direct_post_test {
         (!final_exit_candidates.is_empty(), false)
     } else if final_exit_candidates.is_empty() {
         (true, true)
@@ -4282,12 +4344,7 @@ fn execute_program_loop_exit_paths(
                 value: exit.value().clone(),
                 state: Box::new(head.restored_exit_state(exit.state(), assumptions)),
             },
-            facts: exit
-                .pure_facts()
-                .iter()
-                .cloned()
-                .map(ExecutionPureFact::certified)
-                .collect(),
+            facts: exit.pure_facts().certified_facts(),
             obligations: loop_check_obligations.clone(),
             loan_evidence: exit.loan_evidence().clone(),
         });
@@ -4309,20 +4366,14 @@ fn execute_program_loop_exit_paths(
                 // loop guard, which never becomes false in a natural cycle.
                 jump_exit_entries.entry(target).or_default().push((
                     head.restored_exit_state(candidate.state(), assumptions),
-                    candidate
-                        .pure_facts()
-                        .iter()
-                        .cloned()
-                        .map(ExecutionPureFact::certified)
-                        .collect(),
+                    candidate.pure_facts().certified_facts(),
                     obligations,
                     candidate.loan_evidence().clone(),
                     None,
                 ));
                 continue;
             }
-            let candidate_assumptions =
-                assumptions_with_propositions(assumptions, candidate.pure_facts());
+            let candidate_assumptions = candidate.pure_facts().context_with(assumptions);
             let mut exits = Vec::new();
             for assumption in assume_condition_truthiness(
                 candidate.state(),
@@ -4334,12 +4385,7 @@ fn execute_program_loop_exit_paths(
                 false,
                 budget,
             )? {
-                let candidate_facts = candidate
-                    .pure_facts()
-                    .iter()
-                    .cloned()
-                    .map(ExecutionPureFact::certified)
-                    .collect::<ExecutionFacts>();
+                let candidate_facts = candidate.pure_facts().certified_facts();
                 let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                     &candidate_facts,
                     &[],
@@ -4397,7 +4443,7 @@ fn execute_program_loop_exit_paths(
     )?;
     let mut has_live_iteration = false;
     for (invariant_facts, invariant_obligations, _) in &invariant_contexts {
-        if do_while
+        if direct_post_test
             || !assume_condition_truthiness(
                 &guard_state,
                 condition,
@@ -4425,11 +4471,7 @@ fn execute_program_loop_exit_paths(
         .map(|exit| {
             (
                 head.restored_exit_state(exit.state(), assumptions),
-                exit.pure_facts()
-                    .iter()
-                    .cloned()
-                    .map(ExecutionPureFact::certified)
-                    .collect::<ExecutionFacts>(),
+                exit.pure_facts().certified_facts(),
                 loop_check_obligations.clone(),
                 exit.loan_evidence().clone(),
                 exit.fact_context().cloned(),
@@ -4884,12 +4926,16 @@ fn collect_invariant_check_obligations_with_mode(
                     );
                 }
                 if obligations.len() > before {
-                    guards.push(ProofObligation::new(path.proposition));
+                    guards.push(ProofObligation::new(path.proposition.clone()));
                     changed_obligations.push(before);
                     if without_search && obligations[before].is_assumable() {
                         crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
-                        obligation_assumptions = obligation_assumptions
-                            .assume_proposition(obligations[before].proposition().clone());
+                        // All preceding members are hypotheses of this prepared
+                        // path. Admit the new bare member, as the guard list
+                        // above does, rather than regenerating its implication
+                        // prefix and every partially discharged suffix.
+                        obligation_assumptions =
+                            obligation_assumptions.assume_proposition(path.proposition);
                     }
                 }
                 if without_search {
@@ -5058,7 +5104,7 @@ pub(super) struct LoopPreservationSummary {
 pub(super) fn collect_loop_preservation_summary(
     loop_entry_state: &ExecutionState,
     head: &LoopHead,
-    program_loop: ProgramLoop<'_>,
+    program_loop: LoopExecutionView<'_>,
     composite_resource_definitions: &[CompositeResourceDefinition],
     whole_loop_effect_summaries: &[Proposition],
     assumptions: &PureFactContext,
@@ -5066,7 +5112,7 @@ pub(super) fn collect_loop_preservation_summary(
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<LoopPreservationSummary> {
-    let ProgramLoop {
+    let LoopExecutionView {
         condition,
         invariant_checks,
         effect_checks,
@@ -5076,7 +5122,7 @@ pub(super) fn collect_loop_preservation_summary(
         body,
         update,
         test,
-        do_while,
+        direct_post_test,
         backedge_target,
         natural_exit_target,
         ..
@@ -5108,7 +5154,7 @@ pub(super) fn collect_loop_preservation_summary(
         &[],
         budget,
     )? {
-        let condition_contexts = if do_while {
+        let condition_contexts = if direct_post_test {
             vec![ConditionAssumption {
                 branch: ConditionBranch::Decided(true),
                 facts: invariant_facts.clone(),
@@ -5247,7 +5293,7 @@ pub(super) fn collect_loop_preservation_summary(
                             assumptions,
                             budget,
                         )?;
-                        let mut path_obligations = if do_while && !may_continue {
+                        let mut path_obligations = if direct_post_test && !may_continue {
                             Vec::new()
                         } else {
                             collect_invariant_check_obligations(
@@ -6210,8 +6256,8 @@ pub(super) fn prepare_loop_top_state(
             rebound_failures.push(message);
         }
     }
-    // A direct conditional clause uses the same ordinary folded ownership
-    // internally; its field captures the head expression, not a mutable local.
+    // A direct conditional clause owns a typed occurrence whose condition
+    // captures the head expression, independently of later local mutations.
     let mut ordinary_specs = Vec::new();
     let mut direct_carriers = Vec::new();
     let mut direct_mutexes = Vec::new();
@@ -6225,12 +6271,8 @@ pub(super) fn prepare_loop_top_state(
                 identity,
                 assumptions,
             ) {
-                Ok((updated, mutex)) => {
-                    let instance = updated
-                        .resources()
-                        .owned_instance(identity)
-                        .expect("checked direct loop preparation installs its carrier");
-                    direct_carriers.push(ResourceFact::own(Resource::Instance(instance.clone())));
+                Ok((updated, mutex, carrier)) => {
+                    direct_carriers.push(carrier);
                     direct_mutexes.push(mutex);
                     top_state = updated;
                 }
@@ -7408,6 +7450,7 @@ fn viewed_form_of_resource_fact(fact: &ResourceFact) -> Option<ResourceFact> {
             Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -8661,9 +8704,8 @@ pub(super) fn statement_may_write_memory(
     statement: &ProgramStatement,
 ) -> bool {
     match statement {
-        ProgramStatement::ScalarReferenceScope(scope) => !scope.cleared_locals().is_empty(),
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
@@ -8704,6 +8746,10 @@ pub(super) fn statement_may_write_memory(
             .any(|statement| statement_may_write_memory(state, statement)),
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             statement_may_write_memory(state, try_body)
                 || statement_may_write_memory(state, handler)
@@ -8718,8 +8764,12 @@ pub(super) fn statement_may_write_memory(
         }
 
         ProgramStatement::Loop {
-            test, update, body, ..
+            test: loop_test,
+            update,
+            body,
+            ..
         } => {
+            let (_, _, test) = loop_test.execution_parts();
             statement_may_write_memory(state, body)
                 || test
                     .as_ref()
@@ -8742,17 +8792,11 @@ pub(super) fn collect_loop_modified_locals(
     names: &mut BTreeSet<BindingName>,
 ) {
     match statement {
-        ProgramStatement::ScalarReferenceScope(scope) => names.extend(
-            scope
-                .cleared_locals()
-                .iter()
-                .map(|(name, _)| name.clone().into()),
-        ),
         ProgramStatement::EndAutomaticLifetimes { names: retired, .. } => {
             names.extend(retired.iter().cloned())
         }
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
@@ -8804,8 +8848,12 @@ pub(super) fn collect_loop_modified_locals(
             ..
         } => {
             collect_loop_modified_locals(try_body, names);
-            names.insert(binding.clone().into());
+            names.insert(binding.clone());
             collect_loop_modified_locals(handler, names);
+        }
+        ProgramStatement::UnwindCleanup { body, cleanup } => {
+            collect_loop_modified_locals(body, names);
+            collect_loop_modified_locals(cleanup, names);
         }
         ProgramStatement::If {
             then_branch,
@@ -8817,8 +8865,12 @@ pub(super) fn collect_loop_modified_locals(
         }
 
         ProgramStatement::Loop {
-            test, update, body, ..
+            test: loop_test,
+            update,
+            body,
+            ..
         } => {
+            let (_, _, test) = loop_test.execution_parts();
             collect_loop_modified_locals(body, names);
             if let Some(test) = test {
                 collect_loop_modified_locals(&test.statement, names);
@@ -8988,9 +9040,8 @@ fn for_each_statement_expression<'a>(
 ) {
     match statement {
         ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
@@ -9053,6 +9104,10 @@ fn for_each_statement_expression<'a>(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             for_each_statement_expression(try_body, visit);
             for_each_statement_expression(handler, visit);
@@ -9068,12 +9123,12 @@ fn for_each_statement_expression<'a>(
         }
 
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             body,
             ..
         } => {
+            let (condition, _, test) = loop_test.execution_parts();
             visit(condition);
             for_each_statement_expression(body, visit);
             if let Some(test) = test {
@@ -9098,9 +9153,8 @@ pub(crate) fn collect_address_taken_locals(
 ) {
     match statement {
         ProgramStatement::EndAutomaticLifetimes { .. } => {}
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
@@ -9165,6 +9219,10 @@ pub(crate) fn collect_address_taken_locals(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             collect_address_taken_locals(try_body, names);
             collect_address_taken_locals(handler, names);
@@ -9180,12 +9238,12 @@ pub(crate) fn collect_address_taken_locals(
         }
 
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             body,
             ..
         } => {
+            let (condition, _, test) = loop_test.execution_parts();
             collect_address_taken_in_expression(condition, names);
             collect_address_taken_locals(body, names);
             if let Some(test) = test {

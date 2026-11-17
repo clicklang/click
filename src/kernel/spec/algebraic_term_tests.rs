@@ -182,7 +182,7 @@ fn value_or_match(scrutinee: SpecAlgebraicExpression) -> SpecExpression {
             },
             SpecAlgebraicMatchArm {
                 variant: "Some".to_string(),
-                bindings: vec!["value".to_string()],
+                bindings: vec!["value".to_string().into()],
                 binding_types: vec![AlgebraicValueType::Program(ProgramType::Int32)],
                 body: SpecExpression::ProgramExpression(ProgramExpression::Variable(
                     ("value".to_string()).into(),
@@ -596,11 +596,11 @@ fn nested_match_binder_remains_symbolic_inside_its_arm() {
             },
             SpecAlgebraicMatchArm {
                 variant: "Present".to_string(),
-                bindings: vec!["maybe".to_string()],
+                bindings: vec!["maybe".to_string().into()],
                 binding_types: vec![maybe_value_type],
                 body: value_or_match(SpecAlgebraicExpression {
                     algebraic_type: maybe_type,
-                    node: SpecAlgebraicExpressionNode::Binding("maybe".to_string()),
+                    node: SpecAlgebraicExpressionNode::Binding("maybe".to_string().into()),
                 }),
             },
         ],
@@ -662,7 +662,7 @@ fn algebraic_result_match_on_symbolic_value_remains_one_term() {
                 },
                 SpecAlgebraicResultMatchArm {
                     variant: "Some".to_string(),
-                    bindings: vec!["value".to_string()],
+                    bindings: vec!["value".to_string().into()],
                     binding_types: vec![AlgebraicValueType::Program(ProgramType::Int32)],
                     binding_variables: vec![None],
                     body: Box::new(SpecAlgebraicExpression {
@@ -927,7 +927,7 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
             scrutinee: Box::new(constructor.clone()),
             arms: vec![SpecAlgebraicMatchArm {
                 variant: "At".to_string(),
-                bindings: vec!["p".to_string()],
+                bindings: vec!["p".to_string().into()],
                 binding_types: vec![field_type.clone()],
                 body: SpecExpression::ProgramExpression(ProgramExpression::Variable(
                     ("p".to_string()).into(),
@@ -960,7 +960,7 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
                 scrutinee: Box::new(constructor),
                 arms: vec![SpecAlgebraicResultMatchArm {
                     variant: "At".to_string(),
-                    bindings: vec!["p".to_string()],
+                    bindings: vec!["p".to_string().into()],
                     binding_types: vec![field_type.clone()],
                     binding_variables: vec![None],
                     body: Box::new(SpecAlgebraicExpression {

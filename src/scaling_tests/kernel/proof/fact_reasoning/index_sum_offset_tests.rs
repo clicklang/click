@@ -6,7 +6,7 @@ fn an_index_sum_offset_reads_only_the_cited_premise_and_its_own_terms() {
     let _session = VerificationSession::enter();
     let cited = exact_sum();
     // One run first, so term interning is not charged to the first size.
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&cited));
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&cited));
     normalize_using_conditions(&address_goal(0, 1), std::slice::from_ref(&cited), &facts).unwrap();
     // Unrelated held facts grow; the work stays the same.
     let mut unrelated = Vec::new();
@@ -21,7 +21,7 @@ fn an_index_sum_offset_reads_only_the_cited_premise_and_its_own_terms() {
                 true,
             )
         }));
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
         let goal = address_goal(0, 1);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             normalize_using_conditions(&goal, std::slice::from_ref(&cited), &facts)

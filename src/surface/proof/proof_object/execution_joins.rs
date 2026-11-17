@@ -505,8 +505,6 @@ impl<'a> Proof<'a> {
                     + arm.introduced_loop_clauses.len()
             || arm.execution.core.frontier_loop_rules.len()
                 != parent_execution.core.frontier_loop_rules.len() + arm.introduced_loop_rules.len()
-            || arm.execution.core.unfolded_predicates.len()
-                != parent_execution.core.unfolded_predicates.len() + arm.introduced_unfolds.len()
         {
             return Err(self.step_error(format!(
                 "{name} execution arm changed check metadata that the checked {variant} has not migrated"
@@ -524,7 +522,6 @@ impl<'a> Proof<'a> {
     /// with an empty impossible arm.
     pub(super) fn merge_decided_interface_execution_path(
         &self,
-        parent_unfolds: &PersistentOrderedSet<String>,
         parent_execution: &ExecutionProofState,
         continuation_index: usize,
         take_then: bool,
@@ -602,19 +599,12 @@ impl<'a> Proof<'a> {
         } else {
             (empty, selected)
         };
-        let unfolded_predicates =
-            arm.introduced_unfolds
-                .iter()
-                .fold(parent_unfolds.clone(), |mut unfolds, name| {
-                    unfolds.insert(name.clone());
-                    unfolds
-                });
+
         Ok(CheckedExecutionJoinParts {
             trace_arm_paths: None,
             execution,
             facts,
             common_added_facts: added_facts,
-            unfolded_predicates,
             step: ProofStep::Branch {
                 ensuring: Some(assertions),
                 then_proof: Box::new(then_proof),
@@ -779,8 +769,7 @@ impl<'a> Proof<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn merge_interface_execution_join(
         &self,
-        parent_facts: &ProofFacts,
-        parent_unfolds: &PersistentOrderedSet<String>,
+        parent_facts: &PureFactStore,
         parent_execution: &ExecutionProofState,
         statement_index: usize,
         continuation_index: usize,
@@ -950,7 +939,7 @@ impl<'a> Proof<'a> {
             .max(arms[1].execution.core.kernel_variable_mark());
 
         let abstract_arm = |arm: &CheckedExecutionJoinArm<'_>| -> Result<
-            (ExecutionProofState, ProofFacts),
+            (ExecutionProofState, PureFactStore),
             ClickError,
         > {
             let mut execution = arm.execution.clone();
@@ -1079,7 +1068,7 @@ impl<'a> Proof<'a> {
         }
         execution.core.has_structured_branch_history = true;
         execution.core.execution_abstraction = true;
-        execution.core.unfolded_predicates.clear();
+
         // The joined path is still on the cases the proof took before this
         // split. Its own two cases are the ones that end here.
         execution.presentation.case_assumptions =
@@ -1236,7 +1225,6 @@ impl<'a> Proof<'a> {
             execution,
             facts,
             common_added_facts: added_facts,
-            unfolded_predicates: parent_unfolds.clone(),
             step,
         })
     }
@@ -1264,7 +1252,6 @@ impl<'a> Proof<'a> {
             let name = if take_then { "then" } else { "else" };
             let view = self.sibling_execution_arm_view(record, name, arm_index, id, steps)?;
             let mut parts = self.merge_decided_interface_execution_path(
-                &record.parent_unfolds,
                 &record.parent_execution,
                 record.continuation_index,
                 take_then,
@@ -1277,7 +1264,6 @@ impl<'a> Proof<'a> {
         let (ids, arms) = self.sibling_execution_arm_views(record)?;
         let parts = self.merge_interface_execution_join(
             &record.parent_facts,
-            &record.parent_unfolds,
             &record.parent_execution,
             record.statement_index,
             record.continuation_index,
@@ -1332,7 +1318,6 @@ impl<'a> Proof<'a> {
         let statement_index = record.parent_execution.core.frontier.next_statement_index;
         let parts = self.merge_interface_execution_join(
             &record.common_facts,
-            &record.parent_unfolds,
             &record.parent_execution,
             statement_index,
             statement_index,
@@ -1374,13 +1359,6 @@ impl<'a> Proof<'a> {
         self.merge_branch_generated_load_bindings(execution, parent, arms)?;
         self.merge_branch_generated_load_source_events(execution, parent, arms)?;
         merge_branch_store_separation_misses(execution, parent, arms);
-        // A chosen existential projection is usable only when both sibling
-        // paths retained the same checked source record.  Otherwise it is
-        // branch-local presentation and must not leak through the join.
-        execution.presentation.chosen_projection = (arms[0].presentation.chosen_projection
-            == arms[1].presentation.chosen_projection)
-            .then(|| arms[0].presentation.chosen_projection.clone())
-            .flatten();
         if !carry_condition_spellings {
             return Ok(());
         }
@@ -1469,8 +1447,7 @@ impl<'a> Proof<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn merge_terminal_execution_join(
         &self,
-        parent_facts: &ProofFacts,
-        parent_unfolds: &PersistentOrderedSet<String>,
+        parent_facts: &PureFactStore,
         parent_execution: &ExecutionProofState,
         statement_index: usize,
         execution_start_state: ExecutionState,
@@ -2102,13 +2079,7 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        let mut unfolded_predicates = parent_unfolds.clone();
-        for name in &arms[0].introduced_unfolds {
-            if !arms[1].introduced_unfolds.contains(name) {
-                continue;
-            }
-            unfolded_predicates.insert(name.clone());
-        }
+
         let step = if call_outcomes {
             ProofStep::CallOutcomes {
                 returned_proof: Box::new(then_proof),
@@ -2122,7 +2093,6 @@ impl<'a> Proof<'a> {
             execution,
             facts,
             common_added_facts,
-            unfolded_predicates,
             step,
         })
     }
@@ -2135,8 +2105,7 @@ impl<'a> Proof<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn merge_checked_execution_join(
         &self,
-        parent_facts: &ProofFacts,
-        parent_unfolds: &PersistentOrderedSet<String>,
+        parent_facts: &PureFactStore,
         parent_execution: &ExecutionProofState,
         statement_index: usize,
         continuation_index: usize,
@@ -2311,13 +2280,7 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        let mut unfolded_predicates = parent_unfolds.clone();
-        for name in &arms[0].introduced_unfolds {
-            if !arms[1].introduced_unfolds.contains(name) {
-                continue;
-            }
-            unfolded_predicates.insert(name.clone());
-        }
+
         let [then_arm, else_arm] = arms;
         let step = ProofStep::Branch {
             ensuring: None,
@@ -2329,7 +2292,6 @@ impl<'a> Proof<'a> {
             execution,
             facts,
             common_added_facts,
-            unfolded_predicates,
             step,
         })
     }
@@ -2357,7 +2319,6 @@ impl<'a> Proof<'a> {
         let (ids, arms) = self.sibling_execution_arm_views(record)?;
         let parts = self.merge_checked_execution_join(
             &record.parent_facts,
-            &record.parent_unfolds,
             &record.parent_execution,
             record.statement_index,
             record.continuation_index,
@@ -2387,7 +2348,6 @@ impl<'a> Proof<'a> {
         let (ids, arms) = self.sibling_execution_arm_views(record)?;
         let parts = self.merge_terminal_execution_join(
             &record.parent_facts,
-            &record.parent_unfolds,
             &record.parent_execution,
             record.statement_index,
             record.execution_start_state.clone(),
@@ -2437,7 +2397,6 @@ impl<'a> Proof<'a> {
         )?;
         let parts = self.merge_terminal_execution_join(
             &record.parent_facts,
-            &record.parent_unfolds,
             &record.parent_execution,
             record.statement_index,
             record.execution_start_state.clone(),
@@ -2479,7 +2438,6 @@ impl<'a> Proof<'a> {
         )?;
         let parts = self.merge_terminal_execution_join(
             &record.common_facts,
-            &record.parent_unfolds,
             &record.parent_execution,
             record.parent_execution.core.frontier.next_statement_index,
             record.execution_start_state.clone(),
@@ -2529,7 +2487,6 @@ impl<'a> Proof<'a> {
         )?;
         let Some(parts) = self.merge_case_execution_join(
             &record.common_facts,
-            &record.parent_unfolds,
             &record.parent_execution,
             record.case_condition.clone(),
             [then_view, else_view],
@@ -2553,8 +2510,7 @@ impl<'a> Proof<'a> {
     /// state, and the effect facts are either arm's.
     fn merge_case_execution_join(
         &self,
-        parent_facts: &ProofFacts,
-        parent_unfolds: &PersistentOrderedSet<String>,
+        parent_facts: &PureFactStore,
         parent_execution: &ExecutionProofState,
         case_condition: ProofCaseCondition,
         arms: [CheckedExecutionJoinArm<'_>; 2],
@@ -2678,19 +2634,12 @@ impl<'a> Proof<'a> {
             .map_err(|message| self.step_error(message))?;
         migrate_arm_metadata(&mut execution, &arms, true);
 
-        let mut unfolded_predicates = parent_unfolds.clone();
-        for name in &arms[0].introduced_unfolds {
-            if arms[1].introduced_unfolds.contains(name) {
-                unfolded_predicates.insert(name.clone());
-            }
-        }
         let [then_arm, else_arm] = arms;
         Ok(Some(CheckedExecutionJoinParts {
             trace_arm_paths: None,
             execution,
             facts,
             common_added_facts,
-            unfolded_predicates,
             step: case_condition.step(None, then_arm.certificate, else_arm.certificate),
         }))
     }
@@ -2819,8 +2768,8 @@ impl<'a> Proof<'a> {
         split: SplitId,
         id: BranchId,
         steps: Vec<ProofStep>,
-        ancestry_facts: &'v ProofFacts,
-        delta_facts: &'v ProofFacts,
+        ancestry_facts: &'v PureFactStore,
+        delta_facts: &'v PureFactStore,
         delta_execution: &'v ExecutionProofState,
         condition_theorem: Option<&'v Theorem>,
     ) -> Result<CheckedExecutionJoinArm<'v>, ClickError> {
@@ -2878,17 +2827,7 @@ impl<'a> Proof<'a> {
             .ok_or_else(|| self.step_error(format!(
                 "cannot join `branch`: the {name} arm derivations do not descend from split {:?}", split
             )))?;
-        let introduced_unfolds = execution
-            .core
-            .unfolded_predicates
-            .suffix_since(&delta_execution.core.unfolded_predicates)
-            .ok_or_else(|| {
-                self.step_error(format!(
-                    "cannot join `branch`: the {name} arm unfolds do not descend from split {:?}",
-                    split
-                ))
-            })?
-            .to_vec();
+
         let introduced_loop_clauses = execution
             .presentation
             .frontier_loop_clauses
@@ -2915,7 +2854,6 @@ impl<'a> Proof<'a> {
             effect_base: &delta_execution.core.effect_facts,
             introduced_effect_facts: std::cell::OnceCell::new(),
             introduced_derivations,
-            introduced_unfolds,
             introduced_loop_clauses,
             introduced_loop_rules,
         })
@@ -2965,13 +2903,6 @@ impl<'a> Proof<'a> {
             execution,
             facts: view.facts.clone(),
             common_added_facts: view.introduced_facts.clone(),
-            unfolded_predicates: view.introduced_unfolds.iter().fold(
-                record.parent_unfolds.clone(),
-                |mut unfolds, name| {
-                    unfolds.insert(name.clone());
-                    unfolds
-                },
-            ),
             step,
         };
         self.resume_parent_after_sibling_join(record, [id, id], parts)
@@ -3027,7 +2958,6 @@ impl<'a> Proof<'a> {
                 ids,
                 parent_goal,
                 parts.facts,
-                parts.unfolded_predicates,
                 parts.execution,
                 parts.common_added_facts.clone(),
                 parts.common_added_facts,
@@ -3692,14 +3622,14 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("`branch` requires an open execution frontier"));
         };
         let branch_state = &self.focused_branch().expect("focused branch exists").state;
-        let unfolds = branch_state.unfolded_predicates.clone();
+
         let parent_facts = branch_state.facts.clone();
         let parent_execution = branch_state
             .execution
             .clone()
             .expect("the preparation requires an execution frontier");
         let mut condition_theorems: [Option<Theorem>; 2] = [None, None];
-        let mut base_facts: [Option<ProofFacts>; 2] = [None, None];
+        let mut base_facts: [Option<PureFactStore>; 2] = [None, None];
         let mut base_executions: [Option<Arc<ExecutionProofState>>; 2] = [None, None];
         let mut path_facts: [Option<Vec<Proposition>>; 2] = [None, None];
         let mut arms = [None, None];
@@ -3739,7 +3669,6 @@ impl<'a> Proof<'a> {
             base_executions,
             path_facts,
             parent_facts,
-            parent_unfolds: unfolds,
             parent_execution: parent_execution.clone(),
             statement_index: prepared.statement_index,
             continuation_index: prepared.continuation_index,
@@ -3877,7 +3806,6 @@ impl<'a> Proof<'a> {
             base_executions: [Some(returned_execution), Some(threw_execution)],
             path_facts,
             parent_facts: root_facts,
-            parent_unfolds: self.focused_branch_unfolds().clone(),
             parent_execution: Arc::new(parent_execution),
             statement_index: prepared.statement_index,
             continuation_index: prepared.statement_index,
@@ -3931,7 +3859,7 @@ fn advance_joined_kernel_variable_mark(
 fn migrate_arm_metadata(
     execution: &mut ExecutionProofState,
     arms: &[CheckedExecutionJoinArm<'_>; 2],
-    retain_common_unfolds: bool,
+    _retain_common_unfolds: bool,
 ) {
     for arm in arms {
         for theorem in &arm.introduced_derivations {
@@ -3941,15 +3869,7 @@ fn migrate_arm_metadata(
                 .insert(theorem.clone());
         }
     }
-    if retain_common_unfolds {
-        for name in &arms[0].introduced_unfolds {
-            if arms[1].introduced_unfolds.contains(name)
-                && !execution.core.unfolded_predicates.contains(name)
-            {
-                execution.core.unfolded_predicates.push(name.clone());
-            }
-        }
-    }
+
     for arm in arms {
         // Clauses describe source presentation and may share a C loop across
         // proof branches. Rules are checked path evidence: retain every rule,

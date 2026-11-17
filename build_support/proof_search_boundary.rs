@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use syn::visit::Visit;
 
 pub const MANIFEST: &str = include_str!("proof_search_edges.tsv");
+pub const OWNERSHIP_FALLBACK_MANIFEST: &str = include_str!("ownership_fallback_edges.tsv");
 pub const DRIVER_METHODS: &str = include_str!("proof_driver_methods.txt");
+pub const OWNERSHIP_FALLBACK_TARGETS: &str = include_str!("ownership_fallback_targets.txt");
 pub const TARGETS: &str = include_str!("proof_search_targets.txt");
 
 fn test_only(attrs: &[syn::Attribute]) -> bool {
@@ -25,7 +27,11 @@ struct Inventory {
 }
 impl Inventory {
     fn record(&mut self, target: &str) {
-        if TARGETS.lines().any(|name| name == target) {
+        if TARGETS
+            .lines()
+            .chain(OWNERSHIP_FALLBACK_TARGETS.lines())
+            .any(|name| name == target)
+        {
             *self
                 .edges
                 .entry((self.owner.clone(), self.function.clone(), target.to_owned()))
@@ -241,7 +247,7 @@ pub fn inventory(path: &str, file: &syn::File) -> BTreeMap<String, usize> {
                 caller.as_str(),
                 "spelled_goal"
                     | "structural_proposition_candidate"
-                    | "record_spellability_census"
+                    | "record_raise_lower_census"
                     | "trace_pointer_pair"
                     | "spell_refutation"
                     | "spelled_goal_for_search"
@@ -289,6 +295,7 @@ pub fn inventory(path: &str, file: &syn::File) -> BTreeMap<String, usize> {
 pub fn expected() -> BTreeMap<String, usize> {
     MANIFEST
         .lines()
+        .chain(OWNERSHIP_FALLBACK_MANIFEST.lines())
         .filter(|line| !line.starts_with('#') && !line.is_empty())
         .map(|line| {
             let (key, count) = line.rsplit_once('\t').expect("dependency record count");

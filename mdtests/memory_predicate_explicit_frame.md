@@ -39,11 +39,11 @@ int32 set_before_terminator(
     ensures terminated(data, length);
     ensures result == 0;
 } by {
-    unfold(terminated);
+    unfold(terminated(data, length));
     step();
     have data[length] == 0;
     have terminated(data, length) by {
-        unfold(terminated);
+        unfold(terminated(data, length));
         solve();
     }
     step();

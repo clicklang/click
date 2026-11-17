@@ -101,3 +101,54 @@ fn integer_substitution_nested_carrier_scopes_scale_with_shared_body() {
         );
     }
 }
+
+#[test]
+fn integer_substitution_algebraic_capture_scales_with_nested_scopes() {
+    let from = Variable(9_350);
+    let bound = Variable(9_351);
+    let algebraic_type = AlgebraicType::parameter("Flag".into());
+    let replacement = algebraic_projection(&algebraic_type, bound);
+    let samples = [8, 16, 32, 64].map(|depth| {
+        let mut source = Proposition::Equal(
+            Term::Integer(IntegerTerm::var(from)),
+            Term::Integer(replacement.clone()),
+        );
+        for _ in 0..depth {
+            source = Proposition::ForAll {
+                name: Default::default(),
+                var: bound,
+                sort: Sort::Algebraic(algebraic_type.clone()),
+                body: Box::new(source),
+            };
+        }
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            substitute_integer_variable_in_pure_proposition(&source, from, &replacement).unwrap()
+        });
+        let mut remaining = result;
+        let mut issued = BTreeSet::new();
+        let mut innermost = bound;
+        for _ in 0..depth {
+            let Proposition::ForAll { var, body, .. } = remaining else {
+                panic!("quantifier was lost");
+            };
+            assert_ne!(var, bound);
+            assert!(issued.insert(var));
+            innermost = var;
+            remaining = *body;
+        }
+        assert_eq!(
+            remaining,
+            Proposition::Equal(
+                Term::Integer(replacement.clone()),
+                Term::Integer(algebraic_projection(&algebraic_type, innermost))
+            )
+        );
+        work
+    });
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1] <= pair[0] * 3,
+            "algebraic capture work must scale with explicit scopes: {samples:?}"
+        );
+    }
+}

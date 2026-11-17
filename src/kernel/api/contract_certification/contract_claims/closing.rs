@@ -3,7 +3,7 @@
 use super::*;
 use crate::kernel::proof::{
     ContractClosingGoal, ContractClosingGoals, OutcomeClaimGoals, OutcomeIdentity,
-    OutcomeProofCore, ProofFacts,
+    OutcomeProofCore, PureFactStore,
 };
 use std::sync::{Arc, OnceLock};
 
@@ -78,6 +78,23 @@ impl ContractClosingContext {
                 .map(|authority| authority.cases().clone()),
             entry: OnceLock::new(),
         })
+    }
+
+    pub(crate) fn open_claims(
+        &self,
+        claims: impl IntoIterator<
+            Item = (
+                FunctionContractClaimKey,
+                Option<FunctionContractClaimTarget>,
+            ),
+        >,
+        is_exceptional: bool,
+    ) -> OutcomeClaimGoals {
+        OutcomeClaimGoals::open_with_borrowed_resources(
+            claims,
+            is_exceptional,
+            self.function.resource_ensures(),
+        )
     }
 
     pub(crate) fn open(
@@ -169,7 +186,7 @@ pub(crate) struct ContractExitObligations {
 struct CheckedResourceTransition;
 
 struct PreparedEffectGoals {
-    base: ProofFacts,
+    base: PureFactStore,
     paths: Vec<CertifiedFunctionClaimPath>,
 }
 
@@ -309,7 +326,7 @@ impl ContractExitObligations {
         path: &SymbolicExecutionPath,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
     ) -> Result<Self, ContractClosingRefusal> {
         let publication = outcome
             .publication
@@ -336,7 +353,7 @@ impl ContractExitObligations {
         specification: &FunctionSpecification,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
     ) -> Result<Self, ContractClosingRefusal> {
         self.prove_goal_with_specification(
             kind,
@@ -358,7 +375,7 @@ impl ContractExitObligations {
         specification: &FunctionSpecification,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
     ) -> Result<Self, ContractClosingRefusal> {
         if !self.outcome.same_as(&outcome.identity) {
             return Err(ContractClosingRefusal::Resource(
@@ -401,7 +418,10 @@ impl ContractExitObligations {
                         .unwrap_or(false);
                 let resources_closed = self.checked_transition.is_some()
                     || receipts_closed
-                        && matches!(specification.outcome(), FunctionOutcome::Return { .. })
+                        && matches!(
+                            specification.outcome(),
+                            FunctionOutcome::Return { .. } | FunctionOutcome::Throw { .. }
+                        )
                         && self.resource_receipts_jointly_available(
                             outcome,
                             claims,
@@ -413,7 +433,7 @@ impl ContractExitObligations {
                     outcome,
                     claims,
                     facts,
-                    !outcome.is_exceptional && !resources_closed,
+                    !resources_closed,
                 )?;
                 if !self.context.effect_claims.is_empty() {
                     proved.effects = Some(Arc::new(PreparedEffectGoals {
@@ -532,7 +552,7 @@ impl ContractExitObligations {
         path: &SymbolicExecutionPath,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
         check_resources: bool,
     ) -> Result<Vec<CertifiedFunctionClaimPath>, ContractClosingRefusal> {
         let context = &self.context;
@@ -692,7 +712,7 @@ impl ContractExitObligations {
         &self,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
     ) -> Result<(), ContractClosingRefusal> {
         let context = &self.context;
         let assumptions = facts.assumptions();

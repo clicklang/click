@@ -1038,7 +1038,15 @@ fn frozen_proof_search_inventory_rejects_deleted_or_duplicated_references() {
             false,
         ),
     ] {
-        let file = syn::parse_file(source).unwrap();
+        // Keep the file's independently frozen ownership callers present so
+        // this mutation isolates the release_store discovery edge.
+        let source = format!(
+            "fn acquire_load(c:C) {{ c.try_compose_with_facts_delaying_normalization(); }}
+             fn initialize(c:C) {{ c.try_compose_with_facts_delaying_normalization(); }}
+             fn resolve_observed_publications(c:C) {{ c.try_compose_with_facts_delaying_normalization(); }}
+             {source}"
+        );
+        let file = syn::parse_file(&source).unwrap();
         assert_eq!(
             proof_search_boundary::check(path, &file).is_ok(),
             accepted,
@@ -1539,35 +1547,22 @@ fn join_must_keep_its_discovery_guard() {
 }
 
 #[test]
-fn ordinary_contracts_cannot_call_independent_termination_adapters() {
+fn legacy_loop_preparation_stays_in_the_termination_input_adapter() {
     for path in [
         "src/surface.rs",
         "src/surface/verification.rs",
         "src/kernel/termination/completion.rs",
     ] {
-        for source in [
-            "fn complete() { program_verified_function_termination_rules(&rules); }",
-            "use crate::kernel::program_verified_function_termination_rules as fallback;",
-            "fn complete() { TerminationObligations::generate_independent(&rules); }",
-            "fn complete() { prepare_independent_loop_exits(&rules, &summaries); }",
-        ] {
-            assert!(
-                boundary::check_source(path, source).is_err(),
-                "accepted {path}: {source}"
-            );
-        }
+        let source = "fn complete() { prepare_independent_loop_exits(&rules, &summaries); }";
+        assert!(
+            boundary::check_source(path, source).is_err(),
+            "accepted {path}: {source}"
+        );
     }
     assert!(
         boundary::check_source(
             "src/kernel/termination/inputs.rs",
             "fn adapt() { prepare_independent_loop_exits(&rules, &summaries); }"
-        )
-        .is_ok()
-    );
-    assert!(
-        boundary::check_source(
-            "src/kernel/termination.rs",
-            "fn standalone() { TerminationObligations::generate_independent(&rules); }"
         )
         .is_ok()
     );
@@ -1615,5 +1610,77 @@ fn constructed_returns_and_selected_backings_cannot_restore_discovery() {
             "fn build(c:C) { c.normalized_without_discovery(facts); }"
         )
         .is_ok()
+    );
+}
+
+#[test]
+fn ownership_fallback_inventory_rejects_new_routes_and_hidden_references() {
+    for target in proof_search_boundary::OWNERSHIP_FALLBACK_TARGETS.lines() {
+        for source in [
+            format!("fn step(c: C) {{ c.{target}(); }}"),
+            format!("fn step(c: C) {{ let f = C::{target}; f(c); }}"),
+            format!("fn step(c: C) {{ hidden!(c.{target}()); }}"),
+            format!("use crate::C::{target} as hidden;"),
+        ] {
+            let file = syn::parse_file(&source).unwrap();
+            assert!(
+                proof_search_boundary::check("src/kernel/new_operation.rs", &file).is_err(),
+                "{source}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ownership_fallback_inventory_pins_callers_and_reference_counts() {
+    for (path, owner, name, target) in [
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "EvaluatedReturnResources",
+            "admit_clause",
+            "try_compose_with_legacy_discovery_and_occurrences",
+        ),
+        (
+            "src/kernel/primitives/resource_algebra.rs",
+            "ResourceContext",
+            "admit_certified_memory_boundary",
+            "legacy_memory_boundary_conflict",
+        ),
+        (
+            "src/kernel/primitives/resource_algebra/legacy_search.rs",
+            "ResourceContext",
+            "compose_selected_occurrences",
+            "resume_legacy_discovery",
+        ),
+    ] {
+        let source = format!("impl {owner} {{ fn {name}(c: C) {{ c.{target}(); }} }}");
+        let file = syn::parse_file(&source).unwrap();
+        let key = format!("{path}\tlegacy-caller\t{owner}::{name}\t{target}");
+        assert_eq!(proof_search_boundary::inventory(path, &file)[&key], 1);
+        assert_eq!(proof_search_boundary::expected()[&key], 1);
+        let doubled = syn::parse_file(&format!(
+            "impl {owner} {{ fn {name}(c: C) {{ c.{target}(); c.{target}(); }} }}"
+        ))
+        .unwrap();
+        assert!(
+            proof_search_boundary::check(path, &doubled)
+                .unwrap_err()
+                .iter()
+                .any(|error| error.contains(&key) && error.contains("2 references"))
+        );
+    }
+    let path = "src/kernel/functions/mixed_return_resources.rs";
+    let target = "try_compose_with_legacy_discovery_and_occurrences";
+    let key = format!("{path}\tlegacy-caller\tPreparedReturnComposition::finish\t{target}");
+    assert!(!proof_search_boundary::expected().contains_key(&key));
+    let file = syn::parse_file(&format!(
+        "impl PreparedReturnComposition {{ fn finish(c: C) {{ c.{target}(); }} }}"
+    ))
+    .unwrap();
+    assert!(
+        proof_search_boundary::check(path, &file)
+            .unwrap_err()
+            .iter()
+            .any(|error| error.contains(&key) && error.contains("unreviewed"))
     );
 }

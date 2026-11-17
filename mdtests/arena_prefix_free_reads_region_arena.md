@@ -85,17 +85,17 @@ void arena_release(struct region* region) {
         normalize() using { };
     }
     have at(statement(0).exit, defined(region->arena)) by {
-        preserve(separate(statement(0).footprint, memory(region->arena)));
+        preserve(memory(region->arena), statement(0));
     }
     have region->arena == at(before_store, region->arena) by {
-        preserve(separate(statement(0).footprint, memory(region->arena)));
+        preserve(memory(region->arena), statement(0));
     }
     have separate(memory((&arena)[0..1]), memory(region->arena->data));
     have separate(statement(0).footprint, memory(region->arena->data)) by {
         normalize() using { separate(memory((&arena)[0..1]), memory(region->arena->data)); };
     }
     have region->arena->data == at(before_store, region->arena->data) by {
-        preserve(separate(statement(0).footprint, memory(region->arena->data)));
+        preserve(memory(region->arena->data), statement(0));
     }
     mark after_declare;
     step();
@@ -103,17 +103,17 @@ void arena_release(struct region* region) {
         normalize() using { };
     }
     have at(statement(1).exit, defined(region->arena)) by {
-        preserve(separate(statement(1).footprint, memory(region->arena)));
+        preserve(memory(region->arena), statement(1));
     }
     have region->arena == at(after_declare, region->arena) by {
-        preserve(separate(statement(1).footprint, memory(region->arena)));
+        preserve(memory(region->arena), statement(1));
     }
     have separate(memory((&arena)[0..1]), memory(region->arena->data));
     have separate(statement(1).footprint, memory(region->arena->data)) by {
         normalize() using { separate(memory((&arena)[0..1]), memory(region->arena->data)); };
     }
     have region->arena->data == at(after_declare, region->arena->data) by {
-        preserve(separate(statement(1).footprint, memory(region->arena->data)));
+        preserve(memory(region->arena->data), statement(1));
     }
     have region->arena == at(before_store, region->arena) by {
         rewrite(region->arena, at(after_declare, region->arena));
@@ -132,10 +132,10 @@ void arena_release(struct region* region) {
         normalize() using { separate(memory(arena->live_regions), memory(region->arena)); };
     }
     have at(statement(2).exit, defined(region->arena)) by {
-        preserve(separate(statement(2).footprint, memory(region->arena)));
+        preserve(memory(region->arena), statement(2));
     }
     have region->arena == at(after_assignment, region->arena) by {
-        preserve(separate(statement(2).footprint, memory(region->arena)));
+        preserve(memory(region->arena), statement(2));
     }
     have separate(statement(2).footprint, memory(at(after_assignment, &region->arena->data)[0])) by {
         normalize() using {
@@ -143,7 +143,7 @@ void arena_release(struct region* region) {
         };
     }
     have load_int32_pointer(at(after_assignment, &region->arena->data)) == at(after_assignment, region->arena->data) by {
-        preserve(separate(statement(2).footprint, memory(at(after_assignment, &region->arena->data)[0])));
+        preserve(memory(at(after_assignment, &region->arena->data)[0]), statement(2));
     }
     have region->arena->data == load_int32_pointer(at(after_assignment, &region->arena->data)) by {
         rewrite(region->arena, at(after_assignment, region->arena));

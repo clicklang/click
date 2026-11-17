@@ -116,7 +116,7 @@ that stated it.
 The second half alone would be a weaker fact than it looks. An extent is
 `(b - a) * width` in 32-bit arithmetic, so a count of `1 << 30` four-byte
 elements scales to `0`: the range would be empty, vacuously viewable for any
-pointer, and still spell "the elements `0..1 << 30`". Every rule that reads a
+pointer, and still read as "the elements `0..1 << 30`". Every rule that reads a
 range at element granularity — placing a cell inside it, narrowing it,
 concatenating two of them — therefore asks for the extent half first, whatever
 the fact's origin. A range a proof established rather than stated carries no

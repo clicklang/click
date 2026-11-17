@@ -1,6 +1,113 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: unrelated equality refusal and related-premise replay"]
+fn unrelated_equality_is_refused_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/transport_using_names_its_source_and_target.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("), "{source}");
+    let error = verify_c_sources(&source, &sources).unwrap_err();
+    let report = error.report();
+    assert!(
+        error
+            .message()
+            .contains("`known` requires the current goal as an available semantic fact"),
+        "{report}"
+    );
+    assert!(report.contains("a == 1"), "{report}");
+    assert!(report.contains("goal: b == 1"), "{report}");
+    let control = source.replace("requires a == 1;", "requires a == 1;\n    requires b == a;");
+    assert_ne!(control, source);
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&control, &sources, "t.ensures_0").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("t.ensures_0", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: guarded child ownership release and preservation replay"]
+fn guarded_child_preservation_keeps_the_consumed_read_refusal() {
+    let (source, sources) =
+        mdtest_sources("mdtests/guarded_resource_read_rejects_consumed_owner.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("), "{source}");
+    with_proof_trace("f", || {
+        let error = verify_c_sources(&source, &sources).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(error.message().contains("missing resource fact"), "{error}");
+        assert!(trace.contains("step(consume_child("), "{trace}");
+    });
+    // Returning the same owned child is a positive control for the original C.
+    let control = source.replace(
+        "    consumes state: child_value(p);",
+        "    owns state: child_value(p);\n    ensures state.number == old(state.number);",
+    ).replace(
+        "    step(); step(); solve();",
+        "    step();\n    let { number: returned } = unfold(restored);\n    have returned == old(child.number) by { known(); }\n    step();\n    solve();",
+    );
+    assert_ne!(source, control);
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&control, &sources, "f.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("f.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: negated resource-field expansion and cold replay"]
+fn negated_resource_fields_expand_and_cold_replay() {
+    let sources = [(
+        "probe.c",
+        "struct pair { int start; int end; }; void probe(struct pair *p, int index) {}",
+    )];
+    let source = r#"
+        verifying "probe.c";
+        resource saved(p: struct pair*) {
+            field start: int32;
+            field end: int32;
+            owns *p;
+            fact p->start == start;
+            fact p->end == end;
+        }
+        void probe(struct pair* p, int32 index) {
+            owns r: saved(p);
+            requires 0 <= r.start;
+            requires defined(r.start + index);
+            requires to_integer(r.start + index) < to_integer(r.end);
+        } by {
+            have -to_integer(r.start) == 0 - to_integer(r.start) by { normalize(); }
+            have -(-to_integer(r.start)) == to_integer(r.start) by { normalize(); }
+            let { start: s, end: e } = unfold(r);
+            have to_integer(s + index + 1) <= to_integer(e);
+            let r = fold(saved(p), { start: s, end: e });
+            step();
+            step();
+            solve();
+        }
+    "#;
+    verify_c_sources(source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    // The successor-bound proof also generates negated entry-state field
+    // expressions after `r` has been unfolded. They must elaborate on replay.
+    let expanded = expand_c_claim_source_by_label(source, &sources, "probe.contract").unwrap();
+    without_implicit_solve_for_claim("probe.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn computational_solve_expansions_use_known_without_implicit_search() {
     for (parameters, requirement, goal, tactic) in [
         ("x: Integer", "", "x + 1 > x", "solve()"),
@@ -168,7 +275,7 @@ fn mirrored_implication_consequents_expand_to_checked_extraction() {
             );
             verify_click_theorems(&source).unwrap_or_else(|error| panic!("{goal}: {error}"));
             let expanded = expand_c_claim_source_by_label(&source, &[], "bound.ensures_0").unwrap();
-            assert!(expanded.contains("extract("), "{expanded}");
+            assert!(!expanded.contains("extract("), "{expanded}");
             without_implicit_solve(|| verify_click_theorems(&expanded))
                 .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
             let missing_guard = expanded.replace("requires enabled;", "");
@@ -250,7 +357,10 @@ fn cases_obligation_expands_before_execution_arms() {
             "=> { step_until(function.exit); solve(); }",
             "=> { solve(); }",
         );
-    let explicit = after.replace("            cases {", "            have x == 0 or x == 1 by { extract(x == 0 or x == 1); known(); }\n            cases {");
+    let explicit = after.replace(
+        "            cases {",
+        "            have x == 0 or x == 1 by { known(); known(); }\n            cases {",
+    );
     let result_cases = after
         .replace("x == 0 =>", "result == 0 =>")
         .replace("x == 1 =>", "result == 1 =>");
@@ -1923,15 +2033,15 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
-        claim.contains("implies (let integer_value: Integer = to_integer(old((st.total as "),
+        claim.contains("implies ((to_integer(old((st.total as "),
         "{expanded}"
     );
     assert!(
-        claim.contains("integer_value) <= 9223372036854775807"),
+        claim.contains(": Integer) <= 9223372036854775807"),
         "{expanded}"
     );
     assert!(
-        claim.contains("integer_value) >= -9223372036854775808"),
+        claim.contains(": Integer) >= -9223372036854775808"),
         "{expanded}"
     );
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {
@@ -1960,7 +2070,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
-        claim.contains("implies (let integer_value: Integer = to_integer(old((st.total as "),
+        claim.contains("implies ((to_integer(old((st.total as "),
         "{expanded}"
     );
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {
@@ -2461,11 +2571,11 @@ fn post_execution_closer_continues_the_proof_intros_opened() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_13")]
 fn post_execution_closer_continues_the_proof_a_witness_opened() {
-    let anchor = "witness { len: found_len };\n        solve();";
+    let anchor = "witness(found_len);\n        solve();";
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/cstr_stdlib.md",
         anchor,
-        "witness { len: found_len };\n        ".len(),
+        "witness(found_len);\n        ".len(),
     );
     assert!(!expanded.contains("have exists (len: int32)"), "{expanded}");
 }
@@ -2588,7 +2698,7 @@ theorem integer_forall_solve() {
 }
 theorem integer_exists_solve(x: Integer) {
     ensures witnessed: exists (z: Integer) { z == x } by {
-        witness { z: x };
+        witness(x);
         solve();
     }
 }
@@ -2599,7 +2709,7 @@ theorem integer_exists_choose() {
     requires exists (z: Integer) { z == z };
     ensures chosen: exists (k: Integer) { k == k } by {
         obtain (candidate: Integer) { candidate == candidate };
-        witness { k: candidate };
+        witness(candidate);
         known();
     }
 }
@@ -2628,7 +2738,7 @@ theorem integer_exists_choose() {
                 "{label}: {expanded}"
             );
             assert!(
-                expanded.contains("witness { k: candidate }"),
+                expanded.contains("witness(candidate)"),
                 "{label}: {expanded}"
             );
         }
@@ -2653,7 +2763,7 @@ theorem guarded_integer_exists(value: int32) {
         obtain (candidate: Integer) {
             candidate == to_integer(if value > 0 { value } else { value + 1 })
         };
-        witness { k: candidate };
+        witness(candidate);
         known();
     }
 }
@@ -2669,7 +2779,7 @@ theorem fixed_integer_witness(value: int32) {
     ensures witness_fixed: exists (z: Integer) {
         z == 0 and to_integer(value + 1) == to_integer(value + 1)
     } by {
-        witness { z: 0 };
+        witness(0);
         both {
             both {
                 known();
@@ -2699,7 +2809,7 @@ theorem missing_integer_definedness(value: int32) {
     ensures exists (z: Integer) {
         z == 0 and to_integer(value + 1) == to_integer(value + 1)
     } by {
-        witness { z: 0 };
+        witness(0);
         solve();
     }
 }
@@ -2793,7 +2903,7 @@ theorem indexed_integer_exists(values: int32[]) {
     ensures exists (z: Integer) {
         z == to_integer(values[to_int32(z)])
     } by {
-        witness { z: 0 };
+        witness(0);
         solve();
     }
 }
@@ -3810,7 +3920,7 @@ fn whole_claim_expansion_closes_a_claim_opened_after_execution() {
         (
             "grouped_top_level_existentials",
             "identity.contract",
-            "witness { j: k }",
+            "witness(k)",
         ),
         (
             "intro_as_in_a_function_proof",
@@ -3902,7 +4012,7 @@ fn whole_claim_expansion_retains_logical_steps_after_terminal_c_steps() {
         verify_c_sources(&click, &sources).expect("the original sorting proof verifies");
     let expanded = expand_checked_function_claim(&click, &verified_for_label, "sort3.sorted")
         .unwrap_or_else(|error| panic!("{}", error.message()));
-    assert!(expanded.contains("unfold(sorted_range);"), "{expanded}");
+    assert!(expanded.contains("unfold(sorted_range("), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
@@ -4220,17 +4330,17 @@ fn serialized_loop_premises_reject_a_changed_state_or_polarity() {
     let expanded = expand_function_proof_source(source, &sources, "fill_tail").unwrap();
     verify_c_sources(&expanded, &sources).expect("serialized loop proof must reverify");
 
-    let original = "extract(at(loop(0).exit, i) <= at(loop(0).exit, n));";
+    let original = "have at(loop(0).exit, i) <= at(loop(0).exit, n) by {";
     assert!(expanded.contains(original), "{expanded}");
     for corrupted in [
         expanded.replacen(
             original,
-            "extract(at(region(3).entry, i) <= at(loop(0).exit, n));",
+            "have at(region(3).entry, i) <= at(loop(0).exit, n) by {",
             1,
         ),
         expanded.replacen(
             original,
-            "extract(not at(loop(0).exit, i) <= at(loop(0).exit, n));",
+            "have not at(loop(0).exit, i) <= at(loop(0).exit, n) by {",
             1,
         ),
     ] {
@@ -4615,8 +4725,8 @@ fn contract_refinement_expands_ordinary_helper_proofs() {
         theorem lift(callback: int32 (*)(int32)) {
             requires Source(callback);
             ensures Target(callback) by {
-                unfold(Source);
-                unfold(Target);
+                unfold(Source(callback));
+                unfold(Target(callback));
                 intro();
                 have result == x implies result >= 0 by {
                     apply(nonnegative_equal(x, result));
@@ -5170,7 +5280,7 @@ fn grouped_post_execution_unfold_retains_its_checked_proof_step() {
             ensures selected(x);
         } by {
             step_until(function.exit);
-            unfold(selected);
+            unfold(selected(x));
             known();
         }
     "#;
@@ -5627,7 +5737,7 @@ fn post_execution_existential_solve_retains_its_checked_scope() {
         int32 identity(int32 x) {
             ensures exists (j: int32) { j == result } by {
                 step_until(function.exit);
-                witness { j: result };
+                witness(result);
                 solve();
             }
         }
@@ -5650,7 +5760,7 @@ fn post_execution_existential_solve_retains_its_checked_scope() {
         position.column,
     )
     .expect("the checked existential obligation should expand");
-    assert!(expanded.contains("witness { j: result };"), "{expanded}");
+    assert!(expanded.contains("witness(result);"), "{expanded}");
     assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the retained witness/known scope should verify independently");
@@ -5668,7 +5778,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
             ensures exists (j: int32) { j == result } by {
                 step_until(function.exit);
                 obtain (k: int32) { k == x };
-                witness { j: k };
+                witness(k);
                 solve();
             }
         }
@@ -5693,17 +5803,17 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
         expanded.contains("obtain (k: int32) { k == x };"),
         "{expanded}"
     );
-    assert!(expanded.contains("witness { j: k };"), "{expanded}");
+    assert!(expanded.contains("witness(k);"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the serialized choose/witness proof should independently verify");
 
     let witness_offset = expanded
-        .rfind("witness { j: k };")
+        .rfind("witness(k);")
         .expect("the extracted nested proof should retain its witness");
     let mut corrupted = expanded.clone();
     corrupted.replace_range(
-        witness_offset..witness_offset + "witness { j: k };".len(),
-        "witness { j: k + 1 };",
+        witness_offset..witness_offset + "witness(k);".len(),
+        "witness(k + 1);",
     );
     assert_ne!(
         corrupted, expanded,
@@ -5728,7 +5838,7 @@ fn bounded_range_witness_closes_on_the_checked_outcome_scope() {
             requires 0 < n;
             ensures found_zero: (0..n).any(|k| { k == result }) by {
                 step_until(function.exit);
-                witness { k: 0 };
+                witness(0);
                 solve();
             }
         }
@@ -5745,7 +5855,7 @@ fn bounded_range_witness_closes_on_the_checked_outcome_scope() {
         ContractProofClaim::Ensure(0),
     )
     .expect("the retained bounded witness should expand");
-    assert!(expanded.contains("witness { k: 0 }"), "{expanded}");
+    assert!(expanded.contains("witness(0)"), "{expanded}");
     verify_c_sources(&expanded, &sources)
         .expect("the retained bounded witness should check independently");
 }
@@ -7309,7 +7419,7 @@ fn restricted_solve_after_unfold_expands_explicit_conjunction_extraction() {
             theorem equality_transitive_after_unfold(x: int32, y: int32, z: int32) {
                 requires equality_chain(x, y, z);
                 ensures x == z by {
-                    unfold(equality_chain);
+                    unfold(equality_chain(x, y, z));
                     solve() using {
                         x == y;
                         y == z;
@@ -7333,8 +7443,8 @@ fn restricted_solve_after_unfold_expands_explicit_conjunction_extraction() {
     verify_c_sources(click_source, &[]).expect("conjunction elimination should verify");
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("conjunction elimination should have an explicit expansion");
-    assert!(expanded.contains("extract(x == y);"), "{expanded}");
-    assert!(expanded.contains("extract(y == z);"), "{expanded}");
+    assert!(expanded.contains("have x == y by"), "{expanded}");
+    assert!(expanded.contains("have y == z by"), "{expanded}");
     assert!(expanded.contains("normalize() using"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -8106,7 +8216,7 @@ fn post_execution_solve_unfolds_predicate_goal_explicitly() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("compare_swap2.c", c_source)], line, column);
     let expanded = expanded.expect("post-execution predicate goal should expand");
-    assert!(expanded.contains("unfold(sorted_pair);"), "{expanded}");
+    assert!(expanded.contains("unfold(sorted_pair("), "{expanded}");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
@@ -8117,7 +8227,7 @@ fn post_execution_solve_unfolds_predicate_goal_explicitly() {
     let reverified = { verify_c_sources(&expanded, &[("compare_swap2.c", c_source)]) };
     reverified.expect("expanded predicate-goal proof should independently reverify");
 
-    let corrupted = expanded.replacen("unfold(sorted_pair);", "unfold(missing);", 1);
+    let corrupted = expanded.replacen("unfold(sorted_pair(", "unfold(missing(", 1);
     assert_ne!(
         corrupted, expanded,
         "the expansion should expose its checked predicate unfold"
@@ -9729,7 +9839,7 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
                 ensures result == second;
             } by {
                 have second == first and first == second by {
-                    extract(first == second);
+                    have first == second by known();
                     apply(equality_symmetric(first, second));
                     solve();
                 }
@@ -9768,7 +9878,7 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
         "{expanded_have}"
     );
     assert!(
-        expanded_have.contains("extract(first == second);"),
+        expanded_have.contains("have first == second by {"),
         "{expanded_have}"
     );
     assert!(!expanded_have.contains("solve();"), "{expanded_have}");
@@ -10334,7 +10444,7 @@ fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
             ensures is_nine(result);
         } by {
             step_until(function.exit);
-            unfold(is_nine);
+            unfold(is_nine(result));
             normalize();
         }
     "#;
@@ -10351,7 +10461,7 @@ fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
     assert!(
         tactics.iter().any(|tactic| matches!(
             tactic,
-            ProofTactic::UnfoldPredicate(name) if name == "is_nine"
+            ProofTactic::UnfoldFunction(application) if application.name == "is_nine"
         )),
         "the retained proof lost its predicate unfold: {tactics:#?}"
     );
@@ -10361,7 +10471,7 @@ fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
     verify_c_sources(&rewritten, &sources)
         .expect("the serialized predicate unfold should independently reverify");
 
-    let corrupted = rewritten.replacen("unfold(is_nine);", "unfold(is_eight);", 1);
+    let corrupted = rewritten.replacen("unfold(is_nine(", "unfold(is_eight(", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the unfold"
@@ -11838,7 +11948,7 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
             owns p[0..2];
             ensures result == 7;
         } by {
-            unfold(first_is_seven);
+            unfold(first_is_seven(p));
             branch ensuring {
                 fact p[0] == 7;
                 owns p[0..2];
@@ -12900,7 +13010,10 @@ fn quantified_outcome_solve_keeps_its_binder_on_the_checked_goal() {
         ContractProofClaim::Grouped,
     )
     .expect("the quantified outcome proof should expand");
-    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(
+        expanded.contains("intro();") || expanded.contains("enumerate();"),
+        "{expanded}"
+    );
     assert!(expanded.contains("instantiate("), "{expanded}");
     verify_c_sources(&expanded, &[("bounded.c", c_source)])
         .expect("the retained binder-aware certificate should check");
@@ -12997,7 +13110,7 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
         expanded.contains("have valid_pool(pool) by {"),
         "{expanded}"
     );
-    assert!(expanded.contains("unfold(valid_pool);"), "{expanded}");
+    assert!(expanded.contains("unfold(valid_pool("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .expect("the retained predicate closure should check independently without search");
 }
@@ -13036,7 +13149,7 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
         int32 sort_three_cells(int32 p[3]) {
             consumes p[0..3];
             ensures permutation::permutation(p, old(p), 0, 3) by {
-                unfold(permutation::permutation);
+                unfold(permutation::permutation(p, old(p), 0, 3));
             }
         }
     "#;
@@ -13063,7 +13176,7 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
     );
     assert!(expanded.contains("normalize();"), "{expanded}");
     assert!(
-        expanded.contains("unfold(permutation::permutation);"),
+        expanded.contains("unfold(permutation::permutation("),
         "{expanded}"
     );
     let (reverified, expanded_flat_units) =
@@ -13231,7 +13344,7 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                 invariant j >= 0 and j <= 2;
                 invariant all_le_range(p, 0, j, p[j]);
                 initialize by {
-                    unfold(all_le_range);
+                    unfold(all_le_range(p, 0, j, p[j]));
                     solve();
                 }
                 preserve by {
@@ -13245,23 +13358,23 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                         have defined(j + 1) by { solve(); }
                         have p[j] <= p[j + 1] by { solve(); }
                         have all_le_range(p, 0, j, p[j + 1]) by {
-                            unfold(all_le_range);
+                            unfold(all_le_range(p, 0, j, p[j + 1]));
                             solve();
                         }
                     } else {
                         have defined(j + 1) by { solve(); }
                         have p[j] <= p[j + 1] by { solve(); }
                         have all_le_range(p, 0, j, p[j + 1]) by {
-                            unfold(all_le_range);
+                            unfold(all_le_range(p, 0, j, p[j + 1]));
                             solve();
                         }
                     }
                     step();
-                    unfold(all_le_range);
+                    unfold(all_le_range(p, 0, j, p[j + 1]));
                 }
             }
             step();
-            unfold(all_le_range);
+            unfold(all_le_range(p, 0, j, p[j + 1]));
             solve();
         }
     "#;
@@ -14223,7 +14336,7 @@ fn outcome_solve_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() 
             requires bytes::all_not_equal(p, 0, 3, 'y');
             ensures p[1] != 'y' by {
                 step_until(function.exit);
-                unfold(bytes::all_not_equal);
+                unfold(bytes::all_not_equal(p, 0, 3, 'y'));
                 solve();
             }
         }
@@ -14234,7 +14347,7 @@ fn outcome_solve_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() 
             "bytes::all_not_equal(p, 0, 3, 'y')",
             "(0u64..3u64).all(|k| { p[k] != 'y' })",
         )
-        .replace("unfold(bytes::all_not_equal);", "");
+        .replace("unfold((0u64..3u64).all(|k| { p[k] != 'y' }));", "");
     for source in [click_source, ordinary_source.as_str()] {
         verify_c_sources(source, &sources)
             .expect("universal instantiation must work with or without a predicate unfold");
@@ -14246,8 +14359,9 @@ fn outcome_solve_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() 
         )
         .expect("the universal specialization should expand");
         assert!(expanded.contains("instantiate("), "{expanded}");
-        verify_c_sources(&expanded, &sources)
-            .expect("the universal specialization should check independently");
+        verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
+            panic!("the universal specialization should check independently: {error}\n{expanded}")
+        });
     }
 }
 
@@ -14382,18 +14496,42 @@ fn quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_pro
 
 #[test]
 #[ignore = "nightly: explicit guarded read preservation expansion and cold replay"]
-fn guarded_definedness_transport_expands_and_reverifies() {
+fn guarded_definedness_preservation_expands_and_cold_replays() {
     let (source, sources) =
         mdtest_sources("mdtests/guarded_definedness_survives_a_disjoint_store.md");
     let sources = sources
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
+    assert!(!source.contains("transport("), "{source}");
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
     let expanded = expand_c_claim_source_by_label(&source, &sources, "fill_t.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(expanded.contains("preserve("), "{expanded}");
     assert!(expanded.contains("defined("), "{expanded}");
-    crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve_for_claim("fill_t.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // A write inside the filled prefix must not acquire the same frame proof.
+    let overwritten_sources = sources
+        .iter()
+        .map(|(name, text)| (*name, text.replace("dst[4] = 0", "dst[3] = 0")))
+        .collect::<Vec<_>>();
+    assert_ne!(overwritten_sources[0].1, sources[0].1);
+    let overwritten_sources = overwritten_sources
+        .iter()
+        .map(|(name, text)| (*name, text.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c_sources(&source, &overwritten_sources).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("`normalize using` goal did not normalize to true"),
+        "{}",
+        error.report()
+    );
 }
 
 #[test]
@@ -14472,7 +14610,7 @@ fn source_expander_lowers_smart_solve_after_unfold_inside_have() {
                 ensures result == x;
             } by {
                 have reflexive(x) by {
-                    unfold(reflexive);
+                    unfold(reflexive(x));
                     solve();
                 }
                 step_until(function.exit);
@@ -14510,7 +14648,7 @@ fn source_expander_lowers_smart_solve_after_unfold_inside_have() {
             .find("step_until(function.exit)")
             .expect("expanded proof should retain its suffix")];
     assert!(
-        expanded_have.contains("unfold(reflexive);"),
+        expanded_have.contains("unfold(reflexive("),
         "{expanded_have}"
     );
     assert!(expanded_have.contains("known();"), "{expanded_have}");
@@ -14539,7 +14677,7 @@ fn source_expander_extracts_unfolded_conjuncts_inside_have() {
                 ensures result == x;
             } by {
                 have x == z by {
-                    unfold(equality_chain);
+                    unfold(equality_chain(x, y, z));
                     solve() using {
                         x == y;
                         y == z;
@@ -14565,8 +14703,8 @@ fn source_expander_extracts_unfolded_conjuncts_inside_have() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("restricted solve should extract its unfolded conjunct premises");
-    assert!(expanded.contains("extract(x == y);"), "{expanded}");
-    assert!(expanded.contains("extract(y == z);"), "{expanded}");
+    assert!(expanded.contains("have x == y by"), "{expanded}");
+    assert!(expanded.contains("have y == z by"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
@@ -14663,7 +14801,7 @@ fn source_expander_synthesizes_an_indexed_load_through_a_pointer_field() {
                 views data[1..2];
                 ensures result == 0;
             } by {
-                unfold(second_is);
+                unfold(second_is(owner, value));
                 have data[1] == value by solve();
                 step_until(function.exit);
                 solve();
@@ -14711,7 +14849,7 @@ fn smart_have_uses_transport_planned_at_the_mutation_boundary() {
                 requires first_is_seven(p);
                 owns p[0..2];
             } by {
-                unfold(first_is_seven);
+                unfold(first_is_seven(p));
                 step();
                 have p[0] == 7 by solve();
                 step();
@@ -15694,7 +15832,7 @@ fn unfolded_conjunction_have_solve_expands_and_rechecks() {
             } by {
                 step_until(function.exit);
                 have ordered_pair(pair) by {
-                    unfold(ordered_pair);
+                    unfold(ordered_pair(pair));
                     solve();
                 }
                 solve();
@@ -15753,7 +15891,7 @@ fn outcome_predecessor_bound_solve_expands_to_an_arithmetic_certificate() {
 
                 ensures ordered_pair(pair);
             } by {
-                unfold(ordered_pair);
+                unfold(ordered_pair(pair));
                 step_until(function.exit);
                 known();
                 solve();
@@ -16105,7 +16243,7 @@ theorem mixed_integer_atoms(x: int32, n: Nat) {
     ensures machine_atom: forall (z: Integer) { z + to_integer(x) == to_integer(x) + z } by { solve(); }
     ensures mixed_clause: forall (z: Integer) { x == x and combine(n, z) == combine(n, z) } by { solve(); }
     ensures witnessed: exists (z: Integer) { z == to_integer(x) } by {
-        witness { z: to_integer(x) };
+        witness(to_integer(x));
         normalize();
     }
 }
@@ -16120,7 +16258,7 @@ theorem mixed_integer_atoms(x: int32, n: Nat) {
     }
     for invalid in [
         "function f(z: Integer) -> Integer { z } theorem bad() { ensures forall(z: Integer) { f(z) == 0 } by { solve(); } }",
-        "theorem bad(x: int32) { ensures exists(z: Integer) { z == to_integer(x + 1) } by { witness { z: to_integer(x + 1) }; solve(); } }",
+        "theorem bad(x: int32) { ensures exists(z: Integer) { z == to_integer(x + 1) } by { witness(to_integer(x + 1)); solve(); } }",
         "theorem bad(x: int32) { ensures forall(z: Integer) { to_integer(x + 1) == to_integer(x + 1) } by { solve(); } }",
     ] {
         assert!(
@@ -18606,27 +18744,27 @@ fn empty_fold_difference_source() -> &'static str {
 theorem empty_difference(end: int32, x: int32, y: int32) {
  requires end <= 0;
  ensures marks(end, x) - marks(end, y) == 0 by {
-  peel(marks(end, x)) using { end <= 0; }
-  peel(marks(end, y)) using { end <= 0; }
+  unfold(marks(end, x));
+  unfold(marks(end, y));
   solve() using { }
  }
 }
 theorem empty_product(end: int32, x: int32, y: int32, z: int32) {
  requires end <= 0;
  ensures marks(end, x) - marks(end, y) == (to_integer(y) - to_integer(z)) * marks(end, z) by {
-  peel(marks(end, x)) using { end <= 0; }
-  peel(marks(end, y)) using { end <= 0; }
-  peel(marks(end, z)) using { end <= 0; }
+  unfold(marks(end, x));
+  unfold(marks(end, y));
+  unfold(marks(end, z));
   solve() using { }
  }
 }
 "#
 }
 
-// Peeling the last fold must leave a checked spelling for arithmetic expansion.
+// Unfolding the last fold must leave a checked spelling for arithmetic expansion.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_78")]
-fn peeled_empty_fold_differences_keep_checked_integer_spelling() {
+fn unfolded_empty_fold_differences_keep_checked_integer_spelling() {
     let source = empty_fold_difference_source();
     verify_c_sources(source, &[]).unwrap();
     for claim in ["empty_difference.ensures_0", "empty_product.ensures_0"] {
@@ -18637,7 +18775,7 @@ fn peeled_empty_fold_differences_keep_checked_integer_spelling() {
 
 #[test]
 #[ignore = "nightly: empty-fold result mutation"]
-fn peeled_empty_fold_differences_reject_nonzero_results() {
+fn unfolded_empty_fold_differences_reject_nonzero_results() {
     let source = empty_fold_difference_source();
     let invalid = source.replace("marks(end, y) == 0 by", "marks(end, y) == 1 by");
     assert_ne!(invalid, source);
@@ -18656,22 +18794,22 @@ fn empty_fold_order_source() -> &'static str {
 theorem empty_order(end: int32) {
  requires end <= 0;
  ensures 0 <= marks(end) by {
-  peel(marks(end)) using { end <= 0; }
+  unfold(marks(end));
   solve() using { marks(end) == 0; }
  }
  ensures marks(end) <= 0 by {
-  peel(marks(end)) using { end <= 0; }
+  unfold(marks(end));
   solve() using { }
  }
 }
 "#
 }
 
-// A constant order after peeling must retain its relation at the conclusion,
+// A constant order after unfolding must retain its relation at the conclusion,
 // rather than print the generic equality certificate for Boolean truth.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_78")]
-fn peeled_empty_fold_order_keeps_its_checked_conclusion() {
+fn unfolded_empty_fold_order_keeps_its_checked_conclusion() {
     let source = empty_fold_order_source();
     verify_c_sources(source, &[]).unwrap();
     for claim in ["empty_order.ensures_0", "empty_order.ensures_1"] {
@@ -18682,7 +18820,7 @@ fn peeled_empty_fold_order_keeps_its_checked_conclusion() {
 
 #[test]
 #[ignore = "nightly: empty-fold order and expanded-proof mutations"]
-fn peeled_empty_fold_order_rejects_false_comparisons() {
+fn unfolded_empty_fold_order_rejects_false_comparisons() {
     let source = empty_fold_order_source();
     for (before, after) in [
         ("0 <= marks(end)", "1 <= marks(end)"),
@@ -18702,13 +18840,7 @@ fn peeled_empty_fold_order_rejects_false_comparisons() {
     let false_conclusion = expanded.replacen("0 <= marks(end)", "0 < marks(end)", 1);
     assert_ne!(false_conclusion, expanded);
     verify_c_sources(&false_conclusion, &[]).expect_err("false expanded conclusion accepted");
-    // The selected evidence is now the bound supplied to `peel`, rather
-    // than a separately spelled equality about its result.
-    let peel = expanded.find("peel(marks(end)) using {").unwrap();
-    let forged_evidence = expanded[peel..].replacen("end <= 0;", "end < 0;", 1);
-    assert_ne!(forged_evidence, expanded[peel..]);
-    let forged = format!("{}{forged_evidence}", &expanded[..peel]);
-    verify_c_sources(&forged, &[]).expect_err("unavailable peel premise accepted");
+    assert!(expanded.contains("unfold(marks(end));"), "{expanded}");
 }
 
 // The arithmetic planner's affine sum is constant even though this goal
@@ -21208,6 +21340,7 @@ fn compact_store_proof_repairs_expand_and_replay() {
             "release_run",
         ),
         ("modeled_pthread_local_job_external_output", "worker"),
+        ("return_fold_retains_transported_facts", "arena_write"),
     ] {
         if std::env::var("CLICK_COMPACT_REPAIR").is_ok_and(|selected| selected != function) {
             continue;
@@ -21217,11 +21350,14 @@ fn compact_store_proof_repairs_expand_and_replay() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
+        if function == "arena_write" {
+            assert!(!source.contains("transport("), "{fixture}: {source}");
+        }
         verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{fixture}: {error}"));
         let claim = format!("{function}.contract");
         let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
             .unwrap_or_else(|error| panic!("{fixture}: {error}"));
-        if function == "release_run" {
+        if matches!(function, "arena_write" | "release_run") {
             assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
         }
         without_implicit_solve_for_claim(&claim, || {
@@ -21265,7 +21401,7 @@ fn explicit_and_implicit_existential_requirements_expand_without_search() {
         let expanded =
             crate::surface::expand_c_claim_source_by_label(click, &sources, "caller.ensures_0")
                 .expect("both forms expand the shared zero-witness strategy");
-        assert!(expanded.contains("witness {"), "{mode}: {expanded}");
+        assert!(expanded.contains("witness("), "{mode}: {expanded}");
         crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
             .expect("the expanded obligation uses explicit operations only");
     }
@@ -21286,7 +21422,8 @@ fn explicit_and_implicit_entry_witnesses_expand_without_search() {
             let source = format!("{} by {{ step(); {step} }}", source.trim_end());
             let expanded = expand_c_claim_source_by_label(&source, &sources, "outer.ensures_0")
                 .unwrap_or_else(|error| panic!("{fixture}, {step}: {error}"));
-            assert!(expanded.contains("witness {"), "{expanded}");
+            assert!(expanded.contains("witness("), "{expanded}");
+            assert!(!expanded.contains("extract("), "{expanded}");
             without_implicit_solve_for_claim("outer.contract", || {
                 verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
             })
@@ -21940,8 +22077,8 @@ test_batches! {
     expansion_batch_78: [
         whole_function_expansion_validates_against_imported_pure_declarations,
         c_style_click_comments_preserve_loading_and_expansion_offsets,
-        peeled_empty_fold_differences_keep_checked_integer_spelling,
-        peeled_empty_fold_order_keeps_its_checked_conclusion,
+        unfolded_empty_fold_differences_keep_checked_integer_spelling,
+        unfolded_empty_fold_order_keeps_its_checked_conclusion,
     ],
     expansion_batch_79: [
         signed_bounded_subtraction_preserves_generated_child_sum,
@@ -22582,6 +22719,44 @@ fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
 }
 
 #[test]
+fn contract_unfold_rejects_another_application() {
+    let (source, sources) =
+        mdtest_sources("mdtests/named_contract_value_parameter_contract_refinement_theorem.md");
+    let source = source.replace(
+        "unfold(Adds(f, { amount: 3 }))",
+        "unfold(Adds(f, { amount: 4 }))",
+    );
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c_sources(&source, &sources)
+        .expect_err("unfolding one contract application must not open another");
+    assert!(
+        error.message().contains("different contract application"),
+        "{error}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: byte-copy predicate expansion and independent replay"]
+fn local_byte_predicate_unfolds_expand_and_replay() {
+    let (source, sources) =
+        mdtest_sources("mdtests/char_argument_to_byte_predicate_unfolds_as_bytes.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "copy_u")
+        .expect("the copy should have an explicit local predicate proof");
+    assert!(expanded.contains("old(src)"), "{expanded}");
+    without_implicit_solve_for_claim("copy_u.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the expanded byte proof should replay independently");
+}
+
+#[test]
 #[ignore = "nightly: original arena allocation expansion and replay"]
 fn original_arena_alloc_expands_without_transport_and_rechecks() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -22742,4 +22917,64 @@ fn original_arena_pipeline_return_expands_without_transport_and_rechecks() {
         verify_c_sources(&expanded, &refs).map_err(|error| error.report())
     })
     .unwrap();
+}
+
+#[test]
+fn instantiation_expansion_proves_weakened_guards_with_ordinary_haves() {
+    let source = r#"
+        theorem specialize(x: int32, upper: int32) {
+            requires forall (i: int32) { 0 <= i implies i <= upper };
+            requires 0 < x;
+            ensures answer: x <= upper by {
+                have 0 <= x;
+                instantiate(forall (i: int32) { 0 <= i implies i <= upper }, x);
+                known();
+            }
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &[], "specialize.answer").unwrap();
+    assert!(expanded.contains("have 0 <= x"), "{expanded}");
+    assert!(expanded.contains("instantiate("), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
+    assert!(
+        expanded
+            .lines()
+            .filter(|line| line.contains("instantiate("))
+            .all(|line| !line.contains("using")),
+        "{expanded}"
+    );
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let missing = expanded.replace("requires 0 < x;", "");
+    assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+    let changed = expanded.replace("0 <= i implies", "1 < i implies");
+    assert!(without_implicit_solve(|| verify_click_theorems(&changed)).is_err());
+}
+
+#[test]
+fn refuted_match_arm_retains_its_bridge_proof_from_propagated_false() {
+    let (source, sources) = mdtest_sources(
+        "mdtests/a_refuted_match_arm_bridge_at_function_exit_uses_propagated_false.md",
+    );
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "id").unwrap();
+    let arm = expanded
+        .split_once("Tag::A => {")
+        .unwrap_or_else(|| panic!("{expanded}"))
+        .1;
+    assert!(arm.contains("have "), "{expanded}");
+    let bridge = arm
+        .split_once("by {")
+        .unwrap_or_else(|| panic!("{expanded}"))
+        .1;
+    let body = bridge.split_once('}').unwrap().0;
+    assert!(
+        body.contains("known();") || body.contains("contradiction("),
+        "{expanded}"
+    );
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    let reachable = expanded.replace("requires r.model != Tag::A;", "");
+    assert!(without_implicit_solve(|| verify_c_sources(&reachable, &sources)).is_err());
 }

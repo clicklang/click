@@ -19,7 +19,7 @@ fn trivial_disjuncts_do_not_spell_unrelated_premises() {
         assert_eq!(
             sample
                 .named_work
-                .get("operation `solve closure: premise spelling`")
+                .get("operation `solve closure: premise raising`")
                 .copied()
                 .unwrap_or(0),
             0,
@@ -92,7 +92,7 @@ int32 probe(int32* p) {{
         assert!(!guards[0].failed);
         let spelling = sample
             .named_work
-            .get("operation `solve closure: premise spelling`")
+            .get("operation `solve closure: premise raising`")
             .copied()
             .unwrap_or(0);
         samples.push((size, guards[0].work, spelling));
@@ -124,7 +124,7 @@ int32 probe(int32* p) {{
             }
         }
     }
-    eprintln!("constructor guard (stores, closure work, premise spelling): {samples:?}");
+    eprintln!("constructor guard (stores, closure work, premise raising): {samples:?}");
     assert!(
         samples.iter().all(|(_, _, spelling)| *spelling == 0),
         "{samples:?}"
@@ -162,10 +162,7 @@ theorem count_step(n: uint64{parameters}) {{
     requires full_width_count(n - 1u64) == to_integer(n - 1u64);
     requires to_integer(n - 1u64) == to_integer(n) - to_integer(1u64);
     ensures full_width_count(n) == to_integer(n) by {{
-        peel(full_width_count(n)) using {{
-            to_integer(0u64) <= to_integer(n - 1u64);
-            to_integer(n - 1u64) < to_integer(18446744073709551615u64);
-        }};
+        unfold(full_width_count(n));
         rewrite(full_width_count(n - 1u64), to_integer(n - 1u64));
         rewrite(to_integer(n - 1u64), to_integer(n) - to_integer(1u64));
         solve() using {{}};
@@ -3310,7 +3307,7 @@ fn array_fact_across_local_stores(statement_count: usize) -> (String, String) {
     c_source.push_str("}\n");
 
     let mut click_source = String::from(
-        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    step();\n    step();\n    have 0 <= 0 by { solve(); }\n    have icount(a, 0, 0) == 0 by {\n        peel(icount(a, 0, 0)) using { 0 <= 0; }\n        normalize();\n    }\n",
+        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    step();\n    step();\n    have 0 <= 0 by { solve(); }\n    have icount(a, 0, 0) == 0 by {\n        unfold(icount(a, 0, 0));\n        normalize();\n    }\n",
     );
     // One use of the fact after every step: the walk is asked from a fresh
     // state each time, which is the shape that goes quadratic when an
@@ -3333,7 +3330,7 @@ fn array_fact_across_declarations(statement_count: usize) -> (String, String) {
     c_source.push_str("}\n");
 
     let mut click_source = String::from(
-        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    have 0 <= 0 by { solve(); }\n    have icount(a, 0, 0) == 0 by {\n        peel(icount(a, 0, 0)) using { 0 <= 0; }\n        normalize();\n    }\n",
+        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    have 0 <= 0 by { solve(); }\n    have icount(a, 0, 0) == 0 by {\n        unfold(icount(a, 0, 0));\n        normalize();\n    }\n",
     );
     for _ in 0..statement_count {
         click_source.push_str("    step();\n");
@@ -3355,7 +3352,7 @@ fn array_fact_across_calls(statement_count: usize) -> (String, String) {
     c_source.push_str("    return h[0];\n}\n");
 
     let mut click_source = String::from(
-        "verifying \"keep_h.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid touch_g() {\n    owns g[0..1];\n}\n\nint32 keep_h() {\n    requires h[0] == 5;\n    owns g[0..1];\n    views h[0..1];\n    ensures result == 5;\n} by {\n    have 0 <= 0 by { solve(); }\n    have icount(h, 0, 0) == 0 by {\n        peel(icount(h, 0, 0)) using { 0 <= 0; }\n        normalize();\n    }\n",
+        "verifying \"keep_h.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid touch_g() {\n    owns g[0..1];\n}\n\nint32 keep_h() {\n    requires h[0] == 5;\n    owns g[0..1];\n    views h[0..1];\n    ensures result == 5;\n} by {\n    have 0 <= 0 by { solve(); }\n    have icount(h, 0, 0) == 0 by {\n        unfold(icount(h, 0, 0));\n        normalize();\n    }\n",
     );
     for _ in 0..statement_count {
         click_source.push_str("    step();\n");
@@ -5004,8 +5001,8 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
                      have forall (k: int32) {{ 0 <= k and k < i implies dst[k] == old(src[k]) }} by {{\n                \
                          intro();\n                \
                          intro();\n                \
-                         extract(0 <= k);\n                \
-                         extract(k < i);\n                \
+                         have 0 <= k by known();\n                \
+                         have k < i by known();\n                \
                          have i == 0 by {{\n                    normalize();\n                }}\n                \
                          have not (0 <= k) by {{\n                    \
                              solve() using {{\n                        k < i;\n                        i == 0;\n                    }}\n                \
@@ -7576,7 +7573,7 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
                 size: returns,
                 work: *sample
                     .named_work
-                    .get("operation `solve closure: premise spelling`")
+                    .get("operation `solve closure: premise raising`")
                     .unwrap_or(&0),
                 named_work: BTreeMap::new(),
             });
@@ -7724,8 +7721,8 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         assert_near_linear_scaling("executing a fan-out's paths", &execute);
         eprintln!("fan-out state transport work: {transport:?}");
         assert_near_linear_scaling("solve's state transport search", &transport);
-        eprintln!("fan-out premise spelling work: {spelling:?}");
-        assert_near_linear_scaling("solve's premise spelling", &spelling);
+        eprintln!("fan-out premise raising work: {spelling:?}");
+        assert_near_linear_scaling("solve's premise raising", &spelling);
         eprintln!("indexed fan-out: {samples:?}; selection: {selection:?}");
         assert!(
             selection.windows(2).all(|pair| pair[1] <= pair[0] * 2 + 8),
@@ -9912,6 +9909,50 @@ fn post_return_function_equations_scale_with_explicit_unfolds() {
     );
 }
 
+/// A pointer a call returned is spelled `<region>.result` from one index
+/// lookup, however many calls the path recorded; replacing or removing the
+/// call's exit removes the spelling.
+#[test]
+fn recorded_pointer_call_results_scale_and_follow_replacement() {
+    use crate::kernel::{Pointer, ProgramType, Variable};
+    for size in [16usize, 64, 256, 1024] {
+        let mut retained_states = RecordedStates::new();
+        let value = |index: u64| {
+            ProgramValue::typed_pointer(
+                Pointer::symbolic(Variable(710_000 + index)),
+                ProgramType::Int32Pointer,
+            )
+        };
+        for index in 0..size {
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                retained_states.record_call_result(index, Some(value(index as u64)));
+            });
+            assert!(work <= 2, "{size}: insertion {work}");
+        }
+        let first = Pointer::symbolic(Variable(710_000));
+        let (region, work) = crate::instrumentation::measure_deterministic_work(|| {
+            retained_states.call_result_naming_pointer(&first)
+        });
+        assert_eq!(region, Some(CodeRegionRef::Region(0)));
+        assert!(work <= 2, "{size}: lookup {work}");
+        // A later call returning the same pointer does not take the name.
+        retained_states.record_call_result(size, Some(value(0)));
+        assert_eq!(
+            retained_states.call_result_naming_pointer(&first),
+            Some(CodeRegionRef::Region(0))
+        );
+        let branch = retained_states.clone();
+        retained_states.record_call_result(0, Some(value(20_000)));
+        assert!(retained_states.call_result_naming_pointer(&first).is_none());
+        assert_eq!(
+            branch.call_result_naming_pointer(&first),
+            Some(CodeRegionRef::Region(0))
+        );
+        retained_states.record_call_result(0, None);
+        assert!(retained_states.call_result_naming_pointer(&first).is_none());
+    }
+}
+
 #[test]
 fn recorded_call_results_scale_and_replace_execution_occurrences() {
     use crate::kernel::{ConditionTerm, MachineIntegerType, MachineTerm, Variable};
@@ -10088,7 +10129,7 @@ fn multi_statement_transport_replay_scales_with_explicit_links() {
         );
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), size);
+        assert_eq!(expanded.matches("preserve(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10135,7 +10176,7 @@ fn inequality_transport_replay_scales_with_explicit_links() {
         );
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), size);
+        assert_eq!(expanded.matches("preserve(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10182,7 +10223,7 @@ fn known_value_transport_replay_scales_with_explicit_links() {
         );
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), size);
+        assert_eq!(expanded.matches("preserve(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10229,7 +10270,7 @@ fn state_comparison_transport_replay_scales_with_explicit_links() {
         );
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), size);
+        assert_eq!(expanded.matches("preserve(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10302,7 +10343,7 @@ fn two_read_transport_replay_cost(indexed: bool) {
         };
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), 2 * size);
+        assert_eq!(expanded.matches("preserve(").count(), 2 * size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10357,7 +10398,7 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
         );
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), 2 * size);
+        assert_eq!(expanded.matches("preserve(").count(), 2 * size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10376,6 +10417,15 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
 
 #[test]
 fn nested_conjunction_transport_scales_with_written_leaves() {
+    nested_conjunction_transport_scaling(false);
+}
+
+#[test]
+fn balanced_nested_conjunction_transport_scales_with_written_leaves() {
+    nested_conjunction_transport_scaling(true);
+}
+
+fn nested_conjunction_transport_scaling(balanced: bool) {
     fn conjunction(leaves: &[String], balanced: bool) -> String {
         if leaves.len() == 1 {
             return leaves[0].clone();
@@ -10387,38 +10437,37 @@ fn nested_conjunction_transport_scales_with_written_leaves() {
             conjunction(&leaves[split..], balanced)
         )
     }
-    for balanced in [false, true] {
-        let mut planning = Vec::new();
-        let mut replay = Vec::new();
-        // Skewed syntax must stay within the existing parenthesis/proof depth
-        // limits. Balanced trees exercise larger leaf and premise counts.
-        let sizes = if balanced {
-            [4, 8, 16, 32]
-        } else {
-            [2, 4, 8, 12]
-        };
-        for size in sizes {
-            let mut c_args = String::new();
-            let mut args = String::new();
-            let mut requirements = String::new();
-            let mut setup = String::new();
-            let mut premises = String::new();
-            for i in 0..size {
-                c_args.push_str(&format!(", int *q{i}"));
-                args.push_str(&format!(", int32* q{i}"));
-                requirements.push_str(&format!(
-                    "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
-                ));
-                setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
-                premises.push_str(&format!("separate(statement(0).footprint, memory(*q{i}));"));
-            }
-            let leaves = (0..size)
-                .map(|i| format!("*q{i} == {i}"))
-                .collect::<Vec<_>>();
-            let fact = conjunction(&leaves, balanced);
-            let c = format!("void keep(int *p{c_args}) {{ *p = 0; }}");
-            let source = format!(
-                r#"
+    let mut planning = Vec::new();
+    let mut replay = Vec::new();
+    // Skewed syntax must stay within the existing parenthesis/proof depth
+    // limits. Balanced trees exercise larger leaf and premise counts.
+    let sizes = if balanced {
+        [4, 8, 16, 32]
+    } else {
+        [2, 4, 8, 12]
+    };
+    for size in sizes {
+        let mut c_args = String::new();
+        let mut args = String::new();
+        let mut requirements = String::new();
+        let mut setup = String::new();
+        let mut premises = String::new();
+        for i in 0..size {
+            c_args.push_str(&format!(", int *q{i}"));
+            args.push_str(&format!(", int32* q{i}"));
+            requirements.push_str(&format!(
+                "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
+            ));
+            setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
+            premises.push_str(&format!("separate(statement(0).footprint, memory(*q{i}));"));
+        }
+        let leaves = (0..size)
+            .map(|i| format!("*q{i} == {i}"))
+            .collect::<Vec<_>>();
+        let fact = conjunction(&leaves, balanced);
+        let c = format!("void keep(int *p{c_args}) {{ *p = 0; }}");
+        let source = format!(
+            r#"
                 verifying "nested.c";
                 void keep(int32* p{args}) {{ owns *p; {requirements} requires {fact}; }} by {{
                     step(); {setup}
@@ -10426,35 +10475,30 @@ fn nested_conjunction_transport_scales_with_written_leaves() {
                     step();
                 }}
             "#
-            );
-            let files = [("nested.c", c.as_str())];
-            let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
-                expand_c_claim_source_by_label(&source, &files, "keep.contract")
-            });
-            let expanded = expanded.unwrap();
-            planning.push(work);
-            assert_eq!(expanded.matches("both {").count(), size - 1);
-            assert_eq!(expanded.matches("preserve(separate(").count(), size);
-            assert!(!expanded.contains("transport("));
-            assert!(!expanded.contains("transport_certificate"));
-            let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::surface::proof::without_implicit_solve(|| {
-                    verify_c_sources(&expanded, &files)
-                })
-            });
-            verified.unwrap();
-            replay.push(work);
-        }
-        eprintln!(
-            "nested conjunction balanced={balanced}: expansion {planning:?}, replay {replay:?}"
         );
-        for costs in [planning, replay] {
-            assert!(costs.iter().all(|cost| *cost > 0));
-            assert!(
-                costs.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
-                "{costs:?}"
-            );
-        }
+        let files = [("nested.c", c.as_str())];
+        let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+            expand_c_claim_source_by_label(&source, &files, "keep.contract")
+        });
+        let expanded = expanded.unwrap();
+        planning.push(work);
+        assert_eq!(expanded.matches("both {").count(), size - 1);
+        assert_eq!(expanded.matches("preserve(").count(), size);
+        assert!(!expanded.contains("transport("));
+        assert!(!expanded.contains("transport_certificate"));
+        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &files))
+        });
+        verified.unwrap();
+        replay.push(work);
+    }
+    eprintln!("nested conjunction balanced={balanced}: expansion {planning:?}, replay {replay:?}");
+    for costs in [planning, replay] {
+        assert!(costs.iter().all(|cost| *cost > 0));
+        assert!(
+            costs.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
+            "{costs:?}"
+        );
     }
 }
 
@@ -10506,7 +10550,7 @@ fn conjunction_projection_transport_scales_with_written_source() {
         });
         let expanded = expanded.unwrap();
         expansion.push(work);
-        assert_eq!(expanded.matches("preserve(separate(").count(), 1);
+        assert_eq!(expanded.matches("preserve(").count(), 1);
         assert!(!expanded.contains("both {"));
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
@@ -10580,7 +10624,7 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
         let expanded = expanded.unwrap();
         expansion.push(work);
         assert_eq!(expanded.matches("both {").count(), size / 2 - 1);
-        assert_eq!(expanded.matches("preserve(separate(").count(), size / 2);
+        assert_eq!(expanded.matches("preserve(").count(), size / 2);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10634,7 +10678,7 @@ fn implication_transport_replay_scales_with_explicit_links() {
         );
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), 2 * size);
+        assert_eq!(expanded.matches("preserve(").count(), 2 * size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10729,7 +10773,7 @@ fn compound_implication_transport_scales_with_reads_and_logical_depth() {
             });
             let expanded = expanded.unwrap();
             expansion.push(work);
-            assert_eq!(expanded.matches("preserve(separate(").count(), read_count);
+            assert_eq!(expanded.matches("preserve(").count(), read_count);
             assert!(!expanded.contains("rewrite("));
             assert!(!expanded.contains("transport("));
             assert!(!expanded.contains("transport_certificate"));
@@ -11136,5 +11180,87 @@ fn nested_call_results_scale_with_the_statements_that_read_them() {
             .iter()
             .all(|sample| per_statement(*sample) <= smallest * 3 / 2),
         "nested call results grew per statement: {samples:?}"
+    );
+}
+
+#[test]
+fn ordinary_fold_unfold_checks_only_selected_guards() {
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let facts = (0..size)
+            .map(|index| format!("requires unrelated({index});\n"))
+            .collect::<String>();
+        let source = format!(
+            r#"
+predicate unrelated(n: int32) {{ n >= 0 }}
+function tally(lo: int32, hi: int32) -> Integer {{
+    (lo..hi).fold(0, |acc, k| {{ acc + 1 }})
+}}
+theorem append_tally(lo: int32, hi: int32) {{
+    {facts}
+    requires 0 <= lo;
+    requires lo < hi;
+    ensures tally(lo, hi) == tally(lo, hi - 1) + 1 by {{
+        unfold(tally(lo, hi));
+        normalize();
+    }}
+}}
+"#
+        );
+        let (result, work) =
+            crate::instrumentation::collect_tactic_work(|| verify_click_theorems(&source));
+        result.unwrap();
+        let unfold = work
+            .iter()
+            .find(|sample| sample.tactic.tactic_name == "unfold")
+            .expect("the selected unfolding ran")
+            .work;
+        samples.push((size, unfold));
+    }
+    let baseline = samples[0].1;
+    assert!(
+        samples.iter().all(|(_, work)| *work <= baseline * 2 + 64),
+        "unrelated facts grew selected fold checking: {samples:?}"
+    );
+}
+
+/// A throwing call returns its selected memory input without walking the
+/// unrelated function declarations or pure requirements at its call frontier.
+#[test]
+#[ignore = "nightly: exceptional memory context scaling"]
+fn exceptional_borrowed_memory_is_indexed_in_unrelated_context() {
+    const CALL_WORK: &str = "operation `verification statement: call`";
+    let mut samples = Vec::new();
+    let mut frontier = Vec::new();
+    for size in [2, 8, 16] {
+        let mut c = String::from("void update(int32* value) { *value = 7; }\n");
+        let mut source = String::from(
+            "verifying \"memory.c\";\nfunction unrelated_fact(n: int32) -> int32 { n }\nvoid update(int32* value) throws int32 { owns value[0]; ensures value[0] == 7; exceptional ensures value[0] == 9; }\n",
+        );
+        for index in 0..size {
+            c.push_str(&format!("int32 unused_{index}(int32 x) {{ return x; }}\n"));
+            source.push_str(&format!(
+                "int32 unused_{index}(int32 x) {{ ensures result == x; }}\n"
+            ));
+        }
+        c.push_str("void target(int32* value) { update(value); }\n");
+        source.push_str("void target(int32* value) throws int32 { owns value[0];\n");
+        for index in 0..size {
+            source.push_str(&format!(
+                "requires unrelated_fact({}) != 0;\n",
+                10000 + index
+            ));
+        }
+        source.push_str("ensures value[0] == 7; exceptional ensures value[0] == 9; }\n");
+        let (verified, sample) =
+            scaling_sample(size, || verify_c_sources(&source, &[("memory.c", &c)]));
+        verified.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        frontier.push(sample.named_work.get(CALL_WORK).copied().unwrap_or(0));
+        samples.push(sample);
+    }
+    assert_near_linear_scaling_at_sampled_sizes("exceptional borrowed memory", &samples);
+    assert!(
+        frontier[0] > 0 && frontier.iter().all(|work| *work == frontier[0]),
+        "call frontier {frontier:?}"
     );
 }

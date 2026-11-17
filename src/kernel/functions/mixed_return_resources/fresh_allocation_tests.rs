@@ -35,7 +35,7 @@ pub(super) fn allocated_call(
         &entry,
         &statement,
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
@@ -88,6 +88,141 @@ pub(super) fn fresh_return_facts(pointer: &Pointer, cells: u32) -> [ResourceFact
 }
 
 #[test]
+fn fresh_return_group_refuses_sibling_overlap() {
+    for overlap in [false, true] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let (caller, entry, post, pointer) = allocated_call(16);
+        let creator = checked_allocation_creator(&caller, &entry).unwrap();
+        let events = post.population_effects.creation.as_ref().unwrap();
+        let memory_spec = |start, end| {
+            ResourceSpec::owned_memory(
+                MemorySegment::new(variable("p"), int32_literal(start), int32_literal(end))
+                    .with_uninitialized(true),
+            )
+            .with_role(ResourceTransferRole::Produce)
+            .with_state_source(ResourceStateSource::Post)
+        };
+        let second_start = u32::from(!overlap);
+        let first =
+            ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into()));
+        let second = ResourceFact::own_memory(MemoryRange::new(
+            pointer,
+            second_start.into(),
+            (second_start + 1).into(),
+        ));
+        // Allocation provenance is valid for either piece separately, even
+        // when both descriptions name the same cell. It is not a partition.
+        assert_eq!(
+            FreshAllocationReturn::from_created_owner(&first, &creator, events),
+            FreshAllocationReturn::from_created_owner(&second, &creator, events),
+        );
+        assert!(FreshAllocationReturn::from_created_owner(&first, &creator, events).is_some());
+        let function =
+            program_function(ProgramType::Void, "fresh_siblings", vec![], program_skip())
+                .with_resource_summary(
+                    vec![],
+                    vec![
+                        memory_spec(0, 1),
+                        memory_spec(second_start, second_start + 1),
+                    ],
+                );
+        // Body return checks joint custody separately. Even though either
+        // slice is fresh, the actual owner cannot supply the same cell twice.
+        let required =
+            ResourceContext::new_with_equalities(&facts).unchecked_with_facts([first, second]);
+        assert_eq!(
+            jointly_consume_returned_resource_units(
+                post.resources(),
+                &required,
+                &post,
+                function.contract_interface(),
+                &facts,
+            ),
+            !overlap,
+        );
+        // Description admission checks the returned group before any
+        // destination occurrence is constructed.
+        let described = evaluate_contract_return_resource_context(
+            function.contract_interface(),
+            &[],
+            &[],
+            &[],
+            &entry,
+            &post,
+            2,
+            &[],
+            ReturnResourceComposition::ValidateDescriptions,
+            &facts,
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .unwrap();
+        assert_eq!(
+            matches!(
+                described,
+                Err(RuntimeError::OverlappingOwnedMemoryResources { .. })
+            ),
+            overlap,
+            "{:?}",
+            described.err()
+        );
+        let result = evaluate_contract_return_resource_context(
+            function.contract_interface(),
+            &[],
+            &[],
+            &[],
+            &entry,
+            &post,
+            2,
+            &[],
+            ReturnResourceComposition::BodyReturn {
+                state: &post,
+                frame: caller.resources(),
+                allocations: Some((&creator, events)),
+                consumed: &ConsumedCellReturns::default(),
+            },
+            &facts,
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .unwrap();
+        let restored = result
+            .map_err(|error| format!("{error:?}"))
+            .and_then(|evaluated| {
+                assert_eq!(evaluated.occurrences.len(), 2);
+                evaluated
+                    .restore_entry_borrows(
+                        caller.resources().clone(),
+                        ReturnResourceComposition::BodyReturn {
+                            state: &post,
+                            frame: caller.resources(),
+                            allocations: Some((&creator, events)),
+                            consumed: &ConsumedCellReturns::default(),
+                        },
+                        &facts,
+                    )
+                    .map_err(|error| format!("{error:?}"))?
+                    .finish(&facts)
+                    .map_err(|error| format!("{error:?}"))
+            });
+        if overlap {
+            // Restoration constructs each returned unit from the body's
+            // actual custody, so the second claim on the cell is refused.
+            assert!(
+                matches!(&restored, Err(error) if error.contains("joint returned resource units")),
+                "the same cell was returned twice: {restored:?}"
+            );
+        } else {
+            let (resources, transfers) = restored.unwrap();
+            assert_eq!(transfers.len(), 2);
+            assert_eq!(
+                resources.facts().len(),
+                caller.resources().facts().len() + 2
+            );
+        }
+    }
+}
+
+#[test]
 fn allocator_provenance_is_attached_to_each_emitted_ownership_occurrence() {
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
@@ -105,10 +240,11 @@ fn allocator_provenance_is_attached_to_each_emitted_ownership_occurrence() {
         &post,
         2,
         &[],
-        ReturnResourceComposition::BodyAllocations {
-            consumed: None,
-            creator: &creator,
-            events,
+        ReturnResourceComposition::BodyReturn {
+            state: &post,
+            frame: caller.resources(),
+            allocations: Some((&creator, events)),
+            consumed: &ConsumedCellReturns::default(),
         },
         &facts,
         &mut ExecutionBudget::beside_live_state(),
@@ -126,10 +262,11 @@ fn allocator_provenance_is_attached_to_each_emitted_ownership_occurrence() {
         let (result, mappings) = evaluated
             .restore_entry_borrows(
                 caller.resources().clone(),
-                ReturnResourceComposition::BodyAllocations {
-                    consumed: None,
-                    creator: &creator,
-                    events,
+                ReturnResourceComposition::BodyReturn {
+                    state: &post,
+                    frame: caller.resources(),
+                    allocations: Some((&creator, events)),
+                    consumed: &ConsumedCellReturns::default(),
                 },
                 &facts,
             )
@@ -231,73 +368,6 @@ fn raw_description_validation_does_not_exercise_a_fresh_allocation_annotation() 
     assert!(prepared.finish(&facts).is_err());
 }
 
-fn allocating_function(cells: u32) -> ProgramFunction {
-    let body = program_seq(
-        program_declare("p", ProgramType::Int32Pointer),
-        program_seq(
-            ProgramStatement::HeapAllocate {
-                target: "p".into(),
-                bytes: int32_literal(16),
-                zeroed: false,
-                object_type: None,
-                ends_program_on_failure: true,
-            },
-            program_return(variable("p")),
-        ),
-    );
-    program_function(ProgramType::Int32Pointer, "allocate_return", vec![], body)
-        .with_resource_summary(vec![], returned_specs(CONTRACT_RESULT, cells))
-}
-
-#[test]
-fn executed_allocator_returns_preserve_the_frame_and_check_actual_body_custody() {
-    for cells in [4, 8] {
-        let _session = crate::kernel::VerificationSession::enter();
-        let (caller, _, _, _) = allocated_call(16);
-        let function = allocating_function(cells);
-        let paths = execute_program_function_call_paths(
-            &caller,
-            &function,
-            &[],
-            &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
-            &mut ExecutionBudget::new(),
-        )
-        .unwrap();
-        if cells == 4 {
-            let [
-                FunctionPath {
-                    outcome: FunctionOutcome::Return { value, state },
-                    ..
-                },
-            ] = paths.as_slice()
-            else {
-                panic!("fresh return failed: {paths:?}")
-            };
-            let pointer = value.pointer().unwrap().pointer();
-            assert!(matches!(pointer.block, PointerBlock::Heap(_)));
-            for returned in fresh_return_facts(pointer, 4) {
-                assert!(
-                    state
-                        .resources()
-                        .satisfies_fact(&returned, &PureFactContext::new())
-                );
-            }
-            assert!(
-                state
-                    .resources()
-                    .contains_exact_representation(&caller.resources().facts()[0])
-            );
-        } else {
-            assert!(
-                matches!(paths.as_slice(), [FunctionPath { outcome: FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)), .. }]
-                if message.contains("joint returned resource units")),
-                "oversized return accepted: {paths:?}"
-            );
-        }
-    }
-}
-
 #[test]
 fn composite_children_use_only_actual_allocation_provenance() {
     let facts = PureFactContext::new();
@@ -322,10 +392,11 @@ fn composite_children_use_only_actual_allocation_provenance() {
             &evaluated,
             std::slice::from_ref(&definition),
             &post,
-            ReturnResourceComposition::BodyAllocations {
-                consumed: None,
-                creator,
-                events: post.population_effects.creation.as_ref().unwrap(),
+            ReturnResourceComposition::BodyReturn {
+                state: &post,
+                frame: entry.resources(),
+                allocations: Some((creator, post.population_effects.creation.as_ref().unwrap())),
+                consumed: &ConsumedCellReturns::default(),
             },
             &facts,
         )
@@ -341,51 +412,6 @@ fn composite_children_use_only_actual_allocation_provenance() {
         assert_eq!(
             body.owned_memory_frontier().count(),
             if fresh { 0 } else { 2 }
-        );
-    }
-}
-
-#[test]
-fn executed_composite_allocation_returns_still_check_body_custody() {
-    for cells in [4, 8] {
-        let _session = crate::kernel::VerificationSession::enter();
-        let (caller, _, _, _) = allocated_call(16);
-        let function = allocating_function(cells)
-            .with_resource_summary(
-                vec![],
-                vec![super::tests::composite_spec(
-                    "allocated_body",
-                    variable(CONTRACT_RESULT),
-                    ResourceTransferRole::Produce,
-                )],
-            )
-            .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
-                "allocated_body",
-                vec![program_parameter("p", ProgramType::Int32Pointer)],
-                None,
-                false,
-                returned_specs("p", cells),
-                vec![],
-            )]);
-        let paths = execute_program_function_call_paths(
-            &caller,
-            &function,
-            &[],
-            &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
-            &mut ExecutionBudget::new(),
-        )
-        .unwrap();
-        assert_eq!(
-            matches!(
-                paths.as_slice(),
-                [FunctionPath {
-                    outcome: FunctionOutcome::Return { .. },
-                    ..
-                }]
-            ),
-            cells == 4,
-            "{paths:?}"
         );
     }
 }
@@ -421,10 +447,14 @@ fn one_composite_can_mix_selected_consumed_and_fresh_children() {
             .contract_interface()
             .composite_resource_definitions(),
         &post,
-        ReturnResourceComposition::BodyAllocations {
-            consumed: Some(&transfer.consumed_cell_returns),
-            creator: entry.population_effects.creation.as_ref().unwrap(),
-            events: post.population_effects.creation.as_ref().unwrap(),
+        ReturnResourceComposition::BodyReturn {
+            state: &post,
+            frame: &ResourceContext::new_with_equalities(&facts),
+            allocations: Some((
+                entry.population_effects.creation.as_ref().unwrap(),
+                post.population_effects.creation.as_ref().unwrap(),
+            )),
+            consumed: &transfer.consumed_cell_returns,
         },
         &facts,
     )

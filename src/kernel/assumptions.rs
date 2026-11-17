@@ -51,6 +51,7 @@ pub(in crate::kernel) mod checked_scalar_facts;
 mod condition_reasoning;
 pub(super) mod contradiction_endpoints;
 pub(in crate::kernel) mod contradictions;
+pub(in crate::kernel) mod exact_propagation;
 pub(in crate::kernel) mod observation_comparisons;
 pub(in crate::kernel) mod retained_order_bounds;
 pub(in crate::kernel) mod shared_condition_variables;
@@ -1291,6 +1292,7 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
         key.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         key.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
         key.universals_by_conclusion = crate::persistent::PersistentMap::default();
+        key.universal_equality_sources = Default::default();
         key.shared_condition_variables = Default::default();
         key.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         key.state_condition_variable_base = crate::persistent::PersistentMap::default();
@@ -2264,6 +2266,7 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &MachineTerm, hasher:
         std::hash::Hash::hash(spelling, hasher);
     }
     match term {
+        MachineTerm::ThreadHandle(id) => std::hash::Hash::hash(id, hasher),
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
@@ -2481,6 +2484,7 @@ fn collect_bitvector_memory_load_keys(
     keys: &mut BTreeSet<(PointerBlock, u64)>,
 ) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         bits32_constant!(_)
         | MachineTerm::Variable(_)
         | int64_constant!(_)
@@ -2808,6 +2812,7 @@ fn collect_bitvector_memory_loads_with_width(
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     match term {
+        MachineTerm::ThreadHandle(_) => Ok(()),
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
@@ -4315,7 +4320,7 @@ impl PureFactContext {
         mut self,
         fact: &ExecutionPureFact,
     ) -> Self {
-        self = self.assume_proposition(fact.proposition().clone());
+        self = self.assume_shared_proposition(fact.shared_proposition());
         if !fact.is_certified() {
             return self;
         }
@@ -5615,6 +5620,7 @@ impl PureFactContext {
     /// to replace the condition indexes and refile the selected facts.
     pub(super) fn clear_proposition_facts(&mut self) {
         self.prop_facts = Default::default();
+        self.exact_propagation = Default::default();
         self.comparison_views = Default::default();
         self.equality_graph.clear_proposition_pointer_facts();
         self.execution_fact_projection = self
@@ -6026,19 +6032,6 @@ impl PureFactContext {
     ) -> impl Iterator<Item = &(Proposition, usize)> {
         self.equality_graph
             .algebraic_constructor_field_sources(field)
-    }
-
-    /// Whether an exact same-constructor equality in this context entails
-    /// `field`. This is the checked no-confusion rule used by explicit
-    /// `extract`; the persistent index keeps the query independent of the
-    /// number of unrelated facts in the proof state.
-    pub(crate) fn contains_algebraic_constructor_field_equality(
-        &self,
-        field: &Proposition,
-    ) -> bool {
-        self.algebraic_constructor_field_sources(field)
-            .next()
-            .is_some()
     }
 
     /// Test census of the loadable facts whose base is in `block`.
@@ -6744,56 +6737,63 @@ impl PureFactContext {
     }
 
     pub(super) fn insert_proposition_fact(&mut self, proposition: Proposition) {
+        self.insert_shared_proposition_fact(std::sync::Arc::new(proposition));
+    }
+
+    fn insert_shared_proposition_fact(&mut self, shared: std::sync::Arc<Proposition>) {
+        let proposition = shared.as_ref();
         self.execution_variable_ceiling
-            .file_proposition(&proposition);
+            .file_proposition(proposition);
         if let Proposition::ResourceComposition(resources) = proposition {
-            if !self.resource_compositions.contains(&resources) {
+            if !self.resource_compositions.contains(resources) {
                 self.resource_compositions =
                     self.resource_compositions.with_value(resources.clone());
-                self.composition_members.admit(&resources);
-                self.composition_object_resources.admit(&resources);
+                self.composition_members.admit(resources);
+                self.composition_object_resources.admit(resources);
                 self.composition_object_resources
                     .advance_memory_equalities(self);
                 self.content_fingerprint ^= Self::fingerprint(3, &resources);
+                self.admit_shared_exact_propagation(shared);
             }
             return;
         }
         if self
             .prop_facts
-            .insert(crate::kernel::clone_proposition_iteratively(&proposition))
+            .insert(crate::kernel::clone_proposition_iteratively(proposition))
             .is_none()
         {
             self.execution_fact_projection.insert(
                 ContextFactKey::Proposition(proposition.clone()),
-                std::sync::Arc::new(ExecutionPureFact::new(proposition.clone())),
+                std::sync::Arc::new(ExecutionPureFact::from_shared(shared.clone())),
             );
-            self.adjust_comparison_view(&proposition);
-            self.adjust_atomic_connection_fact(&proposition);
-            self.adjust_stated_proposition_index(&proposition);
+            self.adjust_comparison_view(proposition);
+            self.adjust_atomic_connection_fact(proposition);
+            self.adjust_stated_proposition_index(proposition);
             if matches!(proposition, Proposition::Or(_, _)) {
                 self.disjunction_facts = self
                     .disjunction_facts
-                    .with_value(crate::kernel::clone_proposition_iteratively(&proposition));
+                    .with_value(crate::kernel::clone_proposition_iteratively(proposition));
             }
             if matches!(proposition, Proposition::ResourceSeparate { .. }) {
                 self.separation_facts = self
                     .separation_facts
-                    .with_value(crate::kernel::clone_proposition_iteratively(&proposition));
+                    .with_value(crate::kernel::clone_proposition_iteratively(proposition));
             }
-            self.adjust_algebraic_constructor_field_equalities(&proposition);
-            self.adjust_algebraic_constructor_conflict(&proposition);
-            self.adjust_algebraic_variable_constructor(&proposition);
-            self.adjust_algebraic_graph_equality(&proposition);
-            self.adjust_pointer_value_equality(&proposition);
-            self.adjust_algebraic_variable_variant_evidence(&proposition);
-            self.adjust_memory_loadable_fact(&proposition);
-            self.adjust_separation_block_fact(&proposition);
-            self.adjust_memory_separation_fact(&proposition);
-            self.adjust_nonmemory_separation_fact(&proposition);
-            self.adjust_resource_contains_fact(&proposition);
-            self.adjust_memory_effect_fact(&proposition);
-            self.adjust_pointer_class_fact(&proposition);
+            self.adjust_algebraic_constructor_field_equalities(proposition);
+            self.adjust_algebraic_constructor_conflict(proposition);
+            self.adjust_algebraic_variable_constructor(proposition);
+            self.adjust_algebraic_graph_equality(proposition);
+            self.adjust_pointer_value_equality(proposition);
+            self.adjust_algebraic_variable_variant_evidence(proposition);
+            self.adjust_memory_loadable_fact(proposition);
+            self.adjust_separation_block_fact(proposition);
+            self.adjust_memory_separation_fact(proposition);
+            self.adjust_nonmemory_separation_fact(proposition);
+            self.adjust_resource_contains_fact(proposition);
+            self.adjust_memory_effect_fact(proposition);
+            self.adjust_pointer_class_fact(proposition);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
+            self.admit_shared_exact_propagation(shared);
         }
     }
 
@@ -7484,6 +7484,15 @@ impl PureFactContext {
     }
 
     fn assume_condition_uncharged(self, condition: ConditionTerm, value: bool) -> Self {
+        self.assume_condition_with_source(condition, value, None)
+    }
+
+    fn assume_condition_with_source(
+        self,
+        condition: ConditionTerm,
+        value: bool,
+        source: Option<std::sync::Arc<Proposition>>,
+    ) -> Self {
         let (decided, reduced) = if self.condition_facts.get(&condition) == Some(&value) {
             (None, None)
         } else {
@@ -7519,7 +7528,7 @@ impl PureFactContext {
         let sign_cast_division = (condition.names_sign_cast_division()
             && self.condition_facts.get(&condition) != Some(&value))
         .then(|| condition.clone());
-        let mut next = self.assume_condition_once(condition, value);
+        let mut next = self.assume_condition_once_shared(condition, value, source);
         if !sign_bit_equivalents.is_empty() {
             next = Self::without_sign_bit_rule(|| {
                 sign_bit_equivalents
@@ -7567,7 +7576,16 @@ impl PureFactContext {
         true
     }
 
-    fn assume_condition_once(mut self, condition: ConditionTerm, value: bool) -> Self {
+    fn assume_condition_once(self, condition: ConditionTerm, value: bool) -> Self {
+        self.assume_condition_once_shared(condition, value, None)
+    }
+
+    fn assume_condition_once_shared(
+        mut self,
+        condition: ConditionTerm,
+        value: bool,
+        source: Option<std::sync::Arc<Proposition>>,
+    ) -> Self {
         // Proof branches frequently restate a path fact (for example while
         // lowering the consequent of an implication). Preserve the shared
         // persistent view on that idempotent insertion: `Arc::make_mut`
@@ -7728,9 +7746,8 @@ impl PureFactContext {
         self.condition_facts = self.condition_facts.with_inserted(condition.clone(), value);
         self.execution_fact_projection.insert(
             ContextFactKey::Condition(condition.clone()),
-            std::sync::Arc::new(ExecutionPureFact::new(Proposition::ConditionIs(
-                condition.clone(),
-                value,
+            std::sync::Arc::new(ExecutionPureFact::from_shared(source.unwrap_or_else(
+                || std::sync::Arc::new(Proposition::ConditionIs(condition.clone(), value)),
             ))),
         );
         self.adjust_pointer_class_fact(&Proposition::ConditionIs(condition.clone(), value));
@@ -7768,7 +7785,8 @@ impl PureFactContext {
         if condition.is_bool_value_form() {
             self.admit_bool_binder_truths(&condition);
         }
-        self.content_fingerprint ^= Self::fingerprint(1, &(condition, value));
+        self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), value));
+        self.admit_exact_propagation(Proposition::ConditionIs(condition, value));
         self
     }
 
@@ -7794,10 +7812,11 @@ impl PureFactContext {
         }
     }
 
-    /// Files the signed range of a word an unsigned upper bound below the sign
-    /// bit established: `0 <= term`, and `term < bound + 1` (strict source)
-    /// or `term <= bound`.
+    /// Files the range of the typed signed reading established by an unsigned
+    /// bound below the sign bit: `0 <= signed(term)`, and
+    /// `signed(term) < bound + 1` (strict source) or `signed(term) <= bound`.
     fn assume_unsigned_word_range(mut self, term: MachineTerm, bound: u32, strict: bool) -> Self {
+        let term = condition_reasoning::signed_uint32_term(term);
         self = self.assume_condition_uncharged(
             ConditionTerm::signed_less_equal(MachineTerm::constant(0), term.clone()),
             true,
@@ -7824,6 +7843,63 @@ impl PureFactContext {
     /// mentions; see `ExecutionVariableCeiling`.
     pub(in crate::kernel) fn execution_variable_ceiling(&self) -> Option<Variable> {
         self.execution_variable_ceiling.get()
+    }
+
+    /// Share the admitted syntax with the store and with execution publication.
+    pub(crate) fn assume_shared_proposition(
+        mut self,
+        proposition: std::sync::Arc<Proposition>,
+    ) -> Self {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Proposition::ConditionIs(condition, value) = proposition.as_ref() {
+            return self.assume_condition_with_source(
+                condition.clone(),
+                *value,
+                Some(proposition.clone()),
+            );
+        }
+        if let Proposition::Not(body) = proposition.as_ref() {
+            if let Proposition::ConditionIs(condition, value) = body.as_ref() {
+                return self.assume_condition_uncharged(condition.clone(), !*value);
+            }
+            self.insert_shared_proposition_fact(proposition);
+            return self;
+        }
+        if matches!(proposition.as_ref(), Proposition::And(..)) {
+            return self.assume_proposition_uncharged(
+                crate::kernel::clone_proposition_iteratively(&proposition),
+            );
+        }
+        let decided = decided_algebraic_if(&proposition);
+        let reduced = self.reduce_by_decided_conditions(&proposition);
+        let native = self.shared_antecedent_reading(&proposition);
+        self.insert_shared_proposition_fact(proposition);
+        if let Some(native) = native {
+            self.insert_proposition_fact(native);
+        }
+        if let Some((condition, value, selected)) = decided {
+            self = self.assume_decided_algebraic_if(condition, value, selected);
+        }
+        if let Some(reduced) = reduced {
+            self = self.assume_proposition_uncharged(reduced);
+        }
+        self
+    }
+
+    /// Indexed retrieval of an already retained exact syntax object. This is
+    /// interning, not a proof query; opposite condition occurrences stay distinct.
+    pub(crate) fn shared_assumed_proposition(
+        &self,
+        proposition: &Proposition,
+    ) -> Option<std::sync::Arc<Proposition>> {
+        let key = match proposition {
+            Proposition::ConditionIs(condition, _) => ContextFactKey::Condition(condition.clone()),
+            _ => ContextFactKey::Proposition(proposition.clone()),
+        };
+        self.execution_fact_projection
+            .get(&key)
+            .filter(|fact| fact.proposition() == proposition)
+            .map(|fact| fact.shared_proposition())
     }
 
     pub fn assume_proposition(self, proposition: Proposition) -> Self {
@@ -8084,6 +8160,7 @@ impl PureFactContext {
         }
         if matches!(proposition, Proposition::ForAll { .. }) {
             self.atomic_quantified_facts = self.atomic_quantified_facts.with_value(shared.clone());
+            self.index_universal_equality(proposition);
             for key in UniversalConclusionKey::of(proposition) {
                 crate::instrumentation::record_deterministic_work(1);
                 let bucket = self
@@ -8124,6 +8201,7 @@ impl PureFactContext {
         self.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         self.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
         self.universals_by_conclusion = crate::persistent::PersistentMap::default();
+        self.universal_equality_sources = Default::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.scan_for_upkeep() {
             self.adjust_atomic_connection_fact(&Proposition::ConditionIs(
@@ -8456,6 +8534,9 @@ impl PureFactContext {
         restricted.rebuild_null_pointer_offsets();
         restricted.rebuild_memory_load_condition_facts();
         restricted.rebuild_condition_match_indexes();
+        for (condition, value) in conditions {
+            restricted.admit_exact_propagation(Proposition::ConditionIs(condition.clone(), *value));
+        }
         // File proposition edges and resource indexes only after their
         // condition graph is the selected one, never the inherited graph.
         for proposition in propositions {
@@ -10336,19 +10417,14 @@ impl ProofObligation {
 impl ExecutionPureFact {
     /// The value observed by this producer's completed volatile read.
     pub(crate) fn volatile_read_result(&self) -> Option<&ProgramValue> {
+        crate::instrumentation::record_deterministic_work(1);
         if !self.is_certified() {
             return None;
         }
-        let Proposition::Predicate { name, arguments } = self.proposition() else {
+        let Proposition::VolatileAccess(event) = self.proposition() else {
             return None;
         };
-        if !name.starts_with("__click_volatile_read_") {
-            return None;
-        }
-        let [Term::ProgramValue(_), Term::ProgramValue(value)] = arguments.as_slice() else {
-            return None;
-        };
-        Some(value)
+        (event.kind == VolatileAccessKind::Read).then_some(&event.value)
     }
 
     /// Retain the exact typed producer's definition and checked cached value.
@@ -10410,6 +10486,10 @@ impl ExecutionPureFact {
     }
 
     pub fn new(proposition: Proposition) -> Self {
+        Self::from_shared(std::sync::Arc::new(proposition))
+    }
+
+    pub(crate) fn from_shared(proposition: std::sync::Arc<Proposition>) -> Self {
         Self {
             proposition,
             public: true,
@@ -10428,7 +10508,7 @@ impl ExecutionPureFact {
 
     pub(super) fn internal(proposition: Proposition) -> Self {
         Self {
-            proposition,
+            proposition: std::sync::Arc::new(proposition),
             public: false,
             certified: false,
             logical_read_equation: false,
@@ -10465,7 +10545,7 @@ impl ExecutionPureFact {
 
     pub(super) fn certified(proposition: Proposition) -> Self {
         Self {
-            proposition,
+            proposition: std::sync::Arc::new(proposition),
             public: true,
             certified: true,
             logical_read_equation: false,
@@ -10533,11 +10613,11 @@ impl ExecutionPureFact {
         let value_equation =
             super::memory_provenance::store_value_equation(&after, &pointer, &value);
         Self {
-            proposition: Proposition::MemoryMutatesOnly {
+            proposition: std::sync::Arc::new(Proposition::MemoryMutatesOnly {
                 before: before.clone(),
                 after: after.clone(),
                 writes: vec![(pointer.clone(), value.byte_width())],
-            },
+            }),
             public: false,
             certified: true,
             logical_read_equation: false,
@@ -10566,7 +10646,7 @@ impl ExecutionPureFact {
     }
 
     pub(crate) fn with_proposition(mut self, proposition: Proposition) -> Self {
-        if self.proposition != proposition
+        if self.proposition.as_ref() != &proposition
             || self.generated_load_binding.as_ref().is_some_and(|binding| {
                 !generated_load_binding_matches_proposition(binding, &proposition)
             })
@@ -10586,7 +10666,7 @@ impl ExecutionPureFact {
                 store.source = Default::default();
             }
         }
-        self.proposition = proposition;
+        self.proposition = std::sync::Arc::new(proposition);
         self
     }
 
@@ -10613,7 +10693,7 @@ impl ExecutionPureFact {
         theorem: Theorem,
     ) -> Self {
         Self {
-            proposition: target,
+            proposition: std::sync::Arc::new(target),
             public: false,
             certified: true,
             logical_read_equation: false,
@@ -10645,6 +10725,10 @@ impl ExecutionPureFact {
 
     pub fn condition(condition: ConditionTerm, value: bool) -> Self {
         Self::new(Proposition::ConditionIs(condition, value))
+    }
+
+    pub(crate) fn shared_proposition(&self) -> std::sync::Arc<Proposition> {
+        self.proposition.clone()
     }
 
     pub fn proposition(&self) -> &Proposition {
@@ -13379,7 +13463,7 @@ mod shared_load_atom_comparison_tests {
 
     #[test]
     fn shared_state_premise_requires_the_selected_frame() {
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         let _session = crate::kernel::VerificationSession::enter();
         let before = Memory::new()
             .with_block("shared-frame", 8)
@@ -13441,8 +13525,8 @@ mod shared_load_atom_comparison_tests {
         for source in std::iter::once(Proposition::ConditionIs(condition(&before), true)).chain(
             crate::kernel::proof::fact_reasoning::order_claim_forms(&source),
         ) {
-            let unframed = ProofFacts::from_ordered(std::slice::from_ref(&source));
-            let framed = ProofFacts::from_ordered(&[source.clone(), equality.clone()]);
+            let unframed = PureFactStore::from_ordered(std::slice::from_ref(&source));
+            let framed = PureFactStore::from_ordered(&[source.clone(), equality.clone()]);
             let exports = KernelTermExport::machine_export_count();
             assert!(!unframed.exact_available_across_effects(&target, &[]));
             let available = framed.exact_available_across_effects(&target, &[]);
@@ -13487,8 +13571,8 @@ mod shared_load_atom_comparison_tests {
             },
             false,
         );
-        let missing_frame = ProofFacts::from_ordered(std::slice::from_ref(&source));
-        let framed = ProofFacts::from_ordered(&[source, equality]);
+        let missing_frame = PureFactStore::from_ordered(std::slice::from_ref(&source));
+        let framed = PureFactStore::from_ordered(&[source, equality]);
         let later = condition(&after);
         let view = native_comparison_view(&later, true).unwrap();
         let query = OverflowQueryView::from_operands(
@@ -13515,7 +13599,7 @@ mod shared_load_atom_comparison_tests {
             Operation,
             definedness::{OverflowQueryView, defined_formats},
         };
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         for ty in defined_formats() {
             for (operation, op) in [
                 (Operation::Add, OverflowOperation::Add),
@@ -13540,10 +13624,10 @@ mod shared_load_atom_comparison_tests {
                         truth,
                     )
                 };
-                let held = ProofFacts::from_ordered(&[source(op, false)]);
-                let missing = ProofFacts::from_ordered(&[]);
-                let refuted = ProofFacts::from_ordered(&[source(op, true)]);
-                let wrong = ProofFacts::from_ordered(&[source(
+                let held = PureFactStore::from_ordered(&[source(op, false)]);
+                let missing = PureFactStore::from_ordered(&[]);
+                let refuted = PureFactStore::from_ordered(&[source(op, true)]);
+                let wrong = PureFactStore::from_ordered(&[source(
                     if op == OverflowOperation::Add {
                         OverflowOperation::Multiply
                     } else {

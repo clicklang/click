@@ -662,6 +662,13 @@ pub enum MirTerminator {
         otherwise: Option<usize>,
     },
     Return,
+    /// `return value`: the function returns `value` itself. MIR writes the
+    /// return place `_0` and then returns; when nothing runs between the
+    /// write and the return, the importer returns the written value here
+    /// and `_0` is not a local.
+    ReturnValue {
+        value: Expression,
+    },
     Unreachable,
     /// A Rust panic, `assert!` or `panic!`: the verifier proves the block is
     /// never reached. `message` names the panic in a refusal.

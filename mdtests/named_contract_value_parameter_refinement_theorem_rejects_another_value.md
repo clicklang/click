@@ -1,7 +1,7 @@
 # A refinement theorem for one value does not prove another
 
 `add3` adds three, so a theorem concluding `Adds(&add3, { amount: 4 })` is
-refused: the obligation `unfold(Adds)` opens binds `amount` to `4`.
+refused: the obligation `unfold(Adds(&add3, { amount: 4 }))` opens binds `amount` to `4`.
 
 ```c filename=adds.c
 int32 add3(int32 x) {
@@ -26,12 +26,12 @@ int32 add3(int32 x) {
 
 theorem add3_adds_four() {
     ensures Adds(&add3, { amount: 4 }) by {
-        unfold(Adds);
+        unfold(Adds(&add3, { amount: 4 }));
         solve();
     }
 }
 ```
 
 ```expect
-fail: could not establish `0 <= x and x <= 1000 and (0 <= 4 and 4 <= 1000) implies 0 <= x and x <= 1000 and ((let integer_value: Integer = to_integer((x as int32)) + 3; integer_value) <= 2147483647 and (let integer_value: Integer = to_integer((x as int32)) + 3; integer_value) >= -2147483648 and result == (x + 3) implies (let integer_value: Integer = to_integer((x as int32)) + 4; integer_value) <= 2147483647 and (let integer_value: Integer = to_integer((x as int32)) + 4; integer_value) >= -2147483648 and result == (x + 4))`
+fail: could not establish `0 <= x and x <= 1000 and (0 <= 4 and 4 <= 1000) implies 0 <= x and x <= 1000 and (((to_integer((x as int32)) + 3) : Integer) <= 2147483647 and ((to_integer((x as int32)) + 3) : Integer) >= -2147483648 and result == (x + 3) implies ((to_integer((x as int32)) + 4) : Integer) <= 2147483647 and ((to_integer((x as int32)) + 4) : Integer) >= -2147483648 and result == (x + 4))`
 ```

@@ -31,7 +31,7 @@ fact store's structural keys live in `src/kernel/proof/fact_keys.rs`. The fact s
 transport, conflict, and state-equivalence rules live beside those keys in
 `src/kernel/proof/fact_reasoning.rs`; Surface Click fact selection, diagnostic
 rendering, and budgeted smart premise search remain in the language layer.
-The persistent `ProofFacts` store and all of its semantic indexes live in
+`PureFactStore` and all of its persistent semantic indexes live in
 `src/kernel/proof/facts.rs`; language code receives an opaque store and uses
 named queries and persistent successor operations rather than its fields.
 Kernel `ProofObject`, `ProofState`, `ProofBranch`, and `ProofBranchState` own
@@ -51,9 +51,9 @@ availability and logical shape, refine or close the obligation, and return an
 opaque successor directly. `intro` accepts a callback only to derive new
 opaque presentation from the checked introduction kind; the callback cannot
 choose the kernel proposition, introduced fact, or successor state.
-Conjunction extraction and explicit universal instantiation likewise accept
-lowered inputs, then let the kernel validate availability, guards, and the
-resulting fact before it publishes a successor.
+Explicit implication application and universal instantiation likewise accept
+lowered inputs, then let the kernel establish availability and guards before
+it constructs and publishes the resulting fact.
 The raw persistent fact insertion and focused-state replacement operations are
 scoped to `src/kernel`; their `with_kernel_checked_fact` and
 `publish_checked_result` language adapters are carry-only seams for results
@@ -138,7 +138,7 @@ Pure proofs retain each checked `have`'s written-to-kernel correspondence.
 An explicit citation can reuse that correspondence while its program state and
 referenced bindings are unchanged. Lookup requires a singleton source mapping
 and exact membership of the retained fact; it never scans historical mappings
-or grants authority to the spelling. Shadowed names, ambiguous mappings, and
+or grants authority to the written form. Shadowed names, ambiguous mappings, and
 missing facts take the ordinary citation-lowering path. New goals and term
 construction keep their existing lowering rules.
 Structural loop-effect scopes may restore an already allocated retired cursor
@@ -203,11 +203,11 @@ its written tail is walked, so these completed splits do not accumulate depth.
 No `ProofStep` is smart or internal-only, and both certificate constructors
 apply one admission rule: `from_proof_tactics` classifies source tactics and
 `from_steps` classifies serialized provenance, so a leaf that no explicit
-proof could spell is rejected from either direction. A smart tactic therefore
+proof could write is rejected from either direction. A smart tactic therefore
 has no step of its own. The implicit back-edge closure of a loop's
 `preserve` script, for example, plans the bundle body, and the step retained
 for it is the internal `ProofStep::CloseInvariantsBy` carrying that planned
-body, which has no surface spelling (the `close_invariants` tactic is retired);
+body, which has no Surface form (the `close_invariants` tactic is retired);
 the closure request itself is a semantic-core update with no certificate
 leaf. Nested certificates are admitted where they
 are built, so validating one certificate costs a single pass over its own
@@ -223,7 +223,7 @@ flags, structured-branch flags, and unfolded kernel predicates.
 
 Kernel `ProofExecutionState` pairs that core with an opaque language
 `ExecutionProofPresentation` containing only Surface Click construction data:
-recorded states and their selectors, source spellings,
+recorded states and their selectors, source text,
 case assumptions, frontier loop clauses, planned statement transitions,
 branch and outcome provenance, deferred post-execution tactics, and the
 `SurfaceRecord` used for certificate extraction. Its `ExpansionCursor` records
@@ -299,8 +299,8 @@ claim completion. Unfolds during execution still name their exposed cells.
 When a proof matches an already constructed model, an algebraic payload that
 already has a Surface variable keeps that identity under the new source name.
 The kernel still allocates fresh constructor witnesses and checks the case;
-constructor injectivity justifies the retained payload spelling. The checked
-case also publishes its equation in that spelling. This keeps unfolded scalar
+constructor injectivity justifies the retained payload name. The checked
+case also publishes its equation under that name. This keeps unfolded scalar
 facts attached to the same model value across a fold and another match, without
 changing memory states or transferring ownership. Selection reads only the
 constructor's requested field, with no search through unrelated premises. Ordinary
@@ -324,7 +324,7 @@ continuation then share this bound state; resuming execution uses the retained
 source and does not bind the parameters a second time. Interface clauses still
 require checked resources and facts from both arms. Positive pointer equalities
 may normalize through the arm's maintained equality graph when a logical read
-has a different spelling; ownership, viewability, and other safety obligations
+has a different form; ownership, viewability, and other safety obligations
 still need their own checked evidence. Concrete interface clauses are lowered
 in that exact arm's maintained fact context, so a wide read through a model
 pointer can recover the same cached value used by the arm's explicit proof.
@@ -532,7 +532,7 @@ termination strategy plans the generated dependencies and emits checked
 and `check_termination_callbacks()` steps, followed by `known()`. Local descent
 uses the same primitives as the standalone termination API; its result is
 retained as a fact and reused by strict and normal dependency steps. The
-intermediate spellings are `termination_local("f")`, `termination_strict("f")`,
+intermediate facts are written `termination_local("f")`, `termination_strict("f")`,
 and `termination_body("f")`, together with their negations when refused.
 
 `click expand --claim program.termination file.click` writes this ordinary
@@ -742,7 +742,7 @@ Likewise, a match on an unknown algebraic value remains one symbolic term
 rather than creating execution paths. A function's requirements at the proof's
 entry, an applied theorem's requires and conclusion, and a pure theorem's
 goal are elaborated and lowered the same way, so a declared standard
-theorem matches its kernel axiom by spelling. So are the C fragments stated
+theorem matches its kernel axiom by form. So are the C fragments stated
 outside proofs: a resource clause's quantity, arguments, and segment bounds,
 an effect footprint, a resource definition's reads
 (`evaluate_program_expression_through_kernel`), and a predicate body unfolded on a
@@ -751,12 +751,12 @@ decoded arguments and lowered at the decoded state. A C fragment stated at
 a state that does not justify a load it makes is refused there, unless the
 clause allows symbolic contract loads (a resource segment, an effect
 footprint inside a folded composite), in which case the load stays the
-symbolic term kernel execution spells it as and exposes its viewability as
+symbolic term kernel execution represents it as and exposes its viewability as
 an obligation. The surface has no evaluator of its own. A count named at a recorded state
 is that state's population. A negated condition is the condition with the
-other value, as an execution spells the branch it did not take, and
+other value, as an execution represents the branch it did not take, and
 viewability terms are canonical, so a proposition lowered anywhere is
-spelled as the execution's facts are. The kernel lowering leaves a load's
+represented as the execution's facts are. The kernel lowering leaves a load's
 viewability as an obligation. Claim opening uses the ordinary obligation
 channel to discharge it from the path's facts or an explicit proof. A
 completed postcondition is consumed by its clause and producer path, including
@@ -841,13 +841,13 @@ entries at or before the selected anchor, nearest first, followed by later
 entries in forward order. It does not enumerate and sort the complete map
 before trying a nearby candidate. Tree traversal and synthesis check the
 active work budget and deadline; an exhausted search stops before trying
-further states or presentation fallbacks. Every accepted spelling still
+further states or presentation fallbacks. Every accepted Surface form still
 has to lower to the exact selected kernel premise. Cross-state equality
 reconstruction uses the visited entries and checks cancellation per operand.
 
 Lowering and fixed-state proofs read execution data through `ExecutionView`, a
 borrowed view of the frontier, recorded states, surface
-spellings, execution facts, and the `old(...)` reference state. It is built from
+forms, execution facts, and the `old(...)` reference state. It is built from
 the presentation and its kernel core (`ExecutionProofState::view`, or
 `ExecutionView::new` for a
 planner's scratch state); nothing in it borrows a cursor.
@@ -918,41 +918,41 @@ Three standing rules keep the boundary where the 2026-09 cleanup left it.
   whole-context loops are indexing debts under the efficiency contract, not
   license to reason more. A kernel site may call `decide` only on a bare
   `ConditionIs`.
-- **Selections need a spelling; discharges become obligations.** A kernel
+- **Selections must raise; discharges become obligations.** A kernel
   operation that asks whether a proposition holds uses an exact route or
   emits the proposition as an obligation. One that must choose among
   candidates the kernel itself enumerates lowers the choice as a finite
   disjunction so the proof proves one disjunct, closes it with
   `known()`, and expansion prints it; open
   choices use the existing `instantiate`, `witness`, `obtain`, `rewrite`,
-  and `transport` spellings.
+  and `transport` syntax.
 - **Retained evidence names premises, never a context.** A derivation leaf
   carries the propositions it cites, and its check rebuilds a context from
   exactly those.
-- **A cited spelling must still lower to the fact it cites.** The surface
+- **A cited Surface form must still lower to the fact it cites.** The surface
   map records which Surface form produced which kernel proposition, but a
   form can stop denoting that fact where the certificate is written: a proof
   `match` arm's case fact states the scrutinee's constructor at unchanged
   function entry, and once the arm has refolded its instance, `c.model ==
   C(..)` reads the refolded field instead. A refold is the only move that
-  does this, so resolving a premise spelled as a constructor equation lowers
+  does this, so resolving a premise written as a constructor equation lowers
   the candidate again at the state it will be rechecked in: the recorded pair
   settles that shape only when the form has no lowering there at all, and a
-  form that lowers to some other fact is not a spelling for this one. The
+  form that lowers to some other fact is not a Surface form for this one. The
   stale case falls back on the entry-anchored `old(c.model) == C(..)`, which
   does lower to it, and only where the bare pair would have answered — a
-  lookup that reached no spelling still reaches none. Every other premise
+  lookup that reached no Surface form still reaches none. Every other premise
   keeps the cheap recorded-pair route, because re-lowering every candidate
   costs a smart `have` about half its real-time budget again.
   A fixed-state certificate inside a proof `match` also retains that site's
-  lexical bindings. If a selected comparison has no recorded spelling, it may
-  reconstruct a match-bound scalar name, but only when lowering that name in
-  the same scope yields the exact available kernel premise. The emitted proof
-  keeps the source name, never the kernel's fresh variable spelling.
+  lexical bindings. If a selected comparison has no recorded Surface form, it
+  may reconstruct a match-bound scalar name, but only when lowering that name
+  in the same scope yields the exact available kernel premise. The emitted proof
+  keeps the source name, never the kernel's fresh variable name.
   For an implication guarded by algebraic equality, `solve` first tries to
   refute the guard with an indexed model equality and direct normalization.
   A successful candidate emits the ordinary scoped `have`, `rewrite`,
-  `intro`, and `contradiction` operations, before selecting or spelling facts
+  `intro`, and `contradiction` operations, before selecting or raising facts
   connected to the entire implication. A missed candidate leaves the ordinary
   closure search available.
 

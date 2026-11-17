@@ -35,7 +35,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
         let context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: Memory::new(),
             values: BTreeMap::from([("x".into(), ProgramValue::Int32(value))]),
             array_refs: BTreeMap::new(),
@@ -171,7 +171,7 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
         let context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             memory: Memory::new(),
             values: BTreeMap::from([
                 ("k".into(), ProgramValue::Int32(k)),

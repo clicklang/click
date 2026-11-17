@@ -25,10 +25,10 @@ struct node *caller(struct node *p, struct node *q, struct node *parent) {
         normalize() using { separate(memory(p->word), memory(q->tag)); };
     }
     have p->word == at(before, p->word) by {
-        preserve(separate(statement(0).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(0));
     }
     have *((&p->word) as (int32 **)) == at(before, *((&p->word) as (int32 **))) by {
-        preserve(separate(statement(0).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(0));
     }
     have ((p->word & ~3) as (struct node *)) == parent by {
         rewrite(p->word, at(before, p->word));

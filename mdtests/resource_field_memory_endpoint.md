@@ -82,16 +82,13 @@ void claim(int32* data, int32 capacity, int32 start) {
     } by {
         intro();
         intro();
-        extract(to_integer(old(before.start) + 1) <= to_integer(k));
+        have to_integer(old(before.start) + 1) <= to_integer(k);
         have old(before.start) < old(before.start) + 1;
         have old(before.start) < k;
         have old(before.start) <= k;
         instantiate(forall (k: int32) {
             old(before.start) <= k and k < capacity implies data[k] == 0
-        }, k) using {
-            old(before.start) <= k;
-            k < capacity;
-        };
+        }, k);
         known();
     }
     let after = fold(zero_suffix(data, capacity), { start: old(before.start) + 1 });

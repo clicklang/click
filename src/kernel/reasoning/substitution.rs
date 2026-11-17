@@ -321,7 +321,7 @@ pub(crate) fn substitute_pointer_value_in_proposition(
     let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_typed_variables(
         &c, &integers, &algebraic,
     );
-    let result = rewrite.proposition(proposition);
+    let result = rewrite.substitute_proposition(proposition);
     match rewrite.refusal() {
         None => Ok(result),
         Some(reason) => Err(format!("pointer witness substitution refused: {reason:?}")),
@@ -579,10 +579,14 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
         .predicate_unfoldings()
         .iter()
         .map(|unfolding| PredicateUnfolding {
+            requirement_source: unfolding.requirement_source.clone(),
             predicate: s.spec_proposition(&unfolding.predicate),
             body: s.spec_proposition(&unfolding.body),
         })
         .collect();
+    interface.resource_transfer_rule = std::sync::Arc::new(
+        crate::kernel::functions::SummaryResourceTransferRule::compile(&interface),
+    );
     ProgramFunction {
         program_entry: function.program_entry,
         name: function.name.clone(),
@@ -728,6 +732,11 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                 identity.mutex.clone()
             },
         }),
+        Resource::ConditionalMutexGuard(carrier) => {
+            let mut mapped = (**carrier).clone();
+            mapped.held = s.condition(&carrier.held);
+            Resource::ConditionalMutexGuard(std::sync::Arc::new(mapped))
+        }
         Resource::MutexGuard(identity) => Resource::MutexGuard(MutexIdentity {
             epoch: identity.epoch,
             mutex: if identity.epoch.is_none() {
@@ -938,9 +947,8 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
     s: &S,
 ) -> ProgramStatement {
     match statement {
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -1079,12 +1087,14 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             try_body,
             binding,
             handler,
-            cleanup_unwind,
         } => ProgramStatement::TryCatchInt32 {
             try_body: Box::new(walk_execution_statement(try_body, s)),
             binding: binding.clone(),
             handler: Box::new(walk_execution_statement(handler, s)),
-            cleanup_unwind: *cleanup_unwind,
+        },
+        ProgramStatement::UnwindCleanup { body, cleanup } => ProgramStatement::UnwindCleanup {
+            body: Box::new(walk_execution_statement(body, s)),
+            cleanup: Box::new(walk_execution_statement(cleanup, s)),
         },
         ProgramStatement::Store { pointer, value } => ProgramStatement::Store {
             pointer: s.program_expression(pointer),
@@ -1152,7 +1162,6 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
         ProgramStatement::Loop {
             test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
@@ -1160,19 +1169,17 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             ranking_measures,
             structural_measure,
             body,
-            do_while,
             backedge_target,
             natural_exit_target,
         } => ProgramStatement::Loop {
-            test: test.as_ref().map(|test| LoopTestRegion {
+            test: LoopTestRegion {
                 statement: std::sync::Arc::new(walk_execution_statement(&test.statement, s)),
                 position: test.position,
-            }),
+            },
             update: update
                 .as_ref()
                 .map(|step| std::sync::Arc::new(walk_execution_statement(step, s))),
             structural_measure: structural_measure.clone(),
-            condition: s.program_expression(condition),
             ranking_measures: ranking_measures
                 .iter()
                 .map(|measure| walk_ranking_component(measure, s))
@@ -1208,7 +1215,6 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
                     }),
                 })
                 .collect(),
-            do_while: *do_while,
             backedge_target: *backedge_target,
             natural_exit_target: *natural_exit_target,
             body: Box::new(walk_execution_statement(body, s)),
@@ -1289,6 +1295,15 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
 ) -> Proposition {
     let _scope = s.proposition_scope();
     match proposition {
+        Proposition::VolatileAccess(event) => {
+            Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
+                pointer: s.pointer(&event.pointer),
+                value: s.program_value(&event.value),
+                id: event.id,
+                kind: event.kind,
+                value_type: event.value_type,
+            }))
+        }
         Proposition::Equal(left, right) => Proposition::Equal(s.term(left), s.term(right)),
         Proposition::ConditionIs(condition, value) => {
             Proposition::ConditionIs(s.condition(condition), *value)
@@ -1315,44 +1330,16 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             condition: s.program_expression(condition),
             outcome: outcome.clone(),
         },
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
-        }
-        | Proposition::ProgramStatementVerifies {
-            state,
-            statement,
-            outcome,
-        } => {
-            let state = walk_execution_state(state, s);
-            let statement = walk_execution_statement(statement, s);
-            let outcome = walk_execution_statement_outcome(outcome, s);
-            match proposition {
-                Proposition::ProgramStatementExecutes { .. } => {
-                    Proposition::ProgramStatementExecutes {
-                        state: Box::new(state),
-                        statement: Box::new(statement),
-                        outcome,
-                    }
-                }
-                Proposition::ProgramStatementVerifies { .. } => {
-                    Proposition::ProgramStatementVerifies {
-                        state: Box::new(state),
-                        statement: Box::new(statement),
-                        outcome,
-                    }
-                }
-                _ => unreachable!("the combined statement proposition arm is exhaustive"),
-            }
-        }
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        }
-        | Proposition::ProgramFunctionVerifies {
+        } => Proposition::ProgramStatementVerifies {
+            state: Box::new(walk_execution_state(state, s)),
+            statement: Box::new(walk_execution_statement(statement, s)),
+            outcome: walk_execution_statement_outcome(outcome, s),
+        },
+        Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
@@ -1364,34 +1351,13 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
                 .iter()
                 .map(|argument| s.program_expression(argument))
                 .collect();
-            let outcome = walk_program_function_outcome(outcome, s);
-            match proposition {
-                Proposition::ProgramFunctionExecutes { .. } => {
-                    Proposition::ProgramFunctionExecutes {
-                        state: Box::new(state),
-                        function: Box::new(function),
-                        arguments,
-                        outcome,
-                    }
-                }
-                Proposition::ProgramFunctionVerifies { .. } => {
-                    Proposition::ProgramFunctionVerifies {
-                        state: Box::new(state),
-                        function: Box::new(function),
-                        arguments,
-                        outcome,
-                    }
-                }
-                _ => unreachable!("the combined function proposition arm is exhaustive"),
+            Proposition::ProgramFunctionVerifies {
+                state: Box::new(state),
+                function: Box::new(function),
+                arguments,
+                outcome: walk_program_function_outcome(outcome, s),
             }
         }
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function,
-            specification,
-        } => Proposition::ProgramFunctionSatisfiesSpecification {
-            function: Box::new(walk_program_function(function, s)),
-            specification: Box::new(walk_program_function_specification(specification, s)),
-        },
         Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
@@ -1971,9 +1937,11 @@ mod resource_frame_substitution_tests {
             ),
         );
         let statement = ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: vec![inherited_check(range)],
@@ -1981,7 +1949,6 @@ mod resource_frame_substitution_tests {
             ranking_measures: Vec::new(),
             structural_measure: None,
             body: Box::new(ProgramStatement::Skip),
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
         };
@@ -2017,9 +1984,11 @@ mod resource_frame_substitution_tests {
             MachineTerm::constant(1),
         );
         let statement = ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: vec![inherited_check(range)],
@@ -2027,7 +1996,6 @@ mod resource_frame_substitution_tests {
             ranking_measures: Vec::new(),
             structural_measure: None,
             body: Box::new(ProgramStatement::Skip),
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
         };
@@ -2171,7 +2139,7 @@ pub fn resolve_minted_load_variables(
                 right,
             },
             true,
-        ) = &fact.proposition
+        ) = fact.proposition()
         else {
             continue;
         };
@@ -2206,6 +2174,14 @@ pub(crate) fn substitute_algebraic_variable_in_proposition(
     }
 
     match proposition {
+        Proposition::VolatileAccess(_) => {
+            let source = AlgebraicTerm {
+                algebraic_type: to.algebraic_type.clone(),
+                node: AlgebraicTermNode::Variable(from),
+            };
+            crate::kernel::proof::term_rewrite::TermRewrite::new(&source, to)
+                .proposition(proposition)
+        }
         Proposition::Equal(left, right) => Proposition::Equal(
             rewritten_term(left, from, to),
             rewritten_term(right, from, to),
@@ -2425,6 +2401,10 @@ fn collect_proposition_bound_variables_one(
     variables: &mut BTreeSet<Variable>,
 ) {
     match proposition {
+        Proposition::VolatileAccess(event) => {
+            collect_pointer_bound_variables(&event.pointer, variables);
+            collect_program_value_bound_variables(&event.value, variables);
+        }
         Proposition::Equal(left, right) => {
             collect_term_bound_variables(left, variables);
             collect_term_bound_variables(right, variables);
@@ -2452,12 +2432,7 @@ fn collect_proposition_bound_variables_one(
             collect_execution_state_bound_variables(state, variables);
             collect_program_expression_bound_variables(condition, variables);
         }
-        Proposition::ProgramStatementExecutes {
-            state,
-            statement,
-            outcome,
-        }
-        | Proposition::ProgramStatementVerifies {
+        Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
@@ -2466,13 +2441,7 @@ fn collect_proposition_bound_variables_one(
             collect_execution_statement_bound_variables(statement, variables);
             collect_statement_outcome_bound_variables(outcome, variables);
         }
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        }
-        | Proposition::ProgramFunctionVerifies {
+        Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
@@ -2485,11 +2454,7 @@ fn collect_proposition_bound_variables_one(
             }
             collect_function_outcome_bound_variables(outcome, variables);
         }
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function,
-            specification,
-        }
-        | Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
         } => {
@@ -2745,9 +2710,8 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match statement {
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -2795,6 +2759,10 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             collect_execution_statement_bound_variables(try_body, variables);
             collect_execution_statement_bound_variables(handler, variables);
@@ -2825,15 +2793,15 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
             collect_execution_statement_bound_variables(else_branch, variables);
         }
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
             body,
             ..
         } => {
+            let (condition, _, test) = loop_test.execution_parts();
             collect_program_expression_bound_variables(condition, variables);
             for proposition in invariant {
                 collect_proposition_bound_variables(proposition, variables);
@@ -3288,6 +3256,9 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
                 collect_pointer_bound_variables(&identity.mutex, variables);
             }
         }
+        Resource::ConditionalMutexGuard(carrier) => {
+            collect_condition_bound_variables(&carrier.held, variables)
+        }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
                 let pointer = &identity.mutex;
@@ -3399,6 +3370,7 @@ fn collect_scoped_leaf_bound_variables(
 
 fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         bits32_constant!(_) | MachineTerm::Variable(_) => {}
         crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
@@ -4102,6 +4074,7 @@ fn validate_integer_pure_proposition(
             if !matches!(
                 sort,
                 Sort::Integer
+                    | Sort::Algebraic(_)
                     | Sort::ProgramInt32
                     | Sort::ProgramInt64
                     | Sort::ProgramInteger(_)
@@ -4119,6 +4092,7 @@ fn validate_integer_pure_proposition(
             if !matches!(
                 sort,
                 Sort::Integer
+                    | Sort::Algebraic(_)
                     | Sort::ProgramInt32
                     | Sort::ProgramInt64
                     | Sort::ProgramInteger(_)
@@ -4229,6 +4203,7 @@ enum PropositionBinaryOperator {
 enum IntegerPropositionScope {
     Integer(crate::kernel::proof::term_rewrite::IntegerSubstitutionScope),
     Program(crate::kernel::proof::term_rewrite::ProgramValueSubstitutionScope),
+    Algebraic(crate::kernel::proof::term_rewrite::AlgebraicSubstitutionScope),
 }
 
 /// Iterative proposition traversal for checked pure substitution.  The
@@ -4413,6 +4388,9 @@ fn substitute_pure_proposition_with_walker(
                     IntegerPropositionScope::Program(scope) => {
                         walker.pop_program_substitution_scope(scope);
                     }
+                    IntegerPropositionScope::Algebraic(scope) => {
+                        walker.pop_algebraic_substitution_scope(scope);
+                    }
                 }
                 let body = rewritten.pop().expect("quantifier rewrite result");
                 if exists {
@@ -4450,6 +4428,7 @@ fn queue_integer_quantifier_rewrite<'a>(
     tasks: &mut Vec<IntegerPropositionRewriteTask<'a>>,
 ) -> Result<(), IntegerPureSubstitutionError> {
     let is_integer = *sort == Sort::Integer;
+    let is_algebraic = matches!(sort, Sort::Algebraic(_));
     let is_c = matches!(
         sort,
         Sort::ProgramInt32
@@ -4458,12 +4437,14 @@ fn queue_integer_quantifier_rewrite<'a>(
             | Sort::ProgramPointer(_)
             | Sort::ProgramObjectPointer(_, _)
     );
-    if !is_integer && !is_c {
+    if !is_integer && !is_c && !is_algebraic {
         return Err(IntegerPureSubstitutionError::UnsupportedSort);
     }
 
     let renamed = if is_integer {
         !shadowed && var != from && walker.replacement_contains_integer_variable(var)
+    } else if is_algebraic {
+        walker.replacement_contains_algebraic_variable(var)
     } else {
         walker.replacement_contains_program_variable(var)
     };
@@ -4494,6 +4475,13 @@ fn queue_integer_quantifier_rewrite<'a>(
                 shadowed || var == from,
             )),
             shadowed || var == from,
+        )
+    } else if is_algebraic {
+        (
+            IntegerPropositionScope::Algebraic(
+                walker.push_algebraic_substitution_scope(var, new_var),
+            ),
+            shadowed,
         )
     } else {
         (
@@ -5899,6 +5887,7 @@ pub(crate) fn substitute_bitvector_variable(
     to: &MachineTerm,
 ) -> MachineTerm {
     match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         MachineTerm::Constant { .. } => term.clone(),
         MachineTerm::Variable(variable) if *variable == from => to.clone(),
         MachineTerm::Variable(variable) => {
@@ -8136,6 +8125,9 @@ fn substitute_pointer_variable_in_spec_proposition(
             end: substitute_pointer_variable_in_spec_expression(end, from, to),
             element_width: *element_width,
         },
+        SpecProposition::MutexHeld(expression) => SpecProposition::MutexHeld(Box::new(
+            substitute_pointer_variable_in_spec_expression(expression, from, to),
+        )),
         SpecProposition::Defined(expression) => SpecProposition::Defined(
             substitute_pointer_variable_in_spec_expression(expression, from, to),
         ),
@@ -9007,6 +8999,113 @@ mod integer_mixed_quantifier_tests {
         );
     }
 
+    fn algebraic_variable(algebraic_type: &AlgebraicType, variable: Variable) -> AlgebraicTerm {
+        AlgebraicTerm {
+            algebraic_type: algebraic_type.clone(),
+            node: AlgebraicTermNode::Variable(variable),
+        }
+    }
+
+    fn algebraic_projection(algebraic_type: &AlgebraicType, variable: Variable) -> IntegerTerm {
+        IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
+            "projection".into(),
+            vec![PureFunctionArgument::Algebraic(algebraic_variable(
+                algebraic_type,
+                variable,
+            ))],
+        ))
+    }
+
+    #[test]
+    fn integer_substitution_keeps_algebraic_and_integer_binders_separate() {
+        let from = Variable(9_232);
+        let algebraic_type = AlgebraicType::parameter("Flag".into());
+        let algebraic = algebraic_variable(&algebraic_type, from);
+        let source = Proposition::Exists {
+            name: "flag".into(),
+            var: from,
+            sort: Sort::Algebraic(algebraic_type),
+            body: Box::new(Proposition::And(
+                Box::new(Proposition::Equal(
+                    Term::Integer(IntegerTerm::var(from)),
+                    Term::Integer(IntegerTerm::constant_i64(3)),
+                )),
+                Box::new(Proposition::Equal(
+                    Term::Algebraic(algebraic.clone()),
+                    Term::Algebraic(algebraic.clone()),
+                )),
+            )),
+        };
+        let Proposition::Exists { var, body, .. } =
+            substitute_integer_variable_in_pure_proposition(
+                &source,
+                from,
+                &IntegerTerm::constant_i64(3),
+            )
+            .unwrap()
+        else {
+            panic!("the algebraic existential was lost");
+        };
+        assert_eq!(var, from);
+        assert_eq!(
+            *body,
+            Proposition::And(
+                Box::new(Proposition::Equal(
+                    Term::Integer(IntegerTerm::constant_i64(3)),
+                    Term::Integer(IntegerTerm::constant_i64(3))
+                )),
+                Box::new(Proposition::Equal(
+                    Term::Algebraic(algebraic.clone()),
+                    Term::Algebraic(algebraic)
+                )),
+            )
+        );
+    }
+
+    #[test]
+    fn integer_substitution_avoids_algebraic_capture_and_restores_sibling_scope() {
+        let from = Variable(9_233);
+        let bound = Variable(9_234);
+        let algebraic_type = AlgebraicType::parameter("Flag".into());
+        let replacement = algebraic_projection(&algebraic_type, bound);
+        let leaf = Proposition::Equal(
+            Term::Integer(IntegerTerm::var(from)),
+            Term::Integer(replacement.clone()),
+        );
+        let source = Proposition::And(
+            Box::new(Proposition::ForAll {
+                name: Default::default(),
+                var: bound,
+                sort: Sort::Algebraic(algebraic_type.clone()),
+                body: Box::new(leaf.clone()),
+            }),
+            Box::new(leaf),
+        );
+        let Proposition::And(quantifier, sibling) =
+            substitute_integer_variable_in_pure_proposition(&source, from, &replacement).unwrap()
+        else {
+            panic!("the sibling propositions were lost");
+        };
+        let Proposition::ForAll { var, body, .. } = *quantifier else {
+            panic!("the algebraic universal was lost");
+        };
+        assert_ne!(var, bound);
+        assert_eq!(
+            *body,
+            Proposition::Equal(
+                Term::Integer(replacement.clone()),
+                Term::Integer(algebraic_projection(&algebraic_type, var))
+            )
+        );
+        assert_eq!(
+            *sibling,
+            Proposition::Equal(
+                Term::Integer(replacement.clone()),
+                Term::Integer(replacement)
+            )
+        );
+    }
+
     #[test]
     fn integer_substitution_rejects_non_term_nested_sort() {
         let proposition = Proposition::ForAll {
@@ -9430,9 +9529,6 @@ mod integer_range_fold_substitution_tests {
             &pointer,
             crate::kernel::LoadKind::Int32,
         );
-        let (source_memory_state, _) =
-            crate::kernel::eval::registered_load_for_variable(&load_variable)
-                .expect("the source load must be registered");
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::Variable(load_variable),
@@ -9458,7 +9554,9 @@ mod integer_range_fold_substitution_tests {
                 .unwrap()
                 .1
         );
-        assert_eq!(retained_state, &source_memory_state);
+        // A new address retains the producer's live memory, rather than
+        // reusing the original address's empty version point.
+        assert_eq!(retained_state, &memory);
         assert_eq!(pointer.offset, PointerOffsetTerm::Constant(0));
     }
 
@@ -9481,9 +9579,6 @@ mod integer_range_fold_substitution_tests {
             &pointer,
             crate::kernel::LoadKind::Int32,
         );
-        let (source_memory_state, _) =
-            crate::kernel::eval::registered_load_for_variable(&load_variable)
-                .expect("the source load must be registered");
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::Variable(load_variable),
@@ -9509,7 +9604,9 @@ mod integer_range_fold_substitution_tests {
                 .unwrap()
                 .1
         );
-        assert_eq!(retained_state, &source_memory_state);
+        // A new address retains the producer's live memory, rather than
+        // reusing the original address's empty version point.
+        assert_eq!(retained_state, &memory);
         assert_eq!(pointer.offset, PointerOffsetTerm::Constant(4));
     }
 
@@ -9666,6 +9763,67 @@ mod resource_reference_substitution_tests {
 mod checked_singleton_substitution_tests {
     use super::*;
     use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
+
+    fn pointer_value(variable: Variable) -> PointerValue {
+        PointerValue::new(Pointer::symbolic(variable), ProgramType::Int32Pointer)
+    }
+
+    fn pointer_term(variable: Variable) -> Term {
+        Term::ProgramValue(ProgramValue::Pointer(pointer_value(variable)))
+    }
+
+    #[test]
+    fn pointer_witness_substitution_preserves_connectives_and_binder_scopes() {
+        let from = Variable(70_110);
+        let captured = Variable(70_111);
+        let leaf = Proposition::Equal(pointer_term(from), pointer_term(captured));
+        let atom = Proposition::Equal(
+            Term::Integer(IntegerTerm::var(from)),
+            Term::Integer(IntegerTerm::var(from)),
+        );
+        let compound = Proposition::And(Box::new(atom.clone()), Box::new(leaf.clone()));
+        assert_eq!(
+            substitute_pointer_value_in_proposition(&compound, from, &pointer_value(captured))
+                .unwrap(),
+            Proposition::And(
+                Box::new(atom),
+                Box::new(Proposition::Equal(
+                    pointer_term(captured),
+                    pointer_term(captured)
+                ))
+            )
+        );
+
+        let source = Proposition::ForAll {
+            name: Default::default(),
+            var: captured,
+            sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
+            body: Box::new(leaf.clone()),
+        };
+        let Proposition::ForAll { var, body, .. } =
+            substitute_pointer_value_in_proposition(&source, from, &pointer_value(captured))
+                .unwrap()
+        else {
+            panic!("the quantifier must survive");
+        };
+        assert_ne!(var, captured);
+        assert_eq!(
+            *body,
+            Proposition::Equal(pointer_term(captured), pointer_term(var))
+        );
+
+        let shadowed = Proposition::Exists {
+            name: "shadowed".into(),
+            var: from,
+            sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
+            body: Box::new(leaf),
+        };
+        assert_eq!(
+            substitute_pointer_value_in_proposition(&shadowed, from, &pointer_value(captured))
+                .unwrap(),
+            shadowed
+        );
+    }
 
     fn observed(variable: Variable) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(

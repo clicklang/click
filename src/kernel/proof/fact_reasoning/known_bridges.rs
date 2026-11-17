@@ -208,9 +208,9 @@ pub(crate) fn known_bridge_leaf(
 mod tests {
     use super::*;
     use crate::kernel::machine_integer::{Operation, representation};
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     fn known(goal: &Proposition, premises: &[Proposition]) -> bool {
-        let facts = ProofFacts::from_ordered(premises);
+        let facts = PureFactStore::from_ordered(premises);
         known_bridge_leaf(goal, &|p| facts.pure_known_available(p))
     }
     fn equality(a: IntegerTerm, b: IntegerTerm) -> Proposition {
@@ -297,7 +297,7 @@ mod tests {
             let premise = Proposition::ConditionIs(guard.clone(), truth);
             assert!(known(
                 &equality(value.clone(), arm.clone()),
-                &[premise.clone()]
+                std::slice::from_ref(&premise)
             ));
             assert!(!known(&equality(value.clone(), wrong), &[premise]));
             assert!(!known(&equality(value.clone(), arm), &[]));

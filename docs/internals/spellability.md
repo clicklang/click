@@ -403,14 +403,18 @@ treats a false one like the goal `false` and refutes the path. Regressions:
 evaluation, and the shared comparison constructors used by checking still
 fold.
 
-Machine conditionals with closed 32/64-bit order guards retain their `if` node
-and guard during logical lowering. Their arm domains remain guarded, including
-unselected reads and invalid shifts. Checking selects the arm when needed.
-The comparison boundary recognizes a conditional whose 32/64-bit order guard
-and arms have only literal or variable operands as a fixed-size native atom.
-It retains the comparison family even with a symbolic guard, without exporting
-arithmetic DAGs or selecting an arm from ambient facts. Other result families retain their existing
-selected-arm behavior; literal Boolean and equality guards keep their normal forms.
+Machine conditionals with closed 32/64-bit order guards or closed 64-bit
+equality guards retain their `if` node and guard during logical lowering.
+Their arm domains remain guarded, including unselected reads and invalid
+shifts. Checking selects the arm when needed.
+The comparison boundary recognizes a conditional whose 32/64-bit comparison
+guard and arms have only literal or variable operands as a fixed-size native
+atom. It retains the comparison family for symbolic order and equality guards,
+without exporting arithmetic DAGs or selecting an arm from ambient facts.
+Unsigned literal guard operands keep unsigned spellings, including beside
+variables; signed casts would change their payloads. Other result families
+retain their existing selected-arm behavior; literal Boolean and closed
+32-bit equality guards keep their normal forms.
 
 Generated comparison operands that are negative `int64` literals keep an explicit
 `as int64` cast, including under `old` and `at`. Their printed unary minus would
@@ -591,7 +595,7 @@ Exact premise lists, signed arithmetic claims, and fold alpha keys use this
 same form; they do not add tactic-specific fact searches.
 
 - The fact stores file each fact under its comparison form too
-  (`ProofFacts::with_fact`, `PureFactContext::assume_condition_once`), and an
+  (`PureFactStore::with_fact`, `PureFactContext::assume_condition_once`), and an
   exact lookup also looks up the comparison form of what it looks up.
 - A kernel rule that compares a stated term with one it derives compares
   their comparison forms (identity, cast identity, affine conclusions).
@@ -631,8 +635,8 @@ placeholder, a skipped candidate, or a declining route to work around it.
 
 ## Measuring the gap
 
-`scripts/spellability-census.sh` runs the mdtest corpus with
-`CLICK_SPELLABILITY_CENSUS` set (`src/surface/proof/spellability_census.rs`).
+`scripts/raise-lower-census.sh` runs the mdtest corpus with
+`CLICK_RAISE_LOWER_CENSUS` set (`src/surface/proof/raise_lower_census.rs`).
 Each checked step records, for every fact it adds and for the goal it leaves
 focused, whether the premise speller finds a checked spelling. The script
 prints the misses grouped by kind. It separates steps a person wrote from
@@ -640,7 +644,7 @@ steps a smart tactic's search took: a search step needs a spelling only when
 its search succeeds and is expanded, but a written step's facts and goal may
 be cited by the next written step. The census only observes; it does not
 change any proof. A unit test can record the same lines in memory with
-`spellability_census::capture` and assert that a step's facts are spelled.
+`raise_lower_census::capture` and assert that a step's facts are spelled.
 
 Audit-budget limitation (2026-10-31): enabling both census and fact-stability
 instrumentation together pushes `solve_false_list_position_is_prompt` over

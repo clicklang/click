@@ -16,7 +16,7 @@ theorem quantified_proposition_lambdas(value: Integer) {
         solve();
     }
     ensures (|x: Integer| -> Prop { exists (y: Integer) { y == x } })(value) by {
-        witness { y: value };
+        witness(value);
         solve();
     }
 }
@@ -35,7 +35,7 @@ theorem existential_range_lambda(lo: int32, hi: int32) {
     let same = |x: int32| -> Prop { x == lo };
     requires lo < hi;
     ensures (lo..hi).any(same) by {
-        witness { item: lo };
+        witness(lo);
         solve();
     }
 }
@@ -44,7 +44,7 @@ theorem wide_range_predicates(lo: uint64, hi: uint64) {
     let identity: fn(uint64) -> Prop = |x: uint64| -> Prop { x == x };
     requires lo < hi;
     ensures (lo..hi).all(identity) by { intro() as index; intro(); solve(); }
-    ensures (lo..hi).any(identity) by { witness { item: lo }; solve(); }
+    ensures (lo..hi).any(identity) by { witness(lo); solve(); }
 }
 
 function captured_predicate(limit: int32, value: int32) -> Integer {
@@ -71,7 +71,7 @@ predicate positive(value: int32) { value > 0 }
 theorem proposition_literal_with_predicate(value: int32) {
     requires value > 0;
     ensures prop { positive(value) } by {
-        unfold(positive);
+        unfold(positive(value));
         solve();
     }
 }

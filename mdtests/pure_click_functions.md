@@ -93,7 +93,7 @@ int32 increment_value(int32 x) {
     ensures result_value: result == inc(x);
     ensures predicate_value: one_more(x, result) by {
         step_until(function.exit);
-        unfold(one_more);
+        unfold(one_more(x, result));
         solve();
     }
 }
@@ -118,7 +118,7 @@ int32 range_helpers() {
     ensures all_reflexive: (0..3).all(|k| { k == k });
     ensures any_has_one: (0..3).any(|k| { k == 1 }) by {
         step_until(function.exit);
-        witness { k: 1 };
+        witness(1);
         solve();
     }
 }
@@ -127,7 +127,7 @@ int32 identity_permutation(int32 p[3]) {
     requires viewable(p[0..3]);
     ensures same_multiset: permutation::permutation(p, p, 0, 3) by {
         step_until(function.exit);
-        unfold(permutation::permutation);
+        unfold(permutation::permutation(p, p, 0, 3));
         solve();
     }
 }

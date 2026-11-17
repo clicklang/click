@@ -101,8 +101,16 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
                 )
             },
         )?;
-        let Some(close_proof) = close_proof else {
-            return Ok(closed);
+        let (body, close_proof) = match close_proof {
+            None => return Ok(closed),
+            Some(crate::surface::proof::ScopeCloseProof::By(close_proof)) => {
+                (scope.body.certificate(), Some(close_proof))
+            }
+            Some(crate::surface::proof::ScopeCloseProof::BlockTail(haves)) => {
+                let mut steps = scope.body.certificate().steps().to_vec();
+                steps.extend(haves.steps().iter().cloned());
+                (ProofCertificate::from_steps(steps)?, None)
+            }
         };
         Ok(Proof {
             node: ProofNode::step_child(
@@ -110,8 +118,8 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
                 closed.focused_branch_id(),
                 Arc::new(ProofStep::Open {
                     resource: resource.clone(),
-                    proof: Box::new(scope.body.certificate()),
-                    close_proof: Some(close_proof),
+                    proof: Box::new(body),
+                    close_proof,
                 }),
             ),
             ..closed
@@ -531,6 +539,29 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// Preserve a missing-premise diagnostic instead of treating the written
     /// application as a search miss. Function-exit applications remain
     /// outcome-local ordered-finalization operations.
+    pub(in crate::surface::proof) fn apply_fact_application(
+        &self,
+        fact: &ClickProposition,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        if driver_proof.body.is_at_function_exit() {
+            return Ok(None);
+        }
+        let body = driver_proof.body.driver().apply_fact_application(fact)?;
+        let mut next = driver_proof.clone();
+        if matches!(
+            driver_proof.structure.as_ref(),
+            ProofScopeStructure::Open { .. }
+        ) {
+            for fact in body.added_facts() {
+                if !next.introduced_facts.contains(fact) {
+                    next.introduced_facts.push(fact.clone());
+                }
+            }
+        }
+        next.body = body;
+        Ok(Some(next))
+    }
     pub(in crate::surface::proof) fn apply_theorem_application(
         &self,
         application: &TheoremApplication,

@@ -1,0 +1,32 @@
+{
+  "bitcoin_commit": "9be056a8a72b624dae9623b2f7bded92c2a21c91",
+  "base_input_closure_sha256": "fceeaef86784f820339f6dc3fc24992eb9c6bcf52edccbf6b7869d79296a3c7d",
+  "libstdc++-12-dev_sha256": "d28def6c23630432b57cb38a4c2fd67a79d4e0484027386ca6e8d6005c3d7a73",
+  "supplement_sha256": "0a53dfe25fbb2397ccbf90ddc750d5a2d2e32c22738543fd503b150b1ae399ac",
+  "files": {
+    "bitcoin-src/src/crypto/hex_base.h": "9802b9e157cc8ff8a0cef9d6e3d2c34b0c0d297e0161e11504345cfaaa7c46b9",
+    "bitcoin-src/src/logging/categories.h": "9eb80a4f3321035421862f70125e7fff2f7c44863086c65733b79442e78d57fe",
+    "bitcoin-src/src/streams.h": "71b243c0614d41b60b8d0b2b6c14b7f2795412d80db129cef446af57e4e88ab8",
+    "bitcoin-src/src/support/allocators/zeroafterfree.h": "85ce8d48e7f34ce56ce485c27ea25394f95b01d89f83d1d96bd70221441ca794",
+    "bitcoin-src/src/support/cleanse.h": "ef08d746995d7429dcd00093d5bca2bdfabf5dcba9c9739c4326c48d474c6609",
+    "bitcoin-src/src/util/log.h": "917f4ced75a47f1497d236bf23edef16fb79c0f6c24d48d039988327922a7a97",
+    "bitcoin-src/src/util/obfuscation.h": "2b86fb6438f250ebf888b962b4df1e3ed1a0838485b13357b48d62fbe14c2ff8",
+    "bitcoin-src/src/util/overflow.h": "7f1ec51f028bd0d6a942e6d2c04091b4acad49f5ada761ae11c69f771b16a8bb",
+    "bitcoin-src/src/util/strencodings.h": "05a92016f6407e7e51586ee7643a72ab98593abb88ed70b45ef702f698980a65",
+    "bitcoin-src/src/util/syserror.h": "32cc9cdd3c4e713894d09ca8876fd482a66c3e00f4e3eee432872dc3dfe22e71",
+    "clang-resource/include/__stdarg___gnuc_va_list.h": "feca975bfdfb254d17458a8e3d51f8ad6d9bdc9fd6287727f0f8b2fb81fcb0b0",
+    "clang-resource/include/__stddef_header_macro.h": "4cf46e8fbb809df048eecbbd63686fa741da27afa8db4245bd1f61c1fb1611dc",
+    "clang-resource/include/__stddef_max_align_t.h": "3c1e4de47f4f06b35e2c5890d670052e84f716760505ff51b022fc8b21a9400f",
+    "clang-resource/include/__stddef_null.h": "b1d71b08563ab3d2c22a1e4f8ddf4d9a1111c89e9404b859a45c307e8ebc6c69",
+    "clang-resource/include/__stddef_nullptr_t.h": "898b4465c5d3040d27e760e82983a751b1b0cae23ba280b18a1b81451841f9eb",
+    "clang-resource/include/__stddef_offsetof.h": "e5f0f4ff8ff5fc6a1cc8b535f5065f1728eadd2bf1e1401f021f803ec7b4222f",
+    "clang-resource/include/__stddef_ptrdiff_t.h": "b4178a57f3711b7013cba747a72a2f178c29fa9364e77d75b2159754072ced43",
+    "clang-resource/include/__stddef_size_t.h": "d86ddc0238da09b385846ebef814ffc50a44e40cf85d4e3793f485952b7e73ad",
+    "clang-resource/include/__stddef_wchar_t.h": "1900d4998aef3698b06399ed686db0c21e26509b08638a25734fb97ae89b1001",
+    "clang-resource/include/limits.h": "55620ec210ddaa6e6142b0e7df4e643a942bee4d35f7b0cac82f9268c605946f",
+    "clang-resource/include/stdarg.h": "ce6e43d79dc89b50208ecf259b1ffd519f5a78cd3a2c7fcaac6386f376b89fef",
+    "clang-resource/include/stddef.h": "b3e62a046ddf28d09eedebe6eb9461cb7060e47cad2c69964b222c4eea10347e",
+    "clang-resource/include/stdint.h": "655616d8fcb2c92b38c039019685c658c2346b3dd0021aed4ea057b43f621247",
+    "sysroot/usr/include/c++/12/charconv": "cdff95600eac29e0628893c62f7a691a3428e83c0ed0ca825f9ef76b39287653"
+  }
+}

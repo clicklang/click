@@ -116,7 +116,7 @@ pub(in crate::kernel) struct MachineAtom(crate::kernel::SharedMachineIntegerTerm
 ///
 /// Both offsets sign-extend before scaling, so they differ only where the
 /// `int32` product wraps. `(char *)p + i * 4` keeps that byte offset when it
-/// is formed (`docs/internals/spellability.md#lowering-is-fact-stable`); this
+/// is formed (`docs/internals/raise-lower-principle.md#lowering-is-fact-stable`); this
 /// is the relation that names it as element `i`. The terms are imported as
 /// shared terms, so naming them attaches no spelling to an operand another
 /// check holds in shared form. A constant-size match on the condition;
@@ -1936,7 +1936,7 @@ impl EqualityGraph {
                             };
                             pointers.push(address.as_ref().clone());
                         }
-                        N::MachineLiteral(_) => {}
+                        N::MachineLiteral(_) | N::ThreadHandle(_) => {}
                         // Native pointer discovery treats conditionals, Boolean
                         // casts and folds as opaque; do not inspect their children.
                         N::MachineIf { .. }
@@ -2006,6 +2006,18 @@ impl EqualityGraph {
             state.register_pointer_address(&pointer);
         }
         state.close(Vec::new());
+    }
+
+    /// Recover one typed handle witness from the selected word's equality
+    /// class. This is a value identity lookup; the thread ledger grants rights.
+    pub(in crate::kernel) fn thread_handle_for_word(
+        &self,
+        term: &MachineTerm,
+    ) -> Option<crate::kernel::ThreadHandleId> {
+        let term = exact_read_comparison_input(term);
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_machine_operands(&mut state, &term, &term);
+        state.terms.thread_handle(&term)
     }
 
     pub(in crate::kernel) fn are_uint64_equal(
@@ -2858,18 +2870,12 @@ impl EqualityGraphState {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 });
-                // A function pointer read can meet a function pointer cell
-                // (`CellRead::FunctionPointer`). A data pointer read, which
-                // every pointer comparison registers, does not look.
-                let cell = matches!(block, PointerBlock::FunctionSymbolic(_))
-                    .then(|| (memory.clone(), address.clone()));
                 self.terms.pointer_read(
                     memory.read_identity(),
                     address_term,
                     kind,
                     value_term,
                     block.clone(),
-                    cell,
                 );
                 if is_application(&address.block) {
                     pending.push(address.block);
@@ -3150,7 +3156,6 @@ impl EqualityGraphState {
             .insert(kept.clone(), self.weight(&moved) + self.weight(&kept));
         self.weights.remove(&moved);
         let mut affected = Vec::new();
-        let moved_deltas = deltas.clone();
         for (member, delta) in deltas {
             if let Some(users) = self.uses.get(&member) {
                 affected.extend(users.iter().cloned());
@@ -3162,7 +3167,6 @@ impl EqualityGraphState {
         self.members.remove(&moved);
         self.members.insert(kept.clone(), kept_members);
         self.terms.shift_addresses(&moved, &kept, &moved_from_kept);
-        self.terms.join_block_classes(&moved, &kept, &moved_deltas);
         self.merge_history = Some(std::sync::Arc::new(PointerMergeHistory {
             depth: self.merge_history.as_ref().map_or(1, |node| node.depth + 1),
             merge: PointerClassMerge {
@@ -3359,17 +3363,32 @@ impl EqualityGraph {
     }
 }
 
-/// A raw descriptor of an already registered read is the same selected input
-/// as its retained name. Preserve that exact state before applying the
-/// legacy comparison form to inputs that do not already have an identity.
+/// Select raw read identities without replacing reads by cached values.
+/// Compound expressions retain their written structure: their read leaves
+/// register as applications, and explicit equations supply their values.
 fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
-    if let MachineTerm::MemoryLoad(memory, pointer, kind) = term
-        && crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind)
-    {
-        term.clone()
-    } else {
-        crate::kernel::canonical_term(term)
+    if let MachineTerm::MemoryLoad(memory, pointer, kind) = term {
+        if crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind) {
+            return term.clone();
+        }
+        if matches!(
+            kind,
+            LoadKind::Int8 | LoadKind::UInt8 | LoadKind::Int16 | LoadKind::UInt16
+        ) || kind.is_word32()
+            || *kind == LoadKind::Bits64
+        {
+            // Select the read identity without recovering a cached value.
+            // Already-selected reads above retain their producer's identity.
+            return crate::kernel::canonical_form_of_load(
+                memory.shared_memory().clone(),
+                pointer.as_ref().clone(),
+                *kind,
+            );
+        }
+        // Unmigrated raw read kinds retain their existing preparation policy.
+        return crate::kernel::canonical_term(term);
     }
+    crate::kernel::eval::select_graph_scalar_reads(term)
 }
 
 #[cfg(test)]
@@ -3734,9 +3753,9 @@ mod tests {
         assert!(other_spelling.are_equal(&left, &right));
         assert!(other_spelling.are_equal(&right, &left));
 
-        let mut unspellable = EqualityGraph::default();
-        unspellable.add_equality(&at(a, 0), &at(b, i64::MIN));
-        unspellable.add_offset_equality(
+        let mut unraisable = EqualityGraph::default();
+        unraisable.add_equality(&at(a, 0), &at(b, i64::MIN));
+        unraisable.add_offset_equality(
             &PointerOffsetTerm::Add(
                 Box::new(x.clone()),
                 Box::new(PointerOffsetTerm::Constant(i64::MIN)),
@@ -3745,9 +3764,9 @@ mod tests {
         );
         // The raw address applications can use the stated MIN translation
         // directly, without constructing its unrepresentable opposite sign.
-        assert!(unspellable.are_equal(&left, &right));
-        assert!(unspellable.are_equal(&right, &left));
-        assert!(!unspellable.are_equal(&left, &right.offset_by_bytes(1)));
+        assert!(unraisable.are_equal(&left, &right));
+        assert!(unraisable.are_equal(&right, &left));
+        assert!(!unraisable.are_equal(&left, &right.offset_by_bytes(1)));
     }
 
     #[test]
@@ -4510,3 +4529,9 @@ mod boolean_cast_dependency_tests {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[cfg(test)]
+mod function_read_tests;
+
+#[cfg(test)]
+mod compound_read_tests;

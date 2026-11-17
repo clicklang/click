@@ -78,7 +78,7 @@ int32 ring_buffer_push_wrap(
         normalize() using { separate(memory(data[0]), memory(owner->tail)); };
     }
     have data[0] == at(filled, data[0]) by {
-        preserve(separate(statement(3).footprint, memory(data[0])));
+        preserve(memory(data[0]), statement(3));
     }
     have data[0] == value by {
         known();

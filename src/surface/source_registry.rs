@@ -44,13 +44,6 @@ pub(in crate::surface) enum EntryFactOrigin {
     Derived,
 }
 
-/// Bounded source leaf retained after a checked `choose` projection.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::surface) struct ProjectionSourceToken {
-    pub(in crate::surface) source_id: RequirementSourceId,
-    pub(in crate::surface) connective_path: Vec<usize>,
-}
-
 /// Shallow lookup key for a direct caller predicate argument.  Exact
 /// propositions and expressions remain validation payloads, never map keys.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -118,7 +111,7 @@ impl CallerRequirementIndex {
         owner: CallerSourceOwnerId,
         function_block: &FunctionBlock,
         parameters: &[crate::languages::interface::ImportedParameter],
-        entry_facts: &[Proposition],
+        entry_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
         entry_fact_origins: &[EntryFactOrigin],
         entry_memory_state: crate::kernel::MemoryStateIdentity,
     ) -> Self {
@@ -142,12 +135,12 @@ impl CallerRequirementIndex {
         owner: CallerSourceOwnerId,
         function_block: &FunctionBlock,
         parameters: &[crate::languages::interface::ImportedParameter],
-        entry_facts: &[Proposition],
+        entry_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
         entry_fact_origins: &[EntryFactOrigin],
         entry_memory_state: crate::kernel::MemoryStateIdentity,
         predicates: Option<&PredicateEnvironment>,
     ) -> Self {
-        if entry_facts.len() != entry_fact_origins.len() {
+        if entry_facts.propositions().count() != entry_fact_origins.len() {
             return Self::default();
         }
 
@@ -157,7 +150,11 @@ impl CallerRequirementIndex {
         // becomes an ambiguity tombstone rather than a first-match choice.
         let mut principals =
             PersistentMap::<RequirementSourceId, Option<(usize, Proposition)>>::default();
-        for (fact_index, (fact, origin)) in entry_facts.iter().zip(entry_fact_origins).enumerate() {
+        for (fact_index, (fact, origin)) in entry_facts
+            .propositions()
+            .zip(entry_fact_origins)
+            .enumerate()
+        {
             let EntryFactOrigin::Requirement { source_id, role } = origin else {
                 continue;
             };

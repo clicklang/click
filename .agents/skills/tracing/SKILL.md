@@ -47,7 +47,7 @@ If the report does not explain the premises, rerun the command under
 
 A goal about memory (any `transport`, frame, or `read<...>(state#N, ...)`
 goal) depends on its `state#N` and `value#N` labels: write down the legend
-line that defines each label the goal uses. Two spellings of one C address
+line that defines each label the goal uses. Two written forms of one C address
 (`p` and `g + 16 bytes`, or a read at entry and a read in the loop) are often
 the whole story. Otherwise ignore the legend.
 
@@ -77,7 +77,7 @@ write one of the intermediate facts in Click, it is `inexpressible-fact`.
 The first link that fails becomes the new `G`; go back to step 2.
 
 For one recorded transition, write
-`preserve(separate(region.footprint, B));` under a read-equality goal.
+`preserve(B, region);` under a read-equality goal.
 The execution-produced footprint includes stores, call effects and releases;
 no free-specific rule is needed. Establish footprint separation with explicitly
 selected premises in `normalize() using`. Compose transitions with `have`, `rewrite` and `known`;
@@ -129,7 +129,7 @@ or write the `using` form it names. Only the written form's refusal can be
 `failing-tactic`.
 
 Before each run, state in one line which link is new and why it holds. A new
-tactic, spelling, or position for the same link is not a new attempt. Never
+tactic, written form, or position for the same link is not a new attempt. Never
 edit `solve` or the implicit closer, raise a budget, or change the C to get
 past a link.
 
@@ -140,11 +140,11 @@ will go, not only the program around it:
 
 - Drop each `using` premise, alias, and earlier `have` it does not need, one
   at a time, keeping the refusal.
-- Write it with the most direct spelling: the C local the statement uses
+- Write it with the most direct form: the C local the statement uses
   rather than a spec alias for it.
 - Find the nearest link that passes, such as the same transport of another
   field across the same store, and say what differs between the two (the
-  field's type and width, its offset, the address spelling).
+  field's type and width, its offset, how the address is written).
 
 Then compare the refusal with the one-line argument and name the step Click
 did not take: which two addresses it did not identify, which read it did not

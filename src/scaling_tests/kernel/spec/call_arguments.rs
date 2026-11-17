@@ -12,8 +12,11 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
                 [root.clone(), root],
             );
         }
-        let mut values = crate::persistent::PersistentMap::default();
-        values.insert("x".to_string(), root.clone());
+        let mut values: crate::persistent::PersistentMap<
+            crate::kernel::BindingName,
+            crate::kernel::KernelTerm,
+        > = crate::persistent::PersistentMap::default();
+        values.insert("x".into(), root.clone());
         let state = ExecutionState::new();
         let scope = SpecScope {
             values: Some(&values),
@@ -149,10 +152,11 @@ fn retained_constant_call_arguments_keep_existing_decision_identity() {
     );
     let known = ConditionTerm::equal(native, MachineTerm::constant(0));
     let required = ConditionTerm::equal(produced.clone(), MachineTerm::constant(0));
-    let proof_facts = crate::kernel::proof::ProofFacts::from_ordered(&[Proposition::ConditionIs(
-        known.clone(),
-        true,
-    )]);
+    let proof_facts =
+        crate::kernel::proof::PureFactStore::from_ordered(&[Proposition::ConditionIs(
+            known.clone(),
+            true,
+        )]);
     assert!(
         proof_facts.introduced_goal_available(&Proposition::ConditionIs(required.clone(), true))
     );

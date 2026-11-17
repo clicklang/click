@@ -259,7 +259,7 @@ and malformed declaration graphs.
 Destructor coverage additionally checks cleanup on every return, reverse order
 for two top-level objects, and one direct nested block whose object is destroyed
 both on early return and before an outer continuation. A sibling-block fixture
-reuses one local spelling across two distinct non-overlapping lifetimes and
+reuses one local name across two distinct non-overlapping lifetimes and
 checks each block's early-return and fallthrough edges. An overlapping-lifetime
 fixture checks one outer object plus one inner block object, including
 inner-before-outer cleanup on early return, inner-only cleanup on block
@@ -793,12 +793,15 @@ extraction uses the compiler/runtime identity in
 its runtime paths from that profile. Preparation bundles `rustc` and its runtime
 libraries using `scripts/charon-runtime.sh` and both Charon executables in
 `charon.tar.gz`, as a second artifact, `rust-toolchain`, apart from the test
-binaries: together they are nearly half of the build output, and only the Rust
-import tests start the compiler. The `rust` shards download that artifact,
+binaries: together they are nearly half of the build output. The `rust` shards download that artifact,
 validate the compiler, target, and toolchain identity, and restore those
 libraries before setup, so missing caches do not prevent test execution; every
-other shard downloads the test binaries alone. No shard installs another
-compiler or mdBook. Preparation installs the pinned compiler with `rustc-dev`
+other shard downloads the test binaries alone. Unit shards use
+`scripts/setup-environment.sh --unit-test-runner` to install Click's pinned
+Rust toolchain before the search-boundary tests compile visibility probes.
+This keeps rustup's first-use download outside each test's 30-second timeout;
+an installation failure fails setup. Other archive runners install no compiler,
+and no shard installs mdBook. Preparation installs Charon's pinned compiler with `rustc-dev`
 and `rust-src`, builds Charon once, and archives it. The compiled-in profile owns extractor
 pins, flags, and versioned adapter interpretations; the build script reads the
 same profile. Cargo's extractor dependency pin is checked against it.
@@ -990,7 +993,7 @@ uncharged premise surface synthesis. The probe now asks the direct logical
 closer, and the synthesis is lazy and charged, so the heaviest arena `have`
 (`click profile`, after this calibration) is 488,691 units with every unit
 counted, and the heaviest smart tactic is the failing mdtest `solve`
-(1,040,194, then spelled `solve`). The smart tactics near it are named
+(1,040,194, then written `solve`). The smart tactics near it are named
 in `TacticWorkLimits::default` (an mdtest `solve` and the arena proofs' heavy
 `have`s); they are slow steps to reduce, not headroom. The same run's `run`
 rows calibrate the whole-run budget: the largest whole verification is
@@ -1110,7 +1113,7 @@ a thread-local cache would repeat setup for every fixture.
 An optimization that changes a hot-path representation or algorithm should
 include a generated deterministic-work regression at four or more input sizes.
 Test independent dimensions rather than one realistic example: functions,
-straight-line statements, facts, surface spellings, resources, theorems, and
+straight-line statements, facts, surface forms, resources, theorems, and
 claims. Exclude fixed parsing/startup work where practical and assert the
 growth ratio, not an elapsed-time threshold.
 
@@ -1527,7 +1530,7 @@ selected-unit verification beside 1, 2, 4, and 8 unrelated earlier functions,
 including reversed declaration order. It uses the original eight-tactic
 reproduction, including the single-earlier-function case.
 Before return, signed-order automation selects indexed bounds before broad
-atomic premise spelling. Existing named rules get first choice over that
+atomic premise raising. Existing named rules get first choice over that
 compact context, followed by the checked ordinary arithmetic proof. Terminal
 outcomes retain their result-aware equality rewrites and source-anchoring
 routes before that arithmetic fallback.

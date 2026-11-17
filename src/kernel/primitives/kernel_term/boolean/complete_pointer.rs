@@ -11,7 +11,6 @@ struct PointerIdentity {
     extent_known: bool,
     opaque_extent: Option<SharedPointerAddress>,
     extent: Option<(SharedPointerAddress, KernelTerm)>,
-    local_reference: Option<crate::kernel::loans::LocalReferenceId>,
 }
 
 #[derive(Clone, Debug)]
@@ -66,7 +65,6 @@ impl KernelPointerEquality {
                 extent: q
                     .and_then(|q| q.extent.as_ref())
                     .map(|e| (address(&e.start), numeric(&e.width))),
-                local_reference: q.and_then(|q| q.local_reference).map(|r| r.id()),
             }
         });
         Self {
@@ -87,8 +85,6 @@ impl SharedPointerValue {
         a.program_type == b.program_type
             && aq.is_some_and(|q| q.volatile) == bq.is_some_and(|q| q.volatile)
             && known == bq.is_some_and(|q| q.extent_known)
-            && aq.and_then(|q| q.local_reference).map(|r| r.id())
-                == bq.and_then(|q| q.local_reference).map(|r| r.id())
             && a.address.syntax_equal(&b.address)
             && a.designation.syntax_equal(&b.designation)
             && (known

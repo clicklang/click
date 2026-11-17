@@ -3,7 +3,7 @@
 `mdtests/using_premise_either_orientation.md` pins fixed-state `apply using`.
 The mirrored spelling of a held equality is one fact, and every `using` list
 now asks one availability rule for it, beside the rule for a premise that
-holds without facts: a pure theorem's `apply using` and `instantiate using`
+holds without facts: a pure theorem's `apply using`
 below each list `y == x` while the proof holds `x == y`.
 This used to be a local rule in the two fixed-state checkers only.
 
@@ -25,7 +25,7 @@ theorem instantiate_mirrored(x: int32, y: int32) {
     requires x == y;
     requires forall (k: int32) { k == x implies 0 <= 0 };
     ensures 0 <= 0 by {
-        instantiate(forall (k: int32) { k == x implies 0 <= 0 }, y) using { y == x; };
+        instantiate(forall (k: int32) { k == x implies 0 <= 0 }, y);
         known();
     }
 }

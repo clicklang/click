@@ -16,7 +16,7 @@ Then a contract can use:
 <!-- verified-example: mdtests/compare_swap2_sorted_predicate.md -->
 ```click
 ensures sorted: sorted_pair(p) by {
-    unfold(sorted_pair);
+    unfold(sorted_pair(p));
 }
 ```
 
@@ -28,17 +28,16 @@ proof says:
 
 <!-- verified-example: mdtests/compare_swap2_sorted_predicate.md -->
 ```click
-unfold(sorted_pair);
+unfold(sorted_pair(p));
 ```
 
 This opacity is useful. It lets predicates act as stable abstraction boundaries
 instead of being expanded everywhere.
 
-`unfold` takes the predicate's name, not one call, because it is a switch and
-not a step on one fact: from that point to the end of the proof branch the
-predicate is transparent. Every fact that mentions it gains its body, the
-current goal is rewritten, and a later goal such as `have sorted_pair(q)`
-is proved against the body.
+`unfold(sorted_pair(p))` selects that application at the current state. It
+adds the definition equivalence, exposes the body when the application is
+available, and replaces matching occurrences in the current goal. Other
+applications and later goals stay opaque until explicitly opened.
 
 ## Predicates in requirements
 
@@ -65,7 +64,7 @@ facts. An available existential body can be opened with `obtain (...)`.
 A predicate body may name its parameters, its own bindings, pure functions
 and other predicates. It may not read a C object by name, whether a
 file-scope variable by its bare name or any object by its qualified
-`unit::name` spelling. A predicate fact is keyed on its arguments, so a body
+`unit::name` form. A predicate fact is keyed on its arguments, so a body
 reading `counter` would make `counter_is(5)` the same fact before and after a
 store to `counter`. Pass the value as an argument instead, as
 [pure functions](pure-functions.md#bodies-read-only-their-parameters) do:

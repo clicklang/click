@@ -71,6 +71,9 @@ fn collect_spec_proposition_carriers(
             }
             collect_spec_expression_carriers(right, variables, integer_seen);
         }
+        SpecProposition::MutexHeld(expression) => {
+            collect_spec_expression_carriers(expression, variables, integer_seen);
+        }
         SpecProposition::FloatClassification { expression, .. }
         | SpecProposition::Defined(expression) => {
             collect_spec_expression_carriers(expression, variables, integer_seen);
@@ -1101,6 +1104,9 @@ impl<'a> TermRewrite<'a> {
                 end: self.rewrite_spec_expression(end)?,
                 element_width: *element_width,
             },
+            SpecProposition::MutexHeld(expression) => {
+                SpecProposition::MutexHeld(Box::new(self.rewrite_spec_expression(expression)?))
+            }
             SpecProposition::Defined(expression) => {
                 SpecProposition::Defined(self.rewrite_spec_expression(expression)?)
             }

@@ -56,9 +56,9 @@ void mark(uint64 *values, int32 *visited, int32 n, int32 cur, uint64 stamp) {
             normalize() using { separate(memory(visited[cur]), memory(values[k])); };
         }
         have values[k] == at(before, values[k]) by {
-            preserve(separate(statement(0).footprint, memory(values[k])));
+            preserve(memory(values[k]), statement(0));
         }
-        instantiate(at(before, forall (j: int32) { 0 <= j and j < n implies values[j] == stamp }), k) using { 0 <= k; k < n; };
+        instantiate(at(before, forall (j: int32) { 0 <= j and j < n implies values[j] == stamp }), k);
         rewrite(values[k], at(before, values[k]));
         known();
     }

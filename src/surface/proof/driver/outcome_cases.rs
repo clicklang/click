@@ -111,8 +111,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             });
             let retained_states = provenance.recorded_states.clone();
             let match_cases = |source: &ProofMatch,
-                               query: &ProofFacts,
-                               authority: &ProofFacts,
+                               query: &PureFactStore,
+                               authority: &PureFactStore,
                                bindings: Option<&OutcomeBindings>| {
                 let scoped = driver_proof.with_surface_local_scope(
                     bindings.unwrap_or(&driver_proof.state.locals().values),
@@ -191,7 +191,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             &provenance.surface_propositions,
                             context.spec_definitions,
                             context.theorem_environment,
-                            &[],
                             &execution.core.effect_facts,
                             context.function_block.requires(),
                             Some(facts.clone()),

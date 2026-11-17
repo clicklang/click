@@ -4,6 +4,8 @@ use crate::kernel::loans::{CheckedLoanCallEvidenceSequence, empty_checked_loan_e
 #[cfg(test)]
 mod aggregate_results;
 mod scalar_arrays;
+#[cfg(test)]
+mod unsigned_switch_tests;
 
 #[cfg(test)]
 pub(in crate::kernel) fn execute_execution_statement(
@@ -15,7 +17,7 @@ pub(in crate::kernel) fn execute_execution_statement(
         state,
         statement,
         assumptions,
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::for_new_execution(),
     )
     .ok()?;
@@ -346,16 +348,6 @@ pub(in crate::kernel) fn memory_write_permission_outcome(
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<StatementOutcome> {
-    memory_write_permission_outcome_for_local(state, pointer, bytes, assumptions, false)
-}
-
-fn memory_write_permission_outcome_for_local(
-    state: &ExecutionState,
-    pointer: &Pointer,
-    bytes: u32,
-    assumptions: &PureFactContext,
-    private_local: bool,
-) -> Option<StatementOutcome> {
     let range = MemoryRange::new_with_element_width(
         pointer.clone(),
         MachineTerm::constant(0),
@@ -368,7 +360,7 @@ fn memory_write_permission_outcome_for_local(
     if let Some(outcome) = stable_loan_memory_range_outcome(state, &range, assumptions) {
         return Some(outcome);
     }
-    memory_write_ownership_outcome(state, range, assumptions, private_local)
+    memory_write_ownership_outcome(state, range, assumptions)
 }
 
 /// Pointee stores report loan separation as an obligation. The driver chooses
@@ -392,19 +384,17 @@ fn memory_write_obligation_outcome(
     {
         obligations.push(ProofObligation::verification_condition(requirement));
     }
-    memory_write_ownership_outcome(state, storage_range, assumptions, false)
+    memory_write_ownership_outcome(state, storage_range, assumptions)
 }
 
 fn memory_write_ownership_outcome(
     state: &ExecutionState,
     range: MemoryRange,
     assumptions: &PureFactContext,
-    private_local: bool,
 ) -> Option<StatementOutcome> {
     let pointer = range.base();
     let bytes = range.element_width();
-    if (state.memory.requires_explicit_scalar_ownership(pointer)
-        || (state.has_local_scalar_references() && !private_local))
+    if state.memory.requires_explicit_scalar_ownership(pointer)
         && state
             .resources()
             .memory_write_range(pointer, bytes, assumptions)
@@ -472,99 +462,6 @@ pub(in crate::kernel) fn write_program_lvalue_paths(
 }
 
 fn write_program_lvalue_paths_for_initialization(
-    state: &ExecutionState,
-    lvalue: LValue,
-    value: ExecutionValue,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-    assumptions: &PureFactContext,
-    budget: &mut ExecutionBudget,
-    initialization: bool,
-    store_source: StatementStoreSource,
-) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    // Local copies preserve the lease. Addressable pointer slots and aggregate
-    // transport require a separate reference-storage protocol.
-    if value
-        .pointer()
-        .is_some_and(|pointer| pointer.local_reference().is_some())
-        && !matches!(&lvalue.storage, LValueStorage::Local { name }
-            if state.locals.slot(name).is_none_or(|pointer|
-                crate::kernel::block_is_never_address_taken_local(&pointer.block)))
-    {
-        return Ok(vec![StatementExecutionPath::new(
-            StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(
-                crate::kernel::loans::LoanRefusal::UnsupportedResource
-                    .diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
-            ))),
-            facts,
-            obligations,
-        )]);
-    }
-    if let Some(reference) = &lvalue.local_reference {
-        let effective_assumptions =
-            assumptions_with_path_context(assumptions, &facts, &obligations);
-        let result = lvalue
-            .pointer(state)
-            .ok_or(crate::kernel::loans::LoanRefusal::InvalidEvidence)
-            .and_then(|pointer| {
-                state.local_scalar_access_resources(
-                    reference,
-                    &pointer,
-                    lvalue.value_type,
-                    &effective_assumptions,
-                )
-            });
-        let (resources, occurrence) = match result {
-            Ok(result) => result,
-            Err(error) => {
-                return Ok(vec![StatementExecutionPath::new(
-                    StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(
-                        error.diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
-                    ))),
-                    facts,
-                    obligations,
-                )]);
-            }
-        };
-        let state = state.clone().with_resource_context(resources);
-        let mut paths = write_program_lvalue_paths_without_local_reference(
-            &state,
-            lvalue,
-            value,
-            facts,
-            obligations,
-            assumptions,
-            budget,
-            initialization,
-            store_source,
-        )?;
-        for path in &mut paths {
-            if let StatementOutcome::Normal(state) = &mut path.outcome {
-                let resources = state
-                    .resources()
-                    .clone()
-                    .without_memory_views_supported_by_occurrence(occurrence)
-                    .without_exact_representation_for_occurrence(occurrence)
-                    .expect("scalar store retains its temporary owner");
-                **state = (**state).clone().with_resource_context(resources);
-            }
-        }
-        return Ok(paths);
-    }
-    write_program_lvalue_paths_without_local_reference(
-        state,
-        lvalue,
-        value,
-        facts,
-        obligations,
-        assumptions,
-        budget,
-        initialization,
-        store_source,
-    )
-}
-
-fn write_program_lvalue_paths_without_local_reference(
     state: &ExecutionState,
     lvalue: LValue,
     value: ExecutionValue,
@@ -762,12 +659,11 @@ fn write_program_lvalue_paths_without_local_reference(
                 )]);
             }
             if let Some(pointer) = state.locals.slot(&name).cloned()
-                && let Some(outcome) = memory_write_permission_outcome_for_local(
+                && let Some(outcome) = memory_write_permission_outcome(
                     state,
                     &pointer,
                     value.program_type().byte_width(),
                     &effective_assumptions,
-                    crate::kernel::block_is_never_address_taken_local(&pointer.block),
                 )
             {
                 return Ok(vec![StatementExecutionPath::new(
@@ -781,7 +677,7 @@ fn write_program_lvalue_paths_without_local_reference(
             if let Some(pointer) = volatile_pointer {
                 facts.push(volatile_access_fact(
                     budget,
-                    true,
+                    VolatileAccessKind::Write,
                     pointer,
                     value_type,
                     value.clone().into_native(),
@@ -1149,7 +1045,11 @@ fn write_program_lvalue_paths_without_local_reference(
             );
             if is_volatile {
                 facts.push(volatile_access_fact(
-                    budget, true, pointer, value_type, value,
+                    budget,
+                    VolatileAccessKind::Write,
+                    pointer,
+                    value_type,
+                    value,
                 )?);
             }
             Ok(vec![StatementExecutionPath::new(
@@ -2875,10 +2775,19 @@ fn execute_program_heap_free_paths(
                     &effective_assumptions,
                 )
             });
-        let (pointer, declared_allocation) = match declared_allocation {
+        let (mut pointer, declared_allocation) = match declared_allocation {
             Some((base, bytes)) => (base.clone().with_type(pointer.program_type()), Some(bytes)),
             None => (pointer, None),
         };
+        // The owned token can itself be spelled by a returned alias. Resolve
+        // that address to its indexed storage coordinate before asking whether
+        // it is the exact live allocation base. Keep designation and extent;
+        // this address spelling grants no permission and preserves offsets.
+        pointer.replace_pointer(
+            effective_assumptions
+                .equality_graph
+                .storage_address(pointer.pointer()),
+        );
         if state
             .memory
             .heap
@@ -3281,14 +3190,7 @@ fn live_mutex_return_refusal() -> StatementOutcome {
 pub(in crate::kernel) fn return_authority_refusal(
     state: &ExecutionState,
 ) -> Option<StatementOutcome> {
-    if state.has_local_scalar_references() || state.has_local_reference_scope() {
-        Some(StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(
-            Box::new(
-                crate::kernel::loans::LoanRefusal::ActiveDependency
-                    .diagnostic(crate::kernel::LoanRefusalOperation::Recovery),
-            ),
-        )))
-    } else if has_live_thread_completion(state) {
+    if has_live_thread_completion(state) {
         Some(live_thread_return_refusal())
     } else if has_live_mutex(state) {
         Some(live_mutex_return_refusal())
@@ -3474,10 +3376,10 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<Bi
         | ProgramStatement::Loop { .. }
         | ProgramStatement::Switch { .. }
         | ProgramStatement::TryCatchInt32 { .. }
+        | ProgramStatement::UnwindCleanup { .. }
         // Everything else declares nothing.
+        | ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
@@ -3640,8 +3542,8 @@ pub(in crate::kernel) fn paths_after_scope_exit(
 /// [`execute_statement_paths`], serves both; each place they differ is a
 /// branch on this value.
 pub(in crate::kernel) enum StatementJudgment<'generator, 'scope> {
-    /// `ProgramStatementExecutes`: concrete operational outcomes. A loop runs by
-    /// unrolling its iterations.
+    /// Concrete operational outcomes. A loop runs by unrolling its
+    /// iterations. A contract-less inline helper's body runs under it.
     Executes,
     /// `ProgramStatementVerifies`: an annotated loop is stepped as its checked
     /// abstraction instead, from an environment's verified loop rule or from
@@ -3651,7 +3553,7 @@ pub(in crate::kernel) enum StatementJudgment<'generator, 'scope> {
     Verifies(&'generator mut KernelVariableGenerator<'scope>),
 }
 
-/// `ProgramStatementExecutes` for `statement`.
+/// `statement` stepped under the concrete judgment, which unrolls loops.
 pub(in crate::kernel) fn execute_execution_statement_paths(
     state: &ExecutionState,
     statement: &ProgramStatement,
@@ -3888,8 +3790,6 @@ fn is_annotated_loop(statement: &ProgramStatement) -> bool {
 
 fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
     match statement {
-        ProgramStatement::EndScalarReference(_) => "verification statement: borrow end",
-        ProgramStatement::ScalarReferenceScope(_) => "verification statement: borrow scope",
         ProgramStatement::Skip => "verification statement: skip",
         ProgramStatement::Break => "verification statement: break",
         ProgramStatement::LoopTest { .. } => "verification statement: loop test",
@@ -3915,8 +3815,11 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
         ProgramStatement::Assert { .. } => "verification statement: assert",
         ProgramStatement::StepValue { .. } => "verification statement: step value",
         ProgramStatement::Return(_) => "verification statement: return",
-        ProgramStatement::Throw(_) => "verification statement: throw",
+        ProgramStatement::Throw(_) | ProgramStatement::ThrowOpaque(_) => {
+            "verification statement: throw"
+        }
         ProgramStatement::TryCatchInt32 { .. } => "verification statement: int32 handler",
+        ProgramStatement::UnwindCleanup { .. } => "verification statement: unwind cleanup",
         ProgramStatement::Store { .. } => "verification statement: store",
         ProgramStatement::TypedStore { .. } => "verification statement: typed store",
         ProgramStatement::Update { .. } => "verification statement: update",
@@ -4062,74 +3965,7 @@ fn execute_execution_statement_leaf_paths(
     if !matches!(statement, ProgramStatement::Seq(_)) {
         budget.consume_statement_step()?;
     }
-    // The private scalar lease adapter supports direct scalar execution only.
-    // Until transfer and havoc carry custody, refuse these paths before they
-    // can publish a state or a call boundary without the reserved authority.
-    if (state.has_local_scalar_references() || state.has_local_reference_scope())
-        && matches!(
-            statement,
-            ProgramStatement::Call { .. }
-                | ProgramStatement::CallConstruct { .. }
-                | ProgramStatement::CallResult { .. }
-                | ProgramStatement::Loop { .. }
-                | ProgramStatement::CopyAggregate { .. }
-                | ProgramStatement::InitializeScalarArray { .. }
-                | ProgramStatement::DeclareAggregate { .. }
-                | ProgramStatement::HeapAllocate { .. }
-                | ProgramStatement::HeapFree { .. }
-                | ProgramStatement::EndAutomaticLifetimes { .. }
-        )
-    {
-        return Ok(vec![StatementExecutionPath::new(
-            StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(
-                crate::kernel::loans::LoanRefusal::UnsupportedResource
-                    .diagnostic(crate::kernel::LoanRefusalOperation::Transition),
-            ))),
-            Vec::new().into(),
-            Vec::new(),
-        )]);
-    }
-    let valid_source_operation = match statement {
-        ProgramStatement::Assign {
-            name,
-            expression,
-            source,
-            ..
-        } => source
-            .lease_plan()
-            .is_none_or(|plan| plan.validates_assignment(name, expression)),
-        _ => true,
-    };
-    if !valid_source_operation {
-        return Ok(vec![StatementExecutionPath::new(
-            StatementOutcome::RuntimeError(crate::kernel::source_loans::source_loan_error(
-                crate::kernel::loans::LoanRefusal::InvalidEvidence,
-            )),
-            Vec::new().into(),
-            Vec::new(),
-        )]);
-    }
     let paths = match statement {
-        ProgramStatement::ScalarReferenceScope(source) => vec![StatementExecutionPath::new(
-            match source.execute(state) {
-                Ok(next) => StatementOutcome::Normal(Box::new(next)),
-                Err(error) => StatementOutcome::RuntimeError(
-                    crate::kernel::source_loans::source_loan_error(error),
-                ),
-            },
-            Vec::new().into(),
-            Vec::new(),
-        )],
-        ProgramStatement::EndScalarReference(source) => vec![StatementExecutionPath::new(
-            match source.execute(state, assumptions) {
-                Ok(next) => StatementOutcome::Normal(Box::new(next)),
-                Err(error) => StatementOutcome::RuntimeError(
-                    crate::kernel::source_loans::source_loan_error(error),
-                ),
-            },
-            Vec::new().into(),
-            Vec::new(),
-        )],
         ProgramStatement::Skip => vec![StatementExecutionPath::new(
             StatementOutcome::Normal(Box::new(state.clone())),
             Vec::new().into(),
@@ -4437,23 +4273,6 @@ fn execute_execution_statement_leaf_paths(
             )?;
             for path in &mut paths {
                 if let StatementOutcome::Normal(after) = &mut path.outcome {
-                    if let Some(plan) = source.lease_plan() {
-                        let effective_assumptions = assumptions_with_path_context(
-                            assumptions,
-                            &path.facts,
-                            &path.obligations,
-                        );
-                        let transition = plan.begin(state, after, &effective_assumptions);
-                        match transition {
-                            Ok(next) => **after = next,
-                            Err(error) => {
-                                path.outcome = StatementOutcome::RuntimeError(
-                                    crate::kernel::source_loans::source_loan_error(error),
-                                );
-                                continue;
-                            }
-                        }
-                    }
                     if let Some(fact) = source.completed(state, after, name) {
                         path.facts.push(fact);
                     }
@@ -4766,12 +4585,37 @@ fn execute_execution_statement_leaf_paths(
         ProgramStatement::Return(expression) => {
             execute_program_return_expression_paths(state, expression, assumptions, budget)?
         }
+        ProgramStatement::ThrowOpaque(payload_type) => {
+            let outcome = if payload_type.is_enum() {
+                StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
+            } else if let Some(refusal) = return_authority_refusal(state) {
+                refusal
+            } else {
+                let variable = budget.allocate_kernel_variable()?;
+                StatementOutcome::Throw {
+                    value: crate::kernel::functions::symbolic_call_result(
+                        ProgramType::Parameter(*payload_type),
+                        variable,
+                    )
+                    .into(),
+                    state: Box::new(state.clone()),
+                }
+            };
+            vec![StatementExecutionPath::new(
+                outcome,
+                Vec::new().into(),
+                Vec::new(),
+            )]
+        }
         ProgramStatement::Throw(expression) => {
             let mut paths = Vec::new();
             for path in evaluate_expression_value_paths(state, expression, assumptions, budget)? {
                 let outcome = match path.outcome {
                     ExpressionOutcome::Value(value)
-                        if value.program_type() == ProgramType::Int32 =>
+                        if matches!(
+                            value.program_type(),
+                            ProgramType::Int32 | ProgramType::Parameter(_)
+                        ) =>
                     {
                         if let Some(refusal) = return_authority_refusal(state) {
                             refusal
@@ -4858,6 +4702,45 @@ fn execute_execution_statement_leaf_paths(
                     )?);
                 } else {
                     paths.push(try_path);
+                }
+            }
+            paths
+        }
+        // On an int32 exceptional exit, the cleanup runs in the thrown state
+        // and the same exception continues: `cleanup; throw <payload>`.
+        ProgramStatement::UnwindCleanup { body, cleanup } => {
+            let mut paths = Vec::new();
+            for body_path in execute_statement_paths(
+                state,
+                body,
+                assumptions,
+                execution_context,
+                budget,
+                judgment,
+            )? {
+                if let StatementOutcome::Throw {
+                    value,
+                    state: thrown_state,
+                } = &body_path.outcome
+                    && value.program_type() == ProgramType::Int32
+                {
+                    let unwinding = crate::kernel::program_unwind_continuation(
+                        cleanup,
+                        ProgramExpression::Value(value.clone().into_native()),
+                    );
+                    paths.extend(execute_statement_paths_with_prefix(
+                        thrown_state,
+                        &unwinding,
+                        assumptions,
+                        execution_context,
+                        &body_path.facts,
+                        &body_path.obligations,
+                        &body_path.loan_evidence,
+                        budget,
+                        judgment,
+                    )?);
+                } else {
+                    paths.push(body_path);
                 }
             }
             paths
@@ -4995,19 +4878,18 @@ fn execute_execution_statement_leaf_paths(
             paths
         }
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks: _,
             effect_checks: _,
             resource_specs: _,
             ranking_measures: _,
             structural_measure: _,
-            do_while,
             body,
             ..
         } => {
+            let (condition, direct_post_test, test) = loop_test.execution_parts();
             // The one judgment-specific step: verification takes an
             // annotated loop, or one an environment rule covers, as its
             // checked abstraction. Execution, and verification of a loop
@@ -5031,10 +4913,10 @@ fn execute_execution_statement_leaf_paths(
                     state,
                     condition,
                     invariant,
-                    *do_while,
+                    direct_post_test,
                     body,
                     update.as_deref(),
-                    test.as_ref(),
+                    test,
                     assumptions,
                     execution_context,
                     budget,
@@ -5134,8 +5016,14 @@ fn execute_program_switch_paths(
         } = selector_path;
         match outcome {
             ExpressionOutcome::Value(value) => {
-                let Some(selector) = promote_program_path_value(value, MachineIntegerType::Int32)
-                else {
+                // Integer promotion keeps unsigned int unsigned. Narrower
+                // integers and bool still promote to int on the supported ABI.
+                let selector_type = if value.program_type() == ProgramType::UInt32 {
+                    MachineIntegerType::UInt32
+                } else {
+                    MachineIntegerType::Int32
+                };
+                let Some(selector) = promote_program_path_value(value, selector_type) else {
                     paths.push(StatementExecutionPath::new(
                         StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         facts,
@@ -5146,6 +5034,7 @@ fn execute_program_switch_paths(
                 paths.extend(execute_program_switch_dispatch_paths(
                     state,
                     &selector,
+                    selector_type,
                     cases,
                     0,
                     facts,
@@ -5174,6 +5063,7 @@ fn execute_program_switch_paths(
 fn execute_program_switch_dispatch_paths(
     state: &ExecutionState,
     selector: &MachineTerm,
+    selector_type: MachineIntegerType,
     cases: &[SwitchCase],
     case_index: usize,
     facts: ExecutionFacts,
@@ -5210,6 +5100,7 @@ fn execute_program_switch_dispatch_paths(
         return execute_program_switch_dispatch_paths(
             state,
             selector,
+            selector_type,
             cases,
             case_index + 1,
             facts,
@@ -5220,7 +5111,13 @@ fn execute_program_switch_dispatch_paths(
             judgment,
         );
     };
-    let condition = ConditionTerm::equal(selector.clone(), MachineTerm::constant(value));
+    // A case label holds its 32-bit pattern after conversion to the promoted
+    // selector type, including -1 becoming UINT_MAX for an unsigned selector.
+    let condition = if selector_type == MachineIntegerType::UInt32 {
+        ConditionTerm::uint32_equal(selector.clone(), MachineTerm::uint32_constant(value))
+    } else {
+        ConditionTerm::equal(selector.clone(), MachineTerm::constant(value))
+    };
     let mut paths = Vec::new();
     for condition_path in
         condition_as_program_int32_paths(condition, facts, obligations, assumptions)
@@ -5249,6 +5146,7 @@ fn execute_program_switch_dispatch_paths(
             paths.extend(execute_program_switch_dispatch_paths(
                 state,
                 selector,
+                selector_type,
                 cases,
                 case_index + 1,
                 facts,
@@ -5404,7 +5302,7 @@ pub(in crate::kernel) fn execute_program_loop_paths(
     state: &ExecutionState,
     condition: &ProgramExpression,
     invariant: &[Proposition],
-    do_while: bool,
+    direct_post_test: bool,
     body: &ProgramStatement,
     update: Option<&ProgramStatement>,
     test: Option<&LoopTestRegion>,
@@ -5429,7 +5327,7 @@ pub(in crate::kernel) fn execute_program_loop_paths(
         state: state.clone(),
         facts: Vec::new().into(),
         obligations: Vec::new(),
-        check_condition: !do_while,
+        check_condition: !direct_post_test,
     }];
     let mut paths = Vec::new();
 

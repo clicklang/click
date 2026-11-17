@@ -57,7 +57,7 @@ int32 apply_guarded_effect(
 
 theorem proposed_overly_general_effect_contract() {
     ensures GuardedEffect(&overly_general_effect) by {
-        unfold(GuardedEffect);
+        unfold(GuardedEffect(&overly_general_effect));
         solve();
     }
 }

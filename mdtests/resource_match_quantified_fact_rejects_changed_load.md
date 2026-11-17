@@ -51,10 +51,7 @@ int32 write_one(struct buffer* buffer) {
             have buffer->data[0] == 0 by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < end implies buffer->data[k] == 0
-                }, 0) using {
-                    0 <= 0;
-                    0 < end;
-                };
+                }, 0);
                 known();
             }
             unfold(prefix);
@@ -70,5 +67,5 @@ int32 write_one(struct buffer* buffer) {
 ```
 
 ```expect
-fail: unproved obligation: `forall (k: int32) { 0 <= k and k < (end as int32) implies (let read_pointer = buffer->data; read_pointer)[k] == 0 }`
+fail: fact 2 of 2 of arm `End` is not established: `forall (k: int32) { 0 <= k and k < end implies buffer->data[k] == 0 }`
 ```

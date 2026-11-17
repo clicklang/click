@@ -130,6 +130,7 @@ fn c_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_th
             int32 read() {{
                 static struct node slots[{length}];
                 int32 buf[{length}] = {{1, 0, 3}};
+                unsigned int unsigned_buf[{length}] = {{1u, 0u, 3u}};
                 struct node items[{length}] = {{{{4}}, {{0}}}};
                 int32 scratch[{length}];
                 scratch[0] = 1;
@@ -177,6 +178,7 @@ fn c_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_th
             ("buf".to_string(), true),
             ("items".to_string(), true),
             ("scratch".to_string(), false),
+            ("unsigned_buf".to_string(), true),
         ],
         "an automatic array zero-fills exactly when it has an initializer"
     );

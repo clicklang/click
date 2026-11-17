@@ -39,18 +39,18 @@ int32 loop_stdlib_permutation_invariant(int32 p[3]) {
         invariant i >= 0 and i <= 3;
         invariant permutation::permutation(p, old(p), 0, 3);
         initialize by {
-            unfold(permutation::permutation);
+            unfold(permutation::permutation(p, old(p), 0, 3));
             solve();
         }
         preserve by {
             mark iteration;
-            unfold(permutation::permutation);
+            unfold(permutation::permutation(p, old(p), 0, 3));
             step();
             have i >= 0 and i <= 3;
         }
     }
     step();
-    unfold(permutation::permutation);
+    unfold(permutation::permutation(p, old(p), 0, 3));
     solve();
 }
 ```

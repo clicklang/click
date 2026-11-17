@@ -40,13 +40,13 @@ pub(super) enum LocalOperand {
     Unknown,
 }
 
-pub(super) type LocalOperands = BTreeMap<String, LocalOperand>;
+pub(super) type LocalOperands = BinderMap<LocalOperand>;
 
 /// Binds `bound` in `scope` for the duration of `body`, then restores what
 /// each name meant before.
 fn with_locals<T>(
     scope: &mut LocalOperands,
-    bound: Vec<(String, LocalOperand)>,
+    bound: Vec<(SurfaceBinder, LocalOperand)>,
     body: impl FnOnce(&mut LocalOperands) -> T,
 ) -> T {
     let previous = bound
@@ -81,26 +81,35 @@ pub(super) enum SpecificationBinding {
 #[derive(Clone, Debug, Default)]
 pub(super) struct LetOperands {
     operands: LocalOperands,
-    machine_types: BTreeMap<String, InterfaceType>,
-    specification_types: BTreeMap<String, SpecificationBinding>,
+    machine_types: BinderMap<InterfaceType>,
+    specification_types: BinderMap<SpecificationBinding>,
+    pub(super) types: BinderMap<ClickType>,
 }
 
 /// A `let` binding's previous meaning, restored when its scope ends.
 pub(super) type ShadowedLet = (
-    String,
+    SurfaceBinder,
     Option<LocalOperand>,
     Option<InterfaceType>,
     Option<SpecificationBinding>,
+    Option<ClickType>,
 );
 
 impl Parser {
-    pub(super) fn specification_binding_kind(&self, name: &str) -> Option<SpecificationBinding> {
+    pub(super) fn specification_binding_kind(
+        &self,
+        name: &(impl binders::BinderKey + ?Sized),
+    ) -> Option<SpecificationBinding> {
         self.let_operands.specification_types.get(name).copied()
     }
 
     /// What `name` is as an operand: a binding of the expression being
     /// read, then a `let` in scope.
-    fn local_operand(&self, scope: &LocalOperands, name: &str) -> Option<LocalOperand> {
+    fn local_operand(
+        &self,
+        scope: &LocalOperands,
+        name: &(impl binders::BinderKey + ?Sized),
+    ) -> Option<LocalOperand> {
         scope
             .get(name)
             .or_else(|| self.let_operands.operands.get(name))
@@ -112,10 +121,15 @@ impl Parser {
     /// meant before.
     pub(super) fn bind_let_operand(
         &mut self,
-        name: &str,
+        name: impl Into<SurfaceBinder>,
         click_type: Option<&ClickType>,
         value: Option<&ContractExpression>,
     ) -> ShadowedLet {
+        let name = name.into();
+        let previous_nominal = match click_type {
+            Some(ty) => self.let_operands.types.insert(name.clone(), ty.clone()),
+            None => self.let_operands.types.remove(&name),
+        };
         let specification_type = match click_type {
             Some(ClickType::Function { result, .. }) => Some(SpecificationBinding::Function {
                 proposition_result: result.as_ref() == &ClickType::Proposition,
@@ -162,8 +176,8 @@ impl Parser {
             Some(ty) => self
                 .let_operands
                 .specification_types
-                .insert(name.to_string(), ty),
-            None => self.let_operands.specification_types.remove(name),
+                .insert(name.clone(), ty),
+            None => self.let_operands.specification_types.remove(&name),
         };
         let (operand, machine_type) = match click_type {
             Some(ClickType::Integer) => (LocalOperand::Integer, None),
@@ -187,19 +201,20 @@ impl Parser {
                 None => (LocalOperand::Unknown, None),
             },
         };
-        let previous_operand = self.let_operands.operands.insert(name.to_string(), operand);
+        let previous_operand = self.let_operands.operands.insert(name.clone(), operand);
         let previous_type = match machine_type {
             Some(interface_type) => self
                 .let_operands
                 .machine_types
-                .insert(name.to_string(), interface_type),
-            None => self.let_operands.machine_types.remove(name),
+                .insert(name.clone(), interface_type),
+            None => self.let_operands.machine_types.remove(&name),
         };
         (
-            name.to_string(),
+            name.clone(),
             previous_operand,
             previous_type,
             previous_specification,
+            previous_nominal,
         )
     }
 
@@ -223,7 +238,16 @@ impl Parser {
 
     /// Ends the scope of the `let` bindings `shadowed` recorded, latest first.
     pub(super) fn unbind_let_operands(&mut self, shadowed: Vec<ShadowedLet>) {
-        for (name, operand, machine_type, specification_type) in shadowed.into_iter().rev() {
+        for (name, operand, machine_type, specification_type, nominal) in shadowed.into_iter().rev()
+        {
+            match nominal {
+                Some(ty) => {
+                    self.let_operands.types.insert(name.clone(), ty);
+                }
+                None => {
+                    self.let_operands.types.remove(&name);
+                }
+            }
             match specification_type {
                 Some(ty) => {
                     self.let_operands
@@ -502,7 +526,13 @@ impl Parser {
         expression: &ContractExpression,
         scope: &mut LocalOperands,
     ) -> bool {
+        if let Some(id) = expression.generated_binder() {
+            return self.local_operand(scope, &id) == Some(LocalOperand::Integer);
+        }
+
         match expression {
+            ContractExpression::IntegerContext(_) => true,
+
             ContractExpression::Add(left, right)
             | ContractExpression::Subtract(left, right)
             | ContractExpression::Multiply(left, right) => {
@@ -591,7 +621,7 @@ impl Parser {
 
     /// What each binding of a `match` arm is as an operand, from its
     /// constructor's declared field types.
-    fn arm_operands(&self, arm: &AlgebraicMatchArm) -> Vec<(String, LocalOperand)> {
+    fn arm_operands(&self, arm: &AlgebraicMatchArm) -> Vec<(SurfaceBinder, LocalOperand)> {
         let fields = self
             .algebraic_variant_fields
             .get(&(arm.type_name.clone(), arm.variant.clone()))
@@ -902,6 +932,10 @@ impl Parser {
     /// The machine type of an arithmetic operand, where its spelling shows
     /// it: a parameter, `result`, a suffixed constant, a load or a cast.
     fn machine_operand_type(&self, operand: &ContractExpression) -> Option<InterfaceType> {
+        if let Some(id) = operand.generated_binder() {
+            return self.let_operands.machine_types.get(&id).copied();
+        }
+
         match operand {
             ContractExpression::Old(inner)
             | ContractExpression::At {

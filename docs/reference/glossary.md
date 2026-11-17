@@ -569,7 +569,7 @@ resource according to the callee's contract.
 ### Load term
 
 A Kernel Click term `load(memory, pointer)` denoting the value read from one
-kernel memory value; Surface Click spells it as a read at its [version
+kernel memory value; it raises to a Surface Click read at its [version
 point](#version-point). Canonicalization resolves a known cell immediately or replaces
 the remaining load term with its load variable.
 
@@ -665,7 +665,7 @@ kernel `MemoryRange`.
 ### Modus ponens
 
 The rule that derives `Q` from exact facts `P` and `P implies Q`. Click uses
-this rule in explicit extraction and selected simplification paths.
+this rule in `apply(fact) using { ... }` and solver expansion.
 
 ## N
 
@@ -917,7 +917,7 @@ One of the obligations a loop's `decreases` clause adds to its
 of the measure, then one obligation that the measure decreased. Each compares
 the measure's value at the back edge with its value at the start of the same
 iteration; a component that reads memory is read in each of those two
-memories. The source never spells them. A hand-written closer proves them
+memories. The source never writes them. A hand-written closer proves them
 after the invariants.
 
 ### Round-trip validation
@@ -1060,7 +1060,7 @@ The user-facing language parsed from `.click` files.
 
 A Surface Click proposition, term, selector, or tactic that represents a
 checked kernel meaning in source syntax. Prefer *surface form* for the
-representation and *spelling* only for literal token choices.
+representation and *syntax* for literal token choices.
 
 ### Surface synthesis
 
@@ -1179,9 +1179,9 @@ path assumption.
 ### Version point
 
 The [point](#point) a memory read is lowered to. A read of `*p` lowers to a
-load at its version point, spelled `at(V, *p)`. Choosing it does not depend on
+load at its version point, written `at(V, *p)`. Choosing it does not depend on
 facts ([fact-stable
-lowering](../internals/spellability.md#lowering-is-fact-stable)); facts relate
+lowering](../internals/raise-lower-principle.md#lowering-is-fact-stable)); facts relate
 reads at different version points as ordinary equalities. Reads of one cell
 connected without a possible write share a version point and therefore lower
 to one term. A version point is never earlier than `function.entry`: the

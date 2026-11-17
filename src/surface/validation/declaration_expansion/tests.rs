@@ -31,6 +31,49 @@ fn authority_test_scope(
     }
 }
 
+#[test]
+fn negated_resource_fields_receive_their_declared_metadata() {
+    let mut scope =
+        authority_test_scope(ResourceKind::Composite, InterfaceType::Int32Pointer, true);
+    let field_type = ClickType::Program(InterfaceType::Int32);
+    scope.definitions.get_mut("reference").unwrap().fields =
+        std::sync::Arc::new(BTreeMap::from([("value".into(), (3, field_type.clone()))]));
+    for name in ["value", "missing"] {
+        let expression = ContractExpression::Negate(Box::new(ContractExpression::Negate(
+            Box::new(ContractExpression::ResourceField(ResourceFieldAccess {
+                owner: "r".into(),
+                resource_name: "reference".into(),
+                identity: Variable(0),
+                children: vec![],
+                field: name.into(),
+                field_index: 0,
+                click_type: None,
+            })),
+        )));
+        let result = expand_declared_resource_expression(expression, &scope);
+        if name == "missing" {
+            assert!(
+                result
+                    .unwrap_err()
+                    .message()
+                    .contains("has no field `missing`")
+            );
+            continue;
+        }
+        let ContractExpression::Negate(outer) = result.unwrap() else {
+            panic!()
+        };
+        let ContractExpression::Negate(inner) = *outer else {
+            panic!()
+        };
+        let ContractExpression::ResourceField(access) = *inner else {
+            panic!()
+        };
+        assert_eq!(access.field_index, 3);
+        assert_eq!(access.click_type, Some(field_type.clone()));
+    }
+}
+
 /// Each alternative arm starts from the state before the arms. Afterwards
 /// an instance the arms agree on keeps its resource, one only some arms
 /// bind keeps theirs, and one the arms give different resources is refused.
@@ -185,7 +228,7 @@ fn check_isolated_program(value: i32, expected: i32) {
         verifying "answer.c";
         predicate wanted(x: int32) {{ x == {expected} }}
         int32 answer() {{
-            ensures wanted(result) by {{ step_until(function.exit); unfold(wanted); solve(); }}
+            ensures wanted(result) by {{ step_until(function.exit); unfold(wanted(result)); solve(); }}
         }}
         "#
     );

@@ -1,4 +1,4 @@
-# An omitted subtraction bound cannot discharge a selected guard
+# An omitted subtraction bound remains an unproved guard
 
 ```c filename=inst.c
 unsigned int at(unsigned int *xs, unsigned long n, unsigned long r) {
@@ -15,13 +15,13 @@ uint32 at(uint32* xs, uint64 n, uint64 r) {
     views xs[0..n];
     ensures result <= 100u32;
 } by {
-    have n - r < n;
     have xs[n - r] <= 100u32 by {
-        instantiate(forall (k: uint64) { k < n implies xs[k] <= 100u32 }, n - r) using { };
+        instantiate(forall (k: uint64) { k < n implies xs[k] <= 100u32 }, n - r);
+        known();
     }
 }
 ```
 
 ```expect
-fail: does not follow from the listed evidence
+fail: `known` requires
 ```

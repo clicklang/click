@@ -17,9 +17,9 @@ fn integer_certificate_lowering_scales_with_nodes_not_unrelated_bindings() {
     };
     let mut costs = Vec::new();
     for unrelated in [0, 64, 256, 1024] {
-        let mut bindings = crate::persistent::PersistentMap::default();
+        let mut bindings = PersistentBinderMap::default();
         bindings = bindings.with_inserted(
-            "x".into(),
+            "x",
             SpecIntegerExpression::Term(IntegerTerm::var(Variable(7))),
         );
         for index in 0..unrelated {
@@ -143,16 +143,17 @@ fn putting_a_lowered_loop_in_place_reads_its_path_not_the_loops_before_it() {
         let body = function.body();
         let paths = KernelLoopPaths::of(body);
         let replacement = ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: Vec::new(),
             resource_specs: Vec::new(),
             ranking_measures: Vec::new(),
             structural_measure: None,
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
             body: Box::new(ProgramStatement::Skip),
@@ -219,7 +220,7 @@ fn mathematical_lowering_keeps_repeated_squares_shared_without_evaluation() {
     for ordinary in [false, true] {
         let mut costs = Vec::new();
         for size in [16, 64, 256, 1024] {
-            let mut bindings = crate::persistent::PersistentMap::default();
+            let mut bindings = PersistentBinderMap::default();
             for index in 0..size {
                 bindings = bindings.with_inserted(
                     format!("unused{index}"),
@@ -228,10 +229,8 @@ fn mathematical_lowering_keeps_repeated_squares_shared_without_evaluation() {
             }
             let mut value = IntegerTerm::constant_i64(2);
             for _ in 0..size {
-                bindings = bindings.with_inserted(
-                    "selected".into(),
-                    SpecIntegerExpression::Term(value.clone()),
-                );
+                bindings =
+                    bindings.with_inserted("selected", SpecIntegerExpression::Term(value.clone()));
                 context.integer_values = bindings.clone();
                 let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
                     if ordinary {

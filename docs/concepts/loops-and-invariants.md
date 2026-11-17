@@ -78,7 +78,7 @@ which measure it is: a nonempty int32, unsigned, or `Integer` ranking
 expression, a lexicographic
 tuple of them, or one of the loop's own resource binders. The same uniform
 rule applies to a C function's own `decreases`; there is no `decreases
-resource` spelling anywhere.
+resource` form anywhere.
 
 <!-- verified-example: mdtests/count_to_n_loop_invariant.md -->
 ```click
@@ -153,7 +153,7 @@ cycle needing a checked rule; both are refused otherwise
 (`mdtests/c_decreases_rejects_inline_helper_loop.md` and
 `mdtests/c_decreases_rejects_recursive_inline_helper.md`). A helper's own
 ranked loop is planned under the translation-unit-qualified name its body
-executes under rather than the ordinary spelling its sidecar contract uses,
+executes under rather than the ordinary name its sidecar contract uses,
 which is what lets the plan reach the function the call site names
 (`mdtests/inline_helper_ranked_loop.md`).
 
@@ -175,7 +175,7 @@ iteration; the proof path reaches the head once.
 That frontier does not have to be the top level of the script. A C loop
 guarded by an `if` is reached on one path only, and the proof reaches it by
 splitting the `if` first: `loop { ... }` is then written in the arm whose
-frontier is at the loop. Both conditional spellings take it. A `branch` arm
+frontier is at the loop. Both conditional forms take it. A `branch` arm
 runs the loop rule and joins its sibling at the statement after the `if`,
 which needs an `ensuring` interface whenever the arms leave the loop's locals
 in different states — the summarizing arm holds the loop's abstract exit while
@@ -255,7 +255,7 @@ loop {
 ```
 
 `initialize` is a pure proof of all invariants at the actual loop entry. Its
-script may use exactly `unfold(predicate)`, `apply(theorem(args))`, `have`,
+script may use exactly `unfold(predicate(args))`, `apply(theorem(args))`, `have`,
 `known()`, `normalize()`, `rewrite(...)`, `solve()`, `both`, `cases`, and
 proof-level `if`;
 anything else is rejected with `` `initialize` is a pure proof and cannot use
@@ -300,11 +300,11 @@ as in ``loop 0 invariant 1 entry, owing `defined((i + 1))` ``.
 Each invariant gets its own entry goal, so an `initialize by { ... }` script is
 read as three parts, in this order:
 
-- a leading run of `unfold(predicate)` and `have` steps that name something
+- a leading run of `unfold(predicate(args))` and `have` steps that name something
   other than an invariant. These are *helpers*: each is proved once, where it
   is written, and its fact is available to everything below it.
 - one `have` per declared invariant, in declaration order, naming the
-  invariant exactly as the `loop` head spells it. Such a `have` is that
+  invariant exactly as the `loop` head writes it. Such a `have` is that
   invariant's own proof, and no other invariant reads it.
 - an optional trailing `known()` or `solve()`.
 
@@ -472,7 +472,7 @@ Both work inside a proof `if` and a proof `match` arm
 (`mdtests/loop_body_break_in_match_arm.md`), which is how a body's `if (...)
 break;` is written: those arms are never joined, so each path reaches the loop
 rule on its own. A `branch` is the joining form and has nothing to join when
-one arm leaves the loop, so it refuses and names the proof-level spelling
+one arm leaves the loop, so it refuses and names the proof-level form
 (`mdtests/loop_body_break_in_branch_arm_rejected.md`).
 
 A `return` is terminal for the whole function. It owes neither the loop's
@@ -632,8 +632,8 @@ searched for or proved again: a fact one exit does not state is not kept
 (`mdtests/loop_break_exit_fact_one_exit_does_not_state_is_dropped.md`), and a
 fact about another binder is not restated about the renamed one
 (`mdtests/loop_break_exit_fact_about_another_binder_is_not_restated.md`).
-Identity is of the kernel's propositions, so two exits that spell a fact
-alike about their own arm bindings state different facts, and neither is
+Identity is of the kernel's propositions, so two exits whose facts about
+their own arm bindings print alike state different facts, and neither is
 kept. A claim that does distinguish them
 is read off the exported disjunction with `cases`. The disjunct also uses
 the successor's model name inside pure getters, so a fact such as
@@ -666,7 +666,7 @@ A guard-false exit stands at the loop head, where the locals the body writes
 are fresh names of their own. Its own facts are therefore restated about the
 successor's names before they are disjoined — valid because that exit's own
 disjunct is the equation saying the two are the same value — so the disjunction
-speaks in names a proof after the loop can spell. A `break` exit's facts about
+speaks in names a proof after the loop can write. A `break` exit's facts about
 the *head's* values are left as they are; they are true, but a proof after the
 loop cannot name what they are about, so a `cases` over such a disjunction is
 out of reach.
@@ -870,7 +870,7 @@ follows the body down as far as the body opened: each step needs a premise
 naming that instance's constructor, and the only thing that produces one is the
 body unfolding the instance, so the descent walks the unfold evidence the proof
 already left behind and stops at the first instance nobody opened. It is a walk
-over the constructors the path spelled out, not a search for one, and a back
+over the constructors the path made explicit, not a search for one, and a back
 edge that hands back an instance the body never reached that way is refused by
 name (`mdtests/loop_decreases_strict_descendant.md` is the two-step positive).
 
@@ -948,7 +948,7 @@ where it is declared, naming the local
 (`mdtests/loop_decreases_model_function_rejects_a_c_local.md`), because the
 local moves independently of the binders it would be ranked with. A model value
 itself, such as `decreases c.model;` for a spec enum, has no order and is
-refused with a pointer to the two spellings that do rank by structure
+refused with a pointer to the two forms that do rank by structure
 (`mdtests/loop_decreases_rejects_an_unordered_model.md`). A back edge that
 leaves the measure unchanged, or one that can drive an `Integer` measure below
 zero, leaves its member open
@@ -996,7 +996,7 @@ that omits a constructor is refused exactly as at function entry
 
 `contradiction` does not have to be an arm's only tactic. It refutes the path
 it stands on wherever on that path it stands, so an arm may first bridge the
-refuting fact into its own spelling — a `have`
+refuting fact into its own terms — a `have`
 (`mdtests/function_match_arm_closes_by_contradiction_after_a_have.md`, in a
 `match` at the function's own level), or the `unfold` that exposes the fact at
 all (`mdtests/do_while_returns_rebound_resources.md`, whose loop body's `Empty`
@@ -1071,7 +1071,7 @@ The arm's bindings are in scope in the loop's clauses, as they are in any
 term the arm writes: an invariant, a declared resource's arguments, and a
 `decreases` measure may name the arm's pointer, integer, and model bindings,
 and the clause is read with them resolved exactly as a `have` goal at the
-loop's frontier is. The clause keeps its written spelling, which is what
+loop's frontier is. The clause keeps its source text, which is what
 expansion prints (`mdtests/loop_clause_reads_arm_bindings.md`). The same scope
 reaches the loop's `initialize` and `preserve` bodies, at any nesting depth: a
 `have` goal, a theorem argument, or an `unfold` target written in a phase body
@@ -1171,7 +1171,7 @@ at the frontier. The two conditional forms differ in where their arms go. A
 proof `if` and a proof `match` never join: each arm runs its own complete
 iteration to the loop rule, so each closes the invariants and satisfies the
 measure on its own. `branch` joins its arms at the statement after the C `if`,
-which is the cheaper spelling when they do rejoin — a body whose `if` only
+which is the cheaper form when they do rejoin — a body whose `if` only
 chooses which link to write — and refuses when they cannot, because an arm
 `break`s or `continue`s out of the join.
 
@@ -1241,7 +1241,7 @@ that ran.
 The back edge closes every member with `solve()` alone, which reads the facts
 in scope like any other `solve()`; each member is guarded by the invariants
 declared before it. Each member
-is spelled as its clause writes it, as a function's exit closes each `ensures`
+is raised as its clause writes it, as a function's exit closes each `ensures`
 as written: an invariant over the back-edge locals, and the descent member of
 `decreases m` as `m < at(<iteration entry>, m)`, a tuple's as the
 disjunction over pivots with the earlier components tied. That closes an
@@ -1264,7 +1264,7 @@ with each one (`mdtests/loop_frame_keeps_two_header_cells_of_a_field_map.md`).
 
 When the whole bundle has no source form, for instance because one member is
 at the loop entry beside members at the iteration entry, each member is
-spelled on its own at the one point it names, which is how the expanded
+raised on its own at the one point it names, which is how the expanded
 proof's `have` writes it, so `intro` names a member's quantified index as that
 `have` does.
 

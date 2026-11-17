@@ -107,7 +107,7 @@ two-stage composition:
    A logical read of an integer cell (a Click expression, not C evaluation)
    does not take a recorded value, except a cell holding its own read: it
    keeps its version name, and the read-over-write authority relates it to
-   the stored value ([spellability](spellability.md#a-read-names-its-version-point)).
+   the stored value ([raise-lower principle](raise-lower-principle.md#a-read-names-its-version-point)).
 2. **Replace each remaining load with its load variable**: the kernel
    variable identified by the cell and the state of its last write, found
    by walking the memory derivation DAG.
@@ -133,7 +133,7 @@ Creation sites do not rewrite a term to a preferred member of an equality
 class. In particular, a verified call records its owned ranges in
 assumption-free canonical form in both the call-memory derivation and its
 `MemoryEffectSummary`. If a caller's effect or frame proof uses another
-spelling for a bound, smart frame planning selects the exact equality premises
+form for a bound, smart frame planning selects the exact equality premises
 outside the kernel and emits an ordinary `frame using` certificate. The exact
 frame checker consumes that proof-local range view without replacing the
 stored summary.
@@ -266,7 +266,7 @@ refers to one through a state form such as `at(region(3).entry, x)` or
   the same cells one layer deeper and must adopt the same names, so the cell
   layout and element types are the ones already chosen there rather than a
   second convention. Arm selection uses the facts published by the rewrite.
-  Pointer spelling uses the entry context plus the kernel's checked opening
+  Pointer naming uses the entry context plus the kernel's checked opening
   delta. For a parent with named children, that delta includes its direct
   pointer equalities between bare local names, established before naming the
   memory body and child arguments. Pure body facts retain their model bindings.

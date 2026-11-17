@@ -10,9 +10,9 @@ imported module declares; a project's module loader hands each module the
 declarations of the modules it imports (`import_declarations`), so a module
 reads its imports' names through the same queries as its own. Names bound
 inside a declaration are the parser's scoped `NameTable`. `SymbolTable::resolve` states the
-reading of a written name once, and source expansion spells an identity as
+reading of a written name once, and source expansion prints an identity as
 the shortest of its bare name, its module's short path and its full path that
-`resolve` reads back as that identity, so spelling repeats no rule.
+`resolve` reads back as that identity, so printing repeats no rule.
 
 The top-level declarations of a file and of each library module are read by
 one walk of their tokens, `top_level_declarations`, which records each
@@ -35,12 +35,12 @@ dependency it contributes to a retained session.
 Only a Click reference reads these bindings. The parser resolves a selectively
 imported name where it reads a call (`parse_call_arguments`, through
 `expect_reference_name`) or an `unfold` target. A C function, a C++ member, a
-resource binder or an enum constructor of the same spelling keeps its own
+resource binder or an enum constructor of the same name keeps its own
 meaning. A library path is joined into the declaration it names before
 parsing, so the parser's lookahead sees one name, and `SymbolTable` keeps the
-written spelling by source position. A C or C++ declaration name, such as the
-head `int list::append(int x)` of a namespace member, reads the written
-spelling back (`expect_c_declaration_ident`). A path through a library module
+source text by source position. A C or C++ declaration name, such as the
+head `int list::append(int x)` of a namespace member, reads the source
+text back (`expect_c_declaration_ident`). A path through a library module
 the file does not import is refused only where a Click reference reads it.
 
 The parser tokenizer supplies exact byte spans through `source_tokens`.
@@ -70,11 +70,11 @@ clause after the claim, and a loop phase is the clause its keyword owns.
 Expansion pairs no braces and scans for no `by`.
 
 `printing::print_proposition` is the common Surface proposition printer.
-Every caller selects its spelling explicitly, and no printer reads a mode
+Every caller selects its output form explicitly, and no printer reads a mode
 from anywhere else: `source_click_proposition` writes Click source,
 `describe_click_proposition` an ordinary diagnostic, and
 `refusal_click_proposition` a refusal, which alone may print presentation-only
-text such as an `(unsigned)` order. Source output therefore spells every
+text such as an `(unsigned)` order. Source output therefore prints every
 proposition, including one nested in a conditional expression, as source.
 Expression, place and state formatters are shared with diagnostics; those
 formatters preserve source syntax.
@@ -87,7 +87,7 @@ from (`SurfacePropositionMap::surface`) and printed there. The kernel-fact print
 is the diagnostic extension of it, for facts a person reads in a refusal or a
 `--trace-proof` trace. It prints a kernel `Proposition` directly, so it can
 show what a Click proposition cannot: a read's width, state and address,
-report-local state labels, and the kernel spelling of a fact with no Click
+report-local state labels, and a kernel fact that has no Click
 form. Its modes are explicit (`Mode::Source`, `Exact`, `ExactIdentity`), and
 no expansion path calls it, so its output never reaches generated source.
 
@@ -99,7 +99,7 @@ state is omitted; two array arguments with different states remain distinct.
 Canonical library names in a generated fragment are rewritten only at parser
 token spans. A matching string or comment is left untouched. Name queries read
 indexes rather than scanning the original source; a source rewrite constructs
-its file bindings once before spelling the fragment.
+its file bindings once before rewriting the fragment.
 
 A written code region resolves through `CodeRegionRef::resolve`, both in
 annotation lowering and in proof execution. A loop label binds once per
@@ -112,7 +112,7 @@ expansion still cites the label the proof wrote.
 
 Proof binders in the parser go through `bind_proof_name`. The newest binding
 of a name wins in every reading position: a value binder hides a `have` fact
-and a resource instance of the same spelling until its block ends, and a
+and a resource instance of the same name until its block ends, and a
 resource binder hides a fact. A `forall` or `exists` variable hides the same
 bindings and the bare field of an enclosing resource body until its body
 ends; unlike a proof binder it may also hide a C variable. The hidden bindings are restored from the same
