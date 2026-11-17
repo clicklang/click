@@ -839,6 +839,42 @@ mod tests {
         assert_eq!(locals.get(&carrier).unwrap().native().as_ref(), &int32(3));
     }
 
+    #[test]
+    fn entry_resource_arguments_capture_the_reference_pointer_by_source_metadata() {
+        let carrier = BindingName::reference_carrier("x");
+        let variable = ProgramExpression::Variable(carrier);
+        let fake = ProgramExpression::Variable("&x".into());
+        let pointer = ProgramValue::pointer(Pointer::symbolic(Variable(71)));
+        let other = ProgramValue::pointer(Pointer::symbolic(Variable(72)));
+        let spec = ResourceSpec::declared_with_argument_states(
+            ResourceFamily::Composite,
+            ResourceAccessMode::Own,
+            "references".into(),
+            vec![variable.clone(), fake, variable.clone()],
+            vec![
+                ResourceStateSource::Entry,
+                ResourceStateSource::Entry,
+                ResourceStateSource::Current,
+            ],
+            vec![ProgramType::Int32Pointer; 3],
+            ResourceTransferRole::Consume,
+            ResourceStateSource::Current,
+        )
+        .unwrap()
+        .with_captured_entry_parameters(&BTreeMap::from([
+            ("x".into(), pointer.clone()),
+            ("&x".into(), other.clone()),
+        ]));
+        assert_eq!(
+            spec.declared_arguments().unwrap(),
+            &[
+                ProgramExpression::Value(pointer),
+                ProgramExpression::Value(other),
+                variable,
+            ]
+        );
+    }
+
     fn local(owner: &LocalFunctionId, ordinal: u32, name: &str, depth: u32) -> BindingName {
         LocalBindingId::new(owner.clone(), false, ordinal, Some(name.into()))
             .with_scope_depth(depth)

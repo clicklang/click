@@ -82,3 +82,61 @@ fn typed_binder_freshening_scales_with_selected_replacements_and_ignores_ambient
         }
     }
 }
+
+#[derive(Debug)]
+struct ReferenceSource {
+    values: BTreeMap<crate::kernel::BindingName, SurfaceTerm>,
+    queries: std::cell::Cell<usize>,
+}
+impl SubstitutionSourceMap for ReferenceSource {
+    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&SurfaceTerm> {
+        self.queries.set(self.queries.get() + 1);
+        self.values.get(name)
+    }
+}
+#[test]
+fn reference_substitution_selects_only_its_carrier_and_keeps_lexical_captures_free() {
+    use crate::kernel::BindingName;
+    let carrier = BindingName::reference_carrier("x");
+    let expression = SurfaceTerm::Lambda {
+        parameters: vec![("y".into(), ClickType::Integer)],
+        result: ClickType::Integer,
+        body: Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            carrier.clone(),
+        ))),
+    };
+    let mut baseline = None;
+    for size in [16, 64, 256, 1024] {
+        let mut source = ReferenceSource {
+            values: (0..size)
+                .map(|i| {
+                    (
+                        BindingName::reference_carrier(format!("unused_{i}")),
+                        SurfaceTerm::IntegerLiteral("0".into()),
+                    )
+                })
+                .collect(),
+            queries: Default::default(),
+        };
+        source
+            .values
+            .insert(carrier.clone(), SurfaceTerm::Binding("y".into()));
+        let ((actual, work), persistent_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                lowering::substitute_contract_expression(
+                    &expression,
+                    ContractSubstitutions::new(&source),
+                )
+                .unwrap()
+            })
+        });
+        assert_eq!(source.queries.get(), 1);
+        assert_eq!(
+            lowering::contract_expression_referenced_bindings(&actual),
+            BTreeSet::from([BindingName::from("y")])
+        );
+        assert!(work > 0 && persistent_work > 0);
+        let cost = (work, persistent_work);
+        assert_eq!(*baseline.get_or_insert(cost), cost);
+    }
+}

@@ -12704,7 +12704,7 @@ impl ResourceSpec {
                     {
                         if *state_source == ResourceStateSource::Entry
                             && let ProgramExpression::Variable(name) = argument
-                            && let Some(value) = name.named_in(entry_values)
+                            && let Some(value) = name.metadata_in(entry_values)
                         {
                             *argument = ProgramExpression::Value(value.clone());
                         }

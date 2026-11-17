@@ -2353,7 +2353,7 @@ fn describe_struct_place_range(
             .and_then(|offset| offset.as_const())
             && let Some(place) = describe_layout_place_range(
                 layout,
-                parameter.name(),
+                &parameter.binding_name().to_string(),
                 u64::from(offset) + start * width,
                 u64::from(offset) + end * width,
             )
@@ -2447,7 +2447,12 @@ fn struct_byte_bounds(
         })
     {
         let (start, end) = bounds(offset)?;
-        return Some((parameter.name().to_string(), layout.clone(), start, end));
+        return Some((
+            parameter.binding_name().to_string(),
+            layout.clone(),
+            start,
+            end,
+        ));
     }
     let (address, offset) = loaded_pointer_split(range.base())?;
     let layout =
@@ -6490,7 +6495,10 @@ fn describe_struct_field_load(
             .leaf_field_offsets()
             .filter(|(_, field_offset)| *field_offset == offset);
         if let (Some((field, _)), None) = (fields.next(), fields.next()) {
-            return Some(describe_field_place(parameter.name(), field));
+            return Some(describe_field_place(
+                &parameter.binding_name().to_string(),
+                field,
+            ));
         }
     }
     // A field of a struct reached through a pointer some load read:
