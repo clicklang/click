@@ -24,8 +24,8 @@
 //! the facts as a slice still gets one (`Deref`), materialized once per
 //! list version and counted as a copy (`count_flat_fact_copies`).
 
-use crate::kernel::proof::ProofFacts;
 use crate::kernel::proof::PropositionSource;
+use crate::kernel::proof::{ProofFacts, PureFactStore};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{Proposition, PureFactContext};
@@ -184,6 +184,8 @@ const SEQUENCE_ORIGIN: u64 = 1 << 62;
 
 #[derive(Clone)]
 pub(crate) struct PureFactList {
+    /// Shared store view: the legacy fields below stay empty in this mode.
+    shared: Option<PureFactStore>,
     facts: FactEntries,
     /// The sequence number the next appended fact takes.
     next: u64,
@@ -202,6 +204,7 @@ pub(crate) struct PureFactList {
 impl Default for PureFactList {
     fn default() -> Self {
         Self {
+            shared: None,
             facts: FactEntries::default(),
             next: SEQUENCE_ORIGIN,
             flat: Arc::default(),
@@ -254,9 +257,8 @@ impl std::ops::Deref for PureFactList {
     /// step that reads its whole list this way pays for every earlier fact.
     fn deref(&self) -> &Vec<Proposition> {
         self.flat.get_or_init(|| {
-            count_flat_fact_copies(self.facts.len());
-            self.facts
-                .values()
+            count_flat_fact_copies(self.len());
+            self.iter()
                 .map(|fact| crate::kernel::clone_proposition_iteratively(fact))
                 .collect()
         })
@@ -264,10 +266,7 @@ impl std::ops::Deref for PureFactList {
 }
 
 /// The facts of a list in order.
-pub(crate) type PureFactIter<'a> = std::iter::Map<
-    imbl::ordmap::Values<'a, u64, Arc<Proposition>, imbl::shared_ptr::DefaultSharedPtr>,
-    fn(&'a Arc<Proposition>) -> &'a Proposition,
->;
+pub(crate) type PureFactIter<'a> = Box<dyn Iterator<Item = &'a Proposition> + 'a>;
 
 impl<'a> IntoIterator for &'a PureFactList {
     type Item = &'a Proposition;
@@ -358,6 +357,7 @@ impl PureFactList {
 
     /// Puts `facts`, in order, before every fact of the list.
     fn prepend(&mut self, facts: Vec<Proposition>) {
+        self.materialize_shared();
         if facts.is_empty() {
             return;
         }
@@ -388,6 +388,9 @@ impl PureFactList {
     /// since, or every fact indexed afresh when it was not copied from any
     /// or a fact inside the copied prefix has since changed.
     pub(crate) fn proof_facts(&self) -> ProofFacts {
+        if let Some(shared) = &self.shared {
+            return ProofFacts::from_store(shared.clone());
+        }
         match &self.source {
             Some((source, through)) => self
                 .facts
@@ -401,35 +404,64 @@ impl PureFactList {
         }
     }
 
-    /// Retain the already checked context of this exact ordered fact list.
-    pub(crate) fn with_checked_context(facts: Vec<Proposition>, context: PureFactContext) -> Self {
-        let mut list = Self::from(facts);
-        list.built = BuiltContext::built(list.next, context);
-        list
+    /// Statement-local facts use one kernel store through certification and
+    /// successor publication. The optional context is the producer's lineage.
+    pub(crate) fn for_statement(
+        facts: Vec<Proposition>,
+        context: Option<PureFactContext>,
+        reservations: &PureFactStore,
+    ) -> Self {
+        let store = PureFactStore::from_statement_facts(&facts, context, Some(reservations));
+        Self::from_statement_store(store)
+    }
+
+    /// Only append-only statement-local stores enter this view. General proof
+    /// contexts still use the legacy order adapter until its migration.
+    fn from_statement_store(store: PureFactStore) -> Self {
+        Self {
+            shared: Some(store),
+            ..Self::default()
+        }
+    }
+
+    /// Editing order or withdrawing facts still uses the legacy
+    /// list until those consumers migrate. This boundary is explicit; ordinary
+    /// append-only statement paths never materialize the shared prefix.
+    fn materialize_shared(&mut self) {
+        if let Some(shared) = self.shared.take() {
+            let mut list = Self::from_source(&shared);
+            list.adopt_proof_facts(&ProofFacts::from_store(shared));
+            *self = list;
+        }
     }
 
     /// The context of every fact in the list, extending the built prefix by
     /// the facts appended since.
     pub(crate) fn context(&self) -> PureFactContext {
-        self.built.context_of(&self.facts, self.next)
+        self.shared.as_ref().map_or_else(
+            || self.built.context_of(&self.facts, self.next),
+            |shared| shared.assumptions().clone(),
+        )
     }
 
     pub(crate) fn len(&self) -> usize {
-        self.facts.len()
+        self.shared
+            .as_ref()
+            .map_or_else(|| self.facts.len(), |shared| shared.len())
     }
 
     /// The facts in order, read in place.
     pub(crate) fn iter(&self) -> PureFactIter<'_> {
-        self.facts
-            .values()
-            .map(Arc::as_ref as fn(&Arc<Proposition>) -> &Proposition)
+        match &self.shared {
+            Some(shared) => Box::new(shared.propositions()),
+            None => Box::new(self.facts.values().map(Arc::as_ref)),
+        }
     }
 
     /// The facts as an owned vector.
     pub(crate) fn to_vec(&self) -> Vec<Proposition> {
-        count_flat_fact_copies(self.facts.len());
-        self.facts
-            .values()
+        count_flat_fact_copies(self.len());
+        self.iter()
             .map(|fact| crate::kernel::clone_proposition_iteratively(fact))
             .collect()
     }
@@ -445,14 +477,20 @@ impl PureFactList {
 
     /// Whether `fact` is one of the facts.
     pub(crate) fn contains(&self, fact: &Proposition) -> bool {
-        self.exact_index().by_fact.contains_key(fact)
+        self.shared.as_ref().map_or_else(
+            || self.exact_index().by_fact.contains_key(fact),
+            |shared| shared.contains_top_level(fact),
+        )
     }
 
     /// Whether `required` is one of the facts or, through conjunctions, a
     /// conjunct of one: what `exactly_available_fact` finds in a slice of
     /// these facts, by one lookup.
     pub(crate) fn has_exact_conjunct(&self, required: &Proposition) -> bool {
-        self.exact_index().conjuncts.contains_key(required)
+        self.shared.as_ref().map_or_else(
+            || self.exact_index().conjuncts.contains_key(required),
+            |shared| shared.has_stated_conjunct(required),
+        )
     }
 
     /// Whether a fact of the list directly contradicts `fact`, as
@@ -464,7 +502,6 @@ impl PureFactList {
     /// that is itself neither a negation nor a conjunction; this looks each
     /// such `a` up among the listed facts' conjuncts.
     pub(crate) fn directly_conflicts_with(&self, fact: &Proposition) -> bool {
-        let index = self.exact_index();
         let mut conflict = false;
         conjunction_nodes(fact, &mut |leaf| {
             if conflict || matches!(leaf, Proposition::And(_, _)) {
@@ -482,8 +519,8 @@ impl PureFactList {
                 }
                 _ => None,
             };
-            conflict = index.conjuncts.contains_key(&negated)
-                || opposite.is_some_and(|opposite| index.conjuncts.contains_key(&opposite));
+            conflict = self.has_exact_conjunct(&negated)
+                || opposite.is_some_and(|opposite| self.has_exact_conjunct(&opposite));
         });
         conflict
     }
@@ -491,6 +528,9 @@ impl PureFactList {
     /// Builds the exact index now, so copies made from this list before
     /// they change share it instead of each building its own.
     pub(crate) fn prepare_indexes(&self) {
+        if self.shared.is_some() {
+            return;
+        }
         self.exact_index();
     }
 
@@ -506,6 +546,7 @@ impl PureFactList {
 
     /// The index a mutation updates, if built so far, unshared.
     fn begin_mutation(&mut self) -> Option<ExactFactIndex> {
+        self.materialize_shared();
         self.flat = Arc::new(OnceLock::new());
         let exact = std::mem::take(&mut self.exact);
         Arc::try_unwrap(exact)
@@ -526,6 +567,15 @@ impl PureFactList {
     }
 
     pub(crate) fn extend(&mut self, facts: impl IntoIterator<Item = Proposition>) {
+        if let Some(shared) = &mut self.shared {
+            // Store views publish availability once per proposition. Execution
+            // evidence retains its separate occurrence identities.
+            for fact in facts {
+                *shared = shared.with_kernel_checked_fact(fact);
+            }
+            self.flat = Arc::default();
+            return;
+        }
         let mut facts = facts.into_iter().peekable();
         if facts.peek().is_none() {
             return;
@@ -545,6 +595,7 @@ impl PureFactList {
     /// Keeps the facts `keep` accepts, in order. The built context survives
     /// only when every removed fact lies after its prefix.
     pub(crate) fn retain(&mut self, mut keep: impl FnMut(&Proposition) -> bool) {
+        self.materialize_shared();
         let removed = self
             .facts
             .iter()
@@ -647,6 +698,67 @@ mod tests {
             left: Box::new(MachineTerm::Variable(Variable(variable))),
             right: Box::new(MachineTerm::constant(0)),
         }
+    }
+
+    #[test]
+    fn shared_statement_facts_preserve_scope_order_and_context() {
+        let original = Proposition::ConditionIs(condition(400), true);
+        let left = Proposition::ConditionIs(condition(401), true);
+        let right = Proposition::ConditionIs(condition(402), true);
+        let pair = Proposition::And(Box::new(left.clone()), Box::new(right.clone()));
+        let root = ProofFacts::from_store(PureFactStore::from_statement_facts(
+            std::slice::from_ref(&original),
+            None,
+            None,
+        ));
+        let branch = root.with_kernel_checked_fact(pair.clone());
+        let view = PureFactList::from_statement_store(branch.store().clone());
+        assert!(
+            view.facts.is_empty(),
+            "a store view must not copy a Surface fact map"
+        );
+        assert!(view.exact.get().is_none());
+        assert!(view.proof_facts().shares_exact_index_with(&branch));
+        assert!(
+            view.context()
+                .shares_fact_storage_with(branch.assumptions())
+        );
+        assert!(view.contains(&pair));
+        assert!(!view.contains(&left));
+        assert!(view.has_exact_conjunct(&left));
+        assert!(view.has_exact_conjunct(&pair));
+        assert!(!PureFactList::from_proof_facts(&root).has_exact_conjunct(&left));
+        assert_eq!(
+            view.iter().cloned().collect::<Vec<_>>(),
+            vec![original.clone(), pair.clone()]
+        );
+        let published = root.with_statement_facts(vec![left.clone(), pair.clone()]);
+        assert_eq!(
+            published.propositions().cloned().collect::<Vec<_>>(),
+            vec![left, pair, original]
+        );
+    }
+
+    #[test]
+    fn statement_store_retains_producer_context_and_extends_without_surface_indexes() {
+        let original = Proposition::ConditionIs(condition(410), true);
+        let added = Proposition::ConditionIs(condition(411), true);
+        let context = PureFactContext::new().assume_proposition(original.clone());
+        let mut view = PureFactList::for_statement(
+            vec![original.clone()],
+            Some(context.clone()),
+            &PureFactStore::default(),
+        );
+        assert!(view.context().shares_fact_storage_with(&context));
+        view.push(added.clone());
+        assert!(view.facts.is_empty());
+        assert!(view.exact.get().is_none());
+        assert_eq!(
+            view.iter().cloned().collect::<Vec<_>>(),
+            vec![original, added.clone()]
+        );
+        assert!(view.context().contains_assumed_exact(&added));
+        assert!(!context.contains_assumed_exact(&added));
     }
 
     #[test]
@@ -758,4 +870,10 @@ mod tests {
         // The copy taken before the mutations keeps its facts and indexes.
         check(&copy, &shapes[..12]);
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    use super::*;
+    include!("../scaling_tests/surface/pure_fact_list/store_sharing_tests.rs");
 }

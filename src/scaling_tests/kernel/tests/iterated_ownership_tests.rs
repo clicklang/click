@@ -94,7 +94,7 @@ fn unfolding_the_declaring_resource_is_constant_in_the_range_size() {
                 &context,
                 &folded,
                 &definitions,
-                &memory,
+                &crate::kernel::ProgramPoint::of_memory(&memory),
                 &assumptions,
             )
         });

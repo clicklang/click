@@ -296,6 +296,11 @@ impl ProgramPoint {
         &self.memory
     }
 
+    /// Where on its path this point is.
+    pub(super) fn path_link(&self) -> &PathLink {
+        &self.path
+    }
+
     /// The interned memory state this point stands for, by value.
     pub(crate) fn into_shared_memory(self) -> SharedMemory {
         self.memory

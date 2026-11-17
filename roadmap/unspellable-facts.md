@@ -519,6 +519,85 @@ with current upstream integrated. Six exact regular resource/initializer fixture
 passed, including the unchanged wrong-type refusals, with zero fact-stability
 differences. Quality checks passed; nightly was not run.
 
+### 9z Boundary closure audit
+
+Package 9 consolidates the planned raising, lowering, certification and result
+handoffs. `SurfaceTerm` remains unevaluated source syntax; `KernelTerm` is the
+typed shared operand used by the migrated producers and readers. Raising uses
+one common dispatcher with family readers. Lowering returns the common root
+with facts and obligations kept in their original scope. Contract preparation,
+publication and certificate capture retain that root through their handoffs.
+This is boundary consolidation, not removal of every native term tree.
+
+The 9a inventory is reconciled below. The validation sections for 9b–9y record
+round-trip and refusal parity, fact-stability and deterministic scaling evidence;
+CI and the merge queue also check each delivered slice.
+
+| Remaining boundary / consumer | Reason and coverage |
+| --- | --- |
+| `surface_synthesis.rs`: float literals, complete pointer owners, exact argument/source names and `state_call_result` | A float literal export reads one leaf. Pointer and call-result naming still reads the selected native descriptor under the existing spelling policy. 9f–9i cover exact names, refusal, mixed calls and typed binder scopes. |
+| `annotations.rs`: `lower_integer_arithmetic_proposition`, `lower_contract_integer_to_spec`, `construct_integer_operation`, recorded-point/program bindings | Common operands convert at existing native proposition, deferred Integer-expression or embedded `SpecExpression::Value` storage. 9j–9k cover common comparison construction and separately scoped facts/debts; 9r covers lexical and recorded-state bindings. Changing those payload schemas belongs to package 10. |
+| `spec.rs` / `spec/result.rs`: Integer fold endpoints/results, algebraic match/field bindings, sequence/predicate/resource payloads, proposition outputs | Native result and domain schemas still require selected compatibility values. 9n, 9q and 9r retain supported argument/body roots before those outputs. Logical Boolean outputs remain distinct from raw C Boolean words; float classification and algebraic equality still produce native proposition descriptors. |
+| `SpecCallArgument::into_payload`, disabled-retention evaluation and unsupported/native scalar branches | Typed shared call assembly uses `into_typed_call_operand`; native call consumers and parity controls keep explicit payload conversion. Unsupported forms retain their established refusal, rather than gaining inferred types or new semantics. 9l–9q cover retained/native parity, conversion bounds, raw words and complete pointer casts. |
+| `retained_syntax.rs`: mixed algebraic Call/Read arguments | Selected imports preserve the existing common-root argument comparison, which differs from native syntax comparison. 9t explicitly tests that distinction and constant-work refusal of unsupported growing payloads. |
+| `retained_syntax/pointers.rs`: extent widths and opaque index leaves | Width certification preserves native-syntax admission; opaque leaves preserve the old exporter's reading. 9u tests complete metadata, captured memory, unsupported width/index refusal and shared-address DAG scaling. |
+| `contract_claims.rs`, `execution_value.rs`: memory/provenance equality, exceptional-signature checks, exact outcome refresh | These selected consumers retain their existing native equality/admission policies. Storage identity is not substituted for exact native syntax. 9v–9w cover native binding parity, exact refresh refusal, publication ownership and constant-work retained result handoffs. |
+| `FixedStateFrame`, fixed-state/resource lowering and native theorem bindings | Frames borrow the retained carrier; native allocation/resource/embedded-value consumers request a compatibility view. 9w–9x cover unchanged native outputs, guards, explicit expansion/replay and zero-export retained capture. |
+| `program_evaluate_speprogram_expression_at_state`, strict resource evaluation, resource-field storage | The public native API retains its signature. Strict resource evaluation keeps its distinct checked-load contract. 9y removes the superseded private capture entry point after the final resource-field caller uses the common path, preserving obligations and wrong-type refusal. |
+| Cached native values, native Eq/Ord/Hash and opaque leaves | The 8ad inventory still applies to exact raw C words, complete pointer-integer records, unknown untyped intrinsics and observation descriptors. Removing duplicate native storage and migrating its key consumers is package 10; it is not claimed complete here. |
+
+No references remain to the superseded private native capture entry point or
+its former fixed-state wrapper. No new syntax, proof rules, search indexes or
+budgets were introduced by this closure. Package 10 remains the final
+storage/compatibility cleanup; its exact slices need their own inventory and
+admission-preserving tests.
+
+Final integrated evidence: 3,188 selected API, proof, specification, execution
+and scaling checks passed after 9y and current upstream were combined. The six
+regular initializer/resource fixtures passed with zero fact-stability
+differences. The earlier slice records retain their distinct round-trip,
+conversion-domain, exact-state and explicit replay evidence. The closure document
+passed all 44 documentation checks. Nightly was not run.
+
+## Package 10: storage and compatibility cleanup
+
+Authorized initial sequence: 10a–10e, one PR per slice. Inventory baseline:
+`efa44df78`. The package-9 closure table remains the boundary inventory;
+this inventory assigns the storage behind those boundaries. Later slices are
+provisional until their consumers are inspected.
+
+### 10a Storage inventory and completion criteria
+
+| Storage / consumer | Current representation and dependency | Planned slice |
+| --- | --- | --- |
+| `execution_value.rs`: `ExecutionValue` | Native input or one shared root. Producer equality differs from storage equality; no parallel native field is owned by the shared variant. | Preserve throughout. |
+| `StoredExecutionValue::identity`, `StoredIdentity` | A lazy machine observation key already compares machine locals/outcomes without exporting. Boolean, float, algebraic and pointer keys still request a native descriptor. | 10b contracts; 10c machine key cleanup; 10d Boolean; 10e float; 10f–10g algebraic/pointer. |
+| `StoredMemoryValue` | Native structural Eq/Ord/Hash, including cross-type ordering and the exact native hash stream. Numeric cells remain native. This is a different contract from local machine observation identity. | 10i memory-key migration, after family keys. |
+| `SharedMachineIntegerTerm` (`primitives/integer.rs`) | Shared root plus lazy boxed and structural readings, or exact legacy payload. Observation IDs are already the lookup key; explicit native imports may seed the boxed cache. | 10c storage-key users; 10r cache/reverse-bridge removal after remaining readers migrate. |
+| `KernelTerm::TermData` | Shared node key, weak reverse Integer bridge, `MachineLeafCache` and lazy native argument descriptor. Produced calls may borrow their existing application descriptor. | 10r–10s; do not delete a cache before its reference-returning callers migrate. |
+| Boolean `boolean_argument_native` | Raw C variables retain their program type; logical roots use the existing Boolean identity leaf inside a native `BoolCast`. | 10d local/outcome keys; 10s compatibility cache. |
+| Float `float_native_value` | Exports a native float tree into `argument_leaf` for existing storage keys/APIs. Exact literal bits and carrier widths remain significant. | 10e local/outcome keys; 10s compatibility cache. |
+| Algebraic native value and complete pointer descriptors | Native key consumers and metadata/source readings remain. Exact producer payload is distinct from observation equality. | 10f–10h, then 10m. |
+| Integer results, deferred expressions, range endpoints | Native Integer trees remain in result/binding schemas and fold endpoints. | 10k–10l. |
+| Algebraic fields/matches, theorem/recorded bindings, resource fields | Native output schemas still request selected values. | 10m–10o. |
+| Sequence/resource descriptors and proposition outputs | Expression-bearing native fields remain alongside legitimate opaque state/type/function identities. | 10p–10q; subdivide by independent family. |
+
+10b records producer equality, local/outcome storage identity, memory structural
+identity, exact refresh comparison, certification syntax and mathematical
+observation separately. Eq, Ord and Hash must agree within each contract; no
+shared-root shortcut may broaden proof admission. 10c does not claim machine
+local keys are newly shared: it removes their remaining coupling to native-key
+selection. Memory structural keys remain assigned to 10i.
+
+Each family slice must retain existing equality classes, preserve deterministic
+ordering where consumers depend on it, avoid native materialization for supported
+shared key operations, and include mixed native/shared and growing-DAG checks.
+Native APIs, unsupported opaque forms and exact compatibility outputs remain
+explicit until their assigned consumers migrate. Completion of package 10 means
+every duplicate expression payload/cache and remaining native expression field
+has either been removed or accounted for with its live consumer and reason;
+it does not mean erasing memory, allocation, binder or type identities.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
