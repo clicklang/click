@@ -1705,7 +1705,7 @@ impl<'a> Proof<'a> {
         // cells the condition read.
         let c_branch_condition =
             program_branch_condition_at_frontier(&base_execution, context, condition)?;
-        let mut arms: [Option<(ProofFacts, ExecutionProofState, Vec<Proposition>)>; 2] =
+        let mut arms: [Option<(PureFactStore, ExecutionProofState, Vec<Proposition>)>; 2] =
             [None, None];
         let lowering_condition = self.substitute_fixed_state_locals_in_proposition(condition)?;
         for value in [true, false] {
@@ -1890,7 +1890,7 @@ impl<'a> Proof<'a> {
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
         let source_facts = self.facts().clone();
-        let mut facts = PureFactList::from_proof_facts(&source_facts);
+        let mut facts = PureFactList::from_store(&source_facts);
         let capture_this_tactic = begin_tactic_expansion_capture(
             expansion_capture.as_deref_mut(),
             source_index,

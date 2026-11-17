@@ -2618,20 +2618,14 @@ pub fn prove_program_function_satisfies_specification_from_symbolic_path(
         premises.push(premise.as_ref().clone());
         proved = body;
     }
-    let (state, proved_function, arguments, outcome, verifies) = match proved {
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        } => (state, function, arguments, outcome, false),
-        Proposition::ProgramFunctionVerifies {
-            state,
-            function,
-            arguments,
-            outcome,
-        } => (state, function, arguments, outcome, true),
-        _ => return None,
+    let Proposition::ProgramFunctionVerifies {
+        state,
+        function: proved_function,
+        arguments,
+        outcome,
+    } = proved
+    else {
+        return None;
     };
     if **state != *specification.state()
         || **proved_function != function
@@ -2642,16 +2636,9 @@ pub fn prove_program_function_satisfies_specification_from_symbolic_path(
     }
 
     let requires = specification.requires().to_vec();
-    let conclusion = if verifies {
-        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
-            function: Box::new(function),
-            specification: Box::new(specification),
-        }
-    } else {
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function: Box::new(function),
-            specification: Box::new(specification),
-        }
+    let conclusion = Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+        function: Box::new(function),
+        specification: Box::new(specification),
     };
     let proposition = requires
         .into_iter()
@@ -2683,13 +2670,7 @@ fn certified_function_path_parts<'a>(
         proposition = body;
     }
     let (state, proved_function, arguments, outcome) = match proposition {
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        }
-        | Proposition::ProgramFunctionVerifies {
+        Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
@@ -3857,7 +3838,7 @@ mod entry_authority_tests {
     use super::*;
     use crate::kernel::proof::{
         FunctionOutcomeObligation, OpenedContractEntry, OutcomeProofState, ProofBranch,
-        ProofBranchState, ProofFacts, ProofObject, ProofObligation,
+        ProofBranchState, ProofObject, ProofObligation, PureFactStore,
     };
 
     pub(super) fn checked_execution(
@@ -3971,7 +3952,7 @@ mod entry_authority_tests {
             ProofBranch::new(
                 ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
-                    facts: ProofFacts::default(),
+                    facts: PureFactStore::default(),
                     execution: None,
                 },
             ),

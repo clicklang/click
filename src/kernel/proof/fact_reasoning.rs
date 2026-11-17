@@ -133,7 +133,7 @@ pub(crate) fn normalizes_context_free_leaf(goal: &Proposition) -> bool {
 /// step, not something this enumeration discharges.
 pub(crate) fn enumerated_instance_is_discharged(
     instance: &Proposition,
-    facts: &super::ProofFacts,
+    facts: &super::PureFactStore,
 ) -> bool {
     if facts.contains(instance) {
         return true;
@@ -191,7 +191,7 @@ pub(crate) fn is_single_normalization_condition(proposition: &Proposition) -> bo
 pub(crate) fn normalize_using_conditions(
     goal: &Proposition,
     premises: &[Proposition],
-    facts: &super::ProofFacts,
+    facts: &super::PureFactStore,
 ) -> Result<(), ConditionalNormalizationError> {
     if let Proposition::ResourceSeparate { left, right } = goal
         && (matches!(left.as_ref(), Resource::Footprint(_))
@@ -254,7 +254,7 @@ pub(crate) fn normalize_using_conditions(
 fn normalize_condition_selection(
     goal: &Proposition,
     premises: &[Proposition],
-    facts: &super::ProofFacts,
+    facts: &super::PureFactStore,
 ) -> Result<(), ConditionalNormalizationError> {
     let mut conditions = std::collections::HashMap::new();
     // Keep graph admission in source order. Its bounded pointer fragment may
@@ -2124,7 +2124,7 @@ mod tests {
         }
     }
     use super::*;
-    use crate::kernel::proof::facts::ProofFacts;
+    use crate::kernel::proof::facts::PureFactStore;
     use crate::kernel::proof::quantified_equivalence_index_key;
     use crate::kernel::{
         Memory, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm, ProgramValue, Resource,
@@ -2181,7 +2181,7 @@ mod tests {
     fn footprint_normalization_uses_scoped_addresses_but_only_selected_separation() {
         let _session = crate::kernel::VerificationSession::enter();
         let (goal, separation, alias) = footprint_alias_fixture();
-        let parent = ProofFacts::from_ordered(std::slice::from_ref(&separation));
+        let parent = PureFactStore::from_ordered(std::slice::from_ref(&separation));
         let branch = parent.with_fact(alias);
         assert!(
             normalize_using_conditions(&goal, std::slice::from_ref(&separation), &branch).is_ok()
@@ -2403,7 +2403,7 @@ mod tests {
         let available = quantified(&memory, Variable(3_200_000));
         let requested = quantified(&memory, Variable(2_000_000));
         assert!(
-            ProofFacts::from_ordered(&[available])
+            PureFactStore::from_ordered(&[available])
                 .matching_quantified_fact(&requested)
                 .is_some()
         );
@@ -2670,7 +2670,7 @@ mod tests {
             "an unquantified implication keeps its exact lookup"
         );
 
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&fact));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&fact));
         assert!(facts.pure_known_available(&renamed));
         assert!(!facts.pure_known_available(&other_guard));
         assert!(!facts.pure_known_available(&other_body));
@@ -2809,7 +2809,7 @@ mod tests {
             "range-fold binders should be alpha-equivalent in quantified fact keys"
         );
 
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&left));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&left));
         assert_eq!(
             facts.matching_quantified_fact(&renamed),
             Some(left),
@@ -3458,7 +3458,7 @@ fn separations_equal_modulo_proven_states(
 #[cfg(test)]
 mod integer_reflexivity_tests {
     use super::*;
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     use crate::kernel::{
         IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm, Memory, Pointer,
         PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm,
@@ -3634,8 +3634,8 @@ mod integer_reflexivity_tests {
         .bounds();
         let domain = Proposition::And(Box::new(upper.clone()), Box::new(lower.clone()));
         let reversed = Proposition::And(Box::new(lower.clone()), Box::new(upper.clone()));
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&domain));
-        let incomplete = ProofFacts::from_ordered(std::slice::from_ref(&upper));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&domain));
+        let incomplete = PureFactStore::from_ordered(std::slice::from_ref(&upper));
         let exports = KernelTermExport::machine_export_count();
         for goal in [&upper, &lower] {
             assert!(
@@ -3670,7 +3670,7 @@ mod integer_reflexivity_tests {
         let bounds =
             crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(&goal);
         let domain = Proposition::And(Box::new(bounds[0].clone()), Box::new(bounds[1].clone()));
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&domain));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&domain));
         assert!(normalize_using_conditions(&goal, std::slice::from_ref(&domain), &facts).is_ok());
         assert!(normalize_using_conditions(&goal, &bounds[..1], &facts).is_err());
     }
@@ -3683,7 +3683,7 @@ mod integer_reflexivity_tests {
         let ab = normalization_pointer_equality(&a, &b);
         let bc = normalization_pointer_equality(&b, &c);
         let goal = normalization_pointer_equality(&a.offset_by_bytes(8), &c.offset_by_bytes(8));
-        let parent = ProofFacts::from_ordered(std::slice::from_ref(&ab));
+        let parent = PureFactStore::from_ordered(std::slice::from_ref(&ab));
         let branch = parent.with_fact(bc.clone());
         assert!(normalize_using_conditions(&goal, &[], &branch).is_ok());
         assert!(normalize_using_conditions(&goal, &[ab], &branch).is_ok());
@@ -3731,7 +3731,7 @@ mod integer_reflexivity_tests {
         let left = load(&before, &a);
         let right = load(&before, &b);
         let changed = load(&after, &b);
-        let facts = ProofFacts::from_ordered(&[normalization_pointer_equality(&a, &b)]);
+        let facts = PureFactStore::from_ordered(&[normalization_pointer_equality(&a, &b)]);
         assert!(
             normalize_using_conditions(&normalization_pointer_equality(&left, &right), &[], &facts)
                 .is_ok()
@@ -3787,7 +3787,8 @@ mod integer_reflexivity_tests {
             ConditionTerm::IntegerEqual(IntegerTerm::constant_i64(0).into(), renamed),
             true,
         );
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&premise));
+        let facts =
+            crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&premise));
         assert!(normalize_using_conditions(&goal, &[premise], &facts).is_ok());
     }
 
@@ -3832,14 +3833,15 @@ mod integer_reflexivity_tests {
             ),
             true,
         );
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&premise));
+        let facts =
+            crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&premise));
         assert!(matches!(
             normalize_using_conditions(&goal, std::slice::from_ref(&premise), &facts),
             Err(ConditionalNormalizationError::DoesNotNormalize)
         ));
 
         // A cited premise must be available: the list is the whole evidence.
-        let missing_facts = crate::kernel::proof::ProofFacts::from_ordered(&[]);
+        let missing_facts = crate::kernel::proof::PureFactStore::from_ordered(&[]);
         assert!(matches!(
             normalize_using_conditions(&premise, std::slice::from_ref(&premise), &missing_facts),
             Err(ConditionalNormalizationError::UnavailablePremise(0))
@@ -3880,7 +3882,7 @@ mod integer_reflexivity_tests {
             let premise = Proposition::ConditionIs(condition, true);
             let goal = Proposition::ConditionIs(reversed, true);
             let facts =
-                crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&premise));
+                crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&premise));
             assert!(normalize_using_conditions(&goal, &[premise], &facts).is_ok());
         }
     }
@@ -3909,7 +3911,7 @@ mod integer_reflexivity_tests {
                 value,
             );
             let facts =
-                crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&premise));
+                crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&premise));
             assert!(normalize_using_conditions(&goal, &[premise], &facts).is_ok());
         }
     }
@@ -3988,7 +3990,7 @@ mod uint64_loop_tests {
             Proposition::ConditionIs(ConditionTerm::uint64_less_equal(a.clone(), b.clone()), true);
         let not_lt = Proposition::ConditionIs(ConditionTerm::uint64_less_than(a, b), false);
         let premises = [le, not_lt];
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
         normalize_using_conditions(&goal, &premises, &facts).unwrap();
         for selection in [&premises[..1], &premises[1..], &premises[..0]] {
             assert!(normalize_using_conditions(&goal, selection, &facts).is_err());
@@ -4015,7 +4017,7 @@ mod uint64_loop_tests {
             ),
             Proposition::ConditionIs(ConditionTerm::uint64_less_equal(length, upper), true),
         ];
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
         normalize_using_conditions(&goal, &premises, &facts).unwrap();
         for selection in [&premises[..1], &premises[1..], &premises[..0]] {
             assert!(normalize_using_conditions(&goal, selection, &facts).is_err());
@@ -4066,7 +4068,7 @@ mod uint64_loop_tests {
             ),
             Proposition::ConditionIs(ConditionTerm::uint64_less_equal(whole, upper.clone()), true),
         ];
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
         for sum in [
             MachineTerm::uint64_add(difference.clone(), restored.clone()),
             MachineTerm::uint64_add(restored, difference),
@@ -4244,8 +4246,9 @@ mod annotated_address_condition_tests {
             for value in [false, true] {
                 let source = wrapped(annotated, value);
                 let target = wrapped(!annotated, value);
-                let facts =
-                    crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&source));
+                let facts = crate::kernel::proof::PureFactStore::from_ordered(
+                    std::slice::from_ref(&source),
+                );
                 assert_eq!(
                     super::super::fact_keys::memory_erased_proposition_key(&source),
                     super::super::fact_keys::memory_erased_proposition_key(&target),
@@ -4261,7 +4264,7 @@ mod annotated_address_condition_tests {
                     &ExecutionFacts::new()
                 ));
                 assert!(
-                    !crate::kernel::proof::ProofFacts::default()
+                    !crate::kernel::proof::PureFactStore::default()
                         .available_across_effects(&target, &ExecutionFacts::new(),)
                 );
             }
@@ -4327,7 +4330,7 @@ mod annotated_address_condition_tests {
             super::super::fact_keys::memory_erased_proposition_key(&source)
         );
         assert!(key.requires_checked_match());
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&[source]);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&[source]);
         assert!(!facts.available_across_effects(&target, &ExecutionFacts::new()));
     }
 
@@ -4338,14 +4341,14 @@ mod annotated_address_condition_tests {
             for value in [false, true] {
                 let source = Proposition::ConditionIs(comparison(annotated), value);
                 let cited = Proposition::ConditionIs(comparison(!annotated), value);
-                let facts = crate::kernel::proof::ProofFacts::from_ordered(&[source]);
+                let facts = crate::kernel::proof::PureFactStore::from_ordered(&[source]);
                 let goal = choice(comparison(annotated), value);
                 normalize_using_conditions(&goal, std::slice::from_ref(&cited), &facts).unwrap();
                 assert!(matches!(
                     normalize_using_conditions(
                         &goal,
                         &[cited],
-                        &crate::kernel::proof::ProofFacts::from_ordered(&[])
+                        &crate::kernel::proof::PureFactStore::from_ordered(&[])
                     ),
                     Err(ConditionalNormalizationError::UnavailablePremise(0))
                 ));
@@ -4370,7 +4373,7 @@ mod annotated_address_condition_tests {
 #[cfg(test)]
 mod index_sum_offset_tests {
     use super::*;
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
 
     pub(super) fn index(id: u64) -> MachineTerm {
         MachineTerm::Variable(Variable(id))
@@ -4419,7 +4422,7 @@ mod index_sum_offset_tests {
     #[test]
     fn an_exact_index_sum_equates_offsets_and_a_wrapping_one_does_not() {
         let cited = exact_sum();
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
         assert!(
             normalize_using_conditions(&address_goal(0, 4), std::slice::from_ref(&cited), &facts)
                 .is_ok()
@@ -4430,7 +4433,7 @@ mod index_sum_offset_tests {
             ConditionTerm::uint64_equal(index(3), MachineTerm::uint64_add(index(1), index(2))),
             true,
         );
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&native));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&native));
         assert!(
             normalize_using_conditions(&address_goal(0, 4), std::slice::from_ref(&native), &facts)
                 .is_err()
@@ -4450,7 +4453,7 @@ mod index_sum_offset_tests {
             true,
         );
         let cited = exact_sum();
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
         assert!(normalize_using_conditions(&mixed, std::slice::from_ref(&cited), &facts).is_err());
     }
 

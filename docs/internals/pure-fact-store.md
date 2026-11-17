@@ -1,8 +1,8 @@
 # Pure fact store design
 
 `PureFactStore` owns the pure facts available in one proof scope, their indexes,
-and their maintained reasoning state. `ProofFacts` pairs that store with
-proof-local evidence; `PureFactList` is an ordered view of it. This page records
+and their maintained reasoning state. Proof state uses that store directly;
+`PureFactList` is an ordered occurrence view of it. This page records
 the ownership boundary, the mapped statement transition, and the completed
 migration.
 
@@ -109,12 +109,15 @@ avoids enumerating the variables of an already-retained memory state again.
 `statement_local_reservations_share_ambient_memory` grows unrelated memory at
 sizes 32, 128, and 512 and bounds the newly collected variables.
 
-`ProofFacts` pairs a store with checked rewritten-load evidence, retaining that
-evidence across store successors. Read-only queries delegate to the store.
-Mutations construct store successors; `ProofFacts` has no second proposition
-collection or reasoning context.
+Proof state, checked transitions, resource operations, and ordinary queries all
+use `PureFactStore` directly. The former `ProofFacts` wrapper has been removed.
+Its additional rewritten-load witness sequence was write-only: no consumer read
+it, and retaining the witness objects had no lifetime side effects. The checked
+rewrite operation still captures and validates its local witnesses before
+publishing the established equalities. Execution certificates retain their own
+consumed evidence, transport records, and producer metadata.
 
-`PureFactList` now contains only a `ProofFacts` handle. It has no independent
+`PureFactList` now contains only a `PureFactStore` handle. It has no independent
 proposition map, syntax index, context cache, flattened slice cache, or retained
 source prefix. General proof/list adapters clone the persistent handle.
 `PropositionSource` forwards retained stores and reasoning views through references,
@@ -138,8 +141,7 @@ node once rather than copying every nested subtree as a map key.
 Retention is an explicit scope restriction: an unchanged selection retains its
 context; a changed selection constructs a new scope from the retained inputs
 and shares freshness reservations. It never withdraws facts from a retained
-parent or sibling context, and drops proof-local rewritten-load evidence that
-belonged to the old scope.
+parent or sibling context.
 
 `PureFactContext` is the store's retained reasoning component. Its standalone
 kernel APIs still construct explicitly supplied assumption scopes; they do not
@@ -161,6 +163,41 @@ premises, emitted deltas, printing/serialization, and search that requests an
 explicit snapshot. Resource lists, memory state, written proof syntax, origin
 alignment, and execution evidence remain outside pure-fact ownership.
 
+## Interface audit
+
+The follow-up audit removed `ProofFacts`, rather than preserving a wrapper for
+an unused witness sequence. No compatibility alias remains. Proof branches,
+checked proof transitions, loop exits, resource operations, normalization,
+quantified framing, termination, and search adapters now use `PureFactStore`.
+The removed witness sequence had only initialization, append, and copy sites;
+its objects had no drop hooks or ownership callbacks. Witness validation within
+`with_checked_rewritten_loads` and execution-certificate evidence are unchanged.
+
+| Interface | Meaning and retained boundary | Source |
+| --- | --- | --- |
+| `PureFactStore` | Available propositions, order indexes, freshness, maintained reasoning, and successors constructed by checked proof operations. Used directly by ordinary callers and proof state. | `kernel/proof/facts.rs`, `kernel/proof/branches.rs`, `kernel/proof/object.rs`, `kernel/proof/execution.rs` |
+| `PureFactList` | Raw occurrence order, duplicates, ordinal selection, order-sensitive equality, and explicit scope restriction. Declaration/origin alignment, fixed-state requirement selection, and statement-local ordered inputs require these semantics. | `surface/pure_fact_list.rs`, `surface/source_registry.rs`, `surface/proof/language_context.rs` |
+| `PureFactContext` | Maintained reasoning component, borrowed by equality/order, memory, and resource primitives. Standalone constructors create explicitly selected assumption scopes, such as implication guards and quantified premises; they are not a second cache for a retained store. | `kernel/assumptions.rs`, `kernel/proof/fact_reasoning.rs`, `kernel/quantified_frame.rs` |
+
+`PropositionSource::fact_store` is the ordinary storage projection. Retained
+sources, references, and `Arc` values return their persistent store without
+reindexing propositions or rebuilding its context; explicit input sequences
+construct a scope. `ordered_fact_store` distinguishes occurrence views: proof
+stores present each proposition once, while explicit sequences and lists retain
+repetitions. The old proof-wrapper conversion factories are removed.
+
+Checked loop exits and resource-state restoration use stores directly; loan
+evidence stays on each exit. The Surface index of explicitly retained `have`
+facts and the fixed-state lowering availability index also use stores, with
+justification retained by the corresponding proof operations. Read-only entry-resource evaluation and initial composite-fact recording also
+borrow the store directly, retaining raw occurrence iteration and strict written
+membership where those operations require them. The no-op
+`PureFactList::prepare_indexes` warm-up has been removed because admission
+already maintains all indexes.
+
+Existing diagnostic and predicate enumeration behavior is unchanged. This
+interface cleanup adds no reasoning, ambient traversal, or search permission.
+
 ## One statement transition
 
 The selected path is an ordinary `step()` through
@@ -171,7 +208,7 @@ ambient fact an explicit premise of the statement theorem.
 
 | Boundary | Operation and authority | Storage behavior |
 | --- | --- | --- |
-| Focused proof to checked driver | `check_statement_step_with_policy` borrows the ambient `ProofFacts` and its assumptions. | Retains the ambient store and checked context; no enumeration. |
+| Focused proof to checked driver | `check_statement_step_with_policy` borrows the ambient `PureFactStore` and its assumptions. | Retains the ambient store and checked context; no enumeration. |
 | Select statement-local inputs | The driver selects available case assumptions and observable resource facts, preserving their written order and the checked case context when present. | `PureFactList::for_statement` constructs one local store; the list retains its handle. These are explicitly selected inputs, not a copy of ambient facts. |
 | Advance the frontier | `execute_step_successor_from_frontier_position` clones the local view and calls `execute_step_from_frontier_position_selecting_path`. | Cloning shares persistent storage. Execution state and the caller's ambient reasoning context retain their existing roles. |
 | Certify an outcome | `certified_statement_transitions` executes under the selected context; `certified_transitions_from_execution` extends each local store with kernel-produced path facts and checks prerequisites under the existing policy. | Appending updates store indexes and reasoning state. Exact conflict/conjunct queries use the store; execution evidence remains on the certified transition. |

@@ -106,7 +106,7 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
 fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
     let work = [16usize, 64, 256].map(|size| {
         let (state, authority) = source_state();
-        let facts = ProofFacts::default();
+        let facts = PureFactStore::default();
         let (state, _) = state
             .checked_population_authority_exchange(&authority, true, facts.assumptions())
             .unwrap();

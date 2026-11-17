@@ -76,13 +76,13 @@ trait ResourcePureFacts {
 }
 
 struct ProofResourcePureFacts {
-    facts: ProofFacts,
+    facts: PureFactStore,
     added: Vec<Proposition>,
     published: Vec<Proposition>,
 }
 
 impl ProofResourcePureFacts {
-    fn new(facts: ProofFacts) -> Self {
+    fn new(facts: PureFactStore) -> Self {
         Self {
             facts,
             added: Vec::new(),
@@ -570,7 +570,6 @@ fn dynamic_body_fact_dependency(
             Proposition::MemoryCanStore { .. }
             | Proposition::MemoryMutatesOnly { .. }
             | Proposition::MemoryEffectSummary { .. }
-            | Proposition::ProgramFunctionSatisfiesSpecification { .. }
             | Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. } => Ok(()),
             _ => Err("unsupported opaque proposition in current-load dependency".into()),
         }
@@ -1440,7 +1439,7 @@ pub(super) fn project_initial_resource_facts(
     claim_label: &str,
 ) -> Result<PureFactList, ClickError> {
     let result = ProgramValue::Int32(MachineTerm::constant(0));
-    let mut facts = ProofResourcePureFacts::new(available_pure_facts.indexed_proof_facts());
+    let mut facts = ProofResourcePureFacts::new(available_pure_facts.fact_store());
     append_state_resource_context_observable_facts_with_store(
         parameter_binding,
         state,
@@ -1457,7 +1456,7 @@ pub(super) fn project_initial_resource_facts(
         spec_definitions,
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
-    Ok(PureFactList::from_proof_facts(&facts.facts))
+    Ok(PureFactList::from_store(&facts.facts))
 }
 
 pub(super) fn project_outcome_resource_facts(
@@ -1465,11 +1464,11 @@ pub(super) fn project_outcome_resource_facts(
     parameter_binding: ParameterBinding<'_>,
     pre_state: &ExecutionState,
     outcome: &FunctionOutcome,
-    available_pure_facts: ProofFacts,
+    available_pure_facts: PureFactStore,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
     path_index: usize,
-) -> Result<ProofFacts, ClickError> {
+) -> Result<PureFactStore, ClickError> {
     let FunctionOutcome::Return { value, state } = outcome else {
         return Ok(available_pure_facts);
     };
@@ -1544,7 +1543,7 @@ fn project_folded_resource_observable_facts_with_store(
 
 pub(super) struct CheckedResourceObservation {
     pub(super) state: ExecutionState,
-    pub(super) facts: ProofFacts,
+    pub(super) facts: PureFactStore,
     pub(super) added_facts: Vec<Proposition>,
     pub(super) observed_resource: ResourceFact,
 }
@@ -1556,7 +1555,7 @@ pub(super) fn observe_composite_resource_for_proof(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
     state: ExecutionState,
-    facts: ProofFacts,
+    facts: PureFactStore,
     surface_propositions: &mut SurfacePropositionMap,
     count_derivations: &mut PersistentOrderedSet<Theorem>,
     spec_definitions: SpecDefinitions<'_>,
@@ -2245,12 +2244,12 @@ pub(super) fn record_initial_composite_surface_facts(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    available_pure_facts: &PureFactList,
+    available_pure_facts: &PureFactStore,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
     active_resources: &mut BTreeSet<String>,
 ) -> Result<(), String> {
-    let assumptions = available_pure_facts.context();
+    let assumptions = available_pure_facts.assumptions().clone();
     let ResourceClause::Declared { name, .. } = resource else {
         return Ok(());
     };
@@ -2307,7 +2306,7 @@ pub(super) fn record_initial_composite_surface_facts(
                 &surface,
                 spec_definitions,
             )?;
-            if available_pure_facts.contains(&kernel) {
+            if available_pure_facts.contains_presented(&kernel) {
                 surface_propositions
                     .record_lowering(&surface, &kernel)
                     .map_err(|error| error.raw_summary().to_string())?;
@@ -2849,8 +2848,8 @@ fn append_resource_context_observable_facts_with_store<F: ResourcePureFacts>(
 
 pub(super) fn resource_context_observable_facts_for_proof(
     resources: &ResourceContext,
-    facts: ProofFacts,
-) -> ProofFacts {
+    facts: PureFactStore,
+) -> PureFactStore {
     let mut facts = ProofResourcePureFacts::new(facts);
     append_resource_context_observable_facts_with_store(resources, &mut facts);
     facts.facts
@@ -3072,7 +3071,7 @@ pub(super) struct CheckedResourceUnfold {
     /// Facts this unfold publishes, including facts already known locally.
     pub(super) published_facts: Vec<Proposition>,
     pub(super) state: ExecutionState,
-    pub(super) facts: ProofFacts,
+    pub(super) facts: PureFactStore,
     pub(super) added_facts: Vec<Proposition>,
     pub(super) selected: ResourceFact,
     pub(super) body_was_already_exposed: bool,
@@ -3085,7 +3084,7 @@ pub(super) fn unfold_composite_resource_for_proof(
     source_resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
     state: ExecutionState,
-    facts: ProofFacts,
+    facts: PureFactStore,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
@@ -3114,7 +3113,7 @@ pub(super) fn open_composite_resource_for_proof(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
     state: ExecutionState,
-    facts: ProofFacts,
+    facts: PureFactStore,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
@@ -3143,7 +3142,7 @@ fn unfold_composite_resource_for_proof_with_access(
     source_resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
     state: ExecutionState,
-    facts: ProofFacts,
+    facts: PureFactStore,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
@@ -5026,7 +5025,7 @@ fn fold_composite_resources_on_outcome_with_facts(
 pub(super) struct CheckedResourceFold {
     pub(super) selected: ResourceFact,
     pub(super) state: ExecutionState,
-    pub(super) facts: ProofFacts,
+    pub(super) facts: PureFactStore,
     /// The hold a borrowing fold placed on the loan behind its viewed body,
     /// which the kernel checks as the fold's only ledger change.
     pub(super) loan_holds: Vec<crate::kernel::CheckedLoanTransition>,
@@ -5043,7 +5042,7 @@ type FoldedOutcome = (
 pub(super) struct CheckedOutcomeResourceFold {
     pub(super) selected: ResourceFact,
     pub(super) outcome: FunctionOutcome,
-    pub(super) facts: ProofFacts,
+    pub(super) facts: PureFactStore,
 }
 
 /// Checks one ordinary pre-execution `fold` against a persistent Proof
@@ -5056,7 +5055,7 @@ pub(super) fn fold_composite_resource_for_proof(
     source_resource: &ResourceClause,
     claim_label: &str,
     tactic_index: usize,
-    facts: ProofFacts,
+    facts: PureFactStore,
     parameter_binding: ParameterBinding<'_>,
     pre_state: &ExecutionState,
     state: ExecutionState,
@@ -5090,7 +5089,7 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     claim_label: &str,
     path_index: usize,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
-    facts: ProofFacts,
+    facts: PureFactStore,
     parameter_binding: ParameterBinding<'_>,
     pre_state: &ExecutionState,
     outcome: FunctionOutcome,
@@ -5167,7 +5166,7 @@ pub(super) fn close_open_resource_for_proof(
     resource: &ResourceClause,
     claim_label: &str,
     tactic_index: usize,
-    facts: ProofFacts,
+    facts: PureFactStore,
     parameter_binding: ParameterBinding<'_>,
     pre_state: &ExecutionState,
     state: ExecutionState,
@@ -5199,7 +5198,7 @@ fn fold_composite_resource_for_proof_with_closure(
     source_resource: &ResourceClause,
     claim_label: &str,
     tactic_index: usize,
-    facts: ProofFacts,
+    facts: PureFactStore,
     parameter_binding: ParameterBinding<'_>,
     pre_state: &ExecutionState,
     state: ExecutionState,

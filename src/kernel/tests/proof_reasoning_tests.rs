@@ -232,7 +232,7 @@ fn algebraic_equality_lookup_for_constructor_disequality_is_goal_local() {
             .expect("a known constructor proves disequality from every other constructor");
     assert!(derivation.has_typed_atomic_evidence());
     assert!(derivation.check(&assumptions));
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&[source.clone(), unrelated]);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&[source.clone(), unrelated]);
     assert_eq!(facts.algebraic_equalities_mentioning(&goal), vec![source]);
     let unmatched = Proposition::Not(Box::new(Proposition::Equal(
         Term::Algebraic(AlgebraicTerm {
@@ -313,7 +313,7 @@ fn algebraic_equality_lookup_descends_constructor_fields() {
             node: AlgebraicTermNode::Variable(Variable(89_033)),
         }),
     );
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&[source.clone(), unrelated]);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&[source.clone(), unrelated]);
     assert_eq!(facts.algebraic_equalities_mentioning(&goal), vec![source]);
 }
 
@@ -825,13 +825,15 @@ fn contradicts_recognizes_a_comparison_and_its_arithmetic_negation() {
         true,
     );
 
-    let opposite = crate::kernel::proof::ProofFacts::from_ordered(&[negative.clone(), nonnegative]);
+    let opposite =
+        crate::kernel::proof::PureFactStore::from_ordered(&[negative.clone(), nonnegative]);
     assert!(
         opposite.contradicts(&negative),
         "`x < 0` held beside `x >= 0` contradicts"
     );
 
-    let tighter = crate::kernel::proof::ProofFacts::from_ordered(&[negative.clone(), at_least_one]);
+    let tighter =
+        crate::kernel::proof::PureFactStore::from_ordered(&[negative.clone(), at_least_one]);
     assert!(
         !tighter.contradicts(&negative),
         "`x >= 1` is not the arithmetic negation of `x < 0`"
@@ -972,14 +974,14 @@ fn checked_pure_completion(
     conclusion: &Proposition,
 ) -> crate::kernel::proof::CheckedProposition {
     use crate::kernel::proof::{
-        OutcomeProofState, ProofBranch, ProofBranchState, ProofFacts, ProofObject, ProofObligation,
-        PropositionKnownContext, PropositionObligation,
+        OutcomeProofState, ProofBranch, ProofBranchState, ProofObject, ProofObligation,
+        PropositionKnownContext, PropositionObligation, PureFactStore,
     };
 
     let branch = ProofBranch::new(
         ProofObligation::Proposition(PropositionObligation::new(conclusion.clone(), ())),
         ProofBranchState {
-            facts: ProofFacts::from_ordered(requirements),
+            facts: PureFactStore::from_ordered(requirements),
             execution: None,
         },
     );
@@ -4118,7 +4120,7 @@ fn a_binder_name_never_distinguishes_two_universals() {
     assert_eq!(written.cmp(&other), std::cmp::Ordering::Equal);
     assert_eq!(hash(&written), hash(&other));
     assert_eq!(hash(&written), hash(&unnamed));
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&[written]);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&[written]);
     assert!(facts.contains(&other));
 }
 
@@ -5358,7 +5360,7 @@ fn builtin_obligation_solver_discharges_concrete_invariant() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Normal(Box::new(state)),
@@ -5413,7 +5415,7 @@ fn symbolic_max_lt_branch_is_native_theorem() {
                 b,
                 Proposition::Implies(
                     Box::new(Proposition::ConditionIs(condition, true)),
-                    Box::new(Proposition::ProgramStatementExecutes {
+                    Box::new(Proposition::ProgramStatementVerifies {
                         state: Box::new(state.clone()),
                         statement: Box::new(program_max_body()),
                         outcome: StatementOutcome::Return {
@@ -5451,7 +5453,7 @@ fn symbolic_max_not_lt_branch_is_native_theorem() {
                 b,
                 Proposition::Implies(
                     Box::new(Proposition::ConditionIs(condition, false)),
-                    Box::new(Proposition::ProgramStatementExecutes {
+                    Box::new(Proposition::ProgramStatementVerifies {
                         state: Box::new(state.clone()),
                         statement: Box::new(program_max_body()),
                         outcome: StatementOutcome::Return {
@@ -7230,7 +7232,7 @@ fn bounded_byte_pointer_association_uses_checked_signed_addition() {
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
             &goal,
             std::slice::from_ref(&defined),
-            &crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&defined)),
+            &crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&defined)),
         )
         .is_ok()
     );

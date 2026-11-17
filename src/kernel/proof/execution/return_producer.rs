@@ -67,7 +67,7 @@ pub(super) struct ReturnRewriteProducer {
     completion: StatementOutcome,
     visible: FunctionOutcome,
     context: PureFactContext,
-    base: ProofFacts,
+    base: PureFactStore,
     added: ExecutionFacts,
     publication: Arc<crate::kernel::PublishedFunctionOutcome>,
     outcome: super::super::OutcomeIdentity,
@@ -80,7 +80,7 @@ impl ReturnRewriteProducer {
     /// Retain the current ordinary goal's checked fact delta. Its proof
     /// operation owns these facts; re-proving them at the C return would lose
     /// post-return observations and contract-refinement case assumptions.
-    fn accept_facts(&mut self, facts: &ProofFacts) -> Result<(), String> {
+    fn accept_facts(&mut self, facts: &PureFactStore) -> Result<(), String> {
         let delta = facts
             .introduced_since(&self.base)
             .ok_or("return operation has a different fact lineage")?;
@@ -100,7 +100,7 @@ impl ReturnRewriteProducer {
     pub(super) fn accept_proposition(
         &mut self,
         proof: &super::super::CheckedProposition,
-        base: &ProofFacts,
+        base: &PureFactStore,
     ) -> Result<(), String> {
         if !proof
             .outcome()
@@ -243,7 +243,7 @@ impl ExecutionProofCore {
         &mut self,
         index: usize,
         outcome: &super::super::OutcomeProofCore,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
     ) {
         if outcome.is_exceptional {
             return;
@@ -270,7 +270,7 @@ impl ExecutionProofCore {
     pub(super) fn retain_return_facts(
         &mut self,
         index: usize,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
     ) -> Result<(), String> {
         if let Some(producer) = self.return_producers.get(&index) {
             let mut next = producer.clone();

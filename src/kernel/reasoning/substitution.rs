@@ -450,9 +450,6 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
         .iter()
         .map(|resource| walk_resource_spec(resource, s))
         .collect();
-    interface.resource_transfer_rule = std::sync::Arc::new(
-        crate::kernel::functions::SummaryResourceTransferRule::compile(&interface),
-    );
     interface.resource_constructors = function
         .resource_constructors()
         .iter()
@@ -587,6 +584,9 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
             body: s.spec_proposition(&unfolding.body),
         })
         .collect();
+    interface.resource_transfer_rule = std::sync::Arc::new(
+        crate::kernel::functions::SummaryResourceTransferRule::compile(&interface),
+    );
     ProgramFunction {
         program_entry: function.program_entry,
         name: function.name.clone(),
@@ -1319,44 +1319,16 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             condition: s.program_expression(condition),
             outcome: outcome.clone(),
         },
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
-        }
-        | Proposition::ProgramStatementVerifies {
-            state,
-            statement,
-            outcome,
-        } => {
-            let state = walk_execution_state(state, s);
-            let statement = walk_execution_statement(statement, s);
-            let outcome = walk_execution_statement_outcome(outcome, s);
-            match proposition {
-                Proposition::ProgramStatementExecutes { .. } => {
-                    Proposition::ProgramStatementExecutes {
-                        state: Box::new(state),
-                        statement: Box::new(statement),
-                        outcome,
-                    }
-                }
-                Proposition::ProgramStatementVerifies { .. } => {
-                    Proposition::ProgramStatementVerifies {
-                        state: Box::new(state),
-                        statement: Box::new(statement),
-                        outcome,
-                    }
-                }
-                _ => unreachable!("the combined statement proposition arm is exhaustive"),
-            }
-        }
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        }
-        | Proposition::ProgramFunctionVerifies {
+        } => Proposition::ProgramStatementVerifies {
+            state: Box::new(walk_execution_state(state, s)),
+            statement: Box::new(walk_execution_statement(statement, s)),
+            outcome: walk_execution_statement_outcome(outcome, s),
+        },
+        Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
@@ -1368,34 +1340,13 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
                 .iter()
                 .map(|argument| s.program_expression(argument))
                 .collect();
-            let outcome = walk_program_function_outcome(outcome, s);
-            match proposition {
-                Proposition::ProgramFunctionExecutes { .. } => {
-                    Proposition::ProgramFunctionExecutes {
-                        state: Box::new(state),
-                        function: Box::new(function),
-                        arguments,
-                        outcome,
-                    }
-                }
-                Proposition::ProgramFunctionVerifies { .. } => {
-                    Proposition::ProgramFunctionVerifies {
-                        state: Box::new(state),
-                        function: Box::new(function),
-                        arguments,
-                        outcome,
-                    }
-                }
-                _ => unreachable!("the combined function proposition arm is exhaustive"),
+            Proposition::ProgramFunctionVerifies {
+                state: Box::new(state),
+                function: Box::new(function),
+                arguments,
+                outcome: walk_program_function_outcome(outcome, s),
             }
         }
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function,
-            specification,
-        } => Proposition::ProgramFunctionSatisfiesSpecification {
-            function: Box::new(walk_program_function(function, s)),
-            specification: Box::new(walk_program_function_specification(specification, s)),
-        },
         Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
@@ -2458,12 +2409,7 @@ fn collect_proposition_bound_variables_one(
             collect_execution_state_bound_variables(state, variables);
             collect_program_expression_bound_variables(condition, variables);
         }
-        Proposition::ProgramStatementExecutes {
-            state,
-            statement,
-            outcome,
-        }
-        | Proposition::ProgramStatementVerifies {
+        Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
@@ -2472,13 +2418,7 @@ fn collect_proposition_bound_variables_one(
             collect_execution_statement_bound_variables(statement, variables);
             collect_statement_outcome_bound_variables(outcome, variables);
         }
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        }
-        | Proposition::ProgramFunctionVerifies {
+        Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
@@ -2491,11 +2431,7 @@ fn collect_proposition_bound_variables_one(
             }
             collect_function_outcome_bound_variables(outcome, variables);
         }
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function,
-            specification,
-        }
-        | Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
         } => {

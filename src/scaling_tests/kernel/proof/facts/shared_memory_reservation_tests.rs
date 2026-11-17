@@ -32,7 +32,7 @@ fn facts_over_one_memory_reserve_its_variables_once() {
             })
             .collect::<Vec<_>>();
         let (built, work) =
-            crate::persistent::measure_persistent_work(|| ProofFacts::from_ordered(&facts));
+            crate::persistent::measure_persistent_work(|| PureFactStore::from_ordered(&facts));
         assert!((0..size).all(|index| {
             built.reserves_variable(Variable(7_100_000 + index))
                 && built.reserves_variable(Variable(7_200_000 + index))
@@ -70,7 +70,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
             })
             .collect::<Vec<_>>();
         let before = crate::kernel::reasoning::memory_bound_cell_visits();
-        let built = ProofFacts::from_ordered(&facts);
+        let built = PureFactStore::from_ordered(&facts);
         let visits = crate::kernel::reasoning::memory_bound_cell_visits() - before;
         assert!((0..size).all(|index| {
             built.reserves_variable(Variable(7_300_000 + index))

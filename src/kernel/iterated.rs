@@ -403,16 +403,12 @@ pub(crate) fn apply_iterated_step(
             }
             let next = iterated.with_hole(index.clone());
             let resources = replace_iterated(state.resources().clone(), current, next)?;
-            // The context was valid and the iterated fact only gained a hole,
-            // so only pairs with the element need checking, and only its
-            // block needs normalizing: unrelated holdings cost nothing.
-            let taken = ResourceFact::own_memory(element.clone());
-            let resources = resources
-                .try_compose_into_valid_context_delaying_normalization([taken.clone()], assumptions)
-                .map_err(|error| {
-                    format!("the element overlaps memory this context already owns: {error}")
-                })?
-                .normalized_around_facts(&[taken], assumptions);
+            // The checked owner lost exactly this element to its new hole.
+            // Guard stores preserve that partition; exposing the element is
+            // construction in this same frame, not new ownership admission.
+            // Keep unrelated occurrences and support metadata untouched.
+            let resources =
+                resources.unchecked_with_fact(ResourceFact::own_memory(element.clone()));
             Ok(state.clone().with_resource_context(resources))
         }
         IteratedStep::Give { element } => {
@@ -501,45 +497,56 @@ pub(crate) fn apply_iterated_step(
                 ),
             }
         }
-        IteratedStep::Scatter { template } => {
-            let required = ResourceFact::own(Resource::iterated(template.clone()));
-            let resources = state
-                .resources()
-                .clone()
-                .without_fact_incrementally(&required, assumptions)
-                .ok_or_else(|| {
-                    "scattering needs the iterated ownership fact with no element taken out"
-                        .to_string()
-                })?;
-            match every_guard(state, template, assumptions)? {
-                Some(true) => {
-                    let covering = template.covering_range().ok_or_else(|| {
-                        "the elements do not tile one range, so they cannot be scattered into one"
-                            .to_string()
-                    })?;
-                    // As for `Take`: the fact consumed above overlapped
-                    // nothing, so only pairs with the covering range and its
-                    // block's normalization remain.
-                    let covering = ResourceFact::own_memory(covering);
-                    let resources = resources
-                        .try_compose_into_valid_context_delaying_normalization(
-                            [covering.clone()],
-                            assumptions,
-                        )
-                        .map_err(|error| {
-                            format!("the elements overlap memory this context already owns: {error}")
-                        })?
-                        .normalized_around_facts(&[covering], assumptions);
-                    Ok(state.clone().with_resource_context(resources))
-                }
-                Some(false) => Ok(state.clone().with_resource_context(resources)),
-                None => Err(
-                    "scattering needs every guard known: a fact `forall (k: int32) { lo <= k and k < hi implies guard }` or its negation"
-                        .to_string(),
-                ),
-            }
+        IteratedStep::Scatter { template } => Ok(state.clone().with_resource_context(
+            prepare_iterated_scatter(state, template, assumptions)?.install(),
+        )),
+    }
+}
+
+/// The checked scatter producer retains the exact residual frame. Installation
+/// consumes that construction; it neither repeats guard reasoning nor admits a
+/// newly described range beside an independently supplied frame.
+struct ConstructedIteratedExposure {
+    frame: ResourceContext,
+    range: Option<MemoryRange>,
+}
+
+impl ConstructedIteratedExposure {
+    fn install(self) -> ResourceContext {
+        match self.range {
+            Some(range) => self
+                .frame
+                .unchecked_with_fact(ResourceFact::own_memory(range)),
+            None => self.frame,
         }
     }
+}
+
+fn prepare_iterated_scatter(
+    state: &ExecutionState,
+    template: &IteratedMemory,
+    assumptions: &PureFactContext,
+) -> Result<ConstructedIteratedExposure, String> {
+    let required = ResourceFact::own(Resource::iterated(template.clone()));
+    let frame = state
+        .resources()
+        .clone()
+        .without_fact_incrementally(&required, assumptions)
+        .ok_or_else(|| {
+            "scattering needs the iterated ownership fact with no element taken out".to_string()
+        })?;
+    let range = match every_guard(state, template, assumptions)? {
+        Some(true) => Some(template.covering_range().ok_or_else(||
+            "the elements do not tile one range, so they cannot be scattered into one".to_string())?),
+        Some(false) => None,
+        None => return Err("scattering needs every guard known: a fact `forall (k: int32) { lo <= k and k < hi implies guard }` or its negation".to_string()),
+    };
+    Ok(ConstructedIteratedExposure { frame, range })
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../scaling_tests/kernel/iterated.rs");
 }
 
 /// The reserved identity of the arbitrary index `gather` and `scatter`

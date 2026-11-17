@@ -291,3 +291,24 @@ merged master `857116880`.
 The C, original contracts and theorem, both callbacks, existing tree resources,
 and verifier are unchanged by this repair. Other sidecars and the full-directory
 audit still leave this report open.
+
+## Mirrored context double rotation with an arbitrary far subtree
+
+All four selected proofs in
+`rbtree_size_insert_mirrored_context_double_far_rotation.click` now verify at
+default limits on master `ce6511723` plus the proof repair, including the
+inorder-preservation theorem and both insertion wrappers. The right-left case
+retains complete node observations across initialization and reads, executes
+the missing local declaration and pivot load, and retains parent tags and
+child links through both rotations and callbacks. Empty children are refolded
+at null, and the first callback child's identity is exposed before retaining
+its link through the outer parent update. The far subtree and its valid cached
+count remain arbitrary; the original mirrored count arguments are retained.
+
+Expansion, retained and cold verification, and fixed-point checks pass all 30
+audit sites on merged master `ce6511723` plus this proof repair, at default
+limits.
+
+The C, three original function contracts, inorder theorem, both callbacks,
+existing tree resources, and verifier are unchanged. Other sidecars and the
+full-directory audit still leave this report open.

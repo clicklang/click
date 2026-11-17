@@ -613,7 +613,7 @@ mod mixed_observation_tests {
                 .iter()
                 .map(|b| b.stating_facts()[0].clone())
                 .collect();
-            let missing = crate::kernel::proof::ProofFacts::default();
+            let missing = crate::kernel::proof::PureFactStore::default();
             let lower = missing.clone().with_fact(premises[0].clone());
             let upper = missing.clone().with_fact(premises[1].clone());
             let full = lower.clone().with_fact(premises[1].clone());

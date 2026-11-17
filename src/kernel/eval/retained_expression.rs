@@ -1585,7 +1585,7 @@ mod tests {
             )],
             body,
         );
-        let environment = ExecutionEnvironment::new().with_function(helper);
+        let environment = ExecutionEnvironment::new().with_function(helper.with_inline_body());
         let (mut call, result) = program_call_value(
             0,
             "machine_handoff",
@@ -1618,7 +1618,7 @@ mod tests {
                     &machine_handoff_caller(rust),
                     &statement,
                     &PureFactContext::new(),
-                    ExecutionContext::execute_bodies(&environment),
+                    ExecutionContext::verify_loops(&environment),
                     &mut ExecutionBudget::new(),
                 )
                 .unwrap();
@@ -1675,7 +1675,7 @@ mod tests {
             &function,
             &[],
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&environment),
+            ExecutionContext::verify_loops(&environment),
             &mut ExecutionBudget::new(),
         )
         .unwrap();

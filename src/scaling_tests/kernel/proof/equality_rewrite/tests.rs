@@ -23,7 +23,7 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
             let cited =
                 Proposition::ConditionIs(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
             let mut memory = Memory::new();
-            let mut facts = ProofFacts::default().with_fact(cited.clone());
+            let mut facts = PureFactStore::default().with_fact(cited.clone());
             for index in 0..size {
                 memory = memory.store(
                     Pointer::symbolic(Variable(242_000 + index)),
@@ -88,7 +88,7 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
                     )
                 );
                 assert!(
-                    ProofFacts::default()
+                    PureFactStore::default()
                         .check_equality_rewrite(&goal, &cited)
                         .is_err()
                 );
@@ -123,7 +123,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
             ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
             true,
         );
-        let mut facts = ProofFacts::default().with_fact(cited.clone());
+        let mut facts = PureFactStore::default().with_fact(cited.clone());
         let mut memory = Memory::new();
         for i in 0..size {
             memory = memory.store(
@@ -163,7 +163,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
             true,
         );
         assert!(
-            ProofFacts::default()
+            PureFactStore::default()
                 .check_equality_rewrite(&goal, &cited)
                 .is_err()
         );
@@ -247,7 +247,7 @@ fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
     let fact_sets: Vec<_> = [0, 16, 64, 256, 1024]
         .into_iter()
         .map(|ambient| {
-            let mut facts = ProofFacts::default().with_fact(cited.clone());
+            let mut facts = PureFactStore::default().with_fact(cited.clone());
             for i in 0..ambient {
                 facts = facts.with_fact(equality(
                     MachineTerm::Variable(Variable(194_000 + i)),
@@ -290,7 +290,7 @@ fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
                     truth,
                 );
                 assert!(
-                    ProofFacts::default()
+                    PureFactStore::default()
                         .check_equality_rewrite(&goal, &cited)
                         .is_err()
                 );
@@ -346,7 +346,7 @@ fn native_integer_bound_rewrite_is_dag_linear_and_budget_checked() {
         let expected = condition(make_term(y.clone(), depth));
         let mut ambient_costs = Vec::new();
         for ambient in [0, 16, 64, 256, 1024] {
-            let mut facts = ProofFacts::default().with_fact(cited.clone());
+            let mut facts = PureFactStore::default().with_fact(cited.clone());
             for i in 0..ambient {
                 facts = facts.with_fact(equality(
                     MachineTerm::Variable(Variable(195_000 + i)),
@@ -366,7 +366,7 @@ fn native_integer_bound_rewrite_is_dag_linear_and_budget_checked() {
         depth_costs.push(ambient_costs[0]);
     }
     assert!(depth_costs[3] <= depth_costs[0] * 10, "{depth_costs:?}");
-    let facts = ProofFacts::default().with_fact(cited.clone());
+    let facts = PureFactStore::default().with_fact(cited.clone());
     let result = crate::instrumentation::with_run_work_limit(0, || {
         facts.check_equality_rewrite(&condition(make_term(x, 32)), &cited)
     });
@@ -383,7 +383,7 @@ fn integer_equality_rewrite_scales_with_selected_dag_not_ambient_facts() {
     let cited = integer_equality(x.clone(), y.clone());
     let mut costs = Vec::new();
     for size in [4usize, 16, 64, 256] {
-        let mut facts = ProofFacts::default().with_fact(cited.clone());
+        let mut facts = PureFactStore::default().with_fact(cited.clone());
         for i in 0..size {
             facts = facts.with_fact(integer_equality(
                 IntegerTerm::var(Variable(194_000 + i as u64)),
@@ -450,7 +450,7 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
     let goal = equality(load(&after), MachineTerm::constant(42));
     let mut costs = vec![];
     for size in [16u64, 64, 256, 1024] {
-        let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&premise));
+        let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&premise));
         for index in 0..size {
             facts = facts.with_fact(equality(
                 MachineTerm::Variable(Variable(80_000 + index)),
@@ -477,7 +477,7 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
     }
     assert!(costs.iter().all(|work| *work <= 8), "{costs:?}");
     assert!(
-        ProofFacts::default()
+        PureFactStore::default()
             .check_equality_rewrite(&goal, &premise)
             .is_err()
     );
@@ -505,7 +505,7 @@ fn same_block_pointer_view_rewrite_preserves_extent_and_selected_work() {
         wide: false,
     };
     assert!(
-        ProofFacts::default()
+        PureFactStore::default()
             .check_equality_rewrite(&goal, &cited)
             .is_err()
     );
@@ -515,11 +515,11 @@ fn same_block_pointer_view_rewrite_preserves_extent_and_selected_work() {
         }
         _ => unreachable!(),
     };
-    let false_facts = ProofFacts::from_ordered(&[false_equality]);
+    let false_facts = PureFactStore::from_ordered(&[false_equality]);
     assert!(false_facts.check_equality_rewrite(&goal, &cited).is_err());
     let mut costs = Vec::new();
     for size in [0, 16, 64, 256, 1024] {
-        let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+        let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
         for index in 0..size {
             facts = facts.with_fact(equality(
                 MachineTerm::Variable(Variable(210_000 + index)),
@@ -571,13 +571,13 @@ fn pointer_view_rewrite_preserves_state_extent_and_ambient_scaling() {
         wide: false,
     };
     assert!(
-        ProofFacts::default()
+        PureFactStore::default()
             .check_equality_rewrite(&goal, &cited)
             .is_err()
     );
     let mut costs = Vec::new();
     for size in [0, 4, 16, 64, 256] {
-        let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+        let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
         for index in 0..size {
             facts = facts.with_fact(equality(
                 MachineTerm::Variable(Variable(200_000 + index)),
@@ -636,7 +636,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
             MachineTerm::constant(1),
         )
     };
-    let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+    let facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
     let goal = goal_at(source.clone(), 1);
     assert_eq!(
         facts
@@ -646,7 +646,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
         &goal_at(target.clone(), 1)
     );
     assert!(
-        ProofFacts::default()
+        PureFactStore::default()
             .check_equality_rewrite(&goal, &cited)
             .is_err()
     );
@@ -673,7 +673,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
         true,
     );
     assert!(
-        ProofFacts::from_ordered(std::slice::from_ref(&displaced))
+        PureFactStore::from_ordered(std::slice::from_ref(&displaced))
             .check_equality_rewrite(&goal, &displaced)
             .is_err(),
         "equality at an offset does not identify the whole pointer"
@@ -701,7 +701,7 @@ fn checked_rewrite_does_not_scan_or_rebuild_ambient_facts() {
     let goal = equality(x, MachineTerm::constant(9));
     let mut costs = Vec::new();
     for size in [16u64, 64, 256, 1024] {
-        let mut facts = ProofFacts::default();
+        let mut facts = PureFactStore::default();
         for index in 0..size {
             facts = facts.with_fact(equality(
                 MachineTerm::Variable(Variable(10_000 + index)),
@@ -803,7 +803,7 @@ fn rewrite_integer_application_endpoint_keeps_byte_state_and_ignores_its_content
             ),
             true,
         );
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&equality));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&equality));
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             facts
                 .check_equality_rewrite(&goal, &equality)
@@ -833,13 +833,13 @@ fn checked_integer_rewrite_is_exact_and_ignores_unrelated_facts() {
         y.clone(),
     );
     assert!(
-        ProofFacts::default()
+        PureFactStore::default()
             .check_equality_rewrite(&goal, &cited)
             .is_err()
     );
     let mut costs = Vec::new();
     for size in [4u64, 16, 64, 256] {
-        let mut facts = ProofFacts::default();
+        let mut facts = PureFactStore::default();
         for index in 0..size {
             facts = facts.with_fact(eq(
                 IntegerTerm::var(Variable(188_000 + index)).into(),
@@ -867,7 +867,7 @@ fn checked_integer_rewrite_is_exact_and_ignores_unrelated_facts() {
         body: Box::new(goal.clone()),
     };
     assert!(
-        ProofFacts::default()
+        PureFactStore::default()
             .with_fact(cited.clone())
             .check_equality_rewrite(&captured, &cited)
             .is_err()
@@ -877,7 +877,7 @@ fn checked_integer_rewrite_is_exact_and_ignores_unrelated_facts() {
         *truth = false;
     }
     assert!(
-        ProofFacts::default()
+        PureFactStore::default()
             .with_fact(false_equality.clone())
             .check_equality_rewrite(&goal, &false_equality)
             .is_err()
@@ -1083,7 +1083,7 @@ fn machine_readings_of_selected_integer_facts_ignore_ambient_facts() {
         let equality = integer_equality(difference, observe(n.clone()));
         let word = MachineTerm::uint64_subtract(n.clone(), r.clone());
         let goal = Proposition::ConditionIs(ConditionTerm::uint64_less_than(word, n.clone()), true);
-        let mut facts = ProofFacts::default().with_fact(equality.clone());
+        let mut facts = PureFactStore::default().with_fact(equality.clone());
         for index in 0..size {
             facts = facts.with_fact(Proposition::Predicate {
                 name: format!("unrelated_machine_reading_{index}"),
@@ -1115,7 +1115,7 @@ fn machine_readings_of_selected_integer_facts_ignore_ambient_facts() {
                     )
                 );
                 assert!(
-                    ProofFacts::default()
+                    PureFactStore::default()
                         .check_equality_rewrite(&goal, &equality)
                         .is_err()
                 );
@@ -1150,7 +1150,7 @@ fn modular_integer_rewrite_work_tracks_the_cited_expression() {
             word = MachineTerm::uint64_subtract(word, operand);
         }
         let cited = integer_equality(exact, observe(target.clone()));
-        let facts = ProofFacts::default().with_fact(cited.clone());
+        let facts = PureFactStore::default().with_fact(cited.clone());
         let goal = Proposition::ConditionIs(ConditionTerm::uint64_less_than(word, n.clone()), true);
         let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
             facts.check_equality_rewrite(&goal, &cited)
@@ -1246,7 +1246,7 @@ fn retained_pointer_index_rewrite_scales_with_distinct_nodes() {
             true,
         );
         let equality = Proposition::ConditionIs(ConditionTerm::equal(x, y.clone()), true);
-        let facts = ProofFacts::default().with_fact(equality.clone());
+        let facts = PureFactStore::default().with_fact(equality.clone());
         let exports = KernelTermExport::machine_export_count();
         let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
             facts.check_equality_rewrite(&goal, &equality)

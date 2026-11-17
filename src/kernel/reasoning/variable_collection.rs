@@ -610,15 +610,6 @@ fn collect_proposition_bitvector_variables_one(
             collect_execution_state_bitvector_variables(state, variables);
             collect_program_expression_bitvector_variables(condition, variables);
         }
-        Proposition::ProgramStatementExecutes {
-            state,
-            statement,
-            outcome,
-        } => {
-            collect_execution_state_bitvector_variables(state, variables);
-            collect_execution_statement_bitvector_variables(statement, variables);
-            collect_execution_statement_outcome_bitvector_variables(outcome, variables);
-        }
         Proposition::ProgramStatementVerifies {
             state,
             statement,
@@ -627,19 +618,6 @@ fn collect_proposition_bitvector_variables_one(
             collect_execution_state_bitvector_variables(state, variables);
             collect_execution_statement_bitvector_variables(statement, variables);
             collect_execution_statement_outcome_bitvector_variables(outcome, variables);
-        }
-        Proposition::ProgramFunctionExecutes {
-            state,
-            arguments,
-            function,
-            outcome,
-        } => {
-            collect_execution_state_bitvector_variables(state, variables);
-            for argument in arguments {
-                collect_program_expression_bitvector_variables(argument, variables);
-            }
-            collect_program_function_bitvector_variables(function, variables);
-            collect_program_function_outcome_bitvector_variables(outcome, variables);
         }
         Proposition::ProgramFunctionVerifies {
             state,
@@ -653,13 +631,6 @@ fn collect_proposition_bitvector_variables_one(
             }
             collect_program_function_bitvector_variables(function, variables);
             collect_program_function_outcome_bitvector_variables(outcome, variables);
-        }
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function,
-            specification,
-        } => {
-            collect_program_function_bitvector_variables(function, variables);
-            collect_program_function_specification_bitvector_variables(specification, variables);
         }
         Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,

@@ -73,7 +73,7 @@ fn source_state() -> (ExecutionState, ResourceFact) {
 #[test]
 fn checked_authority_events_reject_forged_deltas() {
     let (before, selected) = source_state();
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let (established, witness) = before
         .checked_population_authority_exchange(&selected, true, facts.assumptions())
         .unwrap();
@@ -207,7 +207,7 @@ fn checked_authority_events_reject_forged_deltas() {
 #[test]
 fn checked_member_events_conserve_one_occurrence_and_reject_forged_deltas() {
     let (before, authority) = source_state();
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let (established, _) = before
         .checked_population_authority_exchange(&authority, true, facts.assumptions())
         .unwrap();
@@ -357,13 +357,13 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
         bytes: MachineTerm::constant(bytes),
         wide: false,
     };
-    let small = ProofFacts::default().with_fact(extent(1));
+    let small = PureFactStore::default().with_fact(extent(1));
     assert!(
         owned
             .checked_population_member_exchange(&member, true, &definition, small.assumptions())
             .is_err()
     );
-    let facts = ProofFacts::default().with_fact(extent(4));
+    let facts = PureFactStore::default().with_fact(extent(4));
     assert!(
         empty
             .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
@@ -407,7 +407,7 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
 fn checked_member_exchange_transfers_exact_contained_resource() {
     for abstract_token in [false, true] {
         let (state, authority) = source_state();
-        let facts = ProofFacts::default();
+        let facts = PureFactStore::default();
         let Resource::PopulationAuthority(description) = authority.resource() else {
             unreachable!()
         };
@@ -541,7 +541,7 @@ fn checked_member_exchange_transfers_exact_contained_resource() {
 #[test]
 fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts() {
     let (state, authority) = source_state();
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let (state, _) = state
         .checked_population_authority_exchange(&authority, true, facts.assumptions())
         .unwrap();
@@ -672,7 +672,7 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
     let definition = function
         .proof_composite_resource_definition("reference")
         .unwrap();
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let (established, _) = before
         .with_resource_context(ResourceContext::new().unchecked_with_fact(memory.clone()))
         .checked_population_authority_exchange(&authority, true, facts.assumptions())
@@ -814,7 +814,7 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
 fn generic_resource_observations_cannot_check_under_authority_history() {
     let (before, _) = source_state();
     let selected = ResourceFact::own_composite("reference".into(), Vec::new());
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let function = program_function(
         ProgramType::Void,
         "value",

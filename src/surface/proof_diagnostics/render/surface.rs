@@ -686,14 +686,11 @@ impl Printer<'_> {
             }
             Proposition::ProgramExpressionEvaluates { .. }
             | Proposition::ProgramConditionEvaluates { .. }
-            | Proposition::ProgramStatementExecutes { .. }
             | Proposition::ProgramStatementVerifies { .. }
-            | Proposition::ProgramFunctionExecutes { .. }
             | Proposition::ProgramFunctionVerifies { .. } => {
                 Some(atom("<a fact about executing C code>"))
             }
-            Proposition::ProgramFunctionSatisfiesSpecification { .. }
-            | Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. } => {
+            Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. } => {
                 Some(atom("<a function satisfies its specification>"))
             }
         }

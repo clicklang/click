@@ -2,7 +2,7 @@ use super::*;
 
 fn normal(state: ExecutionState, statement: ProgramStatement) -> ExecutionState {
     let theorem = prove_execution_statement_execution(state, statement).unwrap();
-    let Proposition::ProgramStatementExecutes {
+    let Proposition::ProgramStatementVerifies {
         outcome: StatementOutcome::Normal(after),
         ..
     } = theorem.proposition()

@@ -1885,16 +1885,11 @@ fn trace_function_pointer_load(
     conclusion: &Proposition,
     assumptions: &crate::kernel::PureFactContext,
 ) -> Option<crate::surface::proof_trace::TraceLoad> {
-    let (Proposition::ProgramStatementExecutes {
+    let Proposition::ProgramStatementVerifies {
         state,
         statement,
         outcome,
-    }
-    | Proposition::ProgramStatementVerifies {
-        state,
-        statement,
-        outcome,
-    }) = conclusion
+    } = conclusion
     else {
         return None;
     };

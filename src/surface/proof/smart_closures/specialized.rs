@@ -154,7 +154,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if crate::kernel::proof::fact_reasoning::normalize_using_conditions(
                 goal,
                 &selected,
-                &crate::kernel::proof::ProofFacts::from_ordered(&selected),
+                &crate::kernel::proof::PureFactStore::from_ordered(&selected),
             )
             .is_err()
             {

@@ -15,7 +15,7 @@ pub(in crate::kernel) fn execute_execution_statement(
         state,
         statement,
         assumptions,
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::for_new_execution(),
     )
     .ok()?;
@@ -3535,8 +3535,8 @@ pub(in crate::kernel) fn paths_after_scope_exit(
 /// [`execute_statement_paths`], serves both; each place they differ is a
 /// branch on this value.
 pub(in crate::kernel) enum StatementJudgment<'generator, 'scope> {
-    /// `ProgramStatementExecutes`: concrete operational outcomes. A loop runs by
-    /// unrolling its iterations.
+    /// Concrete operational outcomes. A loop runs by unrolling its
+    /// iterations. A contract-less inline helper's body runs under it.
     Executes,
     /// `ProgramStatementVerifies`: an annotated loop is stepped as its checked
     /// abstraction instead, from an environment's verified loop rule or from
@@ -3546,7 +3546,7 @@ pub(in crate::kernel) enum StatementJudgment<'generator, 'scope> {
     Verifies(&'generator mut KernelVariableGenerator<'scope>),
 }
 
-/// `ProgramStatementExecutes` for `statement`.
+/// `statement` stepped under the concrete judgment, which unrolls loops.
 pub(in crate::kernel) fn execute_execution_statement_paths(
     state: &ExecutionState,
     statement: &ProgramStatement,

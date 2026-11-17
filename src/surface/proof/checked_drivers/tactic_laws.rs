@@ -28,7 +28,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     expansion_capture: Option<&mut ExpansionCapture>,
     loop_template: &StructuralClause,
     proof_locals: &BinderMap<ContractExpression>,
-    entry_facts: &ProofFacts,
+    entry_facts: &PureFactStore,
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
     available_pure_facts: &mut PureFactList,
