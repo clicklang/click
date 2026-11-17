@@ -4,6 +4,8 @@ use crate::kernel::loans::{CheckedLoanCallEvidenceSequence, empty_checked_loan_e
 #[cfg(test)]
 mod aggregate_results;
 mod scalar_arrays;
+#[cfg(test)]
+mod unsigned_switch_tests;
 
 #[cfg(test)]
 pub(in crate::kernel) fn execute_execution_statement(
@@ -4969,8 +4971,14 @@ fn execute_program_switch_paths(
         } = selector_path;
         match outcome {
             ExpressionOutcome::Value(value) => {
-                let Some(selector) = promote_program_path_value(value, MachineIntegerType::Int32)
-                else {
+                // Integer promotion keeps unsigned int unsigned. Narrower
+                // integers and bool still promote to int on the supported ABI.
+                let selector_type = if value.program_type() == ProgramType::UInt32 {
+                    MachineIntegerType::UInt32
+                } else {
+                    MachineIntegerType::Int32
+                };
+                let Some(selector) = promote_program_path_value(value, selector_type) else {
                     paths.push(StatementExecutionPath::new(
                         StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         facts,
@@ -4981,6 +4989,7 @@ fn execute_program_switch_paths(
                 paths.extend(execute_program_switch_dispatch_paths(
                     state,
                     &selector,
+                    selector_type,
                     cases,
                     0,
                     facts,
@@ -5009,6 +5018,7 @@ fn execute_program_switch_paths(
 fn execute_program_switch_dispatch_paths(
     state: &ExecutionState,
     selector: &MachineTerm,
+    selector_type: MachineIntegerType,
     cases: &[SwitchCase],
     case_index: usize,
     facts: ExecutionFacts,
@@ -5045,6 +5055,7 @@ fn execute_program_switch_dispatch_paths(
         return execute_program_switch_dispatch_paths(
             state,
             selector,
+            selector_type,
             cases,
             case_index + 1,
             facts,
@@ -5055,7 +5066,13 @@ fn execute_program_switch_dispatch_paths(
             judgment,
         );
     };
-    let condition = ConditionTerm::equal(selector.clone(), MachineTerm::constant(value));
+    // A case label holds its 32-bit pattern after conversion to the promoted
+    // selector type, including -1 becoming UINT_MAX for an unsigned selector.
+    let condition = if selector_type == MachineIntegerType::UInt32 {
+        ConditionTerm::uint32_equal(selector.clone(), MachineTerm::uint32_constant(value))
+    } else {
+        ConditionTerm::equal(selector.clone(), MachineTerm::constant(value))
+    };
     let mut paths = Vec::new();
     for condition_path in
         condition_as_program_int32_paths(condition, facts, obligations, assumptions)
@@ -5084,6 +5101,7 @@ fn execute_program_switch_dispatch_paths(
             paths.extend(execute_program_switch_dispatch_paths(
                 state,
                 selector,
+                selector_type,
                 cases,
                 case_index + 1,
                 facts,
