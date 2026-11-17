@@ -4886,7 +4886,25 @@ fn execute_execution_statement_leaf_paths(
                     }
                 }
             }
-            paths
+            if matches!(statement, ProgramStatement::LoopTest { .. })
+                && let Some(helper) = &budget.inline_call_name
+                && paths
+                    .iter()
+                    .any(|path| matches!(path.outcome, StatementOutcome::Normal(_)))
+                && paths
+                    .iter()
+                    .any(|path| matches!(path.outcome, StatementOutcome::LoopTestFalse(_)))
+            {
+                vec![StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
+                        "inline helper `{helper}`: loop guard cannot be decided at the call site; give the helper a Click contract with a checked loop proof"
+                    ))),
+                    Vec::new().into(),
+                    Vec::new(),
+                )]
+            } else {
+                paths
+            }
         }
         ProgramStatement::Loop {
             test: loop_test,
@@ -4900,7 +4918,6 @@ fn execute_execution_statement_leaf_paths(
             body,
             ..
         } => {
-            let (condition, direct_post_test, test) = loop_test.execution_parts();
             // The one judgment-specific step: verification takes an
             // annotated loop, or one an environment rule covers, as its
             // checked abstraction. Execution, and verification of a loop
@@ -4922,12 +4939,10 @@ fn execute_execution_statement_leaf_paths(
                 Some(paths) => paths,
                 None => execute_program_loop_paths(
                     state,
-                    condition,
                     invariant,
-                    direct_post_test,
                     body,
                     update.as_deref(),
-                    test,
+                    loop_test,
                     assumptions,
                     execution_context,
                     budget,
@@ -5311,36 +5326,94 @@ pub(in crate::kernel) fn assertion_truthiness_obligation(
     }
 }
 
-pub(in crate::kernel) fn execute_program_loop_paths(
+/// One iteration's shared phases. The pre-test is outside the body scope:
+/// a false pre-test never retires declarations in a body it did not enter.
+pub(in crate::kernel) fn execute_loop_iteration_paths(
     state: &ExecutionState,
-    condition: &ProgramExpression,
-    invariant: &[Proposition],
-    direct_post_test: bool,
+    start: crate::kernel::LoopEntryPhase,
     body: &ProgramStatement,
     update: Option<&ProgramStatement>,
-    test: Option<&LoopTestRegion>,
+    test: &LoopTestRegion,
+    assumptions: &PureFactContext,
+    execution_context: ExecutionContext<'_>,
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
+    prefix_obligations: &[ProofObligation],
+    budget: &mut ExecutionBudget,
+    judgment: &mut StatementJudgment<'_, '_>,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let entries = if start == crate::kernel::LoopEntryPhase::Test {
+        execute_statement_paths_with_prefix(
+            state,
+            &test.statement,
+            assumptions,
+            execution_context,
+            prefix_facts,
+            prefix_obligations,
+            &empty_checked_loan_evidence_sequence(),
+            budget,
+            judgment,
+        )?
+    } else {
+        vec![StatementExecutionPath::new(
+            StatementOutcome::Normal(Box::new(state.clone())),
+            prefix_facts.persistent_facts(),
+            prefix_obligations.to_vec(),
+        )]
+    };
+    let declared = scope_declared_names(body);
+    let mut paths = Vec::new();
+    for entry in entries {
+        if let StatementOutcome::Normal(state) = entry.outcome {
+            paths.extend(paths_after_scope_exit(
+                execute_statement_paths_with_prefix(
+                    &state,
+                    body,
+                    assumptions,
+                    execution_context,
+                    &entry.facts,
+                    &entry.obligations,
+                    &entry.loan_evidence,
+                    budget,
+                    judgment,
+                )?,
+                &declared,
+            ));
+        } else {
+            paths.push(entry);
+        }
+    }
+    let continuation = program_loop_continuation(update, Some(test));
+    paths_after_loop_update(
+        paths,
+        continuation.as_deref(),
+        assumptions,
+        execution_context,
+        budget,
+        judgment,
+    )
+}
+
+pub(in crate::kernel) fn execute_program_loop_paths(
+    state: &ExecutionState,
+    invariant: &[Proposition],
+    body: &ProgramStatement,
+    update: Option<&ProgramStatement>,
+    test: &LoopTestRegion,
     assumptions: &PureFactContext,
     execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     judgment: &mut StatementJudgment<'_, '_>,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    let body_region = program_loop_body_region(body, test);
-    let body = &body_region;
-    let continuation = program_loop_continuation(update, test);
-    let update = continuation.as_deref();
     struct PendingLoopPath {
         state: ExecutionState,
         facts: ExecutionFacts,
         obligations: Vec<ProofObligation>,
-        check_condition: bool,
     }
 
-    let body_declared = scope_declared_names(body);
     let mut pending = vec![PendingLoopPath {
         state: state.clone(),
         facts: Vec::new().into(),
         obligations: Vec::new(),
-        check_condition: !direct_post_test,
     }];
     let mut paths = Vec::new();
 
@@ -5348,7 +5421,6 @@ pub(in crate::kernel) fn execute_program_loop_paths(
         state: current_state,
         facts: accumulated_facts,
         obligations: accumulated_obligations,
-        check_condition,
     }) = pending.pop()
     {
         budget.consume_loop_unroll()?;
@@ -5376,196 +5448,54 @@ pub(in crate::kernel) fn execute_program_loop_paths(
         }
         let loop_assumptions = assumptions_with_propositions(&current_assumptions, invariant);
 
-        let condition_paths = if check_condition {
-            evaluate_program_condition_paths(&current_state, condition, &loop_assumptions, budget)?
-        } else {
-            vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(1))),
-                facts: Vec::new().into(),
-                obligations: Vec::new(),
-            }]
-        };
-        if let Some(helper) = &budget.inline_call_name {
-            let mut may_continue = false;
-            let mut may_exit = false;
-            for path in &condition_paths {
-                crate::instrumentation::record_deterministic_work(1);
-                if let ExpressionOutcome::Value(value) = &path.outcome {
-                    for truth in program_truthiness_paths(
-                        value.clone(),
-                        path.facts.clone(),
-                        path.obligations.clone(),
-                        &loop_assumptions,
-                    ) {
-                        may_continue |= truth.is_true;
-                        may_exit |= !truth.is_true;
-                    }
-                }
-            }
-            if may_continue && may_exit {
-                paths.push(StatementExecutionPath::new(StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
-                        format!("inline helper `{helper}`: loop guard cannot be decided at the call site; give the helper a Click contract with a checked loop proof"),
-                    )), accumulated_facts, accumulated_obligations));
-                continue;
-            }
-        }
-        for condition_path in condition_paths {
-            let Some((condition_facts, condition_obligations)) =
-                merge_execution_pure_facts_and_obligations(
-                    &[],
-                    &base_obligations,
-                    &condition_path.facts,
-                    &condition_path.obligations,
-                    &current_assumptions,
-                )
-            else {
+        for body_path in execute_loop_iteration_paths(
+            &current_state,
+            test.entry_phase(),
+            body,
+            update,
+            test,
+            &loop_assumptions,
+            execution_context,
+            &[],
+            &[],
+            budget,
+            judgment,
+        )? {
+            let Some((step_facts, step_obligations)) = merge_execution_pure_facts_and_obligations(
+                &[],
+                &base_obligations,
+                &body_path.facts,
+                &body_path.obligations,
+                &current_assumptions,
+            ) else {
                 continue;
             };
-
-            match condition_path.outcome {
-                ExpressionOutcome::Value(value) => {
-                    let truthiness_paths = program_truthiness_paths(
-                        value,
-                        condition_facts,
-                        condition_obligations,
-                        &current_assumptions,
-                    );
-                    for truthiness_path in truthiness_paths {
-                        if !truthiness_path.is_true {
-                            let Some((facts, obligations)) =
-                                merge_execution_pure_facts_and_obligations(
-                                    &accumulated_facts,
-                                    &accumulated_obligations,
-                                    &truthiness_path.facts,
-                                    &truthiness_path.obligations,
-                                    assumptions,
-                                )
-                            else {
-                                continue;
-                            };
-                            paths.push(StatementExecutionPath::new(
-                                StatementOutcome::Normal(Box::new(current_state.clone())),
-                                facts,
-                                obligations,
-                            ));
-                            continue;
-                        }
-
-                        let body_assumptions = assumptions_with_path_context(
-                            &current_assumptions,
-                            &truthiness_path.facts,
-                            &truthiness_path.obligations,
-                        );
-                        // The body is a scope, and every way out of an
-                        // iteration leaves it: the back edge, `break`,
-                        // `continue`, and every transfer out of the loop.
-                        let body_paths = paths_after_scope_exit(
-                            execute_statement_paths(
-                                &current_state,
-                                body,
-                                &body_assumptions,
-                                execution_context,
-                                budget,
-                                judgment,
-                            )?,
-                            &body_declared,
-                        );
-                        for body_path in paths_after_loop_update(
-                            body_paths,
-                            update,
-                            &body_assumptions,
-                            execution_context,
-                            budget,
-                            judgment,
-                        )? {
-                            let Some((step_facts, step_obligations)) =
-                                merge_execution_pure_facts_and_obligations(
-                                    &truthiness_path.facts,
-                                    &truthiness_path.obligations,
-                                    &body_path.facts,
-                                    &body_path.obligations,
-                                    &current_assumptions,
-                                )
-                            else {
-                                continue;
-                            };
-                            let Some((facts, obligations)) =
-                                merge_execution_pure_facts_and_obligations(
-                                    &accumulated_facts,
-                                    &accumulated_obligations,
-                                    &step_facts,
-                                    &step_obligations,
-                                    assumptions,
-                                )
-                            else {
-                                continue;
-                            };
-                            match body_path.outcome {
-                                StatementOutcome::Normal(next_state)
-                                | StatementOutcome::Continue(next_state) => {
-                                    pending.push(PendingLoopPath {
-                                        state: *next_state,
-                                        facts,
-                                        obligations,
-                                        check_condition: true,
-                                    });
-                                }
-                                StatementOutcome::LoopTestFalse(next_state)
-                                | StatementOutcome::Break(next_state) => {
-                                    paths.push(StatementExecutionPath::new(
-                                        StatementOutcome::Normal(next_state),
-                                        facts,
-                                        obligations,
-                                    ));
-                                }
-                                outcome @ (StatementOutcome::Return { .. }
-                                | StatementOutcome::Throw { .. }
-                                | StatementOutcome::Jump { .. }
-                                | StatementOutcome::VerificationDiverges
-                                | StatementOutcome::UndefinedBehavior(_)
-                                | StatementOutcome::RuntimeError(_)) => {
-                                    paths.push(StatementExecutionPath::new(
-                                        outcome,
-                                        facts,
-                                        obligations,
-                                    ));
-                                }
-                            }
-                        }
-                    }
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+                &accumulated_facts,
+                &accumulated_obligations,
+                &step_facts,
+                &step_obligations,
+                assumptions,
+            ) else {
+                continue;
+            };
+            match body_path.outcome {
+                StatementOutcome::Normal(next_state) | StatementOutcome::Continue(next_state) => {
+                    pending.push(PendingLoopPath {
+                        state: *next_state,
+                        facts,
+                        obligations,
+                    });
                 }
-                ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &accumulated_facts,
-                        &accumulated_obligations,
-                        &condition_facts,
-                        &condition_obligations,
-                        assumptions,
-                    ) else {
-                        continue;
-                    };
+                StatementOutcome::LoopTestFalse(next_state)
+                | StatementOutcome::Break(next_state) => {
                     paths.push(StatementExecutionPath::new(
-                        StatementOutcome::UndefinedBehavior(undefined_behavior),
+                        StatementOutcome::Normal(next_state),
                         facts,
                         obligations,
                     ));
                 }
-                ExpressionOutcome::RuntimeError(error) => {
-                    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                        &accumulated_facts,
-                        &accumulated_obligations,
-                        &condition_facts,
-                        &condition_obligations,
-                        assumptions,
-                    ) else {
-                        continue;
-                    };
-                    paths.push(StatementExecutionPath::new(
-                        StatementOutcome::RuntimeError(error),
-                        facts,
-                        obligations,
-                    ));
-                }
+                outcome => paths.push(StatementExecutionPath::new(outcome, facts, obligations)),
             }
         }
         budget.check_path_width(paths.len().saturating_add(pending.len()))?;

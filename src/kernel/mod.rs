@@ -235,7 +235,8 @@ pub use loops::LoopBinder;
 pub(crate) use loops::loop_state_components_match_at_back_edge;
 pub(crate) use loops::memory_range_bounds_refusal;
 pub(crate) use loops::{
-    loop_binder_state_components_match_at_back_edge, loop_binders, loop_condition_may_continue,
+    LoopConditionFeasibility, classify_loop_condition,
+    loop_binder_state_components_match_at_back_edge, loop_binders,
     loop_state_with_loop_binders_rebound, loop_structural_descent_failure,
 };
 // Used through other modules' glob imports of `crate::kernel`, which the unused

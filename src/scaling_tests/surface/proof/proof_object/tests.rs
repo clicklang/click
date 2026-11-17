@@ -733,22 +733,20 @@ fn explicit_loop_have_checks_complete_invariant_bundle() {
             .unwrap();
         assert!(explicit.facts().contains(&body_kernel));
         assert!(joined.certify_loop_invariant_bundle(&checks, &[]).is_err());
-        let prepared = joined
+        let (prepared, _) = joined
             .driver()
             .prepare_loop_invariant_bundle(
                 &ExecutionState::new(),
                 &ExecutionState::new(),
                 &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
-                &ProgramExpression::Value(int32(1)),
+                Some(&ProgramExpression::Value(int32(1))),
                 &checks,
                 &[],
                 None,
                 &[surface.clone(), legacy_surface.clone()],
                 &[],
                 &[],
-                false,
             )
-            .unwrap()
             .unwrap();
         let certified = prepared
             .certify_loop_invariant_bundle(&checks, &[])

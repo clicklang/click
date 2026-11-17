@@ -1023,7 +1023,7 @@ impl KernelLoopPaths {
                     body,
                     ..
                 } => {
-                    let (_, _, test) = loop_test.execution_parts();
+                    let test = loop_test.source_region();
                     paths.push(Some(path.clone()));
                     // A loop inside another is not one a walk lowers alone.
                     paths.extend(std::iter::repeat_n(
@@ -1516,7 +1516,7 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             let loop_index = *next_loop_index;
             *next_loop_index += 1;
             if loop_index == target {
@@ -1660,7 +1660,7 @@ fn kernel_loop_replaced(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             let index = *next;
             *next += 1;
             if index == target {
@@ -1723,7 +1723,7 @@ fn count_kernel_loops(statement: &ProgramStatement) -> usize {
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             1 + count_kernel_loops(body)
                 + test
                     .as_ref()
@@ -3147,7 +3147,7 @@ fn collect_local_pointer_element_types(
                 body,
                 ..
             } => {
-                let (_, _, test) = loop_test.execution_parts();
+                let test = loop_test.source_region();
                 pending.push(body);
                 if let Some(test) = test {
                     pending.push(&test.statement);
@@ -3875,7 +3875,7 @@ impl AnnotationLowerer<'_> {
                 natural_exit_target,
                 body,
             } => {
-                let (_, _, test) = loop_test.execution_parts();
+                let test = loop_test.source_region();
                 self.next_statement_index();
                 let index = self.next_loop_index();
                 let mut lowered_test = None;

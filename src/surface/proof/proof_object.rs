@@ -88,6 +88,30 @@ pub(super) struct Proof<'a> {
     site: ProofStepSite,
 }
 
+/// The rebound state and guard decisions produced by the loop-state join.
+/// Closure may add facts; it does not repeat this source-state construction.
+pub(super) struct LoopBoundary {
+    state: ExecutionState,
+    guard: crate::kernel::LoopConditionFeasibility,
+    head_compatible: bool,
+}
+
+impl LoopBoundary {
+    pub(super) fn state(&self) -> &ExecutionState {
+        &self.state
+    }
+
+    pub(super) fn may_exit(&self) -> bool {
+        self.guard.may_exit()
+    }
+
+    /// Compatible exits are covered by the invariant-head abstraction.
+    /// A distinct partition is retained only for an established false guard.
+    pub(super) fn explicit_exit_state(&self) -> Option<&ExecutionState> {
+        (self.may_exit() && !self.head_compatible).then_some(self.state())
+    }
+}
+
 /// Feasible arms of one checked C `if` frontier.
 ///
 /// Entering the container performs the audited condition transition and C

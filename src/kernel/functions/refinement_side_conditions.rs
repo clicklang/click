@@ -1045,7 +1045,7 @@ pub(super) fn statement_writes_aggregate_parameter(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_writes_aggregate_parameter(body, parameter_name, writes, unknown_write);
             if let Some(test) = test {
                 statement_writes_aggregate_parameter(

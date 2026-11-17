@@ -2980,6 +2980,9 @@ the loop's own regions, `loop(i).call(f, j)` and `loop(i).test()`: a pass steps
 the calls, then the test, whose false side leaves the loop
 ([a loop's points](../../internals/kernel.md#what-stepping-a-statement-means)).
 The call's result is named by its call, `loop(i).call(f, j).result`.
+A pure condition has the same `loop(i).test()` decision region. Its pre-test
+can share the loop-head step, with a separate state and footprint from the
+whole loop's exit.
 
 Symbolic pointer-writing loops should use invariants and explicit loop effects.
 Do not expect unconstrained symbolic loops to be unrolled automatically.

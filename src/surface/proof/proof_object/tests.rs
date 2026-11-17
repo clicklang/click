@@ -15150,3 +15150,86 @@ fn known_have_step(proposition: ClickProposition) -> ProofStep {
         proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
     }
 }
+
+#[test]
+#[ignore = "nightly: 0.77s in the parallel scaling selection; guard classification has fast scaling coverage"]
+fn loop_exit_eligibility_comes_from_the_guard_not_an_ownership_failure() {
+    let file = crate::surface::parse("void boundary() { ensures true; }").unwrap();
+    let parsed = syntax::parse_function("void boundary() {}").unwrap();
+    let function = parsed.to_kernel_function();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let resources = ResourceEnvironment::new(&[]);
+    let environment = ExecutionEnvironment::new();
+    let state = ExecutionState::new().with_local(
+        "gate",
+        ProgramValue::Int32(MachineTerm::Variable(Variable(9_771_000))),
+    );
+    let root = Proof::for_execution_frontier(
+        "loop edge",
+        0,
+        ExecutionProofState::at_entry(
+            state.clone(),
+            ExecutionFrontier {
+                region: ExecutionRegionKind::LoopBody,
+                position: FrontierPosition::RegionBoundary,
+                ..ExecutionFrontier::default()
+            },
+            RecordedStates::new(),
+            SurfacePropositionMap::default(),
+            PersistentSequence::default(),
+        ),
+        vec![],
+        ExecutionProofConstants::default(),
+        &file.function_blocks()[0],
+        &function,
+        &parsed,
+        &[],
+        &environment,
+        &resources,
+        SpecDefinitions::new(&predicates, &functions),
+        &theorems,
+    );
+    let true_guard = ProgramExpression::Value(crate::kernel::int32(1));
+    let false_guard = ProgramExpression::Value(crate::kernel::int32(0));
+    let unknown_guard = ProgramExpression::Variable("gate".into());
+    let owned = state.clone().with_resource_context(
+        crate::kernel::ResourceContext::new().unchecked_with_fact(
+            crate::kernel::ResourceFact::own_token("keep".into(), Vec::new()),
+        ),
+    );
+    for (guard, consumed, may_continue, may_exit) in [
+        (&false_guard, false, false, true),
+        (&false_guard, true, false, true),
+        (&true_guard, true, true, false),
+        (&unknown_guard, true, true, true),
+    ] {
+        let head = if consumed { &owned } else { &state };
+        let result = root.check_loop_boundary(
+            head,
+            head,
+            &crate::kernel::IntegerTerm::constant_i64(0),
+            Some(guard),
+            &[],
+            &[],
+            None,
+            &[],
+        );
+        if consumed && may_continue {
+            assert!(
+                result
+                    .err()
+                    .unwrap()
+                    .message()
+                    .contains("resource ownership"),
+                "a continuing edge cannot become an exit when ownership is missing"
+            );
+        } else {
+            let edge = result.unwrap();
+            assert_eq!(edge.may_exit(), may_exit);
+            assert_eq!(edge.state(), &state);
+            assert_eq!(edge.explicit_exit_state().is_some(), consumed && may_exit);
+        }
+    }
+}

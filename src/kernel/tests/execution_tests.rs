@@ -566,7 +566,7 @@ fn final_iteration_condition_can_use_the_pre_body_bound() {
         );
 
     assert!(
-        !loop_condition_may_continue(
+        !classify_loop_condition(
             &state,
             &crate::kernel::program_expression::less_than(
                 crate::kernel::program_expression::variable("i"),
@@ -575,6 +575,7 @@ fn final_iteration_condition_can_use_the_pre_body_bound() {
             &assumptions,
         )
         .expect("condition classification should stay within its expression budget")
+        .may_continue()
     );
 }
 
@@ -1848,9 +1849,9 @@ fn unreadable_guard_operand_leaves_the_condition_undecided() {
     );
     let mut budget = ExecutionBudget::for_program_expression(&condition);
     for desired_truthiness in [false, true] {
-        let assumptions = crate::kernel::loops::assume_condition_truthiness(
+        let assumptions = crate::kernel::loops::assume_loop_entry_truthiness(
             &state,
-            &condition,
+            Some(&condition),
             &[],
             &PureFactContext::new(),
             &[],

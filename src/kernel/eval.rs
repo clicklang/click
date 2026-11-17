@@ -149,11 +149,12 @@ pub(super) use operators::*;
 #[cfg(test)]
 pub(super) use statements::execute_execution_statement;
 pub(super) use statements::memory_write_permission_outcome;
+#[cfg(test)]
+pub(super) use statements::paths_after_scope_exit;
 pub(crate) use statements::resolve_pending_heap_allocations;
 pub(super) use statements::{
-    StatementJudgment, execute_execution_statement_paths, execute_statement_paths,
-    execute_statement_paths_with_prefix, paths_after_loop_update, paths_after_scope_exit,
-    scope_declared_names,
+    StatementJudgment, execute_execution_statement_paths, execute_loop_iteration_paths,
+    execute_statement_paths, execute_statement_paths_with_prefix,
 };
 pub(super) use statements::{sync_retained_stack_local, sync_stack_local};
 

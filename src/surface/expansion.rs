@@ -2166,7 +2166,7 @@ fn returning_then_arms(statement: &ProgramStatement) -> BTreeSet<usize> {
                 body,
                 ..
             } => {
-                let (_, _, test) = loop_test.execution_parts();
+                let test = loop_test.source_region();
                 for region in crate::kernel::program_loop_regions(body, update.as_deref(), test) {
                     visit(region, index, returns, catches_exceptions);
                 }
