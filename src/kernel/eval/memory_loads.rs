@@ -2624,14 +2624,14 @@ thread_local! {
 /// their comparison forms. This is the one place the authority enters
 /// matching; a check does not resolve reads on its own.
 ///
-/// A closed native comparison, which lowering retains as written
-/// (`1u64 == 0u64`), has the comparison form of the constant it decides, so
+/// A closed comparison, which lowering retains as written (`1u64 == 0u64`,
+/// `true == false`), has the comparison form of the constant it decides, so
 /// it matches the folded `false` a kernel constructor produced for the same
 /// fact. Only the two literal roots are inspected.
 pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> {
     if let Proposition::ConditionIs(condition, value) = proposition
         && let Some(decided) =
-            crate::kernel::machine_integer::comparison::literal_native_comparison_value(condition)
+            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
     {
         return Some(Proposition::ConditionIs(
             ConditionTerm::Constant(decided),

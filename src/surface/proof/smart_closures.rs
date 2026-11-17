@@ -3960,7 +3960,7 @@ fn literal_requirement_spelling(
     }
     // The `bool` literal lowers to exactly this constant condition; a closed
     // comparison such as `0 == 1` is retained by lowering instead.
-    let literal = crate::surface::bool_truth(crate::surface::bool_literal(*value));
+    let literal = ClickProposition::Value(crate::surface::bool_literal(*value));
     Some(RequirementSpelling {
         surface: if *polarity {
             literal
@@ -4128,16 +4128,7 @@ pub(super) fn propositions_match_after_canonical_loads(
     true
 }
 
-/// The value of a constant condition, or of a closed native comparison
-/// decided from its two literal roots.
-fn closed_condition_value(condition: &ConditionTerm) -> Option<bool> {
-    match condition {
-        ConditionTerm::Constant(value) => Some(*value),
-        condition => {
-            crate::kernel::machine_integer::comparison::literal_native_comparison_value(condition)
-        }
-    }
-}
+use crate::kernel::machine_integer::comparison::closed_condition_value;
 
 #[test]
 fn literal_requirement_matching_respects_both_truth_and_polarity() {

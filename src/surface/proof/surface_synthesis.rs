@@ -2712,6 +2712,22 @@ fn synthesize_surface_atomic_proposition(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
+    // A closed `bool` comparison is spelled as written: `true == false`
+    // lowers back to exactly this retained comparison.
+    if let ConditionTerm::BoolEqual(left, right) = condition
+        && let (ConditionTerm::Constant(left), ConditionTerm::Constant(right)) =
+            (left.as_ref(), right.as_ref())
+    {
+        return Some(ClickProposition::Comparison {
+            left: crate::surface::bool_literal(*left),
+            operator: if *value {
+                ComparisonOperator::Equal
+            } else {
+                ComparisonOperator::NotEqual
+            },
+            right: crate::surface::bool_literal(*right),
+        });
+    }
     if matches!(
         condition,
         ConditionTerm::Variable(_)
@@ -2769,7 +2785,7 @@ fn synthesize_surface_atomic_proposition(
     if let ConditionTerm::Constant(condition) = condition {
         // The `bool` literal lowers to exactly this constant condition. A
         // closed comparison such as `0 == 1` does not: lowering retains it.
-        let literal = crate::surface::bool_truth(crate::surface::bool_literal(*condition));
+        let literal = ClickProposition::Value(crate::surface::bool_literal(*condition));
         return Some(if *value {
             literal
         } else {

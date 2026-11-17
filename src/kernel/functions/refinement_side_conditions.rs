@@ -193,6 +193,7 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
             SpecProposition::Comparison { .. }
             | SpecProposition::IntegerComparison { .. }
             | SpecProposition::FloatClassification { .. }
+            | SpecProposition::Truth(_)
             | SpecProposition::Defined(_)
             | SpecProposition::And(..)
             | SpecProposition::Or(..)
@@ -299,6 +300,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecProposition::Comparison { .. }
             | SpecProposition::AlgebraicComparison { .. }
             | SpecProposition::FloatClassification { .. }
+            | SpecProposition::Truth(_)
             | SpecProposition::Defined(_)
             | SpecProposition::And(..)
             | SpecProposition::Or(..)

@@ -7890,6 +7890,7 @@ fn substitute_pointer_variable_in_spec_proposition(
     to: &Pointer,
 ) -> SpecProposition {
     match proposition {
+        SpecProposition::Truth(value) => SpecProposition::Truth(*value),
         SpecProposition::ForAllInteger {
             name,
             variable,
