@@ -4123,7 +4123,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             let array_refs = array_refs_for_parameters(
                 parameter_binding.parameters,
                 &values,
-                guard_state.memory(),
+                &guard_state.program_point(),
             );
             let retained_states = RecordedStates::new();
             for argument in arguments {

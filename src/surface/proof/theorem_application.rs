@@ -1239,7 +1239,7 @@ pub(super) fn theorem_application_bindings(
                 array_refs.insert(
                     parameter.name().to_string(),
                     ClickArrayRef {
-                        memory: context.post_state.memory().clone(),
+                        point: context.post_state.program_point(),
                         pointer: crate::kernel::Pointer::null(),
                         element_type,
                     },
@@ -1428,7 +1428,7 @@ pub(in crate::surface::proof) fn theorem_application_bound_array_memories(
             let array_ref = array_refs.get(parameter.name())?;
             Some((
                 parameter.name().to_string(),
-                SpecPoint::At(crate::kernel::ProgramPoint::of_memory(&array_ref.memory)),
+                SpecPoint::At(array_ref.point.clone()),
             ))
         })
         .collect()

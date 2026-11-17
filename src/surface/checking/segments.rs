@@ -27,8 +27,11 @@ pub(in crate::surface) fn evaluate_requirement_segment(
         &crate::surface::lowering::contract_segment_referenced_names(segment),
     )
     .map_err(|error| error.message)?;
-    let array_refs =
-        array_refs_for_values(parameter_binding, &parameter_values, entry_state.memory());
+    let array_refs = array_refs_for_values(
+        parameter_binding,
+        &parameter_values,
+        &entry_state.program_point(),
+    );
     evaluate_segment_bounds(
         segment,
         &PureFactContext::new(),
@@ -50,8 +53,11 @@ pub(in crate::surface) fn evaluate_requirement_segment_base(
         &crate::surface::lowering::contract_segment_referenced_names(segment),
     )
     .map_err(|error| error.message)?;
-    let array_refs =
-        array_refs_for_values(parameter_binding, &parameter_values, entry_state.memory());
+    let array_refs = array_refs_for_values(
+        parameter_binding,
+        &parameter_values,
+        &entry_state.program_point(),
+    );
     let ProgramValue::Pointer(base) =
         crate::surface::proof::evaluate_program_expression_through_kernel(
             &segment.base,

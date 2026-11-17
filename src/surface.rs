@@ -3425,7 +3425,7 @@ pub(crate) use binary_contract_expression;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickArrayRef {
-    memory: Memory,
+    point: crate::kernel::ProgramPoint,
     pointer: Pointer,
     element_type: ProgramType,
 }

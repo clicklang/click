@@ -369,6 +369,10 @@ the one the text names.
   form. In particular `at(point, expression)` can raise at any program point
   whose recorded state selects the same version point for the read. Distinct
   program points may lower to the same read; raising picks one of them.
+  The scalar-read entry/current shortcut compares actual program-point IDs,
+  rather than memory contents. Distinct points with equal snapshots still
+  reach the read-version checks that select current, `old`, or recorded syntax;
+  absent IDs do not identify two independently constructed states.
 - Allowed: identifying two places whose values are structurally equal by a
   fact-free walk, which names one place twice rather than substituting a
   value. The version walk below is that case.
