@@ -14496,18 +14496,42 @@ fn quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_pro
 
 #[test]
 #[ignore = "nightly: explicit guarded read preservation expansion and cold replay"]
-fn guarded_definedness_transport_expands_and_reverifies() {
+fn guarded_definedness_preservation_expands_and_cold_replays() {
     let (source, sources) =
         mdtest_sources("mdtests/guarded_definedness_survives_a_disjoint_store.md");
     let sources = sources
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
+    assert!(!source.contains("transport("), "{source}");
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
     let expanded = expand_c_claim_source_by_label(&source, &sources, "fill_t.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(expanded.contains("preserve("), "{expanded}");
     assert!(expanded.contains("defined("), "{expanded}");
-    crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve_for_claim("fill_t.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // A write inside the filled prefix must not acquire the same frame proof.
+    let overwritten_sources = sources
+        .iter()
+        .map(|(name, text)| (*name, text.replace("dst[4] = 0", "dst[3] = 0")))
+        .collect::<Vec<_>>();
+    assert_ne!(overwritten_sources[0].1, sources[0].1);
+    let overwritten_sources = overwritten_sources
+        .iter()
+        .map(|(name, text)| (*name, text.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c_sources(&source, &overwritten_sources).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("`normalize using` goal did not normalize to true"),
+        "{}",
+        error.report()
+    );
 }
 
 #[test]

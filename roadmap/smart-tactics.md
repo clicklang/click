@@ -195,12 +195,12 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 17 | 34 |
-| `examples/` | 20 | 153 |
+| `mdtests/` | 16 | 33 |
+| `examples/` | 19 | 132 |
 | `library/` | 0 | 0 |
-| Total | 37 | 187 |
+| Total | 35 | 165 |
 
-The 10 mdtests with failure expectations still require migration while retaining
+The 9 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text
 to expansion/mutation tests; migrate those inputs together with their tests,
 rather than replacing a smart test input with an already-expanded proof. Positive fixtures also need full-file verification:
