@@ -2906,11 +2906,23 @@ pub(crate) fn program_loop_pass(
     update: Option<&ProgramStatement>,
     test: Option<&LoopTestRegion>,
 ) -> ProgramStatement {
+    program_loop_pass_and_continuation(body, update, test).0
+}
+
+/// Assemble a pass and retain its shared continuation from the same source.
+/// A checked entry can use this code directly as its continue destination.
+pub(crate) fn program_loop_pass_and_continuation(
+    body: &ProgramStatement,
+    update: Option<&ProgramStatement>,
+    test: Option<&LoopTestRegion>,
+) -> (ProgramStatement, Option<std::sync::Arc<ProgramStatement>>) {
     let body = program_loop_body_region(body, test);
-    match program_loop_continuation(update, test) {
-        Some(tail) => ProgramStatement::seq(std::sync::Arc::new(body), tail),
+    let continuation = program_loop_continuation(update, test);
+    let pass = match &continuation {
+        Some(tail) => ProgramStatement::seq(std::sync::Arc::new(body), tail.clone()),
         None => body,
-    }
+    };
+    (pass, continuation)
 }
 
 impl ProgramStatement {

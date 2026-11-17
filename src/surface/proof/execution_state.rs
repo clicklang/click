@@ -1668,10 +1668,9 @@ mod proof_fact_store_tests {
                 ..ExecutionFrontier::default()
             };
             frontier.continuations.push(ProofExecutionContinuation {
-                continue_region: None,
+                loop_control: None,
                 remaining: Some(remaining.clone()),
                 next_statement_index: 1,
-                loop_exit_statement_index: 2,
                 exceptional: None,
             });
             let ancestor = frontier.clone();
@@ -1696,10 +1695,9 @@ mod proof_fact_store_tests {
             );
 
             frontier.continuations.push(ProofExecutionContinuation {
-                continue_region: None,
+                loop_control: None,
                 remaining: Some(remaining.clone()),
                 next_statement_index: 2,
-                loop_exit_statement_index: 3,
                 exceptional: None,
             });
             assert!(

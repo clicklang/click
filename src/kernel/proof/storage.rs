@@ -480,6 +480,10 @@ impl<T> PersistentSequence<T> {
         self.tail.is_none()
     }
 
+    pub(crate) fn last(&self) -> Option<&T> {
+        self.tail.as_deref().map(|node| &node.value)
+    }
+
     pub(crate) fn len(&self) -> usize {
         self.len
     }
