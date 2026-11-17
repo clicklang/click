@@ -2929,9 +2929,19 @@ fn refused_composite_assembly_retains_the_failed_source_clause() {
     else {
         panic!("the failed body fact must retain its source");
     };
+    // The cell holds 7: lowering retains the closed comparison `7 == 0`
+    // rather than folding it to `false`.
     assert_eq!(
         *fact,
-        Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: crate::kernel::MachineIntegerType::Int32,
+                relation: crate::kernel::CompareRelation::Equal,
+                left: Box::new(MachineTerm::constant(7)),
+                right: Box::new(MachineTerm::constant(0)),
+            },
+            true
+        )
     );
     assert_eq!(source.spelling, "*p == 0");
     assert_eq!(
