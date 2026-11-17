@@ -32,22 +32,18 @@ int32 caller(int32 x) throws int32 {
         returned => {
             step();
             step();
-            step();
             outcomes {
                 returned => {
-                    step();
                     step();
                     step();
                     solve();
                 }
                 threw => {
-                    step();
                     solve();
                 }
             }
         }
         threw => {
-            step();
             solve();
         }
     }

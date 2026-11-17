@@ -1994,14 +1994,8 @@ fn try_check_structural_function_proof_inner<'a>(
                         (true, returned_branch.as_ref()),
                         (false, threw_branch.as_ref()),
                     ] {
-                        let Some(leading) = execution_region_leading_tactic(region) else {
-                            return decline();
-                        };
-                        if !matches!(leading.tactic, ProofTactic::Step) {
-                            return decline();
-                        }
                         let focused = advanced.focus_split_arm(&record, take_returned)?;
-                        let next = driven!(advance_focused_execution_region_after_leading_tactic(
+                        let next = driven!(advance_focused_execution_region(
                             focused,
                             Some(&record),
                             region,
@@ -4092,14 +4086,8 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                         (true, returned_branch.as_ref()),
                         (false, threw_branch.as_ref()),
                     ] {
-                        let Some(leading) = execution_region_leading_tactic(region) else {
-                            return decline();
-                        };
-                        if !matches!(leading.tactic, ProofTactic::Step) {
-                            return decline();
-                        }
                         let focused = advanced.focus_split_arm(&record, take_returned)?;
-                        let next = driven!(advance_focused_execution_region_after_leading_tactic(
+                        let next = driven!(advance_focused_execution_region(
                             focused,
                             Some(&record),
                             region,

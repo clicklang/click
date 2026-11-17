@@ -2670,7 +2670,7 @@ fn execute_step_from_frontier_position_selecting_path(
         // `if`: each is its own proof arm, so one linear step cannot take
         // both.
         return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached `{}`, which may throw; its returned and threw successors are separate proof arms. Write `outcomes {{ returned => {{ step(); ... }} threw => {{ step(); ... }} }}` here, or end the script here and let its implicit tail split it",
+            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached `{}`, which may throw; its returned and threw successors are separate proof arms. Write `outcomes {{ returned => {{ ... }} threw => {{ ... }} }}` here, or end the script here and let its implicit tail split it",
             describe_statement_head(&step_statement)
         )));
     }

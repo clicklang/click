@@ -13044,8 +13044,8 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
             ensures result == result by {
                 branch {
                     outcomes {
-                        returned => { step(); }
-                        threw => { step(); step_until(function.exit); }
+                        returned => { }
+                        threw => { step_until(function.exit); }
                     }
                 } else { }
                 step();

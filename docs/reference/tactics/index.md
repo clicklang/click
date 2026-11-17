@@ -1286,8 +1286,7 @@ assumptions. The source container owns expansion of its nested proof.
 
 **Specialized.** Write it at a C++ call that may throw, when the two outcomes
 need different proofs; the implicit tail splits them for you. At a maybe-throwing
-call, prove its two successors separately; each arm begins with the `step()`
-that runs the call along its edge. Inside a `try`/`catch (int name)` the `threw`
+call, `outcomes` executes the call and starts each arm at its checked successor. Inside a `try`/`catch (int name)` the `threw`
 arm follows the caught exceptional edge into the handler.
 
 Outside any `try` the `threw` arm ends at function exit with that throw, while

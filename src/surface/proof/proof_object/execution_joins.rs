@@ -1551,12 +1551,12 @@ impl<'a> Proof<'a> {
             steps.extend_from_slice(body.steps());
             ProofCertificate::from_steps(steps)
         };
-        let then_proof = if proof_case_split {
+        let then_proof = if proof_case_split || call_outcomes {
             arms[0].certificate.clone()
         } else {
             terminal_certificate(&arms[0].certificate, empty_source_arms[0])?
         };
-        let else_proof = if proof_case_split {
+        let else_proof = if proof_case_split || call_outcomes {
             arms[1].certificate.clone()
         } else {
             terminal_certificate(&arms[1].certificate, empty_source_arms[1])?
@@ -2355,8 +2355,7 @@ impl<'a> Proof<'a> {
     }
 
     /// Joins the returned and caught-throw descendants of one live call.
-    /// The call has already been executed in each sibling, so the resulting
-    /// certificate retains one leading `step()` per arm.
+    /// Each arm certificate starts at its checked call successor.
     pub(in crate::surface::proof) fn join_focused_call_outcomes_terminal(
         &self,
         record: &ExecutionSplit<'a>,

@@ -76,12 +76,10 @@ int32 single_guard_step(int32& value, bool should_throw) {
     step();
     outcomes {
         returned => {
-            step();
             step_until(function.exit);
             solve();
         }
         threw => {
-            step();
             step_until(function.exit);
             solve();
         }
