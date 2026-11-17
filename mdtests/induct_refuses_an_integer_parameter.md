@@ -13,7 +13,7 @@ verifying "induct_refuses_an_integer_parameter.c";
 theorem over_integer(n: Integer) {
     requires n >= 0;
     ensures n == n by {
-        induct(n) as ih;
+        let ih = induct(n);
         normalize();
     }
 }

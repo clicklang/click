@@ -5907,7 +5907,7 @@ pub enum ProofTactic {
     NormalizeUsing(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
     Intro,
-    /// `intro() as name`: introduce a universal goal's variable under a
+    /// `let name = intro()`: introduce a universal goal's variable under a
     /// name the proof chooses instead of the one the proposition wrote.
     IntroAs(String),
     IntroBinder(SurfaceBinder),
@@ -6221,7 +6221,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "induct",
-        syntax: "induct(n) as ih",
+        syntax: "let ih = induct(n)",
         class: "simple",
     },
     PublicTacticForm {
@@ -6346,7 +6346,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "intro-as",
-        syntax: "intro() as name",
+        syntax: "let name = intro()",
         class: "simple",
     },
     PublicTacticForm {

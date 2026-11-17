@@ -10032,8 +10032,45 @@ impl Parser {
     // common tactic dispatcher so nested proof bodies fit the bounded stack.
     #[inline(never)]
     fn parse_let_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        // Generated logical identities are valid intro outputs, while
+        // resource and call output patterns retain their written names.
+        if self.peek_ident() == Some("binder") && self.peek_next() == Some(&Token::LParen) {
+            let binder = self.expect_surface_binder("introduced variable")?;
+            self.expect(Token::Equal)?;
+            self.expect_ident_spelling("intro")?;
+            if self.tactic_names.contains("intro") {
+                return Err(self.error("generated binder outputs require the built-in `intro`"));
+            }
+            self.expect_empty_tactic_args("intro")?;
+            self.expect(Token::Semicolon)?;
+            return self.named_intro(binder);
+        }
         let output = self.parse_let_output_pattern()?;
         self.expect(Token::Equal)?;
+        if matches!(self.peek_ident(), Some("intro" | "induct"))
+            && !self.tactic_names.contains(self.peek_ident().unwrap())
+        {
+            let tactic = self.expect_ident("binding-producing tactic")?;
+            let CallOutputPattern::Single(name) = output else {
+                return Err(self.error(format!(
+                    "`{tactic}` produces one binding: write `let name = {tactic}(...);`"
+                )));
+            };
+            if tactic == "intro" {
+                self.expect_empty_tactic_args("intro")?;
+                self.expect(Token::Semicolon)?;
+                return self.named_intro(name.into());
+            }
+            self.refuse_cast_type_binder(&name)?;
+            self.expect(Token::LParen)?;
+            let parameter = self.expect_ident("induction parameter")?;
+            self.expect(Token::RParen)?;
+            self.expect(Token::Semicolon)?;
+            return Ok(ProofTactic::Induct {
+                parameter,
+                hypothesis: name,
+            });
+        }
         if self.peek_ident() == Some("step") {
             self.position += 1;
             self.expect(Token::LParen)?;
@@ -10936,87 +10973,92 @@ impl Parser {
         self.parse_named_proof_tactic(name)
     }
 
+    fn named_intro(&mut self, name: SurfaceBinder) -> Result<ProofTactic, ClickError> {
+        if let Some(name) = name.written() {
+            self.refuse_cast_type_binder(name)?;
+        }
+        self.names.hide_for_proof_binder(&name, false);
+        if let Some(name) = name.written() {
+            self.names.ended_fact_names.remove(name);
+        }
+        Ok(match name {
+            SurfaceBinder::Written(name) => ProofTactic::IntroAs(name),
+            name => ProofTactic::IntroBinder(name),
+        })
+    }
+
     // Structural induction retains a child proof parser. Its syntax
     // temporaries must not share the large leaf-tactic dispatch frame.
     #[inline(never)]
     fn parse_induct_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        let tactic = {
-            self.expect(Token::LParen)?;
-            let parameter = self.expect_ident("induction parameter")?;
-            self.expect(Token::RParen)?;
-            self.expect_ident_spelling("as")?;
-            let hypothesis = self.expect_ident("induction hypothesis name")?;
-            self.refuse_cast_type_binder(&hypothesis)?;
-            if self.peek() == Some(&Token::LBrace) {
+        self.expect(Token::LParen)?;
+        let parameter = self.expect_ident("induction parameter")?;
+        self.expect(Token::RParen)?;
+        self.expect_ident_spelling("as")?;
+        let hypothesis = self.expect_ident("induction hypothesis name")?;
+        self.refuse_cast_type_binder(&hypothesis)?;
+        if self.peek() != Some(&Token::LBrace) {
+            return Err(self.error("scalar induction uses `let ih = induct(n);`"));
+        }
+        self.position += 1;
+        let mut arms = Vec::new();
+        while self.peek() != Some(&Token::RBrace) {
+            let type_name = self.expect_ident("induction pattern datatype")?;
+            self.expect(Token::ColonColon)?;
+            let variant = self.expect_ident("induction pattern variant")?;
+            let mut bindings = Vec::new();
+            if self.peek() == Some(&Token::LParen) {
                 self.position += 1;
-                let mut arms = Vec::new();
-                while self.peek() != Some(&Token::RBrace) {
-                    let type_name = self.expect_ident("induction pattern datatype")?;
-                    self.expect(Token::ColonColon)?;
-                    let variant = self.expect_ident("induction pattern variant")?;
-                    let mut bindings = Vec::new();
-                    if self.peek() == Some(&Token::LParen) {
-                        self.position += 1;
-                        if self.peek() != Some(&Token::RParen) {
-                            loop {
-                                bindings.push(self.expect_ident("induction pattern binding")?);
-                                match self.peek() {
-                                    Some(Token::Comma) => self.position += 1,
-                                    Some(Token::RParen) => break,
-                                    Some(token) => {
-                                        return Err(self.error(format!(
-                                            "expected `,` or `)` after induction binding, got {}",
-                                            token.describe()
-                                        )));
-                                    }
-                                    None => {
-                                        return Err(
-                                            self.error("expected `)` after induction bindings")
-                                        );
-                                    }
-                                }
+                if self.peek() != Some(&Token::RParen) {
+                    loop {
+                        bindings.push(self.expect_ident("induction pattern binding")?);
+                        match self.peek() {
+                            Some(Token::Comma) => self.position += 1,
+                            Some(Token::RParen) => break,
+                            Some(token) => {
+                                return Err(self.error(format!(
+                                    "expected `,` or `)` after induction binding, got {}",
+                                    token.describe()
+                                )));
+                            }
+                            None => {
+                                return Err(self.error("expected `)` after induction bindings"));
                             }
                         }
-                        self.expect(Token::RParen)?;
-                    }
-                    self.expect(Token::FatArrow)?;
-                    let newly_bound = bindings
-                        .iter()
-                        .filter(|binding| {
-                            self.names
-                                .insert(NameKind::ContractBinding, (*binding).clone())
-                        })
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    let tactics = self.parse_possibly_empty_tactic_block();
-                    for binding in newly_bound {
-                        self.names.remove(NameKind::ContractBinding, &binding);
-                    }
-                    arms.push(ProofInductionArm {
-                        type_name,
-                        variant,
-                        bindings,
-                        tactics: tactics?,
-                    });
-                    if self.peek() == Some(&Token::Comma) {
-                        self.position += 1;
                     }
                 }
-                self.expect(Token::RBrace)?;
-                self.skip_redundant_semicolon();
-                return Ok(ProofTactic::StructuralInduct {
-                    parameter,
-                    hypothesis,
-                    arms,
-                });
+                self.expect(Token::RParen)?;
             }
-            ProofTactic::Induct {
-                parameter,
-                hypothesis,
+            self.expect(Token::FatArrow)?;
+            let newly_bound = bindings
+                .iter()
+                .filter(|binding| {
+                    self.names
+                        .insert(NameKind::ContractBinding, (*binding).clone())
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            let tactics = self.parse_possibly_empty_tactic_block();
+            for binding in newly_bound {
+                self.names.remove(NameKind::ContractBinding, &binding);
             }
-        };
-        self.expect(Token::Semicolon)?;
-        Ok(tactic)
+            arms.push(ProofInductionArm {
+                type_name,
+                variant,
+                bindings,
+                tactics: tactics?,
+            });
+            if self.peek() == Some(&Token::Comma) {
+                self.position += 1;
+            }
+        }
+        self.expect(Token::RBrace)?;
+        self.skip_redundant_semicolon();
+        Ok(ProofTactic::StructuralInduct {
+            parameter,
+            hypothesis,
+            arms,
+        })
     }
 
     // Keep the large leaf-tactic dispatch frame out of recursive proof-body
@@ -11362,22 +11404,9 @@ impl Parser {
             "intro" => {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("as") {
-                    self.position += 1;
-                    let name = self.expect_surface_binder("name for the introduced variable")?;
-                    if let Some(name) = name.written() {
-                        self.refuse_cast_type_binder(name)?;
-                    }
-                    self.names.hide_for_proof_binder(&name, false);
-                    if let Some(name) = name.written() {
-                        self.names.ended_fact_names.remove(name);
-                    }
-                    match name {
-                        SurfaceBinder::Written(name) => ProofTactic::IntroAs(name),
-                        name => ProofTactic::IntroBinder(name),
-                    }
-                } else {
-                    ProofTactic::Intro
+                    return Err(self.error("`intro() as name` is now `let name = intro();`"));
                 }
+                ProofTactic::Intro
             }
             "split" | "left" | "right" => {
                 return Err(self.error(format!(
@@ -18117,6 +18146,63 @@ mod tactic_classification_tests {
     use crate::surface::proof_certificate::certificate_step_class;
 
     #[test]
+    fn logical_bindings_use_let_and_round_trip() {
+        for source in [
+            "intro();",
+            "let x = intro();",
+            "let binder(7) = intro();",
+            "let ih = induct(n);",
+        ] {
+            let tactic = Parser::new(source).unwrap().parse_proof_tactic().unwrap();
+            let printed = super::super::printing::format_partial_tactic_sequence(
+                std::slice::from_ref(&tactic),
+            );
+            assert_eq!(printed, source);
+            Parser::new(&printed).unwrap().parse_proof_tactic().unwrap();
+            match (source, &tactic) {
+                ("intro();", ProofTactic::Intro) => {}
+                ("let x = intro();", ProofTactic::IntroAs(name)) => assert_eq!(name, "x"),
+                ("let binder(7) = intro();", ProofTactic::IntroBinder(_)) => {}
+                (
+                    "let ih = induct(n);",
+                    ProofTactic::Induct {
+                        parameter,
+                        hypothesis,
+                    },
+                ) => {
+                    assert_eq!(parameter, "n");
+                    assert_eq!(hypothesis, "ih");
+                }
+                _ => panic!("unexpected tactic: {source}"),
+            }
+        }
+        for source in [
+            "intro() as x;",
+            "intro() as binder(7);",
+            "induct(n) as ih;",
+            "let x = intro(3);",
+            "let ih = induct(n, m);",
+            "let ih = induct();",
+            "let { x: y } = intro();",
+            "let { x: y } = induct(n);",
+            "let x = intro()",
+            "let ih = induct(n)",
+        ] {
+            assert!(
+                Parser::new(source).unwrap().parse_proof_tactic().is_err(),
+                "{source}"
+            );
+        }
+        assert!(matches!(
+            Parser::new("induct(xs) as ih { List::Nil => {} }")
+                .unwrap()
+                .parse_proof_tactic()
+                .unwrap(),
+            ProofTactic::StructuralInduct { .. }
+        ));
+    }
+
+    #[test]
     fn witness_accepts_only_nonempty_positional_values() {
         for (source, count) in [
             ("witness(3);", 1),
@@ -18174,7 +18260,7 @@ mod tactic_classification_tests {
         ("gather-resource", "gather(reference(p));"),
         ("scatter-resource", "scatter(reference(p));"),
         ("construct-resource", "construct(reference(p));"),
-        ("induct", "induct(n) as ih;"),
+        ("induct", "let ih = induct(n);"),
         (
             "structural-induct",
             "induct(xs) as ih { List::Nil => { normalize(); } }",
@@ -18223,7 +18309,7 @@ mod tactic_classification_tests {
         ("normalize-using", "normalize() using { x == 1; };"),
         ("preserve", "preserve(memory(*p), statement(0));"),
         ("intro", "intro();"),
-        ("intro-as", "intro() as name;"),
+        ("intro-as", "let name = intro();"),
         ("enumerate", "enumerate();"),
         ("contradiction", "contradiction(x == 1);"),
         ("rewrite", "rewrite(x, 1);"),
