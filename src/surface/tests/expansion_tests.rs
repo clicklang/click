@@ -1,6 +1,66 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: wide element bounds, initializedness, and cold replay"]
+fn wide_viewable_element_needs_containment_and_initializedness() {
+    let (source, sources) =
+        mdtest_sources("mdtests/transport_wide_viewable_range_outside_element_is_refused.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    let report = verify_c_sources(&source, &sources).unwrap_err().report();
+    assert!(
+        report.contains("goal:") && report.contains("k < to_integer(n + 1u64)"),
+        "{report}"
+    );
+
+    // An inside index gets through containment, but viewability alone cannot
+    // establish that the byte has been initialized.
+    let inside = source.replace(
+        "k < n + 2u64 implies",
+        "to_integer(k) < to_integer(n + 1u64) implies",
+    );
+    assert_ne!(inside, source);
+    let report = verify_c_sources(&inside, &sources).unwrap_err().report();
+    assert!(report.contains("goal: defined"), "{report}");
+
+    let initialized = inside
+        .replace(
+            "    ensures result",
+            concat!(
+                "    requires forall (j: uint64) {\n",
+                "        to_integer(j) < to_integer(n + 1u64) implies defined(bytes[j])\n",
+                "    };\n    ensures result",
+            ),
+        )
+        .replace(
+            "            known();\n        }",
+            concat!(
+                "            instantiate(forall (j: uint64) {\n",
+                "                to_integer(j) < to_integer(n + 1u64) implies defined(old(bytes[j]))\n",
+                "            }, k);\n",
+                "            have defined(old(bytes[k])) by { known(); }\n",
+                "            have separate(memory(x), memory(bytes[k])) by { normalize(); }\n",
+                "            have separate(statement(0).footprint, memory(bytes[k])) by {\n",
+                "                normalize() using { separate(memory(x), memory(bytes[k])); };\n",
+                "            }\n",
+                "            preserve(memory(bytes[k]), statement(0));\n        }",
+            ),
+        );
+    verify_c_sources(&initialized, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "f.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&initialized, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: C string viewability and call authority"]
 fn cstr_viewability_without_transport_does_not_supply_call_authority() {
     let (source, sources) = mdtest_sources("mdtests/cstr_dynamic_invalidated_transport.md");
@@ -4070,6 +4130,40 @@ fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
     }
     let expanded = expand_c_claim_source_by_label(&click, &sources, "keep.contract").unwrap();
     assert!(expanded.contains("step(inner, {});"), "{expanded}");
+}
+
+#[test]
+#[ignore = "nightly: cold replay of two default call binding proofs"]
+fn bare_step_call_result_bindings_expand_and_replay() {
+    for (fixture, binding) in [
+        ("mdtests/c_static_function.md", "let { result: r } = step()"),
+        (
+            "mdtests/step_binds_call_result_with_default_resource.md",
+            "let { result: saved } = step()",
+        ),
+    ] {
+        let (source, owned_sources) = mdtest_sources(fixture);
+        let sources = crate::cli::source_refs(&owned_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "run.contract")
+            .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+        assert!(expanded.contains(binding), "{expanded}");
+        without_implicit_solve_for_claim("run.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    }
+
+    let (source, owned_sources) = mdtest_sources("mdtests/call_result_discarded.md");
+    let sources = crate::cli::source_refs(&owned_sources);
+    let source = source.replace("step(classify, { })", "step()");
+    let error = verify_c_sources(&source, &sources)
+        .expect_err("discarding a C call result leaves no value to bind");
+    assert!(
+        error
+            .message()
+            .contains("requires a scalar assignment or a used call result"),
+        "{error}"
+    );
 }
 
 /// The loop back edge needs both the current zero and the previous entry's
@@ -19690,19 +19784,19 @@ void set(int32* p, int32* q, int32 x) {
     let expanded = expand_function_proof_source(click_source, &c_sources, "set")
         .expect("the bare open should expand");
     let start = expanded.find("open(cell(p)) {").expect("the expanded open");
-    let by = start + expanded[start..].find("} by {").unwrap_or_else(|| {
-        panic!(
-            "the implicit `solve`'s proof of the close should print as the open's `by`: {expanded}"
-        )
-    });
+    let have = start
+        + expanded[start..].find("        have ").unwrap_or_else(|| {
+            panic!("the closing fact should be proved inside the open block: {expanded}")
+        });
+    let end = have
+        + expanded[have..]
+            .find("\n    }")
+            .expect("the open block closes");
+    assert!(!expanded[end..].starts_with("\n    } by"), "{expanded}");
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &c_sources))
         .expect("the expansion should reverify cold");
-    let by_end = by
-        + expanded[by..]
-            .find("\n    }\n")
-            .expect("the open's `by` closes");
     let mut without_proof = expanded.clone();
-    without_proof.replace_range(by..by_end + "\n    }".len(), "}");
+    without_proof.replace_range(have..end, "");
     let error = crate::surface::proof::without_implicit_solve(|| {
         verify_c_sources(&without_proof, &c_sources)
     })
@@ -19712,6 +19806,38 @@ void set(int32* p, int32* q, int32 x) {
         "the refusal should name the closing fold: {}",
         error.message()
     );
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-replays two closing outcomes"]
+fn open_scope_closing_facts_replay_after_both_returns() {
+    let c_source = "int32 f(int32* p, int32 x, int32 y) {
+        if (x > 0) { p[0] = x; return x; }
+        else { p[0] = y; return y; }
+    }";
+    let click_source = r#"
+verifying "returns.c";
+resource cell(p: int32*) { owns p[0..1]; fact p[0] > 0 or p[0] < -1; }
+int32 f(int32* p, int32 x, int32 y) {
+    requires y > 0;
+    owns cell(p);
+    ensures result > 0;
+} by {
+    open(cell(p)) {
+        branch { step_until(function.exit); } else { step_until(function.exit); }
+    }
+    solve();
+}
+"#;
+    let sources = [("returns.c", c_source)];
+    let expanded = expand_function_proof_source(click_source, &sources, "f").unwrap();
+    assert!(!expanded.contains("\n    } by {"), "{expanded}");
+    assert!(
+        expanded.contains("have p[0] > 0 or p[0] < -1"),
+        "{expanded}"
+    );
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 /// `expanded` with its first step's obligation proofs removed:
@@ -21786,12 +21912,15 @@ void set(int32* p, int32* q, int32 x) {
 }
 "#;
     let expanded = expand_function_proof_source(source, &sources, "set").unwrap();
-    assert!(expanded.matches("} by {").count() >= 2, "{expanded}");
+    assert!(
+        expanded.contains("have q[0] > 0 or q[0] < -1"),
+        "{expanded}"
+    );
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .expect("nested closing obligations retain explicit proofs");
     let invalid = source.replace(
         "open(cell(q)) { step(); }",
-        "open(cell(q)) { step(); } by { known(); }",
+        "open(cell(q)) { step(); have q[0] < -1 by { known(); } }",
     );
     assert!(
         verify_c_sources(&invalid, &sources).is_err(),

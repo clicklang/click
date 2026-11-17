@@ -9605,8 +9605,24 @@ impl ExecutionProofCore {
                 .map_or(&no_assumptions, |entry| entry.assumptions());
             let theorem_assumptions =
                 crate::kernel::api::proof_evidence_assumptions(theorem, entry_assumptions);
-            *reached =
-                crate::kernel::resolve_pending_heap_allocations(&reached, &theorem_assumptions);
+            *reached = crate::kernel::resolve_pending_heap_allocations_with(
+                &reached,
+                &theorem_assumptions,
+                |obligation| {
+                    // The condition theorem decides the outcome. Retirement
+                    // evidence is a separate premise in the checked context.
+                    let premise = obligation.proposition();
+                    if context.states_required_goal(premise) {
+                        return Ok(());
+                    }
+                    Err(EvidenceRefusal {
+                        reason: "successful realloc requires separation from its call-entry loans",
+                        expected: None,
+                        proved: None,
+                        premise: Some(premise.clone()),
+                    })
+                },
+            )?;
         }
         if let Some(pending) = &reached.pending_thread_create {
             let no_assumptions = PureFactContext::new();

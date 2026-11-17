@@ -105,6 +105,13 @@ impl LoopBoundary {
         self.guard.may_exit()
     }
 
+    pub(super) fn required_ranking_measures<'m>(
+        &self,
+        declared: &'m [crate::kernel::RankingComponent],
+    ) -> &'m [crate::kernel::RankingComponent] {
+        self.guard.required_ranking_measures(declared)
+    }
+
     /// Compatible exits are covered by the invariant-head abstraction.
     /// A distinct partition is retained only for an established false guard.
     pub(super) fn explicit_exit_state(&self) -> Option<&ExecutionState> {
@@ -450,9 +457,6 @@ enum ProofScopeStructure {
         resource: ResourceClause,
         source_index: usize,
         preserve_exposed_body: bool,
-        /// The source's `open(r) { ... } by { ... }` proof of the body fact
-        /// the closing fold leaves open.
-        written_close_proof: Option<Vec<ProofTactic>>,
     },
 }
 

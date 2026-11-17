@@ -179,24 +179,6 @@ fn active_heap_memory_loan(range: MemoryRange) -> LoanLedger {
         .expect("memory loan apply")
 }
 
-fn assert_heap_loan_write_rejected(outcome: &StatementOutcome) {
-    let StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)) = outcome else {
-        panic!("expected a loan refusal, got {outcome:?}");
-    };
-    assert_eq!(
-        diagnostic.category(),
-        crate::kernel::LoanRefusalCategory::ActiveDependency
-    );
-    assert_eq!(
-        diagnostic.operation(),
-        crate::kernel::LoanRefusalOperation::MemoryAccess
-    );
-    // A lifetime-ending operation names the loan that still protects the
-    // allocation, not just the fact that some loan refused.
-    assert!(diagnostic.subject().conflicting_resource_fact().is_some());
-    assert!(diagnostic.subject().loan_id().is_some());
-}
-
 fn heap_allocation_paths() -> Vec<StatementExecutionPath> {
     let state = ExecutionState::new()
         .with_population_creation_tracking()
@@ -1479,25 +1461,14 @@ fn heap_free_requires_separation_from_an_interior_loan_until_it_ends() {
     );
 }
 
-#[test]
-fn active_stable_loan_rejects_overlapping_heap_realloc() {
-    let state = successful_heap_allocation_state();
-    let local = state.locals().get_native("p");
-    let Some(ProgramValue::Pointer(pointer)) = local.as_deref() else {
-        panic!("allocation should assign a pointer");
-    };
-    // The second int32 cell is a strict subrange of the 16-byte allocation.
-    let loan = active_heap_memory_loan(MemoryRange::new(
-        pointer.pointer().clone(),
-        MachineTerm::constant(1),
-        MachineTerm::constant(2),
-    ));
-    let state = state.with_loan_ledger(Some(loan));
-    let state = state.with_local("q", ProgramValue::pointer(Address::null()));
-    let realloc = execute_execution_statement_paths(
-        &state,
+fn start_test_realloc(
+    state: &ExecutionState,
+    assumptions: &PureFactContext,
+) -> Box<ExecutionState> {
+    let paths = execute_execution_statement_paths(
+        state,
         &program_reallocate_then_assign(
-            3,
+            0,
             "q",
             ProgramType::Int32Pointer,
             vec![
@@ -1505,12 +1476,103 @@ fn active_stable_loan_rejects_overlapping_heap_realloc() {
                 crate::kernel::program_expression::int32_literal(8),
             ],
         ),
+        assumptions,
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    let [path]: [StatementExecutionPath; 1] = paths.try_into().expect("one realloc path");
+    assert!(path.obligations.is_empty());
+    let StatementOutcome::Normal(pending) = path.outcome else {
+        panic!("realloc must leave a pending result: {:?}", path.outcome);
+    };
+    pending
+}
+
+fn resolve_test_realloc(pending: &ExecutionState) -> Vec<StatementExecutionPath> {
+    execute_execution_statement_paths(
+        pending,
+        &program_if(
+            crate::kernel::program_expression::variable("q"),
+            ProgramStatement::Skip,
+            ProgramStatement::Skip,
+        ),
         &PureFactContext::new(),
         ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
-    .expect("realloc should return a checked refusal");
-    assert_heap_loan_write_rejected(&realloc[0].outcome);
+    .unwrap()
+}
+
+#[test]
+fn realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation() {
+    let state =
+        successful_heap_allocation_state().with_local("q", ProgramValue::pointer(Address::null()));
+    let local = state.locals().get_native("p");
+    let Some(ProgramValue::Pointer(pointer)) = local.as_deref() else {
+        panic!("allocation should assign a pointer");
+    };
+    let base = pointer.pointer().clone();
+    // This field is in the part that the successful shrink would cut off.
+    let interior = MemoryRange::new(base.offset_by_bytes(12), 0.into(), 1.into());
+    let ledger = active_heap_memory_loan(interior.clone());
+    let state = state.with_loan_ledger(Some(ledger.clone()));
+    let pending = start_test_realloc(&state, &PureFactContext::new());
+    let paths = resolve_test_realloc(&pending);
+    assert_eq!(paths.len(), 2);
+    let failure = paths
+        .iter()
+        .find(|path| path.obligations.is_empty())
+        .unwrap();
+    let StatementOutcome::Normal(after_failure) = &failure.outcome else {
+        panic!("a failed allocation must keep running");
+    };
+    assert_eq!(
+        after_failure.memory().live_heap_block_size(&base),
+        Some(&AllocationSize::int32(16))
+    );
+    assert_eq!(after_failure.resources(), state.resources());
+    assert_eq!(after_failure.loan_ledger(), Some(&ledger));
+    assert_eq!(
+        after_failure.locals().get_native("q").as_deref(),
+        Some(&ProgramValue::pointer(Address::null()))
+    );
+
+    // Proof operations after the call must not change which loans constrain it.
+    let pending = pending.with_loan_ledger(None);
+    let paths = resolve_test_realloc(&pending);
+    let success = paths
+        .iter()
+        .find(|path| !path.obligations.is_empty())
+        .unwrap();
+    let [obligation] = success.obligations.as_slice() else {
+        panic!("success must have one separation prerequisite");
+    };
+    let Proposition::ResourceSeparate { left, right } = obligation.proposition() else {
+        panic!("expected separation");
+    };
+    assert_eq!(right.as_ref(), &Resource::Memory(interior));
+    let Resource::Memory(old_range) = left.as_ref() else {
+        panic!("expected the old allocation byte range");
+    };
+    assert_eq!(old_range.base(), &base);
+    assert_eq!(old_range.signed_constant_end(), Some(16));
+    assert_eq!(old_range.element_width(), 1);
+    assert!(!PureFactContext::new().proves_resource_separate(left, right));
+
+    let local = pending.locals().get_native("q");
+    let Some(ProgramValue::Pointer(result)) = local.as_deref() else {
+        panic!("pending realloc must name its result");
+    };
+    let success_assumptions = PureFactContext::new()
+        .assume_condition(pointer_is_null_condition(result.pointer().clone()), false);
+    let checked = crate::kernel::resolve_pending_heap_allocations_with(
+        &pending,
+        &success_assumptions,
+        |requirement| Err(requirement),
+    );
+    assert_eq!(checked.unwrap_err().proposition(), obligation.proposition());
+    assert!(pending.memory().live_heap_block_size(&base).is_some());
 }
 
 #[test]

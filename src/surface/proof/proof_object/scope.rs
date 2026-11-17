@@ -70,10 +70,8 @@ impl<'a> ProofScope<'a> {
         &self,
         resource: ResourceClause,
         source_index: usize,
-        written_close_proof: Option<Vec<ProofTactic>>,
     ) -> Result<ProofScope<'a>, ClickError> {
-        self.body
-            .begin_open(resource, source_index, written_close_proof)
+        self.body.begin_open(resource, source_index)
     }
 
     /// Associates the checked lowering metadata reported by a refused
@@ -687,13 +685,11 @@ impl<'a> ProofScope<'a> {
                 ref resource,
                 source_index,
                 preserve_exposed_body,
-                ref written_close_proof,
             } => self.close_open_scope_from(
                 &self.body,
                 resource,
                 source_index,
                 preserve_exposed_body,
-                written_close_proof,
             ),
         }
     }
@@ -701,15 +697,13 @@ impl<'a> ProofScope<'a> {
     /// Closes this `open` scope from `body`, this scope's body or one that
     /// has gone on to prove a body fact the closing fold leaves open; the
     /// recorded scope keeps this scope's own body. At function exit the
-    /// close is deferred with the source's `written_close_proof`, and the
-    /// deferred close checks it.
+    /// close is deferred until the outcome proof.
     pub(in crate::surface::proof) fn close_open_scope_from(
         &self,
         body: &Proof<'a>,
         resource: &ResourceClause,
         source_index: usize,
         preserve_exposed_body: bool,
-        written_close_proof: &Option<Vec<ProofTactic>>,
     ) -> Result<Proof<'a>, ClickError> {
         let ProofContext::Execution(context) = self.root.context.as_ref() else {
             unreachable!("an open scope can only be created from an execution Proof")
@@ -732,7 +726,6 @@ impl<'a> ProofScope<'a> {
                 PostExecutionTactic::CloseOpen {
                     resource: resource.clone(),
                     preserve_exposed_body,
-                    written_close_proof: written_close_proof.clone(),
                 },
                 Some(body.state.locals().values.clone()),
             );
@@ -819,7 +812,7 @@ impl<'a> ProofScope<'a> {
                 Arc::new(ProofStep::Open {
                     resource: resource.clone(),
                     proof: Box::new(body_certificate),
-                    close_proof: None,
+                    deferred_tail: false,
                 }),
             ),
         })

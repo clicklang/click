@@ -343,7 +343,7 @@ the one execution transition that fails.
 | --- | --- | --- | --- | --- |
 | `mark name;` | simple | Specialized | Name the current execution state. | [Reference](#proof-marks) |
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
-| `let { result: name } = step()` | simple | Specialized | Bind the checked value of a scalar assignment. | [Reference](#binding-a-statement-result) |
+| `let { result: name } = step()` | simple | Specialized | Bind the checked value of an assignment or a call. | [Reference](#binding-a-statement-result) |
 | `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
@@ -543,28 +543,27 @@ separate smart `implicit closer` row at the step.
 
 **Form:** `let { result: name } = step()`
 
-**Specialized.** Write it when a later fact must name an assigned value after
-its local is overwritten or leaves scope. Execute the scalar assignment at the
-current frontier and bind its checked value to an immutable proof name. The name
-continues to denote that value after the source local is overwritten or leaves
-scope.
+**Specialized.** Bind the checked value from the next assignment or call to
+an immutable proof name. The name can refer to the value after C overwrites
+the local, leaves its scope, or uses the result of the call.
 
-**Accepts** a frontier whose next lowered statement assigns a scalar or
-pointer C local without a call: `y = e;`, `x += e;`, `x++;`, or the second
-step of `int32 y = e;` (its initializing assignment). `name` must not be a C
-local in scope or a parameter. A proof name may be bound again, and the newest
-binding wins. The step executes exactly as `step()` does, and `name` then
-denotes the assigned value.
+**Accepts** a scalar or pointer local assignment such as `y = e;`,
+`x += e;`, or the initializing assignment of `int32 y = e;`. It also accepts
+a call whose result is used, including `y = g(x);`, `if (g(x))`, or
+`return g(x);` at the call step. Bare `step()` must be able to resolve the
+call in the current proof context. A proof name may be rebound, and the
+newest binding wins.
 
 **Outside it**, with what to write instead:
 
-- An assignment from a call, `y = g(x);`: use
-  `let { result: name } = step(g, { })`. The empty map is enough for a
-  callee without binders.
+- A call that needs a callee, contract, or binder selection: supply it on
+  the right, for example `let { result: name } = step(g, { input: instance })`.
+  Use the named call form to bind any resources the call produces.
+- A call whose result C discards: use `step()`.
 - A store through a pointer, field, or array element (`p[0] = 3;`,
   `p->v = 3;`): use `step()` and name the cell.
-- A `return`, a declaration's first step, or any other non-assignment: use
-  `step()`. `result` names a returned value.
+- A return step itself or a declaration's first step: use `step()`.
+  In an outcome proof, `result` names the function's return value.
 - A name that is a C variable here is refused with `names a C variable here`.
   Choose another name.
 - An output other than `result`, such as `let { value: v } = step()`, is
@@ -575,7 +574,7 @@ denotes the assigned value.
 The ordinary step checks every access and arithmetic prerequisite, and the
 binding adds no assumption. Expansion retains the binding unchanged.
 
-**Checked examples:** [`step_result_binding_names_checked_values_and_survives_overwrite`](https://github.com/clicklang/click/blob/master/src/surface/tests/project_tests.rs), [`a_step_result_name_can_be_bound_again.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_result_name_can_be_bound_again.md), [`step_result_binding_refuses_a_store_through_a_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/step_result_binding_refuses_a_store_through_a_pointer.md)
+**Checked examples:** [`c_static_function.md`](https://github.com/clicklang/click/blob/master/mdtests/c_static_function.md), [`step_binds_call_result_with_default_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/step_binds_call_result_with_default_resource.md), [`step_result_binding_names_checked_values_and_survives_overwrite`](https://github.com/clicklang/click/blob/master/src/surface/tests/project_tests.rs), [`a_step_result_name_can_be_bound_again.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_result_name_can_be_bound_again.md), [`step_result_binding_refuses_a_store_through_a_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/step_result_binding_refuses_a_store_through_a_pointer.md)
 
 ### Execution to function exit
 
@@ -918,8 +917,8 @@ the C value.
 - The `let` pattern names every `produces` binder. A produced instance's
   resource arguments are the call's arguments
   ([`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md)).
-- A callee without binders takes the empty map `{ }`. Use this to name the
-  result of `y = g(x);` or `return g(x);`
+- An explicitly named callee without binders takes the empty map `{ }`.
+  This form also names a call result when the proof names the callee
   ([`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md)).
   `name` must not be a C variable. A proof name may be rebound.
 
@@ -1124,7 +1123,6 @@ step is still checked.
 | `if P [ensuring { ... } then] { ... } else { ... }` | control | Core | Split a proof on a chosen proposition. | [Reference](#proposition-branches) |
 | `cases { A => { ... } B => { ... } }` | control | Specialized | Prove a written collection of cases. | [Reference](#explicit-cases) |
 | `open(resource) { ... }` | control | Specialized | Unfold a resource for a nested proof. | [Reference](#scoped-resource-opening) |
-| `open(...) { ... } by { ... }` | control | Expansion output | Supply the proof that restores an opened resource. | [Reference](#scoped-resource-opening-with-restoration) |
 | `witness(value, ...);` | simple | Specialized | Supply values for existential binders. | [Reference](#existential-witnesses) |
 | `let name = obtain(exists (k: Type) { P });` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
 
@@ -3180,35 +3178,14 @@ an `ensuring` interface can rejoin before the block closes.
 
 Missing ownership, an undecided guard, or failure to restore the body fails. A
 body fact the closing fold leaves open is proved by the implicit closer, which
-expansion prints as `open(...) { ... } by { ... }`. When it leaves several open,
-the implicit closer proves each, and expansion prints them as `have`s at the end
-of the block. Click checks the exact
-resource transition; expansion recurses, and profiling reports descendants.
+expansion writes as `have` steps at the end of the block. To supply a closing
+proof by hand, put the `have` there yourself, after any execution that
+establishes the fact. This also works when the block reaches function exit.
+A trailing `by` after the block is refused.
 
 **Checked examples:** [`resource_population_open.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_population_open.md), [`open_scope_model_match_terminal.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_terminal.md), [`open_scope_model_match_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejoins.md), [`open_scope_model_match_rejects_bad_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejects_bad_arm.md)
 
-### Scoped resource opening with restoration
-
-**Form:** `open(...) { ... } by { ... }`
-
-**Expansion output.** `click expand` writes it; by hand, write it only to give
-the close a different proof than the implicit closer. Closing an `open` scope
-folds its resource again; the body after `by` proves the one body fact that fold
-leaves open, as `fold(...) by { ... }` does, where the block ends, or after
-execution when the block reaches function exit.
-
-A bare `open` proves that fact by the implicit closer, which expansion prints as
-this `by`. The body is one tactic call, such as `solve();`, or a block.
-
-**Failure, checking, and tools:**
-
-Refused when the close leaves no body fact open (superfluous) or more than one;
-prove the others with `have` in the block, the form expansion writes for a bare
-`open` whose close leaves several. Expansion keeps the `by` and
-prints the body's checked steps; a smart tactic written in the `by` expands with its claim
-(`click expand --claim`), not as a site of its own.
-
-**Checked examples:** [`open_by_proves_the_closing_fold_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/open_by_proves_the_closing_fold_body_fact.md), [`open_by_is_refused_when_the_close_leaves_nothing_open.md`](https://github.com/clicklang/click/blob/master/mdtests/open_by_is_refused_when_the_close_leaves_nothing_open.md)
+**Checked closing examples:** [`open_closing_fact_inside_block.md`](https://github.com/clicklang/click/blob/master/mdtests/open_closing_fact_inside_block.md), [`open_trailing_by_is_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/open_trailing_by_is_rejected.md)
 
 ### Existential witnesses
 

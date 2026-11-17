@@ -516,26 +516,11 @@ pub(crate) fn rust_iterator_method(
         (K::RangeInclusive, "start()") => variable("start"),
         (K::RangeInclusive, "end()") => variable("end"),
         (K::RangeInclusive, "is_empty()") => {
-            let local = |suffix| ContractExpression::ProgramExpression(variable(suffix));
-            let compare = |left, operator, right| ClickProposition::Comparison {
-                left,
-                operator,
-                right,
-            };
-            return proposition_bool_value(ClickProposition::Or(
-                Box::new(compare(
-                    local("done"),
-                    ComparisonOperator::NotEqual,
-                    ContractExpression::ProgramExpression(
-                        crate::kernel::program_expression::int32_literal(0),
-                    ),
-                )),
-                Box::new(compare(
-                    local("start"),
-                    ComparisonOperator::GreaterThan,
-                    local("end"),
-                )),
-            ));
+            return proposition_bool_value(ClickProposition::Comparison {
+                left: ContractExpression::ProgramExpression(variable("start")),
+                operator: ComparisonOperator::GreaterThan,
+                right: ContractExpression::ProgramExpression(variable("end")),
+            });
         }
         (K::Range, "len()") => {
             ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
@@ -6351,13 +6336,7 @@ impl ProofTactic {
                     .collect(),
             },
             Self::Have(have) => vec![Obligation(Source(&have.proof))],
-            Self::Open(open) => {
-                let mut children = vec![Continuing(Script(&open.tactics))];
-                if let Some(close) = &open.close_proof {
-                    children.push(Obligation(Script(close)));
-                }
-                children
-            }
+            Self::Open(open) => vec![Continuing(Script(&open.tactics))],
             Self::If(proof_if) => vec![
                 Continuing(Script(&proof_if.then_tactics)),
                 Continuing(Script(&proof_if.else_tactics)),
@@ -6539,36 +6518,17 @@ impl ProofHave {
 pub struct ProofOpen {
     resource: ResourceClause,
     tactics: Vec<ProofTactic>,
-    /// `open(r) { ... } by { ... }`: the proof of the one body fact the
-    /// scope's closing fold leaves open, as `fold(r) by { ... }` proves a
-    /// fold's.
-    close_proof: Option<Vec<ProofTactic>>,
+    // The captured tail of a deferred close, merged into the matching scope
+    // when the outcome proof is assembled.
+    deferred_tail: bool,
 }
 
 impl ProofOpen {
-    /// The proof a deferred close of `open(resource)` recorded for the body
-    /// fact its closing fold left open: an `open` with no body, which the
-    /// certificate attaches to the scope it closes as that scope's `by`.
-    pub(crate) fn deferred_close_proof(
-        resource: ResourceClause,
-        close_proof: Vec<ProofTactic>,
-    ) -> Self {
-        Self {
-            resource,
-            tactics: Vec::new(),
-            close_proof: Some(close_proof),
-        }
-    }
-
-    /// The `have`s a deferred close of `open(resource)` proved for the
-    /// several body facts its closing fold left open: an `open` with an
-    /// empty `by`, which the certificate appends to the block of the scope
-    /// it closes. A written `by` is never empty.
     pub(crate) fn deferred_block_tail(resource: ResourceClause, haves: Vec<ProofTactic>) -> Self {
         Self {
             resource,
             tactics: haves,
-            close_proof: Some(Vec::new()),
+            deferred_tail: true,
         }
     }
 }

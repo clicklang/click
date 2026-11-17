@@ -32,6 +32,7 @@ mod id_hash;
 pub mod instrumentation;
 pub mod kernel;
 pub mod languages;
+pub mod nightly_report;
 mod persistent;
 pub mod project;
 mod source;

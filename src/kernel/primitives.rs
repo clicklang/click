@@ -7408,6 +7408,14 @@ pub struct RepresentationCopyEffect {
     pub bytes_argument: usize,
 }
 
+/// An exact byte span of a checked representation copy whose source may
+/// contain unwritten bytes.
+pub(super) struct RepresentationCopyRange {
+    pub(super) destination: Address,
+    pub(super) source: Address,
+    pub(super) bytes: u32,
+}
+
 /// A contract supplied for a C function whose implementation is outside the
 /// verified source set. External rules are intentionally distinct from
 /// [`VerifiedFunctionRule`]: they are knowns accepted at call sites,
@@ -9155,6 +9163,8 @@ impl AllocationSize {
 pub(super) struct PendingReallocation {
     pub(super) old_pointer: Address,
     pub(super) old_bytes: AllocationSize,
+    /// Full old byte range separated from the active loans at the call.
+    pub(super) retirement_separation: Option<std::sync::Arc<Proposition>>,
     /// Bytes at the start of the new block that retain calloc's guaranteed
     /// zero value. A prefix equal to the new allocation size means the whole
     /// block is zeroed; a shorter prefix leaves the grown tail uninitialized.

@@ -116,7 +116,7 @@ src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_close_invarian
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_execution_statement_step	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_step_with_obligation_proofs	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::close_bundle_member_by_solve	try_solve_closure	1
-src/surface/proof/driver/obligations.rs	driver	ProofDriver::close_scope_with_body_fact_proof	driver	3
+src/surface/proof/driver/obligations.rs	driver	ProofDriver::close_scope_with_body_fact_proof	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::discharge_entry_requirements	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::plan_invariant_bundle_member_closure	driver	9
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::prepare_loop_invariant_bundle	driver	1

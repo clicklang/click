@@ -37,7 +37,9 @@ impl<'a> Scope<'a> {
                 self.values.insert(name.to_owned(), root.clone());
             }
             AlgebraicFieldResult::Shared(_) => {}
-            AlgebraicFieldResult::Native(value) => self.bind_native_field(name, value),
+            AlgebraicFieldResult::Imported(_) => {
+                self.bind_native_field(name, &value.clone().into_native())
+            }
         }
     }
 
