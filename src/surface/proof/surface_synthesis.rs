@@ -3800,8 +3800,23 @@ fn raise_kernel_term_dispatch(
             relation,
             arguments,
         } => {
-            let operand =
-                |term| synthesize_observation_operand(recurse(term)?, format.program_type());
+            // Wide equality reads unsigned literals as the same words. Keep
+            // their literal payloads: a signed cast would change those roots.
+            let unsigned_literals = *relation == CompareRelation::Equal
+                && format.format().bits() == 64
+                && arguments.iter().all(|term| {
+                    crate::kernel::MachineOperandView::Shared(term)
+                        .literal()
+                        .is_some_and(|value| value.uint64_as_const().is_some())
+                });
+            let operand = |term| {
+                let expression = recurse(term)?;
+                if unsigned_literals {
+                    Some(expression)
+                } else {
+                    synthesize_observation_operand(expression, format.program_type())
+                }
+            };
             proposition_bool_value(ClickProposition::Comparison {
                 left: operand(&arguments[0])?,
                 operator: match relation {
