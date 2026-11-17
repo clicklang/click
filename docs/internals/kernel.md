@@ -2031,6 +2031,14 @@ function-entry memory and entry scalar values, then elaborates `expr`
 normally. The surface evaluates no expression itself: every C fragment,
 wherever it is stated, is elaborated this way and evaluated by the kernel.
 
+Declared resource arguments with `ResourceStateSource::Entry` use the
+entry state unless the evaluation frame carries the same actual program-point
+ID (or is the entry state object itself). Such a frame may add the folded
+clauses' read authority at entry. Equal memory snapshots at distinct points
+do not select the entry frame; two missing point IDs do not identify states.
+`functions::resource_argument_point_tests` covers these distinctions. This
+selection does not use `ProgramPoint`'s legacy snapshot-based equality.
+
 Memory access obligations carry the operation byte width. Do not infer load or
 store width only from pointer syntax; the operation type is what determines
 whether an access needs one byte or four bytes.
