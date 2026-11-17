@@ -4267,7 +4267,7 @@ fn source_backed_call_requirement_surface(
                 return None;
             }
         }
-        ProofStep::Step => {
+        ProofStep::Step | ProofStep::StepBind(_) => {
             // Even an indirect callback must retain the exact function-pointer
             // expression named by the carrier before routing through its
             // selected interface, except for the named-contract alias above.
@@ -4290,7 +4290,9 @@ fn source_backed_call_requirement_surface(
     let expected_interface = match step {
         ProofStep::StepContract(application) => application.name.as_str(),
         ProofStep::StepCall(transport) if transport.is_named_contract() => transport.callee(),
-        ProofStep::Step | ProofStep::StepCall(_) => site.interface.as_ref(),
+        ProofStep::Step | ProofStep::StepBind(_) | ProofStep::StepCall(_) => {
+            site.interface.as_ref()
+        }
         _ => return None,
     };
     if site.interface.as_ref() != expected_interface {
@@ -4547,8 +4549,10 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
     context: &ExecutionProofContext<'_>,
 ) -> Option<(String, CallerRequirementSelection)> {
     let source = requirement.call_site.as_ref()?;
-    if !matches!(step, ProofStep::Step | ProofStep::StepCall(_))
-        || source.interface.as_ref() != source.callee.as_str()
+    if !matches!(
+        step,
+        ProofStep::Step | ProofStep::StepBind(_) | ProofStep::StepCall(_)
+    ) || source.interface.as_ref() != source.callee.as_str()
     {
         return None;
     }
