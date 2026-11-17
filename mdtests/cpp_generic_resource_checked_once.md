@@ -257,6 +257,7 @@ template<class T> Stack<T>::~Stack() {
         }
     }
     unfold(list);
+    step_until(function.exit);
     solve();
 }
 
@@ -272,6 +273,8 @@ int round_trip(int x) {
     let empty = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };
+    step();
+    let { after: pushed } = step(Stack<int>::push, { before: empty });
     step_until(function.exit);
     unfold(length(List<int32>::Cons(x, List<int32>::Nil)));
     unfold(first_or(List<int32>::Cons(x, List<int32>::Nil), 0));
@@ -285,7 +288,8 @@ unsigned long pushed_size(int x) {
     let empty = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };
-    step_until(region(3));
+    step();
+    let { after: one } = step(Stack<int>::push, { before: empty });
     unfold(length(List<int32>::Cons(x, List<int32>::Nil)));
     have length(List<int32>::Cons(x, List<int32>::Nil)) < 1000000 by solve() using {
         length(List<int32>::Cons(x, List<int32>::Nil)) == length(List<int32>::Nil) + 1;
