@@ -3363,13 +3363,21 @@ impl EqualityGraph {
 /// as its retained name. Preserve that exact state before applying the
 /// legacy comparison form to inputs that do not already have an identity.
 fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
-    if let MachineTerm::MemoryLoad(memory, pointer, kind) = term
-        && crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind)
-    {
-        term.clone()
-    } else {
-        crate::kernel::canonical_term(term)
+    if let MachineTerm::MemoryLoad(memory, pointer, kind) = term {
+        if crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind) {
+            return term.clone();
+        }
+        if kind.is_word32() {
+            // Select the read identity without recovering a cached value.
+            // Already-selected reads above retain their producer's identity.
+            return crate::kernel::canonical_form_of_load(
+                memory.shared_memory().clone(),
+                pointer.as_ref().clone(),
+                *kind,
+            );
+        }
     }
+    crate::kernel::canonical_term(term)
 }
 
 #[cfg(test)]

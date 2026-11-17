@@ -447,7 +447,7 @@ impl TermClasses {
                         // The graph uses the same assumption-free read identity
                         // as its native entry point. Keep the written descriptor
                         // intact; only its graph class follows that identity.
-                        let canonical = crate::kernel::canonical_term(
+                        let canonical = crate::kernel::equality_graph::exact_read_comparison_input(
                             term.machine_read_leaf().expect("read leaf"),
                         );
                         let shared = crate::kernel::KernelTermImport::default()

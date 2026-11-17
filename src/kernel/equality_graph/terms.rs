@@ -35,7 +35,6 @@ pub(super) use congruence::has_machine_operands;
 /// read meets a function pointer cell directly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum CellRead {
-    Int32,
     UInt64,
     FunctionPointer,
     /// An 8- or 16-bit read, equal to a stored value of its width.
@@ -2094,14 +2093,10 @@ impl TermClasses {
                     self.intern_node(Node::Int32Read(source.read_identity(), address));
                 self.close_with_affine_definition(vec![(id, source_read)], true);
             }
-            self.pending_cell_reads.push(PendingCellRead {
-                read: id,
-                memory,
-                origin,
-                pointer,
-                kind: CellRead::Int32,
-                only: None,
-            });
+            // The store's explicit equation supplies a word read's value.
+            // Registering a read only establishes its address/state application;
+            // it must not import additional equalities from cached memory.
+            let _ = origin;
         }
         while let Some(pending) = self.pending_cell_reads.pop() {
             self.equate_read_with_aliased_cell(pending);
@@ -2165,17 +2160,7 @@ impl TermClasses {
                 .find_map(|memory| memory.known_value(&cell));
             use crate::kernel::ProgramValue as V;
             found = match (stored, kind) {
-                (Some(V::Int64(value) | V::UInt64(value)), CellRead::UInt64)
-                | (Some(V::Int32(value)), CellRead::Int32) => Some(Ok(value)),
-                // The `int32` read of a cell storing a `uint32` value is σ of
-                // that value (rule K5's reinterpretation, σ a node).
-                (Some(V::UInt32(value)), CellRead::Int32) => {
-                    Some(Ok(crate::kernel::MachineTerm::sign_cast32(
-                        crate::kernel::MachineIntegerType::UInt32,
-                        crate::kernel::MachineIntegerType::Int32,
-                        value,
-                    )))
-                }
+                (Some(V::Int64(value) | V::UInt64(value)), CellRead::UInt64) => Some(Ok(value)),
                 (
                     Some(V::Bool(value) | V::Int8(value) | V::UInt8(value)),
                     CellRead::Narrow(crate::kernel::CarrierWidth::Bits8),

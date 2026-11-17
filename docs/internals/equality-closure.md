@@ -738,6 +738,15 @@ equality therefore gives equal reads at that state, even when its block
 relation has no affine spelling. Late address merges propagate through the
 same parent-use index as addition and scaling.
 
+Registering a four-byte word read does not equate it with a value recovered
+from the memory cell cache. Native and shared raw word-read inputs use read
+identity selection rather than cached-value canonicalization at this graph
+boundary. A producer's retained store equation supplies the value equality;
+ordinary congruence then propagates it through address aliases and enclosing
+expressions. The equation remains scoped to its fact context. This boundary
+does not remove the separate memory-resolution APIs or the cache routes for
+other read widths and function pointers.
+
 Selected int32 operands prepare their pointer dependencies before registering
 the scalar read. A shifted raw pointer read imports only the exact definition
 retained by its typed producer; matching arithmetic without that metadata is
