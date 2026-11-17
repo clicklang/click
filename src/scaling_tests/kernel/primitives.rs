@@ -82,3 +82,27 @@ fn narrow_comparison_identity_is_constant_in_operand_size() {
         "identity readings by depth: {counts:?}"
     );
 }
+
+/// Opaque exception values keep their type at every call/throw boundary.
+/// Both existing and newly admitted rigid names use the name index.
+#[test]
+fn rigid_type_lookup_is_indexed_in_registered_types() {
+    let target = TypeParameterName::intern("scaling::opaque_exception_target");
+    for size in [0, 16, 64, 256] {
+        for index in 0..size {
+            TypeParameterName::intern(&format!("scaling::opaque_unrelated_{size}_{index}"));
+        }
+        let fresh = AlgebraicType::parameter(format!("scaling::opaque_fresh_{size}"));
+        let ((found, missing), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let found = TypeParameterName::of(&target.algebraic_type());
+            assert!(TypeParameterName::carries(&target.algebraic_type()));
+            let missing = TypeParameterName::carries(&fresh);
+            let admitted = TypeParameterName::of(&fresh);
+            assert_eq!(TypeParameterName::of(&fresh), admitted);
+            (found, missing)
+        });
+        assert_eq!(found, target);
+        assert!(!missing);
+        assert_eq!(work, 5, "registered growth={size}");
+    }
+}

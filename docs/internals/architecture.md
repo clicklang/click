@@ -155,7 +155,7 @@ exceptional unwinding edges. The language frontends decide which edges are
 legal; the kernel does not infer cleanup or loan recovery from lexical scope
 alone.
 
-The selected C++ exception profile is deliberately closed: C++20 on the pinned
+The `scalar_int32` C++ exception profile is deliberately closed: C++20 on the pinned
 Clang/LLVM 19.1.7 `x86_64-unknown-linux-gnu` profile, exceptions enabled,
 RTTI disabled, one `int32` exceptional payload, a matching `catch (int)`, and
 non-throwing constructors and destructors. `throws int32` is part of the
@@ -164,6 +164,43 @@ separate claim families; a missing exceptional declaration is non-throwing,
 not an unconstrained promise. The locked exporter artifact records the
 compiler profile and semantic input, so an exporter change cannot silently
 broaden a normal-only import.
+
+The separate `ios_failure` profile propagates the exact opaque
+`std::ios_base::failure` class, without handlers or user cleanup. Its pinned
+standard-library constructor lowers to a fresh abstract value from a catalog
+factory; the runtime owns storage and destruction, and allocation failure is
+assumed to terminate. Direct exceptional interfaces can borrow raw memory:
+normal and throwing call successors share footprint-bounded havoc, but receive
+only their own postcondition family. Both successors use the existing joint
+resource-return and loan-recovery operations. Outcome claim cells keep borrowed
+resource ensures open on throws instead of marking every normal-family cell
+vacuous. Named callback refinement remains pure `int32`.
+
+The `typed` profile also admits ordinary trivial aggregate prvalues and
+empty exception tags. It evaluates explicit scalar field initializers in
+source order through ordinary value steps, then `ThrowOpaque` allocates a
+fresh value of the imported nominal type and returns the current state.
+Class types use an elaborated `struct Name` identity distinct from generic
+type parameters. Construction has no trusted user-constructor contract;
+nontrivial copying, destruction and class handlers remain refused.
+
+C++ `declared_noexcept` is retained in the shared imported declaration as
+`requires_nonthrowing_contract`, including dispatch aliases. Signature
+checking refuses `throws` on that interface; the existing nonthrowing body
+judgment proves that all reachable exits are normal. A guarded call may use
+its callee's exceptional guarantees to refute the exceptional path. Modular
+eligibility depends on the interface, while checked body safety establishes
+that internal throws are caught or excluded by its preconditions. No
+termination behavior is assumed from a `noexcept` spelling. Opaque exception
+profiles still refuse automatic destruction in potentially throwing functions;
+the already-built lifetime plan detects that restriction in nested scopes too.
+A caught scalar throw retains the after-try continuation in both the Surface
+frontier and checked statement-evidence cursor, so a normally completing
+handler resumes the enclosing function.
+
+C++ void fallthrough lowers to an explicit kernel return, as C void fallthrough
+does. This gives a final maybe-throwing call a normal continuation for `outcomes`
+without adding a statement to the original source.
 
 The C++ exporter uses Clang's typed AST and checked source CFG to identify the
 throw, handler, payload, and constructed objects. It emits destructor calls as

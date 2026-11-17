@@ -215,14 +215,15 @@ std::optional<Options> parse_options(int argc, const char **argv) {
             !object->getString("header") || !object->getString("sha256") ||
             (object->getString("kind") != "checked_boolean_statement" &&
              object->getString("kind") != "checked_boolean_statement_with_consteval_metadata" &&
-             object->getString("kind") != "checked_boolean_statement_with_literal_metadata") ||
+             object->getString("kind") != "checked_boolean_statement_with_literal_metadata" &&
+             object->getString("kind") != "opaque_exception_constructor") ||
             !result.library_assertions.emplace(object->getString("function")->str(), std::move(entry)).second) {
           llvm::errs() << "error: invalid or duplicate library assertion contract\n";
           return std::nullopt;
         }
       }
     } else if (option == "--exception-behavior") {
-      if (value != "normal_only" && value != "scalar_int32") {
+      if (value != "normal_only" && value != "scalar_int32" && value != "ios_failure" && value != "typed") {
         llvm::errs() << "error: unsupported exception behavior `" << value << "`\n";
         return std::nullopt;
       }
@@ -325,9 +326,11 @@ public:
   }
 
   void finish() {
-    if (exception_behavior_ == "scalar_int32" &&
+    if (exception_behavior_ != "normal_only" &&
         !context_.getLangOpts().CXXExceptions) {
-      fail({}, "scalar int32 exception profile requires C++ exceptions enabled");
+      fail({}, exception_behavior_ == "ios_failure"
+                   ? "ios_failure exception profile requires C++ exceptions enabled"
+                   : "scalar int32 exception profile requires C++ exceptions enabled");
       return;
     }
     if (!resolve_generic_templates())
@@ -563,12 +566,6 @@ private:
     if (prototype == nullptr) {
       fail(declaration->getLocation(),
            "the supported C++ function must have a prototype");
-      return std::nullopt;
-    }
-    if (exception_behavior_ == "scalar_int32" && prototype->isNothrow() &&
-        constructor == nullptr && destructor == nullptr) {
-      fail(declaration->getLocation(),
-           "scalar int32 exception profile does not model noexcept termination");
       return std::nullopt;
     }
     if (!prototype->isNothrow() &&
@@ -1068,7 +1065,6 @@ private:
     const auto *pointer = parameter->getType()->getAs<clang::PointerType>();
     const bool mutable_int_pointer =
         pointer != nullptr && !parameter->getType().hasQualifiers() &&
-        !pointer->getPointeeType().hasQualifiers() &&
         supported_pointer_element(pointer->getPointeeType());
     const bool by_value_integer =
         !parameter->getType().hasQualifiers() &&
@@ -1095,7 +1091,7 @@ private:
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
            "32/64/128-bit integer or unsigned char, a native element "
-           "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, or mutable int* parameter, mutable unsigned int*/unsigned char* parameter, or a "
+           "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, a native element pointer (possibly const pointee), or a "
            "mutable or const simple-record reference parameter, a trivially copied simple-record value, "
            "a mutable pointer to a simple record, or a pointer to a noexcept function");
       return std::nullopt;
@@ -1168,6 +1164,17 @@ private:
          context_.hasSameType(unqualified, context_.UnsignedCharTy) ||
          (supported_byte_enum(type) &&
           type->getAs<clang::EnumType>()->getDecl()->getQualifiedNameAsString() == "std::byte"));
+  }
+
+  bool supported_pointer_qualification(const clang::CastExpr *cast) const {
+    const auto *source = cast->getSubExpr()->getType()->getAs<clang::PointerType>();
+    const auto *target = cast->getType()->getAs<clang::PointerType>();
+    return cast->getCastKind() == clang::CK_NoOp && source && target &&
+        supported_pointer_element(source->getPointeeType()) &&
+        supported_pointer_element(target->getPointeeType()) &&
+        !source->getPointeeType().isConstQualified() &&
+        target->getPointeeType().isConstQualified() &&
+        context_.hasSameUnqualifiedType(source->getPointeeType(), target->getPointeeType());
   }
 
   // A mutable pointer to a simple, complete, non-polymorphic record, such
@@ -1263,8 +1270,7 @@ private:
         supported_scalar_value_type(type))
       return true;
     const auto *pointer = type->getAs<clang::PointerType>();
-    return pointer != nullptr && !pointer->getPointeeType().hasQualifiers() &&
-           supported_pointer_element(pointer->getPointeeType());
+    return pointer != nullptr && supported_pointer_element(pointer->getPointeeType());
   }
 
   // A pointer to a non-throwing, non-variadic function whose parameters and
@@ -1648,6 +1654,148 @@ private:
     return statement;
   }
 
+  std::optional<Json>
+  lower_ios_failure_throw(const clang::CXXThrowExpr *statement) {
+    const clang::Expr *value = statement->getSubExpr();
+    while (value != nullptr) {
+      value = value->IgnoreParenImpCasts();
+      if (const auto *cleanup = llvm::dyn_cast<clang::ExprWithCleanups>(value))
+        value = cleanup->getSubExpr();
+      else if (const auto *temporary =
+                   llvm::dyn_cast<clang::CXXBindTemporaryExpr>(value))
+        value = temporary->getSubExpr();
+      else if (const auto *temporary =
+                   llvm::dyn_cast<clang::MaterializeTemporaryExpr>(value))
+        value = temporary->getSubExpr();
+      else if (const auto *cast =
+                   llvm::dyn_cast<clang::CXXFunctionalCastExpr>(value))
+        value = cast->getSubExpr();
+      else
+        break;
+    }
+    const auto *construction =
+        llvm::dyn_cast_or_null<clang::CXXConstructExpr>(value);
+    const auto *constructor =
+        construction == nullptr ? nullptr : construction->getConstructor();
+    const auto *record =
+        constructor == nullptr ? nullptr : constructor->getParent();
+    const std::string name = "std::ios_base::failure::failure";
+    auto configured = library_assertions_.find(name);
+    const auto *contract = configured == library_assertions_.end()
+                               ? nullptr
+                               : configured->second.getAsObject();
+    const auto *literal = construction && construction->getNumArgs() == 2
+        ? llvm::dyn_cast<clang::StringLiteral>(
+              construction->getArg(0)->IgnoreParenImpCasts())
+        : nullptr;
+    if (!construction || !constructor || !record ||
+        record->getQualifiedNameAsString() != "std::ios_base::failure" ||
+        constructor->isVariadic() || constructor->getNumParams() != 2 ||
+        !literal || !literal->isOrdinary() || literal->getBytes().size() > 4096 ||
+        !std::all_of(literal->getBytes().begin(), literal->getBytes().end(),
+                     [](unsigned char byte) { return byte > 0 && byte < 128; }) ||
+        !llvm::isa<clang::CXXDefaultArgExpr>(construction->getArg(1)) ||
+        !contract ||
+        contract->getString("kind") != "opaque_exception_constructor") {
+      fail(statement->getThrowLoc(),
+           "ios_failure throws require the pinned std::ios_base::failure "
+           "narrow-literal constructor and its default error code");
+      return std::nullopt;
+    }
+    const auto first = constructor->getParamDecl(0)->getType();
+    const auto second = constructor->getParamDecl(1)->getType();
+    const auto *error_type = second.getNonReferenceType()->getAsCXXRecordDecl();
+    if (!first->isPointerType() || !first->getPointeeType().isConstQualified() ||
+        !context_.hasSameUnqualifiedType(first->getPointeeType(), context_.CharTy) ||
+        !second->isLValueReferenceType() ||
+        !second.getNonReferenceType().isConstQualified() || !error_type ||
+        error_type->getQualifiedNameAsString() != "std::error_code") {
+      fail(statement->getThrowLoc(),
+           "ios_failure constructor has an unsupported signature");
+      return std::nullopt;
+    }
+    auto header = dependency_source(constructor->getLocation());
+    if (!header || *header != contract->getString("header") ||
+        constructor->getDefinition() != nullptr) {
+      fail(statement->getThrowLoc(),
+           "ios_failure constructor must be an external declaration in its "
+           "pinned header");
+      return std::nullopt;
+    }
+    std::filesystem::path file(source_manager_.getFilename(
+        source_manager_.getSpellingLoc(constructor->getLocation())).str());
+    if (file.is_relative())
+      file = std::filesystem::path(compilation_directory_) / file;
+    std::error_code error;
+    file = std::filesystem::canonical(file, error);
+    if (error) {
+      fail(statement->getThrowLoc(),
+           "could not resolve the exception constructor header");
+      return std::nullopt;
+    }
+    dependency_sources_.insert(*header);
+    llvm::json::Object result;
+    result["kind"] = "throw_ios_failure";
+    result["constructor"] = Json(llvm::json::Object(*contract));
+    result["declaration_file"] = file.generic_string();
+    result["message"] = literal->getBytes().str();
+    result["span"] = span(statement->getSourceRange());
+    return Json(std::move(result));
+  }
+
+  std::optional<Json> lower_typed_throw(const clang::CXXThrowExpr *statement,
+                                      const clang::FunctionDecl *function,
+                                      bool cleanup_effects = false) {
+    const clang::Expr *value = statement->getSubExpr();
+    if (!value) { fail(statement->getThrowLoc(), "rethrow is outside the typed exception profile"); return std::nullopt; }
+    const auto *record = value->getType()->getAsCXXRecordDecl();
+    if (record && record->getQualifiedNameAsString() == "std::ios_base::failure")
+      return lower_ios_failure_throw(statement);
+    if (!record || !value->isPRValue() || !record->isAggregate() ||
+        !record->isTriviallyCopyable() || !record->hasTrivialDestructor() ||
+        record->getNumBases() != 0 || record->isPolymorphic() || cleanup_effects) {
+      fail(statement->getThrowLoc(), "typed class throws require an aggregate prvalue with trivial copying/destruction and no cleanup effects");
+      return std::nullopt;
+    }
+    value = value->IgnoreParenImpCasts();
+    if (const auto *cast = llvm::dyn_cast<clang::CXXFunctionalCastExpr>(value))
+      value = cast->getSubExpr()->IgnoreParenImpCasts();
+    const auto *list = llvm::dyn_cast<clang::InitListExpr>(value);
+    const auto *written = list && list->getSyntacticForm() ? list->getSyntacticForm() : list;
+    const unsigned count = std::distance(record->field_begin(), record->field_end());
+    if (!list || !written || written->getNumInits() != count || has_stateless_field(record)) {
+      fail(statement->getThrowLoc(), "aggregate throws require one explicit initializer per field");
+      return std::nullopt;
+    }
+    auto type = lower_type(statement->getSubExpr()->getType().getUnqualifiedType(), statement->getThrowLoc());
+    if (!type) return std::nullopt;
+    llvm::json::Array fields;
+    unsigned index = 0;
+    for (const auto *field : record->fields()) {
+      if (field->getType()->isRecordType() || field->getType()->isArrayType() || field->getType()->isReferenceType()) {
+        fail(field->getLocation(), "opaque aggregate exception fields require supported scalar values"); return std::nullopt;
+      }
+      auto expression = lower_expression(list->getInit(index), function);
+      if (!expression) return std::nullopt;
+      llvm::json::Object reference;
+      reference["record_declaration_id"] = declaration_id(record);
+      reference["declaration_id"] = declaration_id(field);
+      reference["name"] = field->getNameAsString();
+      reference["span"] = span(field->getSourceRange());
+      llvm::json::Object initializer;
+      initializer["field"] = std::move(reference);
+      initializer["value"] = std::move(*expression);
+      initializer["span"] = span(written->getInit(index++)->getSourceRange());
+      fields.push_back(std::move(initializer));
+    }
+    llvm::json::Object result;
+    result["kind"] = "throw_aggregate";
+    result["value_type"] = std::move(*type);
+    result["fields"] = std::move(fields);
+    result["span"] = span(statement->getSourceRange());
+    return Json(std::move(result));
+  }
+
   std::optional<Json> lower_statement(const clang::Stmt *statement,
                                       const clang::FunctionDecl *function,
                                       bool allow_local_declaration,
@@ -1678,6 +1826,10 @@ private:
       return Json(std::move(result));
     }
     if (const auto *cleanups = llvm::dyn_cast<clang::ExprWithCleanups>(statement)) {
+      if (const auto *throwing = llvm::dyn_cast<clang::CXXThrowExpr>(cleanups->getSubExpr())) {
+        if (exception_behavior_ == "typed") return lower_typed_throw(throwing, function, cleanups->cleanupsHaveSideEffects());
+        if (exception_behavior_ == "ios_failure") return lower_ios_failure_throw(throwing);
+      }
       const auto *call = llvm::dyn_cast<clang::CallExpr>(cleanups->getSubExpr());
       const auto *callee = call == nullptr ? nullptr : call->getDirectCallee();
       // A trivial record assignment still materializes the RHS temporary. Its
@@ -1701,7 +1853,13 @@ private:
     }
     if (const auto *throw_expression =
             llvm::dyn_cast<clang::CXXThrowExpr>(statement)) {
-      if (exception_behavior_ != "scalar_int32") {
+      if (exception_behavior_ == "typed" && throw_expression->getSubExpr() != nullptr &&
+          !throw_expression->getSubExpr()->getType()->isSpecificBuiltinType(clang::BuiltinType::Int))
+        return lower_typed_throw(throw_expression, function);
+      if (exception_behavior_ == "ios_failure" && throw_expression->getSubExpr() != nullptr &&
+          !throw_expression->getSubExpr()->getType()->isSpecificBuiltinType(clang::BuiltinType::Int))
+        return lower_ios_failure_throw(throw_expression);
+      if (exception_behavior_ != "scalar_int32" && exception_behavior_ != "ios_failure" && exception_behavior_ != "typed") {
         fail(throw_expression->getThrowLoc(),
              "throw expressions are outside the normal-only C++ profile");
         return std::nullopt;
@@ -2431,6 +2589,10 @@ private:
         std::string kind;
         switch (cast->getCastKind()) {
         case clang::CK_NoOp:
+          if (supported_pointer_qualification(cast)) {
+            kind = "pointer_qualification";
+            break;
+          }
           if (!context_.hasSameType(cast->getType(), cast->getSubExpr()->getType())) {
             fail(cast->getExprLoc(), "unsupported C++ call-result no-op conversion");
             return std::nullopt;
@@ -2527,7 +2689,7 @@ private:
     const auto *local_pointer = local->getType()->getAs<clang::PointerType>();
     const auto *pointed_record = record_pointer_target(local->getType());
     const bool mutable_pointer = (local_pointer && !local->getType().hasQualifiers() &&
-        !local_pointer->getPointeeType().hasQualifiers() && supported_pointer_element(local_pointer->getPointeeType())) ||
+        supported_pointer_element(local_pointer->getPointeeType())) ||
         pointed_record != nullptr;
     if (pointed_record != nullptr && !remember_record(pointed_record)) {
       return std::nullopt;
@@ -4699,6 +4861,18 @@ private:
       return boolean_constant(boolean->getValue(), boolean->getSourceRange(),
                               false);
     }
+    if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression);
+        cast != nullptr && supported_pointer_qualification(cast)) {
+      auto value = lower_expression(cast->getSubExpr(), function);
+      auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+      if (!value || !value_type) return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "pointer_qualification";
+      result["value"] = std::move(*value);
+      result["value_type"] = std::move(*value_type);
+      result["span"] = span(cast->getSourceRange());
+      return Json(std::move(result));
+    }
     // Only literal null conversions are total, effect-free pointer values.
     // A nullptr_t call or variable still has evaluation behavior and is not
     // silently folded to a literal by this boundary.
@@ -4712,10 +4886,9 @@ private:
         return std::nullopt;
       }
       const auto *pointer = cast->getType()->getAs<clang::PointerType>();
-      if ((pointer == nullptr || pointer->getPointeeType().hasQualifiers() ||
-           !supported_pointer_element(pointer->getPointeeType())) &&
+      if ((pointer == nullptr || !supported_pointer_element(pointer->getPointeeType())) &&
           record_pointer_target(cast->getType()) == nullptr) {
-        fail(cast->getExprLoc(), "C++ null pointer literal requires a mutable int32 pointer, uint32 pointer, unsigned-byte pointer or simple record pointer");
+        fail(cast->getExprLoc(), "C++ null pointer literal requires a native element pointer or simple record pointer");
         return std::nullopt;
       }
       auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());
@@ -5137,7 +5310,7 @@ private:
       return false;
     }
     if (context_.getLangOpts().CXXExceptions &&
-        exception_behavior_ != "scalar_int32" &&
+        exception_behavior_ == "normal_only" &&
         !definition->hasTrivialDestructor()) {
       fail(definition->getLocation(),
            "the exception-enabled C++ profile is limited to an object-free "
@@ -5303,9 +5476,11 @@ private:
     bool has_state = false;
     for (const clang::FieldDecl *field : record->fields())
       has_state = has_state || !stateless_field(field);
-    // `field_empty` is kept as the first test: it is what refuses a record
-    // Clang has not completed, as it did before stateless members existed.
-    if ((record->field_empty() || !has_state) && record->getNumBases() == 0) {
+    // Complete empty records are usable as opaque exception tags. A record
+    // whose only fields were erased still has no supported storage layout.
+    if ((!record->isCompleteDefinition() ||
+         (record->field_empty() && exception_behavior_ != "typed") ||
+         (!record->field_empty() && !has_state)) && record->getNumBases() == 0) {
       fail(record->getLocation(),
            "the supported C++ record must contain at least one field");
       return false;
@@ -6823,6 +6998,12 @@ public:
   // Each generic class template's abstract type arguments are declared
   // ahead of the translation unit, in the predefines, which no file holds.
   bool BeginSourceFileAction(clang::CompilerInstance &compiler) override {
+    if (options_.exception_behavior != "normal_only") {
+      // The checked nonthrowing contract, rather than a syntactic warning,
+      // must prove that a noexcept body's explicit throw cannot escape.
+      compiler.getDiagnostics().setSeverity(clang::diag::warn_throw_in_noexcept_func,
+          clang::diag::Severity::Ignored, clang::SourceLocation());
+    }
     std::set<std::string> names;
     for (const GenericTemplate &generic : options_.generic_templates)
       names.insert(generic.parameters.begin(), generic.parameters.end());
