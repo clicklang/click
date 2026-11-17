@@ -5751,7 +5751,11 @@ impl<'a> TermRewrite<'a> {
                 let (op, left, right) = v
                     .as_bitvector_comparison()
                     .expect("every other condition has its own arm");
-                op.build_raw(self.bits(left), self.bits(right))
+                super::equality_rewrite::rebuild_machine_comparison(
+                    op,
+                    self.bits(left),
+                    self.bits(right),
+                )
             }
         };
         // Comparison forms are lookup aids, not stored syntax. Replacing a
