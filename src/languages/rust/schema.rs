@@ -543,7 +543,18 @@ pub enum MirStatement {
     },
     SharedArrayNext {
         iterator: String,
-        option: String,
+        /// The local the `Option` `next` returns is built in; `None` once
+        /// the `for` loop reads only its element, which `payload` binds.
+        option: Option<String>,
+        /// The local the yielded element's reference is bound to, the `for`
+        /// loop's own variable: the yielding arm assigns it directly and
+        /// builds no `Option`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<String>,
+        /// Whether the iterator yields, when its `for` header's test already
+        /// decided it: the statement is then that arm alone.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        taken: Option<bool>,
     },
     /// `target = source.enumerate()` of a slice iterator.
     EnumerateInitialize {
