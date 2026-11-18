@@ -6145,6 +6145,14 @@ fn variables_entering(base: &SymbolicMemory, memory: &SymbolicMemory) -> BTreeSe
             }
         }
     }
+    let before = base.heap.initialized.partial_map();
+    let after = memory.heap.initialized.partial_map();
+    for change in before.diff(after) {
+        let pointer = change.key();
+        if let Some(byte) = after.get(pointer) {
+            variables.extend(partial_byte_variables(pointer, byte.value.as_ref()));
+        }
+    }
     for change in base.cells.concrete().diff(memory.cells.concrete()) {
         let pointer = change.key();
         if let Some(value) = memory.cells.concrete().get(pointer) {
@@ -6274,6 +6282,7 @@ fn memory_entry_count(memory: &SymbolicMemory) -> usize {
         + memory.union_cells.len()
         + memory.heap.uninitialized_objects.len()
         + memory.heap.initialized.as_map().len()
+        + memory.heap.initialized.partial_map().len()
 }
 
 fn add_counts(counts: &mut VariableCounts, mentioned: BTreeSet<Variable>, sign: i64) {
@@ -6348,6 +6357,40 @@ fn object_address_variables(pointer: &Address) -> BTreeSet<Variable> {
     let mut variables = BTreeSet::new();
     collect_pointer_bitvector_variables(pointer, &mut variables);
     variables
+}
+
+fn partial_byte_variables(pointer: &Address, value: Option<&ProgramValue>) -> BTreeSet<Variable> {
+    match value {
+        Some(value) => cell_variables(pointer, value),
+        None => object_address_variables(pointer),
+    }
+}
+
+fn add_partial_byte_changes(
+    before: &super::super::primitives::InitializedBytes,
+    after: &super::super::primitives::InitializedBytes,
+    counts: &mut VariableCounts,
+) {
+    let before = before.partial_map();
+    let after = after.partial_map();
+    for change in before.diff(after) {
+        crate::instrumentation::record_deterministic_work(1);
+        let pointer = change.key();
+        if let Some(byte) = before.get(pointer) {
+            add_counts(
+                counts,
+                partial_byte_variables(pointer, byte.value.as_ref()),
+                -1,
+            );
+        }
+        if let Some(byte) = after.get(pointer) {
+            add_counts(
+                counts,
+                partial_byte_variables(pointer, byte.value.as_ref()),
+                1,
+            );
+        }
+    }
 }
 
 fn cell_variables(pointer: &Address, value: &ProgramValue) -> BTreeSet<Variable> {
@@ -6439,11 +6482,14 @@ fn heap_variable_counts(
                 }
             }
         }
+        add_partial_byte_changes(&base.initialized, &heap.initialized, &mut counts);
         counts
     } else {
         if whole == WholeCount::Charged {
             crate::instrumentation::record_deterministic_work(
-                heap.uninitialized_objects.len() + heap.initialized.as_map().len(),
+                heap.uninitialized_objects.len()
+                    + heap.initialized.as_map().len()
+                    + heap.initialized.partial_map().len(),
             );
         }
         let mut counts = VariableCounts::default();
@@ -6453,6 +6499,13 @@ fn heap_variable_counts(
             .chain(heap.initialized.as_map().keys())
         {
             add_counts(&mut counts, object_address_variables(pointer), 1);
+        }
+        for (pointer, byte) in heap.initialized.partial_map().iter() {
+            add_counts(
+                &mut counts,
+                partial_byte_variables(pointer, byte.value.as_ref()),
+                1,
+            );
         }
         counts
     };
@@ -6521,6 +6574,11 @@ fn counts_from_base(
             }
         }
     }
+    add_partial_byte_changes(
+        &base.heap.initialized,
+        &memory.heap.initialized,
+        &mut counts,
+    );
     for change in base.cells.concrete().diff(memory.cells.concrete()) {
         let pointer = change.key();
         if let Some(value) = base.cells.concrete().get(pointer) {
@@ -6663,6 +6721,12 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
         .chain(memory.heap.initialized.as_map().keys())
     {
         collect_pointer_bitvector_variables(pointer, variables);
+    }
+    for (pointer, byte) in memory.heap.initialized.partial_map().iter() {
+        collect_pointer_bitvector_variables(pointer, variables);
+        if let Some(value) = &byte.value {
+            collect_program_value_bitvector_variables(value, variables);
+        }
     }
     for (pointer, value) in memory.cells.concrete().iter() {
         #[cfg(test)]
