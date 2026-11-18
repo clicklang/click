@@ -154,8 +154,7 @@ fn consuming_call_does_not_expand_unrelated_folded_allocations() {
         let state = ExecutionState::new().with_memory(memory.clone());
         let apply = |kept: &ResourceContext| {
             apply_verified_heap_allocation_delta(
-                memory.clone(),
-                &memory,
+                &state,
                 &input,
                 kept,
                 &output,

@@ -139,8 +139,7 @@ fn preserved_fold_can_continue_an_allocation_loaded_from_another_block() {
         vec![ProgramValue::typed_pointer(slot, slot_type)],
     ));
     let result = apply_verified_heap_allocation_delta(
-        memory.clone(),
-        &memory,
+        &state,
         &input,
         &kept,
         &ResourceContext::new(),
