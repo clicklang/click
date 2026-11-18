@@ -220,7 +220,10 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
             assert!(!rewrite.integer_work_exhausted);
             output
         });
-        let Term::Integer(IntegerTerm::Machine(machine)) = output else {
+        let term_source_0 @ Term::Integer(_) = output else {
+            panic!("registered load carrier changed shape")
+        };
+        let (Some(IntegerTerm::Machine(machine)),) = (term_source_0.integer_native(),) else {
             panic!("registered load carrier changed shape")
         };
         assert!(!machine.has_boxed_operand());
@@ -1470,10 +1473,8 @@ fn shared_machine_fold_endpoints_rewrite_in_linear_dag_work() {
             assert!(graph.are_integer_equal(original, rewritten));
             output
         });
-        assert!(matches!(
-            output,
-            Term::Integer(IntegerTerm::RangeFold { .. })
-        ));
+        assert!(matches!(&(
+            output), term_source_0 @ Term::Integer(_) if matches!((term_source_0.integer_native(),), (Some(IntegerTerm::RangeFold { .. }),))));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         work.push(measured);
     }

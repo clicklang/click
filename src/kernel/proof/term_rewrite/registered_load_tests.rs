@@ -154,11 +154,15 @@ fn checked_program_substitution_reserves_free_integer_in_registered_load_pointer
     assert!(!rewrite.integer_work_exhausted);
     assert!(!rewrite.unsupported_integer_scope);
 
-    let Term::Integer(IntegerTerm::RangeFold { item, body, .. }) = output else {
+    let term_source_0 @ Term::Integer(_) = output else {
+        panic!("checked substitution dropped the Integer fold")
+    };
+    let (Some(IntegerTerm::RangeFold { item, body, .. }),) = (term_source_0.integer_native(),)
+    else {
         panic!("checked substitution dropped the Integer fold")
     };
     assert_ne!(
-        item, free_integer,
+        *item, free_integer,
         "free Integer pointer input was captured"
     );
     assert_eq!(
@@ -199,10 +203,14 @@ fn checked_program_substitution_reserves_free_program_in_registered_load_pointer
     assert!(!rewrite.integer_work_exhausted);
     assert!(!rewrite.unsupported_integer_scope);
 
-    let Term::Integer(IntegerTerm::RangeFold { item, body, .. }) = output else {
+    let term_source_0 @ Term::Integer(_) = output else {
         panic!("checked substitution dropped the C fold")
     };
-    assert_ne!(item, free_c, "free C pointer input was captured");
+    let (Some(IntegerTerm::RangeFold { item, body, .. }),) = (term_source_0.integer_native(),)
+    else {
+        panic!("checked substitution dropped the C fold")
+    };
+    assert_ne!(*item, free_c, "free C pointer input was captured");
     assert_eq!(body.as_ref(), &machine_variable(load));
     let (_, pointer) = crate::kernel::eval::registered_load_for_variable(&load)
         .expect("replacement load must retain its defining pointer");
@@ -237,7 +245,10 @@ fn checked_registered_load_rewrite_remints_nested_direct_offset() {
     assert!(!rewrite.integer_work_exhausted);
     assert!(!rewrite.unsupported_integer_scope);
 
-    let Term::Integer(IntegerTerm::Machine(machine)) = output else {
+    let term_source_0 @ Term::Integer(_) = output else {
+        panic!("nested registered load changed the Integer carrier")
+    };
+    let (Some(IntegerTerm::Machine(machine)),) = (term_source_0.integer_native(),) else {
         panic!("nested registered load changed the Integer carrier")
     };
     assert!(!machine.has_boxed_operand());
@@ -295,7 +306,10 @@ fn checked_integer_binding_rewrites_registered_load_at_exact_state() {
     assert!(!rewrite.integer_work_exhausted);
     assert!(!rewrite.unsupported_integer_scope);
 
-    let Term::Integer(IntegerTerm::Machine(machine)) = output else {
+    let term_source_0 @ Term::Integer(_) = output else {
+        panic!("the Integer machine observation changed carrier")
+    };
+    let (Some(IntegerTerm::Machine(machine)),) = (term_source_0.integer_native(),) else {
         panic!("the Integer machine observation changed carrier")
     };
     let (rewritten_memory, rewritten_pointer, kind) =

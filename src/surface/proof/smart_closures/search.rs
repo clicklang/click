@@ -7582,16 +7582,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // loop, that spelling may stop denoting its old checked fact.
         // Re-lower those movable forms below; other live recorded pairs keep
         // their indexed lookup without repeating proposition lowering.
-        let constructor_equation = matches!(
-            kernel,
-            Proposition::Equal(
+        let constructor_equation = matches!(&(
+            kernel), Proposition::Equal(
                 Term::Algebraic(_),
-                Term::Algebraic(crate::kernel::AlgebraicTerm {
+                term_source_0 @ Term::Algebraic(_)
+            ) if matches!((term_source_0.algebraic_native(),), (Some(crate::kernel::AlgebraicTerm {
                     node: crate::kernel::AlgebraicTermNode::Constructor { .. },
                     ..
-                })
-            )
-        );
+                }),)));
         let retained_branch_equality = match kernel {
             condition_source_0 @ Proposition::ConditionIs(_, _)
                 if let Some((
