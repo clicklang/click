@@ -21400,6 +21400,26 @@ fn historical_integer_algebra_leaves_expand_without_normalize() {
 }
 
 #[test]
+#[ignore = "nightly: expands and cold-verifies a memory predicate proof"]
+fn sign_changes_in_integer_certificates_expand_without_normalize() {
+    let (source, sources) = mdtest_sources("mdtests/memory_predicate_explicit_frame.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c_claim_source_by_label(&source, &sources, "set_before_terminator.contract")
+            .expect("a memory predicate proof should expand");
+    assert!(
+        expanded.contains("apply(click::integer::equal_negate("),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("normalize();"), "{expanded}");
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .expect("the expanded proof should cold verify");
+}
+
+#[test]
 #[ignore = "nightly: expands and cold-verifies all sort3 paths"]
 fn sequential_sort_branches_keep_their_expanded_continuations_in_scope() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/sort3_sorted.md");
