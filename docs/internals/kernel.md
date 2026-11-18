@@ -1746,11 +1746,11 @@ producer's `.result` or bind the checked value with `let { result: name } = step
 
 C++ materialized objects and hidden catch payloads use a separate
 `LocalBindingId` namespace owned by the source unit and function. Their
-ordinals have no lexical C spelling. Surface references use `f.temporary(N)`
-when they need the binding. Exact storage uses `.storage(implicit)`,
-`.storage(lifetime, N)`, or `.storage(frame, N)`. Materialized objects retain
-distinct automatic lifetimes. The parser indexes temporary declarations in
-the prelowered body once. `TryCatchInt32` carries a `BindingName` through
+ordinals have no lexical C spelling. A materialization step publishes the
+object's address as its `.result` after construction or copy. This names the
+same object through its original automatic lifetime, including for a
+constructor that returns `void`. The parser indexes legacy temporary
+declarations in the prelowered body once. `TryCatchInt32` carries a `BindingName` through
 execution and evidence checking. Unwinding through a destructible local binds
 no payload: see the C++ cleanup model in
 [Architecture](architecture.md#selected-control-flow-and-c-cleanup-model). No generated variable spelling or collision

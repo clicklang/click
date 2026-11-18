@@ -19975,6 +19975,14 @@ int32 probe(struct Sink& sink, int32 input) {
     click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, &import))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
     assert!(!expanded.contains(".temporary("), "{expanded}");
+    let explicit_materialization = source.replace(
+        "    ensures sink.total == input;\n}\nint32 probe(",
+        "    ensures sink.total == input;\n} by {\n    step_until(call(0)); step(); step();\n    have region(2).result.value == input;\n}\nint32 probe(",
+    );
+    assert_ne!(explicit_materialization, source);
+    let explicit_project = parsed.with_entry_source(explicit_materialization);
+    verify_program_prepared_project(&explicit_project, &import)
+        .expect("cite the object materialized by the void constructor");
     let false_value = source.replace("ensures result == input;", "ensures result == 7;");
     let sidecar = project.directory.join("false.click");
     fs::write(&sidecar, &false_value).unwrap();

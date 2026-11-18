@@ -358,9 +358,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
             continue;
         }
         let ordinal = u32::try_from(*header).map_err(|_| "MIR loop header index exceeds u32")?;
-        let flag = LocalBindingId::temporary(owner.clone(), ordinal);
-        flag.initialize_program_type(ProgramType::Int32);
-        let flag = BindingName::from(flag);
+        let flag = BindingName::from(LocalBindingId::loop_escape(owner.clone(), ordinal));
         declarations = program_seq(
             declarations,
             program_declare(flag.clone(), ProgramType::Int32),

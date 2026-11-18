@@ -830,7 +830,20 @@ impl SourceExecutionLayout {
                         layout.call_numbers.insert(statement_index, *call);
                         layout.step_regions.insert(*call, statement_index);
                     }
-                    if let ProgramStatement::StepValue { steps, .. } = statement {
+                    if let ProgramStatement::StepValue {
+                        steps, expression, ..
+                    } = statement
+                    {
+                        if let ProgramExpression::Variable(name) = expression
+                            && name
+                                .local_id()
+                                .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                            && let Some(fields) = aggregate_objects.get(name)
+                        {
+                            layout
+                                .aggregate_results
+                                .insert(statement_index, fields.clone());
+                        }
                         for step in steps {
                             if let std::collections::btree_map::Entry::Vacant(entry) =
                                 layout.step_regions.entry(*step)

@@ -1450,6 +1450,7 @@ impl LoweringContext<'_> {
                 let layout = self.record_layout(name)?;
                 let (prefix, actual) = self.normalize_arguments(arguments)?;
                 let temporary = self.fresh_aggregate_capture(name)?;
+                let (materialize, address) = self.retain_materialized(&temporary);
                 // The RHS is a separate object: the live LHS may be read by
                 // the factory and cannot serve as unwritten construction storage.
                 Ok(evaluate_then(
@@ -1463,10 +1464,13 @@ impl LoweringContext<'_> {
                                 actual,
                             )),
                             program_seq(
-                                program_copy_aggregate(
-                                    self.lower_place(target)?,
-                                    crate::kernel::program_expression::variable(temporary.clone()),
-                                    layout,
+                                program_seq(
+                                    materialize,
+                                    program_copy_aggregate(
+                                        self.lower_place(target)?,
+                                        address,
+                                        layout,
+                                    ),
                                 ),
                                 program_end_automatic_lifetimes(vec![(temporary)]),
                             ),
@@ -1519,6 +1523,7 @@ impl LoweringContext<'_> {
                 };
                 let layout = self.record_layout(name)?;
                 let capture = self.fresh_aggregate_capture(name)?;
+                let (materialize, address) = self.retain_materialized(&capture);
                 let mut result = program_seq(
                     program_declare_aggregate(capture.clone(), layout.clone()),
                     program_copy_aggregate(
@@ -1527,13 +1532,11 @@ impl LoweringContext<'_> {
                         layout,
                     ),
                 );
+                result = program_seq(result, materialize);
                 for cleanup in state.exit(0) {
                     result = program_seq(result, self.lower_cleanup(cleanup)?);
                 }
-                Ok(program_seq(
-                    result,
-                    program_return(crate::kernel::program_expression::variable(capture)),
-                ))
+                Ok(program_seq(result, program_return(address)))
             }
             CppStatement::Return { value, .. } => {
                 let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
@@ -1945,10 +1948,9 @@ impl LoweringContext<'_> {
                         self.coerced(operation),
                     ),
                 );
-                lowered.push(crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(capture.clone()),
-                    ProgramType::UInt8Pointer,
-                ));
+                let (materialize, address) = self.retain_materialized(&capture);
+                evaluation = evaluate_then(evaluation, materialize);
+                lowered.push(address);
                 temporaries.push(capture);
             } else if let CppCallArgument::Call {
                 callee,
@@ -2162,6 +2164,15 @@ impl LoweringContext<'_> {
         let id = LocalBindingId::temporary(self.temporary_owner.clone(), ordinal);
         id.initialize_program_type(program_type);
         Ok(id.into())
+    }
+
+    /// Publish the address after construction or copying has completed.
+    /// The full expression still owns the storage and retires it separately.
+    fn retain_materialized(&self, binding: &BindingName) -> (ProgramStatement, ProgramExpression) {
+        self.retain_value(
+            crate::kernel::program_expression::variable(binding.clone()),
+            ProgramType::UInt8Pointer,
+        )
     }
 
     fn fresh_aggregate_capture(&mut self, record: &str) -> Result<BindingName, String> {

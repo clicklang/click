@@ -1332,6 +1332,11 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
+    if let ProgramValue::Pointer(pointer) = value
+        && let Some(result) = synthesize_materialized_result(pointer.pointer())
+    {
+        return Some(result);
+    }
     if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
@@ -6854,6 +6859,20 @@ fn synthesize_pointer_equality_address(
     }
 }
 
+fn synthesize_materialized_result(pointer: &Address) -> Option<ContractExpression> {
+    if !matches!(&pointer.base, AddressBase::AutomaticLocal { binding, .. } if binding.is_temporary())
+    {
+        return None;
+    }
+    SYNTHESIS_RECORDED_POINTS.with(|points| {
+        let points = points.borrow();
+        let points = points.as_ref()?;
+        Some(ContractExpression::RegionResult(
+            points.call_result_naming_pointer(pointer)?,
+        ))
+    })
+}
+
 fn synthesize_surface_pointer_expression(
     pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
@@ -6870,6 +6889,9 @@ fn synthesize_surface_pointer_expression(
         .with(|points| points.borrow().as_ref()?.allocation_result(pointer))
     {
         return Some(ContractExpression::RegionAllocation(region));
+    }
+    if let Some(result) = synthesize_materialized_result(pointer) {
+        return Some(result);
     }
     if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
         return Some(field);
