@@ -4382,7 +4382,7 @@ impl RecordedStates {
             .call_results
             .get(&index)
             .map(RetainedProgramValue::native_compat)
-            && self.pointer_call_results.get(pointer.pointer()) == Some(&index)
+            && self.pointer_call_results.get(pointer.address()) == Some(&index)
         {
             self.pointer_call_results.remove(pointer.address());
         }
@@ -4404,7 +4404,7 @@ impl RecordedStates {
             }
             // So does the first call to return a pointer.
             if let ProgramValue::Pointer(pointer) = native
-                && self.pointer_call_results.get(pointer.pointer()).is_none()
+                && self.pointer_call_results.get(pointer.address()).is_none()
             {
                 self.pointer_call_results
                     .insert(pointer.address().clone(), index);
@@ -4541,7 +4541,7 @@ impl RecordedStates {
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.pointer_call_results.get(pointer)?;
-        matches!(self.call_result_native(&index), Some(ProgramValue::Pointer(held)) if held.pointer() == pointer)
+        matches!(self.call_result_native(&index), Some(ProgramValue::Pointer(held)) if held.address() == pointer)
             .then_some(CodeRegionRef::Region(index))
     }
 
