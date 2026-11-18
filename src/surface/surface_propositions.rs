@@ -958,7 +958,7 @@ impl SurfacePropositionMap {
                 let qualified = [left, right].map(|side| qualified_object_access(side));
                 if qualified.iter().any(Option::is_some) {
                     let resolved = crate::kernel::resolve_load_variables_from_registry(kernel);
-                    if let Proposition::ConditionIs(
+                    if let Some((
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
@@ -972,7 +972,7 @@ impl SurfacePropositionMap {
                             right: b,
                         },
                         _,
-                    ) = &resolved
+                    )) = (&resolved).condition_native()
                     {
                         for (expression, term) in qualified.into_iter().zip([a, b]) {
                             if let Some(expression) = expression

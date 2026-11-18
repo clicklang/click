@@ -1472,6 +1472,21 @@ wildcard truth markers. The corrected inventory records 47 further patterns
 10q3b2 and remain required before 10q3c; the earlier zero-remainder count is not
 completion evidence. Neither family adds proof rules, search indexes or budgets.
 
+### 10q3b2 Catch-all condition readers (in progress)
+
+The remaining truth-independent patterns and nested macro readers use selected
+native views. The corrected inventory examines anonymous wildcard children as
+well as named syntax children and recursively parses assertion/matching macro
+bodies. All 47 outstanding structural patterns are prepared; the complete
+inventory now reports zero remaining nested native condition patterns.
+
+Mutation regressions explicitly clone and rebuild the exact native condition
+instead of requiring mutable storage access. Optional-goal and returned DTO
+readers retain their existing owners and payload contracts. The output schema
+and matching rules are unchanged. All 1,012 selected checks passed, including
+preservation, loaded quantifiers, wide scalars and surface round trips. Quality
+passed; broader ownership/scaling/proof validation remains pending.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

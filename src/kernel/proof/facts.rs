@@ -3313,26 +3313,34 @@ fn collect_proposition_algebraic_terms(
             collect_algebraic_term_roots(left, terms);
             collect_algebraic_term_roots(right, terms);
         }
-        Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(left, right), _) => {
+        condition_source_0 @ Proposition::ConditionIs(_, _)
+            if let Some((ConditionTerm::AlgebraicEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             collect_algebraic_term_roots(left, terms);
             collect_algebraic_term_roots(right, terms);
         }
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            _,
-        ) => {
+        condition_source_0 @ Proposition::ConditionIs(_, _)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
             for value in [left.as_ref(), right.as_ref()] {
                 if let MachineTerm::AlgebraicMatch { scrutinee, .. } = value {
                     collect_algebraic_term_roots(scrutinee, terms);
                 }
             }
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), _) => {
+        condition_source_0 @ Proposition::ConditionIs(_, _)
+            if let Some((ConditionTerm::IntegerEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             for value in [left.as_ref(), right.as_ref()] {
                 if let crate::kernel::IntegerTerm::AlgebraicMatch { scrutinee, .. } = value {
                     collect_algebraic_term_roots(scrutinee, terms);
