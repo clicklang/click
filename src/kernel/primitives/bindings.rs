@@ -266,6 +266,9 @@ impl LocalBindingId {
 impl std::fmt::Display for CanonicalLocalBinding<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let id = self.0;
+        if id.is_temporary() {
+            return f.write_str("<temporary storage>");
+        }
         if id.0.kind == LocalBindingKind::LoopEscape {
             return f.write_str("<loop escape>");
         }
@@ -276,9 +279,7 @@ impl std::fmt::Display for CanonicalLocalBinding<'_> {
             f,
             "{}.{}({})",
             id.function(),
-            if id.is_temporary() {
-                "temporary"
-            } else if id.is_parameter() {
+            if id.is_parameter() {
                 "parameter"
             } else {
                 "local"
@@ -936,7 +937,6 @@ mod tests {
         assert_eq!(temporary.source_spelling(), None);
         assert_eq!(locals.active_source_name(&temporary), None);
         assert_eq!(locals.resolve_binding(&temporary), temporary);
-        assert_eq!(temporary.to_string(), "\"unit.cpp\"::f.temporary(0)");
         assert_ne!(temporary, BindingName::from(temporary.to_string()));
         assert_ne!(temporary, LocalBindingId::temporary(owner, 1).into());
         assert_ne!(

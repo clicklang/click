@@ -4008,8 +4008,10 @@ It still names that result after every local or cell that held it has lost it,
 and a fact the call produced lowers from it exactly
 (`mdtests/a_call_result_is_spelled_by_its_call.md`,
 `mdtests/a_discarded_call_result_keeps_its_call_name.md`). Allocation regions also
-expose their nullable return through `.result`; void calls and other regions
-that do not produce a result are refused
+expose their nullable return through `.result`. In C++, the region that
+reserves storage for a materialized object exposes its address through
+`.result` before construction. Reading a field still requires initialized
+storage. Void calls and other regions that do not produce a result are refused
 (`mdtests/a_void_call_has_no_result_value.md`). Click writes a value only the frontend's
 temporary for a call held this way
 (`mdtests/an_unbound_call_result_is_reported_by_its_call.md`).

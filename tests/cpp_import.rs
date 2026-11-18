@@ -19977,7 +19977,7 @@ int32 probe(struct Sink& sink, int32 input) {
     assert!(!expanded.contains(".temporary("), "{expanded}");
     let explicit_materialization = source.replace(
         "    ensures sink.total == input;\n}\nint32 probe(",
-        "    ensures sink.total == input;\n} by {\n    step_until(call(0)); step(); step();\n    have region(2).result.value == input;\n}\nint32 probe(",
+        "    ensures sink.total == input;\n} by {\n    step_until(call(0));\n    have byte_offset(region(0).result, 0) == region(0).result;\n    step(); step();\n    have region(0).result == region(2).result;\n    have region(2).result.value == input;\n}\nint32 probe(",
     );
     assert_ne!(explicit_materialization, source);
     let explicit_project = parsed.with_entry_source(explicit_materialization);
@@ -21452,7 +21452,7 @@ fn cpp_record_reference_results_read_and_write_direct_fields() {
     while let Some(statement) = pending.pop() {
         match statement {
             ProgramStatement::Seq(body) => pending.extend(body.iter().rev().map(AsRef::as_ref)),
-            ProgramStatement::Assign {
+            ProgramStatement::StepValue {
                 expression: ProgramExpression::TypedLoad { .. },
                 ..
             } => operations.push("read right operand".to_owned()),

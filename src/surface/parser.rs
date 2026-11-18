@@ -15331,15 +15331,8 @@ impl Parser {
             self.position = start;
             return Ok(None);
         }
-        let temporary =
-            matches!(self.peek_next(), Some(Token::Ident(selector)) if selector == "temporary");
         let parameter = match (self.peek(), self.peek_next()) {
             (Some(Token::Dot), Some(Token::Ident(selector))) if selector == "local" => false,
-            (Some(Token::Dot), Some(Token::Ident(selector)))
-                if selector == "temporary" && path.is_empty() =>
-            {
-                false
-            }
             (Some(Token::Dot), Some(Token::Ident(selector)))
                 if selector == "parameter" && path.is_empty() =>
             {
@@ -15379,11 +15372,7 @@ impl Parser {
             let ordinal = u32::try_from(self.expect_index("declaration ordinal")?)
                 .map_err(|_| self.error("declaration ordinal exceeds u32"))?;
             let owner = crate::kernel::LocalFunctionId::new(source, function);
-            let query = if temporary {
-                crate::kernel::LocalBindingId::temporary(owner, ordinal)
-            } else {
-                crate::kernel::LocalBindingId::new(owner, parameter, ordinal, None)
-            };
+            let query = crate::kernel::LocalBindingId::new(owner, parameter, ordinal, None);
             self.local_bindings
                 .declarations
                 .get_key_value(&query)
@@ -15876,11 +15865,7 @@ impl Parser {
 
         if self.peek_ident() == Some("byte_offset") && self.peek_next() == Some(&Token::LParen) {
             self.position += 2;
-            let pointer = self.parse_contract_expression()?;
-            let source_pointer = pointer;
-            let Some(pointer) = contract_expression_as_program_expression(&source_pointer) else {
-                return Err(self.error("byte offset expects a current C pointer expression"));
-            };
+            let source_pointer = self.parse_contract_expression()?;
             self.expect(Token::Comma)?;
             let bytes = match self.next() {
                 Some(Token::Number(bytes)) => bytes,
@@ -15895,13 +15880,21 @@ impl Parser {
                 }
             };
             self.expect(Token::RParen)?;
-            return Ok(crate::surface::lowering::contract_c_unary(
-                source_pointer,
-                ProgramExpression::PointerOffsetBytes {
-                    pointer: Box::new(pointer),
-                    bytes,
+            let lowered = |pointer| ProgramExpression::PointerOffsetBytes {
+                pointer: Box::new(pointer),
+                bytes,
+            };
+            return Ok(
+                match contract_expression_as_program_expression(&source_pointer) {
+                    Some(pointer) => {
+                        crate::surface::lowering::contract_c_unary(source_pointer, lowered(pointer))
+                    }
+                    None => ContractExpression::CUnary {
+                        operand: Box::new(source_pointer),
+                        lowered: lowered(ProgramExpression::Value(int32(0))),
+                    },
                 },
-            ));
+            );
         }
 
         let typed_load = typed_load_type_from_name(self.peek_ident());

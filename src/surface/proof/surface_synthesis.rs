@@ -1335,9 +1335,9 @@ pub(in crate::surface) fn synthesize_surface_value(
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
     if let ProgramValue::Pointer(pointer) = value
-        && let Some(result) = synthesize_materialized_result(pointer.address())
+        && is_materialized_address(pointer.address())
     {
-        return Some(result);
+        return synthesize_materialized_result(pointer.address());
     }
     if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.address().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::StaticObject { .. }))
     {
@@ -2539,14 +2539,12 @@ fn synthesize_surface_atomic_proposition(
                     index += 2;
                 }
                 Term::ProgramValue(ProgramValue::Pointer(pointer)) => {
-                    call_arguments.push(ContractExpression::ProgramExpression(
-                        synthesize_surface_pointer(
-                            pointer,
-                            parameter_binding,
-                            state,
-                            bound_variables,
-                        )?,
-                    ));
+                    call_arguments.push(synthesize_surface_pointer_expression(
+                        pointer,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?);
                     index += 1;
                 }
                 Term::ProgramValue(
@@ -2688,17 +2686,14 @@ fn synthesize_surface_atomic_proposition(
             )
         };
         let read_state = historical.as_ref().map_or(state, |(_, state)| state);
-        let pointer =
-            synthesize_surface_pointer(pointer, parameter_binding, read_state, bound_variables)?;
+        let pointer = synthesize_surface_pointer_expression(
+            pointer,
+            parameter_binding,
+            read_state,
+            bound_variables,
+        )?;
         let validity = ClickProposition::Defined {
-            expression: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
-                pointer: Box::new(pointer),
-                value_type: *value_type,
-                volatile: false,
-                pointee_constant: false,
-                access_class: None,
-                source: crate::kernel::ExpressionLoadSource::none(),
-            }),
+            expression: synthesize_typed_load(pointer, *value_type),
         };
         return Some(match historical {
             Some((selector, _)) => ClickProposition::At {
@@ -4401,7 +4396,9 @@ pub(super) fn synthesize_surface_resource_subject(
     };
     // A scalar's storage is its address, not its current value or the zero
     // offset within its block. The slot index supplies the exact local name.
-    let surface_base = if let Some(name) = state.locals().name_for_slot(range.base()) {
+    let surface_base = if is_materialized_address(range.base()) {
+        synthesize_materialized_result(range.base())?
+    } else if let Some(name) = state.locals().name_for_slot(range.base()) {
         let object = ProgramExpression::Variable(surface_local_name(name));
         let address = if state.locals().array_object_element_type(name).is_some() {
             object
@@ -6367,6 +6364,29 @@ fn synthesize_struct_field_load(
         .or_else(|| synthesize_local_field_load(pointer, value_type, parameter_binding, state))
 }
 
+fn synthesize_typed_load(
+    pointer: ContractExpression,
+    value_type: ProgramType,
+) -> ContractExpression {
+    let lowered = |pointer| ProgramExpression::TypedLoad {
+        pointer: Box::new(pointer),
+        value_type,
+        volatile: false,
+        pointee_constant: false,
+        access_class: None,
+        source: Default::default(),
+    };
+    match pointer {
+        ContractExpression::ProgramExpression(pointer) => {
+            ContractExpression::ProgramExpression(lowered(pointer))
+        }
+        operand => ContractExpression::CUnary {
+            operand: Box::new(operand),
+            lowered: lowered(ProgramExpression::Value(int32(0))),
+        },
+    }
+}
+
 /// Recover source syntax for an opaque pointer value read from an owned
 /// aggregate field. Offset-based synthesis cannot name its distinct block.
 /// This is a candidate spelling; callers must re-lower it to the exact fact.
@@ -6385,6 +6405,12 @@ fn synthesize_owned_field_at_address(
     let field = layout.fields().iter().find(|field| {
         field.program_type() == value_type && slot.offset_by_bytes(field.offset_bytes()) == *address
     })?;
+    if is_materialized_address(address) {
+        return Some(synthesize_typed_load(
+            synthesize_materialized_result(address)?,
+            value_type,
+        ));
+    }
     let base = ProgramExpression::Variable(surface_local_name(&name));
     Some(ContractExpression::Field {
         pointee_struct: None,
@@ -6443,6 +6469,12 @@ fn synthesize_owned_pointer_field(
     let field = layout.fields().iter().find(|field| {
         field.program_type().is_pointer() && slot.offset_by_bytes(field.offset_bytes()) == address
     })?;
+    if is_materialized_address(&address) {
+        return Some(synthesize_typed_load(
+            synthesize_materialized_result(&address)?,
+            field.program_type(),
+        ));
+    }
     let base = ProgramExpression::Variable(surface_local_name(&name));
     Some(ContractExpression::Field {
         pointee_struct: None,
@@ -6516,6 +6548,9 @@ fn synthesize_surface_pointer(
     let _frame = SurfaceSynthesisFrame::enter("pointer")?;
     if pointer == &Address::null() {
         return Some(ProgramExpression::Value(int32(0)));
+    }
+    if is_materialized_address(pointer) {
+        return None;
     }
     if matches!(
         pointer.base,
@@ -6923,17 +6958,16 @@ fn synthesize_pointer_equality_address(
     }
 }
 
+fn is_materialized_address(pointer: &Address) -> bool {
+    matches!(&pointer.base, AddressBase::AutomaticLocal { binding, .. } if binding.is_temporary())
+}
+
 fn synthesize_materialized_result(pointer: &Address) -> Option<ContractExpression> {
-    if !matches!(&pointer.base, AddressBase::AutomaticLocal { binding, .. } if binding.is_temporary())
-    {
-        return None;
-    }
     SYNTHESIS_RECORDED_POINTS.with(|points| {
-        let points = points.borrow();
-        let points = points.as_ref()?;
-        Some(ContractExpression::RegionResult(
-            points.call_result_naming_pointer(pointer)?,
-        ))
+        points
+            .borrow()
+            .as_ref()?
+            .produced_address_expression(pointer)
     })
 }
 
@@ -6949,13 +6983,13 @@ fn synthesize_surface_pointer_expression(
     {
         return Some(ContractExpression::RegionResult(region));
     }
-    if let Some(region) = SYNTHESIS_RECORDED_POINTS
-        .with(|points| points.borrow().as_ref()?.allocation_result(pointer))
-    {
-        return Some(ContractExpression::RegionAllocation(region));
-    }
-    if let Some(result) = synthesize_materialized_result(pointer) {
-        return Some(result);
+    if let Some(expression) = SYNTHESIS_RECORDED_POINTS.with(|points| {
+        points
+            .borrow()
+            .as_ref()?
+            .produced_address_expression(pointer)
+    }) {
+        return Some(expression);
     }
     if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
         return Some(field);
@@ -6988,15 +7022,15 @@ fn synthesize_surface_pointer_expression(
     ) {
         return Some(result);
     }
-    // A pointer an earlier call returned, which no local here holds, is that
-    // call's result.
-    if let Some(region) = SYNTHESIS_RECORDED_POINTS.with(|points| {
+    // A pointer an earlier call returned can also name an address at a
+    // fixed byte displacement from that result.
+    if let Some(expression) = SYNTHESIS_RECORDED_POINTS.with(|points| {
         points
             .borrow()
             .as_ref()?
-            .call_result_naming_pointer(pointer)
+            .call_result_address_expression(pointer)
     }) {
-        return Some(ContractExpression::RegionResult(region));
+        return Some(expression);
     }
     if parameter_binding.arguments.iter().any(|argument| {
         matches!(

@@ -4889,6 +4889,64 @@ impl RecordedStates {
         self.allocation_results.get(pointer).cloned()
     }
 
+    /// Name the address of frontend-owned storage by its producing region.
+    fn produced_address_expression(
+        &self,
+        pointer: &crate::kernel::Address,
+    ) -> Option<ContractExpression> {
+        use crate::kernel::AddressBase;
+        match &pointer.base {
+            AddressBase::AutomaticLocal { binding, .. } if binding.is_temporary() => {
+                self.call_result_address_expression(pointer)
+            }
+            AddressBase::Heap(_) => Self::displaced_result_address(pointer, |base| {
+                Some(ContractExpression::RegionAllocation(
+                    self.allocation_result(base)?,
+                ))
+            }),
+            _ => None,
+        }
+    }
+
+    fn call_result_address_expression(
+        &self,
+        pointer: &crate::kernel::Address,
+    ) -> Option<ContractExpression> {
+        if let Some(region) = self.call_result_naming_pointer(pointer) {
+            return Some(ContractExpression::RegionResult(region));
+        }
+        Self::displaced_result_address(pointer, |base| {
+            Some(ContractExpression::RegionResult(
+                self.call_result_naming_pointer(base)?,
+            ))
+        })
+    }
+
+    fn displaced_result_address(
+        pointer: &crate::kernel::Address,
+        name_base: impl FnOnce(&crate::kernel::Address) -> Option<ContractExpression>,
+    ) -> Option<ContractExpression> {
+        use crate::kernel::{Address, AddressOffset};
+        let AddressOffset::Constant(bytes) = pointer.offset else {
+            return None;
+        };
+        let bytes = u32::try_from(bytes).ok()?;
+        if bytes == 0 {
+            return name_base(pointer);
+        }
+        let base = Address {
+            base: pointer.base.clone(),
+            offset: AddressOffset::Constant(0),
+        };
+        Some(ContractExpression::CUnary {
+            operand: Box::new(name_base(&base)?),
+            lowered: ProgramExpression::PointerOffsetBytes {
+                pointer: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
+                bytes,
+            },
+        })
+    }
+
     /// The recorded points at which some local held a pointer into `block`,
     /// with their states, in the locals' name order: at most
     /// [`POINTER_POINTS_OFFERED`], each checked against its state.
@@ -4998,10 +5056,20 @@ impl RecordedStates {
                         Some(call) => state
                             .step_result(call)
                             .map(|value| RetainedProgramValue::from(value.clone().into_value())),
-                        None => layout
-                            .call_result_local(*index)
-                            .and_then(|local| state.locals().get(local))
-                            .map(|value| RetainedProgramValue::from(value.clone().into_value())),
+                        None => {
+                            let local = layout.call_result_local(*index)?;
+                            if let Some(value) = state.locals().get(local) {
+                                return Some(RetainedProgramValue::from(
+                                    value.clone().into_value(),
+                                ));
+                            }
+                            local.local_id().filter(|id| id.is_temporary())?;
+                            let address = state.locals().aggregate_object_pointer(local)?;
+                            Some(RetainedProgramValue::from(ProgramValue::typed_pointer(
+                                address.clone(),
+                                crate::kernel::ProgramType::UInt8Pointer,
+                            )))
+                        }
                     });
             self.record_retained_call_result(*index, result);
         }

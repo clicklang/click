@@ -1407,7 +1407,12 @@ fn local_naming_entries(
     let mut entries = state
         .locals()
         .object_values()
-        .filter(|(name, _)| !name.named().is_some_and(|name| name.starts_with("__rust_")))
+        .filter(|(name, _)| {
+            !name
+                .local_id()
+                .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                && !name.named().is_some_and(|name| name.starts_with("__rust_"))
+        })
         .map(|(name, value)| {
             let binding = crate::kernel::program_local_source_name(name);
             (binding.to_string(), (binding, value.clone().into_native()))

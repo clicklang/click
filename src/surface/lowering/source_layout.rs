@@ -806,6 +806,15 @@ impl SourceExecutionLayout {
                     {
                         aggregate_objects
                             .insert(name.binding().clone(), aggregate_result_fields(declared));
+                        // Construction can require proofs about the destination before
+                        // it has initialized fields or published the constructed value.
+                        let binding = name.binding();
+                        if binding
+                            .local_id()
+                            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                        {
+                            layout.call_results.insert(statement_index, binding.clone());
+                        }
                     }
                     if let ProgramStatement::CallConstruct { target, .. } = statement {
                         let fields = aggregate_objects.get(target).ok_or_else(|| {
