@@ -3186,10 +3186,7 @@ fn synthesize_surface_atomic_proposition(
                 {
                     read
                 }
-                _ => spell_wrapping_uint64_operand(
-                    &root,
-                    raise_kernel_term(&root, parameter_binding, state, bound_variables)?,
-                )?,
+                _ => raise_kernel_term(&root, parameter_binding, state, bound_variables)?,
             }
         } else {
             synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?

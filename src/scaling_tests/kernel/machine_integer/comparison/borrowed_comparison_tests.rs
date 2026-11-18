@@ -295,7 +295,8 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     [variable.clone(), literal(1)],
                 );
                 assert!(
-                    bounded_comparison_operand(format, V::Shared(&signed_left_shift)).is_none()
+                    bounded_comparison_operand(format, V::Shared(&signed_left_shift), true)
+                        .is_none()
                 );
             }
             let wrapping_cases = [O::Add, O::Subtract].map(|op| {
@@ -318,7 +319,7 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                 (&wrapping_cases[..], &wrapping_cases[..0])
             };
             for (signed, ..) in wrapping_misses {
-                assert!(bounded_comparison_operand(format, V::Shared(signed)).is_none());
+                assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
             }
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -333,7 +334,7 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                         [V::Shared(&other), V::Shared(hit)],
                     ] {
                         let condition =
-                            logical_condition_for_operand_views(format, R::Equal, operands);
+                            logical_conditional_guard_for_operand_views(format, R::Equal, operands);
                         assert!(is_bounded_machine_comparison(&condition));
                         let guard =
                             crate::kernel::KernelTermImport::default().condition(&condition);
@@ -344,7 +345,7 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                         assert!(conditional_atom(&conditional).is_some());
                     }
                     for miss in [left_miss, right_miss] {
-                        let condition = logical_condition_for_operand_views(
+                        let condition = logical_conditional_guard_for_operand_views(
                             format,
                             R::Equal,
                             [V::Shared(miss), V::Shared(&other)],

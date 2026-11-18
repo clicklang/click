@@ -219,7 +219,24 @@ pub(crate) fn logical_condition_for_operand_views(
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> ConditionTerm {
-    retained_comparison_for_operand_views(format, relation, operands)
+    logical_comparison(format, relation, operands, false)
+}
+
+pub(in crate::kernel) fn logical_conditional_guard_for_operand_views(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    operands: [crate::kernel::MachineOperandView<'_>; 2],
+) -> ConditionTerm {
+    logical_comparison(format, relation, operands, true)
+}
+
+fn logical_comparison(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    operands: [crate::kernel::MachineOperandView<'_>; 2],
+    retain_wrapping: bool,
+) -> ConditionTerm {
+    retained_comparison_for_operand_views(format, relation, operands, retain_wrapping)
         .unwrap_or_else(|| condition_for_operand_views(format, relation, operands))
 }
 
@@ -227,6 +244,7 @@ fn retained_comparison_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
+    retain_wrapping: bool,
 ) -> Option<ConditionTerm> {
     let variables = operands.map(|operand| operand.variable().copied());
     let [left, right] = if matches!(format.format().bits(), 32 | 64)
@@ -240,7 +258,8 @@ fn retained_comparison_for_operand_views(
         if !matches!(format.format().bits(), 32 | 64) {
             return None;
         }
-        let [left, right] = operands.map(|operand| bounded_comparison_operand(format, operand));
+        let [left, right] =
+            operands.map(|operand| bounded_comparison_operand(format, operand, retain_wrapping));
         if left.is_none() && right.is_none() {
             return None;
         }
@@ -290,8 +309,8 @@ pub(crate) fn is_bounded_machine_comparison(condition: &crate::kernel::Condition
         return false;
     }
     use crate::kernel::MachineOperandView as V;
-    let a = bounded_comparison_operand(*format, V::Legacy(left));
-    let b = bounded_comparison_operand(*format, V::Legacy(right));
+    let a = bounded_comparison_operand(*format, V::Legacy(left), true);
+    let b = bounded_comparison_operand(*format, V::Legacy(right), true);
     (a.is_some() || b.is_some())
         && (a.is_some() || comparison_leaf_operand(V::Legacy(left)).is_some())
         && (b.is_some() || comparison_leaf_operand(V::Legacy(right)).is_some())
@@ -310,6 +329,7 @@ fn comparison_leaf_operand(operand: crate::kernel::MachineOperandView<'_>) -> Op
 fn bounded_comparison_operand(
     observation: MachineIntegerType,
     operand: crate::kernel::MachineOperandView<'_>,
+    retain_wrapping: bool,
 ) -> Option<MachineTerm> {
     if let Some((format, op @ crate::kernel::MachineUnaryOp::BitwiseNot, child)) = operand.unary()
         && matches!(format.format().bits(), 32 | 64)
@@ -336,7 +356,8 @@ fn bounded_comparison_operand(
         // encoding. An explicitly unsigned operation carries its own type,
         // including under the Int64 filing format of wide equality.
         O::Add | O::Subtract
-            if (!format.format().is_signed() || word32_arithmetic)
+            if retain_wrapping
+                && (!format.format().is_signed() || word32_arithmetic)
                 && (arguments[0].variable().is_some() != arguments[1].variable().is_some()) => {}
         O::ShiftRight | O::ShiftLeft
             if operator == O::ShiftRight || !format.format().is_signed() =>
@@ -385,7 +406,7 @@ fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
     crate::instrumentation::record_deterministic_work(1);
     let atom = |format, root: &crate::kernel::KernelTerm| {
         comparison_leaf_operand(V::Shared(root))
-            .or_else(|| bounded_comparison_operand(format, V::Shared(root)))
+            .or_else(|| bounded_comparison_operand(format, V::Shared(root), true))
     };
     let condition = match arguments[0].node() {
         N::Variable(variable) => ConditionTerm::Variable(*variable),

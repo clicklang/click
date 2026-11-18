@@ -456,8 +456,9 @@ over such leaves, a right shift or unsigned left shift by an in-range literal
 count, or an unsigned sum or difference over a variable and a literal. The
 comparison or conditional result type can identify a `uint32` operation whose
 node carries the shared 32-bit word encoding.
-Standalone comparisons recognize the same operands. Even intrinsically decided
-guards in these forms retain their conditional; checking selects the arm. The
+Standalone comparisons also recognize the bounded bitwise and shift operands.
+Even intrinsically decided guards in these forms retain their conditional;
+checking selects the arm. The
 reader inspects only the operator and its immediate leaves. Negated Boolean
 variables use the same guard with swapped arms. This preserves the comparison
 family without exporting arithmetic DAGs or using ambient facts to select an arm.
