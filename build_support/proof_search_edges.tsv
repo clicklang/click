@@ -813,3 +813,7 @@ src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::try_int
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	try_int32_add_sub_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	try_int32_add_sub_using	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_int32_add_sub_using	try_int32_add_sub_using	1
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::try_native_integer_bound	driver	5
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_native_integer_bound	try_native_integer_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	try_native_integer_bound	1
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	try_native_integer_bound	1

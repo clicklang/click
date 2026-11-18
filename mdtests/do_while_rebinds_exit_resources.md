@@ -52,7 +52,7 @@ void walk(struct Node* p) {
                 Chain::Empty => { unfold(t); contradiction(p == 0); },
                 Chain::Node(identity, rest) => {
                     let { tail: next } = unfold(t);
-                    let frame = fold(path(p->next), { model: Path::Step(identity, c.model) }, { up: c });
+                    let frame = fold(path(p->next), { model: Path::Step(identity, c.model), up: c });
                     step();
                     if p == 0 {
                     } else {

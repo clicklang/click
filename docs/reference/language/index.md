@@ -6,7 +6,7 @@ sources.
 
 They may begin with local specification imports such as
 `import "../models/common.click";`, and Click library imports such as
-`import click::cstr;`. Imports contribute declarations but do not select the
+`import click::c::string;`. Imports contribute declarations but do not select the
 imported file's theorem, C function, or tactic proofs. See
 [Files and sidecars](../../concepts/sidecars.md#local-specification-imports)
 for the module and selection rules.
@@ -36,6 +36,7 @@ this page covers each form's full rules and edge cases.
 | `views p[0..n];`, `owns p[0..n];` | Read and write resources a call needs and keeps | [Read and write resources](#read-and-write-resources) |
 | `decreases e;` | Termination measure of a recursive function or a loop | [C termination](#c-termination) |
 | `old(e)`, `at(region(N).entry, e)` | A value in the entry state or another recorded state | [`old(...)`](#old), [`at(...)`](#at) |
+| `exact(p[i])` | A read named by the state in scope itself, not its cell's version point | [`exact(...)`](#exact) |
 | `P and Q`, `P or Q`, `P implies Q`, `not P` | Proposition connectives (C's `&&` and `\|\|` are not Click syntax) | [Propositions](#propositions) |
 | `forall (k: int32) { P }`, `(lo..hi).all(\|k\| { P })` | Quantified propositions; the range form guards memory reads | [Propositions](#propositions) |
 | `Integer`, `to_integer(x)` | Unbounded mathematical integers | [Mathematical integers](#mathematical-integers) |
@@ -2127,7 +2128,7 @@ resource uncalled(flag: int32*) {
 }
 ```
 
-A Click library module may declare resources too, such as `click::cstr`'s
+A Click library module may declare resources too, such as `click::c::string`'s
 C string `cstr_at(p, len)`. A file sees a library resource exactly
 when it sees that module's predicates and functions: the module is implicit,
 imported, or brought by the C program's library calls. Declaring a resource
@@ -2281,7 +2282,7 @@ let { prefix: p } = unfold(before);
 ```
 
 `p` is a plain proof value for the rest of the function. Later `have`s, loop
-invariants and `decreases` measures, fold field maps such as
+invariants and `decreases` measures, fold input maps such as
 `fold(claimed_prefix(data, occupied, capacity), { prefix: p + 1 })`, and the
 closing contract claims may all name it. One pattern may mix child slots and
 fields, `let { marks: m, prefix: p, free: f, live: n } = unfold(state)`
@@ -2427,7 +2428,7 @@ let { left: l, right: r } = unfold(root);
 unfold(l);
 step_until(function.exit);
 let l = fold(tree(left), { model: Tree::Leaf(2) });
-let root = fold(tree(p), { model: old(root.model) }, { left: l, right: r });
+let root = fold(tree(p), { model: old(root.model), left: l, right: r });
 ```
 
 `let { ... } = unfold(root)` consumes `root`, exposes its immediate memory,
@@ -2450,31 +2451,23 @@ returning an algebraic or mathematical value cannot serve as a C index.
 See `mdtests/resource_child_pure_arguments.md` and
 `mdtests/resource_child_pure_arguments_recursive.md`.
 
-The third fold argument maps child slots to owned resource names. Folding
-consumes those children and the parent's immediate memory, checking each
-child's family, arguments, and fields against the proposed model. Replacements
-and reordered children are allowed when those checks hold. Missing, duplicate,
-unfolded, or mismatched children are rejected. A leaf omits the empty child map.
+The fold input map accepts field initializers and child bindings in either order.
+A field key takes a value expression. A child slot takes the name of a held
+resource. Folding consumes the selected children and the parent's immediate
+memory, checking each child's family, arguments, and fields against the proposed
+model. Missing, duplicate, unfolded, or mismatched children are rejected.
 
-A child whose owned resource has the slot's own name may be left out of the
-map: `{ left: left, right: r }` is written `{ right: r }`, and a map whose
-every child is taken this way is left out. The fold keeps the children of
-the arm its model selects, so a leaf folded beside an owned `left` leaves
-`left` alone, and the kernel checks the completed map exactly as a written
-one. A slot is taken by name only from a resource binding of that name in
-scope, never the fold's own result, a name the map already uses, or a pure
-binding; one of another resource family is not taken. The taken resource
-must still be owned in folded form: otherwise the fold names the missing
-child and why the in-scope one does not fill it
-(`mdtests/a_fold_does_not_take_an_unfolded_child_by_name.md`).
+Supply each named child of the selected arm in the input map, even if its
+held instance has the same name as the slot. Omit the map when it has no
+entries.
 
-<!-- verified-example: mdtests/a_fold_takes_children_by_name.md -->
+<!-- verified-example: mdtests/a_fold_binds_same_named_children_explicitly.md -->
 ```click
 let { left: left, right: right } = unfold(root);
 unfold(left);
 step_until(function.exit);
 let left = fold(tree(lp), { model: Tree::Leaf(2) });
-let root = fold(tree(p), { model: old(root.model) });
+let root = fold(tree(p), { model: old(root.model), left: left, right: right });
 ```
 
 A resource that declares no `field` may still name a child that has fields,
@@ -2495,8 +2488,9 @@ It keeps the child's fields in a record the author does not write, so their
 values survive a fold as a declared field's do. The child must be declared
 before it. It may be held without an instance name, `owns pair(p);`, unfolded with `let { first: c } = unfold(pair(p));`,
 and folded with `fold(pair(p), { first: c });`, which takes only the child
-map; with the child bound to `first`, `fold(pair(p));` takes it by name
-(`mdtests/a_hidden_record_folds_its_child_by_name.md`). Holding it by name, `owns x: pair(p);`, is also accepted.
+input. With the child bound to `first`, write `fold(pair(p), { first: first });`
+(`mdtests/a_hidden_record_folds_an_explicit_same_named_child.md`). The parent
+may also be held by name, `owns x: pair(p);`.
 
 The retained child fields have structural paths. `pair(p).first.v` selects
 `first.v` in the one in-scope instance with the exact written target `pair(p)`.
@@ -2547,8 +2541,8 @@ an input child without promising to return it separately.
 
 Parent-qualified resource handles such as `root.left` are not supported.
 Unfolding a recursive body requires `let { ... } = unfold(...)` to name its
-selected children; refolding requires the child map, less the children taken
-by name. Unfold consumes the parent, so it
+selected children. Refolding supplies the selected child slots in the input
+map. Unfold consumes the parent, so it
 cannot be projected or unfolded again unless a new owned parent is constructed.
 
 A child names one declared field-bearing resource: the parent's own definition
@@ -2579,7 +2573,7 @@ resource ctx_at(node: struct tree_node*) {
 Here `ctx_at` owns a `tree_at`, and `tree_at` never owns a `ctx_at`; two
 definitions that own each other are still rejected as a composite resource
 cycle. `Context::Top => {}` shows that an arm may own nothing at all, and
-`fold(ctx_at(node), { model: Context::Top }, {})` constructs it.
+`fold(ctx_at(node), { model: Context::Top })` constructs it.
 
 An arm need not own only cells of the resource's own parameters. The frame
 below is keyed by the focused child and owns the cells of the `parent` the
@@ -2641,7 +2635,7 @@ resource arena_prefix_state(arena: struct arena*) {
 ```
 
 `let { marks: m, free: f } = unfold(state)` and
-`fold(arena_prefix_state(arena), { ... }, { marks: m, free: f })` expose and
+`fold(arena_prefix_state(arena), { ..., marks: m, free: f })` expose and
 consume them as for an arm. A body or arm may also own a field-free declared
 resource without a name, `owns cell_value(cell);`; it stays folded while the
 parent is unfolded (`mdtests/resource_match_arm_unnamed_child.md`). A
@@ -4157,6 +4151,49 @@ follow earlier `step` or joined `branch` steps. The
 target must be forward and reachable on that selected path; it cannot be used
 to rewind execution or enter an unselected branch.
 
+## `exact(...)`
+
+`exact(place)` is the read of `place` named by the state in scope itself,
+with no version walk (`design/exact-reads.md`). An ordinary read `p[i]` names
+the cell's version point, the state the assumption-free version walk selects
+for the cell: after a store to another object it is still the read named by
+the earlier state ([a read names its version
+point](../../internals/raise-lower-principle.md#a-read-names-its-version-point)).
+`exact(p[i])` is the read of the same cell named by the current state. Both
+denote the same value; they are different kernel terms for it, and the
+assumption-free load equality relates them.
+
+| Surface | Read |
+|---|---|
+| `p[i]` | at `p[i]`'s version point, seen from the current state |
+| `exact(p[i])` | named by the current state |
+| `at(point, exact(p[i]))` | named by `point`'s state |
+| `old(exact(p[i]))` | named by the function's entry state |
+
+`place` is any place expression whose ordinary read is legal there, such as
+`p[i]`, `h->next` or `*q`
+(`mdtests/an_exact_read_takes_a_field_or_a_dereference.md`). The read's type
+comes from the place.
+It reads an integer, `bool` or pointer cell; a pointer read's provenance and
+bounds owner are the same exact read. `exact` applies to the outermost read
+only: `exact(p[i]->next)` reads `->next` exactly through the ordinary read of
+`p[i]`, and `exact(exact(p[i])->next)` reads both exactly.
+
+<!-- verified-example: mdtests/an_exact_read_of_an_unchanged_cell_equals_its_ordinary_read.md -->
+```click
+have exact(p[0]) == p[0] by normalize();
+have old(exact(p[0])) == old(p[0]) by normalize();
+```
+
+`exact` grants no access permission and adds no facts. A C read after it
+still needs its own resource
+(`mdtests/an_exact_read_grants_no_access.md`). An operand that is not a
+memory read, such as a parameter's value, is refused: "`exact` takes a memory
+read, such as `p[i]` or `h->next`"
+(`mdtests/exact_refuses_an_operand_that_is_not_a_memory_read.md`). A declared
+resource argument and a resource fact cannot contain `exact`. `exact` is a
+built-in form, so no predicate or function can be named `exact`.
+
 ## Pure Click functions
 
 Click functions are specification-level value definitions, not executable C
@@ -4319,7 +4356,7 @@ pure helper over `uint8[]` can appear in an invariant or inside `old(...)`.
 The Click library provides byte-slice helpers over `uint8[]`: `bytes::count`,
 `bytes::equal`, `bytes::equal_range`, `bytes::all_equal`, `bytes::contains`, and
 `bytes::all_not_equal`. It also provides C-string predicates:
-`cstr::prefix`, `cstr::len`, `cstr::cstr`, and `cstr::bounded`, whose lengths and bounds
+`string::prefix`, `string::len`, `string::cstr`, and `string::bounded`, whose lengths and bounds
 are `size_t` (`uint64`) values as C measures them. These are ordinary Click
 functions and predicates, not built-in kernel concepts.
 

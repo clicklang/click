@@ -374,9 +374,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             I::TruncatingRemainder(n, d) => Some((n.clone(), d.clone(), true)),
             _ => None,
         };
-        let (n, d, rem, target, lower, written_target) = if let Some((n, d, r)) = get(&left) {
+        let (n, d, rem, target, lower, written_target) = if let Some((n, d, r)) = get(left) {
             (n, d, r, right, false, written_right)
-        } else if let Some((n, d, r)) = get(&right) {
+        } else if let Some((n, d, r)) = get(right) {
             (n, d, r, left, true, written_left)
         } else {
             return Ok(None);

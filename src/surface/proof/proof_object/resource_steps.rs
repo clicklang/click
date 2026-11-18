@@ -341,28 +341,12 @@ impl<'a> Proof<'a> {
         let selected = lower_resource_clause_at_state(
             resource,
             context.parameter_binding(),
-            &execution.core.state,
+            execution.core.reached_state(),
         )?;
-        let (after_state, witness) = execution
+        let after_state = execution
             .core
-            .state
-            .checked_population_authority_exchange(&selected, establish, before_facts.assumptions())
+            .record_population_authority_rewrite(&before_facts, &selected, establish)
             .map_err(|message| self.step_error(message))?;
-        execution
-            .core
-            .record_population_authority_rewrite(
-                &before_facts,
-                &selected,
-                establish,
-                &witness,
-                &after_state,
-                &before_facts,
-            )
-            .map_err(|message| {
-                self.step_error(format!(
-                    "kernel rejected checked population authority `{operation}`: {message}"
-                ))
-            })?;
         execution.core.state = after_state.into();
         let branch = self
             .focused_branch()
@@ -598,17 +582,6 @@ impl<'a> Proof<'a> {
                     .collect::<Result<Arc<[(String, Variable)]>, ClickError>>()
             })
             .transpose()?;
-        let selected_children = match (&binding.default_child_bindings, selected_children) {
-            (Some(defaults), Some(explicit)) if !unfold => Some(self.fold_children_with_defaults(
-                before,
-                instance,
-                definition,
-                context.function.composite_resource_definitions(),
-                explicit,
-                defaults,
-            )?),
-            (_, selected_children) => selected_children,
-        };
         let instance_value = instance.clone();
         let instance = &instance_value;
         let collecting =
@@ -1099,54 +1072,6 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// A fold's explicit child map, completed by name: each child the
-    /// selected arm owns that the map left out is the in-scope resource of
-    /// the same name, which must be owned in folded form here. Candidates
-    /// for slots the arm does not own are dropped. The kernel receives the
-    /// completed map and checks it exactly as a written one.
-    fn fold_children_with_defaults(
-        &self,
-        before: &ExecutionState,
-        instance: &crate::kernel::ResourceInstance,
-        definition: &crate::kernel::CompositeResourceDefinition,
-        definitions: &[crate::kernel::CompositeResourceDefinition],
-        explicit: Arc<[(String, Variable)]>,
-        defaults: &[(String, String, Variable)],
-    ) -> Result<Arc<[(String, Variable)]>, ClickError> {
-        let Some(owned) = crate::kernel::selected_instance_child_names(
-            before,
-            instance,
-            definition,
-            definitions,
-            self.facts().assumptions(),
-        ) else {
-            // No arm is decided: leave the map as written, so the kernel
-            // reports what it needs to select one.
-            return Ok(explicit);
-        };
-        let mut completed = explicit.to_vec();
-        for slot in owned {
-            if completed.iter().any(|(bound, _)| *bound == slot) {
-                continue;
-            }
-            let Some((_, name, identity)) = defaults.iter().find(|(bound, _, _)| *bound == slot)
-            else {
-                continue;
-            };
-            let identity = before
-                .owned_resource_instance(*identity)
-                .ok_or_else(|| {
-                    self.step_error(format!(
-                        "fold of `{}` must supply its named child `{slot}` in its child map: `{{ {slot}: name }}`; the in-scope `{name}` is not owned in folded form here",
-                        instance.name()
-                    ))
-                })?
-                .identity();
-            completed.push((slot, identity));
-        }
-        Ok(completed.into())
-    }
-
     /// The proof locals after `let { field: name, ... } = unfold(instance)`
     /// binds each named C-typed field of `instance` to its folded C value,
     /// which lowers exactly as a matched constructor payload does.
@@ -1488,7 +1413,7 @@ impl<'a> Proof<'a> {
             let branch = match self.focused_obligation() {
                 Some(Obligation::Proposition(goal)) => {
                     let Some((ConditionTerm::IntegerEqual(unfolded, replacement), true)) =
-                        (&derived).condition_native()
+                        derived.condition_native()
                     else {
                         return Err(self.step_error(
                             "the restated fold law did not produce an Integer equation",

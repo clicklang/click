@@ -50,7 +50,7 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
         Context::Left(identity, grandparent, color, sibling_model, up_model) => {
             ... derive rb_parent_is(t.model, identity) from parent consistency ...
             let { sibling: s, up: u } = unfold(c);
-            let sub = fold(rb_at(identity), { ... }, { left: t, right: s });
+            let sub = fold(rb_at(identity), { ..., left: t, right: s });
             ... establish the measure's descent ...
             let { whole: whole } = refold_to_root(identity, root, { c: u, t: sub });
         },
@@ -143,8 +143,12 @@ application.
   entry state, resource transfer, recursion hypotheses, termination, rule
   packaging at the completed contract root, and the audit's targeted runs. The
   surface proves it with the tactic's script followed by the one `return`
-  step and one `known` per claim, so the script itself must leave each
-  produced instance held and each `ensures` available on every live path.
+  step and one `known` per claim and per contract-closing goal, so the
+  script itself must leave each produced instance held and each `ensures`
+  available on every live path. This ending does not depend on the implicit
+  closer, so a tactic's expansion, which leaves it out, is checked the same
+  way with that closer off. The script runs no code: it may not `step`, but a
+  `fold` may prove its instance facts with `by { ... }`.
   A terminal `contradiction` in a proof `match` arm instead refutes that
   path with a checked fact and its negation; no return or postcondition
   suffix is added there, and expansion preserves the refutation. The IR is the one all

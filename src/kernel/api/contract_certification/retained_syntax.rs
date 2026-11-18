@@ -706,7 +706,7 @@ mod tests {
         ] {
             let right = KernelTerm::algebraic_read(
                 ty.clone(),
-                crate::kernel::ProgramPoint::at(&state),
+                crate::kernel::ProgramPoint::at(state),
                 SharedAddress::import(address),
             );
             let native = AlgebraicTerm {

@@ -1,6 +1,6 @@
 # An `snprintf` call map gives the length of the C string a `%s` copies
 
-A `%s` argument is viewed as `click::cstr::cstr_at(aN, nN)` for a value
+A `%s` argument is viewed as `click::c::string::cstr_at(aN, nN)` for a value
 parameter `nN`, so its length must come from somewhere. For a local array,
 such as `tmp` here, nothing the caller holds supplies it. The call step gives
 it: `step(snprintf, { n1: 0u64 })`. The format comes from the call at the
@@ -23,8 +23,8 @@ int f(char *buf, int len)
 ```
 
 ```click
-import click::cstr;
-import click::format;
+import click::c::string;
+import click::c::stdio;
 target "x86_64-unknown-linux-gnu";
 mode "kernel";
 verifying "snprintf_call_map_names_a_local_c_string.c";
@@ -40,16 +40,16 @@ int32 f(char buf[], int32 len) {
     }
     step();
     step();
-    have format::decimal_length(7u64) == 1u64 by {
-        apply(format::decimal_length_1(7u64));
+    have stdio::decimal_length(7u64) == 1u64 by {
+        apply(stdio::decimal_length_1(7u64));
     }
     step(snprintf, { n1: 0u64 });
     step();
-    have result == format::decimal_length(7u64) as int32 by {
+    have result == stdio::decimal_length(7u64) as int32 by {
         solve();
     }
     have result == 1 by {
-        solve() using { result == format::decimal_length(7u64) as int32; format::decimal_length(7u64) == 1u64; };
+        solve() using { result == stdio::decimal_length(7u64) as int32; stdio::decimal_length(7u64) == 1u64; };
     }
 }
 ```

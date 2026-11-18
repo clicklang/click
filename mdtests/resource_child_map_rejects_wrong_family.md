@@ -77,8 +77,9 @@ void frame_push(struct tree_node* node, struct tree_node* up,
 } by {
     step_until(function.exit);
     let ctx = fold(ctx_at(node), {
-        model: Context::Left(s.model, u.model)
-    }, { right: u, up: s });
+        model: Context::Left(s.model, u.model),
+        right: u, up: s
+    });
     solve();
 }
 ```

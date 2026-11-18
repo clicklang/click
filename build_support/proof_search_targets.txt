@@ -261,3 +261,4 @@ try_pointer_translation_closure
 try_bounded_cast_identity_using
 try_bounded_cast_identity_closure
 try_rewrite_conditional_arms_using
+try_native_integer_bound

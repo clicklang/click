@@ -88,8 +88,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     mark m3; step();
                     have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
                     have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { known(); }
-                    let tree = fold(sized_at(node), { model: old(state.model) }, { metadata: metadata, left: left, right: right });
-                    let state = fold(sized_stop_at(node, root), { model: old(state.model), context: old(state.context) }, { tree: tree, path: path });
+                    let tree = fold(sized_at(node), { model: old(state.model), metadata: metadata, left: left, right: right });
+                    let state = fold(sized_stop_at(node, root), { model: old(state.model), context: old(state.context), tree: tree, path: path });
                     loop {
                         owns state: sized_stop_at(node, root);
                         decreases 0;
@@ -108,8 +108,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(color_bit(shade), 1); normalize();
                             }
                             step(); step(); step();
-                            let path = fold(sized_context_at(node, root->rb_node, 0, value), { model: old(state.context) }, { metadata: parent_size, sibling: sibling, up: up });
-                            let state = fold(sized_stop_at(node, root), { model: old(state.model), context: old(state.context) }, { tree: tree, path: path });
+                            let path = fold(sized_context_at(node, root->rb_node, 0, value), { model: old(state.context), metadata: parent_size, sibling: sibling, up: up });
+                            let state = fold(sized_stop_at(node, root), { model: old(state.model), context: old(state.context), tree: tree, path: path });
                             step();
                         }
                     }
@@ -164,8 +164,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     mark m3; step();
                     have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
                     have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { known(); }
-                    let tree = fold(sized_at(node), { model: old(state.model) }, { metadata: metadata, left: left, right: right });
-                    let state = fold(sized_stop_at(node, root), { model: old(state.model), context: old(state.context) }, { tree: tree, path: path });
+                    let tree = fold(sized_at(node), { model: old(state.model), metadata: metadata, left: left, right: right });
+                    let state = fold(sized_stop_at(node, root), { model: old(state.model), context: old(state.context), tree: tree, path: path });
                     loop {
                         owns state: sized_stop_at(node, root);
                         decreases 0;
@@ -184,8 +184,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(color_bit(shade), 1); normalize();
                             }
                             step(); step(); step();
-                            let path = fold(sized_context_at(node, root->rb_node, 0, value), { model: old(state.context) }, { metadata: parent_size, sibling: sibling, up: up });
-                            let state = fold(sized_stop_at(node, root), { model: old(state.model), context: old(state.context) }, { tree: tree, path: path });
+                            let path = fold(sized_context_at(node, root->rb_node, 0, value), { model: old(state.context), metadata: parent_size, sibling: sibling, up: up });
+                            let state = fold(sized_stop_at(node, root), { model: old(state.model), context: old(state.context), tree: tree, path: path });
                             step();
                         }
                     }

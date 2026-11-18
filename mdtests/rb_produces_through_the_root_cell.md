@@ -109,8 +109,10 @@ void rb_set_root(struct rb_node* node, struct rb_root* root) {
             have separate(memory(node->rb_left), memory(root->rb_node)) by { known(); };
             have separate(memory(node->rb_right), memory(root->rb_node)) by { known(); };
             step_until(function.exit);
-            let u = fold(rb_at(root->rb_node), { model: old(t.model) },
-                         { left: l, right: r });
+            let u = fold(rb_at(root->rb_node), {
+                model: old(t.model),
+                left: l, right: r
+            });
             solve();
         },
     }

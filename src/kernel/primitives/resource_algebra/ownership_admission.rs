@@ -42,6 +42,26 @@ impl ResourceContext {
         entries.iter().next().copied()
     }
 
+    /// Insert the authority issued by one checked mutex ledger transition.
+    /// Its only boundary is the exact identity among the retained authorities.
+    pub(in crate::kernel) fn insert_checked_mutex_authority(
+        mut self,
+        fact: ResourceFact,
+    ) -> Result<Self, ResourceContextValidityError> {
+        debug_assert!(matches!(
+            fact.resource(),
+            Resource::MutexGuard(_) | Resource::MutexLive(_) | Resource::MutexUse(_)
+        ));
+        crate::instrumentation::record_deterministic_work(1);
+        if self.exclusive_boundary_owner(&fact).is_some() {
+            return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                fact,
+            ));
+        }
+        self.insert_fact(fact);
+        Ok(self)
+    }
+
     /// Admit explicit resources using maintained indexes only. This operation
     /// never invokes discovery when the index cannot decide an overlap.
     pub(crate) fn admit_without_discovery(
@@ -165,11 +185,6 @@ impl ResourceContext {
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod scaling_tests {
-    include!("../../../scaling_tests/kernel/primitives/resource_algebra/ownership_admission.rs");
-}
 
 impl ResourceContext {
     /// Apply a checked loan's restoration recipe. Old separation comes from
@@ -306,4 +321,9 @@ impl ResourceContext {
         frame.advance_prepared_memory_equalities(assumptions);
         Ok((frame, inserted))
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../../scaling_tests/kernel/primitives/resource_algebra/ownership_admission.rs");
 }

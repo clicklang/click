@@ -181,11 +181,13 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
                         known();
                     }
                     let frame = fold(ctx_at(root->left), {
-                        model: Context::Left(root, value, right_model, ctx.model)
-                    }, { sibling: rt, up: ctx });
+                        model: Context::Left(root, value, right_model, ctx.model),
+                        sibling: rt, up: ctx
+                    });
                     let again = fold(ctx_at(root->left), {
-                        model: Context::Left(root, value, right_model, Context::Top)
-                    }, { sibling: rt, up: ctx });
+                        model: Context::Left(root, value, right_model, Context::Top),
+                        sibling: rt, up: ctx
+                    });
                     step();
                 },
             }
@@ -206,8 +208,9 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
                 normalize();
             }
             let sub = fold(tree_at(root), {
-                model: HeapTree::Node(identity, value, left_model, right_model)
-            }, { left: l, right: rt });
+                model: HeapTree::Node(identity, value, left_model, right_model),
+                left: l, right: rt
+            });
             have heap_left(sub.model) == HeapTree::Empty by {
                 rewrite(sub.model, HeapTree::Node(identity, value, left_model, right_model));
                 rewrite(heap_left(HeapTree::Node(identity, value, left_model, right_model)), left_model);

@@ -2091,6 +2091,15 @@ For discarded-result copy assignment between live lvalues, a resolved
 checked as a call. An `extern` contract can describe the destination's
 updated logical state, the source's state, and the returned reference.
 
+A C++ function taking a record by value can declare contract value parameters
+with `let`. For example, `let count: uint64;` and
+`requires value.count == count;` give the contract a name for the entry
+count independently of later writes to the parameter. A caller can relate
+its record's entry count to a resource field in a precondition and pass
+the count with `step(shorten, { count: old(source.count) });`. The call
+checks the equality on the copied record. The copy's storage is local
+to the callee, and copying pointer fields grants no backing authority.
+
 Discarded-result trivial copy assignment between live lvalues of the same
 nominal record lowers to shared C aggregate field copies. Clang must resolve a
 non-deleted, non-virtual trivial copy assignment; the record and embedded
@@ -2101,7 +2110,15 @@ Clang layouts preserve native pointer and unsigned extent values; copying a
 descriptor transfers no backing-storage authority. Self-assignment preserves
 the fields. User-defined assignment bodies and move assignment remain refused.
 
-Copy construction and moves, default or partial aggregate initialization, multiple
+Copy-initializing a local from a live lvalue, as in `auto copy = source;`,
+can use a resolved trivial copy constructor declared in a system header.
+The constructor call takes the destination's address and a reference to the
+source. Its `extern` contract can establish the destination's logical state
+independently of the object's fields. The pinned libc++ test
+`libcxx_span_copy_initialization_uses_an_opaque_contract` checks this with a
+logical pointer and count.
+
+Other copy construction and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,
 general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.

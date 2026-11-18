@@ -152,7 +152,7 @@ mod tests {
             for subtract in [false, true] {
                 let (premises, goal, _) = inputs(ty, subtract, min.clone(), max.clone());
                 assert!(check_rule(vec![0, 1], &goal, &premises).is_ok());
-                let Some((ConditionTerm::IntegerEqual(a, b), true)) = (&goal).condition_native()
+                let Some((ConditionTerm::IntegerEqual(a, b), true)) = goal.condition_native()
                 else {
                     unreachable!()
                 };

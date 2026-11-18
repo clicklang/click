@@ -174,7 +174,7 @@ template<class T> void Stack<T>::push(T value) {
             unfold(state);
             step_until(function.exit);
             let tail = fold(nodes<T>(this->head->next), { items: List<T>::Nil });
-            let state = fold(nodes<T>(this->head), { items: List::Cons(value, List<T>::Nil) }, { tail: tail });
+            let state = fold(nodes<T>(this->head), { items: List::Cons(value, List<T>::Nil), tail: tail });
             unfold(length(List::Cons(value, List<T>::Nil)));
             have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
             solve();
@@ -182,10 +182,10 @@ template<class T> void Stack<T>::push(T value) {
         List::Cons(top, below) => {
             // Keep the old list packaged while constructing its new head.
             let { tail: rest } = unfold(state);
-            let prior = fold(nodes<T>(this->head), { items: List::Cons(top, below) }, { tail: rest });
+            let prior = fold(nodes<T>(this->head), { items: List::Cons(top, below), tail: rest });
             step_until(function.exit);
             have this->head->next == old(this->head);
-            let state = fold(nodes<T>(this->head), { items: List::Cons(value, List::Cons(top, below)) }, { tail: prior });
+            let state = fold(nodes<T>(this->head), { items: List::Cons(value, List::Cons(top, below)), tail: prior });
             unfold(length(List::Cons(value, List::Cons(top, below))));
             have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
             solve();
@@ -232,7 +232,7 @@ template<class T> bool Stack<T>::pop(T& out) {
                 },
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
-                    let state = fold(nodes<T>(this->head), { items: List::Cons(next_value, next_items) }, { tail: next });
+                    let state = fold(nodes<T>(this->head), { items: List::Cons(next_value, next_items), tail: next });
                     have to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);
                     have to_integer(old(this->count) - 1u64) == length(List::Cons(next_value, next_items)) by solve() using {
                         to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - 1;

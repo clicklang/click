@@ -50,8 +50,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             mark m3; step();
             have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
             have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
-            let focus = fold(sized_at(node), { model: SizedTree::Node(identity, ancestor, shade, value, left, right) }, { metadata: metadata, left: l, right: r });
-            let state = fold(sized_flip_state(root), { chain: old(state.chain), model: old(state.model), context: old(state.context) }, { focus: focus, path: path });
+            let focus = fold(sized_at(node), { model: SizedTree::Node(identity, ancestor, shade, value, left, right), metadata: metadata, left: l, right: r });
+            let state = fold(sized_flip_state(root), { chain: old(state.chain), model: old(state.model), context: old(state.context), focus: focus, path: path });
             loop {
                 owns state: sized_flip_state(root);
                 decreases 0;
@@ -111,7 +111,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             let { metadata: metadata, left: l, right: r } = unfold(focus);
                             step(); step();
                             unfold(color_bit(Color::Black));
-                            let focus = fold(sized_at(node), { model: SizedTree::Node(identity, 0, Color::Black, value, left, right) }, { metadata: metadata, left: l, right: r });
+                            let focus = fold(sized_at(node), { model: SizedTree::Node(identity, 0, Color::Black, value, left, right), metadata: metadata, left: l, right: r });
                             have sized_value(focus.model) == value by {
                                 rewrite(focus.model, SizedTree::Node(identity, 0, Color::Black, value, left, right));
                                 unfold(sized_value(SizedTree::Node(identity, 0, Color::Black, value, left, right))); normalize();
@@ -133,7 +133,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 have ancestor == 0 by known();
                                 rewrite(ancestor, 0); normalize();
                             }
-                            let state = fold(sized_flip_state(root), { chain: old(state.chain), model: focus.model, context: SizedContext::Top }, { focus: focus, path: path });
+                            let state = fold(sized_flip_state(root), { chain: old(state.chain), model: focus.model, context: SizedContext::Top, focus: focus, path: path });
                             have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by known();
                             step();
                         },
@@ -176,7 +176,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(color_bit(color), 1); normalize();
                                     }
                                     step(); step(); step();
-                                    let path = fold(sized_context_at(node, root->rb_node, 0, value), { model: SizedContext::Left(a, gp, color, cached, sibling, up) }, { metadata: a_size, sibling: held_sibling, up: held_up });
+                                    let path = fold(sized_context_at(node, root->rb_node, 0, value), { model: SizedContext::Left(a, gp, color, cached, sibling, up), metadata: a_size, sibling: held_sibling, up: held_up });
                                     have sized_value(focus.model) == value by {
                                         rewrite(focus.model, old(state.model));
                                         rewrite(old(state.model), SizedTree::Node(identity, ancestor, shade, value, left, right));
@@ -194,7 +194,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(focus.model, old(state.model));
                                         rewrite(path.model, SizedContext::Left(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Left(a, gp, color, cached, sibling, up), ctx); normalize();
                                     }
-                                    let state = fold(sized_flip_state(root), { chain: old(state.chain), model: focus.model, context: path.model }, { focus: focus, path: path });
+                                    let state = fold(sized_flip_state(root), { chain: old(state.chain), model: focus.model, context: path.model, focus: focus, path: path });
                                     have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by known();
                                     step();
                                 },
@@ -217,7 +217,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(color_bit(color), 1); normalize();
                                     }
                                     step(); step(); step();
-                                    let path = fold(sized_context_at(node, root->rb_node, 0, value), { model: SizedContext::Right(a, gp, color, cached, sibling, up) }, { metadata: a_size, sibling: held_sibling, up: held_up });
+                                    let path = fold(sized_context_at(node, root->rb_node, 0, value), { model: SizedContext::Right(a, gp, color, cached, sibling, up), metadata: a_size, sibling: held_sibling, up: held_up });
                                     have sized_value(focus.model) == value by {
                                         rewrite(focus.model, old(state.model));
                                         rewrite(old(state.model), SizedTree::Node(identity, ancestor, shade, value, left, right));
@@ -235,7 +235,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(focus.model, old(state.model));
                                         rewrite(path.model, SizedContext::Right(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Right(a, gp, color, cached, sibling, up), ctx); normalize();
                                     }
-                                    let state = fold(sized_flip_state(root), { chain: old(state.chain), model: focus.model, context: path.model }, { focus: focus, path: path });
+                                    let state = fold(sized_flip_state(root), { chain: old(state.chain), model: focus.model, context: path.model, focus: focus, path: path });
                                     have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by known();
                                     step();
                                 },

@@ -236,18 +236,11 @@ impl ParameterPlaceScope {
         let mut shapes: BTreeMap<_, _> = parameters
             .iter()
             .filter(|parameter| parameter.is_reference() && parameter.struct_name().is_none())
-            .map(|parameter| {
-                (
-                    crate::kernel::BindingName::from(variable(parameter.name())),
-                    PointeeShape::ScalarReferent,
-                )
-            })
+            .map(|parameter| (variable(parameter.name()), PointeeShape::ScalarReferent))
             .collect();
         for (name, fields) in block.parameter_field_places() {
             shapes.insert(
-                name.named()
-                    .map(|name| crate::kernel::BindingName::from(variable(name)))
-                    .unwrap_or_else(|| name.clone()),
+                name.named().map(&variable).unwrap_or_else(|| name.clone()),
                 PointeeShape::Struct {
                     fields: fields.clone(),
                 },
@@ -6746,6 +6739,16 @@ pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
 /// A field of the struct `base` points at: `c.field` through an object's
 /// address, `p->field` through a pointer.
 pub(super) fn describe_field_place(base: &str, field: &str) -> String {
+    // A field access binds tighter than a prefix operator: `&s->f` is the
+    // address of `s->f`. A base written with one, such as the address of a
+    // static object `&"file.c"::static(0)`, is parenthesized.
+    let parenthesized;
+    let base = if object_at_address(base).is_none() && base.starts_with(['&', '*', '-', '!']) {
+        parenthesized = format!("({base})");
+        parenthesized.as_str()
+    } else {
+        base
+    };
     match object_at_address(base) {
         Some(object) => format!("{object}.{field}"),
         // Rust writes a field through a reference with `.`, and a tuple
@@ -7458,6 +7461,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             selector,
             expression,
         } => describe_program_point_expression(Some(selector), expression),
+        ContractExpression::Exact(place) => {
+            format!("exact({})", describe_contract_expression(place))
+        }
         ContractExpression::Negate(expression) => {
             format!("-{}", describe_contract_expression(expression))
         }

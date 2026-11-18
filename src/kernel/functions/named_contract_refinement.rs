@@ -771,11 +771,7 @@ pub(super) fn forced_refinement_instance_bindings(
                 .iter()
                 .zip(implementation.arguments.iter())
                 .all(|(left, right)| {
-                    crate::kernel::resource_field_values_proven_equal(
-                        (left).into(),
-                        (right).into(),
-                        assumptions,
-                    )
+                    crate::kernel::resource_field_values_proven_equal(left, right, assumptions)
                 })
         {
             return Ok(None);
@@ -888,8 +884,8 @@ pub(super) fn refinement_bindings_at_post(
                         .zip(implementation.iter())
                         .all(|(left, right)| {
                             crate::kernel::resource_field_values_proven_equal(
-                                (left).into(),
-                                (right).into(),
+                                left,
+                                right,
                                 assumptions,
                             )
                         })

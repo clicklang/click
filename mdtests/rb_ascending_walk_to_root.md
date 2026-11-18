@@ -322,8 +322,9 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                     }
                     let lifted = fold(rb_at(node), {
                         model: RbTree::Node(identity, grandparent, color,
-                                            t.model, sibling_model)
-                    }, { left: t, right: s });
+                                            t.model, sibling_model),
+                        left: t, right: s
+                    });
                 },
                 Context::Right(identity, grandparent, color, sibling_model, up_model) => {
                     have ctx_reroot(Context::Right(identity, grandparent, color,
@@ -362,8 +363,9 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                     }
                     let lifted = fold(rb_at(node), {
                         model: RbTree::Node(identity, grandparent, color,
-                                            sibling_model, t.model)
-                    }, { left: s, right: t });
+                                            sibling_model, t.model),
+                        left: s, right: t
+                    });
                 },
             }
         }
@@ -409,8 +411,9 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
             }
             let { left: l, right: r } = unfold(t);
             let sub = fold(rb_at(node), {
-                model: RbTree::Node(identity, parent_model, color, left_model, right_model)
-            }, { left: l, right: r });
+                model: RbTree::Node(identity, parent_model, color, left_model, right_model),
+                left: l, right: r
+            });
             have sub.model == plug(old(c.model), old(t.model)) by {
                 rewrite(sub.model, RbTree::Node(identity, parent_model, color, left_model, right_model));
                 known();

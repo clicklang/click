@@ -161,6 +161,7 @@ fn collect_signed_surface_terms<'a>(
             ContractExpression::CUnary { operand: inner, .. }
             | ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             }
@@ -1747,7 +1748,7 @@ impl<'a> Proof<'a> {
                 continue;
             };
             let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
-                (&condition).native_compat(),
+                condition.native_compat(),
             ) else {
                 continue;
             };
@@ -1802,7 +1803,7 @@ impl<'a> Proof<'a> {
             return false;
         };
         let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
-            (&condition).native_compat(),
+            condition.native_compat(),
         ) else {
             return false;
         };
@@ -3059,7 +3060,7 @@ impl<'a> Proof<'a> {
                 _ => continue,
             };
             let Some((crate::kernel::ConditionTerm::IntegerLessEqual(left, right), true)) =
-                (&bound).condition_native()
+                bound.condition_native()
             else {
                 return None;
             };
@@ -3818,7 +3819,7 @@ fn conjunction_under_binders(goal: Option<&Proposition>) -> bool {
 }
 
 /// The existential witness closer is reserved for the source-backed range
-/// slice.  In particular, a generated overflow guard (as in `cstr::readable`)
+/// slice.  In particular, a generated overflow guard (as in `string::readable`)
 /// remains on the dynamic state-transport route.  The worklist is bounded
 /// because this predicate is part of smart closure dispatch.
 fn quantified_external_range_goal(goal: &Proposition) -> bool {
@@ -4001,7 +4002,7 @@ fn literal_requirement_spelling(
     requirement: &UnresolvedRequirement,
 ) -> Option<RequirementSpelling> {
     let Some((ConditionTerm::Constant(value), polarity)) =
-        (&requirement.proposition).condition_native()
+        requirement.proposition.condition_native()
     else {
         return None;
     };
@@ -4428,7 +4429,7 @@ fn source_backed_call_requirement_surface(
                     .parameters()
                     .iter()
                     .map(|parameter| {
-                        crate::surface::surface_parameter_binding(&parameter.binding_name())
+                        crate::surface::surface_parameter_binding(parameter.binding_name())
                     })
                     .collect::<Vec<_>>(),
                 function

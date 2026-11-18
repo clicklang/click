@@ -40,7 +40,7 @@ void probe(struct node *p, struct node *q) {
             let {kid: kid} = unfold(a);
             have p == id by known();
             step();
-            let b = fold(frame(p), {model: Tag::At(q, cm)}, {kid: kid});
+            let b = fold(frame(p), { model: Tag::At(q, cm), kid: kid });
         },
     }
 }

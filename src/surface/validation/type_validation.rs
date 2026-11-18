@@ -710,6 +710,7 @@ fn integer_expression_kind(
         }
         ContractExpression::Negate(inner)
         | ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => integer_expression_kind(inner, integer_bindings, click_functions, locals),
@@ -958,6 +959,7 @@ fn contains_scoped_expression_shape(
         | ContractExpression::CUnary { operand: base, .. }
         | ContractExpression::Negate(base)
         | ContractExpression::Old(base)
+        | ContractExpression::Exact(base)
         | ContractExpression::At {
             expression: base, ..
         }
@@ -1030,6 +1032,7 @@ fn contains_integer_expression_signal(
         }
         ContractExpression::Negate(inner)
         | ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => contains_integer_expression_signal(inner, integer_bindings, click_functions, locals),
@@ -2008,6 +2011,7 @@ pub(super) fn infer_scoped_spec_value_type(
             })
         }
         ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => infer_scoped_spec_value_type(
@@ -2740,6 +2744,7 @@ pub(super) fn validate_to_nat_argument_type(
         ContractExpression::Binding(name) => !variables.contains_key(name),
         ContractExpression::Negate(inner)
         | ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => {
@@ -2961,6 +2966,7 @@ fn infer_spec_value_type(
             Ok(SpecValueType::Sequence(left.or(right)))
         }
         ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => infer_spec_value_type(inner, variables, click_functions, context),
@@ -3656,7 +3662,7 @@ pub(crate) fn array_ref_elements_compatible(
 
 /// [`click_types_compatible`] for an argument of a predicate or pure
 /// function, which also passes a signed character pointer as `uint8` bytes, so a
-/// specification such as `cstr::readable(s)` reads a C string's bytes. Under
+/// specification such as `string::readable(s)` reads a C string's bytes. Under
 /// either signedness of `char` this reads the same objects: the kernel
 /// lets a character type read a one-byte cell of the other signedness as the
 /// same eight bits (C11 6.5p7), so `bytes[k] == '\0'` holds exactly when the
@@ -4021,7 +4027,9 @@ pub(super) fn infer_contract_expression_type(
         ContractExpression::ResourceWildcard => Err(ClickError::new(
             "`_` is only valid inside a `count(...)` resource pattern",
         )),
-        ContractExpression::Old(expression) | ContractExpression::At { expression, .. } => {
+        ContractExpression::Old(expression)
+        | ContractExpression::Exact(expression)
+        | ContractExpression::At { expression, .. } => {
             infer_contract_expression_type(expression, variables, click_functions, context)
         }
         ContractExpression::Add(left, right) => {
@@ -5375,7 +5383,7 @@ fn validate_contract_expression_calls(
             validate_contract_expression_calls(base, click_functions, context)?;
             Ok(())
         }
-        ContractExpression::Old(body) => {
+        ContractExpression::Old(body) | ContractExpression::Exact(body) => {
             validate_contract_expression_calls(body, click_functions, context)
         }
         ContractExpression::At { expression, .. } => {

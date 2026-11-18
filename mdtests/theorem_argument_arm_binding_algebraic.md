@@ -81,8 +81,10 @@ int peek(struct node* p) {
                 apply(depth_ok_of(Tree::Node(id, value, left_model)));
                 known();
             }
-            let u = fold(tree_at(p), { model: Tree::Node(id, value, left_model) },
-                         { left: l });
+            let u = fold(tree_at(p), {
+                model: Tree::Node(id, value, left_model),
+                left: l
+            });
             solve();
         },
     }

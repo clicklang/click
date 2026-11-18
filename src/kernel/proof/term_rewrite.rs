@@ -25,8 +25,10 @@ mod graph_condition_tests;
 mod integer_conditional_tests;
 #[cfg(test)]
 mod pointer_application_tests;
+mod retained_boolean;
 #[allow(dead_code)]
 mod retained_folds;
+mod retained_integer;
 #[allow(dead_code)]
 mod retained_matches;
 mod shared_comparison;

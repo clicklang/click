@@ -739,35 +739,19 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             let fields = binding.fold_fields.as_ref().unwrap();
             let only_hidden =
                 !fields.is_empty() && fields.iter().all(|(name, _)| name.contains('.'));
-            let children = binding
-                .child_bindings
-                .as_ref()
-                .map(|children| {
-                    children
+            let inputs = fields
+                .iter()
+                .filter(|(name, _)| !name.contains('.'))
+                .map(|(name, value)| format!("{name}: {}", describe_contract_expression(value)))
+                .chain(
+                    binding
+                        .child_bindings
                         .iter()
-                        .map(|(slot, name, _)| format!("{slot}: {name}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                })
-                .unwrap_or_default();
-            let inputs = if only_hidden {
-                format!("{{ {children} }}")
-            } else {
-                let visible = fields
-                    .iter()
-                    .filter(|(name, _)| !name.contains('.'))
-                    .map(|(name, value)| format!("{name}: {}", describe_contract_expression(value)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!(
-                    "{{ {visible} }}{}",
-                    if children.is_empty() {
-                        String::new()
-                    } else {
-                        format!(", {{ {children} }}")
-                    }
+                        .flat_map(|children| children.iter())
+                        .map(|(slot, name, _)| format!("{slot}: {name}")),
                 )
-            };
+                .collect::<Vec<_>>()
+                .join(", ");
             let result = if binding.name.starts_with('#') {
                 String::new()
             } else {
@@ -795,7 +779,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 output,
                 &prefix,
                 &format!(
-                    "{result}fold({}, {inputs});{record}",
+                    "{result}fold({}, {{ {inputs} }});{record}",
                     format_resource_target(resource)
                 ),
             );

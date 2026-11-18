@@ -891,9 +891,11 @@ fn parse_click_file_with_program_sources(
 /// certifying the tactic, through the same contract, recursion, and
 /// termination checks every C function has, and the packaged rule is what an
 /// application of the tactic applies. The tactic's own script runs first;
-/// then the one `return` is stepped, and every claim is closed by
-/// `known`, so the script must already have established each produced
-/// instance and each `ensures` as an available fact.
+/// then the one `return` is stepped, and every claim and contract-closing
+/// goal is closed by `known`, so the script must already have established
+/// each produced instance and each `ensures` as an available fact. The
+/// ending does not depend on the implicit closer, so a tactic's expansion,
+/// which leaves it out, is checked the same way with that closer off.
 fn with_tactic_procedures(
     mut file: ClickFile,
     mut parsed_sources: BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
@@ -936,7 +938,7 @@ fn with_tactic_procedures(
         let mut suffix = vec![ProofTactic::Synthetic(Box::new(ProofTactic::Step))];
         suffix.extend(std::iter::repeat_n(
             ProofTactic::Synthetic(Box::new(ProofTactic::Known)),
-            block.ensures.len(),
+            tactic_procedure_ending_len(&block) - 1,
         ));
         append_on_every_path(&mut script, &suffix);
         block.grouped_proof = Some(std::sync::Arc::new(SourceProof::Script(script)));
@@ -988,13 +990,22 @@ fn append_on_every_path(script: &mut Vec<ProofTactic>, suffix: &[ProofTactic]) {
 
 /// The first tactic in `tactics`, at any depth of proof control, that runs
 /// C or addresses a C control-flow point, by its source name.
+/// How many tactics the checker appends where each path of a tactic's proof
+/// ends: one `step` over the procedure's `return`, then a `known` per
+/// `ensures` and per contract-closing goal.
+pub(in crate::surface) fn tactic_procedure_ending_len(block: &FunctionBlock) -> usize {
+    1 + block.ensures().len() + crate::kernel::proof::ContractClosingGoal::COUNT
+}
+
 fn first_executing_tactic(tactics: &[ProofTactic]) -> Option<&'static str> {
     tactics.iter().find_map(|tactic| match tactic {
         ProofTactic::Step
         | ProofTactic::StepBind(_)
         | ProofTactic::StepContract(_)
-        | ProofTactic::StepCall(_)
-        | ProofTactic::StepProved { .. } => Some("step"),
+        | ProofTactic::StepCall(_) => Some("step"),
+        // `let y = fold(...) by { ... }` proves a fold's obligations: what
+        // runs is the tactic it wraps, not necessarily a step.
+        ProofTactic::StepProved { step, .. } => first_executing_tactic(std::slice::from_ref(step)),
         ProofTactic::SmartExecute => Some("implicit tail"),
         ProofTactic::ExecuteUntil(_) => Some("step_until"),
         ProofTactic::Loop(_) => Some("loop"),
@@ -1077,7 +1088,56 @@ fn changed_outside_proof_unit(
     {
         rewritten.library_imports = baseline.library_imports.clone();
     }
-    rewritten != proof_unit_erased_click_file(baseline.clone(), target)
+    let mut baseline = proof_unit_erased_click_file(baseline.clone(), target);
+    if rewritten == baseline {
+        return false;
+    }
+    // Resolving a range fold or range predicate draws fresh generated binder
+    // identities from one session-wide counter, so a second parse of an
+    // unchanged declaration differs from the first in those numbers alone.
+    // The files agree when they are equal up to a consistent renumbering,
+    // compared on their debug forms without the read positions `==` ignores.
+    for file in [&mut rewritten, &mut baseline] {
+        erase_read_positions(file);
+    }
+    renumbered_generated_binders(&format!("{rewritten:?}"))
+        != renumbered_generated_binders(&format!("{baseline:?}"))
+}
+
+/// Clears where the parser read `file`, which never makes two files unequal.
+fn erase_read_positions(file: &mut ClickFile) {
+    file.source_spans = Default::default();
+    file.termination_span = None;
+    for theorem in &mut file.theorem_definitions {
+        theorem.body = Default::default();
+    }
+    for function in file.function_blocks.iter_mut().chain(
+        file.tactic_definitions
+            .iter_mut()
+            .map(TacticDefinition::function_block_mut),
+    ) {
+        function.body = Default::default();
+    }
+}
+
+/// `debug` with each distinct `GeneratedBinderId(n)` renumbered by the order
+/// of its first occurrence.
+fn renumbered_generated_binders(debug: &str) -> String {
+    const PREFIX: &str = "GeneratedBinderId(";
+    let mut numbers = std::collections::HashMap::<&str, usize>::new();
+    let mut output = String::with_capacity(debug.len());
+    let mut rest = debug;
+    while let Some(start) = rest.find(PREFIX) {
+        let (before, after) = rest.split_at(start + PREFIX.len());
+        output.push_str(before);
+        let digits = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        let next = numbers.len();
+        let number = *numbers.entry(&after[..digits]).or_insert(next);
+        output.push_str(&number.to_string());
+        rest = &after[digits..];
+    }
+    output.push_str(rest);
+    output
 }
 
 pub fn verify_c_sources(
@@ -3517,6 +3577,9 @@ pub enum ModelFamily {
     Allocator,
     /// The contract the C front end writes for one `snprintf` format.
     Snprintf,
+    /// The contract the C front end writes for a literal `printf` or `fprintf`.
+    Printf,
+    Fprintf,
     /// A C++ standard-library catalog contract.
     CppStd,
     /// A Rust core-method contract.
@@ -3529,11 +3592,13 @@ pub enum ModelFamily {
 impl ModelFamily {
     /// Every family a function's assumptions can belong to; the thread
     /// runtime, which a whole verification assumes, is reported apart.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 9] = [
         Self::Extern,
         Self::CLibrary,
         Self::Allocator,
         Self::Snprintf,
+        Self::Printf,
+        Self::Fprintf,
         Self::CppStd,
         Self::RustCore,
         Self::Primitive,
@@ -3546,6 +3611,8 @@ impl ModelFamily {
             Self::CLibrary => "C library",
             Self::Allocator => "allocator",
             Self::Snprintf => "snprintf",
+            Self::Printf => "printf",
+            Self::Fprintf => "fprintf",
             Self::CppStd => "C++ std",
             Self::RustCore => "Rust core",
             Self::Primitive => "primitive",
@@ -3566,7 +3633,9 @@ impl ModelAssumption {
     /// format, `"%s"`, and any other by its name.
     pub fn display(&self) -> String {
         match crate::languages::c::formatted_output::function_format(&self.name) {
-            Some(format) => format!("\"{}\"", String::from_utf8_lossy(&format).escape_default()),
+            Some((_, format)) => {
+                format!("\"{}\"", String::from_utf8_lossy(&format).escape_default())
+            }
             None => self.name.clone(),
         }
     }
@@ -3601,10 +3670,15 @@ fn program_assumptions_parsed(
                 } else {
                     ModelFamily::CLibrary
                 }
-            } else if name
-                .starts_with(crate::languages::c::formatted_output::FORMATTED_OUTPUT_PREFIX)
+            } else if let Some((function, _)) =
+                crate::languages::c::formatted_output::function_format(name)
             {
-                ModelFamily::Snprintf
+                use crate::languages::c::formatted_output::FormattedOutput;
+                match function {
+                    FormattedOutput::Snprintf => ModelFamily::Snprintf,
+                    FormattedOutput::Printf => ModelFamily::Printf,
+                    FormattedOutput::Fprintf => ModelFamily::Fprintf,
+                }
             } else if library_models.is_some_and(|models| models.contains(name)) {
                 frontend_family
             } else {

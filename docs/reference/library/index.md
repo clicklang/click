@@ -26,7 +26,7 @@ how far it is trusted:
   code that uses it, not with a sidecar import. `click::c::string` is written
   in Click below. The C front end builds in the allocator family
   ([heap allocation](../language/c.md#heap-allocation)) and writes the
-  `snprintf` contracts ([formatted output](../language/c.md#formatted-output)),
+  literal-format contracts ([formatted output](../language/c.md#formatted-output)),
   and the C++ and Rust importers append the generic contracts of
   `library/cpp/` and `library/rust/core.click`, written out at each called
   instance, and the Rust integer-method contracts of
@@ -48,10 +48,8 @@ how far it is trusted:
 | [`click::integer`](#clickinteger) | `import click::integer;` | specification |
 | [`click::permutation`](#clickpermutation) | `import click::permutation;` | specification |
 | [`click::bytes`](#clickbytes) | `import click::bytes;`, or with `click::c::string` | specification |
-| [`click::cstr`](#clickcstr) | `import click::cstr;`, or with `click::c::string` | specification |
-| [`click::format`](#clickformat) | `import click::format;`; named by path in `snprintf` contracts | specification |
 | [`click::c::stdio`](#clickcstdio) | `import click::c::stdio;`, or with the projected `<stdio.h>` | C library interface |
-| [`click::c::string`](#clickcstring) | when the C declares or calls one of its functions | C library interface |
+| [`click::c::string`](#clickcstring) | `import click::c::string;`, or when the C declares or calls a modeled string function | C library interface and specification |
 | [C++ standard library interfaces](#c-standard-library-interfaces), `library/cpp/` (not a module) | when a C++ import calls one of its functions | C++ library interface |
 | [`click::rust::i8` ... `click::rust::usize`](#clickrusti8-through-clickrustusize) | `import click::rust::u32;`; named by path in Rust core-method contracts | specification |
 | [`click::rust::vec`](#clickrustvec) | `import click::rust::vec;` | specification, with trusted axioms |
@@ -6786,6 +6784,25 @@ theorem subtract_right_order(a: Integer, b: Integer, c: Integer) {
 }
 ```
 
+### `integer::lt_le_predecessor`
+
+```click
+theorem lt_le_predecessor(a: Integer, b: Integer) {
+    requires a < b;
+    ensures a <= b - 1 by {
+        have a + 1 <= b by {
+            apply(integer::lt_step_le(a, b)) using { a < b; };
+        }
+        have (a + 1) - 1 <= b - 1 by {
+            apply(integer::subtract_right_order(a + 1, b, 1)) using { a + 1 <= b; };
+        }
+        have a == (a + 1) - 1 by { known(); }
+        rewrite(a, (a + 1) - 1);
+        known();
+    }
+}
+```
+
 ### `integer::subtract_left_order`
 
 ```click
@@ -7951,293 +7968,59 @@ theorem comparison_zero_when_equal(left: uint8[], right: uint8[], length: uint64
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) applies the comparison laws. C ordering clients are checked in [`mdtests/memcmp_orders_the_first_differing_byte.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_the_first_differing_byte.md) and [`mdtests/memcmp_orders_after_equal_prefix.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_after_equal_prefix.md).
 
-## `click::cstr`
+## `click::c::stdio`
 
-Source: `library/cstr.click`, `import click::cstr;`, or brought by `click::c::string`.
+Source: `library/c/stdio.click`. The sidecar can import the module or
+select names such as `import click::c::stdio::{stream, write_requests};`.
 
-### `cstr::prefix`
+### `WriteAttempt` and `stream`
 
 ```click
-predicate prefix(bytes: uint8[], len: uint64) {
-    forall (k: uint64) { k < len implies bytes[k] != '\0' }
+spec enum WriteAttempt {
+    Attempt(List<uint8>, int32),
+}
+
+abstract resource stream(file: void*) {
+    field write_history: List<WriteAttempt>;
 }
 ```
 
-**Meaning:** States that the first `len` bytes contain no null terminator.
+A write attempt records its requested bytes and the return value from the
+write. For the modeled `printf` and `fprintf` calls, a nonnegative result
+means the stream accepted the entire request. A negative result signals an
+error and may accompany partial output. The latest attempt is at the head of
+the history. [Hosted startup](../language/c.md#hosted-standard-output)
+supplies the standard output stream with an empty history.
 
-**Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::prefix(args))` when a proof needs the predicate body.
-
-### `cstr::len`
-
-```click
-predicate len(bytes: uint8[], len: uint64) {
-    len < 18446744073709551615u64 and
-        viewable(bytes[0..len + 1u64]) and
-        cstr::prefix(bytes, len) and
-        bytes[len] == '\0'
-}
-```
-
-**Meaning:** States that `len` is a `size_t` length below `SIZE_MAX`, the
-complete prefix through its terminator is readable, the preceding bytes contain
-no null terminator, and byte `len` is a null terminator.
-
-**Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::len(args))` when a proof needs the predicate body.
-
-### `cstr::cstr`
+### `stdio::write_requests`
 
 ```click
-predicate cstr(bytes: uint8[]) {
-    exists (len: uint64) {
-        cstr::len(bytes, len)
+function write_requests(history: List<WriteAttempt>) -> List<List<uint8>>
+    decreases history
+{
+    match history {
+        List::Nil => List<List<uint8>>::Nil,
+        List::Cons(attempt, tail) => match attempt {
+            WriteAttempt::Attempt(bytes, _) =>
+                List<List<uint8>>::Cons(bytes, stdio::write_requests(tail)),
+        },
     }
 }
 ```
 
-**Meaning:** States that the byte array has some exact specification-level C-string length.
-
-**Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::cstr(args))` when a proof needs the predicate body.
-
-### `cstr::readable_len`
-
-```click
-predicate readable_len(bytes: uint8[], len: uint64) {
-    len < 18446744073709551615u64 and
-        viewable(bytes[0..len + 1u64]) and
-        forall (k: uint64) { k < len implies bytes[k] != '\0' } and
-        bytes[len] == '\0' and
-        forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
-}
-```
-
-**Meaning:** States that `len` is a `size_t` C-string length below
-`SIZE_MAX`, the complete prefix through its terminator is dynamically viewable,
-the prefix has no embedded terminator, and every byte through the null
-terminator is defined.
-
-**Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::readable_len(args))` when a proof needs the predicate body.
-
-### `cstr::readable_len_unique`
-
-```click
-theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
-    requires forall (k: uint64) { k < left implies bytes[k] != '\0' };
-    requires bytes[left] == '\0';
-    requires forall (k: uint64) { k < right implies bytes[k] != '\0' };
-    requires bytes[right] == '\0';
-
-    ensures left == right by {
-        have left < right or not (left < right) by {
-            if left < right {
-                known();
-            } else {
-                known();
-            }
-        }
-        cases {
-            left < right => {
-                instantiate(forall (k: uint64) { k < right implies bytes[k] != '\0' }, left);
-                contradiction(false);
-            }
-            not (left < right) => {
-                have right < left or not (right < left) by {
-                    if right < left {
-                        known();
-                    } else {
-                        known();
-                    }
-                }
-                cases {
-                    right < left => {
-                        instantiate(forall (k: uint64) { k < left implies bytes[k] != '\0' }, right);
-                        contradiction(false);
-                    }
-                    not (right < left) => {
-                        have left <= right by {
-                            solve();
-                        }
-                        solve();
-                    }
-                }
-            }
-        }
-    }
-}
-```
-
-**Meaning:** Proves that two `size_t` lengths with the same null-free prefix
-condition and null terminator for one byte array are equal. It is a pure
-content theorem; it does not grant viewability or read/write permission.
-
-**Kind:** theorem. The proof is checked as part of the standard-library
-definition and its requirements and guarantee are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `cstr::readable`
-
-```click
-predicate readable(bytes: uint8[]) {
-    exists (len: uint64) {
-        len < 18446744073709551615u64 and
-            viewable(bytes[0..len + 1u64]) and
-            forall (k: uint64) { k < len implies bytes[k] != '\0' } and
-            bytes[len] == '\0' and
-            forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
-    }
-}
-```
-
-**Meaning:** States that the byte array has some dynamically viewable,
-null-terminated C-string prefix. The length remains existential; unfold the
-predicate when a proof needs to expose that witness. A caller can pass the same
-unchanged plain-`char` or signed-character pointer to a callee requiring this predicate:
-contract expansion retains the predicate's unsigned byte reads. The caller
-must supply the requirement; it does not cover an offset pointer or survive
-an arbitrary write to the string. See
-[`cstr_plain_char_caller_requirement_reaches_callee.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_plain_char_caller_requirement_reaches_callee.md).
-
-**Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::readable(args))` when a proof needs the predicate body.
-
-### `cstr_at`
-
-```click
-resource cstr_at(p: const uint8*, len: uint64) {
-    owns p[0..len + 1u64];
-    fact len < 18446744073709551615u64;
-    fact forall (k: uint64) { 0u64 <= k and k < len implies p[k] != '\0' };
-    fact p[len] == '\0';
-    fact forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(len + 1u64) implies defined(p[k]) };
-}
-```
-
-**Meaning:** A C string: the `len + 1` bytes of `p` through its first
-terminator, with the facts that make them the C string of length `len`. The
-body owns the bytes, and a contract chooses how it holds them. `views
-cstr_at(p, len);` borrows the string read-only: the callee cannot write it,
-and an opened view exposes the bytes as views. `owns cstr_at(p, len);` holds
-it exclusively and returns the same instance, so `len` is unchanged at exit.
-A function that changes the length, such as one that writes an earlier
-terminator, states `consumes cstr_at(p, len);` and `produces` the new
-instance with the bytes it no longer covers. The bytes determine `len`, so
-`fold(cstr_at(p, m))` at any other length fails. An owner lends its instance
-to a callee that views it, and a caller that owns the bytes and holds the
-facts but no instance has the call assemble the view; the caller keeps its
-bytes. `open(cstr_at(p, len)) { ... }` exposes the body and the facts. A
-`char`, `signed char`, or `unsigned char` pointer may be passed for `p`, as
-for the C-string predicates; a signed character pointer is read through its
-byte view `p as (uint8 *)`.
-
-**Kind:** composite resource. Parameter types, memory clause, and facts are normative in the declaration above.
-
-**Verified use:** [`cstr_at_view_passes_through_a_call.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_view_passes_through_a_call.md),
-[`cstr_at_opens_and_lends_a_prefix_to_a_copy.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_opens_and_lends_a_prefix_to_a_copy.md),
-[`cstr_at_fold_refuses_a_wrong_length.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_fold_refuses_a_wrong_length.md),
-[`cstr_at_viewed_string_cannot_be_written.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_viewed_string_cannot_be_written.md),
-[`cstr_at_owner_rewrites_a_byte_and_refolds_the_same_length.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_owner_rewrites_a_byte_and_refolds_the_same_length.md),
-[`cstr_at_owns_clause_cannot_shorten_the_string.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_owns_clause_cannot_shorten_the_string.md),
-[`cstr_at_consumes_and_produces_a_shorter_string.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_consumes_and_produces_a_shorter_string.md),
-[`cstr_at_owner_lends_its_string_to_a_viewing_callee.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_owner_lends_its_string_to_a_viewing_callee.md),
-[`cstr_at_call_assembles_a_view_from_owned_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_call_assembles_a_view_from_owned_bytes.md),
-and, through character pointers,
-[`cstr_at_borrows_a_char_string_from_the_library.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_borrows_a_char_string_from_the_library.md).
-
-### `cstr::bounded`
-
-```click
-predicate bounded(bytes: uint8[], max: uint64) {
-    exists (k: uint64) { k < max and bytes[k] == '\0' }
-}
-```
-
-**Meaning:** States that a null terminator occurs before the exclusive bound `max`.
-
-**Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::bounded(args))` when a proof needs the predicate body.
-
-### `cstr::len_is_viewable`
-
-```click
-theorem len_is_viewable(bytes: uint8[], len: uint64) {
-    requires cstr::len(bytes, len);
-
-    ensures viewable(bytes[0..len + 1u64]) by {
-        unfold(cstr::len(bytes, len));
-        solve();
-    }
-}
-```
-
-**Meaning:** Given an exact C-string length, exposes the viewability of the
-prefix and its terminator as a separate fact for a subsequent proof step.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/cstr_viewable_witness.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_viewable_witness.md) checks this witness projection.
-
-### `cstr::len_has_prefix`
-
-```click
-theorem len_has_prefix(bytes: uint8[], len: uint64) {
-    requires cstr::len(bytes, len);
-
-    ensures cstr::prefix(bytes, len) by {
-        unfold(cstr::len(bytes, len));
-        solve();
-    }
-}
-```
-
-**Meaning:** Given its listed requirements, proves `cstr::prefix(bytes, len)`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `cstr::len_has_terminator`
-
-```click
-theorem len_has_terminator(bytes: uint8[], len: uint64) {
-    requires cstr::len(bytes, len);
-
-    ensures bytes[len] == '\0' by {
-        unfold(cstr::len(bytes, len));
-        solve();
-    }
-}
-```
-
-**Meaning:** Given its listed requirements, proves `bytes[len] == '\0'`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-## `click::format`
-
-Source: `library/format.click`, `import click::format;`. The C front end's `snprintf` contracts name it by path.
+Returns the requested byte lists in history order, regardless of their
+outcomes. Verified in [`printf_and_fprintf_share_the_streams_write_history.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_and_fprintf_share_the_streams_write_history.md).
 
 ### Decimal formatting
 
-`click::format` states the characters C's `printf` family writes for an
+`click::c::stdio` states the characters C's `printf` family writes for an
 integer. The C front end writes the contract of each `snprintf` call with a
 string-literal format with these functions
 ([formatted output](../language/c.md#formatted-output)). The theorems
-`format::decimal_length_n` and `format::pow10_e` evaluate them for the
+`stdio::decimal_length_n` and `stdio::pow10_e` evaluate them for the
 32-bit values `%u` and `%d` convert.
 
-### `format::pow10`
+### `stdio::pow10`
 
 ```click
 function pow10(e: uint64) -> uint64 {
@@ -8249,9 +8032,9 @@ function pow10(e: uint64) -> uint64 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::pow10(args))` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(stdio::pow10(args))` when a proof needs the function body.
 
-### `format::decimal_length`
+### `stdio::decimal_length`
 
 ```click
 function decimal_length(v: uint64) -> uint64 {
@@ -8263,31 +8046,31 @@ function decimal_length(v: uint64) -> uint64 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::decimal_length(args))` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(stdio::decimal_length(args))` when a proof needs the function body.
 
-### `format::decimal_digit`
+### `stdio::decimal_digit`
 
 ```click
 function decimal_digit(v: uint64, k: uint64) -> uint8 {
-    if k < format::decimal_length(v) {
-        (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) as uint8
+    if k < stdio::decimal_length(v) {
+        (48u64 + v / stdio::pow10(stdio::decimal_length(v) - 1u64 - k) % 10u64) as uint8
     } else {
         48u8
     }
 }
 ```
 
-**Meaning:** The ASCII character of `v`'s `k`th decimal digit, counting from the most significant. Past the last digit, at `k >= format::decimal_length(v)`, it is `'0'` (`48u8`), so the function is total. Unfolding it owes nothing: specification `/` and `%` are total, so the digit's division by `format::pow10(...)` needs no nonzero premise.
+**Meaning:** The ASCII character of `v`'s `k`th decimal digit, counting from the most significant. Past the last digit, at `k >= stdio::decimal_length(v)`, it is `'0'` (`48u8`), so the function is total. Unfolding it owes nothing: specification `/` and `%` are total, so the digit's division by `stdio::pow10(...)` needs no nonzero premise.
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::decimal_digit(args))` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(stdio::decimal_digit(args))` when a proof needs the function body.
 
-### `format::padded_length`
+### `stdio::padded_length`
 
 ```click
 function padded_length(v: uint64, width: uint64) -> uint64 {
-    if format::decimal_length(v) < width { width } else { format::decimal_length(v) }
+    if stdio::decimal_length(v) < width { width } else { stdio::decimal_length(v) }
 }
 ```
 
@@ -8295,16 +8078,16 @@ function padded_length(v: uint64, width: uint64) -> uint64 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::padded_length(args))` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(stdio::padded_length(args))` when a proof needs the function body.
 
-### `format::padded_digit`
+### `stdio::padded_digit`
 
 ```click
 function padded_digit(v: uint64, width: uint64, pad: uint8, k: uint64) -> uint8 {
-    if to_integer(k) < to_integer(format::padded_length(v, width) - format::decimal_length(v)) {
+    if to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)) {
         pad
     } else {
-        format::decimal_digit(v, k - (format::padded_length(v, width) - format::decimal_length(v)))
+        stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v)))
     }
 }
 ```
@@ -8313,9 +8096,9 @@ function padded_digit(v: uint64, width: uint64, pad: uint8, k: uint64) -> uint8 
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::padded_digit(args))` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(stdio::padded_digit(args))` when a proof needs the function body.
 
-### `format::magnitude`
+### `stdio::magnitude`
 
 ```click
 function magnitude(v: int32) -> uint64 {
@@ -8327,13 +8110,13 @@ function magnitude(v: int32) -> uint64 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::magnitude(args))` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(stdio::magnitude(args))` when a proof needs the function body.
 
-### `format::signed_length`
+### `stdio::signed_length`
 
 ```click
 function signed_length(v: int32) -> uint64 {
-    if v < 0 { 1u64 + format::decimal_length(format::magnitude(v)) } else { format::decimal_length(format::magnitude(v)) }
+    if v < 0 { 1u64 + stdio::decimal_length(stdio::magnitude(v)) } else { stdio::decimal_length(stdio::magnitude(v)) }
 }
 ```
 
@@ -8341,16 +8124,16 @@ function signed_length(v: int32) -> uint64 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::signed_length(args))` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(stdio::signed_length(args))` when a proof needs the function body.
 
-### `format::signed_digit`
+### `stdio::signed_digit`
 
 ```click
 function signed_digit(v: int32, k: uint64) -> uint8 {
     if v < 0 {
-        if k == 0u64 { 45u8 } else { format::decimal_digit(format::magnitude(v), k - 1u64) }
+        if k == 0u64 { 45u8 } else { stdio::decimal_digit(stdio::magnitude(v), k - 1u64) }
     } else {
-        format::decimal_digit(format::magnitude(v), k)
+        stdio::decimal_digit(stdio::magnitude(v), k)
     }
 }
 ```
@@ -8359,185 +8142,185 @@ function signed_digit(v: int32, k: uint64) -> uint8 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::signed_digit(args))` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(stdio::signed_digit(args))` when a proof needs the function body.
 
-### `format::pow10_0`
+### `stdio::pow10_0`
 
 ```click
 theorem pow10_0() {
-    ensures format::pow10(0u64) == 1u64 by {
-        unfold(format::pow10(0u64));
+    ensures stdio::pow10(0u64) == 1u64 by {
+        unfold(stdio::pow10(0u64));
         solve();
     }
 }
 ```
 
-**Meaning:** Evaluates `format::pow10` at `0`.
+**Meaning:** Evaluates `stdio::pow10` at `0`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::pow10_1`
+### `stdio::pow10_1`
 
 ```click
 theorem pow10_1() {
-    ensures format::pow10(1u64) == 10u64 by {
-        unfold(format::pow10(1u64));
+    ensures stdio::pow10(1u64) == 10u64 by {
+        unfold(stdio::pow10(1u64));
         solve();
     }
 }
 ```
 
-**Meaning:** Evaluates `format::pow10` at `1`.
+**Meaning:** Evaluates `stdio::pow10` at `1`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::pow10_2`
+### `stdio::pow10_2`
 
 ```click
 theorem pow10_2() {
-    ensures format::pow10(2u64) == 100u64 by {
-        unfold(format::pow10(2u64));
+    ensures stdio::pow10(2u64) == 100u64 by {
+        unfold(stdio::pow10(2u64));
         solve();
     }
 }
 ```
 
-**Meaning:** Evaluates `format::pow10` at `2`.
+**Meaning:** Evaluates `stdio::pow10` at `2`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::pow10_3`
+### `stdio::pow10_3`
 
 ```click
 theorem pow10_3() {
-    ensures format::pow10(3u64) == 1000u64 by {
-        unfold(format::pow10(3u64));
+    ensures stdio::pow10(3u64) == 1000u64 by {
+        unfold(stdio::pow10(3u64));
         solve();
     }
 }
 ```
 
-**Meaning:** Evaluates `format::pow10` at `3`.
+**Meaning:** Evaluates `stdio::pow10` at `3`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::pow10_4`
+### `stdio::pow10_4`
 
 ```click
 theorem pow10_4() {
-    ensures format::pow10(4u64) == 10000u64 by {
-        unfold(format::pow10(4u64));
+    ensures stdio::pow10(4u64) == 10000u64 by {
+        unfold(stdio::pow10(4u64));
         solve();
     }
 }
 ```
 
-**Meaning:** Evaluates `format::pow10` at `4`.
+**Meaning:** Evaluates `stdio::pow10` at `4`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::pow10_5`
+### `stdio::pow10_5`
 
 ```click
 theorem pow10_5() {
-    ensures format::pow10(5u64) == 100000u64 by {
-        unfold(format::pow10(5u64));
+    ensures stdio::pow10(5u64) == 100000u64 by {
+        unfold(stdio::pow10(5u64));
         solve();
     }
 }
 ```
 
-**Meaning:** Evaluates `format::pow10` at `5`.
+**Meaning:** Evaluates `stdio::pow10` at `5`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::pow10_6`
+### `stdio::pow10_6`
 
 ```click
 theorem pow10_6() {
-    ensures format::pow10(6u64) == 1000000u64 by {
-        unfold(format::pow10(6u64));
+    ensures stdio::pow10(6u64) == 1000000u64 by {
+        unfold(stdio::pow10(6u64));
         solve();
     }
 }
 ```
 
-**Meaning:** Evaluates `format::pow10` at `6`.
+**Meaning:** Evaluates `stdio::pow10` at `6`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::pow10_7`
+### `stdio::pow10_7`
 
 ```click
 theorem pow10_7() {
-    ensures format::pow10(7u64) == 10000000u64 by {
-        unfold(format::pow10(7u64));
+    ensures stdio::pow10(7u64) == 10000000u64 by {
+        unfold(stdio::pow10(7u64));
         solve();
     }
 }
 ```
 
-**Meaning:** Evaluates `format::pow10` at `7`.
+**Meaning:** Evaluates `stdio::pow10` at `7`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::pow10_8`
+### `stdio::pow10_8`
 
 ```click
 theorem pow10_8() {
-    ensures format::pow10(8u64) == 100000000u64 by {
-        unfold(format::pow10(8u64));
+    ensures stdio::pow10(8u64) == 100000000u64 by {
+        unfold(stdio::pow10(8u64));
         solve();
     }
 }
 ```
 
-**Meaning:** Evaluates `format::pow10` at `8`.
+**Meaning:** Evaluates `stdio::pow10` at `8`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::pow10_9`
+### `stdio::pow10_9`
 
 ```click
 theorem pow10_9() {
-    ensures format::pow10(9u64) == 1000000000u64 by {
-        unfold(format::pow10(9u64));
+    ensures stdio::pow10(9u64) == 1000000000u64 by {
+        unfold(stdio::pow10(9u64));
         solve();
     }
 }
 ```
 
-**Meaning:** Evaluates `format::pow10` at `9`.
+**Meaning:** Evaluates `stdio::pow10` at `9`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::pow10_nonzero`
+### `stdio::pow10_nonzero`
 
 ```click
 theorem pow10_nonzero(e: uint64) {
     requires e < 20u64;
-    ensures format::pow10(e) != 0u64 by {
-        unfold(format::pow10(e));
+    ensures stdio::pow10(e) != 0u64 by {
+        unfold(stdio::pow10(e));
         if e == 19u64 {
             normalize() using { e == 19u64; };
         } else {
@@ -8645,12 +8428,12 @@ theorem pow10_nonzero(e: uint64) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_length_1`
+### `stdio::decimal_length_1`
 
 ```click
 theorem decimal_length_1(v: uint64) {
     requires v < 10u64;
-    ensures format::decimal_length(v) == 1u64 by {
+    ensures stdio::decimal_length(v) == 1u64 by {
         have v < 10u64 by { solve(); }
         have v < 100u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100u64)); }
         have v < 1000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000u64)); }
@@ -8670,7 +8453,7 @@ theorem decimal_length_1(v: uint64) {
         have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100000000000000000u64)); }
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000000000u64)); }
-        unfold(format::decimal_length(v));
+        unfold(stdio::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10u64; }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 100u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100u64; }; }
@@ -8714,19 +8497,19 @@ theorem decimal_length_1(v: uint64) {
 }
 ```
 
-**Meaning:** A value with 1 decimal digit has `format::decimal_length` 1.
+**Meaning:** A value with 1 decimal digit has `stdio::decimal_length` 1.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_length_2`
+### `stdio::decimal_length_2`
 
 ```click
 theorem decimal_length_2(v: uint64) {
     requires 10u64 <= v;
     requires v < 100u64;
-    ensures format::decimal_length(v) == 2u64 by {
+    ensures stdio::decimal_length(v) == 2u64 by {
         have not (v < 10u64) by { solve(); }
         have v < 100u64 by { solve(); }
         have v < 1000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000u64)); }
@@ -8746,7 +8529,7 @@ theorem decimal_length_2(v: uint64) {
         have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 100000000000000000u64)); }
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000000000u64)); }
-        unfold(format::decimal_length(v));
+        unfold(stdio::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
         have (if v < 100u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100u64; }; }
@@ -8790,19 +8573,19 @@ theorem decimal_length_2(v: uint64) {
 }
 ```
 
-**Meaning:** A value with 2 decimal digits has `format::decimal_length` 2.
+**Meaning:** A value with 2 decimal digits has `stdio::decimal_length` 2.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_length_3`
+### `stdio::decimal_length_3`
 
 ```click
 theorem decimal_length_3(v: uint64) {
     requires 100u64 <= v;
     requires v < 1000u64;
-    ensures format::decimal_length(v) == 3u64 by {
+    ensures stdio::decimal_length(v) == 3u64 by {
         have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 100u64, v)); }
         have not (v < 100u64) by { solve(); }
         have v < 1000u64 by { solve(); }
@@ -8822,7 +8605,7 @@ theorem decimal_length_3(v: uint64) {
         have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000000000u64)); }
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000000000u64)); }
-        unfold(format::decimal_length(v));
+        unfold(stdio::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
         have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
@@ -8866,19 +8649,19 @@ theorem decimal_length_3(v: uint64) {
 }
 ```
 
-**Meaning:** A value with 3 decimal digits has `format::decimal_length` 3.
+**Meaning:** A value with 3 decimal digits has `stdio::decimal_length` 3.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_length_4`
+### `stdio::decimal_length_4`
 
 ```click
 theorem decimal_length_4(v: uint64) {
     requires 1000u64 <= v;
     requires v < 10000u64;
-    ensures format::decimal_length(v) == 4u64 by {
+    ensures stdio::decimal_length(v) == 4u64 by {
         have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 1000u64, v)); }
         have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 1000u64, v)); }
         have not (v < 1000u64) by { solve(); }
@@ -8898,7 +8681,7 @@ theorem decimal_length_4(v: uint64) {
         have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000000000u64)); }
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000000000u64)); }
-        unfold(format::decimal_length(v));
+        unfold(stdio::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
         have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
@@ -8942,19 +8725,19 @@ theorem decimal_length_4(v: uint64) {
 }
 ```
 
-**Meaning:** A value with 4 decimal digits has `format::decimal_length` 4.
+**Meaning:** A value with 4 decimal digits has `stdio::decimal_length` 4.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_length_5`
+### `stdio::decimal_length_5`
 
 ```click
 theorem decimal_length_5(v: uint64) {
     requires 10000u64 <= v;
     requires v < 100000u64;
-    ensures format::decimal_length(v) == 5u64 by {
+    ensures stdio::decimal_length(v) == 5u64 by {
         have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 10000u64, v)); }
         have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 10000u64, v)); }
         have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 10000u64, v)); }
@@ -8974,7 +8757,7 @@ theorem decimal_length_5(v: uint64) {
         have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000000000u64)); }
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000000000u64)); }
-        unfold(format::decimal_length(v));
+        unfold(stdio::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
         have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
@@ -9018,19 +8801,19 @@ theorem decimal_length_5(v: uint64) {
 }
 ```
 
-**Meaning:** A value with 5 decimal digits has `format::decimal_length` 5.
+**Meaning:** A value with 5 decimal digits has `stdio::decimal_length` 5.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_length_6`
+### `stdio::decimal_length_6`
 
 ```click
 theorem decimal_length_6(v: uint64) {
     requires 100000u64 <= v;
     requires v < 1000000u64;
-    ensures format::decimal_length(v) == 6u64 by {
+    ensures stdio::decimal_length(v) == 6u64 by {
         have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 100000u64, v)); }
         have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 100000u64, v)); }
         have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 100000u64, v)); }
@@ -9050,7 +8833,7 @@ theorem decimal_length_6(v: uint64) {
         have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000000000u64)); }
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000000000u64)); }
-        unfold(format::decimal_length(v));
+        unfold(stdio::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
         have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
@@ -9094,19 +8877,19 @@ theorem decimal_length_6(v: uint64) {
 }
 ```
 
-**Meaning:** A value with 6 decimal digits has `format::decimal_length` 6.
+**Meaning:** A value with 6 decimal digits has `stdio::decimal_length` 6.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_length_7`
+### `stdio::decimal_length_7`
 
 ```click
 theorem decimal_length_7(v: uint64) {
     requires 1000000u64 <= v;
     requires v < 10000000u64;
-    ensures format::decimal_length(v) == 7u64 by {
+    ensures stdio::decimal_length(v) == 7u64 by {
         have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 1000000u64, v)); }
         have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 1000000u64, v)); }
         have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 1000000u64, v)); }
@@ -9126,7 +8909,7 @@ theorem decimal_length_7(v: uint64) {
         have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000000000u64)); }
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000000000u64)); }
-        unfold(format::decimal_length(v));
+        unfold(stdio::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
         have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
@@ -9170,19 +8953,19 @@ theorem decimal_length_7(v: uint64) {
 }
 ```
 
-**Meaning:** A value with 7 decimal digits has `format::decimal_length` 7.
+**Meaning:** A value with 7 decimal digits has `stdio::decimal_length` 7.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_length_8`
+### `stdio::decimal_length_8`
 
 ```click
 theorem decimal_length_8(v: uint64) {
     requires 10000000u64 <= v;
     requires v < 100000000u64;
-    ensures format::decimal_length(v) == 8u64 by {
+    ensures stdio::decimal_length(v) == 8u64 by {
         have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 10000000u64, v)); }
         have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 10000000u64, v)); }
         have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 10000000u64, v)); }
@@ -9202,7 +8985,7 @@ theorem decimal_length_8(v: uint64) {
         have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000000000u64)); }
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000000000u64)); }
-        unfold(format::decimal_length(v));
+        unfold(stdio::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
         have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
@@ -9246,19 +9029,19 @@ theorem decimal_length_8(v: uint64) {
 }
 ```
 
-**Meaning:** A value with 8 decimal digits has `format::decimal_length` 8.
+**Meaning:** A value with 8 decimal digits has `stdio::decimal_length` 8.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_length_9`
+### `stdio::decimal_length_9`
 
 ```click
 theorem decimal_length_9(v: uint64) {
     requires 100000000u64 <= v;
     requires v < 1000000000u64;
-    ensures format::decimal_length(v) == 9u64 by {
+    ensures stdio::decimal_length(v) == 9u64 by {
         have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 100000000u64, v)); }
         have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 100000000u64, v)); }
         have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 100000000u64, v)); }
@@ -9278,7 +9061,7 @@ theorem decimal_length_9(v: uint64) {
         have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000000000u64)); }
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000000000u64)); }
-        unfold(format::decimal_length(v));
+        unfold(stdio::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
         have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
@@ -9322,19 +9105,19 @@ theorem decimal_length_9(v: uint64) {
 }
 ```
 
-**Meaning:** A value with 9 decimal digits has `format::decimal_length` 9.
+**Meaning:** A value with 9 decimal digits has `stdio::decimal_length` 9.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_length_10`
+### `stdio::decimal_length_10`
 
 ```click
 theorem decimal_length_10(v: uint64) {
     requires 1000000000u64 <= v;
     requires v < 10000000000u64;
-    ensures format::decimal_length(v) == 10u64 by {
+    ensures stdio::decimal_length(v) == 10u64 by {
         have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 1000000000u64, v)); }
         have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 1000000000u64, v)); }
         have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 1000000000u64, v)); }
@@ -9354,7 +9137,7 @@ theorem decimal_length_10(v: uint64) {
         have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000000000u64)); }
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000000000u64)); }
-        unfold(format::decimal_length(v));
+        unfold(stdio::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
         have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
@@ -9398,24 +9181,24 @@ theorem decimal_length_10(v: uint64) {
 }
 ```
 
-**Meaning:** A value with 10 decimal digits has `format::decimal_length` 10.
+**Meaning:** A value with 10 decimal digits has `stdio::decimal_length` 10.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_digit_power_nonzero`
+### `stdio::decimal_digit_power_nonzero`
 
 ```click
 theorem decimal_digit_power_nonzero(v: uint64, k: uint64) {
-    requires k < format::decimal_length(v);
-    ensures format::pow10(format::decimal_length(v) - 1u64 - k) != 0u64 by {
-        have format::decimal_length(v) <= 20u64 by {
-            unfold(format::decimal_length(v));
+    requires k < stdio::decimal_length(v);
+    ensures stdio::pow10(stdio::decimal_length(v) - 1u64 - k) != 0u64 by {
+        have stdio::decimal_length(v) <= 20u64 by {
+            unfold(stdio::decimal_length(v));
             solve();
         }
-        have (format::decimal_length(v) - 1u64 - k) as uint64 < 20u64 by { solve(); }
-        apply(format::pow10_nonzero(format::decimal_length(v) - 1u64 - k));
+        have (stdio::decimal_length(v) - 1u64 - k) as uint64 < 20u64 by { solve(); }
+        apply(stdio::pow10_nonzero(stdio::decimal_length(v) - 1u64 - k));
     }
 }
 ```
@@ -9426,40 +9209,40 @@ theorem decimal_digit_power_nonzero(v: uint64, k: uint64) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_digit_of_length`
+### `stdio::decimal_digit_of_length`
 
 ```click
 theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
-    requires format::decimal_length(v) == n;
+    requires stdio::decimal_length(v) == n;
     requires k < n;
-    ensures format::decimal_digit(v, k) == (48u64 + v / format::pow10(n - 1u64 - k) % 10u64) as uint8 by {
-        unfold(format::decimal_digit(v, k));
-        rewrite(format::decimal_length(v), n);
+    ensures stdio::decimal_digit(v, k) == (48u64 + v / stdio::pow10(n - 1u64 - k) % 10u64) as uint8 by {
+        unfold(stdio::decimal_digit(v, k));
+        rewrite(stdio::decimal_length(v), n);
         normalize() using { k < n; };
     }
 }
 ```
 
-**Meaning:** Rewrites digit `k < n` of a value whose length is known to be `n` to `48 + v / 10^(n-1-k) % 10`. For known `n` and `k`, `format::pow10_e` gives the value of the power `format::pow10(n - 1u64 - k)` it divides by.
+**Meaning:** Rewrites digit `k < n` of a value whose length is known to be `n` to `48 + v / 10^(n-1-k) % 10`. For known `n` and `k`, `stdio::pow10_e` gives the value of the power `stdio::pow10(n - 1u64 - k)` it divides by.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::decimal_digit_lower_bound`
+### `stdio::decimal_digit_lower_bound`
 
 ```click
 theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
-    ensures 48u8 <= format::decimal_digit(v, k) by {
-        if k < format::decimal_length(v) {
-            apply(format::decimal_digit_power_nonzero(v, k));
-            unfold(format::decimal_digit(v, k));
-            have 48u8 <= (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) as uint8;
-            normalize() using { k < format::decimal_length(v); };
+    ensures 48u8 <= stdio::decimal_digit(v, k) by {
+        if k < stdio::decimal_length(v) {
+            apply(stdio::decimal_digit_power_nonzero(v, k));
+            unfold(stdio::decimal_digit(v, k));
+            have 48u8 <= (48u64 + v / stdio::pow10(stdio::decimal_length(v) - 1u64 - k) % 10u64) as uint8;
+            normalize() using { k < stdio::decimal_length(v); };
             known();
         } else {
-            unfold(format::decimal_digit(v, k));
-            normalize() using { not (k < format::decimal_length(v)); };
+            unfold(stdio::decimal_digit(v, k));
+            normalize() using { not (k < stdio::decimal_length(v)); };
         }
     }
 }```
@@ -9470,17 +9253,17 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `format::padded_digit_lower_bound`
+### `stdio::padded_digit_lower_bound`
 
 ```click
 theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
-    ensures 48u8 <= format::padded_digit(v, width, 48u8, k) by {
-        unfold(format::padded_digit(v, width, 48u8, k));
-        if to_integer(k) < to_integer(format::padded_length(v, width) - format::decimal_length(v)) {
-            normalize() using { to_integer(k) < to_integer(format::padded_length(v, width) - format::decimal_length(v)); };
+    ensures 48u8 <= stdio::padded_digit(v, width, 48u8, k) by {
+        unfold(stdio::padded_digit(v, width, 48u8, k));
+        if to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)) {
+            normalize() using { to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)); };
         } else {
-            apply(format::decimal_digit_lower_bound(v, k - (format::padded_length(v, width) - format::decimal_length(v))));
-            solve() using { not (to_integer(k) < to_integer(format::padded_length(v, width) - format::decimal_length(v))); 48u8 <= format::decimal_digit(v, k - (format::padded_length(v, width) - format::decimal_length(v))); };
+            apply(stdio::decimal_digit_lower_bound(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))));
+            solve() using { not (to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v))); 48u8 <= stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))); };
         }
     }
 }```
@@ -9491,30 +9274,13 @@ theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-## `click::c::stdio`
-
-The declarations live in `library/c/stdio.click`. The write history
-records the requested bytes and outcome of each modeled write.
-
-### `WriteAttempt` and `stream`
-
-```click
-spec enum WriteAttempt {
-    Accepted(List<uint8>),
-    Failed(List<uint8>),
-}
-
-abstract resource stream(file: void*) {
-    field write_history: List<WriteAttempt>;
-}
-```
-
-[Hosted startup](../language/c.md#hosted-standard-output) supplies the
-standard output stream with an empty history.
-
 ## `click::c::string`
 
-Source: `library/c/string.click`, a C library interface: it comes with a C declaration of, or call to, one of its functions, not with an import.
+`library/c/string.click` defines the C library contracts and the proof
+vocabulary for C strings. A C declaration or call brings the modeled
+contracts. To use a proof helper, a sidecar can name its full path or import
+the module. For example, `import click::c::string::{cstr_at, readable};`
+selects the C-string resource and its readability predicate.
 
 ### External C contracts
 
@@ -9610,7 +9376,7 @@ assembles from owned bytes and the string's facts when the caller holds
 none. The string's facts (the length is
 below `SIZE_MAX`, no earlier terminator, the terminator at `len`, every byte
 defined) come with the instance, so the result points at its terminator.
-`cstr::readable` alone grants no resource and does not satisfy the call.
+`string::readable` alone grants no resource and does not satisfy the call.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
@@ -9618,7 +9384,278 @@ defined) come with the instance, so the result points at its terminator.
 [`mdtests/cstr_readable_witness_stated_before_call.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_readable_witness_stated_before_call.md)
 names the string a call assembles; and
 [`mdtests/cstr_dynamic_indexed_read_requires_permission.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_dynamic_indexed_read_requires_permission.md)
-refuses a caller that holds only `cstr::readable`.
+refuses a caller that holds only `string::readable`.
+
+### C-string resources, predicates and theorems
+
+### `string::prefix`
+
+```click
+predicate prefix(bytes: uint8[], len: uint64) {
+    forall (k: uint64) { k < len implies bytes[k] != '\0' }
+}
+```
+
+**Meaning:** States that the first `len` bytes contain no null terminator.
+
+**Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(string::prefix(args))` when a proof needs the predicate body.
+
+### `string::len`
+
+```click
+predicate len(bytes: uint8[], len: uint64) {
+    len < 18446744073709551615u64 and
+        viewable(bytes[0..len + 1u64]) and
+        string::prefix(bytes, len) and
+        bytes[len] == '\0'
+}
+```
+
+**Meaning:** States that `len` is a `size_t` length below `SIZE_MAX`, the
+complete prefix through its terminator is readable, the preceding bytes contain
+no null terminator, and byte `len` is a null terminator.
+
+**Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(string::len(args))` when a proof needs the predicate body.
+
+### `string::cstr`
+
+```click
+predicate cstr(bytes: uint8[]) {
+    exists (len: uint64) {
+        string::len(bytes, len)
+    }
+}
+```
+
+**Meaning:** States that the byte array has some exact specification-level C-string length.
+
+**Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(string::cstr(args))` when a proof needs the predicate body.
+
+### `string::readable_len`
+
+```click
+predicate readable_len(bytes: uint8[], len: uint64) {
+    len < 18446744073709551615u64 and
+        viewable(bytes[0..len + 1u64]) and
+        forall (k: uint64) { k < len implies bytes[k] != '\0' } and
+        bytes[len] == '\0' and
+        forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
+}
+```
+
+**Meaning:** States that `len` is a `size_t` C-string length below
+`SIZE_MAX`, the complete prefix through its terminator is dynamically viewable,
+the prefix has no embedded terminator, and every byte through the null
+terminator is defined.
+
+**Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(string::readable_len(args))` when a proof needs the predicate body.
+
+### `string::readable_len_unique`
+
+```click
+theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
+    requires forall (k: uint64) { k < left implies bytes[k] != '\0' };
+    requires bytes[left] == '\0';
+    requires forall (k: uint64) { k < right implies bytes[k] != '\0' };
+    requires bytes[right] == '\0';
+
+    ensures left == right by {
+        have left < right or not (left < right) by {
+            if left < right {
+                known();
+            } else {
+                known();
+            }
+        }
+        cases {
+            left < right => {
+                instantiate(forall (k: uint64) { k < right implies bytes[k] != '\0' }, left);
+                contradiction(false);
+            }
+            not (left < right) => {
+                have right < left or not (right < left) by {
+                    if right < left {
+                        known();
+                    } else {
+                        known();
+                    }
+                }
+                cases {
+                    right < left => {
+                        instantiate(forall (k: uint64) { k < left implies bytes[k] != '\0' }, right);
+                        contradiction(false);
+                    }
+                    not (right < left) => {
+                        have left <= right by {
+                            solve();
+                        }
+                        solve();
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+**Meaning:** Proves that two `size_t` lengths with the same null-free prefix
+condition and null terminator for one byte array are equal. It is a pure
+content theorem; it does not grant viewability or read/write permission.
+
+**Kind:** theorem. The proof is checked as part of the standard-library
+definition and its requirements and guarantee are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `string::readable`
+
+```click
+predicate readable(bytes: uint8[]) {
+    exists (len: uint64) {
+        len < 18446744073709551615u64 and
+            viewable(bytes[0..len + 1u64]) and
+            forall (k: uint64) { k < len implies bytes[k] != '\0' } and
+            bytes[len] == '\0' and
+            forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
+    }
+}
+```
+
+**Meaning:** States that the byte array has some dynamically viewable,
+null-terminated C-string prefix. The length remains existential; unfold the
+predicate when a proof needs to expose that witness. A caller can pass the same
+unchanged plain-`char` or signed-character pointer to a callee requiring this predicate:
+contract expansion retains the predicate's unsigned byte reads. The caller
+must supply the requirement; it does not cover an offset pointer or survive
+an arbitrary write to the string. See
+[`cstr_plain_char_caller_requirement_reaches_callee.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_plain_char_caller_requirement_reaches_callee.md).
+
+**Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(string::readable(args))` when a proof needs the predicate body.
+
+### `cstr_at`
+
+```click
+resource cstr_at(p: const uint8*, len: uint64) {
+    owns p[0..len + 1u64];
+    fact len < 18446744073709551615u64;
+    fact forall (k: uint64) { 0u64 <= k and k < len implies p[k] != '\0' };
+    fact p[len] == '\0';
+    fact forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(len + 1u64) implies defined(p[k]) };
+}
+```
+
+**Meaning:** A C string: the `len + 1` bytes of `p` through its first
+terminator, with the facts that make them the C string of length `len`. The
+body owns the bytes, and a contract chooses how it holds them. `views
+cstr_at(p, len);` borrows the string read-only: the callee cannot write it,
+and an opened view exposes the bytes as views. `owns cstr_at(p, len);` holds
+it exclusively and returns the same instance, so `len` is unchanged at exit.
+A function that changes the length, such as one that writes an earlier
+terminator, states `consumes cstr_at(p, len);` and `produces` the new
+instance with the bytes it no longer covers. The bytes determine `len`, so
+`fold(cstr_at(p, m))` at any other length fails. An owner lends its instance
+to a callee that views it, and a caller that owns the bytes and holds the
+facts but no instance has the call assemble the view; the caller keeps its
+bytes. `open(cstr_at(p, len)) { ... }` exposes the body and the facts. A
+`char`, `signed char`, or `unsigned char` pointer may be passed for `p`, as
+for the C-string predicates; a signed character pointer is read through its
+byte view `p as (uint8 *)`.
+
+**Kind:** composite resource. Parameter types, memory clause, and facts are normative in the declaration above.
+
+**Verified use:** [`cstr_at_view_passes_through_a_call.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_view_passes_through_a_call.md),
+[`cstr_at_opens_and_lends_a_prefix_to_a_copy.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_opens_and_lends_a_prefix_to_a_copy.md),
+[`cstr_at_fold_refuses_a_wrong_length.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_fold_refuses_a_wrong_length.md),
+[`cstr_at_viewed_string_cannot_be_written.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_viewed_string_cannot_be_written.md),
+[`cstr_at_owner_rewrites_a_byte_and_refolds_the_same_length.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_owner_rewrites_a_byte_and_refolds_the_same_length.md),
+[`cstr_at_owns_clause_cannot_shorten_the_string.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_owns_clause_cannot_shorten_the_string.md),
+[`cstr_at_consumes_and_produces_a_shorter_string.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_consumes_and_produces_a_shorter_string.md),
+[`cstr_at_owner_lends_its_string_to_a_viewing_callee.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_owner_lends_its_string_to_a_viewing_callee.md),
+[`cstr_at_call_assembles_a_view_from_owned_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_call_assembles_a_view_from_owned_bytes.md),
+and, through character pointers,
+[`cstr_at_borrows_a_char_string_from_the_library.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_borrows_a_char_string_from_the_library.md).
+
+### `string::bounded`
+
+```click
+predicate bounded(bytes: uint8[], max: uint64) {
+    exists (k: uint64) { k < max and bytes[k] == '\0' }
+}
+```
+
+**Meaning:** States that a null terminator occurs before the exclusive bound `max`.
+
+**Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(string::bounded(args))` when a proof needs the predicate body.
+
+### `string::len_is_viewable`
+
+```click
+theorem len_is_viewable(bytes: uint8[], len: uint64) {
+    requires string::len(bytes, len);
+
+    ensures viewable(bytes[0..len + 1u64]) by {
+        unfold(string::len(bytes, len));
+        solve();
+    }
+}
+```
+
+**Meaning:** Given an exact C-string length, exposes the viewability of the
+prefix and its terminator as a separate fact for a subsequent proof step.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/cstr_viewable_witness.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_viewable_witness.md) checks this witness projection.
+
+### `string::len_has_prefix`
+
+```click
+theorem len_has_prefix(bytes: uint8[], len: uint64) {
+    requires string::len(bytes, len);
+
+    ensures string::prefix(bytes, len) by {
+        unfold(string::len(bytes, len));
+        solve();
+    }
+}
+```
+
+**Meaning:** Given its listed requirements, proves `string::prefix(bytes, len)`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `string::len_has_terminator`
+
+```click
+theorem len_has_terminator(bytes: uint8[], len: uint64) {
+    requires string::len(bytes, len);
+
+    ensures bytes[len] == '\0' by {
+        unfold(string::len(bytes, len));
+        solve();
+    }
+}
+```
+
+**Meaning:** Given its listed requirements, proves `bytes[len] == '\0'`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ## C++ standard library interfaces
 

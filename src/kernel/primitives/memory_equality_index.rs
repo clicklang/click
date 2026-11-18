@@ -373,11 +373,12 @@ impl MemoryAddresses {
             }
         }
         if key.0 == AddressKind::OwnedStart {
-            if insert && !bucket.boundary_origin_set {
-                if let Some(origin) = AffineOffset::constant(0).checked_sub(&key.1.0) {
-                    bucket.boundary_origin = origin;
-                    bucket.boundary_origin_set = true;
-                }
+            if insert
+                && !bucket.boundary_origin_set
+                && let Some(origin) = AffineOffset::constant(0).checked_sub(&key.1.0)
+            {
+                bucket.boundary_origin = origin;
+                bucket.boundary_origin_set = true;
             }
             if let Some(start) = key.1.0.checked_add(&bucket.boundary_origin)
                 && start.is_constant()
@@ -453,11 +454,12 @@ impl MemoryAddresses {
             moved.origin = origin;
             (moved, kept, shift)
         };
-        if !larger.boundary_origin_set && smaller.boundary_origin_set {
-            if let Some(origin) = smaller.boundary_origin.checked_sub(&shift) {
-                larger.boundary_origin = origin;
-                larger.boundary_origin_set = true;
-            }
+        if !larger.boundary_origin_set
+            && smaller.boundary_origin_set
+            && let Some(origin) = smaller.boundary_origin.checked_sub(&shift)
+        {
+            larger.boundary_origin = origin;
+            larger.boundary_origin_set = true;
         }
         let boundary_shift = shift
             .checked_add(&larger.boundary_origin)
@@ -2985,6 +2987,33 @@ impl ResourceContext {
     }
 }
 
+fn direct_endpoint_separation(
+    end: &MachineTerm,
+    start: &MachineTerm,
+    assumptions: &PureFactContext,
+) -> bool {
+    if end == start
+        || assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
+            end.clone(),
+            start.clone(),
+        )) == Some(true)
+    {
+        return true;
+    }
+    let interval = |term: &MachineTerm| {
+        term.as_const()
+            .map(|value| {
+                let value = i64::from(value as i32);
+                (value, value)
+            })
+            .or_else(|| assumptions.indexed_constant_interval(term))
+    };
+    match (interval(end), interval(start)) {
+        (Some((_, upper)), Some((lower, _))) => upper <= lower,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3549,32 +3578,5 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/primitives/memory_equality_index/tests.rs");
-    }
-}
-
-fn direct_endpoint_separation(
-    end: &MachineTerm,
-    start: &MachineTerm,
-    assumptions: &PureFactContext,
-) -> bool {
-    if end == start
-        || assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
-            end.clone(),
-            start.clone(),
-        )) == Some(true)
-    {
-        return true;
-    }
-    let interval = |term: &MachineTerm| {
-        term.as_const()
-            .map(|value| {
-                let value = i64::from(value as i32);
-                (value, value)
-            })
-            .or_else(|| assumptions.indexed_constant_interval(term))
-    };
-    match (interval(end), interval(start)) {
-        (Some((_, upper)), Some((lower, _))) => upper <= lower,
-        _ => false,
     }
 }

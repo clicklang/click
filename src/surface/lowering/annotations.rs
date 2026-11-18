@@ -45,6 +45,23 @@ fn integer_comparison_operator(
     })
 }
 
+/// The cells whose ordinary reads name their version point, and so have an
+/// `exact` read too: integer, `bool` and pointer cells.
+fn exact_readable_type(value_type: ProgramType) -> bool {
+    matches!(
+        value_type,
+        ProgramType::Bool
+            | ProgramType::Int8
+            | ProgramType::UInt8
+            | ProgramType::Int16
+            | ProgramType::UInt16
+            | ProgramType::Int32
+            | ProgramType::UInt32
+            | ProgramType::Int64
+            | ProgramType::UInt64
+    ) || value_type.is_pointer()
+}
+
 fn is_unsuffixed_integer_literal_expression(expression: &ContractExpression) -> bool {
     match expression {
         ContractExpression::IntegerLiteral(_) => true,
@@ -155,6 +172,7 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
             .or_else(|| arms.iter().find_map(|arm| fixed_measure_state(&arm.body))),
         ContractExpression::Field { base, .. }
         | ContractExpression::Negate(base)
+        | ContractExpression::Exact(base)
         | ContractExpression::BitwiseNot(base) => fixed_measure_state(base),
         ContractExpression::ArrayIndex { base, .. } => fixed_measure_state(base),
         ContractExpression::SequenceConcat(left, right)
@@ -5853,6 +5871,7 @@ impl AnnotationLowerer<'_> {
             }
             ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => self.contract_expression_click_type_in_scope(inner, environment, lexical_bindings),
@@ -6680,6 +6699,7 @@ impl AnnotationLowerer<'_> {
                 point: environment.current_point.clone(),
                 pointer: Box::new(pointer),
                 value_type: *value_type,
+                exact: false,
             }),
             ProgramExpression::Load(pointer_expression) => Ok(SpecExpression::MemoryLoad {
                 point: environment.current_point.clone(),
@@ -6687,8 +6707,56 @@ impl AnnotationLowerer<'_> {
                 value_type: self
                     .program_expression_array_element_type(pointer_expression, environment)
                     .unwrap_or(ProgramType::Int32),
+                exact: false,
             }),
             _ => Ok(pointer),
+        }
+    }
+
+    /// `exact(place)` (`design/exact-reads.md`): the place lowers as an
+    /// ordinary read in the state in scope, and its outermost read is then
+    /// named by that state itself instead of the cell's version point. The
+    /// reads that compute the place's address stay ordinary. The term depends
+    /// only on the place and the state, never on facts.
+    fn lower_exact_read_to_spec(
+        &mut self,
+        place: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecExpression, String> {
+        let refuse = || {
+            format!(
+                "`exact` takes a memory read, such as `p[i]` or `h->next`; `{}` is not one",
+                diagnostics::describe_contract_expression(place)
+            )
+        };
+        fn exact_read(read: SpecExpression) -> Result<SpecExpression, SpecExpression> {
+            match read {
+                SpecExpression::MemoryLoad {
+                    point,
+                    pointer,
+                    value_type,
+                    ..
+                } if exact_readable_type(value_type) => Ok(SpecExpression::MemoryLoad {
+                    point,
+                    pointer,
+                    value_type,
+                    exact: true,
+                }),
+                // A loop-entry read keeps its state selector.
+                SpecExpression::LoopEntryState(inner) => match exact_read(*inner) {
+                    Ok(read) => Ok(SpecExpression::LoopEntryState(Box::new(read))),
+                    Err(inner) => Err(SpecExpression::LoopEntryState(Box::new(inner))),
+                },
+                other => Err(other),
+            }
+        }
+        match exact_read(self.lower_contract_expression_to_spec(place, environment)?) {
+            Ok(read) => Ok(read),
+            Err(SpecExpression::MemoryLoad { .. }) => Err(format!(
+                "`exact` reads an integer or pointer cell; `{}` reads neither",
+                diagnostics::describe_contract_expression(place)
+            )),
+            Err(_) => Err(refuse()),
         }
     }
 
@@ -6836,12 +6904,14 @@ impl AnnotationLowerer<'_> {
                             point: environment.current_point.clone(),
                             pointer: Box::new(value),
                             value_type: *value_type,
+                            exact: false,
                         })
                     }
                     ProgramExpression::Load(_) => Ok(SpecExpression::MemoryLoad {
                         point: environment.current_point.clone(),
                         pointer: Box::new(value),
                         value_type: self.contract_array_element_type(operand, environment),
+                        exact: false,
                     }),
                     ProgramExpression::AddressOf(_)
                     | ProgramExpression::CheckedObjectAddress(_) => {
@@ -7136,6 +7206,7 @@ impl AnnotationLowerer<'_> {
                                 byte_width: value_type.byte_width(),
                             }),
                             value_type,
+                            exact: false,
                         })
                     }
                     ProgramExpression::Add(lowered_base, stride) => {
@@ -7174,7 +7245,9 @@ impl AnnotationLowerer<'_> {
                 ..
             } if matches!(
                 base.as_ref(),
-                ContractExpression::Old(_) | ContractExpression::At { .. }
+                ContractExpression::Old(_)
+                    | ContractExpression::At { .. }
+                    | ContractExpression::Exact(_)
             ) =>
             {
                 self.lower_program_point_field_to_spec(base, lowered, *offset_bytes, environment)
@@ -7292,6 +7365,7 @@ impl AnnotationLowerer<'_> {
                 selector,
                 expression,
             } => self.lower_at_expression_to_spec(selector, expression, environment),
+            ContractExpression::Exact(place) => self.lower_exact_read_to_spec(place, environment),
             ContractExpression::Negate(expression) => {
                 if self.contract_expression_is_integer(expression, environment) {
                     return Err(
@@ -7473,6 +7547,7 @@ impl AnnotationLowerer<'_> {
                         point: array_ref.point,
                         pointer,
                         value_type: array_ref.element_type,
+                        exact: false,
                     })
                 }
             }
@@ -8524,6 +8599,7 @@ impl AnnotationLowerer<'_> {
                 Ok(generics::default_numeral_click_type(argument))
             }
             ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => self.infer_unconstrained_call_argument_type(inner, environment),
@@ -9426,6 +9502,7 @@ impl AnnotationLowerer<'_> {
                     ),
                 )),
                 value_type: metadata.program_type,
+                exact: false,
             });
         }
 
@@ -9452,7 +9529,7 @@ impl AnnotationLowerer<'_> {
         // namespace. Their pointer is fixed when the reference is initialized;
         // old-state reads change the referent's memory, never that pointer.
         if let Some(referent) = name.reference_referent() {
-            let state = environment.reference_state.as_ref().or_else(|| {
+            let state = environment.reference_state.as_ref().or({
                 if environment.at_function_entry {
                     Some(self.entry_state)
                 } else {
@@ -9515,6 +9592,7 @@ impl AnnotationLowerer<'_> {
                             ProgramType::ParameterPointer(parameter),
                         ))),
                         value_type,
+                        exact: false,
                     });
                 }
                 Ok(SpecExpression::Value(ProgramValue::typed_pointer(
@@ -9557,6 +9635,7 @@ impl AnnotationLowerer<'_> {
                         .entry_state
                         .global_object_type(&name)
                         .expect("checked global object type"),
+                    exact: false,
                 })
             }
             None if matches!(environment.current_point, SpecPoint::At(_)) => {
@@ -9870,6 +9949,7 @@ impl AnnotationLowerer<'_> {
                     point: environment.current_point.clone(),
                     pointer: Box::new(pointer),
                     value_type: element_type,
+                    exact: false,
                 })
             }
             ProgramExpression::TypedLoad {
@@ -9925,6 +10005,7 @@ impl AnnotationLowerer<'_> {
                     point: environment.current_point.clone(),
                     pointer: Box::new(self.lower_program_expression_to_spec(pointer, environment)?),
                     value_type: *value_type,
+                    exact: false,
                 })
             }
             ProgramExpression::Load(pointer) => Ok(SpecExpression::MemoryLoad {
@@ -9933,6 +10014,7 @@ impl AnnotationLowerer<'_> {
                 value_type: self
                     .program_expression_array_element_type(pointer, environment)
                     .unwrap_or(ProgramType::Int32),
+                exact: false,
             }),
             expression => {
                 let expression = if environment.contract_result_in_scope {
@@ -10261,7 +10343,7 @@ impl AnnotationLowerer<'_> {
             ContractExpression::At { expression, .. } => {
                 self.contract_array_element_type(expression, environment)
             }
-            ContractExpression::Old(expression) => {
+            ContractExpression::Old(expression) | ContractExpression::Exact(expression) => {
                 self.contract_array_element_type(expression, environment)
             }
             ContractExpression::Add(left, right) => {
@@ -10288,6 +10370,7 @@ impl AnnotationLowerer<'_> {
     ) -> Result<Option<u32>, String> {
         // A state changes the value read, not the call's declared type.
         if let ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } = expression
@@ -10349,7 +10432,7 @@ impl AnnotationLowerer<'_> {
             | ContractExpression::Field { lowered, .. } => {
                 self.program_expression_array_element_width(lowered, environment)
             }
-            ContractExpression::Old(inner) => {
+            ContractExpression::Old(inner) | ContractExpression::Exact(inner) => {
                 self.contract_pointer_element_width(inner, environment)
             }
             ContractExpression::At {
@@ -10409,7 +10492,9 @@ impl AnnotationLowerer<'_> {
                 lowered: expression,
                 ..
             } => self.program_expression_array_element_type(expression, environment),
-            ContractExpression::Old(expression) | ContractExpression::At { expression, .. } => {
+            ContractExpression::Old(expression)
+            | ContractExpression::Exact(expression)
+            | ContractExpression::At { expression, .. } => {
                 self.contract_pointer_element_type(expression, environment)
             }
             ContractExpression::Add(left, right) => self
@@ -10950,6 +11035,7 @@ mod integer_source_quantifier_tests {
                     ProgramValue::pointer(Address::null()),
                 )),
                 value_type: ProgramType::Int32,
+                exact: false,
             }));
         let captured = SpecIntegerExpression::Add(
             Box::new(SpecIntegerExpression::Term(IntegerTerm::var(explicit))),

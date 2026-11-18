@@ -174,7 +174,105 @@ fn bounded_cast_shape(goal: &Proposition) -> Option<(crate::kernel::MachineInteg
     None
 }
 
+/// View an Integer order as lower endpoint, upper endpoint, and strictness.
+fn integer_order(
+    proposition: &Proposition,
+) -> Option<(
+    &crate::kernel::SharedIntegerTerm,
+    &crate::kernel::SharedIntegerTerm,
+    bool,
+)> {
+    match proposition.condition_native()? {
+        (ConditionTerm::IntegerLessEqual(a, b), true) => Some((a, b, false)),
+        (ConditionTerm::IntegerGreaterEqual(a, b), true) => Some((b, a, false)),
+        (ConditionTerm::IntegerLessThan(a, b), true) => Some((a, b, true)),
+        (ConditionTerm::IntegerGreaterThan(a, b), true) => Some((b, a, true)),
+        _ => None,
+    }
+}
+
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Carry one checked native order to an exact Integer endpoint. A strict
+    /// endpoint needs an explicit discreteness law; the observation itself is
+    /// the same comparison. Keep the value at the cited read's exact state.
+    pub(in crate::surface::proof) fn try_native_integer_bound(
+        input: &Proof<'a>,
+        source: &Proposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_native_integer_bound");
+        let (Some(goal), Some(written)) = (input.goal(), input.surface_goal()) else {
+            return Ok(None);
+        };
+        // A written Integer observation can retain the native comparison
+        // in the kernel. Match both sides in their exact Integer reading.
+        let goal_readings =
+            crate::kernel::machine_integer::comparison::integer_readings_with_promotions(goal);
+        let Some((goal_lo, goal_hi, false)) = std::iter::once(goal)
+            .chain(&goal_readings)
+            .find_map(integer_order)
+        else {
+            return Ok(None);
+        };
+        let readings =
+            crate::kernel::machine_integer::comparison::integer_readings_with_promotions(source);
+        for reading in std::iter::once(source).chain(&readings) {
+            let Some((lo, hi, strict)) = integer_order(reading) else {
+                continue;
+            };
+            if !strict && (lo, hi) == (goal_lo, goal_hi) {
+                return attempt::candidate_outcome(input.driver().apply_step(ProofStep::Known));
+            }
+            if !strict {
+                continue;
+            }
+            let Some((lower, ComparisonOperator::LessEqual, upper)) =
+                integer_surface_ordered_parts(written)
+            else {
+                return Ok(None);
+            };
+            let one = || Box::new(number(1));
+            let (law, left, right, adjustment) = if let (Some(bound), Some(target)) =
+                (lo.as_const(), goal_lo.as_const())
+                && hi == goal_hi
+                && &(bound + BigInt::one()) == target
+            {
+                let original = surface_signed_integer_literal(bound);
+                let shifted = ContractExpression::Add(Box::new(original.clone()), one());
+                ("lt_step_le", original, upper, eq(lower, shifted))
+            } else if let (Some(bound), Some(target)) = (hi.as_const(), goal_hi.as_const())
+                && lo == goal_lo
+                && &(bound - BigInt::one()) == target
+            {
+                let original = surface_signed_integer_literal(bound);
+                let shifted = ContractExpression::Subtract(Box::new(original.clone()), one());
+                ("lt_le_predecessor", lower, original, eq(upper, shifted))
+            } else {
+                continue;
+            };
+            let granted = ClickProposition::Comparison {
+                left: left.clone(),
+                operator: ComparisonOperator::LessThan,
+                right: right.clone(),
+            };
+            let proof = (|| {
+                let scope = input.driver().open_have(granted.clone())?;
+                let closed = scope.driver().apply_step(ProofStep::Known)?;
+                let observed = closed.join()?;
+                // The instantiated law retains its arithmetic endpoint.
+                // Rewrite the printed literal to that exact expression.
+                let rewritten = observed
+                    .driver()
+                    .apply_step(ProofStep::Rewrite(adjustment))?;
+                rewritten
+                    .driver()
+                    .apply_step(apply(law, vec![left, right], vec![granted]))
+            })();
+            return attempt::candidate_outcome(proof);
+        }
+        Ok(None)
+    }
+
     /// Retain a native read's available domain or its recorded initialization.
     /// Observation identities themselves need only their outer range guards.
     pub(in crate::surface::proof) fn prepare_integer_read_domain(
@@ -577,13 +675,26 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let goal = body.goal();
                 let mut known =
                     goal.is_some_and(crate::surface::planning::solve::computes_with_known);
+                let mut single_source = None;
                 let all_available = premises.iter().all(|source| {
                     body.lower_cited_surface_proposition(source, "interval source")
                         .is_ok_and(|premise| {
                             known |= goal == Some(&premise);
-                            body.facts().listed_premise_available(&premise, &[], false)
+                            let available =
+                                body.facts().listed_premise_available(&premise, &[], false);
+                            if available && premises.len() == 1 {
+                                single_source = Some(premise);
+                            }
+                            available
                         })
                 });
+                if !known
+                    && let Some(source) = single_source
+                    && let Some(closed) = driver.try_native_integer_bound(&source)?
+                    && closed.is_complete()
+                {
+                    return Ok(Some(closed.join()?));
+                }
                 let step = if all_available && known {
                     ProofStep::Known
                 } else {

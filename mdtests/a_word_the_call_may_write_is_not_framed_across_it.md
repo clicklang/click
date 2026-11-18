@@ -81,8 +81,9 @@ void probe(struct node* g, struct node* n) {
         Anchor::At(gg, nn, saved, tag) => {
             let { word: w, nw: v } = unfold(state);
             let state = fold(frame(g,n), {
-                anchor: old(state.anchor)
-            }, { word: w, nw: v });
+                anchor: old(state.anchor),
+                word: w, nw: v
+            });
 
             loop {
                 owns state: frame(g,n);

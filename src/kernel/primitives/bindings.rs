@@ -853,8 +853,8 @@ mod tests {
     #[test]
     fn reference_carriers_have_structural_identity_and_separate_storage() {
         let owner = LocalFunctionId::new(Some("references.cpp".into()), "f".into());
-        let referent: BindingName = local(&owner, 0, "x", 0).into();
-        let shadow: BindingName = local(&owner, 1, "x", 1).into();
+        let referent: BindingName = local(&owner, 0, "x", 0);
+        let shadow: BindingName = local(&owner, 1, "x", 1);
         let carrier = BindingName::reference_carrier(referent.clone());
         assert_eq!(carrier.reference_referent(), Some(&referent));
         assert_ne!(carrier, referent);

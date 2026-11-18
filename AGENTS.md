@@ -53,12 +53,12 @@ expansion checks.
 Prefer to fix a small reproduced verifier, tooling, or diagnostic defect in
 the same task thread: put its reproduction in the fix PR and land its
 regression with the fix. `bugs/` holds internally discovered defects that are
-not found through the tracing skill workflow and are too large to fix now or
+not found through the proof-repair skill and are too large to fix now or
 unrelated to the current work. Do not file one there without asking the user
 first; describe it with its reproduction and ask whether to file it.
-Defects found through the tracing skill workflow go to GitHub issues after
-user approval, including when tracing is used during internal development or
-nightly investigations. Follow the skill's reporting instructions and labels.
+Defects found through the proof-repair skill go to GitHub issues after
+user approval, including during internal development or nightly investigations.
+Follow the skill's reporting instructions and labels.
 Other defects reported by people or agents using Click also arrive as GitHub
 issues. New `roadmap/` items require an explicit user request. A general request
 to investigate or implement something does not authorize new roadmap items.
@@ -102,12 +102,12 @@ function or type; the rules are in
 
 ## Use proof friction to improve the tool
 
-When a proof fails, follow the [tracing procedure](docs/concepts/tracing.md)
-(the `tracing` skill): record the goal that was not proved, write the argument
-as a chain of `have` goals, and refine the first link that does not close until
-each link is one simple tactic. Every attempt must change that chain; a new
-tactic, written form, or position for the same link is not progress. Stop at one of
-its named outcomes. A link `solve` does not prove is too big, never by itself a
+When a proof fails, use the [`proof-repair` skill](.agents/skills/proof-repair/SKILL.md).
+Follow the [proof repair procedure](docs/concepts/tracing.md): record the goal
+that was not proved, write the argument as a chain of `have` goals, and refine
+the first link that does not close until each link is one simple tactic.
+Every attempt must change that chain. A new tactic, written form, or position for
+the same link is not progress. Stop at one of its named outcomes. A link `solve` does not prove is too big, never by itself a
 verifier problem. File defects found through this workflow as GitHub issues
 after user approval, following the skill's reporting instructions, including
 for `inexpressible-fact`, `failing-tactic`, `unclear-trace`, crashes, and hangs.

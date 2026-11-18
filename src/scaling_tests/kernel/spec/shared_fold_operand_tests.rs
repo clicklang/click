@@ -95,7 +95,7 @@ fn fold_item_domains_retain_growing_endpoints_at_each_width() {
                             panic!("positive guard")
                         };
                         let view =
-                            structural_native_comparison_view((&condition).native_compat(), true)
+                            structural_native_comparison_view(condition.native_compat(), true)
                                 .unwrap();
                         assert_eq!(view.format, format);
                         assert_eq!(view.relation, relation);

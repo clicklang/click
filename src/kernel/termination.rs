@@ -5353,6 +5353,7 @@ mod ranking_member_tests {
                 ProgramType::Int32Pointer,
             )))),
             value_type: ProgramType::Int32,
+            exact: false,
         }
     }
 

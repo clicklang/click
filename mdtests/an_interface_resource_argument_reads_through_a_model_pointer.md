@@ -86,7 +86,7 @@ int32 peek(struct node* n, int32 x) {
                         preserve(memory(n->next->next), statement(2));
                     }
                     have defined(id->next) by { rewrite(id, n); normalize(); }
-                    let t = fold(list(n->next), { model: Chain::Cons(tid, w, more) }, { tail: u });
+                    let t = fold(list(n->next), { model: Chain::Cons(tid, w, more), tail: u });
                 },
             }
             step();

@@ -1369,6 +1369,7 @@ fn return_exchange_keeps_the_published_body_state() {
                     ProgramType::Int32Pointer,
                 )))),
                 value_type: ProgramType::Int32,
+                exact: false,
             },
             operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(7)),
@@ -2692,6 +2693,7 @@ fn interface_logical_read_does_not_establish_validity() {
             ProgramType::Int32Pointer,
         )))),
         value_type: ProgramType::Int32,
+        exact: false,
     };
     let spec = SpecProposition::Comparison {
         left: load.clone(),

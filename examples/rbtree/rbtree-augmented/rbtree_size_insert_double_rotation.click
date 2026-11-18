@@ -108,7 +108,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             have node->rb_right == 0 by { known(); }
             let n_left = fold(sized_at(node->rb_left), { model: SizedTree::Empty });
             let n_right = fold(sized_at(node->rb_right), { model: SizedTree::Empty });
-            let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty) }, { metadata: n_size, left: n_left, right: n_right });
+            let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), metadata: n_size, left: n_left, right: n_right });
             have p->rb_right == node by { known(); }
             have p->rb_left != p by {
                 known();
@@ -116,9 +116,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             have p->rb_right != p by {
                 known();
             }
-            let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Red, 2, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)) }, { metadata: p_size, left: p_left, right: focus });
-            let tree = fold(sized_at(g), { model: old(state.model) }, { metadata: g_size, left: parent_tree, right: g_right });
-            let state = fold(sized_insert_double_at(node, root), { phase: SizedInsertDoublePhase::Before(g, p), model: old(state.model) }, { tree: tree });
+            let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Red, 2, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)), metadata: p_size, left: p_left, right: focus });
+            let tree = fold(sized_at(g), { model: old(state.model), metadata: g_size, left: parent_tree, right: g_right });
+            let state = fold(sized_insert_double_at(node, root), { phase: SizedInsertDoublePhase::Before(g, p), model: old(state.model), tree: tree });
             loop {
                 owns state: sized_insert_double_at(node, root);
                 decreases 0;
@@ -144,7 +144,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(g_right); unfold(p_left);
                     mark before_inner_rotation;
                     let { metadata: n_size, left: n_left, right: n_right } = unfold(focus);
-                    let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty) }, { metadata: n_size, left: n_left, right: n_right });
+                    let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), metadata: n_size, left: n_left, right: n_right });
                     unfold(color_bit(Color::Red)); unfold(color_bit(Color::Black));
                     have p->__rb_parent_color == address(g) by {
                         rewrite(p->__rb_parent_color, address(g) + (p->__rb_parent_color & 1));
@@ -209,7 +209,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite((p->__rb_parent_color & 1), 0);
                         rewrite(p->__rb_parent_color, address(node)); normalize();
                     }
-                    let demoted = fold(sized_recompute_at(p), { model: SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty) }, { metadata: p_size, left: p_left, right: p_right });
+                    let demoted = fold(sized_recompute_at(p), { model: SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), metadata: p_size, left: p_left, right: p_right });
                     transport(at(before_inner_stores, node->rb_right == 0), node->rb_right == 0) using {
                         at(before_inner_stores, node->rb_right == 0);
                         at(before_inner_stores, gparent->rb_left) == parent;
@@ -251,7 +251,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         separate(memory(node->__rb_parent_color), memory(node->rb_left));
                         separate(memory(node->__rb_parent_color), memory(parent->__rb_parent_color));
                     };
-                    let rotated = fold(sized_rotation_left_at(p, node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty) }, { metadata: n_size, demoted: demoted, other: other });
+                    let rotated = fold(sized_rotation_left_at(p, node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty), metadata: n_size, demoted: demoted, other: other });
                     unfold(sized_left(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty)));
                     have 0 <= sized_value(sized_left(sized_left(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty)))) by { rewrite(sized_left(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty)), SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty)); rewrite(sized_left(SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty)), SizedTree::Empty); rewrite(sized_value(SizedTree::Empty), 0); normalize(); }
                     have 0 <= sized_value(sized_right(sized_left(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty)))) by { rewrite(sized_left(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty)), SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty)); rewrite(sized_right(SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty)), SizedTree::Empty); rewrite(sized_value(SizedTree::Empty), 0); normalize(); }
@@ -323,7 +323,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     };
                     let p_size = fold(size_metadata(p), { value: 1 });
                     let n_size = fold(size_metadata(node), { value: 2 });
-                    let p_leaf = fold(sized_at(p), { model: SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty) }, { metadata: p_size, left: p_empty_left, right: p_empty_right });
+                    let p_leaf = fold(sized_at(p), { model: SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), metadata: p_size, left: p_empty_left, right: p_empty_right });
                     have gparent == g by { known(); }
                     have gparent->__rb_parent_color == 1 by { known(); }
                     have separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
@@ -358,8 +358,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     have g->rb_right == 0 by { known(); }
                     let g_right = fold(sized_at(0), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
-                        model: SizedTree::Node(g, node, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)
-                    }, { metadata: g_size, left: g_left, right: g_right });
+                        model: SizedTree::Node(g, node, Color::Red, 3, SizedTree::Empty, SizedTree::Empty),
+                        metadata: g_size, left: g_left, right: g_right
+                    });
                     transport(at(before_outer_rotation, node->rb_left == p), node->rb_left == p) using {
                         at(before_outer_rotation, node->rb_left == p);
                         parent == node;
@@ -411,8 +412,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     let second_rotated = fold(sized_rotation_right_at(g, node), {
                         model: SizedTree::Node(node, 0, Color::Black, 2,
                             SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty),
-                            SizedTree::Node(g, node, Color::Red, 3, SizedTree::Empty, SizedTree::Empty))
-                    }, { metadata: n_size, other: p_leaf, demoted: demoted });
+                            SizedTree::Node(g, node, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)),
+                        metadata: n_size, other: p_leaf, demoted: demoted
+                    });
                     unfold(sized_right(SizedTree::Node(node, 0, Color::Black, 2, SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(g, node, Color::Red, 3, SizedTree::Empty, SizedTree::Empty))));
                     unfold(sized_left(SizedTree::Node(g, node, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)));
                     unfold(sized_right(SizedTree::Node(g, node, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)));
@@ -448,8 +450,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(sized_double_after(g, p, node)); normalize();
                     }
                     let state = fold(sized_insert_double_at(node, root), {
-                        phase: SizedInsertDoublePhase::After(g, p), model: second.model
-                    }, { tree: second });
+                        phase: SizedInsertDoublePhase::After(g, p), model: second.model,
+                        tree: second
+                    });
                     have state.phase == sized_double_finish(old(state.phase)) by {
                         unfold(sized_double_finish(SizedInsertDoublePhase::Before(g, p))); solve();
                     }

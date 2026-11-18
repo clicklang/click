@@ -13,7 +13,7 @@ fn generic_resources::write<T: Copy>(cell: &mut generic_resources::Cell<T>, valu
 } by {
     let {} = unfold(before);
     step_until(function.exit);
-    let after = fold(cell<T>(cell), { value: value }, {});
+    let after = fold(cell<T>(cell), { value: value });
 }
 
 fn generic_resources::read<T: Copy>(cell: &generic_resources::Cell<T>) -> T {
@@ -24,7 +24,7 @@ fn generic_resources::read<T: Copy>(cell: &generic_resources::Cell<T>) -> T {
 } by {
     let {} = unfold(before);
     step_until(function.exit);
-    let after = fold(cell<T>(cell), { value: old(before.value) }, {});
+    let after = fold(cell<T>(cell), { value: old(before.value) });
 }
 
 fn generic_resources::set_and_get(cell: &mut generic_resources::Cell<u32>, x: u32) -> u32 {

@@ -2646,7 +2646,7 @@ void f(struct node* p) {
             mark before_store;
             have p->right == link by { known(); }
             step();
-            let t = fold(tree(id), { model: Tree::Node(id, link, lm, rm) }, { left: l, right: r });
+            let t = fold(tree(id), { model: Tree::Node(id, link, lm, rm), left: l, right: r });
             step_until(function.exit); solve();
         },
     }
@@ -4411,7 +4411,7 @@ verifying "f.c";
 resource cell(p: int32*, index: int32) { field value: int32; owns *p; }
 resource holder(p: int32*) { field value: int32; owns child: cell(p, 1); fact child.value == value; }
 void f(int32* p) { consumes c: cell(p, 0); ensures true; } by {
-    let h = fold(holder(p), { value: c.value }, { child: c });
+    let h = fold(holder(p), { value: c.value, child: c });
 }
 "#;
     let c = "void f(int *p) {}";
@@ -4580,7 +4580,49 @@ test_batches! {
     diagnostic_batch_24: [
         child_argument_goal_reports_scalar_indices,
         a_failing_tactic_on_an_opened_claim_reports_its_own_source,
+        an_open_callback_obligation_through_a_static_object_reads_back,
     ],
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_24")]
+fn an_open_callback_obligation_through_a_static_object_reads_back() {
+    // The field of a file-static object read through its address is written
+    // `(&"file.c"::static(0))->field`; without the parentheses, `&` would
+    // take the address of the field instead of the pointer stored in it.
+    let fixture = crate::cli::read_mdtest(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/const_callback_table_abstract.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let inputs = fixture
+        .c_sources
+        .iter()
+        .map(|(name, body)| (name.as_str(), body.as_str()))
+        .collect::<Vec<_>>();
+    let step = "    fold(callbacks_storage(&suite));\n    step();\n";
+    assert!(source.contains(step), "{source}");
+    let with_entries = |propagate: &str, copy: &str| {
+        source.replace(
+            step,
+            &format!(
+                "    fold(callbacks_storage(&suite));\n    step() {{\n        requires Propagate({propagate}) by {{ known(); }}\n        requires Copy({copy}) by {{ known(); }}\n    }}\n"
+            ),
+        )
+    };
+    let error = verify_c_sources(&with_entries("&propagate", "&copy"), &inputs)
+        .expect_err("the function addresses are not the stored field values");
+    let field = |name: &str| format!("(&\"abstract_table.c\"::static(0))->{name}");
+    let open = format!(
+        "it leaves open `Propagate({})`, `Copy({})`",
+        field("propagate"),
+        field("copy")
+    );
+    assert!(error.report().contains(&open), "{}", error.report());
+    verify_c_sources(&with_entries(&field("propagate"), &field("copy")), &inputs).unwrap_or_else(
+        |error| panic!("the listed obligations must read back: {}", error.report()),
+    );
 }
 
 #[test]

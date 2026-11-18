@@ -449,6 +449,7 @@ pub(super) fn selected_instance_resource_load_values(
                         point: SpecPoint::Current,
                         pointer,
                         value_type,
+                        exact: false,
                     } = load
                     else {
                         return None;

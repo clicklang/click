@@ -2052,7 +2052,7 @@ pub(crate) fn connected_equalities(
                 right,
             },
             true,
-        )) = (&fact).condition_native()
+        )) = fact.condition_native()
             && left.is_sign_cast32_of(right)
         {
             continue;

@@ -3645,6 +3645,62 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
 }
 
 #[test]
+fn composite_body_and_explicit_definedness_requirement_share_the_entry_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let file = crate::surface::parse(
+        r#"
+        resource initialized_cell(p: int32*) {
+            owns p[0..2];
+            fact defined(*p);
+        }
+        int32 read(int32* p) {
+            owns initialized_cell(p);
+            requires defined(p[1]);
+            ensures true;
+        }
+        "#,
+    )
+    .unwrap();
+    let function = &file.function_blocks()[0];
+    let parsed = syntax::parse_function("int32 read(int32* p) { return *p; }").unwrap();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let resources = ResourceEnvironment::new(file.resource_definitions());
+    let owner = CallerSourceOwnerId::ordinary("read.c", "read");
+    let context = initial_claim_context_with_caller_owner(
+        function,
+        &parsed,
+        &resources,
+        SpecDefinitions::new(&predicates, &functions),
+        "definedness at function entry",
+        Some(&owner),
+    )
+    .unwrap();
+    let entry_point = context.state.observation_point_id().unwrap();
+    let mut body_fact = false;
+    let mut requirement_fact = false;
+    for (fact, origin) in context.pure_facts.iter().zip(&context.entry_fact_origins) {
+        let Proposition::MemoryReadDefined { at, .. } = fact else {
+            continue;
+        };
+        match origin {
+            EntryFactOrigin::Derived => body_fact = true,
+            EntryFactOrigin::Requirement {
+                source_id,
+                role: RequirementFactRole::Principal { .. },
+            } if source_id.outer_ordinal == 1 => requirement_fact = true,
+            _ => continue,
+        }
+        assert_eq!(*at, Some(entry_point), "{origin:?}");
+    }
+    assert!(body_fact, "missing the composite body's definedness fact");
+    assert!(
+        requirement_fact,
+        "missing the explicit definedness requirement"
+    );
+}
+
+#[test]
 fn initial_entry_origins_keep_nonzero_requirement_identity_after_derived_insertions() {
     let click_file = crate::surface::parse(
         r#"

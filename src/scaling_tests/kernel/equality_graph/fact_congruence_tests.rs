@@ -208,7 +208,7 @@ fn full_pointer_alias_queries_do_not_walk_unrelated_conditions() {
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
             context
                 .equality_graph
-                .knows_condition((&condition).native_compat(), value)
+                .knows_condition(condition.native_compat(), value)
         });
         assert!(proved);
         costs.push(work);

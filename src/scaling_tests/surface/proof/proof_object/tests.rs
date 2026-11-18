@@ -1902,7 +1902,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 right,
             },
             true,
-        )) = (&facts[0]).condition_native()
+        )) = facts[0].condition_native()
         else {
             unreachable!()
         };
@@ -2054,7 +2054,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 right: stored,
             },
             true,
-        )) = (&facts[0]).condition_native()
+        )) = facts[0].condition_native()
         else {
             unreachable!()
         };

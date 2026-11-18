@@ -54,7 +54,7 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
                 solve();
             }
             let c = fold(node_at(gparent->rb_left), { v: 0 });
-            let s = fold(left_child(gparent), { v: 0 }, { child: c });
+            let s = fold(left_child(gparent), { v: 0, child: c });
             step();
         }
     }

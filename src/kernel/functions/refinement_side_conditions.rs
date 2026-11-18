@@ -1112,6 +1112,7 @@ pub(super) fn spec_proposition_current_parameter_accesses(
                     point: SpecPoint::Current,
                     pointer,
                     value_type,
+                    ..
                 },
             ) => match spec_expression_parameter_offset(pointer, parameter_name) {
                 Some(offset) => {

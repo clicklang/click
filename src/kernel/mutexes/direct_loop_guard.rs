@@ -252,7 +252,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
             identity,
             guard,
             initialization,
-            held: condition.into(),
+            held: condition,
         }),
     });
     if let Some(guard) = old_guard {

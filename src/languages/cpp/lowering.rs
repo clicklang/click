@@ -562,7 +562,7 @@ fn value_step(
 fn value_result(step: u32) -> ProgramExpression {
     ProgramExpression::StepResult {
         step,
-        origin: crate::kernel::StepOrigin::Value("scalar evaluation".into()),
+        origin: crate::kernel::StepOrigin::Value("scalar evaluation"),
         ends: true,
     }
 }

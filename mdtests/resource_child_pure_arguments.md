@@ -39,7 +39,7 @@ int32 read_child(int32* p) {
     unfold(child);
     step_until(function.exit);
     let child = fold(cell(p), { value: old(root.value) });
-    let root = fold(holder(), { model: old(root.model), value: old(root.value) }, { child: child });
+    let root = fold(holder(), { model: old(root.model), value: old(root.value), child: child });
     solve();
 }
 ```

@@ -118,7 +118,7 @@ bool pop(struct stack* s, int32* out) {
                 },
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
-                    let after = fold(nodes(s->head), { items: List::Cons(next_value, next_items) }, { tail: next });
+                    let after = fold(nodes(s->head), { items: List::Cons(next_value, next_items), tail: next });
                     have to_integer(old(s->count)) == length(tail_items) + 1 by solve() using {
                         to_integer(old(s->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;

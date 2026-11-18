@@ -59,7 +59,7 @@ impl recursive_drop::Stack {
         ensures after.values == List<u32>::Nil;
     } by {
         step_until(function.exit);
-        let after = fold(nodes(result.head), { values: List<u32>::Nil }, {});
+        let after = fold(nodes(result.head), { values: List<u32>::Nil });
     }
 
     fn push(&mut self, value: u32) {
@@ -69,7 +69,7 @@ impl recursive_drop::Stack {
         ensures after.values == List::Cons(value, old(before.values));
     } by {
         step_until(function.exit);
-        let after = fold(nodes(self.head), { values: List::Cons(value, old(before.values)) }, { tail: before });
+        let after = fold(nodes(self.head), { values: List::Cons(value, old(before.values)), tail: before });
     }
 
     // `self.head.take()?` returns `None` from an empty stack; otherwise the
@@ -85,7 +85,7 @@ impl recursive_drop::Stack {
             List::Nil => {
                 let {} = unfold(before);
                 step_until(function.exit);
-                let after = fold(nodes(self.head), { values: List<u32>::Nil }, {});
+                let after = fold(nodes(self.head), { values: List<u32>::Nil });
                 unfold(first(List<u32>::Nil));
                 unfold(rest(List<u32>::Nil));
             }
@@ -195,7 +195,7 @@ impl recursive_drop::Stack {
                 match tail_values {
                     List::Nil => {
                         let {} = unfold(tail);
-                        let after = fold(nodes(self.head), { values: List<u32>::Nil }, {});
+                        let after = fold(nodes(self.head), { values: List<u32>::Nil });
                     }
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
@@ -210,7 +210,7 @@ impl recursive_drop::Stack {
                             rewrite(self.head, old(self.head.next));
                             known();
                         }
-                        let after = fold(nodes(self.head), { values: List::Cons(w, more) }, { tail: next });
+                        let after = fold(nodes(self.head), { values: List::Cons(w, more), tail: next });
                     }
                 }
             }
