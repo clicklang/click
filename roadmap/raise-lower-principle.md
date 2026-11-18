@@ -1067,7 +1067,7 @@ not a change to proof rules or snapshot architecture.
 | 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Landed in [PR #3217](https://github.com/clicklang/click/pull/3217); all pushed commits verified upstream; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b landed in [PR #3233](https://github.com/clicklang/click/pull/3233), with all six pushed commits verified upstream; it implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Implemented locally; final 525 focused checks, all 1,919 regular scaling cases, 14 wide-range/allocation proofs, fact stability and quality passed. |
-| 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Common stores and direct guard handoff implemented locally; 589 focused checks and all 1,920 regular scaling cases passed; one of 27 selected proofs is being isolated. |
+| 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Implemented locally; current-upstream 590 focused checks, all 1,926 regular scaling cases, indexed/resource-field proofs, fact stability and quality passed; one isolated proof has identical upstream failure. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
 | 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
 
@@ -1186,7 +1186,7 @@ checks (two isolated and 1,917 remaining), all 14 selected proofs, fact stabilit
 (zero changed terms/paths) and quality passed. Native rewrite callbacks remain
 explicit compatibility boundaries; no equality rule changed.
 
-### 10p4 Iterated ownership operands (in progress)
+### 10p4 Iterated ownership operands
 
 Bounds, guard comparison values and ordered selected holes use the existing
 common machine carrier. Explicit native constructors preserve exact input
@@ -1204,15 +1204,19 @@ and formation checks; record this live input boundary rather than claiming it
 was erased. Native checked element-index APIs also remain explicit inputs.
 These are selected compatibility boundaries, not extra parallel payloads in
 `IteratedMemory`. Nominal owner/address identities, hole order and checked
-take/give/scatter/gather rules remain unchanged.
+indexed fold/unfold and scatter/gather rules remain unchanged.
 
 The actual guard evaluator regression was red with three machine exports and
-now passes without exporting or replacing its root. All 589 focused checks and
-all 1,920 regular scaling cases passed; quality passed. The iterated proof
-selection passed 26 of 27 fixtures. The external-claim fixture has an unresolved
-separation from a field-dependent empty range; preserve its source and isolate
-against the current upstream/range-only tree before claiming completion. Logs
-are `/tmp/package10p4-proofs.log`; no proof or checker limit has been changed.
+now passes without exporting or replacing its root. After integrating upstream
+`58b0c2c9e`, all 590 focused checks, all 1,926 regular scaling cases (two
+isolated and 1,924 remaining), 18 indexed-operation proofs and
+15 resource-field proofs passed. The iterated selection passed 26 of 27:
+the external-claim fixture fails identically on unchanged upstream, with the
+same field-dependent empty-range separation obligation. Its source and all
+checker limits remain unchanged; it is not counted as a passing check.
+Fact stability recorded zero changed terms/paths; quality passed. Full nightly
+was not run. The preceding pre-integration 589 focused/1,920 scaling checks also
+passed. Temporary reader/producer isolation experiments were reverted in 10p3.
 
 ## Chunk 3: machine-valued pure-function results
 
