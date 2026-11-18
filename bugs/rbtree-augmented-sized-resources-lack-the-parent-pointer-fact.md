@@ -405,3 +405,22 @@ matched the same obligation on replay. Requirement deduplication now uses
 the same canonical comparison as replay. A reduced bounded-argument call
 checks expansion and replay with the implicit closer off, and refuses an
 argument that violates its upper bound.
+
+## Context rotation with arbitrary focused child subtrees
+
+All four selected proofs in
+`rbtree_size_insert_context_focus_rotation.click` now verify at default limits,
+including both insertion wrappers and the inorder-preservation theorem. Owned
+node observations retain the parent tags, child identities and inequalities
+through initialization and the loop's read-only prefix. The proof executes the
+missing local declaration and first rotation store, retains the unchanged and
+newly written links across the parent-update call, and explicitly normalizes
+the callback's count equation from `to_integer(gv) == 2 + to_integer(nv)`.
+
+Expansion, retained and cold verification, and fixed-point checks pass all 13
+audit sites at default limits.
+
+The focused node's child subtrees and valid cached sizes remain arbitrary.
+The C, three original function contracts, inorder theorem, writable callback,
+existing tree resources, and verifier are unchanged. Other sidecars and the
+full-directory audit still leave this report open.
