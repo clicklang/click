@@ -3081,6 +3081,15 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         .iter()
         .filter(|requirement| requirement.fact.is_own())
     {
+        // An empty range has no ownership to reserve or restore. As with
+        // an empty view, its endpoints suffice without a backing occurrence.
+        if requirement
+            .fact
+            .memory_own_range()
+            .is_some_and(|range| memory_range_is_proven_empty(range, assumptions))
+        {
+            continue;
+        }
         if let Resource::MutexUse(identity) = requirement.fact.resource()
             && !same_thread_protocol_effect
         {
