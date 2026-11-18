@@ -1435,6 +1435,27 @@ impl ProgramLayouts {
                 }
             }
         }
+        // A lowering that places declarations at source statements, as
+        // Rust's does a repeated name's, names each by its statement.
+        if let Some(sites) = function.source_sites() {
+            for (binding, site) in &sites.declarations {
+                crate::instrumentation::record_deterministic_work(1);
+                if let Some(id) = binding.local_id()
+                    && let Some(name) = id.spelling()
+                    && let Some(path) = sites.paths.get(*site as usize)
+                {
+                    index.sites.insert(
+                        (
+                            id.source().map(str::to_owned),
+                            id.function().to_owned(),
+                            path.clone(),
+                            name.to_owned(),
+                        ),
+                        id.clone(),
+                    );
+                }
+            }
+        }
     }
 
     pub(in crate::surface) fn register_string_literals(
