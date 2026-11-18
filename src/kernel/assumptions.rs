@@ -3958,9 +3958,14 @@ impl PureFactContext {
     fn adjust_pointer_equality(&mut self, proposition: &Proposition) {
         let (left, right) = match proposition {
             Proposition::Equal(
-                Term::ProgramValue(ProgramValue::Pointer(left)),
-                Term::ProgramValue(ProgramValue::Pointer(right)),
-            ) => (left, right),
+                term_source_0 @ Term::ProgramValue(_),
+                term_source_1 @ Term::ProgramValue(_),
+            ) if let Some(ProgramValue::Pointer(left)) = term_source_0.program_value_native()
+                && let Some(ProgramValue::Pointer(right)) =
+                    term_source_1.program_value_native() =>
+            {
+                (left, right)
+            }
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((ConditionTerm::PointerEqual(left, right), _)) =
                     condition_source_0.condition_native() =>
@@ -7246,9 +7251,12 @@ impl PureFactContext {
                     })
             }
             Proposition::Equal(
-                Term::ProgramValue(ProgramValue::Pointer(left)),
-                Term::ProgramValue(ProgramValue::Pointer(right)),
-            ) => {
+                term_source_0 @ Term::ProgramValue(_),
+                term_source_1 @ Term::ProgramValue(_),
+            ) if let Some(ProgramValue::Pointer(left)) = term_source_0.program_value_native()
+                && let Some(ProgramValue::Pointer(right)) =
+                    term_source_1.program_value_native() =>
+            {
                 self.equality_graph
                     .admitted
                     .pointer_value_classes

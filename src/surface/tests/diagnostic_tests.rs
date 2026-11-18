@@ -4579,7 +4579,46 @@ test_batches! {
     ],
     diagnostic_batch_24: [
         child_argument_goal_reports_scalar_indices,
+        a_failing_tactic_on_an_opened_claim_reports_its_own_source,
     ],
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_24")]
+fn a_failing_tactic_on_an_opened_claim_reports_its_own_source() {
+    // After execution reaches the exit, the first `unfold` of the claim's
+    // goal opens the claim's proof, and later tactics run on it. A failure
+    // in the second `unfold` names that tactic, not the one that opened it.
+    let c = "int f(int p[3]) { return 0; }";
+    let source = r#"
+        verifying "opened.c";
+        predicate sorted(p: int32[], n: int32) {
+            sorted_range(p, 0, n)
+        }
+        predicate sorted_range(p: int32[], lo: int32, hi: int32) {
+            forall (i: int32) {
+                forall (j: int32) {
+                    0 <= i and 0 <= j and lo <= i and i < j and j < hi implies p[i] <= p[j]
+                }
+            }
+        }
+        int32 f(int32 p[3]) {
+            consumes p[0..3];
+            ensures sorted: sorted(p, 1) by {
+                step();
+                unfold(sorted(p, 1));
+                unfold(sorted_range(p, 0, n));
+            }
+        }
+    "#;
+    let error =
+        verify_c_sources(source, &[("opened.c", c)]).expect_err("`n` is not in scope in the proof");
+    assert!(
+        error.report().contains("unbound variable `n`"),
+        "{}",
+        error.report()
+    );
+    assert_eq!(error.proof_source_site(), Some(("f.sorted", &[2][..])));
 }
 
 #[test]

@@ -386,7 +386,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     ) by {
         solve();
     }
-    gather(arena_cells(arena->data, arena->occupied, arena->capacity));
+    fold(arena_cells(arena->data, arena->occupied, arena->capacity)[..]);
     fold(arena_cells(arena->data, arena->occupied, arena->capacity));
     let state = fold(arena_state(arena), { live: 0, capacity: arena->capacity });
     step();
@@ -3351,7 +3351,7 @@ void arena_destroy(struct arena* arena) {
         1
     ));
     unfold(arena_cells(arena->data, arena->occupied, arena->capacity));
-    scatter(arena_cells(arena->data, arena->occupied, arena->capacity));
+    unfold(arena_cells(arena->data, arena->occupied, arena->capacity)[..]);
     step_until(function.exit);
     solve();
 }

@@ -39,6 +39,14 @@ another standard-library or core function or type.
    something excludes every other owner. They are not kernel rules about a
    type, so code outside a language's safe subset, unsafe Rust or a foreign
    call, can be checked against the same interface.
+7. **Keep program names and proof names distinct.** Preserve library types,
+   names, and call signatures as the source language exposes them. Define
+   resources and proof-only helpers whose meaning comes from that library in
+   `click::<language>::<library>`, such as `click::c::stdio` for C format
+   rendering. Define queries on ghost state as module-level specification
+   functions. Keep operations with language-independent meanings, such as
+   byte equality, in shared specification modules. In sidecar examples,
+   prefer a selective import of the proof names the example uses.
 
 ## Adding an interface
 

@@ -1212,6 +1212,7 @@ pub(crate) struct CheckedResourceFact {
 pub(crate) struct FunctionMemoryEffectProjection {
     ranges: Vec<MemoryRange>,
     evidence_facts: ExecutionFacts,
+    has_exact_write_ranges: bool,
     /// The owned requirement each projected range came out of, for the ranges
     /// a checked resource transition produced. An explicit effect segment
     /// names no requirement and appears here not at all; the call site reads
@@ -3474,7 +3475,9 @@ fn execute_verified_function_applications_with_suspension(
         {
             match representation_copy_initialization(
                 &entry_state.memory,
-                &argument_values,
+                argument_values
+                    .native_values()
+                    .expect("representation copy arguments"),
                 effect,
                 &transfer.borrowed_inputs,
                 &effective_assumptions,
@@ -3550,7 +3553,9 @@ fn execute_verified_function_applications_with_suspension(
         let memory = if let Some(effect) = application.representation_copy {
             transfer_representation_copy_cells(
                 &entry_state.memory,
-                &argument_values,
+                argument_values
+                    .native_values()
+                    .expect("representation copy arguments"),
                 memory,
                 effect,
             )
@@ -3590,14 +3595,16 @@ fn execute_verified_function_applications_with_suspension(
             // The function's own proof still checks its actual returned value.
             let result = symbolic_contract_result(interface, result_identity)
                 .with_pointer_object_class(interface.return_object_type_guarantee.clone());
-            let arguments = argument_values
-                .iter()
-                .cloned()
-                .map(PureFunctionArgument::Value)
-                .collect::<Vec<_>>();
-            let (all_null, evidence) =
-                super::spec::pure_pointer_result_class(application.pointer_result, &arguments);
             if let ProgramValue::Pointer(mut pointer) = result {
+                let arguments = argument_values
+                    .native_values()
+                    .unwrap_or_default()
+                    .iter()
+                    .cloned()
+                    .map(PureFunctionArgument::Value)
+                    .collect::<Vec<_>>();
+                let (all_null, evidence) =
+                    super::spec::pure_pointer_result_class(application.pointer_result, &arguments);
                 if all_null {
                     pointer.replace_pointer(Address::null());
                 }
@@ -5235,7 +5242,7 @@ fn exceptional_direct_function_path(
     interface: &FunctionContractInterface,
     evidence: Option<&ProgramFunction>,
     framed_rule: Option<FramedCallRule<'_>>,
-    argument_values: &[ProgramValue],
+    argument_values: &VerifiedCallArguments,
     entry_state: &ExecutionState,
     entry_contract_state: &ExecutionState,
     transfer: &FunctionResourceTransfer,
@@ -5390,7 +5397,7 @@ struct PreparedVerifiedFunctionCall<'a> {
     /// explicit even when it is the concrete function's own interface, so
     /// callback and ordinary calls cannot silently grow separate evaluators.
     interface: &'a FunctionContractInterface,
-    argument_values: Vec<ProgramValue>,
+    argument_values: VerifiedCallArguments,
     entry_state: ExecutionState,
     entry_contract_state: ExecutionState,
     transfer: FunctionResourceTransfer,
@@ -5571,6 +5578,86 @@ fn checked_contract_control_read_state(
     Ok(state.clone().with_resource_context(resources))
 }
 
+fn prepare_native_contract_arguments(
+    caller_state: &ExecutionState,
+    name: &str,
+    interface: &FunctionContractInterface,
+    arguments_path: &ArgumentsPath<ExecutionValue>,
+    assumptions: &PureFactContext,
+) -> Result<(VerifiedCallArguments, Vec<ProofObligation>), FunctionPath> {
+    let native_arguments = arguments_path
+        .values
+        .iter()
+        .map(|value| value.native().into_owned())
+        .collect::<Vec<_>>();
+    if let Some(undefined_behavior) =
+        freed_pointer_argument_conversion(caller_state, interface, &native_arguments, assumptions)
+    {
+        return Err(FunctionPath::new(
+            FunctionOutcome::UndefinedBehavior(undefined_behavior),
+            arguments_path.facts.clone(),
+            arguments_path.obligations.clone(),
+        ));
+    }
+    if let Some(refusal) = incompatible_pointer_argument(
+        caller_state,
+        name,
+        interface,
+        &native_arguments,
+        assumptions,
+    ) {
+        return Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(refusal),
+            arguments_path.facts.clone(),
+            arguments_path.obligations.clone(),
+        ));
+    }
+    let Some((mut argument_values, argument_obligations)) = coerce_contract_arguments(
+        interface,
+        &native_arguments,
+        &arguments_path.obligations,
+        assumptions,
+    ) else {
+        return Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
+                contract_argument_binding_error(interface, name, &native_arguments),
+            )),
+            arguments_path.facts.clone(),
+            arguments_path.obligations.clone(),
+        ));
+    };
+    if let Some(outcome) = aggregate_argument_read_refusal(
+        caller_state,
+        interface.parameters(),
+        &argument_values,
+        assumptions,
+    ) {
+        return Err(FunctionPath::new(
+            outcome,
+            arguments_path.facts.clone(),
+            argument_obligations,
+        ));
+    }
+    if let Some(refusal) = crate::kernel::object_types::check_requirements(
+        name,
+        interface.parameters(),
+        interface.object_type_requirements(),
+        &mut argument_values,
+        caller_state.memory(),
+        assumptions,
+    ) {
+        return Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(refusal),
+            arguments_path.facts.clone(),
+            argument_obligations,
+        ));
+    }
+    Ok((
+        VerifiedCallArguments::Native(argument_values),
+        argument_obligations,
+    ))
+}
+
 fn prepare_verified_function_call<'a>(
     caller_state: &ExecutionState,
     application: FunctionContractApplication<'a>,
@@ -5625,80 +5712,52 @@ fn prepare_verified_function_call<'a>(
         &arguments_path.facts,
         &arguments_path.obligations,
     );
-    let native_arguments = arguments_path
-        .values
-        .iter()
-        .map(|value| value.native().into_owned())
-        .collect::<Vec<_>>();
-    if let Some(undefined_behavior) = freed_pointer_argument_conversion(
-        caller_state,
-        contract_interface,
-        &native_arguments,
-        &path_assumptions,
-    ) {
-        return Ok(Err(FunctionPath::new(
-            FunctionOutcome::UndefinedBehavior(undefined_behavior),
-            arguments_path.facts,
-            arguments_path.obligations,
-        )));
-    }
-    if let Some(refusal) = incompatible_pointer_argument(
-        caller_state,
+    let argument_timing = crate::instrumentation::OperationTiming::new(
         application.name,
-        contract_interface,
-        &native_arguments,
-        &path_assumptions,
-    ) {
-        return Ok(Err(FunctionPath::new(
-            FunctionOutcome::RuntimeError(refusal),
-            arguments_path.facts,
-            arguments_path.obligations,
-        )));
-    }
-    let Some((mut argument_values, argument_obligations)) = coerce_contract_arguments(
-        contract_interface,
-        &native_arguments,
-        &arguments_path.obligations,
-        &path_assumptions,
-    ) else {
-        return Ok(Err(FunctionPath::new(
-            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
-                contract_argument_binding_error(
-                    contract_interface,
-                    application.name,
-                    &native_arguments,
-                ),
-            )),
-            arguments_path.facts,
-            arguments_path.obligations,
-        )));
+        "verified function rule application",
+        "verified call argument preparation",
+    );
+    let parameters = contract_interface.parameters();
+    // Exact shared words need no conversion or pointer/aggregate checks.
+    // Keep the native route for interfaces with native argument consumers.
+    let retains_words = !parameters.is_empty()
+        && application.representation_copy.is_none()
+        && application.pointer_result.is_none()
+        && contract_interface
+            .object_type_requirements()
+            .range(0..parameters.len())
+            .next()
+            .is_none()
+        && parameters.len() == arguments_path.values.len()
+        && parameters
+            .iter()
+            .zip(&arguments_path.values)
+            .all(|(parameter, value)| {
+                parameter.aggregate_layout().is_none()
+                    && parameter.program_type() == ProgramType::UInt32
+                    && value.program_type() == ProgramType::UInt32
+                    && value
+                        .shared()
+                        .is_some_and(KernelTerm::is_shared_machine_operand)
+            });
+    crate::instrumentation::record_deterministic_work(parameters.len());
+    let (argument_values, argument_obligations) = if retains_words {
+        (
+            VerifiedCallArguments::BoundWords,
+            arguments_path.obligations.clone(),
+        )
+    } else {
+        match prepare_native_contract_arguments(
+            caller_state,
+            application.name,
+            contract_interface,
+            &arguments_path,
+            &path_assumptions,
+        ) {
+            Ok(prepared) => prepared,
+            Err(failure) => return Ok(Err(failure)),
+        }
     };
-    if let Some(outcome) = aggregate_argument_read_refusal(
-        caller_state,
-        contract_interface.parameters(),
-        &argument_values,
-        &path_assumptions,
-    ) {
-        return Ok(Err(FunctionPath::new(
-            outcome,
-            arguments_path.facts,
-            argument_obligations,
-        )));
-    }
-    if let Some(refusal) = crate::kernel::object_types::check_requirements(
-        application.name,
-        contract_interface.parameters(),
-        contract_interface.object_type_requirements(),
-        &mut argument_values,
-        caller_state.memory(),
-        &path_assumptions,
-    ) {
-        return Ok(Err(FunctionPath::new(
-            FunctionOutcome::RuntimeError(refusal),
-            arguments_path.facts,
-            argument_obligations,
-        )));
-    }
     let Some(mut entry_state) = bind_contract_arguments(
         caller_state,
         contract_interface,
@@ -5711,13 +5770,14 @@ fn prepare_verified_function_call<'a>(
                 contract_argument_binding_error(
                     contract_interface,
                     application.name,
-                    &argument_values,
+                    argument_values.native_values().unwrap_or_default(),
                 ),
             )),
             arguments_path.facts,
             argument_obligations,
         )));
     };
+    drop(argument_timing);
     // A named contract's value parameters take the values its fact fixed,
     // as the call parameters take the call's arguments. A function's own
     // contract value parameters, `let n: uint64;`, take the values the
@@ -6771,6 +6831,7 @@ fn prepare_verified_function_call<'a>(
         )));
     }
     let projection_range_sources = projection.range_sources;
+    let has_exact_write_ranges = projection.has_exact_write_ranges;
     {
         // Compare the effects against the complete checked view frontier, not
         // just the views whose requirement is a plain memory range. A
@@ -6885,16 +6946,6 @@ fn prepare_verified_function_call<'a>(
                 );
         }
     }
-    let has_exact_write_ranges = if contract_interface.resource_derived_mutable_frame() {
-        projection_range_sources
-            .iter()
-            .all(|(_, source)| source.memory_own_range().is_some())
-    } else {
-        contract_interface
-            .contract_mutable()
-            .iter()
-            .all(|segment| segment.guard().is_none())
-    };
     transfer.memory_effects = mutable_ranges.clone();
     // A resource-derived call is authorized by exactly these checked inputs,
     // borrowed and consumed alike: its write set is projected from them
@@ -7525,9 +7576,13 @@ fn function_contract_requirement_is_proven(
             };
             let [
                 Term::ExecutionState(_),
-                Term::ProgramValue(ProgramValue::Pointer(pointer)),
+                term_source_0 @ Term::ProgramValue(_),
                 values @ ..,
             ] = arguments.as_slice()
+            else {
+                return Ok(false);
+            };
+            let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),)
             else {
                 return Ok(false);
             };
@@ -7969,7 +8024,9 @@ pub(super) fn checked_owned_memory_ranges(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<Vec<MemoryRange>> {
-    OwnedFootprintDerivation::new(definitions, state, assumptions).derive(fact)
+    OwnedFootprintDerivation::new(definitions, state, assumptions)
+        .derive(fact)
+        .map(|footprint| footprint.ranges)
 }
 
 /// Project storage dependencies once at an independent contract entry. The
@@ -7994,6 +8051,7 @@ pub(super) fn assumed_mutex_input_reservations(
         ranges.extend(
             derivation
                 .derive(fact)
+                .map(|footprint| footprint.ranges)
                 .unwrap_or_else(|| vec![MemoryRange::unnamed_footprint()]),
         );
         let mut guards = OwnedFootprintDerivation::new(
@@ -8006,6 +8064,7 @@ pub(super) fn assumed_mutex_input_reservations(
         guard_ranges.extend(
             guards
                 .derive(fact)
+                .map(|footprint| footprint.ranges)
                 .unwrap_or_else(|| vec![MemoryRange::unnamed_footprint()]),
         );
     }
@@ -8468,12 +8527,18 @@ struct OwnedFootprintDerivation<'a> {
     assumptions: &'a PureFactContext,
     evaluation_assumptions: PureFactContext,
     ranges: Vec<MemoryRange>,
+    exact: bool,
     reaches_unnamed: bool,
     undefined_family: bool,
     work: usize,
     /// What remains to visit. The descent is a worklist rather than a
     /// recursion, so a long chain of families costs heap, not stack.
     pending: Vec<OwnedFootprintTask<'a>>,
+}
+
+struct OwnedMemoryFootprint {
+    ranges: Vec<MemoryRange>,
+    exact: bool,
 }
 
 /// One pending visit of [`OwnedFootprintDerivation`].
@@ -8506,6 +8571,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 .allow_symbolic_contract_loads()
                 .prefer_symbolic_external_loads(),
             ranges: Vec::new(),
+            exact: false,
             reaches_unnamed: false,
             undefined_family: false,
             work: 0,
@@ -8516,7 +8582,14 @@ impl<'a> OwnedFootprintDerivation<'a> {
     /// The footprint of `fact`, owned by the holder. `None` when a family
     /// it reaches has no definition in the set: the interface is malformed
     /// and the transition that needs the footprint is refused.
-    fn derive(mut self, fact: &ResourceFact) -> Option<Vec<MemoryRange>> {
+    fn derive(mut self, fact: &ResourceFact) -> Option<OwnedMemoryFootprint> {
+        self.exact = match fact {
+            ResourceFact::Own(Resource::Memory(_), _) => true,
+            ResourceFact::Own(Resource::Composite { .. }, quantity) => {
+                quantity.as_const() == Some(1)
+            }
+            _ => false,
+        };
         self.pending.push(OwnedFootprintTask::Fact(fact.clone()));
         while let Some(task) = self.pending.pop() {
             // Past the bound the footprint is unnamed memory, which covers
@@ -8547,7 +8620,10 @@ impl<'a> OwnedFootprintDerivation<'a> {
             if self.reaches_unnamed {
                 self.ranges.push(MemoryRange::unnamed_footprint());
             }
-            return Some(self.ranges);
+            return Some(OwnedMemoryFootprint {
+                ranges: self.ranges,
+                exact: false,
+            });
         }
         // This is the footprint of the selected held/assumed head, including
         // conservative unions of match arms, not admission of new ownership.
@@ -8568,7 +8644,10 @@ impl<'a> OwnedFootprintDerivation<'a> {
         }
         ranges.sort();
         ranges.dedup();
-        Some(ranges)
+        Some(OwnedMemoryFootprint {
+            ranges,
+            exact: self.exact && !self.reaches_unnamed,
+        })
     }
 
     /// Charges one unit; past the bound the footprint is unnamed.
@@ -8720,6 +8799,11 @@ impl<'a> OwnedFootprintDerivation<'a> {
         if !self.enters(definition) {
             return;
         }
+        self.exact &= definition.condition.is_none()
+            && definition.witnesses.is_empty()
+            && definition.resource_parameters.is_empty()
+            && !definition.authorized
+            && !definition.is_sealed();
         if definition.instance_schema.is_some() || definition.matched.is_some() {
             self.reaches_unnamed = true;
             return;
@@ -8912,6 +8996,11 @@ impl<'a> OwnedFootprintDerivation<'a> {
             return;
         }
         for spec in contains {
+            // A flat body contributes exactly its unconditional memory
+            // clauses. Other terms may project a conservative span or child.
+            self.exact &= matches!(spec.term(), ResourceTerm::Memory(segment) if segment.guard().is_none())
+                && spec.guard().is_none()
+                && spec.resource_arguments().is_empty();
             // Abstract tokens own no memory, regardless of their quantity.
             // Footprint discovery need not prove that quantity nonnegative;
             // the actual resource exchange still checks it. A population
@@ -9072,6 +9161,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     let mut ranges = BTreeSet::new();
     let mut evidence_facts = Vec::new();
     let mut range_sources = Vec::new();
+    let mut has_exact_write_ranges = true;
     if let Some(resources) = transition_resources {
         for checked in resources {
             // Borrowing is a boundary role, not an access-mode rewrite:
@@ -9080,12 +9170,12 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
             if !checked.fact.is_own() {
                 continue;
             }
-            let Some(expanded) = checked_owned_memory_ranges(
-                &checked.fact,
+            let Some(footprint) = OwnedFootprintDerivation::new(
                 interface.composite_resource_definitions(),
                 entry,
                 assumptions,
-            ) else {
+            )
+            .derive(&checked.fact) else {
                 if !interface.resource_derived_mutable_frame() {
                     continue;
                 }
@@ -9093,7 +9183,8 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
                     "could not expand the checked resource transition".to_string()
                 ));
             };
-            for range in expanded {
+            has_exact_write_ranges &= footprint.exact || footprint.ranges.is_empty();
+            for range in footprint.ranges {
                 // Every byte of the expansion belongs to this one requirement,
                 // whatever depth it came from, so the requirement is the
                 // source recorded for each of its ranges.
@@ -9110,7 +9201,9 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     // modular-call source.  Functions without resource clauses retain their
     // explicit effect segments here.
     let explicit_segments = if !interface.resource_derived_mutable_frame() {
-        interface.contract_mutable()
+        let segments = interface.contract_mutable();
+        has_exact_write_ranges = segments.iter().all(|segment| segment.guard().is_none());
+        segments
     } else {
         &[]
     };
@@ -9129,6 +9222,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     Ok(Ok(FunctionMemoryEffectProjection {
         ranges: ranges.into_iter().collect(),
         evidence_facts: evidence_facts.into(),
+        has_exact_write_ranges,
         range_sources,
     }))
 }

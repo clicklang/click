@@ -1996,10 +1996,12 @@ fn expand_declared_resource_tactic_with_resources(
     tactic: ProofTactic,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ProofTactic, ClickError> {
-    let expand_slot = |mut slot: Box<IteratedSlot>| -> Result<Box<IteratedSlot>, ClickError> {
-        slot.resource = expand_resource_application(slot.resource, resource_definitions, true)?;
-        Ok(slot)
-    };
+    let expand_target =
+        |mut target: Box<IteratedTarget>| -> Result<Box<IteratedTarget>, ClickError> {
+            target.resource =
+                expand_resource_application(target.resource, resource_definitions, true)?;
+            Ok(target)
+        };
     match tactic {
         ProofTactic::UnfoldResource(resource) => Ok(ProofTactic::UnfoldResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
@@ -2017,21 +2019,11 @@ fn expand_declared_resource_tactic_with_resources(
         ProofTactic::ConstructResource(resource) => Ok(ProofTactic::ConstructResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
         )),
-        ProofTactic::Iterated(IteratedTactic::Gather(resource)) => {
-            Ok(ProofTactic::Iterated(IteratedTactic::Gather(
-                expand_declared_resource_clause(resource, resource_definitions)?,
-            )))
-        }
-        ProofTactic::Iterated(IteratedTactic::Scatter(resource)) => {
-            Ok(ProofTactic::Iterated(IteratedTactic::Scatter(
-                expand_declared_resource_clause(resource, resource_definitions)?,
-            )))
-        }
-        ProofTactic::Iterated(IteratedTactic::UnfoldSlot(slot)) => Ok(ProofTactic::Iterated(
-            IteratedTactic::UnfoldSlot(expand_slot(slot)?),
+        ProofTactic::Iterated(IteratedTactic::Unfold(target)) => Ok(ProofTactic::Iterated(
+            IteratedTactic::Unfold(expand_target(target)?),
         )),
-        ProofTactic::Iterated(IteratedTactic::FoldSlot(slot)) => Ok(ProofTactic::Iterated(
-            IteratedTactic::FoldSlot(expand_slot(slot)?),
+        ProofTactic::Iterated(IteratedTactic::Fold(target)) => Ok(ProofTactic::Iterated(
+            IteratedTactic::Fold(expand_target(target)?),
         )),
         tactic @ ProofTactic::ObserveSavedMemory { .. } => Ok(tactic),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),

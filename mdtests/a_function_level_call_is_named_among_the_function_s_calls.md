@@ -15,6 +15,7 @@ int32 f(int32 a) {
 ```
 
 ```click
+import click::integer;
 extern int32 twice(int32 x) {
     requires defined(x + x);
     ensures result == x + x;
@@ -24,16 +25,58 @@ int32 f(int32 a) {
     requires a >= 0 and a <= 100;
     ensures result == 4 * a + 3;
 } by {
-    step_until(statement(2));
-    have call(twice, 1).result == statement(1).call(twice, 0).result;
+    step_until(statement(0).call(twice, 0));
+    let { result: first } = step();
+    step();
     have call(twice, 0).result == a + a;
-    have call(1).result == call(twice, 1).result;
-    have to_integer(b) == to_integer(call(twice, 0).result) + 1 by {
+    have to_integer(b) == to_integer(first) + 1 by {
         normalize() using {
-            -2147483648 <= to_integer(call(twice, 0).result) + 1;
-            to_integer(call(twice, 0).result) + 1 <= 2147483647;
+            -2147483648 <= to_integer(first) + 1;
+            to_integer(first) + 1 <= 2147483647;
         };
     }
+
+    // The first call doubles a value in [0, 100], so b is in [1, 201].
+    have 0 <= to_integer(a) by solve() using { a >= 0; };
+    have to_integer(a) <= 100 by solve() using { a <= 100; };
+    apply(integer::add_le(0, to_integer(a), 0, to_integer(a)));
+    apply(integer::add_le(to_integer(a), 100, to_integer(a), 100));
+    have to_integer(first) == to_integer(a) + to_integer(a) by known();
+    have 0 <= to_integer(first) by {
+        rewrite(to_integer(first), to_integer(a) + to_integer(a));
+        known();
+    }
+    have to_integer(first) <= 200 by {
+        rewrite(to_integer(first), to_integer(a) + to_integer(a));
+        known();
+    }
+    apply(integer::add_le(0, to_integer(first), 1, 1));
+    apply(integer::add_le(to_integer(first), 200, 1, 1));
+    have 1 <= to_integer(b) by {
+        rewrite(to_integer(b), to_integer(first) + 1);
+        known();
+    }
+    have to_integer(b) <= 201 by {
+        rewrite(to_integer(b), to_integer(first) + 1);
+        known();
+    }
+
+    // The second call doubles b within the signed int32 range.
+    apply(integer::add_le(1, to_integer(b), 1, to_integer(b)));
+    apply(integer::add_le(to_integer(b), 201, to_integer(b), 201));
+    have -2147483648 <= to_integer(b) + to_integer(b) by {
+        apply(integer::le_transitive(-2147483648, 2, to_integer(b) + to_integer(b)));
+    }
+    have to_integer(b) + to_integer(b) <= 2147483647 by {
+        apply(integer::le_transitive(to_integer(b) + to_integer(b), 402, 2147483647));
+    }
+    step_until(statement(1).call(twice, 0));
+    step() by { known(); }
+
+    step();
+
+    have call(twice, 1).result == statement(1).call(twice, 0).result;
+    have call(1).result == call(twice, 1).result;
     have to_integer(c) == to_integer(call(twice, 1).result) + 1 by {
         normalize() using {
             -2147483648 <= to_integer(call(twice, 1).result) + 1;

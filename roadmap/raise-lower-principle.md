@@ -1211,7 +1211,7 @@ and formation checks; record this live input boundary rather than claiming it
 was erased. Native checked element-index APIs also remain explicit inputs.
 These are selected compatibility boundaries, not extra parallel payloads in
 `IteratedMemory`. Nominal owner/address identities, hole order and checked
-indexed fold/unfold and scatter/gather rules remain unchanged.
+indexed and whole-clause fold/unfold rules remain unchanged.
 
 The actual guard evaluator regression was red with three machine exports and
 now passes without exporting or replacing its root. After integrating upstream
@@ -1530,7 +1530,7 @@ pushed commits were verified upstream. The separate 10q3d producer handoffs and
 10q4 expression-bearing `Term` outputs remain required; storage support alone
 does not close either boundary.
 
-### 10q3d Evaluated condition producer handoffs (in progress)
+### 10q3d Evaluated condition producer handoffs (complete)
 
 Deliver the producer families sequentially; the machine family starts with an
 independent scaling prerequisite:
@@ -1539,7 +1539,7 @@ independent scaling prerequisite:
 | --- | --- | --- |
 | 10q3d1 | Boolean, Integer and shared float comparison/classification outputs | PR #3281 merged as `0f7849d09`; all seven pushed commits were verified upstream. |
 | 10q3d2a | Partial-borrow scaling contract | PR #3300 merged as `c5befccfb`; all pushed commits were verified upstream. |
-| 10q3d2b | Typed machine comparison outputs in `SpecValue::comparison_in` | Implemented and validated; retain exact canonical output and native dependency scope. |
+| 10q3d2b | Typed machine comparison outputs in `SpecValue::comparison_in` | PR #3304 merged as `0f7385286`; all pushed commits were verified upstream. |
 
 10q3d1 forwards logical Boolean equality roots directly. Literal comparisons
 retain the logical operand and apply the existing truth polarity and outer
@@ -1608,6 +1608,29 @@ C program was changed.
 Existing native numeric-coercion readers remain explicit adapters for the later
 10r–10t audit; mixed-format conversion rules are unchanged. Expression-bearing
 equality and predicate `Term` payloads remain assigned to 10q4.
+
+### 10q4 Expression-bearing Term outputs (in progress)
+
+| Subslice | Boundary | Acceptance |
+| --- | --- | --- |
+| 10q4a | Structural native payload readers | Prepare all 67 structural patterns in 19 files, including macros, through selected borrowed views without changing the Term schema or matching rules. |
+| 10q4b | Exact expression payload carriers | Retain logical, machine, Integer, program-value and algebraic roots in the five corresponding Term fields; preserve exact native identity and root-aware collection/substitution. |
+| 10q4c | Equality and predicate producers | Forward actual evaluated roots into the carriers, close the producer inventory, and verify proof/refusal, fact stability and scaling parity. |
+
+Sequence and pointer-offset descriptors retain the operands migrated in their
+earlier families; memory and execution-state identities keep their existing
+ownership. Compatibility readers remain explicit and assigned to 10r–10t.
+Storage support alone does not close the actual producer handoffs.
+
+10q4a prepares the native structural readers without switching storage or
+producers. Owned pointer rewrite results use a consuming extractor, preserving
+the previous move of their recursive address prefix. A growing-address test
+checks allocation identity. The prepared readers passed 973 focused checks,
+1,364 broader checks, all 1,951 regular scaling checks and quality. After the
+consuming-extractor refinement and integration with upstream `0f7385286`,
+all 1,585 affected checks, two selected regular proof fixtures with fact
+auditing, and quality passed. Nightly was excluded. The exact payload carriers
+and actual producer handoffs remain required in 10q4b and 10q4c.
 
 ## Chunk 3: machine-valued pure-function results
 

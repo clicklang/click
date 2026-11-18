@@ -4597,9 +4597,13 @@ fn rewrite_integer_memory_loadable_with_walker(
     } = proposition
     {
         integer_work(1)?;
-        let Term::ProgramValue(ProgramValue::Pointer(pointer)) = walker.term(&Term::ProgramValue(
+        let term_source_0 @ Term::ProgramValue(_) = walker.term(&Term::ProgramValue(
             ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::VoidPointer)),
         )) else {
+            unreachable!("pointer rewrite changed its carrier")
+        };
+        let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),)
+        else {
             unreachable!("pointer rewrite changed its carrier")
         };
         integer_substitution_refusal(walker.refusal())?;
@@ -4621,9 +4625,10 @@ fn rewrite_integer_memory_loadable_with_walker(
     };
     integer_work(1)?;
     let pointer = ProgramValue::Pointer(Pointer::new(base.clone(), ProgramType::VoidPointer));
-    let Term::ProgramValue(ProgramValue::Pointer(pointer)) =
-        walker.term(&Term::ProgramValue(pointer))
-    else {
+    let term_source_0 @ Term::ProgramValue(_) = walker.term(&Term::ProgramValue(pointer)) else {
+        unreachable!("pointer rewrite changed its carrier")
+    };
+    let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),) else {
         unreachable!("pointer rewrite changed its carrier")
     };
     if walker.work_exhausted() {
@@ -6257,8 +6262,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
     if matches!(pointer.base, AddressBase::PureFunctionApplication(_)) {
         let source = MachineTerm::Variable(from);
         let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()));
-        let Term::ProgramValue(ProgramValue::Pointer(result)) =
-            crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to).term(&term)
+        let Some(ProgramValue::Pointer(result)) =
+            crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to)
+                .term(&term)
+                .into_program_value_native()
         else {
             unreachable!()
         };
@@ -6995,9 +7002,10 @@ fn substitute_pointer_variable_in_pointer(
 ) -> Address {
     if matches!(&pointer.base, AddressBase::PureFunctionApplication(_)) {
         let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()));
-        let Term::ProgramValue(ProgramValue::Pointer(result)) =
+        let Some(ProgramValue::Pointer(result)) =
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
                 .term(&term)
+                .into_program_value_native()
         else {
             unreachable!()
         };
@@ -8961,13 +8969,11 @@ mod integer_mixed_quantifier_tests {
         let Proposition::And(integer_goal, c_goal) = *body else {
             panic!("nested C proposition shape changed")
         };
-        assert!(matches!(
-            *integer_goal,
-            Proposition::Equal(
-                Term::Integer(IntegerTerm::Machine(_)),
-                Term::Integer(IntegerTerm::Constant(_))
-            )
-        ));
+        assert!(matches!(&(
+            *integer_goal), Proposition::Equal(
+                term_source_0 @ Term::Integer(_),
+                term_source_1 @ Term::Integer(_)
+            ) if matches!((term_source_0.integer_native(), term_source_1.integer_native()), (Some(IntegerTerm::Machine(_)), Some(IntegerTerm::Constant(_))))));
         assert_eq!(*c_goal, program_int_equality(fresh, fresh));
     }
 
@@ -9086,10 +9092,8 @@ mod integer_mixed_quantifier_tests {
         let Proposition::And(integer_goal, pointer_goal) = *body else {
             panic!("nested scope proposition shape changed")
         };
-        assert!(matches!(
-            *integer_goal,
-            Proposition::Equal(Term::Integer(IntegerTerm::Machine(_)), Term::Integer(_))
-        ));
+        assert!(matches!(&(
+            *integer_goal), Proposition::Equal(term_source_0 @ Term::Integer(_), Term::Integer(_)) if matches!((term_source_0.integer_native(),), (Some(IntegerTerm::Machine(_)),))));
         assert_eq!(
             *pointer_goal,
             Proposition::Equal(pointer_value(outer_c), pointer_value(pointer_after))

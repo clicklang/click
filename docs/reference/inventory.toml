@@ -711,14 +711,6 @@ id = "language.word.fold"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.gather"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.scatter"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.forall"
 path = "reference/language/grammar.md#word-index"
 
@@ -1419,14 +1411,6 @@ id = "tactic.construct"
 path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
-id = "tactic.gather"
-path = "reference/tactics/index.md#resources-and-transport"
-
-[[item]]
-id = "tactic.scatter"
-path = "reference/tactics/index.md#resources-and-transport"
-
-[[item]]
 id = "tactic.observe"
 path = "reference/tactics/index.md#resources-and-transport"
 
@@ -1485,10 +1469,10 @@ path = "reference/tactics/index.md#resources-and-transport"
 id = "tactic-form.fold-slot"
 path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
-id = "tactic-form.gather-resource"
+id = "tactic-form.fold-iterated-clause"
 path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
-id = "tactic-form.scatter-resource"
+id = "tactic-form.unfold-iterated-clause"
 path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.construct-resource"

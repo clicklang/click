@@ -2998,13 +2998,14 @@ the old arguments, as in
 The index and guard are still read in the current state.
 See `mdtests/indexed_iterated_ownership.md`.
 
-Two operations convert the whole iterated fact:
+The `[..]` selector converts the whole iterated clause.
 
-- `gather(arena_cells(data, occupied, capacity));` forms the fact the
-  resource's clause denotes from the range its elements cover, when a
-  quantified fact says every guard is true, or from nothing when every guard
-  is false.
-- `scatter(arena_cells(data, occupied, capacity));` is the converse.
+- `fold(arena_cells(data, occupied, capacity)[..]);` forms the clause from
+  its covering range when every guard is true, or from no element memory when
+  every guard is false.
+- `unfold(arena_cells(data, occupied, capacity)[..]);` consumes the clause
+  with all slots restored and returns the covering range when every guard
+  is true.
 
 The guard is read against the current cells, so a C store to a guard cell
 changes which elements the fact claims. Such a store is allowed only at an
