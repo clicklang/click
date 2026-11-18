@@ -1576,8 +1576,11 @@ After integrating `214cbacd7`, all 1,950 regular scaling checks, 208 affected
 checks, nine selected regular proof fixtures with fact auditing, and quality
 passed. The fixtures include the unchanged byte-storage frontier, proof-branch
 and loop refusals, and array-fold library and callers. Nightly fixtures were
-not run. Only test counters and test code change; production algorithms and
-machine output remain unchanged.
+not run. After integrating the labeled-branch and interval changes in
+`d9457ebdb`, all 330 focused step, canonical-footprint, parser, interval,
+expansion and proof-object checks passed, along with three audited regular
+proof fixtures and quality. Only test counters and test code change;
+production algorithms and machine output remain unchanged.
 
 10q3d2 remains part of this family. Its first activation passed 1,942 of
 1,943 scaling checks after the other eight regressions were repaired, but
