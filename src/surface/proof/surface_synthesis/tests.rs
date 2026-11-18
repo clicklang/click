@@ -4155,14 +4155,28 @@ fn local_read_test_address(name: &str) -> Address {
     }
 }
 
-fn local_read_test_store(state: &ExecutionState, pointer: &Address, bits: u32) -> ExecutionState {
-    state.clone().with_memory(state.memory().clone().store(
-        pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant(bits)),
-    ))
+fn local_read_test_store(
+    state: &ExecutionState,
+    pointer: &Address,
+    value_type: ProgramType,
+    bits: u32,
+) -> ExecutionState {
+    let value = match value_type {
+        ProgramType::Int32 => ProgramValue::Int32(MachineTerm::constant(bits)),
+        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(bits)),
+        _ => unreachable!("32-bit local test type"),
+    };
+    state
+        .clone()
+        .with_memory(state.memory().clone().store(pointer.clone(), value))
 }
 
-fn local_read_test_claim() -> ClickProposition {
+fn local_read_test_claim(value_type: ProgramType) -> ClickProposition {
+    let limit = if value_type == ProgramType::UInt32 {
+        ProgramValue::UInt32(MachineTerm::uint32_constant(20))
+    } else {
+        int32(20)
+    };
     ClickProposition::Comparison {
         left: ContractExpression::CUnary {
             operand: Box::new(ContractExpression::ProgramExpression(
@@ -4170,7 +4184,7 @@ fn local_read_test_claim() -> ClickProposition {
             )),
             lowered: ProgramExpression::TypedLoad {
                 pointer: Box::new(ProgramExpression::Value(int32(0))),
-                value_type: ProgramType::Int32,
+                value_type,
                 volatile: false,
                 pointee_constant: false,
                 access_class: None,
@@ -4178,36 +4192,44 @@ fn local_read_test_claim() -> ClickProposition {
             },
         },
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::IntegerLiteral("20".into()),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(limit)),
     }
 }
 
 #[test]
-fn ordinary_int32_reads_select_the_write_on_their_own_path() {
+fn ordinary_word32_reads_select_the_write_on_their_own_path() {
+    check_local_read_versions(ProgramType::Int32, ProgramType::UInt32);
+    check_local_read_versions(ProgramType::UInt32, ProgramType::Int32);
+}
+
+fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType) {
     let _session = crate::kernel::VerificationSession::enter();
+    let pointer_type = match value_type {
+        ProgramType::Int32 => ProgramType::Int32Pointer,
+        ProgramType::UInt32 => ProgramType::UInt32Pointer,
+        _ => unreachable!("32-bit local test type"),
+    };
     let slot = local_read_test_address("slot");
     let other = local_read_test_address("other");
+    let load_kind = crate::kernel::LoadKind::of_type(value_type).unwrap();
     let start = ExecutionState::new()
         .with_memory(
             SymbolicMemory::new()
                 .with_block("local:slot", 4)
                 .with_block("local:other", 4),
         )
-        .with_local(
-            "p",
-            ProgramValue::typed_pointer(slot.clone(), ProgramType::Int32Pointer),
-        );
-    let left_write = local_read_test_store(&start, &slot, 7);
-    let right_write = local_read_test_store(&start, &slot, 7);
-    let left = local_read_test_store(&left_write, &other, 1);
-    let right = local_read_test_store(&right_write, &other, 1);
+        .with_local("p", ProgramValue::typed_pointer(slot.clone(), pointer_type));
+    let left_write = local_read_test_store(&start, &slot, value_type, 7);
+    let right_write = local_read_test_store(&start, &slot, value_type, 7);
+    let left = local_read_test_store(&left_write, &other, disjoint_type, 1);
+    let right = local_read_test_store(&right_write, &other, disjoint_type, 1);
     assert_eq!(left.memory(), right.memory());
     assert_ne!(
         left_write.program_point_id(),
         right_write.program_point_id()
     );
 
-    let claim = local_read_test_claim();
+    let claim = local_read_test_claim(value_type);
     let selectors = [
         ProgramPointSelector::Mark("left_write".into()),
         ProgramPointSelector::Mark("right_write".into()),
@@ -4227,12 +4249,14 @@ fn ordinary_int32_reads_select_the_write_on_their_own_path() {
             panic!("read comparison");
         };
         let MachineTerm::MemoryLoad(point, _, kind) = left.as_ref() else {
-            panic!("ordinary int32 read: {left:?}");
+            panic!("ordinary {value_type:?} read: {left:?}");
         };
-        assert_eq!(*kind, crate::kernel::LoadKind::Int32);
+        assert_eq!(*kind, load_kind);
         assert_eq!(point.id(), write.program_point_id());
-        let root =
-            crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, left);
+        let root = crate::kernel::KernelTermImport::default().machine(
+            MachineIntegerType::from_program_type(value_type).unwrap(),
+            left,
+        );
         assert!(
             matches!(root.node(), crate::kernel::KernelTermNode::MemoryLoad { point, .. }
             if point.id() == write.program_point_id())
@@ -4245,11 +4269,11 @@ fn ordinary_int32_reads_select_the_write_on_their_own_path() {
         )
         .expect("a named version has an ordinary read spelling");
         assert!(matches!(&raised, ContractExpression::At { selector: at, .. } if at == selector));
-        let replay = ClickProposition::Comparison {
-            left: raised,
-            operator: ComparisonOperator::LessEqual,
-            right: ContractExpression::IntegerLiteral("20".into()),
+        let mut replay = claim.clone();
+        let ClickProposition::Comparison { left, .. } = &mut replay else {
+            unreachable!("test comparison")
         };
+        *left = raised;
         assert_eq!(
             relower_written_proposition_with_states(&replay, other_path, other_path, &points),
             Ok(lowered)
@@ -4258,29 +4282,49 @@ fn ordinary_int32_reads_select_the_write_on_their_own_path() {
     }
     assert_ne!(roots[0], roots[1]);
 
-    let repeated = local_read_test_store(&left, &slot, 7);
+    let repeated = local_read_test_store(&left, &slot, value_type, 7);
     assert_eq!(left.memory(), repeated.memory());
     assert_eq!(
         repeated
             .program_point()
-            .indexed_local_int32_version(&slot)
+            .indexed_local_word32_version(&slot, load_kind)
             .unwrap()
             .id(),
         repeated.program_point_id()
     );
-    let possibly_aliasing = local_read_test_store(&left, &Address::symbolic(Variable(981_640)), 9);
+    let mismatched = local_read_test_store(&left, &slot, disjoint_type, 7);
+    assert!(
+        mismatched
+            .program_point()
+            .indexed_local_word32_version(&slot, load_kind)
+            .is_none(),
+        "a write with different signedness ends the prior version"
+    );
+
+    let possibly_aliasing =
+        local_read_test_store(&left, &Address::symbolic(Variable(981_640)), value_type, 9);
     assert!(
         possibly_aliasing
             .program_point()
-            .indexed_local_int32_version(&slot)
+            .indexed_local_word32_version(&slot, load_kind)
             .is_none(),
         "an unclassified store cannot keep an indexed version"
     );
 }
 
 #[test]
-fn ordinary_int32_read_work_is_independent_of_unrelated_path_length() {
+fn ordinary_word32_read_work_is_bounded_as_path_grows() {
+    check_local_read_work(ProgramType::Int32, ProgramType::UInt32);
+    check_local_read_work(ProgramType::UInt32, ProgramType::Int32);
+}
+
+fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
     let _session = crate::kernel::VerificationSession::enter();
+    let pointer_type = match value_type {
+        ProgramType::Int32 => ProgramType::Int32Pointer,
+        ProgramType::UInt32 => ProgramType::UInt32Pointer,
+        _ => unreachable!("32-bit local test type"),
+    };
     let slot = local_read_test_address("slot");
     let other = local_read_test_address("other");
     let start = ExecutionState::new()
@@ -4289,23 +4333,20 @@ fn ordinary_int32_read_work_is_independent_of_unrelated_path_length() {
                 .with_block("local:slot", 4)
                 .with_block("local:other", 4),
         )
-        .with_local(
-            "p",
-            ProgramValue::typed_pointer(slot.clone(), ProgramType::Int32Pointer),
-        );
-    let claim = local_read_test_claim();
+        .with_local("p", ProgramValue::typed_pointer(slot.clone(), pointer_type));
+    let claim = local_read_test_claim(value_type);
     let mut work = Vec::new();
     for (earlier, later) in [(4, 4), (64, 4), (1024, 4), (4, 64), (4, 1024)] {
         // Grow the history of overwritten values and the disjoint suffix
         // independently. Every sample names a new version on its own path.
         let mut before = start.clone();
         for i in 0..earlier {
-            before = local_read_test_store(&before, &slot, i);
+            before = local_read_test_store(&before, &slot, value_type, i);
         }
-        let write = local_read_test_store(&before, &slot, earlier);
+        let write = local_read_test_store(&before, &slot, value_type, earlier);
         let mut reader = write.clone();
         for i in 0..later {
-            reader = local_read_test_store(&reader, &other, i);
+            reader = local_read_test_store(&reader, &other, disjoint_type, i);
         }
         let ((lowered, map_work), proof_work) =
             crate::instrumentation::measure_deterministic_work(|| {

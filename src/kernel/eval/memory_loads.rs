@@ -279,28 +279,36 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     paths
 }
 
-/// A logical int32 read whose version was selected from the execution path.
-pub(in crate::kernel) fn evaluate_indexed_int32_read(
+/// A logical 32-bit integer read whose version was selected from the execution path.
+pub(in crate::kernel) fn evaluate_indexed_word32_read(
     memory: &SymbolicMemory,
     version: ProgramPoint,
     pointer: Address,
+    kind: LoadKind,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> ExpressionPath {
     let stored = version
-        .indexed_int32_store_bits()
-        .expect("an indexed int32 version comes from a direct store")
+        .indexed_word32_store_bits()
+        .expect("an indexed 32-bit integer version comes from a direct store")
         .clone();
-    let read = MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), LoadKind::Int32);
+    let read = MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind);
+    let (format, value) = match kind {
+        LoadKind::Int32 => (MachineIntegerType::Int32, ProgramValue::Int32(read.clone())),
+        LoadKind::UInt32 => (
+            MachineIntegerType::UInt32,
+            ProgramValue::UInt32(read.clone()),
+        ),
+        _ => unreachable!("indexed 32-bit integer read"),
+    };
     // Retain the read and publish its exact store equation separately.
     facts.push(ExecutionPureFact {
         logical_read_equation: true,
         ..ExecutionPureFact::certified(Proposition::condition_is(
-            ConditionTerm::equal(read.clone(), stored),
+            ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored),
             true,
         ))
     });
-    let value = ProgramValue::Int32(read);
     super::typed_reads::record(memory, &pointer, &value);
     ExpressionPath {
         outcome: ExpressionOutcome::Value(value),

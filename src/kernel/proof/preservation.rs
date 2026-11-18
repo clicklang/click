@@ -967,6 +967,68 @@ mod tests {
     }
 
     #[test]
+    fn preserve_uses_the_uint32_version_of_each_selected_endpoint() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let _reads = typed_reads::ReadScope::enter();
+        let address = |name: &str| Address {
+            base: AddressBase::Concrete(name.into()),
+            offset: AddressOffset::Constant(0),
+        };
+        let slot = address("local:unsigned");
+        let other = address("local:signed");
+        let start = ExecutionState::new().with_memory(
+            SymbolicMemory::new()
+                .with_block("local:unsigned", 4)
+                .with_block("local:signed", 4),
+        );
+        let before = start.clone().with_memory(start.memory().clone().store(
+            slot.clone(),
+            ProgramValue::UInt32(MachineTerm::uint32_constant(0x8000_0000)),
+        ));
+        let after = before.clone().with_memory(
+            before
+                .memory()
+                .clone()
+                .store(other, ProgramValue::Int32(MachineTerm::constant(1))),
+        );
+        let read = |state: &ExecutionState| {
+            let version = state
+                .program_point()
+                .indexed_local_word32_version(&slot, LoadKind::UInt32)
+                .unwrap();
+            let path = crate::kernel::eval::evaluate_indexed_word32_read(
+                state.memory(),
+                version,
+                slot.clone(),
+                LoadKind::UInt32,
+                Default::default(),
+                Vec::new(),
+            );
+            let ExpressionOutcome::Value(ProgramValue::UInt32(bits)) = path.outcome else {
+                panic!("expected an unsigned read");
+            };
+            bits
+        };
+        let before_read = read(&before);
+        let after_read = read(&after);
+        assert_eq!(before_read, after_read);
+        let footprint = crate::kernel::RegionFootprint::transition(
+            "signed store".into(),
+            &before,
+            &after,
+            &Vec::<ExecutionPureFact>::new(),
+        );
+        let kind = ReadType::Integer(MachineIntegerType::UInt32);
+        assert_eq!(
+            observation_equality(&footprint, slot, kind, kind),
+            Some(Proposition::condition_is(
+                ConditionTerm::uint32_equal(after_read, before_read),
+                true,
+            )),
+        );
+    }
+
+    #[test]
     fn preserve_checks_exact_footprint_endpoints_and_available_evidence() {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
