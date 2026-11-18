@@ -1014,7 +1014,7 @@ struct Context<'a> {
     /// Where each of those is declared: its binding and source statement
     /// (`Function::sites`), so `statement(i).local(word)` names it.
     declaration_sites: Vec<(BindingName, u32)>,
-    shared_array_iterators: BTreeMap<String, ProgramType>,
+    shared_array_iterators: BTreeMap<String, shared_arrays::SliceIteratorStorage>,
     /// The range locals, with their element type.
     ranges: BTreeMap<String, (Type, bool)>,
     /// The count of each enumerated slice iterator and the index of each yielded Option.

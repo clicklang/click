@@ -59,8 +59,8 @@ fn charon_slice_into_iter_preserves_actual_typed_state_and_checked_reads() {
             "ensures result == old(bytes[0]);",
             "ensures result != old(bytes[0]);",
         ),
-        CLAIM.replace("views bytes[0..1];", ""),
-        CLAIM.replace("views values[0..1];", ""),
+        CLAIM.replace("views bytes[0..1];", "views bytes[0..0];"),
+        CLAIM.replace("views values[0..1];", "views values[0..0];"),
     ] {
         assert_ne!(bad, CLAIM);
         assert!(ProgramVerificationSession::new_program_prepared(&bad, &prepared).is_err());
