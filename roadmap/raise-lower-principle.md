@@ -1230,6 +1230,11 @@ resource-field proof selections, fact stability and quality passed again.
 The range parent PR's eight pushed commits were verified upstream before
 integration. Full nightly was not run.
 
+After integrating upstream `cc0f851400`, the address-comparison change is
+preserved alongside stored operand readers. All 81 affected checks, the indexed
+proof selection, fact stability and quality passed. A first filter spelling
+matched no fixtures; the corrected `indexed` selection passed.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
