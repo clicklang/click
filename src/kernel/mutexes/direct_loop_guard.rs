@@ -234,7 +234,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     {
         return Err(missing_guard(spec));
     }
-    let condition = source_condition(head, spec, assumptions)?;
+    let condition = StoredConditionTerm::from_minted(source_condition(head, spec, assumptions)?);
     let mut state = abstract_loop_mutex(head, &mutex, condition.clone())?;
     let ledger = state.mutex_ledger.as_ref().unwrap();
     let Resource::MutexGuard(guard) = ledger.guard_resource(&mutex).unwrap().resource().clone()
@@ -252,7 +252,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
             identity,
             guard,
             initialization,
-            held: condition,
+            held: condition.into(),
         }),
     });
     if let Some(guard) = old_guard {
@@ -313,8 +313,9 @@ impl MutexContext {
         if !owns_carrier(&self.state, carrier) {
             return Ok(None);
         }
-        let active = crate::kernel::loops::condition_is_decided(assumptions, &carrier.head.held)
-            .ok_or_else(|| MutexTransitionError::MissingGuard(mutex.clone()))?;
+        let active =
+            crate::kernel::loops::condition_is_decided(assumptions, carrier.head.condition())
+                .ok_or_else(|| MutexTransitionError::MissingGuard(mutex.clone()))?;
         let ledger = self.state.mutex_ledger.as_ref().unwrap();
         if ledger
             .guard_resource(mutex)
@@ -376,7 +377,7 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
         if source_mutex(&state, &carrier.source, assumptions)? != *mutex {
             return Err("conditional loop guard changed its mutex".into());
         }
-        if carrier.head.held == held
+        if carrier.head.condition() == &held
             && owns_carrier(&state, carrier)
             && state.mutex_ledger.as_ref().is_some_and(|next| {
                 matches!(

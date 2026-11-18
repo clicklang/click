@@ -1067,8 +1067,8 @@ not a change to proof rules or snapshot architecture.
 | 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Landed in [PR #3217](https://github.com/clicklang/click/pull/3217); all pushed commits verified upstream; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b landed in [PR #3233](https://github.com/clicklang/click/pull/3233), with all six pushed commits verified upstream; it implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Landed in [PR #3246](https://github.com/clicklang/click/pull/3246); all eight pushed commits verified upstream; 525 focused checks, all 1,919 regular scaling cases, 14 selected proofs, fact stability and quality passed; isolated upstream baseline limitation below. |
-| 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Published as [PR #3261](https://github.com/clicklang/click/pull/3261), with auto-merge requested; 590 focused checks, all 1,926 regular scaling cases, indexed/resource-field proofs, fact stability and quality passed; one isolated upstream baseline failure. |
-| 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
+| 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Landed in [PR #3261](https://github.com/clicklang/click/pull/3261); all ten pushed commits verified upstream; 590 focused checks, all 1,926 regular scaling cases, indexed/resource-field proofs, fact stability and quality passed; one isolated upstream baseline failure. |
+| 10p5 | `PublicationRight::observed`, `ConditionalMutexGuard::held`, and the matching `MutexEntry::ConditionalLoop` condition. Preserve channel/acquisition identities and protocol rules. | Common carriers and producer handoffs implemented locally; two producer regressions confirmed red; 690 focused checks, all 1,927 regular scaling cases and publication proofs passed; mutex proofs passed 215/216 with one identical parent failure. |
 | 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
 
 `MemorySegment` source expressions and declared `ResourceQuantity` expressions
@@ -1234,6 +1234,41 @@ After integrating upstream `cc0f851400`, the address-comparison change is
 preserved alongside stored operand readers. All 81 affected checks, the indexed
 proof selection, fact stability and quality passed. A first filter spelling
 matched no fixtures; the corrected `indexed` selection passed.
+
+### 10p5 Publication and conditional mutex protocol values (in progress)
+
+Publication observations use `StoredProgramValue`, which retains native input
+or an existing common program root with exact native identity/order/hash/debug.
+Acquire-load observations store the freshly minted variable root while their
+legacy result DTO keeps its original value and variable identity. Shared value
+collectors and substitution use existing retained-value operations.
+
+Conditional guard heads and their matching conditional ledger entries use one
+`StoredConditionTerm`. Native constructor inputs keep exact syntax; checked
+scalar loop conditions import structurally through the existing exact-input
+mode and share one root across the two stores. Selected native condition reads
+reuse the existing Boolean argument slot; literal conditions borrow static
+literal outputs. No enclosing native condition cache is added. Protocol
+materialization and native output/rewriting remain explicit boundaries; native
+rewrites keep the callback's exact result. Channel, resource, initialization
+and acquisition identities and the checked protocol transitions are unchanged.
+
+Both actual producer regressions were red: the acquire observation and the
+conditional guard/ledger pair still held native inputs. The other 28 checks,
+including native identity, scalar condition round-trips and constant-work
+clones over growing machine/Boolean DAGs, passed. The two producer handoffs are
+implemented. All 690 focused checks, all 1,927 regular scaling cases and the
+publication proof selection passed. Mutex proofs passed 215/216;
+`population_conservation_local_mutex.md` (a nightly-only fixture) fails identically on the parent
+revision, at the same `fold(control(p), ...)` quantity bound. It uses neither
+migrated protocol producer. Fact stability recorded 88 refusals and no changed
+terms or paths. Final quality passed. No syntax or proof rule is changed.
+
+After integrating upstream `cc0f851400` and the iterated descriptor parent,
+all 400 affected protocol/substitution/collection checks, publication fixtures,
+fact stability and quality passed again. The earlier 690 focused checks,
+1,927 regular scaling cases and 215 passing mutex fixtures remain the full
+slice validation; the identical parent failure above is not counted as a pass.
 
 ## Chunk 3: machine-valued pure-function results
 

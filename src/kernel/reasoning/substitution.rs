@@ -686,7 +686,10 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
             side: right.side,
             payload: right.payload.map_values(|v| walk_algebraic_value(v, s)),
             flag: s.pointer(&right.flag),
-            observed: right.observed.as_ref().map(|value| s.program_value(value)),
+            observed: right
+                .observed
+                .as_ref()
+                .map(|value| StoredProgramValue::from(s.stored_program_value(value.value()))),
         }),
         Resource::MutexUse(identity) => Resource::MutexUse(MutexUseIdentity {
             protected: identity.protected.as_ref().map(|p| {
@@ -706,7 +709,7 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
         }),
         Resource::ConditionalMutexGuard(carrier) => {
             let mut mapped = (**carrier).clone();
-            mapped.held = s.condition(&carrier.held);
+            mapped.held = s.condition(carrier.condition()).into();
             Resource::ConditionalMutexGuard(std::sync::Arc::new(mapped))
         }
         Resource::MutexGuard(identity) => Resource::MutexGuard(MutexIdentity {
@@ -3270,7 +3273,7 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
             }
         }
         Resource::ConditionalMutexGuard(carrier) => {
-            collect_condition_bound_variables(&carrier.held, variables)
+            collect_condition_bound_variables(carrier.condition(), variables)
         }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
@@ -3284,7 +3287,7 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
                 .visit_values(|v| collect_algebraic_value_bound_variables(v, variables));
             collect_pointer_bound_variables(&right.flag, variables);
             if let Some(value) = &right.observed {
-                collect_program_value_bound_variables(value, variables);
+                collect_expression_value_bound_variables(value.value(), variables);
             }
         }
         Resource::Instance(instance) => {

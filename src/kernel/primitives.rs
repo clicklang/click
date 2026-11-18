@@ -159,7 +159,7 @@ mod memory_equality_index;
 mod sequence_values;
 pub use sequence_values::{SequenceValues, SequenceValuesIter};
 mod descriptor_values;
-pub use descriptor_values::StoredMachineTerm;
+pub use descriptor_values::{StoredConditionTerm, StoredMachineTerm, StoredProgramValue};
 mod resource_fields;
 pub(crate) use resource_fields::StoredResourceField;
 pub use resource_fields::{ResourceFieldValue, ResourceFieldValues};
@@ -11670,7 +11670,7 @@ pub struct PublicationRight {
     pub(in crate::kernel) payload: super::ResourceDescription,
     /// A subscriber right an acquire load has read `observed` through, until
     /// a C branch decides whether that value is zero.
-    pub(in crate::kernel) observed: Option<ProgramValue>,
+    pub(in crate::kernel) observed: Option<StoredProgramValue>,
 }
 
 impl PublicationRight {
@@ -11687,7 +11687,9 @@ impl PublicationRight {
         }
     }
     pub(crate) fn observed(&self) -> Option<&ProgramValue> {
-        self.observed.as_ref()
+        self.observed
+            .as_ref()
+            .map(StoredProgramValue::native_compat)
     }
     pub(crate) fn side(&self) -> PublicationSide {
         self.side
@@ -11720,7 +11722,7 @@ pub struct ConditionalMutexGuard {
     pub(in crate::kernel) identity: Variable,
     pub(in crate::kernel) guard: MutexIdentity,
     pub(in crate::kernel) initialization: MutexIdentity,
-    pub(in crate::kernel) held: ConditionTerm,
+    pub(in crate::kernel) held: StoredConditionTerm,
 }
 
 impl ConditionalMutexGuard {
@@ -11728,7 +11730,7 @@ impl ConditionalMutexGuard {
         self.guard.mutex()
     }
     pub(crate) fn condition(&self) -> &ConditionTerm {
-        &self.held
+        self.held.native_compat()
     }
 }
 

@@ -9,7 +9,7 @@ use super::*;
 pub(in crate::kernel) fn abstract_loop_mutex(
     state: &ExecutionState,
     mutex: &Address,
-    held: ConditionTerm,
+    held: impl Into<StoredConditionTerm>,
 ) -> Result<ExecutionState, String> {
     if state.preserves_mutex_protocols {
         return Err("loop mutex abstraction requires a concrete initialization".into());
@@ -39,7 +39,7 @@ pub(in crate::kernel) fn abstract_loop_mutex(
         MutexEntry::ConditionalLoop {
             initialization,
             epoch,
-            held,
+            held: held.into(),
         },
     ));
     Ok(result)
@@ -82,11 +82,10 @@ impl MutexContext {
         else {
             return Ok(None);
         };
-        let held = crate::kernel::loops::condition_is_decided(assumptions, held).ok_or(
-            MutexTransitionError::Refusal(
+        let held = crate::kernel::loops::condition_is_decided(assumptions, held.native_compat())
+            .ok_or(MutexTransitionError::Refusal(
                 "Requires the loop resource to determine whether the mutex is held",
-            ),
-        )?;
+            ))?;
         let entry = if held {
             MutexEntry::Locked {
                 initialization: *initialization,
