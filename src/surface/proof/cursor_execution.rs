@@ -3304,7 +3304,7 @@ fn execute_step_from_frontier_position_selecting_path(
             execution
                 .presentation
                 .recorded_states
-                .record_call_result(statement_index, Some(result.clone()));
+                .record_call_transition_result(statement_index, result.clone());
         }
         if let Some(loop_index) = loop_index
             && !matches!(outcome, StatementOutcome::Normal(_))

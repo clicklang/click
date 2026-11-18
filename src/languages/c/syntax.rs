@@ -11143,6 +11143,23 @@ impl Parser {
                 }
                 incomplete = true;
                 0
+            } else if self.peek_ident() == Some("sizeof") {
+                let length = match self.parse_primary()? {
+                    CExpression::SizeOfStruct { bytes, .. }
+                    | CExpression::SizeOfUnion { bytes, .. }
+                    | CExpression::SizeOfType { bytes, .. } => bytes,
+                    CExpression::UInt64Literal(bytes) => u32::try_from(bytes)
+                        .map_err(|_| self.error_here("array length is out of range"))?,
+                    _ => {
+                        return Err(
+                            self.error_here("expected a constant sizeof as the array length")
+                        );
+                    }
+                };
+                if length == 0 {
+                    return Err(self.error_here("local arrays must have positive length"));
+                }
+                length
             } else {
                 match self.next() {
                     Some(Token::Number(number)) => {
@@ -17521,6 +17538,17 @@ impl Parser {
 
         if self.peek() == Some(&Token::Amp) {
             self.position += 1;
+            if let Some(object) = self.local_bit_field_object()
+                && !object.is_pointer()
+                && !matches!(
+                    self.peek_next(),
+                    Some(Token::Dot | Token::Arrow | Token::LBracket | Token::LParen)
+                )
+            {
+                let pointer = object.source_pointer();
+                self.position += 1;
+                return Ok(pointer);
+            }
             if let Some(Token::Ident(name)) = self.peek().cloned()
                 && !self.variable_types.contains_key(&self.resolve_name(&name))
             {
@@ -19044,9 +19072,16 @@ impl Parser {
             && actual != expected
             && actual_struct_name.is_none()
             && expected_struct_name.is_none();
+        // C character pointers inspect a local bit-field record's object
+        // representation. Retyping to any wider scalar remains restricted.
+        let bit_field_representation_cast = one_byte_pointer(expected)
+            && actual_struct_name
+                .as_ref()
+                .is_some_and(|name| self.bit_field_records.contains_key(name));
         if expected == InterfaceType::VoidPointer
             || actual == InterfaceType::VoidPointer
             || signedness_cast
+            || bit_field_representation_cast
         {
             return Ok(());
         }
@@ -19530,6 +19565,13 @@ impl Parser {
 
     fn parse_primary(&mut self) -> Result<CExpression, CSyntaxError> {
         if let Some(object) = self.local_bit_field_object().cloned() {
+            if object.is_pointer()
+                && !self.bit_field_forbidden_operand
+                && self.peek_next() != Some(&object.member_operator())
+            {
+                self.position += 1;
+                return Ok(object.source_pointer());
+            }
             return self.parse_local_bit_field_read(object);
         }
         if self.peek_ident() == Some("__builtin_offsetof") {
@@ -19555,8 +19597,15 @@ impl Parser {
                 let bytes = self
                     .structs
                     .get(&name)
-                    .ok_or_else(|| self.error_here(format!("unknown struct declaration `{name}`")))?
-                    .size_bytes;
+                    .map(|layout| layout.size_bytes)
+                    .or_else(|| {
+                        self.bit_field_records
+                            .get(&name)
+                            .map(|record| record.size_bytes())
+                    })
+                    .ok_or_else(|| {
+                        self.error_here(format!("unknown struct declaration `{name}`"))
+                    })?;
                 return Ok(CExpression::SizeOfStruct { name, bytes });
             }
             if self.peek_ident() == Some("union") {
@@ -19569,6 +19618,17 @@ impl Parser {
                     .ok_or_else(|| self.error_here(format!("unknown union declaration `{name}`")))?
                     .size_bytes;
                 return Ok(CExpression::SizeOfUnion { name, bytes });
+            }
+            if let Some(object) = self.local_bit_field_object()
+                && self.peek_next() == Some(&Token::RParen)
+            {
+                let bytes = if object.is_pointer() {
+                    8
+                } else {
+                    object.size_bytes()
+                };
+                self.position += 2;
+                return Ok(CExpression::UInt64Literal(u64::from(bytes)));
             }
             if !self.is_type_start() {
                 // `sizeof(expression)`: the operand is not evaluated; only
