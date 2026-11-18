@@ -1065,7 +1065,7 @@ not a change to proof rules or snapshot architecture.
 | Subslice | Owning stores | Status |
 | --- | --- | --- |
 | 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Landed in [PR #3217](https://github.com/clicklang/click/pull/3217); all pushed commits verified on upstream. Focused/scaling/proof/fact-stability validation passed. |
-| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b covers argument stores. |
+| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a is published as [PR #3220](https://github.com/clicklang/click/pull/3220), with auto-merge requested (413 focused checks and full local validation passed); 10p2b covers argument stores. |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
@@ -1126,7 +1126,8 @@ All 1,915 regular scaling cases passed (two isolated and 1,913 remaining).
 The resource-field proof selection, fact stability (zero changed terms/paths)
 and quality checks passed; validation script exit is zero. PR delivery follows
 10p1. After integrating upstream `3557c0453`, all 413 affected checks and
-quality passed again. Full nightly was not run.
+quality passed again. [PR #3220](https://github.com/clicklang/click/pull/3220)
+has auto-merge requested. Full nightly was not run.
 
 ## Chunk 3: machine-valued pure-function results
 
