@@ -15,6 +15,25 @@ pub(super) fn with_contract_interface_argument_views(
     interface: &FunctionContractInterface,
     values: &[ProgramValue],
 ) -> ExecutionState {
+    contract_interface_argument_views(state, interface, values, false)
+}
+
+/// A verified call's states are derived from its bound entry without
+/// executing the callee body. Reuse the checked scalar argument binding.
+pub(super) fn with_bound_contract_interface_argument_views(
+    state: &ExecutionState,
+    interface: &FunctionContractInterface,
+    values: &[ProgramValue],
+) -> ExecutionState {
+    contract_interface_argument_views(state, interface, values, true)
+}
+
+fn contract_interface_argument_views(
+    state: &ExecutionState,
+    interface: &FunctionContractInterface,
+    values: &[ProgramValue],
+    arguments_already_bound: bool,
+) -> ExecutionState {
     let mut state = state.clone();
     state.resources = state.resources.unpublished_contract_view();
     for (parameter, value) in interface.parameters().iter().zip(values) {
@@ -24,6 +43,9 @@ pub(super) fn with_contract_interface_argument_views(
             // that binding lets contract field accesses inspect the copy
             // rather than accidentally replacing it with the caller's source
             // pointer.
+            continue;
+        }
+        if arguments_already_bound && parameter.program_type() == ProgramType::UInt32 {
             continue;
         }
         // Keep the contract view identical to the typed parameter binding.
@@ -598,9 +620,9 @@ pub(in crate::kernel) fn evaluate_program_arguments_paths(
     .collect())
 }
 
-pub(in crate::kernel) fn evaluate_retained_program_arguments_paths(
+pub(in crate::kernel) fn evaluate_retained_program_arguments_paths<'a>(
     state: &ExecutionState,
-    arguments: &[ProgramExpression],
+    arguments: impl IntoIterator<Item = &'a ProgramExpression>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     environment: Option<&ExecutionEnvironment>,
@@ -622,12 +644,16 @@ pub(in crate::kernel) fn evaluate_retained_program_arguments_paths(
 
             let argument_assumptions =
                 assumptions_with_path_context(assumptions, &path.facts, &path.obligations);
-            for argument_path in crate::kernel::eval::evaluate_expression_value_paths(
+            let mut successors = crate::kernel::eval::evaluate_expression_value_paths(
                 state,
                 argument,
                 &argument_assumptions,
                 budget,
-            )? {
+            )?
+            .into_iter()
+            .peekable();
+            let mut accumulated = path.values;
+            while let Some(argument_path) = successors.next() {
                 let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                     &path.facts,
                     &path.obligations,
@@ -638,6 +664,12 @@ pub(in crate::kernel) fn evaluate_retained_program_arguments_paths(
                     continue;
                 };
 
+                // Only a fork needs a copy of the values already evaluated.
+                let mut values = if successors.peek().is_some() {
+                    accumulated.clone()
+                } else {
+                    std::mem::take(&mut accumulated)
+                };
                 match argument_path.outcome {
                     ExpressionOutcome::Value(value) => {
                         let value = if matches!(argument, ProgramExpression::FunctionAddress(_)) {
@@ -650,7 +682,6 @@ pub(in crate::kernel) fn evaluate_retained_program_arguments_paths(
                         } else {
                             value
                         };
-                        let mut values = path.values.clone();
                         values.push(value);
                         next_paths.push(ArgumentsPath {
                             values,
@@ -661,14 +692,14 @@ pub(in crate::kernel) fn evaluate_retained_program_arguments_paths(
                     }
                     ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
                         next_paths.push(ArgumentsPath {
-                            values: path.values.clone(),
+                            values,
                             outcome: Some(FunctionOutcome::UndefinedBehavior(undefined_behavior)),
                             facts,
                             obligations,
                         })
                     }
                     ExpressionOutcome::RuntimeError(error) => next_paths.push(ArgumentsPath {
-                        values: path.values.clone(),
+                        values,
                         outcome: Some(FunctionOutcome::RuntimeError(error)),
                         facts,
                         obligations,
@@ -1109,7 +1140,18 @@ pub(super) fn bind_contract_arguments(
                 parameter.binding_name().clone(),
                 roots.get(index).map_or_else(
                     || ExecutionValue::from(value.clone()),
-                    |source| source.retain_coerced_argument(value.clone()),
+                    |source| {
+                        // A same-type word argument has no coercion to perform.
+                        // Keep its evaluated operand for contract lowering.
+                        if parameter.program_type() == ProgramType::UInt32
+                            && source.program_type() == ProgramType::UInt32
+                            && source.shared().is_some()
+                        {
+                            source.clone()
+                        } else {
+                            source.retain_coerced_argument(value.clone())
+                        }
+                    },
                 ),
                 parameter.program_type(),
                 SymbolicMemory::value_parameter_pointer(parameter.binding_name()),

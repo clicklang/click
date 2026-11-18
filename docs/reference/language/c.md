@@ -348,6 +348,13 @@ through two calls to a pointer-taking helper without resetting the state.
   `int32 a[3];`, `int32 matrix[3][4];`, `uint64 values[2];`, and
   `double samples[2];`. Fixed pointer arrays such as `int *slots[2]` are
   supported in local, static, and file-scope storage and as struct fields.
+  For supported arithmetic element types, a local `const` array accepts
+  explicit or inferred bounds and positional runtime initializers without
+  calls, updates, or references to the array under construction. Omitted
+  elements are zero-filled. The stored elements are read-only through aliases,
+  including pointers produced by casts that drop `const`.
+<!-- verified-example: mdtests/c_const_automatic_array.md -->
+<!-- verified-example: mdtests/c_const_automatic_array_cast_write.md -->
 - Fixed-dimensional local arrays of copyable structs with nested positional
   element initializers and integer array-element designators at each dimension;
   omitted fields and elements are zero-filled.
@@ -1244,6 +1251,9 @@ Supported C surface includes:
 - C99 block-scope struct compound literals, such as
   `&(struct pair){ .left = 20, .right = 22 }`, for mutable non-volatile
   struct object types; see [compound literals](#block-scope-struct-compound-literals)
+- One-dimensional block-scope array compound literals with modeled arithmetic
+  elements, such as `(int[]){10, 20, 30}`; see
+  [array compound literals](#block-scope-array-compound-literals)
 - GNU statement expressions of the exact form `({ statements; value; })`;
   `statements` use the supported C statement grammar and execute in a nested
   scope, while the final `value` must be a modeled scalar, pointer, or function
@@ -1469,7 +1479,7 @@ value is evaluated, so returning a literal's address from one does not extend
 its lifetime. The frontend uses existing automatic aggregate allocation and
 lifetime-end operations; it adds no kernel primitive or axiom.
 
-File-scope compound literals, scalar and array compound literals, const-qualified
+File-scope and scalar compound literals, const-qualified
 or volatile struct object types, and aligned typedef object types remain outside
 this increment. Functions combining `goto` and compound literals are refused
 until jump edges retire the newly introduced lexical objects. Repeatable loop
@@ -1498,6 +1508,28 @@ and [`c_struct_compound_literal_gnu_expired.md`](https://github.com/clicklang/cl
 <!-- verified-example: mdtests/c_struct_compound_literal.md -->
 <!-- verified-example: mdtests/c_struct_compound_literal_argument.md -->
 <!-- verified-example: mdtests/c_struct_compound_literal_loop.md -->
+
+### Block-scope array compound literals
+
+An expression such as `(int[]){10, 20, 30}` is an unnamed array lvalue.
+The type name can supply a fixed positive bound or leave it to be inferred
+from the positional initializer list. Omitted trailing elements of an
+explicit bound receive the element type's zero value.
+
+The array decays to an element pointer in ordinary value expressions and
+supports subscripting and writes through the resulting pointer. `sizeof`
+uses the completed array size without evaluating the initializer. Storage and
+initializer sequencing follow the block-scope struct literal rules above.
+Each evaluation restores omitted elements to zero. Leaving the enclosing
+block retires the storage, even if a pointer to an element escaped.
+
+This supports one-dimensional arrays of unqualified, modeled arithmetic
+types with ordinary alignment. Array designators, multidimensional literals,
+and pointers to the whole array are outside this support.
+
+<!-- verified-example: mdtests/c_array_compound_literal.md -->
+<!-- verified-example: mdtests/c_array_compound_literal_evaluation.md -->
+<!-- verified-example: mdtests/c_array_compound_literal_sizeof.md -->
 
 ## File-scope scalar globals
 
@@ -3145,7 +3177,7 @@ These are not general C features yet:
   addresses, and variadic function-pointer signatures; only the body-less
   prototype is retained
 - volatile forms outside the sequential scalar model described above
-- const-qualified automatic/local aggregate objects, and broader qualifier
+- const-qualified automatic struct objects, and broader qualifier
   conversions beyond scalar globals, scalar tables, const static-storage
   aggregates, pointer-to-const views, and one-level pointee-const casts,
   including explicit casts that drop one-level pointee `const`

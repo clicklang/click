@@ -1,6 +1,7 @@
 # A continue is a pass of the loop
 
-A `continue` is a back edge: the pass it ends counts.
+A `continue` is a back edge: the pass it ends counts. The preservation proof
+selects the C branch and leaves the `continue` to the automatic tail.
 
 ```c filename=cont.c
 int32 evens(int32 n) {
@@ -35,6 +36,15 @@ int32 evens(int32 n) {
         invariant 0 <= i and i <= n;
         invariant i == iterations;
         invariant 0 <= e and e <= iterations;
+        preserve by {
+            step();
+            if i % 2 == 1 {
+                step();
+            } else {
+                step();
+                step();
+            }
+        }
     }
 }
 ```

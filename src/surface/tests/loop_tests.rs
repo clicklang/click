@@ -628,12 +628,13 @@ fn completed_recursive_loop_bodies_skip_legacy_preplanning_and_recheck() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_02")]
-fn explicit_straight_line_swap_transports_an_entry_bound() {
+fn explicit_straight_line_swap_preserves_an_entry_bound() {
     for index in ["0", "j"] {
         let c = format!(
             "int32 swap(int32 p[3], int32 j) {{ int32 tmp; tmp = p[{index}]; p[{index}] = p[{index} + 1]; p[{index} + 1] = tmp; return 0; }}"
         );
         let click = r#"
+            import click::separation;
             verifying "swap.c";
             int32 swap(int32 p[3], int32 j) {
                 requires j == 0;
@@ -646,17 +647,24 @@ fn explicit_straight_line_swap_transports_an_entry_bound() {
                 have p[$index] == old(p[$index + 1]) by { normalize(); }
                 mark first_written;
                 step();
+                have to_integer($index) != to_integer($index + 1) by {
+                    normalize() using { j == 0; };
+                }
+                apply(separation::separate_elements(p, $index, $index + 1)) using {
+                    to_integer($index) != to_integer($index + 1);
+                };
+                have separate(statement(3).footprint, memory(p[$index])) by {
+                    normalize() using { separate(memory(p[$index]), memory(p[$index + 1])); };
+                }
+                have p[$index] == at(first_written, p[$index]) by {
+                    preserve(memory(p[$index]), statement(3));
+                }
                 have p[$index] == old(p[$index + 1]) by {
-                    transport(at(first_written, p[$index]) == old(p[$index + 1]),
-                              p[$index] == old(p[$index + 1])) using {
-                        at(first_written, p[$index]) == old(p[$index + 1]);
-                        j == 0;
-                    };
+                    rewrite(p[$index], at(first_written, p[$index]));
+                    known();
                 }
                 have p[0] == old(p[1]) by {
-                    transport(p[$index] == old(p[$index + 1]), p[0] == old(p[1])) using {
-                        p[$index] == old(p[$index + 1]); j == 0;
-                    };
+                    normalize() using { p[$index] == old(p[$index + 1]); j == 0; };
                 }
                 have p[2] == old(p[2]) by { normalize(); }
                 have p[0] <= p[2] by {
@@ -668,8 +676,19 @@ fn explicit_straight_line_swap_transports_an_entry_bound() {
             }
         "#
         .replace("$index", index);
-        verify_c_sources(&click, &[("swap.c", c.as_str())])
+        let sources = [("swap.c", c.as_str())];
+        let verified = verify_c_sources(&click, &sources)
             .unwrap_or_else(|e| panic!("index {index}: {}", e.message()));
+        let expanded = expand_checked_grouped_claim(&click, &verified, "swap")
+            .unwrap_or_else(|e| panic!("index {index}: {}", e.message()));
+        assert!(
+            !expanded.contains("transport("),
+            "index {index}: {expanded}"
+        );
+        without_implicit_solve_for_claim("swap.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|e| panic!("index {index}: {e}"));
     }
 }
 
@@ -2841,7 +2860,7 @@ test_batches! {
     ],
     loop_batch_02: [
         symbolic_alignment_expands_to_ordinary_proof_and_rechecks_without_planning,
-        explicit_straight_line_swap_transports_an_entry_bound,
+        explicit_straight_line_swap_preserves_an_entry_bound,
         frontier_local_loop_verifies_and_advances_to_exit,
         individual_loop_proof_has_no_whole_claim_acceptance_check,
     ],

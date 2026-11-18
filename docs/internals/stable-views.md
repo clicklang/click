@@ -201,7 +201,9 @@ and a view reserved from distinct caller occurrences are disjoint by the
 partition invariant, while the same occurrence needs an arithmetic proof.
 An ordinary verified call with exact write ranges requires those ranges to
 be separate from the caller's pre-existing live loans. The proof uses the
-ranges selected at call entry.
+ranges selected at call entry. The standard-library `memcpy` uses its
+checked destination byte range for this obligation. Its source view still
+participates in the call's resource partition.
 Call retirement requires the full input allocation to be separate from the
 entry ledger, including loans opened by the call. This applies to a definite
 free and to an output that leaves the allocation's continuity undecided.

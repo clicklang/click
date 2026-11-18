@@ -328,6 +328,9 @@ fn syntax_statement_reads(statement: &syntax::CStatement) -> bool {
     let read =
         |expression: &syntax::CExpression| expression_reads(&expression.to_kernel_expression());
     match statement {
+        S::Declare { zero_fill, .. } => zero_fill
+            .iter()
+            .any(|fill| fill.written_elements.iter().any(|(_, value)| read(value))),
         S::Assign { expression, .. }
         | S::Return(expression, _)
         | S::Assert {

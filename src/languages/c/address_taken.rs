@@ -373,20 +373,27 @@ pub(crate) fn child_statements<'a>(
 ) {
     match statement {
         CStatement::EndAggregateLifetimes { .. }
+        | CStatement::FillArrayTail { .. }
         | CStatement::Skip
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
-        | CStatement::Declare {
-            initializer: None, ..
-        }
         | CStatement::DeclareStructValue { .. } => {}
         CStatement::Label { statement, .. } => statements.push(statement),
         CStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            expressions.extend(
+                initializer.iter().chain(
+                    zero_fill
+                        .iter()
+                        .flat_map(|fill| fill.written_elements.iter().map(|(_, value)| value)),
+                ),
+            );
         }
-        | CStatement::Assign { expression, .. } => expressions.push(expression),
+        CStatement::Assign { expression, .. } => expressions.push(expression),
         CStatement::Call { arguments, .. } | CStatement::CallResult { arguments, .. } => {
             expressions.extend(arguments.iter());
         }
