@@ -12,13 +12,13 @@ verifying "contract_float_pointer_casts.c";
 
 float* next32(float* p) {
     views p[0..2];
-    ensures result == (p as (uint8 *) as (void *) as (float *)) + 1;
+    ensures address(result) == address((p as (uint8 *) as (void *) as (float *)) + 1);
     ensures result as (uint8 *) == p as (uint8 *) + 4;
 }
 
 double* next64(double* p) {
     views p[0..2];
-    ensures result == (p as (uint8 *) as (void *) as (double *)) + 1;
+    ensures address(result) == address((p as (uint8 *) as (void *) as (double *)) + 1);
     ensures result as (uint8 *) == p as (uint8 *) + 8;
 }
 

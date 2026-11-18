@@ -64,6 +64,42 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
     }
 }
 
+#[test]
+fn pointer_cast_goal_keeps_its_written_operands_in_diagnostics() {
+    let c = "float* next32(float* p) { return p + 1; }";
+    let source = r#"
+        verifying "cast.c";
+        float* next32(float* p) {
+            views p[0..2];
+            ensures result == (p as (uint8 *) as (void *) as (float *)) + 1;
+            ensures result as (uint8 *) == p as (uint8 *) + 4;
+        } by {
+            step();
+            have result == (p as (uint8 *) as (void *) as (float *)) + 1 by {
+                known();
+            }
+        }
+    "#;
+    let assert_goal = |report: String| {
+        let goal = report
+            .lines()
+            .find_map(|line| line.trim_start().strip_prefix("goal: "))
+            .unwrap_or_else(|| panic!("expected a goal in {report}"));
+        assert!(goal.starts_with("result =="), "{report}");
+        for cast in ["as (uint8 *)", "as (void *)", "as (float *)"] {
+            assert!(goal.contains(cast), "{report}");
+        }
+    };
+    let sources = [("cast.c", c)];
+    let error = verify_c_sources(source, &sources).unwrap_err();
+    assert_goal(error.concise_report());
+    assert_goal(error.report());
+    with_proof_trace("next32", || {
+        let error = verify_c_sources(source, &sources).unwrap_err();
+        assert_goal(error.trace_context_report().unwrap());
+    });
+}
+
 fn assert_subobject_access_reports(c: &str, source: &str, ordinary_goal: &str, trace_goal: &str) {
     let ordinary = verify_c_sources(source, &[("access.c", c)])
         .unwrap_err()
