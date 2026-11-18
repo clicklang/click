@@ -62,10 +62,17 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
             ] {
                 // A 32-bit observation of a byte load is the byte's own.
                 let observation = |value| IntegerTerm::from_machine(ty, value).unwrap();
+                // The rewritten goal states its comparison of an observation
+                // and a constant in the one form, the native comparison.
+                let observed_zero = |value| {
+                    crate::kernel::assumptions::canonical_observation_form(&integer_equality(
+                        observation(value),
+                        IntegerTerm::constant_i64(0),
+                    ))
+                };
                 let goal =
                     integer_equality(observation(source.clone()), IntegerTerm::constant_i64(0));
-                let expected =
-                    integer_equality(observation(target.clone()), IntegerTerm::constant_i64(0));
+                let expected = observed_zero(target.clone());
                 let (checked, cost) = crate::instrumentation::measure_deterministic_work(|| {
                     facts.check_equality_rewrite(&goal, &cited)
                 });
@@ -73,18 +80,9 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
                 assert_eq!(checked.proposition(), &expected);
                 assert_ne!(
                     checked.proposition(),
-                    &integer_equality(
-                        observation(other_memory_state.clone()),
-                        IntegerTerm::constant_i64(0)
-                    )
+                    &observed_zero(other_memory_state.clone())
                 );
-                assert_ne!(
-                    checked.proposition(),
-                    &integer_equality(
-                        observation(other_kind.clone()),
-                        IntegerTerm::constant_i64(0)
-                    )
-                );
+                assert_ne!(checked.proposition(), &observed_zero(other_kind.clone()));
                 assert!(
                     PureFactStore::default()
                         .check_equality_rewrite(&goal, &cited)

@@ -87,9 +87,9 @@ to_integer(y)` or `to_integer(x) OP c` for a constant `c` in the type's range,
 holds exactly when the native comparison `x OP y` or `x OP c` does
 (`to_integer` is injective and order-preserving within each type). The kernel
 states such a fact in one form, the native comparison
-(`structural_native_comparison_of_integer_observation`, applied when a contract lowers and
-again by `canonical_observation_form` on every kernel-built verification
-condition). Written either way it is the same fact: `known()` closes
+(`structural_native_comparison_of_integer_observation`, applied when a contract lowers;
+`canonical_observation_form` on every kernel-built verification condition and
+on a `rewrite` result). Written either way it is the same fact: `known()` closes
 `to_integer(i) < to_integer(n)` from `i < n`, and a dropped `requires right !=
 0u32;` beside `requires to_integer(right) != 0;` changes nothing. The order and
 equality bridge theorems below therefore restate a fact rather than derive one.
@@ -104,9 +104,22 @@ term; generic substitution preserves operation and comparison nodes too.
 Two cases keep the Integer form. A comparison whose native form folds to a
 constant, such as `0 <= to_integer(u)` for an unsigned `u`, stays an Integer
 fact so the type range it states can be cited. A comparison over Integer
-arithmetic, such as `to_integer(a + b) <= to_integer(n)` or
-`to_integer(a) + 1 <= n`, has no native form and stays Integer;
-`to_integer(a + b)` is still not `to_integer(a) + to_integer(b)`.
+arithmetic, such as `to_integer(a) + 1 <= n` or `to_integer(a) + to_integer(b)
+<= to_integer(n)`, has no native form and stays Integer. An observation of
+machine arithmetic is not Integer arithmetic: `to_integer(a + b) <=
+to_integer(n)` observes the machine sum, a value of `n`'s type, and is the
+native `a + b <= n`. It is still not `to_integer(a) + to_integer(b) <=
+to_integer(n)`; the two agree only where `a + b` is defined.
+
+The native comparison node holds boxed machine terms, so a comparison whose
+operand is a retained shared machine term other than a variable, literal,
+read, call, address or simple conditional (a sum or a product) is stated as the
+Integer comparison of its observations instead
+(`comparison::condition_for_operand_views`), and `canonical_observation_form`
+keeps it so. Contract lowering's boxed reading exports the operand and states
+the native comparison, so the same fact can still take both forms; this is a
+representation gap, not a semantic exception, and closes when the native
+comparison can retain shared operands.
 
 Built-in checks (Rust panic checks, C definedness and branch decisions) read
 machine facts, so filing an Integer fact (`PureFactContext::assume_condition`)
