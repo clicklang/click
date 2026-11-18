@@ -7075,66 +7075,95 @@ fn check_conditional_round_trip_with_arm(
     equality: &str,
     then_value: &str,
 ) {
-    use crate::kernel::proof::PureFactStore;
-    let _session = crate::kernel::VerificationSession::enter();
-    let state = ExecutionState::new()
-        .with_local(
-            "x",
-            format.value_from_term(MachineTerm::Variable(Variable(999708))),
-        )
-        .with_local(
-            "y",
-            format.value_from_term(MachineTerm::Variable(Variable(999709))),
-        )
-        .with_local(
-            "z",
-            format.value_from_term(MachineTerm::Variable(Variable(999710))),
-        )
-        .with_local(
-            "flag",
-            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999711))),
-        );
-    let parse = |text: &str| {
+    let fixture = ConditionalRoundTrip::new(format, spelling);
+    let equality = fixture.lower(equality);
+    let original = fixture.goal(guard, reverse, then_value);
+    fixture.check(&original, &equality, guard, reverse);
+}
+
+struct ConditionalRoundTrip<'a> {
+    spelling: &'a str,
+    state: ExecutionState,
+    _session: crate::kernel::VerificationSession,
+}
+
+impl<'a> ConditionalRoundTrip<'a> {
+    fn new(format: MachineIntegerType, spelling: &'a str) -> Self {
+        let session = crate::kernel::VerificationSession::enter();
+        let state = ExecutionState::new()
+            .with_local(
+                "x",
+                format.value_from_term(MachineTerm::Variable(Variable(999708))),
+            )
+            .with_local(
+                "y",
+                format.value_from_term(MachineTerm::Variable(Variable(999709))),
+            )
+            .with_local(
+                "z",
+                format.value_from_term(MachineTerm::Variable(Variable(999710))),
+            )
+            .with_local(
+                "flag",
+                ProgramValue::of_bool(ConditionTerm::Variable(Variable(999711))),
+            );
+        Self {
+            spelling,
+            state,
+            _session: session,
+        }
+    }
+
+    fn lower(&self, text: &str) -> Proposition {
         let file = parser::parse(&format!(
             "theorem probe() {{ requires {text}; ensures true; }}"
         ))
         .unwrap();
-        let Requirement::Proposition(p) = &file.theorem_definitions()[0].requires()[0] else {
-            panic!("expected a proposition")
+        let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!("expected a proposition");
         };
-        p.clone()
-    };
-    let equality = relower_written_proposition(&parse(equality), &state).unwrap();
-    let value = format!("to_integer(if {guard} {{ {then_value} }} else {{ 3 as {spelling} }})");
-    let goal = if reverse {
-        format!("100 <= {value}")
-    } else {
-        format!("{value} <= 100")
-    };
-    let original = relower_written_proposition(&parse(&goal), &state).unwrap();
-    let rewritten = PureFactStore::from_ordered(std::slice::from_ref(&equality))
-        .check_equality_rewrite(&original, &equality)
-        .unwrap()
-        .proposition()
-        .clone();
-    let Proposition::ConditionIs(condition, true) = rewritten else {
-        panic!("expected a comparison")
-    };
-    for truth in [true, false] {
-        let produced = Proposition::ConditionIs(condition.clone(), truth);
-        let raised =
-            synthesize_surface_proposition(&produced, ParameterBinding::default(), &state).unwrap();
-        assert_eq!(
-            relower_written_proposition(&raised, &state).unwrap(),
-            produced,
-            "Surface AST: {spelling}, guard={guard}, reverse={reverse}, truth={truth}"
-        );
-        let text = crate::surface::printing::source_click_proposition(&raised);
-        let restored = relower_written_proposition(&parse(&text), &state).unwrap();
-        assert_eq!(
-            restored, produced,
-            "{spelling}, guard={guard}, reverse={reverse}, truth={truth}: {text}"
-        );
+        relower_written_proposition(written, &self.state).unwrap()
+    }
+
+    fn goal(&self, guard: &str, reverse: bool, then_value: &str) -> Proposition {
+        let spelling = self.spelling;
+        let value = format!("to_integer(if {guard} {{ {then_value} }} else {{ 3 as {spelling} }})");
+        let goal = if reverse {
+            format!("100 <= {value}")
+        } else {
+            format!("{value} <= 100")
+        };
+        self.lower(&goal)
+    }
+
+    fn check(&self, original: &Proposition, equality: &Proposition, guard: &str, reverse: bool) {
+        use crate::kernel::proof::PureFactStore;
+        let spelling = self.spelling;
+        let rewritten = PureFactStore::from_ordered(std::slice::from_ref(equality))
+            .check_equality_rewrite(original, equality)
+            .unwrap()
+            .proposition()
+            .clone();
+        let Proposition::ConditionIs(condition, true) = rewritten else {
+            panic!("expected a comparison");
+        };
+        for truth in [true, false] {
+            let produced = Proposition::ConditionIs(condition.clone(), truth);
+            let raised =
+                synthesize_surface_proposition(&produced, ParameterBinding::default(), &self.state)
+                    .unwrap();
+            assert_eq!(
+                relower_written_proposition(&raised, &self.state).unwrap(),
+                produced,
+                "Surface AST: {spelling}, guard={guard}, reverse={reverse}, truth={truth}, equality={equality:?}"
+            );
+            let text = crate::surface::printing::source_click_proposition(&raised);
+            assert_eq!(
+                self.lower(&text),
+                produced,
+                "{spelling}, guard={guard}, reverse={reverse}, truth={truth}, equality={equality:?}: {text}"
+            );
+        }
     }
 }
 
@@ -7483,16 +7512,19 @@ fn bitwise_guard_conditionals_round_trip_after_rewrite() {
         (T::Int64, "int64"),
         (T::UInt64, "uint64"),
     ] {
-        for operand in bitwise_round_trip_operands(spelling) {
-            let equality = format!("x == ({operand})");
-            for guard in [
-                "x < y", "x <= y", "x > y", "x >= y", "x == y", "x != y", "y < x", "y <= x",
-                "y > x", "y >= x", "y == x", "y != x",
-            ] {
-                for reverse in [false, true] {
-                    check_conditional_round_trip_with_arm(
-                        format, spelling, guard, reverse, &equality, "z",
-                    );
+        // The source goal depends on the guard and comparison direction,
+        // while the equality depends only on the bitwise operand.
+        let fixture = ConditionalRoundTrip::new(format, spelling);
+        let equalities = bitwise_round_trip_operands(spelling)
+            .map(|operand| fixture.lower(&format!("x == ({operand})")));
+        for guard in [
+            "x < y", "x <= y", "x > y", "x >= y", "x == y", "x != y", "y < x", "y <= x", "y > x",
+            "y >= x", "y == x", "y != x",
+        ] {
+            for reverse in [false, true] {
+                let original = fixture.goal(guard, reverse, "z");
+                for equality in &equalities {
+                    fixture.check(&original, equality, guard, reverse);
                 }
             }
         }
