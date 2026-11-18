@@ -678,9 +678,15 @@ pub(in crate::kernel) fn pointer_predicate_selector(proposition: &Proposition) -
     let arguments = arguments
         .iter()
         .map(|argument| match argument {
-            Term::ProgramValue(ProgramValue::Pointer(pointer)) => Term::ProgramValue(
-                ProgramValue::typed_pointer(crate::kernel::Address::null(), pointer.program_type()),
-            ),
+            term_source_0 @ Term::ProgramValue(_)
+                if let Some(ProgramValue::Pointer(pointer)) =
+                    term_source_0.program_value_native() =>
+            {
+                Term::ProgramValue(ProgramValue::typed_pointer(
+                    crate::kernel::Address::null(),
+                    pointer.program_type(),
+                ))
+            }
             other => other.clone(),
         })
         .collect();

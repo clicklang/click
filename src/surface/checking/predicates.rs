@@ -257,8 +257,15 @@ pub(in crate::surface) fn decode_predicate_arguments(
                         parameter.name()
                     ));
                 };
-                let Some(Term::ProgramValue(ProgramValue::Pointer(pointer))) =
-                    arguments.get(index + 1)
+                let Some(term_source_0 @ Term::ProgramValue(_)) = arguments.get(index + 1) else {
+                    return Err(format!(
+                        "predicate `{}` argument `{}` is missing its array-ref pointer",
+                        definition.name(),
+                        parameter.name()
+                    ));
+                };
+                let (Some(ProgramValue::Pointer(pointer)),) =
+                    (term_source_0.program_value_native(),)
                 else {
                     return Err(format!(
                         "predicate `{}` argument `{}` is missing its array-ref pointer",

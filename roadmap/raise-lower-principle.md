@@ -1609,6 +1609,19 @@ Existing native numeric-coercion readers remain explicit adapters for the later
 10r–10t audit; mixed-format conversion rules are unchanged. Expression-bearing
 equality and predicate `Term` payloads remain assigned to 10q4.
 
+### 10q4 Expression-bearing Term outputs (in progress)
+
+| Subslice | Boundary | Acceptance |
+| --- | --- | --- |
+| 10q4a | Structural native payload readers | Prepare all 67 structural patterns in 19 files, including macros, through selected borrowed views without changing the Term schema or matching rules. |
+| 10q4b | Exact expression payload carriers | Retain logical, machine, Integer, program-value and algebraic roots in the five corresponding Term fields; preserve exact native identity and root-aware collection/substitution. |
+| 10q4c | Equality and predicate producers | Forward actual evaluated roots into the carriers, close the producer inventory, and verify proof/refusal, fact stability and scaling parity. |
+
+Sequence and pointer-offset descriptors retain the operands migrated in their
+earlier families; memory and execution-state identities keep their existing
+ownership. Compatibility readers remain explicit and assigned to 10r–10t.
+Storage support alone does not close the actual producer handoffs.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

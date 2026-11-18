@@ -7525,9 +7525,13 @@ fn function_contract_requirement_is_proven(
             };
             let [
                 Term::ExecutionState(_),
-                Term::ProgramValue(ProgramValue::Pointer(pointer)),
+                term_source_0 @ Term::ProgramValue(_),
                 values @ ..,
             ] = arguments.as_slice()
+            else {
+                return Ok(false);
+            };
+            let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),)
             else {
                 return Ok(false);
             };

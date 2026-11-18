@@ -700,7 +700,10 @@ pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, 
         return None;
     };
     let contract = crate::kernel::FunctionContract::surface_name_from_predicate(name)?;
-    let [_, Term::ProgramValue(ProgramValue::Pointer(pointer))] = arguments.as_slice() else {
+    let [_, term_source_0 @ Term::ProgramValue(_)] = arguments.as_slice() else {
+        return None;
+    };
+    let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),) else {
         return None;
     };
     let Address {
