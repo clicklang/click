@@ -26,8 +26,7 @@ const RUN_QUARANTINED: &str = "CLICK_RUN_QUARANTINED";
 /// Rewrites the checked-in C++ imports instead of comparing them.
 const REFRESH_CPP_IMPORTS: &str = "CLICK_REFRESH_CPP_IMPORTS";
 const BUBBLE_SORT3_WORK_LIMIT: usize = 100_000;
-/// The explicit frame refusal takes about 175,000 units with scoped failure
-/// reuse, versus 513,000 when its proof routes repeat the same questions.
+/// Pin the explicit frame refusal under a fixed work limit.
 const PROMPT_EXPLICIT_FRAME_FAILURE_WORK_LIMIT: usize = 250_000;
 
 /// Known-broken mdtests, skipped by default so the suite is a meaningful
@@ -43,6 +42,11 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    "pointer_offset_explicit_bridge.md", // 0.81s focused: explicit scalar-pointer law applications
+    "nested_conditional_explicit_arm_equations.md", // 0.89s focused: arithmetic, observations and casts
+    "widened_unsigned_sum_returned_identity.md",    // 1.19s focused: explicit returned-sum identity
+    "widened_unsigned_sum_observation_identity.md", // 0.63s focused: widening and reassociation
+    "aligned_address_word_library.md", // 0.9s focused: 36 explicit word and scalar-pointer law applications
     "loop_numeric_descent_on_exit.md", // 1.09s focused: split final and continuing preservation paths
     "loop_numeric_descent_on_generated_exit.md", // 0.58s in parallel: generated preservation of a false next test
     "a_returned_member_domain_supports_a_logical_read.md", // 2.3s: member-result resource fold and logical read
@@ -194,7 +198,7 @@ const NIGHTLY: &[&str] = &[
     "entry_alignment_premise_expands.md",                                      // 1.4s
     "execute_order_reasoning_terminates.md",                                   // 0.7s
     "expand_sequential_null_checks.md",                                        // 1.4s
-    "explicit_transport_failure_is_prompt.md",                                 // 1.5s
+    "explicit_preserve_failure_is_prompt.md",                                  // 1.5s
     "field_borrow_parent_drop.md",                                             // 0.7s
     "field_borrow_parent_drop_rejects_stale_value.md",                         // 0.7s
     "field_derived_precise_effect_after_metadata_write.md",                    // 4.4s
@@ -644,7 +648,7 @@ fn run_mdtest_attempt(path: &Path) -> Result<(), String> {
     if !budgets_disabled
         && path
             .file_name()
-            .is_some_and(|name| name == "explicit_transport_failure_is_prompt.md")
+            .is_some_and(|name| name == "explicit_preserve_failure_is_prompt.md")
     {
         return instrumentation::with_tactic_work_limits(
             instrumentation::TacticWorkLimits {

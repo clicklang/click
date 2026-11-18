@@ -29,7 +29,7 @@ fn retained_contract_result_storage_and_exit_memory_skip_expression_prefixes() {
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
                 set_function_result(&mut state, &function, value.clone());
-                let memory = function_exit_memory(&caller, &state, &value, &function);
+                let memory = function_exit_memory(&caller, &state, &value, &function).unwrap();
                 assert_eq!(&memory, state.memory());
             }
         });
@@ -52,7 +52,7 @@ fn pointer_return_handoffs_retain_prepared_dags_without_export() {
         Vec::new(),
         program_return(crate::kernel::program_expression::int32_literal(0)),
     );
-    let payload = SharedPointerValue::import(&PointerValue::new(
+    let payload = SharedPointerValue::import(&Pointer::new(
         Address::symbolic(Variable(1027300)),
         ProgramType::Int32Pointer,
     ));

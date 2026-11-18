@@ -7,18 +7,17 @@ use super::*;
 #[test]
 fn direct_local_write_builds_loan_obligation_without_visiting_aliases() {
     let _session = crate::kernel::VerificationSession::enter();
-    let execute = |state: &ExecutionState,
-                   statement: &ProgramStatement,
-                   assumptions: &PureFactContext| {
-        execute_execution_statement_paths(
-            state,
-            statement,
-            assumptions,
-            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-            &mut ExecutionBudget::default(),
-        )
-        .unwrap()
-    };
+    let execute =
+        |state: &ExecutionState, statement: &ProgramStatement, assumptions: &PureFactContext| {
+            execute_execution_statement_paths(
+                state,
+                statement,
+                assumptions,
+                ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap()
+        };
     let state = normal_state(&execute(
         &ExecutionState::new(),
         &program_declare("x", ProgramType::Int32),
@@ -47,7 +46,9 @@ fn direct_local_write_builds_loan_obligation_without_visiting_aliases() {
         }
         // The proof boundary publishes admitted equalities for ownership
         // queries before the step. Measure the write against that snapshot.
-        state.resources().synchronize_memory_equalities(&assumptions);
+        state
+            .resources()
+            .synchronize_memory_equalities(&assumptions);
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute(&state, &write, &assumptions)
         });

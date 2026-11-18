@@ -47,11 +47,11 @@ pub(super) fn native_name(value: &ProgramValue) -> Option<SurfaceBinder> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{KernelTermExport, PointerValue, SubobjectBounds, VerificationSession};
+    use crate::kernel::{KernelTermExport, Pointer, SubobjectBounds, VerificationSession};
 
-    fn check_names(values: Vec<(&str, PointerValue)>) {
+    fn check_names(values: Vec<(&str, Pointer)>) {
         let state = ExecutionState::new();
-        let bindings: BTreeMap<_, _> = values
+        let bindings: ProgramValueBindings = values
             .iter()
             .map(|(name, value)| (name.to_string(), ProgramValue::Pointer(value.clone())))
             .collect();
@@ -177,15 +177,16 @@ mod tests {
             KernelTermImport, MachineIntegerType, MachineTerm, PureFunctionArgument,
         };
         let _session = VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1024950)),
             ProgramType::Int32Pointer,
         );
         let state = ExecutionState::new().with_local("p", ProgramValue::Pointer(pointer.clone()));
-        let bindings = BTreeMap::from([("p".to_string(), ProgramValue::Pointer(pointer.clone()))]);
+        let bindings =
+            ProgramValueBindings::from([("p".to_string(), ProgramValue::Pointer(pointer.clone()))]);
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let value = format.value_from_term(MachineTerm::object_pointer_address(
-                pointer.pointer().clone(),
+                pointer.address().clone(),
                 pointer.object_class(),
             ));
             let root =
@@ -224,7 +225,7 @@ mod tests {
     #[test]
     fn pointer_proof_names_preserve_qualifiers_instead_of_address_equality() {
         let _session = VerificationSession::enter();
-        let plain = PointerValue::new(
+        let plain = Pointer::new(
             Address::symbolic(Variable(1015000)),
             ProgramType::Int32Pointer,
         );
@@ -247,7 +248,7 @@ mod tests {
         );
         let pointer = Address::symbolic(Variable(1015010));
         let make = |memory| {
-            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+            Pointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
                 SubobjectBounds {
                     start: pointer.clone(),
                     width: MachineTerm::MemoryLoad(
@@ -289,7 +290,7 @@ mod tests {
     #[test]
     fn pointer_proof_name_scopes_restore_exact_payload_bindings() {
         let _session = VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1015020)),
             ProgramType::Int32Pointer,
         );

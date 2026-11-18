@@ -156,6 +156,11 @@ pub use iterated::{IteratedGuard, IteratedMemory};
 pub(in crate::kernel) mod canonical_fact_set;
 mod composition_member_index;
 mod memory_equality_index;
+mod sequence_values;
+pub use sequence_values::{SequenceValues, SequenceValuesIter};
+mod resource_fields;
+pub(crate) use resource_fields::StoredResourceField;
+pub use resource_fields::{ResourceFieldValue, ResourceFieldValues};
 mod resource_algebra;
 pub(crate) use resource_algebra::coalesce_written_resource_descriptions;
 #[cfg(test)]
@@ -1273,7 +1278,7 @@ pub enum ConditionTerm {
     PointerOffsetEqual(Box<AddressOffset>, Box<AddressOffset>),
     PointerEqual(Box<Address>, Box<Address>),
     /// Specification pointer equality includes the designated object and bounds.
-    PointerValueEqual(Box<PointerValue>, Box<PointerValue>),
+    PointerValueEqual(Box<Pointer>, Box<Pointer>),
     IntegerLessThan(SharedIntegerTerm, SharedIntegerTerm),
     IntegerLessEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerGreaterThan(SharedIntegerTerm, SharedIntegerTerm),
@@ -1306,7 +1311,7 @@ pub enum ConditionTerm {
     /// `byte != 0` (the byte rule of Stage 5 bounds the byte to 0 or 1
     /// where a front end produces the read). Two reads of one cell in one
     /// state are one value.
-    BoolLoad(SharedMemory, Box<Address>),
+    BoolLoad(ProgramPoint, Box<Address>),
 }
 
 /// A condition's identity: the condition itself, with a 32-bit equality's
@@ -1334,7 +1339,7 @@ enum ConditionIdentity<'a> {
     Float64(&'a FloatCondition),
     PointerOffsetEqual(&'a AddressOffset, &'a AddressOffset),
     PointerEqual(&'a Address, &'a Address),
-    PointerValueEqual(&'a PointerValue, &'a PointerValue),
+    PointerValueEqual(&'a Pointer, &'a Pointer),
     IntegerLessThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerLessEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerGreaterThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
@@ -1348,7 +1353,7 @@ enum ConditionIdentity<'a> {
         else_condition: &'a ConditionTerm,
     },
     BoolEqual(&'a ConditionTerm, &'a ConditionTerm),
-    BoolLoad(&'a SharedMemory, &'a Address),
+    BoolLoad(&'a ProgramPoint, &'a Address),
 }
 
 /// A comparison side as its fact identity reads it
@@ -2350,8 +2355,8 @@ pub(super) struct ObjectTypePremise {
 /// values that differ only in it designate the same object. A fact about a
 /// pointer therefore matches the pointer however its type is qualified.
 #[derive(Clone, Debug)]
-pub struct PointerValue {
-    pointer: Address,
+pub struct Pointer {
+    address: Address,
     /// The object designated when this value entered. Address aliases never
     /// replace this component; only value transport or substitution maps it.
     provenance: Arc<Address>,
@@ -2403,7 +2408,7 @@ pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
 /// an opaque domain whose bounds come from coverage evidence.
 ///
 /// The term-valued width also supports the legacy symbolic-bounds prototype.
-/// Production unseen pointers use `PointerValue::bounds_owner` instead
+/// Production unseen pointers use `Pointer::bounds_owner` instead
 /// (`design/pointer-subobject-bounds.md`, Phase C).
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SubobjectBounds {
@@ -2415,7 +2420,7 @@ impl SubobjectBounds {
     /// The fact that these opaque bounds cover `range`.
     pub(crate) fn coverage_fact(&self, range: &MemoryRange) -> Proposition {
         let pointer = |pointer: Address| {
-            Term::ProgramValue(ProgramValue::Pointer(PointerValue::new(
+            Term::ProgramValue(ProgramValue::Pointer(Pointer::new(
                 pointer,
                 ProgramType::VoidPointer,
             )))
@@ -2465,9 +2470,9 @@ impl SubobjectBounds {
             return None;
         };
         let count = to
-            .pointer()
-            .element_index_from_base_with_width(from.pointer(), width)?;
-        Some((from.pointer().clone(), count, width))
+            .address()
+            .element_index_from_base_with_width(from.address(), width)?;
+        Some((from.address().clone(), count, width))
     }
 
     /// A native range retains both full-width endpoints in its coverage fact.
@@ -2490,7 +2495,7 @@ impl SubobjectBounds {
             return None;
         };
         Some(MemoryRange::new_wide(
-            base.pointer().clone(),
+            base.address().clone(),
             start.clone(),
             end.clone(),
             width,
@@ -2511,7 +2516,7 @@ impl SubobjectBounds {
     }
 }
 
-impl PointerValue {
+impl Pointer {
     pub(crate) fn new(pointer: Address, program_type: ProgramType) -> Self {
         assert!(
             program_type.is_pointer(),
@@ -2540,7 +2545,7 @@ impl PointerValue {
         Self {
             bounds_owner: (!known_root).then(|| Arc::new(root.clone())),
             provenance: Arc::new(root),
-            pointer,
+            address: pointer,
             program_type,
             qualifiers: known_root.then(|| {
                 Arc::new(PointerQualifiers {
@@ -2561,7 +2566,7 @@ impl PointerValue {
     ) -> Self {
         let mut value = Self::new(pointer, program_type);
         if matches!(program_type, ProgramType::FunctionPointer(_))
-            || value.pointer.base.is_function()
+            || value.address.base.is_function()
         {
             return value;
         }
@@ -2582,11 +2587,11 @@ impl PointerValue {
     /// the producing read, not an address-alias or preservation query.
     pub(crate) fn complete_read_source(&self) -> Option<(SharedMemory, Address)> {
         if self.bounds_owner() != Some(self.provenance())
-            || self.pointer.object_identity() == *self.provenance()
+            || self.address.object_identity() == *self.provenance()
         {
             return None;
         }
-        let address_read = self.pointer.as_loaded_value()?;
+        let address_read = self.address.as_loaded_value()?;
         let origin = self.provenance().as_loaded_value()?;
         if address_read.displacement != AddressOffset::Constant(0)
             || origin.displacement != AddressOffset::Constant(0)
@@ -2644,12 +2649,12 @@ impl PointerValue {
         self
     }
 
-    pub(crate) fn pointer(&self) -> &Address {
-        &self.pointer
+    pub(crate) fn address(&self) -> &Address {
+        &self.address
     }
 
     pub(crate) fn into_pointer(self) -> Address {
-        self.pointer
+        self.address
     }
 
     pub(crate) fn program_type(&self) -> ProgramType {
@@ -2682,7 +2687,7 @@ impl PointerValue {
 
     pub(crate) fn with_type(self, program_type: ProgramType) -> Self {
         Self {
-            pointer: self.pointer,
+            address: self.address,
             provenance: self.provenance,
             bounds_owner: self.bounds_owner,
             program_type,
@@ -2710,13 +2715,13 @@ impl PointerValue {
     /// own spelling: it names the same bytes either way, and the access
     /// check resolves the address against it as it resolves a held range.
     pub(crate) fn replace_pointer(&mut self, pointer: Address) {
-        self.pointer = pointer;
+        self.address = pointer;
     }
 
     /// The same value at another address in the same subobject: the result
     /// of pointer arithmetic, which keeps the type, qualifiers and bounds.
     pub(crate) fn with_address(mut self, pointer: Address) -> Self {
-        self.pointer = pointer;
+        self.address = pointer;
         self
     }
 
@@ -2809,7 +2814,7 @@ impl PointerValue {
     /// variables, not where it only respells the address.
     pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Address) -> Address) -> Self {
         let mut result = self.clone();
-        result.pointer = map(&self.pointer);
+        result.address = map(&self.address);
         let provenance = map(&self.provenance);
         if provenance != *self.provenance {
             result.provenance = Arc::new(provenance);
@@ -2828,7 +2833,7 @@ impl PointerValue {
         &self,
         mut map: impl FnMut(&Address) -> Option<Address>,
     ) -> Option<Self> {
-        let pointer = map(&self.pointer)?;
+        let pointer = map(&self.address)?;
         let provenance = map(&self.provenance)?;
         let bounds_owner = match self.bounds_owner() {
             Some(origin) => Some(Arc::new(map(origin)?)),
@@ -2859,19 +2864,19 @@ impl PointerValue {
 
     /// Every address the value mentions, for variable collection.
     pub(crate) fn pointers(&self) -> impl Iterator<Item = &Address> {
-        std::iter::once(&self.pointer)
+        std::iter::once(&self.address)
             .chain(std::iter::once(self.provenance.as_ref()))
             .chain(self.bounds_owner())
             .chain(self.bounds().map(|bounds| &bounds.start))
     }
 
     pub(crate) fn is_null(&self) -> bool {
-        self.pointer.base == AddressBase::Concrete("null".to_string())
-            && self.pointer.offset == AddressOffset::Constant(0)
+        self.address.base == AddressBase::Concrete("null".to_string())
+            && self.address.offset == AddressOffset::Constant(0)
     }
 }
 
-impl PointerValue {
+impl Pointer {
     /// Everything that is the value's identity: the address, the type it is
     /// viewed through, whether the pointee is volatile, and the subobject it
     /// designates, plus its opaque local-reference custody. A lease key is a
@@ -2891,7 +2896,7 @@ impl PointerValue {
         Option<&SubobjectBounds>,
     ) {
         (
-            &self.pointer,
+            &self.address,
             &self.provenance,
             &self.program_type,
             self.pointee_volatile(),
@@ -2906,37 +2911,37 @@ impl PointerValue {
     }
 }
 
-impl PartialEq for PointerValue {
+impl PartialEq for Pointer {
     fn eq(&self, other: &Self) -> bool {
         self.identity() == other.identity()
     }
 }
 
-impl Eq for PointerValue {}
+impl Eq for Pointer {}
 
-impl std::hash::Hash for PointerValue {
+impl std::hash::Hash for Pointer {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.identity().hash(state);
     }
 }
 
-impl PartialOrd for PointerValue {
+impl PartialOrd for Pointer {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for PointerValue {
+impl Ord for Pointer {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.identity().cmp(&other.identity())
     }
 }
 
-impl std::ops::Deref for PointerValue {
+impl std::ops::Deref for Pointer {
     type Target = Address;
 
     fn deref(&self) -> &Self::Target {
-        &self.pointer
+        &self.address
     }
 }
 
@@ -3493,7 +3498,7 @@ pub(in crate::kernel) enum PointerIntegerKind {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct PointerIntegerValue {
     pub(in crate::kernel) numeric: Box<ProgramValue>,
-    pub(in crate::kernel) pointer: Box<PointerValue>,
+    pub(in crate::kernel) pointer: Box<Pointer>,
     pub(in crate::kernel) kind: PointerIntegerKind,
 }
 
@@ -3519,7 +3524,7 @@ pub enum ProgramValue {
     Float32(MachineTerm),
     /// IEEE-754 binary64 payload represented in the shared checked term arena.
     Float64(MachineTerm),
-    Pointer(PointerValue),
+    Pointer(Pointer),
     /// A value of an abstract type parameter: the spec value of that rigid
     /// type it is.
     Parameter(Box<AlgebraicTerm>),
@@ -4817,7 +4822,7 @@ pub enum AlgebraicTermNode {
     /// `pointer`, a generic struct's field: the algebraic counterpart of a
     /// [`MachineTerm::MemoryLoad`].
     MemoryLoad {
-        memory: SharedMemory,
+        point: ProgramPoint,
         pointer: Box<Address>,
     },
 }
@@ -4826,12 +4831,8 @@ impl AlgebraicTermNode {
     /// The scalar load term at the same memory and address as a
     /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
     /// address as it reaches a scalar load's.
-    pub(crate) fn memory_load_carrier(memory: &SharedMemory, pointer: &Address) -> MachineTerm {
-        MachineTerm::MemoryLoad(
-            ProgramPoint::at(memory),
-            Box::new(pointer.clone()),
-            LoadKind::Bits64,
-        )
+    pub(crate) fn memory_load_carrier(point: &ProgramPoint, pointer: &Address) -> MachineTerm {
+        MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
     }
 
     /// The [`AlgebraicTermNode::MemoryLoad`] whose carrier a rewrite of
@@ -4839,9 +4840,9 @@ impl AlgebraicTermNode {
     /// address. `None` when the rewrite replaced the load.
     pub(crate) fn memory_load_from_carrier(carrier: &ProgramValue) -> Option<Self> {
         match carrier {
-            ProgramValue::UInt64(MachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64)) => {
+            ProgramValue::UInt64(MachineTerm::MemoryLoad(point, pointer, LoadKind::Bits64)) => {
                 Some(Self::MemoryLoad {
-                    memory: memory.shared_memory().clone(),
+                    point: point.clone(),
                     pointer: pointer.clone(),
                 })
             }
@@ -4866,7 +4867,7 @@ impl AlgebraicTermNode {
         ProgramValue::Parameter(Box::new(AlgebraicTerm {
             algebraic_type: parameter.algebraic_type(),
             node: Self::MemoryLoad {
-                memory,
+                point: crate::kernel::ProgramPoint::at(&memory),
                 pointer: Box::new(pointer),
             },
         }))
@@ -4878,7 +4879,8 @@ impl AlgebraicTermNode {
         pointer: &Address,
     ) -> AlgebraicValue {
         AlgebraicValue::Program(ProgramValue::UInt64(Self::memory_load_carrier(
-            memory, pointer,
+            &crate::kernel::ProgramPoint::at(memory),
+            pointer,
         )))
     }
 }
@@ -5004,7 +5006,10 @@ impl AlgebraicTerm {
                             });
                         }
                     }
-                    AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+                    AlgebraicTermNode::MemoryLoad {
+                        point: memory,
+                        pointer,
+                    } => {
                         visit(MachineOperandView::Legacy(
                             &AlgebraicTermNode::memory_load_carrier(memory, pointer),
                         ));
@@ -5031,7 +5036,7 @@ impl AlgebraicTerm {
                     ProgramValue::Parameter(term) => pending.push(Node::Algebraic(term)),
                     ProgramValue::Void => {}
                     ProgramValue::Bool(v) => visit(MachineOperandView::Legacy(v)),
-                    ProgramValue::Pointer(v) => pending.push(Node::Offset(&v.pointer().offset)),
+                    ProgramValue::Pointer(v) => pending.push(Node::Offset(&v.address().offset)),
                     ProgramValue::Int8(v) => visit(MachineOperandView::Legacy(v)),
                     ProgramValue::Int16(v)
                     | ProgramValue::UInt16(v)
@@ -5526,7 +5531,7 @@ pub struct SequenceTerm {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SequenceTermNode {
-    Literal(std::sync::Arc<[ProgramValue]>),
+    Literal(SequenceValues),
     Concat(SequenceTerm, SequenceTerm),
 }
 
@@ -6512,11 +6517,15 @@ impl AggregateInitializer {
     }
 }
 
+/// Sorted record-relative offsets and masks of the bytes occupied by named
+/// C bit-fields. A padding-only byte has no entry.
+pub(crate) type BitFieldBytes = Arc<[(u32, std::num::NonZeroU8)]>;
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct AggregateLayout {
     /// The declared bits copied by an assignment of a local C bit-field
     /// record. Padding is outside the assigned value.
-    pub(super) bit_field_bits: Option<std::num::NonZeroU32>,
+    pub(super) bit_field_bytes: Option<BitFieldBytes>,
     pub(super) size_bytes: u32,
     pub(super) alignment_bytes: u32,
     pub(super) fields: Vec<AggregateField>,
@@ -6536,19 +6545,13 @@ impl AggregateLayout {
             fields,
             unions: Vec::new(),
             value_type: None,
-            bit_field_bits: None,
+            bit_field_bytes: None,
         }
     }
 
-    pub(crate) fn bit_field_record(
-        size_bytes: u32,
-        alignment_bytes: u32,
-        field_bits: std::num::NonZeroU32,
-    ) -> Self {
-        Self {
-            bit_field_bits: Some(field_bits),
-            ..Self::new(size_bytes, alignment_bytes, Vec::new())
-        }
+    pub(crate) fn with_bit_field_bytes(mut self, field_bytes: Option<BitFieldBytes>) -> Self {
+        self.bit_field_bytes = field_bytes;
+        self
     }
 
     /// The layout of an object that holds one value of `value_type`, a type
@@ -6580,7 +6583,7 @@ impl AggregateLayout {
             fields,
             unions,
             value_type: None,
-            bit_field_bits: None,
+            bit_field_bytes: None,
         }
     }
 
@@ -11757,7 +11760,7 @@ pub struct ResourceInstance {
     pub(super) name: String,
     pub(super) arguments: ResourceArguments,
     pub(super) schema: ResourceFieldSchema,
-    pub(super) fields: ResourceArguments,
+    pub(super) fields: ResourceFieldValues,
     pub(super) resource_arguments: Arc<[super::ResourceReference]>,
 }
 
@@ -11767,7 +11770,7 @@ impl ResourceInstance {
         name: String,
         arguments: ResourceArguments,
         schema: ResourceFieldSchema,
-        fields: ResourceArguments,
+        fields: ResourceFieldValues,
     ) -> Option<Self> {
         Self::new_with_resource_arguments(identity, name, arguments, schema, fields, Vec::new())
     }
@@ -11779,26 +11782,14 @@ impl ResourceInstance {
         name: String,
         arguments: ResourceArguments,
         schema: ResourceFieldSchema,
-        fields: ResourceArguments,
+        fields: ResourceFieldValues,
         resource_arguments: Vec<super::ResourceReference>,
     ) -> Option<Self> {
         if schema.is_fieldless() || schema.fields().len() != fields.len() {
             return None;
         }
-        for ((_, ty), value) in schema.fields().iter().zip(fields.iter()) {
-            let valid = match (ty, value) {
-                (ResourceFieldType::Integer, AlgebraicValue::Integer(_)) => true,
-                (ResourceFieldType::Program(ty), AlgebraicValue::Program(value)) => {
-                    *ty == value.program_type()
-                }
-                (ResourceFieldType::Algebraic(ty), AlgebraicValue::Algebraic(value)) => {
-                    *ty == value.algebraic_type && value.is_well_formed()
-                }
-                _ => false,
-            };
-            if !valid {
-                return None;
-            }
+        if !fields.matches_schema(&schema) {
+            return None;
         }
         Some(Self {
             identity,
@@ -11829,7 +11820,7 @@ impl ResourceInstance {
     pub fn arguments(&self) -> &[AlgebraicValue] {
         &self.arguments
     }
-    pub fn fields(&self) -> &[AlgebraicValue] {
+    pub fn fields(&self) -> &ResourceFieldValues {
         &self.fields
     }
     pub fn schema(&self) -> &ResourceFieldSchema {
@@ -12705,9 +12696,9 @@ impl ResourceSpec {
     /// Current arguments remain state-dependent; source spellings remain intact.
     pub(crate) fn with_captured_entry_parameters(
         mut self,
-        entry_values: &BTreeMap<String, ProgramValue>,
+        entry_values: &impl NamedBindingMap<ProgramValue>,
     ) -> Self {
-        fn capture(term: &mut ResourceTerm, entry_values: &BTreeMap<String, ProgramValue>) {
+        fn capture(term: &mut ResourceTerm, entry_values: &impl NamedBindingMap<ProgramValue>) {
             match term {
                 ResourceTerm::Instance { resource, .. } => capture(resource, entry_values),
                 ResourceTerm::Composite {
@@ -14043,7 +14034,7 @@ pub struct FunctionContractRefinementContext {
     /// not needed to lower the symbolic relation.
     pub(super) function_interface: FunctionContractInterface,
     pub(super) function_name: String,
-    pub(super) pointer: PointerValue,
+    pub(super) pointer: Pointer,
     pub(super) source_contract: Option<FunctionContract>,
     /// The values a fact fixed for the implementation side's own value
     /// parameters, when that side is a named contract found through one.

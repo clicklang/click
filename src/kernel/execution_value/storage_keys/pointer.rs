@@ -10,7 +10,7 @@ struct PointerData {
     identity: PointerIdentity,
     fingerprint: u64,
 }
-// Field order is PointerValue::identity, not address equality or producer identity.
+// Field order is Pointer::identity, not address equality or producer identity.
 #[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 struct PointerIdentity {
     address: AddressKey,
@@ -50,9 +50,9 @@ impl PointerStorageKey {
             fingerprint: hash.finish(),
         }))
     }
-    pub(in crate::kernel) fn native(value: &PointerValue) -> Self {
+    pub(in crate::kernel) fn native(value: &Pointer) -> Self {
         Self::new(PointerIdentity {
-            address: AddressKey::native(value.pointer()),
+            address: AddressKey::native(value.address()),
             provenance: AddressKey::native(value.provenance()),
             program_type: value.program_type(),
             volatile: value.pointee_volatile(),

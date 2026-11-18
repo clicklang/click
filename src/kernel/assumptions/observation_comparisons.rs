@@ -956,9 +956,9 @@ impl PureFactContext {
 #[cfg(test)]
 mod resource_relation_tests {
     use super::*;
-    use crate::kernel::{Address, LoadKind, PointerValue, ProgramType, Variable};
+    use crate::kernel::{Address, LoadKind, Pointer, ProgramType, Variable};
 
-    fn relation(term: MachineTerm, pointer: PointerValue, separate: bool) -> Proposition {
+    fn relation(term: MachineTerm, pointer: Pointer, separate: bool) -> Proposition {
         let left = Resource::Composite {
             name: "storage".into(),
             arguments: vec![AlgebraicValue::Program(ProgramValue::Pointer(
@@ -1006,7 +1006,7 @@ mod resource_relation_tests {
             LoadKind::Int32,
             4,
         );
-        let pointer = PointerValue::new(address.clone(), ProgramType::Int32Pointer);
+        let pointer = Pointer::new(address.clone(), ProgramType::Int32Pointer);
         let read = |memory, address, kind| MachineTerm::MemoryLoad(memory, Box::new(address), kind);
         for separate in [false, true] {
             let named = relation(MachineTerm::Variable(name), pointer.clone(), separate);
@@ -1045,8 +1045,7 @@ mod resource_relation_tests {
                     different_provenance,
                     separate
                 )));
-                let different_pointer =
-                    PointerValue::new(address.clone(), ProgramType::Int8Pointer);
+                let different_pointer = Pointer::new(address.clone(), ProgramType::Int8Pointer);
                 assert!(!facts.proves_exact(&relation(
                     MachineTerm::Variable(name),
                     different_pointer,

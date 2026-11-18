@@ -922,6 +922,9 @@ struct LoanLedgerData {
     active_nonlocal_indexed_ranges: usize,
     active_memory_loans: usize,
     active_footprint: active_footprint::ActiveFootprint,
+    /// Whole automatic objects pinned by live backing, with one diagnostic
+    /// range per loan and object. Bounds cannot release the object's lifetime.
+    automatic_storage_loans: PersistentMap<AddressBase, PersistentMap<LoanId, MemoryRange>>,
     /// Exact coordinate origins, including symbolic pointers. Constant byte
     /// intervals support cache retention without searching the symbolic loans.
     cache_memory_index: CacheProtectionIndex,
@@ -1007,12 +1010,46 @@ fn update_cache_protection(
     }
 }
 
+fn automatic_loan_blocks(range: &MemoryRange) -> impl Iterator<Item = &AddressBase> {
+    let base = &range.base().base;
+    let origin = &range.access_provenance().0.base;
+    std::iter::once(base)
+        .chain((origin != base).then_some(origin))
+        .filter(|block| block.is_local_block() || matches!(block, AddressBase::Temporary(_)))
+}
+
+fn update_automatic_storage_loans(
+    index: &mut PersistentMap<AddressBase, PersistentMap<LoanId, MemoryRange>>,
+    range: &MemoryRange,
+    loan: LoanId,
+    insert: bool,
+) {
+    let (start, end) = range.bound_terms();
+    if start == end || memory_range_is_empty(range) {
+        return;
+    }
+    for block in automatic_loan_blocks(range) {
+        let bucket = index.get(block).cloned().unwrap_or_default();
+        let bucket = if insert {
+            bucket.with_inserted(loan, range.clone())
+        } else {
+            bucket.without_key(&loan)
+        };
+        *index = if bucket.is_empty() {
+            index.without_key(block)
+        } else {
+            index.with_inserted(block.clone(), bucket)
+        };
+    }
+}
+
 fn update_indexed_memory_range(
     data: &mut LoanLedgerData,
     range: &MemoryRange,
     loan: LoanId,
     insert: bool,
 ) -> Result<(), LoanRefusal> {
+    update_automatic_storage_loans(&mut data.automatic_storage_loans, range, loan, insert);
     update_cache_protection(data, range, loan, insert);
     if ledger_interval_nodes(range).is_none() {
         return Ok(());
@@ -4707,6 +4744,7 @@ impl LoanLedger {
                     active_nonlocal_indexed_ranges: 0,
                     active_memory_loans: 0,
                     active_footprint: Default::default(),
+                    automatic_storage_loans: PersistentMap::default(),
                     cache_memory_index: PersistentMap::default(),
                     cache_memory_subtree: PersistentMap::default(),
                     unindexed_memory: PersistentMap::default(),
@@ -6196,6 +6234,40 @@ impl LoanLedger {
         })
     }
 
+    /// Whole-object retirement uses the backing identities retained when
+    /// loans were opened. Select one live loan directly for the refusal.
+    pub(super) fn automatic_storage_retirement_refusal(
+        &self,
+        block: &AddressBase,
+        size: &MachineTerm,
+    ) -> Option<LoanRefusalDiagnostic> {
+        #[cfg(test)]
+        let _fast =
+            crate::kernel::search::FastOperationScope::enter("automatic storage retirement");
+        crate::instrumentation::record_deterministic_work(1);
+        let data = &self.storage.data;
+        let (loan, protected) = data.automatic_storage_loans.get(block)?.iter().next()?;
+        let record = data.loans.get(loan).expect("indexed live loan");
+        let attempted = MemoryRange::new_with_element_width(
+            Address {
+                base: block.clone(),
+                offset: super::AddressOffset::Constant(0),
+            },
+            0u32.into(),
+            size.clone(),
+            1,
+        );
+        Some(LoanRefusal::ActiveDependency.diagnostic_with_subject(
+            LoanRefusalOperation::MemoryAccess,
+            LoanRefusalSubject::for_memory_conflict(
+                attempted,
+                ResourceFact::view_memory(protected.clone()),
+                *loan,
+                origin_kind(&record.origin),
+            ),
+        ))
+    }
+
     /// Explain a refused access in the D13 shape: the loan that refused it,
     /// where that loan came from, the range it protects, and the range the
     /// operation attempted. Only the refusal path pays for the explanation,
@@ -7286,6 +7358,7 @@ impl LoanLedger {
         let data = &self.storage.data;
         let mut expected_cache_index = CacheProtectionIndex::default();
         let mut expected_cache_subtree = CacheProtectionIndex::default();
+        let mut expected_automatic_storage = PersistentMap::default();
         for (loan, record) in data.loans.iter() {
             if !data
                 .scopes
@@ -7295,6 +7368,7 @@ impl LoanLedger {
                 continue;
             }
             for range in &record.memory_backing {
+                update_automatic_storage_loans(&mut expected_automatic_storage, range, *loan, true);
                 if let Some((origin, nodes)) = cache_protection_nodes(range) {
                     for node in nodes {
                         for ancestor in memory_interval_ancestors(&node) {
@@ -7315,9 +7389,10 @@ impl LoanLedger {
                 }
             }
         }
-        if !expected_cache_index
-            .iter()
-            .eq(data.cache_memory_index.iter())
+        if expected_automatic_storage != data.automatic_storage_loans
+            || !expected_cache_index
+                .iter()
+                .eq(data.cache_memory_index.iter())
             || !expected_cache_subtree
                 .iter()
                 .eq(data.cache_memory_subtree.iter())

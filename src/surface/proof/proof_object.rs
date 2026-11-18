@@ -1562,7 +1562,7 @@ impl Proof<'_> {
                     Some(*variable)
                 }
                 ProgramValue::Pointer(pointer) => {
-                    match (&pointer.pointer().base, &pointer.pointer().offset) {
+                    match (&pointer.address().base, &pointer.address().offset) {
                         (
                             crate::kernel::AddressBase::Symbolic(variable),
                             AddressOffset::Constant(0),
@@ -1640,7 +1640,7 @@ fn diagnostic_value_variable(value: &ProgramValue) -> Option<Variable> {
             },
             _ => None,
         },
-        ProgramValue::Pointer(pointer) => match &pointer.pointer().offset {
+        ProgramValue::Pointer(pointer) => match &pointer.address().offset {
             AddressOffset::Variable(variable) => Some(*variable),
             // C pointers to sized elements keep their direct symbolic offset
             // in element units. An added displacement is composite and does
@@ -1677,7 +1677,7 @@ pub(in crate::surface::proof) fn register_recorded_state_names(
     // Each exited loop's pass count, `loop(i).iterations`.
     for (name, iterations) in retained_states.loop_iteration_bindings() {
         if let crate::kernel::IntegerTerm::Variable(variable) = iterations {
-            labels.integer_source_name(*variable, name);
+            labels.integer_source_name(variable, name);
         }
     }
     // Each recorded call's result, `statement(0).call(f, 0).result`.
@@ -1700,7 +1700,7 @@ fn register_call_result_name(
             labels.fallback_read_name(read, spelling);
         }
         ProgramValue::Pointer(pointer) => {
-            labels.fallback_pointer_name(pointer.pointer(), spelling.clone());
+            labels.fallback_pointer_name(pointer.address(), spelling.clone());
             labels.fallback_value_name(spelling, value.clone());
         }
         _ => {}
@@ -1810,7 +1810,7 @@ fn register_state_names(
                 // An address no structural spelling names, a heap
                 // allocation, is the pointer local that held it.
                 ProgramValue::Pointer(pointer) => {
-                    labels.fallback_pointer_name(pointer.pointer(), format!("at({point}, {name})"));
+                    labels.fallback_pointer_name(pointer.address(), format!("at({point}, {name})"));
                 }
                 _ => {}
             }
@@ -1835,7 +1835,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         // user-chosen name wins over the synthesized C assignment target.
         for (name, value) in proof_local_program_values(&self.0) {
             if let ProgramValue::Pointer(pointer) = value {
-                labels.immutable_pointer_name(pointer.pointer(), &name.to_string());
+                labels.immutable_pointer_name(pointer.address(), &name.to_string());
             }
             if let Some(variable) = diagnostic_value_variable(value) {
                 labels.immutable_source_name(variable, name.to_string());
@@ -3406,6 +3406,13 @@ impl<'a> Proof<'a> {
     ) -> Result<Self, ClickError> {
         let kernel = self.lower_surface_goal(goal, "source contract clause")?;
         self.focus_fixed_state_goal_for_cell(kernel, Some(goal.clone()), None, Some(key))
+    }
+
+    pub(in crate::surface::proof) fn ends_in_empty_normalize_using(&self) -> bool {
+        matches!(
+            self.node.step.as_deref(),
+            Some(ProofStep::NormalizeUsing(premises)) if premises.is_empty()
+        )
     }
 
     pub(super) fn is_complete(&self) -> bool {

@@ -1847,7 +1847,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(result.pointer().clone(), argument),
+            ConditionTerm::pointer_equal(result.address().clone(), argument),
             true,
         )
     ));

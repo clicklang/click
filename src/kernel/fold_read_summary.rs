@@ -355,7 +355,7 @@ impl CheckedFoldReadSummary {
         };
         Some(FoldReadInterval {
             memory: memory.clone(),
-            base: pointer.pointer().clone(),
+            base: pointer.address().clone(),
             start: endpoint(self.start)?,
             end: endpoint(self.end)?,
             element_width: self.element_width,

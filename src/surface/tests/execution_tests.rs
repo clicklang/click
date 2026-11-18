@@ -1347,7 +1347,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
     else {
         panic!("fill3's input is a pointer");
     };
-    let base = argument.pointer().clone();
+    let base = argument.address().clone();
     let first = base.clone();
     let second = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(1));
     let third = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(2));

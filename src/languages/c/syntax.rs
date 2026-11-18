@@ -3323,7 +3323,7 @@ impl ImportedFunction {
             return None;
         }
         Some(crate::kernel::ProgramValue::Pointer(
-            crate::kernel::PointerValue::new(address.pointer, declared_type.to_kernel_type())
+            crate::kernel::Pointer::new(address.pointer, declared_type.to_kernel_type())
                 .with_pointee_constant(declared_pointee_constant)
                 .with_bounds(address.bounds),
         ))
@@ -19520,11 +19520,19 @@ impl Parser {
             );
         }
         self.expect(Token::RParen)?;
-        let layout = self.structs.get(name).ok_or_else(|| {
-            self.error_here(format!(
-                "`__builtin_offsetof` requires complete struct `{name}`"
-            ))
-        })?;
+        let layout = self
+            .structs
+            .get(name)
+            .or_else(|| {
+                self.bit_field_records
+                    .get(name)
+                    .map(|record| &record.storage)
+            })
+            .ok_or_else(|| {
+                self.error_here(format!(
+                    "`__builtin_offsetof` requires complete struct `{name}`"
+                ))
+            })?;
         let field = layout
             .fields
             .get(&member)

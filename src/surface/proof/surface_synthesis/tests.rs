@@ -5,7 +5,7 @@ use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 #[test]
 fn separation_names_loaded_pointer_fields_at_their_declared_type() {
-    use crate::kernel::{MemoryRange, PointerValue, Resource};
+    use crate::kernel::{MemoryRange, Pointer, Resource};
     for scalar in ["uint8", "uint16", "int32", "uint64"] {
         let _session = crate::kernel::VerificationSession::enter();
         let function = syntax::parse_function(&format!(
@@ -30,7 +30,7 @@ fn separation_names_loaded_pointer_fields_at_their_declared_type() {
             );
         let range = |pointer| {
             Resource::Memory(MemoryRange::from_pointer_value(
-                &PointerValue::new(pointer, ProgramType::UInt8Pointer),
+                &Pointer::new(pointer, ProgramType::UInt8Pointer),
                 MachineTerm::constant(0),
                 MachineTerm::constant(4),
                 1,
@@ -57,9 +57,9 @@ fn separation_names_loaded_pointer_fields_at_their_declared_type() {
 
 #[test]
 fn separate_round_trips_without_generating_span_obligations() {
-    use crate::kernel::{MemoryRange, PointerValue, Resource};
+    use crate::kernel::{MemoryRange, Pointer, Resource};
     for wide in [false, true] {
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(997001)),
             ProgramType::Int32Pointer,
         );
@@ -137,7 +137,7 @@ fn separate_round_trips_without_generating_span_obligations() {
         let (lowered, _, _, obligations) =
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                 written, &PureFactContext::new(),
-                ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+                ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
                 FixedStateFrame::new(&state, &state, None, &RecordedStates::default()),
                 SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
                 FixedStateLoweringOptions::default(),
@@ -168,7 +168,7 @@ fn relower_written_proposition_with_states(
     crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
         surface,
         &PureFactContext::new(),
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         FixedStateFrame::new(pre_state, state, None, recorded_states),
         SpecDefinitions::new(
             &PredicateEnvironment::new(&[]),
@@ -428,7 +428,7 @@ fn definedness_round_trips_at_a_distinct_point_with_equal_memory() {
     let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
         &spelled,
         &PureFactContext::new(),
-        ContractEnvironment::new(&BTreeMap::new(), &ClickArrayRefs::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &ClickArrayRefs::new()),
         FixedStateFrame::new(&current, &current, None, &points),
         SpecDefinitions::new(
             &PredicateEnvironment::new(&[]),
@@ -731,7 +731,7 @@ fn exact_external_zero_based_byte_range_round_trips_symbolic_end() {
     let requirement = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: match &arguments[0] {
-            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.pointer().clone(),
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
             _ => unreachable!(),
         },
         bytes: MachineTerm::add(MachineTerm::Variable(Variable(1)), MachineTerm::constant(1)),
@@ -766,7 +766,7 @@ fn exact_external_zero_based_byte_range_round_trips_symbolic_end() {
 fn exact_external_zero_based_byte_range_resolves_direct_variable_argument() {
     let (parameters, mut arguments, state) = external_byte_range_caller();
     let base = match &arguments[0] {
-        ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.pointer().clone(),
+        ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
         _ => unreachable!(),
     };
     arguments[0] = ProgramExpression::Variable("bytes".into());
@@ -801,7 +801,7 @@ fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
     let requirement = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: match &arguments[0] {
-            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.pointer().clone(),
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
             _ => unreachable!(),
         },
         bytes: MachineTerm::constant(4),
@@ -3769,7 +3769,7 @@ fn boolean_calls_conditionals_and_equalities_round_trip_in_both_polarities() {
                 synthesize_surface_proposition(&fact, ParameterBinding::default(), &state)
                     .expect("Bool fact spelling");
             let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
-                &surface, &PureFactContext::new(), ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+                &surface, &PureFactContext::new(), ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
                 FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
                 SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(file.click_function_definitions())),
                 FixedStateLoweringOptions::default(),
@@ -3794,7 +3794,7 @@ fn generic_call_spelling_reparses_to_the_same_concrete_and_nested_instance() {
             "x",
             ProgramValue::Int32(MachineTerm::Variable(Variable(99001))),
         );
-        let values = BTreeMap::from([(
+        let values = ProgramValueBindings::from([(
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(99001))),
         )]);
@@ -4017,7 +4017,7 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
         let file = parser::parse(&source).unwrap();
         let value = ProgramValue::Int32(MachineTerm::Variable(Variable(99002)));
         let state = ExecutionState::new().with_local("x", value.clone());
-        let values = BTreeMap::from([("x".to_string(), value)]);
+        let values = ProgramValueBindings::from([("x".to_string(), value)]);
         let lower = |proposition: &ClickProposition| {
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                 proposition, &PureFactContext::new(), ContractEnvironment::new(&values, &BTreeMap::new()),
@@ -4198,7 +4198,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
                 true,
             ),
             ProgramValue::Pointer(pointer) => Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(pointer.pointer().clone(), pointer.pointer().clone()),
+                ConditionTerm::pointer_equal(pointer.address().clone(), pointer.address().clone()),
                 true,
             ),
             _ => unreachable!(),
@@ -4377,7 +4377,7 @@ fn check_common_machine_call_formats(formats: &[(MachineIntegerType, &str)]) {
         let file = parser::parse(&declarations).unwrap();
         let variable = ProgramValue::Int32(MachineTerm::Variable(Variable(995900)));
         let state = ExecutionState::new().with_local("x", variable.clone());
-        let values = BTreeMap::from([("x".to_string(), variable)]);
+        let values = ProgramValueBindings::from([("x".to_string(), variable)]);
         let parse_expression = |text: &str, result_type: &str| {
             let parsed = parser::parse(&format!(
                 "{declarations} function probe(x: int32) -> {result_type} {{ {text} }}"
@@ -4578,7 +4578,7 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
             node: crate::kernel::SpecAlgebraicExpressionNode::Variable(Variable(991900)),
         },
     )]);
-    let values = BTreeMap::from([
+    let values = ProgramValueBindings::from([
         (
             "payload".to_string(),
             ProgramValue::Parameter(Box::new(scrutinee.clone())),
@@ -4652,18 +4652,18 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
 #[test]
 fn common_pointer_calls_round_trip_nested_source_calls() {
     use crate::kernel::{
-        AddressBase, KernelTerm, KernelTermImport, PointerValue, PureFunctionArgument,
+        AddressBase, KernelTerm, KernelTermImport, Pointer, PureFunctionArgument,
         SharedPointerValue,
     };
     let _session = crate::kernel::VerificationSession::enter();
     let declarations = "function select(p: int32*) -> int32* { p }";
     let file = parser::parse(declarations).unwrap();
-    let input = ProgramValue::Pointer(PointerValue::new(
+    let input = ProgramValue::Pointer(Pointer::new(
         Address::symbolic(Variable(1025900)),
         ProgramType::Int32Pointer,
     ));
     let state = ExecutionState::new().with_local("p", input.clone());
-    let values = BTreeMap::from([("p".to_string(), input)]);
+    let values = ProgramValueBindings::from([("p".to_string(), input)]);
     let lower = |expression: &SurfaceTerm| {
         let spec = crate::surface::lowering::elaborate_fixed_state_expression(
             expression,
@@ -4707,7 +4707,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
         };
         // Reconstruct the same nested common roots that the producer test
         // checks, keeping inner calls as children rather than exporting them.
-        fn common(pointer: &PointerValue) -> KernelTerm {
+        fn common(pointer: &Pointer) -> KernelTerm {
             let value = SharedPointerValue::import(pointer);
             let AddressBase::PureFunctionApplication(application) = &pointer.base else {
                 return KernelTerm::shared_pointer_value(value);
@@ -4724,7 +4724,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
                         pointer: ProgramValue::Pointer(pointer),
                         element_type,
                     } => Some(KernelTerm::shared_array_reference(
-                        crate::kernel::intern_memory_ref(memory),
+                        crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
                         common(pointer),
                         *element_type,
                     )),
@@ -4775,7 +4775,7 @@ fn string_literal_pointer_raising_names_the_exact_source_occurrence() {
 
 #[test]
 fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
-    use crate::kernel::{IntegerTerm, PointerValue};
+    use crate::kernel::{IntegerTerm, Pointer};
     for (format, name) in [
         (MachineIntegerType::Int64, "load_int64"),
         (MachineIntegerType::UInt64, "load_uint64"),
@@ -4787,10 +4787,7 @@ fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
             .with_memory(memory.clone())
             .with_local(
                 "p",
-                ProgramValue::Pointer(PointerValue::new(
-                    pointer.clone(),
-                    ProgramType::UInt64Pointer,
-                )),
+                ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::UInt64Pointer)),
             );
         let read = crate::kernel::canonical_form_of_load(
             crate::kernel::intern_memory(memory),
@@ -4862,8 +4859,8 @@ fn float_bit_literals_round_trip_exact_native_values() {
                 expression,
                 BTreeMap::new(),
                 &state,
-                BTreeMap::new(),
-                BTreeMap::new(),
+                ProgramValueBindings::new(),
+                ProgramValueBindings::new(),
                 None,
                 &RecordedStates::new(),
                 SpecDefinitions::new(
@@ -4976,8 +4973,8 @@ fn common_float_atoms_round_trip_printed_surface_bits() {
                 expression,
                 BTreeMap::new(),
                 &state,
-                values.clone(),
-                values.clone(),
+                values.clone().into(),
+                values.clone().into(),
                 None,
                 &RecordedStates::new(),
                 SpecDefinitions::new(
@@ -5064,8 +5061,8 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
                 parsed.click_function_definitions()[0].body().unwrap(),
                 BTreeMap::new(),
                 &state,
-                BTreeMap::new(),
-                BTreeMap::new(),
+                ProgramValueBindings::new(),
+                ProgramValueBindings::new(),
                 None,
                 &RecordedStates::new(),
                 SpecDefinitions::new(
@@ -5146,8 +5143,8 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
             expression,
             BTreeMap::new(),
             &state,
-            BTreeMap::new(),
-            BTreeMap::new(),
+            ProgramValueBindings::new(),
+            ProgramValueBindings::new(),
             None,
             &RecordedStates::new(),
             SpecDefinitions::new(
@@ -5273,8 +5270,8 @@ fn click_float_unary_negation_preserves_positive_zero_sign() {
             parsed.click_function_definitions()[0].body().unwrap(),
             BTreeMap::new(),
             &state,
-            BTreeMap::new(),
-            BTreeMap::new(),
+            ProgramValueBindings::new(),
+            ProgramValueBindings::new(),
             None,
             &RecordedStates::new(),
             SpecDefinitions::new(
@@ -5355,8 +5352,8 @@ fn click_float_unary_negation_preserves_bits_and_symbolic_operands() {
                 body,
                 BTreeMap::new(),
                 &state,
-                BTreeMap::new(),
-                BTreeMap::new(),
+                ProgramValueBindings::new(),
+                ProgramValueBindings::new(),
                 None,
                 &RecordedStates::new(),
                 SpecDefinitions::new(
@@ -5474,8 +5471,8 @@ fn common_float_arithmetic_round_trips_existing_operators() {
                 parsed.click_function_definitions()[0].body().unwrap(),
                 BTreeMap::new(),
                 &state,
-                BTreeMap::new(),
-                BTreeMap::new(),
+                ProgramValueBindings::new(),
+                ProgramValueBindings::new(),
                 None,
                 &RecordedStates::new(),
                 SpecDefinitions::new(
@@ -5593,8 +5590,8 @@ fn numeric_float_cast_spellings_match_native_conversions_and_round_trip() {
                     expression,
                     BTreeMap::new(),
                     &state,
-                    BTreeMap::new(),
-                    BTreeMap::new(),
+                    ProgramValueBindings::new(),
+                    ProgramValueBindings::new(),
                     None,
                     &RecordedStates::new(),
                     SpecDefinitions::new(
@@ -5645,8 +5642,8 @@ fn numeric_float_casts_read_historical_and_current_operands() {
         expression,
         BTreeMap::new(),
         &state,
-        BTreeMap::from([("x".into(), entry)]),
-        BTreeMap::from([("x".into(), current)]),
+        ProgramValueBindings::from([("x".into(), entry)]),
+        ProgramValueBindings::from([("x".into(), current)]),
         None,
         &RecordedStates::new(),
         SpecDefinitions::new(
@@ -5751,8 +5748,8 @@ fn common_float_conversions_round_trip_existing_casts() {
                     parsed.click_function_definitions()[0].body().unwrap(),
                     BTreeMap::new(),
                     &state,
-                    BTreeMap::new(),
-                    BTreeMap::new(),
+                    ProgramValueBindings::new(),
+                    ProgramValueBindings::new(),
                     None,
                     &RecordedStates::new(),
                     SpecDefinitions::new(
@@ -5832,8 +5829,8 @@ fn common_float_to_integer_conversions_round_trip_with_definedness() {
                     parsed.click_function_definitions()[0].body().unwrap(),
                     BTreeMap::new(),
                     &state,
-                    BTreeMap::new(),
-                    BTreeMap::new(),
+                    ProgramValueBindings::new(),
+                    ProgramValueBindings::new(),
                     None,
                     &RecordedStates::new(),
                     SpecDefinitions::new(
@@ -5920,8 +5917,8 @@ fn common_float_predicates_round_trip_existing_spelling() {
                 parsed.click_function_definitions()[0].body().unwrap(),
                 BTreeMap::new(),
                 &state,
-                BTreeMap::new(),
-                BTreeMap::new(),
+                ProgramValueBindings::new(),
+                ProgramValueBindings::new(),
                 None,
                 &RecordedStates::new(),
                 SpecDefinitions::new(
@@ -5984,8 +5981,8 @@ fn common_float_calls_round_trip_existing_function_syntax() {
                 .unwrap(),
             BTreeMap::new(),
             &state,
-            BTreeMap::new(),
-            BTreeMap::new(),
+            ProgramValueBindings::new(),
+            ProgramValueBindings::new(),
             None,
             &RecordedStates::new(),
             SpecDefinitions::new(
@@ -6060,8 +6057,8 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
             .unwrap(),
         BTreeMap::new(),
         &state,
-        BTreeMap::new(),
-        BTreeMap::new(),
+        ProgramValueBindings::new(),
+        ProgramValueBindings::new(),
         None,
         &RecordedStates::new(),
         SpecDefinitions::new(
@@ -6087,7 +6084,7 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
 #[test]
 fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = crate::kernel::PointerValue::new(
+    let pointer = crate::kernel::Pointer::new(
         Address::symbolic(Variable(1008590)),
         ProgramType::Int32Pointer,
     );
@@ -6315,7 +6312,9 @@ fn shared_algebraic_reads_and_variables_raise_without_tree_exports() {
     for node in [
         AlgebraicTermNode::Variable(variable),
         AlgebraicTermNode::MemoryLoad {
-            memory: crate::kernel::intern_memory_ref(state.memory()),
+            point: crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(
+                state.memory(),
+            )),
             pointer: Box::new(pointer.clone()),
         },
     ] {
@@ -6396,13 +6395,13 @@ fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
 
 #[test]
 fn shared_pointer_comparisons_preserve_native_spelling() {
-    use crate::kernel::{KernelTermImport, PointerValue};
+    use crate::kernel::{KernelTermImport, Pointer};
     let _session = crate::kernel::VerificationSession::enter();
-    let left = PointerValue::new(
+    let left = Pointer::new(
         Address::symbolic(Variable(999988)),
         ProgramType::Int32Pointer,
     );
-    let right = PointerValue::new(
+    let right = Pointer::new(
         Address::symbolic(Variable(999989)),
         ProgramType::Int32Pointer,
     );
@@ -6421,10 +6420,10 @@ fn shared_pointer_comparisons_preserve_native_spelling() {
     for native in [
         ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())),
         ConditionTerm::PointerEqual(
-            Box::new(left.pointer().clone()),
-            Box::new(right.pointer().clone()),
+            Box::new(left.address().clone()),
+            Box::new(right.address().clone()),
         ),
-        ConditionTerm::PointerEqual(Box::new(left.pointer().clone()), Box::new(Address::null())),
+        ConditionTerm::PointerEqual(Box::new(left.address().clone()), Box::new(Address::null())),
     ] {
         let expected = synthesize_surface_bool(&native, binding, &state, &names).unwrap();
         let root = KernelTermImport::default().condition(&native);
@@ -6458,7 +6457,7 @@ fn closed_machine_orders_round_trip_after_checked_rewrite() {
         for bound in [5, 100] {
             let _session = crate::kernel::VerificationSession::enter();
             let state = ExecutionState::new().with_local("x", value.clone());
-            let values = BTreeMap::from([("x".to_string(), value.clone())]);
+            let values = ProgramValueBindings::from([("x".to_string(), value.clone())]);
             let empty = BTreeMap::new();
             let lower = |surface: &ClickProposition| {
                 crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
@@ -6625,7 +6624,7 @@ fn machine_arithmetic_round_trips_after_checked_rewrite() {
                     _ => unreachable!(),
                 };
                 let state = ExecutionState::new().with_local("x", value.clone());
-                let values = BTreeMap::from([("x".to_string(), value)]);
+                let values = ProgramValueBindings::from([("x".to_string(), value)]);
                 let empty = BTreeMap::new();
                 let lower = |surface: &ClickProposition| {
                     crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
@@ -6756,7 +6755,7 @@ fn narrow_comparisons_round_trip_after_checked_rewrite() {
                     let _session = crate::kernel::VerificationSession::enter();
                     let x = source.value_from_term(MachineTerm::Variable(Variable(999702)));
                     let state = ExecutionState::new().with_local("x", x.clone());
-                    let values = BTreeMap::from([("x".to_string(), x)]);
+                    let values = ProgramValueBindings::from([("x".to_string(), x)]);
                     let empty = BTreeMap::new();
                     let lower = |surface: &ClickProposition| {
                         crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
@@ -7075,66 +7074,95 @@ fn check_conditional_round_trip_with_arm(
     equality: &str,
     then_value: &str,
 ) {
-    use crate::kernel::proof::PureFactStore;
-    let _session = crate::kernel::VerificationSession::enter();
-    let state = ExecutionState::new()
-        .with_local(
-            "x",
-            format.value_from_term(MachineTerm::Variable(Variable(999708))),
-        )
-        .with_local(
-            "y",
-            format.value_from_term(MachineTerm::Variable(Variable(999709))),
-        )
-        .with_local(
-            "z",
-            format.value_from_term(MachineTerm::Variable(Variable(999710))),
-        )
-        .with_local(
-            "flag",
-            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999711))),
-        );
-    let parse = |text: &str| {
+    let fixture = ConditionalRoundTrip::new(format, spelling);
+    let equality = fixture.lower(equality);
+    let original = fixture.goal(guard, reverse, then_value);
+    fixture.check(&original, &equality, guard, reverse);
+}
+
+struct ConditionalRoundTrip<'a> {
+    spelling: &'a str,
+    state: ExecutionState,
+    _session: crate::kernel::VerificationSession,
+}
+
+impl<'a> ConditionalRoundTrip<'a> {
+    fn new(format: MachineIntegerType, spelling: &'a str) -> Self {
+        let session = crate::kernel::VerificationSession::enter();
+        let state = ExecutionState::new()
+            .with_local(
+                "x",
+                format.value_from_term(MachineTerm::Variable(Variable(999708))),
+            )
+            .with_local(
+                "y",
+                format.value_from_term(MachineTerm::Variable(Variable(999709))),
+            )
+            .with_local(
+                "z",
+                format.value_from_term(MachineTerm::Variable(Variable(999710))),
+            )
+            .with_local(
+                "flag",
+                ProgramValue::of_bool(ConditionTerm::Variable(Variable(999711))),
+            );
+        Self {
+            spelling,
+            state,
+            _session: session,
+        }
+    }
+
+    fn lower(&self, text: &str) -> Proposition {
         let file = parser::parse(&format!(
             "theorem probe() {{ requires {text}; ensures true; }}"
         ))
         .unwrap();
-        let Requirement::Proposition(p) = &file.theorem_definitions()[0].requires()[0] else {
-            panic!("expected a proposition")
+        let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!("expected a proposition");
         };
-        p.clone()
-    };
-    let equality = relower_written_proposition(&parse(equality), &state).unwrap();
-    let value = format!("to_integer(if {guard} {{ {then_value} }} else {{ 3 as {spelling} }})");
-    let goal = if reverse {
-        format!("100 <= {value}")
-    } else {
-        format!("{value} <= 100")
-    };
-    let original = relower_written_proposition(&parse(&goal), &state).unwrap();
-    let rewritten = PureFactStore::from_ordered(std::slice::from_ref(&equality))
-        .check_equality_rewrite(&original, &equality)
-        .unwrap()
-        .proposition()
-        .clone();
-    let Proposition::ConditionIs(condition, true) = rewritten else {
-        panic!("expected a comparison")
-    };
-    for truth in [true, false] {
-        let produced = Proposition::ConditionIs(condition.clone(), truth);
-        let raised =
-            synthesize_surface_proposition(&produced, ParameterBinding::default(), &state).unwrap();
-        assert_eq!(
-            relower_written_proposition(&raised, &state).unwrap(),
-            produced,
-            "Surface AST: {spelling}, guard={guard}, reverse={reverse}, truth={truth}"
-        );
-        let text = crate::surface::printing::source_click_proposition(&raised);
-        let restored = relower_written_proposition(&parse(&text), &state).unwrap();
-        assert_eq!(
-            restored, produced,
-            "{spelling}, guard={guard}, reverse={reverse}, truth={truth}: {text}"
-        );
+        relower_written_proposition(written, &self.state).unwrap()
+    }
+
+    fn goal(&self, guard: &str, reverse: bool, then_value: &str) -> Proposition {
+        let spelling = self.spelling;
+        let value = format!("to_integer(if {guard} {{ {then_value} }} else {{ 3 as {spelling} }})");
+        let goal = if reverse {
+            format!("100 <= {value}")
+        } else {
+            format!("{value} <= 100")
+        };
+        self.lower(&goal)
+    }
+
+    fn check(&self, original: &Proposition, equality: &Proposition, guard: &str, reverse: bool) {
+        use crate::kernel::proof::PureFactStore;
+        let spelling = self.spelling;
+        let rewritten = PureFactStore::from_ordered(std::slice::from_ref(equality))
+            .check_equality_rewrite(original, equality)
+            .unwrap()
+            .proposition()
+            .clone();
+        let Proposition::ConditionIs(condition, true) = rewritten else {
+            panic!("expected a comparison");
+        };
+        for truth in [true, false] {
+            let produced = Proposition::ConditionIs(condition.clone(), truth);
+            let raised =
+                synthesize_surface_proposition(&produced, ParameterBinding::default(), &self.state)
+                    .unwrap();
+            assert_eq!(
+                relower_written_proposition(&raised, &self.state).unwrap(),
+                produced,
+                "Surface AST: {spelling}, guard={guard}, reverse={reverse}, truth={truth}, equality={equality:?}"
+            );
+            let text = crate::surface::printing::source_click_proposition(&raised);
+            assert_eq!(
+                self.lower(&text),
+                produced,
+                "{spelling}, guard={guard}, reverse={reverse}, truth={truth}, equality={equality:?}: {text}"
+            );
+        }
     }
 }
 
@@ -7483,16 +7511,19 @@ fn bitwise_guard_conditionals_round_trip_after_rewrite() {
         (T::Int64, "int64"),
         (T::UInt64, "uint64"),
     ] {
-        for operand in bitwise_round_trip_operands(spelling) {
-            let equality = format!("x == ({operand})");
-            for guard in [
-                "x < y", "x <= y", "x > y", "x >= y", "x == y", "x != y", "y < x", "y <= x",
-                "y > x", "y >= x", "y == x", "y != x",
-            ] {
-                for reverse in [false, true] {
-                    check_conditional_round_trip_with_arm(
-                        format, spelling, guard, reverse, &equality, "z",
-                    );
+        // The source goal depends on the guard and comparison direction,
+        // while the equality depends only on the bitwise operand.
+        let fixture = ConditionalRoundTrip::new(format, spelling);
+        let equalities = bitwise_round_trip_operands(spelling)
+            .map(|operand| fixture.lower(&format!("x == ({operand})")));
+        for guard in [
+            "x < y", "x <= y", "x > y", "x >= y", "x == y", "x != y", "y < x", "y <= x", "y > x",
+            "y >= x", "y == x", "y != x",
+        ] {
+            for reverse in [false, true] {
+                let original = fixture.goal(guard, reverse, "z");
+                for equality in &equalities {
+                    fixture.check(&original, equality, guard, reverse);
                 }
             }
         }
@@ -7717,10 +7748,68 @@ fn fixed_unsigned_left_shifts_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+fn wrapping_add_subtract_in_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling, boundary) in [
+        (T::UInt32, "uint32", u64::from(u32::MAX)),
+        (T::UInt64, "uint64", u64::MAX),
+    ] {
+        for (op, value) in ["+", "-"]
+            .into_iter()
+            .flat_map(|op| [1, 7, boundary].map(|value| (op, value)))
+        {
+            let equality = format!("x == (z {op} ({value} as {spelling}))");
+            for reverse in [false, true] {
+                for guard in ["flag", "not flag"] {
+                    check_conditional_round_trip_using_equality(
+                        format, spelling, guard, reverse, &equality,
+                    );
+                }
+                for guard in ["x < y", "x == y", "y <= x", "y != x"] {
+                    check_conditional_round_trip_with_arm(
+                        format, spelling, guard, reverse, &equality, "z",
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn wrapping_product_in_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling, boundary) in [
+        (T::UInt32, "uint32", u64::from(u32::MAX)),
+        (T::UInt64, "uint64", u64::MAX),
+    ] {
+        for value in [3, 7, boundary] {
+            for product in [
+                format!("z * ({value} as {spelling})"),
+                format!("({value} as {spelling}) * z"),
+            ] {
+                let equality = format!("x == ({product})");
+                for reverse in [false, true] {
+                    for guard in ["flag", "not flag"] {
+                        check_conditional_round_trip_using_equality(
+                            format, spelling, guard, reverse, &equality,
+                        );
+                    }
+                    for guard in ["x < y", "x == y", "y <= x", "y != x"] {
+                        check_conditional_round_trip_with_arm(
+                            format, spelling, guard, reverse, &equality, "z",
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
-    use crate::kernel::PointerValue;
+    use crate::kernel::Pointer;
     let _session = crate::kernel::VerificationSession::enter();
-    let node = PointerValue::new(
+    let node = Pointer::new(
         Address::symbolic(Variable(999977)),
         ProgramType::Int32Pointer,
     );
@@ -7736,8 +7825,8 @@ fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
     let state = ExecutionState::new();
     let equality = Proposition::ConditionIs(
         ConditionTerm::PointerEqual(
-            Box::new(node.pointer().clone()),
-            Box::new(node.pointer().clone()),
+            Box::new(node.address().clone()),
+            Box::new(node.address().clone()),
         ),
         true,
     );
@@ -7804,8 +7893,8 @@ fn call_capture_names_the_selected_result_at_its_declared_type() {
             expression,
             BTreeMap::new(),
             &current,
-            BTreeMap::new(),
-            BTreeMap::new(),
+            ProgramValueBindings::new(),
+            ProgramValueBindings::new(),
             None,
             &points,
             SpecDefinitions::new(

@@ -130,14 +130,10 @@ impl<'a> FloatOperandView<'a> {
 impl KernelTermImport {
     fn float_atom(&mut self, format: KernelFloatType, term: &MachineTerm) -> KernelTerm {
         crate::instrumentation::record_deterministic_work(1);
-        if let MachineTerm::MemoryLoad(memory, pointer, kind) = term
+        if let MachineTerm::MemoryLoad(point, pointer, kind) = term
             && *kind == format.load_kind()
         {
-            return KernelTerm::float_read(
-                format,
-                memory.shared_memory().clone(),
-                SharedAddress::import(pointer),
-            );
+            return KernelTerm::float_read(format, point.clone(), SharedAddress::import(pointer));
         }
         let view = FloatOperandView::Native(format, term);
         let ty = KernelType::Program(format.program_type());

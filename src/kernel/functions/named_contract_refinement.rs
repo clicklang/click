@@ -369,7 +369,7 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
         contract,
         function_interface: function_interface.clone(),
         function_name: function_name.to_string(),
-        pointer: PointerValue::new(
+        pointer: Pointer::new(
             Address {
                 base: AddressBase::Function(function_name.to_string()),
                 offset: AddressOffset::Constant(0),
@@ -971,7 +971,7 @@ pub(in crate::kernel) fn fresh_resource_instance_fields(
     site: ModelFieldMintSite<'_>,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<ResourceArguments> {
+) -> ExecutionResult<ResourceFieldValues> {
     let mut fields = Vec::with_capacity(schema.fields().len());
     for (_, field_type) in schema.fields() {
         fields.push(resource_instance_field_value(
@@ -980,7 +980,7 @@ pub(in crate::kernel) fn fresh_resource_instance_fields(
         ));
     }
     register_minted_model_fields(schema, &site, &fields);
-    Ok(fields.into_iter().collect())
+    Ok(ResourceFieldValues::from_minted(fields))
 }
 
 /// The arbitrary model a join gives one named interface instance, drawn from
@@ -991,7 +991,7 @@ pub(crate) fn interface_join_instance_fields(
     schema: &ResourceFieldSchema,
     identity: Variable,
     next_kernel_variable: u64,
-) -> Option<(ResourceArguments, u64)> {
+) -> Option<(ResourceFieldValues, u64)> {
     let mut budget = ExecutionBudget::continuing_from(next_kernel_variable);
     let fields = arbitrary_resource_instance_fields(
         schema,
@@ -1009,7 +1009,7 @@ pub(in crate::kernel) fn arbitrary_resource_instance_fields(
     schema: &ResourceFieldSchema,
     site: ModelFieldMintSite<'_>,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<ResourceArguments> {
+) -> ExecutionResult<ResourceFieldValues> {
     let mut fields = Vec::with_capacity(schema.fields().len());
     for (_, field_type) in schema.fields() {
         fields.push(resource_instance_field_value(
@@ -1018,7 +1018,7 @@ pub(in crate::kernel) fn arbitrary_resource_instance_fields(
         ));
     }
     register_minted_model_fields(schema, &site, &fields);
-    Ok(fields.into_iter().collect())
+    Ok(ResourceFieldValues::from_minted(fields))
 }
 
 /// Installs the shared instances one side reads, under the identities that

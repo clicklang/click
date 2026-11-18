@@ -3,19 +3,10 @@
 Arithmetic search expands to ordinary proof steps, with the selected premises
 stated explicitly in `solve() using { ... }`.
 
-```text
-have defined((old(st.total) + at(region(2).exit, got))) by {
-    arithmetic_certificate rules {
-        premise 0: old(st.total) < 100 => old(st.total) < 100;
-        premise 1: at(region(2).exit, got) == 1 => at(region(2).exit, got) == 1;
-        int64_defined bounds [0, 1] => defined((old(st.total) + at(region(2).exit, got)));
-        conclusion 0;
-    }
-}
-```
-
-followed by the `have` and `rewrite` of the consequent, and the expansion
-re-verifies (`src/surface/tests/expansion_tests.rs`). The explicit step on
+The expansion proves `defined((old(st.total) + at(region(2).exit, got)))`
+from the two operand bounds, `old(st.total) < 100` and
+`at(region(2).exit, got) == 1`, then states and rewrites the consequent; the
+expansion re-verifies (`src/surface/tests/expansion_tests.rs`). The explicit step on
 its own, a widened operand, and the refusal when the bounds do not exclude
 overflow are in [`int64_defined_from_bounds.md`](int64_defined_from_bounds.md)
 and

@@ -160,19 +160,19 @@ pub enum KernelTermNode {
         destination: MachineIntegerType,
         operand: KernelTerm,
     },
-    /// Exact scalar read descriptor. The state is an opaque shared value;
+    /// Exact scalar read descriptor. The read is made at `point`;
     /// observation origins and access evidence are not part of this node.
     /// Native addresses remain an explicit input boundary during migration.
     MemoryLoad {
-        memory: SharedMemory,
+        point: ProgramPoint,
         address: SharedAddress,
         kind: LoadKind,
     },
     /// Complete formed pointer value with prepared address and metadata children.
-    PointerValue(SharedPointerValue),
-    /// A pointer argument with its selected memory state.
+    Pointer(SharedPointerValue),
+    /// A pointer argument with the point its array is read at.
     ArrayReference {
-        memory: SharedMemory,
+        point: ProgramPoint,
         pointer: KernelTerm,
         element_type: ProgramType,
     },
@@ -193,7 +193,7 @@ pub enum KernelTermNode {
     /// Access authority and read-over-write evidence remain outside the term.
     PointerRead {
         value: SharedPointerValue,
-        memory: SharedMemory,
+        point: ProgramPoint,
         address: SharedAddress,
     },
     /// Address observation retains its exact prepared address and object annotation.
@@ -343,12 +343,12 @@ impl PartialEq for NodeKey {
                 && match (&self.0.node, &other.0.node) {
                     (
                         KernelTermNode::MemoryLoad {
-                            memory: a,
+                            point: a,
                             address: p,
                             kind: k,
                         },
                         KernelTermNode::MemoryLoad {
-                            memory: b,
+                            point: b,
                             address: q,
                             kind: l,
                         },
@@ -356,20 +356,26 @@ impl PartialEq for NodeKey {
                         // The interner is process-wide; states belong to arenas.
                         // Comparing their contents across arenas would walk unrelated
                         // memory while registering one selected read.
-                        a.arena_id() == b.arena_id() && p == q && k == l
+                        a.shared_memory().arena_id() == b.shared_memory().arena_id()
+                            && p == q
+                            && k == l
                     }
                     (
                         KernelTermNode::PointerRead {
                             value: a,
-                            memory: m,
+                            point: m,
                             address: p,
                         },
                         KernelTermNode::PointerRead {
                             value: b,
-                            memory: n,
+                            point: n,
                             address: q,
                         },
-                    ) => m.arena_id() == n.arena_id() && a == b && p == q,
+                    ) => {
+                        m.shared_memory().arena_id() == n.shared_memory().arena_id()
+                            && a == b
+                            && p == q
+                    }
                     (a, b) => a == b,
                 })
     }
@@ -384,10 +390,10 @@ impl NodeKey {
     fn new(ty: KernelType, node: KernelTermNode) -> Self {
         let mut hash = crate::id_hash::FingerprintHasher::default();
         ty.hash(&mut hash);
-        if let KernelTermNode::MemoryLoad { memory, .. }
-        | KernelTermNode::PointerRead { memory, .. } = &node
+        if let KernelTermNode::MemoryLoad { point, .. }
+        | KernelTermNode::PointerRead { point, .. } = &node
         {
-            memory.arena_id().hash(&mut hash);
+            point.shared_memory().arena_id().hash(&mut hash);
         }
         node.hash(&mut hash);
         // A fresh legacy identity belongs to its producer. Read observations
@@ -412,7 +418,7 @@ impl NodeKey {
                 .arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
-            KernelTermNode::PointerValue(_)
+            KernelTermNode::Pointer(_)
             | KernelTermNode::PointerRead { .. }
             | KernelTermNode::PointerArithmetic { .. }
             | KernelTermNode::PointerCall { .. }
@@ -732,6 +738,41 @@ impl KernelTerm {
     ) -> crate::kernel::execution_value::storage_keys::ConditionStorageKey {
         crate::kernel::execution_value::storage_keys::condition_for_root(self)
     }
+    /// Selected native program-value output for stored argument/state readers.
+    /// Reuse the existing root-owned compatibility slot; cloning or retaining
+    /// the stored value never requests this reading.
+    pub(crate) fn program_value_native_compat(&self) -> Option<&ProgramValue> {
+        if let KernelTermNode::Legacy(legacy) = self.node()
+            && let PureFunctionArgument::Value(value) = legacy.value()
+        {
+            return Some(value);
+        }
+        if let Some(value) = self
+            .pointer_native()
+            .or_else(|| self.boolean_native())
+            .or_else(|| self.algebraic_native_value())
+            .or_else(|| self.float_native_value())
+        {
+            return Some(value);
+        }
+        if !matches!(self.ty(), KernelType::Program(_)) {
+            return None;
+        }
+        let PureFunctionArgument::Value(value) = self
+            .0
+            .argument_leaf
+            .get_or_init(|| {
+                Box::new(PureFunctionArgument::Value(
+                    crate::kernel::ExecutionValue::Shared(self.clone()).into_native(),
+                ))
+            })
+            .as_ref()
+        else {
+            unreachable!("program value output cache")
+        };
+        Some(value)
+    }
+
     #[cfg(test)]
     pub(crate) fn has_cached_native_argument(&self) -> bool {
         self.0.argument_leaf.get().is_some()
@@ -1116,11 +1157,21 @@ impl KernelTerm {
 #[derive(Default)]
 pub(crate) struct KernelTermImport {
     integers: HashMap<SharedIntegerTerm, KernelTerm>,
+    // Stored native field inputs preserve argument carrier forms. Numeric
+    // checking/producer imports keep their existing common-operand policy.
+    exact_field_inputs: bool,
     // Index producers can retain their supplied native tree unless import
     // expanded a registered read.
     pub(super) machine_input_requires_export: bool,
 }
 impl KernelTermImport {
+    pub(crate) fn for_exact_field_inputs() -> Self {
+        Self {
+            exact_field_inputs: true,
+            ..Self::default()
+        }
+    }
+
     /// Every argument family is explicit here. Native fallbacks preserve C
     /// carrier records and out-of-domain inputs; migrated expressions expose
     /// their children through the common nodes.
@@ -1175,7 +1226,7 @@ impl KernelTermImport {
                 element_type,
             } => match pointer {
                 ProgramValue::Pointer(pointer) => KernelTerm::shared_array_reference(
-                    intern_memory(memory.clone()),
+                    ProgramPoint::of_memory(memory),
                     KernelTerm::shared_pointer_value(SharedPointerValue::import(pointer)),
                     *element_type,
                 ),
@@ -1504,7 +1555,7 @@ mod tests {
 
     #[test]
     fn legacy_pointer_equality_does_not_discard_auxiliary_qualifiers() {
-        let pointer = PointerValue::new(Address::symbolic(Variable(76)), ProgramType::Int32Pointer);
+        let pointer = Pointer::new(Address::symbolic(Variable(76)), ProgramType::Int32Pointer);
         let constant = pointer.clone().with_pointee_constant(true);
         assert_eq!(
             pointer, constant,
@@ -1532,7 +1583,7 @@ mod tests {
     #[test]
     fn legacy_adapter_keeps_complete_pointers_and_scoped_integer_nodes() {
         let base = Address::symbolic(Variable(75));
-        let root = PointerValue::new(base.clone(), ProgramType::Int32Pointer);
+        let root = Pointer::new(base.clone(), ProgramType::Int32Pointer);
         let member = root.clone().with_bounds(Some(SubobjectBounds {
             start: base,
             width: 4u32.into(),
@@ -1685,7 +1736,7 @@ impl KernelTermExport {
             KernelTermNode::PointerRead { value, .. }
             | KernelTermNode::PointerArithmetic { value, .. }
             | KernelTermNode::PointerCall { value, .. }
-            | KernelTermNode::PointerValue(value) => {
+            | KernelTermNode::Pointer(value) => {
                 PureFunctionArgument::Value(ProgramValue::Pointer(value.export()?))
             }
             KernelTermNode::ArrayReference { .. } => {

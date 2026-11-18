@@ -1,4 +1,4 @@
-# Arithmetic certificates from negated Integer order
+# Arithmetic from negated Integer order
 
 ```click
 theorem negated_lower(n: Integer) {

@@ -5,6 +5,9 @@
 //! uses the shared kernel.
 
 use std::collections::{BTreeMap, BTreeSet};
+mod program_values;
+use crate::kernel::RetainedProgramValue;
+use program_values::ProgramValueBindings;
 use std::fmt;
 
 use crate::instrumentation::{self, TacticEvent, VerificationEvent};
@@ -2236,7 +2239,7 @@ pub struct ResourceInstanceBinding {
     identity: Variable,
     children: Vec<String>,
     schema: Option<crate::kernel::ResourceFieldSchema>,
-    fields: Option<crate::kernel::ResourceArguments>,
+    fields: Option<crate::kernel::ResourceFieldValues>,
     /// Present only on an explicit proof-side resource construction.
     fold_fields: Option<Vec<(String, ContractExpression)>>,
     /// Explicit child slot, surface name, and instance identity. Shared to
@@ -3452,13 +3455,13 @@ type ClickArrayRefs = BTreeMap<String, ClickArrayRef>;
 /// references, as `contract_environment_at_state` builds them.
 #[derive(Clone, Copy)]
 struct ContractEnvironment<'a> {
-    values: &'a BTreeMap<String, ProgramValue>,
+    values: &'a ProgramValueBindings,
     array_refs: &'a ClickArrayRefs,
     parameters: ParameterBinding<'a>,
 }
 
 impl<'a> ContractEnvironment<'a> {
-    fn new(values: &'a BTreeMap<String, ProgramValue>, array_refs: &'a ClickArrayRefs) -> Self {
+    fn new(values: &'a ProgramValueBindings, array_refs: &'a ClickArrayRefs) -> Self {
         Self {
             values,
             array_refs,
@@ -3521,18 +3524,22 @@ fn surface_parameter_binding(binding: &crate::kernel::BindingName) -> crate::ker
 }
 
 /// The identity of a symbolic model-field value, independent of its carrier.
-fn model_field_variable(value: &crate::kernel::AlgebraicValue) -> Option<crate::kernel::Variable> {
-    use crate::kernel::{AlgebraicTermNode, AlgebraicValue, MachineTerm};
-    match value {
-        AlgebraicValue::Algebraic(term) => match term.node {
+fn model_field_variable<'a>(
+    value: impl Into<crate::kernel::ResourceFieldValue<'a>>,
+) -> Option<crate::kernel::Variable> {
+    use crate::kernel::{AlgebraicTermNode, MachineTerm};
+    match value.into() {
+        crate::kernel::ResourceFieldValue::Algebraic(term) => match term.node {
             AlgebraicTermNode::Variable(variable) => Some(variable),
             _ => None,
         },
-        AlgebraicValue::Program(ProgramValue::Parameter(term)) => match term.node {
-            AlgebraicTermNode::Variable(variable) => Some(variable),
-            _ => None,
-        },
-        AlgebraicValue::Program(
+        crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(term)) => {
+            match term.node {
+                AlgebraicTermNode::Variable(variable) => Some(variable),
+                _ => None,
+            }
+        }
+        crate::kernel::ResourceFieldValue::Program(
             crate::kernel::integer_c_value!(MachineTerm::Variable(variable)),
         ) => Some(*variable),
         _ => None,
@@ -3565,7 +3572,7 @@ type ReadEventNames<T> =
 #[derive(Clone, Default)]
 struct RecordedHistoryMark(Option<std::sync::Arc<RecordedStateChange>>);
 
-type RecordedCallResults = crate::persistent::PersistentMap<usize, ProgramValue>;
+type RecordedCallResults = crate::persistent::PersistentMap<usize, RetainedProgramValue>;
 
 /// Points one path recorded at a range of regions, with their call results.
 #[derive(Clone, Default)]
@@ -3575,7 +3582,7 @@ struct RecordedRegionPoints {
         ExecutionState,
         Option<RecordedCallResults>,
     )>,
-    call_results: Vec<(usize, ProgramValue)>,
+    call_results: Vec<(usize, RetainedProgramValue)>,
 }
 
 #[derive(Clone)]
@@ -3650,7 +3657,7 @@ struct RecordedStates {
     /// own state, so after the loop the name has no one state.
     ambiguous_exit_points: crate::persistent::PersistentMap<ProgramPointSelector, (usize, usize)>,
     call_result_points: crate::persistent::PersistentMap<(u64, usize), ()>,
-    read_event_results: crate::persistent::PersistentMap<(usize, usize), ProgramValue>,
+    read_event_results: crate::persistent::PersistentMap<(usize, usize), RetainedProgramValue>,
     read_event_counts: crate::persistent::PersistentMap<usize, usize>,
     read_event_names: ReadEventNames<ProgramValue>,
     read_event_scalar_names: ReadEventNames<crate::kernel::MachineTerm>,
@@ -3664,7 +3671,7 @@ struct RecordedStates {
     pointer_call_results: crate::persistent::PersistentMap<crate::kernel::Address, usize>,
     /// Each exited loop's pass count, the head's `iterations`, which the
     /// facts past the loop state over: spelled `loop(i).iterations`.
-    loop_iterations: crate::persistent::PersistentMap<usize, crate::kernel::IntegerTerm>,
+    loop_iterations: crate::persistent::PersistentMap<usize, crate::kernel::KernelTerm>,
     /// The loop whose pass count each variable is: one lookup spells it.
     loop_iteration_variables: crate::persistent::PersistentMap<crate::kernel::Variable, usize>,
     /// The recorded point at which each scalar model-field value was first
@@ -4073,7 +4080,7 @@ impl RecordedStates {
         for event in 0..self.read_event_counts.get(&index).copied().unwrap_or(0) {
             crate::instrumentation::record_deterministic_work(1);
             let key = (index, event);
-            if let Some(value) = self.read_event_results.get(&key).cloned() {
+            if let Some(value) = self.read_event_native(&key).cloned() {
                 self.read_event_results.remove(&key);
                 Self::remove_read_event_name(&mut self.read_event_names, &value, key);
                 match &value {
@@ -4083,7 +4090,7 @@ impl RecordedStates {
                     ProgramValue::Pointer(pointer) => {
                         Self::remove_read_event_name(
                             &mut self.read_event_pointer_names,
-                            pointer.pointer(),
+                            pointer.address(),
                             key,
                         );
                     }
@@ -4095,7 +4102,7 @@ impl RecordedStates {
         for value in values {
             crate::instrumentation::record_deterministic_work(1);
             let key = (index, count);
-            self.read_event_results.insert(key, value.clone());
+            self.read_event_results.insert(key, value.clone().into());
             Self::add_read_event_name(&mut self.read_event_names, value, key);
             match value {
                 ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
@@ -4104,7 +4111,7 @@ impl RecordedStates {
                 ProgramValue::Pointer(pointer) => {
                     Self::add_read_event_name(
                         &mut self.read_event_pointer_names,
-                        pointer.pointer(),
+                        pointer.address(),
                         key,
                     );
                 }
@@ -4121,8 +4128,7 @@ impl RecordedStates {
 
     fn read_event_values(&self, index: usize) -> impl Iterator<Item = &ProgramValue> {
         (0..self.read_event_counts.get(&index).copied().unwrap_or(0)).map(move |event| {
-            self.read_event_results
-                .get(&(index, event))
+            self.read_event_native(&(index, event))
                 .expect("recorded read")
         })
     }
@@ -4177,8 +4183,7 @@ impl RecordedStates {
                 _ => self.result_region_index(&CodeRegionRef::Path(parent.to_vec()))?,
             };
             return self
-                .read_event_results
-                .get(&(index, *event))
+                .read_event_native(&(index, *event))
                 .cloned()
                 .ok_or_else(|| {
                     format!(
@@ -4198,6 +4203,7 @@ impl RecordedStates {
             return self
                 .call_results_at(selector)
                 .and_then(|results| results.get(&index))
+                .map(RetainedProgramValue::native_compat)
                 .cloned()
                 .ok_or_else(|| {
                     format!(
@@ -4207,13 +4213,12 @@ impl RecordedStates {
                     )
                 });
         }
-        if let Some(result) = self.call_results.get(&index) {
+        if let Some(result) = self.call_result_native(&index) {
             return Ok(result.clone());
         }
         if self.read_event_counts.get(&index) == Some(&1) {
             return Ok(self
-                .read_event_results
-                .get(&(index, 0))
+                .read_event_native(&(index, 0))
                 .expect("recorded read")
                 .clone());
         }
@@ -4312,7 +4317,7 @@ impl RecordedStates {
             self.set_call_result_snapshot(selector, results.clone());
         }
         for (index, value) in &points.call_results {
-            self.record_call_result(*index, Some(value.clone()));
+            self.record_retained_call_result(*index, Some(value.clone()));
         }
     }
 
@@ -4330,7 +4335,7 @@ impl RecordedStates {
 
     /// Some transition certificates expose the return value separately
     /// from the state recorded at the call's exit.
-    fn record_call_transition_result(&mut self, index: usize, value: ProgramValue) {
+    fn record_call_transition_result(&mut self, index: usize, value: RetainedProgramValue) {
         if self.records_call_snapshots() {
             let exit = ProgramPointSelector::from(ProgramPointRef {
                 region: CodeRegionRef::Region(index),
@@ -4340,51 +4345,73 @@ impl RecordedStates {
                 results.insert(index, value.clone());
             }
         }
-        self.record_call_result(index, Some(value));
+        self.record_retained_call_result(index, Some(value));
     }
 
     fn record_call_result(&mut self, index: usize, value: Option<ProgramValue>) {
+        self.record_retained_call_result(index, value.map(RetainedProgramValue::from));
+    }
+
+    fn call_result_native(&self, index: &usize) -> Option<&ProgramValue> {
+        self.call_results
+            .get(index)
+            .map(RetainedProgramValue::native_compat)
+    }
+
+    fn read_event_native(&self, key: &(usize, usize)) -> Option<&ProgramValue> {
+        self.read_event_results
+            .get(key)
+            .map(RetainedProgramValue::native_compat)
+    }
+
+    fn record_retained_call_result(&mut self, index: usize, value: Option<RetainedProgramValue>) {
         crate::instrumentation::record_deterministic_work(1);
         // A pointer-sized integer is named by its numeric value.
         if let Some(ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term)) = self
-            .call_results
-            .get(&index)
+            .call_result_native(&index)
             .map(ProgramValue::numeric_value)
         {
             self.call_result_points
                 .remove(&(crate::kernel::held_term_fingerprint(term), index));
         }
-        if let Some(ProgramValue::Parameter(term)) = self.call_results.get(&index)
+        if let Some(ProgramValue::Parameter(term)) = self
+            .call_results
+            .get(&index)
+            .map(RetainedProgramValue::native_compat)
             && self.algebraic_call_results.get(term.as_ref()) == Some(&index)
         {
             self.algebraic_call_results.remove(term.as_ref());
         }
-        if let Some(ProgramValue::Pointer(pointer)) = self.call_results.get(&index)
-            && self.pointer_call_results.get(pointer.pointer()) == Some(&index)
+        if let Some(ProgramValue::Pointer(pointer)) = self
+            .call_results
+            .get(&index)
+            .map(RetainedProgramValue::native_compat)
+            && self.pointer_call_results.get(pointer.address()) == Some(&index)
         {
-            self.pointer_call_results.remove(pointer.pointer());
+            self.pointer_call_results.remove(pointer.address());
         }
         self.call_results.remove(&index);
-        if let Some(value) = value.filter(|value| *value != ProgramValue::Void) {
+        if let Some(value) = value.filter(|value| value.native_compat() != &ProgramValue::Void) {
+            let native = value.native_compat();
             if let ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) =
-                value.numeric_value()
+                native.numeric_value()
             {
                 self.call_result_points
                     .insert((crate::kernel::held_term_fingerprint(term), index), ());
             }
             // The first call to produce an algebraic value names it.
-            if let ProgramValue::Parameter(term) = &value
+            if let ProgramValue::Parameter(term) = native
                 && self.algebraic_call_results.get(term.as_ref()).is_none()
             {
                 self.algebraic_call_results
                     .insert(term.as_ref().clone(), index);
             }
             // So does the first call to return a pointer.
-            if let ProgramValue::Pointer(pointer) = &value
-                && self.pointer_call_results.get(pointer.pointer()).is_none()
+            if let ProgramValue::Pointer(pointer) = native
+                && self.pointer_call_results.get(pointer.address()).is_none()
             {
                 self.pointer_call_results
-                    .insert(pointer.pointer().clone(), index);
+                    .insert(pointer.address().clone(), index);
             }
             self.call_results.insert(index, value);
         }
@@ -4392,20 +4419,30 @@ impl RecordedStates {
 
     /// Records the pass count `iterations` of loop `loop_index`'s head,
     /// which the facts of a path past the loop state over.
+    #[cfg(test)]
     pub(crate) fn record_loop_iterations(
         &mut self,
         loop_index: usize,
         iterations: &crate::kernel::IntegerTerm,
     ) {
-        if let Some(crate::kernel::IntegerTerm::Variable(prior)) =
-            self.loop_iterations.get(&loop_index)
+        let root = crate::kernel::KernelTermImport::default().integer(&iterations.clone().into());
+        self.record_loop_iterations_root(loop_index, root);
+    }
+
+    pub(crate) fn record_loop_iterations_root(
+        &mut self,
+        loop_index: usize,
+        iterations: crate::kernel::KernelTerm,
+    ) {
+        if let Some(prior) = self.loop_iterations.get(&loop_index)
+            && let crate::kernel::KernelTermNode::Variable(prior) = prior.node()
         {
             self.loop_iteration_variables.remove(prior);
         }
-        if let crate::kernel::IntegerTerm::Variable(variable) = iterations {
+        if let crate::kernel::KernelTermNode::Variable(variable) = iterations.node() {
             self.loop_iteration_variables.insert(*variable, loop_index);
         }
-        self.loop_iterations.insert(loop_index, iterations.clone());
+        self.loop_iterations.insert(loop_index, iterations);
     }
 
     /// The loop whose pass count `variable` is: one lookup.
@@ -4414,17 +4451,24 @@ impl RecordedStates {
         variable: crate::kernel::Variable,
     ) -> Option<usize> {
         let index = *self.loop_iteration_variables.get(&variable)?;
-        matches!(self.loop_iterations.get(&index), Some(crate::kernel::IntegerTerm::Variable(held)) if *held == variable)
+        matches!(self.loop_iterations.get(&index).map(|root| root.node()), Some(crate::kernel::KernelTermNode::Variable(held)) if *held == variable)
             .then_some(index)
     }
 
-    /// Each exited loop's pass count under its spelling, `loop(i).iterations`.
+    /// Selected diagnostic output; retained loop counts remain common roots.
     pub(crate) fn loop_iteration_bindings(
         &self,
-    ) -> impl Iterator<Item = (String, &crate::kernel::IntegerTerm)> {
-        self.loop_iterations
-            .iter()
-            .map(|(index, term)| (loop_iterations_spelling(*index), term))
+    ) -> impl Iterator<Item = (String, crate::kernel::IntegerTerm)> {
+        self.loop_iterations.iter().map(|(index, term)| {
+            (
+                loop_iterations_spelling(*index),
+                crate::kernel::KernelTermExport::default()
+                    .integer(term)
+                    .expect("recorded Integer output")
+                    .as_ref()
+                    .clone(),
+            )
+        })
     }
 
     /// A capture in a recorded state names the call result in that
@@ -4447,7 +4491,7 @@ impl RecordedStates {
             Some(point) => self.call_results_at(point)?,
             None => &self.call_results,
         };
-        let recorded = results.get(&index)?;
+        let recorded = results.get(&index)?.native_compat();
         if recorded.program_type() != value.program_type() || recorded != value.native().as_ref() {
             return None;
         }
@@ -4476,7 +4520,7 @@ impl RecordedStates {
                         "{}.result",
                         diagnostics::describe_code_region_ref(&CodeRegionRef::Path(steps))
                     ),
-                    value,
+                    value.native_compat(),
                 ))
             })
             .collect()
@@ -4489,7 +4533,7 @@ impl RecordedStates {
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.algebraic_call_results.get(term)?;
-        matches!(self.call_results.get(&index), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
+        matches!(self.call_result_native(&index), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
             .then_some(CodeRegionRef::Region(index))
     }
 
@@ -4501,7 +4545,7 @@ impl RecordedStates {
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.pointer_call_results.get(pointer)?;
-        matches!(self.call_results.get(&index), Some(ProgramValue::Pointer(held)) if held.pointer() == pointer)
+        matches!(self.call_result_native(&index), Some(ProgramValue::Pointer(held)) if held.address() == pointer)
             .then_some(CodeRegionRef::Region(index))
     }
 
@@ -4519,7 +4563,7 @@ impl RecordedStates {
                 return None;
             }
             crate::instrumentation::record_deterministic_work(1);
-            if matches!(self.call_results.get(index).map(ProgramValue::numeric_value), Some(ProgramValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
+            if matches!(self.call_result_native(index).map(ProgramValue::numeric_value), Some(ProgramValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
             {
                 return Some(CodeRegionRef::Region(*index));
             }
@@ -4825,7 +4869,7 @@ impl RecordedStates {
             state
                 .memory()
                 .fresh_allocation_identity(value)
-                .map(|value| value.pointer().clone())
+                .map(|value| value.address().clone())
         };
         let region = CodeRegionRef::Region(*index);
         if let Some(old) = prior.and_then(result)
@@ -4953,13 +4997,13 @@ impl RecordedStates {
                     .and_then(|layout| match layout.call_number(*index) {
                         Some(call) => state
                             .step_result(call)
-                            .map(|value| value.clone().into_native()),
+                            .map(|value| RetainedProgramValue::from(value.clone().into_value())),
                         None => layout
                             .call_result_local(*index)
                             .and_then(|local| state.locals().get(local))
-                            .map(|value| value.clone().into_native()),
+                            .map(|value| RetainedProgramValue::from(value.clone().into_value())),
                     });
-            self.record_call_result(*index, result);
+            self.record_retained_call_result(*index, result);
         }
         if self.records_call_snapshots() {
             self.call_result_snapshots
@@ -5098,7 +5142,7 @@ impl RecordedStates {
         // A pass count both arms left the loop with stays.
         for (index, iterations) in self.loop_iterations.iter() {
             if other.loop_iterations.get(index) == Some(iterations) {
-                common.record_loop_iterations(*index, iterations);
+                common.record_loop_iterations_root(*index, iterations.clone());
             }
         }
         for selector in changed {
@@ -5546,7 +5590,7 @@ impl SpecElaborationContext {
 
     fn old_state(
         &self,
-        entry_values: &BTreeMap<String, ProgramValue>,
+        entry_values: &ProgramValueBindings,
         entry: &crate::kernel::ProgramPoint,
     ) -> Result<Self, String> {
         if self.function_contract {
@@ -5776,7 +5820,7 @@ pub enum SourceProof {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertifiedStatementTransition {
     pub(crate) native_step: std::sync::Arc<crate::kernel::SymbolicExecutionPath>,
-    pub(crate) call_result: Option<ProgramValue>,
+    pub(crate) call_result: Option<RetainedProgramValue>,
     /// The call's by-value aggregate parameters as it bound them, recorded
     /// as the call region's parameter point (`R.parameter(name)`).
     pub(crate) call_parameters: Option<crate::kernel::CallParameters>,
@@ -5799,7 +5843,7 @@ pub struct CertifiedStatementTransition {
     pub(crate) loop_invariant_correspondence: Vec<(usize, Proposition)>,
     /// The loop head's pass count the facts state over, recorded so a proof
     /// past the loop spells it `loop(i).iterations`.
-    pub(crate) loop_iterations: Option<crate::kernel::IntegerTerm>,
+    pub(crate) loop_iterations: Option<crate::kernel::KernelTerm>,
     pub(crate) prerequisite_derivations: Vec<PropositionDerivation>,
     /// Exact entry-state facts consumed while planning this
     /// transition. Kept outside the kernel theorem so collecting certificate
@@ -7563,7 +7607,7 @@ impl ParameterNaming {
                 BTreeMap::new(),
                 |mut sources, (index, argument)| {
                     if let ProgramExpression::Value(ProgramValue::Pointer(pointer)) = argument {
-                        sources.entry(pointer.pointer().clone()).or_insert(index);
+                        sources.entry(pointer.address().clone()).or_insert(index);
                     }
                     sources
                 },
@@ -7650,7 +7694,7 @@ impl<'a> SpecDefinitions<'a> {
         self
     }
 
-    fn pointer_element_width(&self, pointer: &crate::kernel::PointerValue) -> Result<u32, String> {
+    fn pointer_element_width(&self, pointer: &crate::kernel::Pointer) -> Result<u32, String> {
         if let Some(crate::kernel::effective_type::CAccessClass::Struct(class)) =
             pointer.object_class()
         {

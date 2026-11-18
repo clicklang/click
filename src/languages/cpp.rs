@@ -24,11 +24,11 @@ pub use link::LinkedCppProgram;
 pub use lowering::{LoweredCppFunction, lower_import};
 pub use schema::{
     CppBase, CppBaseReference, CppBinaryOperator, CppByteTemplateArgument, CppCallArgument,
-    CppCleanup, CppCondition, CppConditionCall, CppConstant, CppConstantReference,
-    CppConstevalMetadata, CppExceptionBehavior, CppExport, CppExpression, CppField,
-    CppFieldInitializer, CppFieldReference, CppFunction, CppFunctionKind, CppFunctionReference,
-    CppInitializer, CppLibraryAssertion, CppLibraryAssertionKind, CppLibraryMetadata,
-    CppLiteralConstructor, CppLiteralMetadata, CppLiteralMetadataBinding, CppPlace,
-    CppPlaceReference, CppProfile, CppProjection, CppRecord, CppScalarCastKind,
-    CppScalarConversion, CppSpan, CppStatement, CppType, CppTypeAlias,
+    CppCleanup, CppCompoundAssignment, CppCondition, CppConditionCall, CppConstant,
+    CppConstantReference, CppConstevalMetadata, CppExceptionBehavior, CppExport, CppExpression,
+    CppField, CppFieldInitializer, CppFieldReference, CppFunction, CppFunctionKind,
+    CppFunctionReference, CppInitializer, CppLibraryAssertion, CppLibraryAssertionKind,
+    CppLibraryMetadata, CppLiteralConstructor, CppLiteralMetadata, CppLiteralMetadataBinding,
+    CppPlace, CppPlaceReference, CppProfile, CppProjection, CppRecord, CppReturnedMember,
+    CppScalarCastKind, CppScalarConversion, CppSpan, CppStatement, CppType, CppTypeAlias,
 };
