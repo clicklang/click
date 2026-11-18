@@ -1,6 +1,5 @@
 import click::integer;
 import click::rust::slice;
-import click::rust::chunks_exact;
 
 verifying "../../vendor/adler2-2.0.1/src/lib.rs";
 
