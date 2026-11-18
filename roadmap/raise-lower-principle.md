@@ -1147,6 +1147,8 @@ Eq/Ord/Hash/debug, pointer provenance and existing nominal identities remain
 unchanged. All 427 focused checks, all 1,917 regular scaling checks (two isolated
 and 1,915 remaining), and quality passed. All 5,599 regular proof fixtures passed (815.69 seconds), with zero changed
 terms or selected paths in the fact-stability report (121 legitimate refusals).
+After integrating upstream `f94b8b852`, all 427 focused checks, 24 selected
+entry/resource-field proof fixtures, fact stability and quality passed again.
 Full nightly was not run.
 
 ## Chunk 3: machine-valued pure-function results
