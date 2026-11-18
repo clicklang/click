@@ -17127,12 +17127,11 @@ fn consume_resource_fact_definitionally(
     at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
-    let memory = at.memory();
     fn consume(
         available: &ResourceContext,
         required: &ResourceFact,
         definitions: &[CompositeResourceDefinition],
-        memory: &SymbolicMemory,
+        at: &ProgramPoint,
         assumptions: &PureFactContext,
         seen: &mut BTreeSet<(ResourceContext, ResourceFact)>,
     ) -> Option<ResourceContext> {
@@ -17143,7 +17142,7 @@ fn consume_resource_fact_definitionally(
         // satisfiable: read access is represented by the materialized cells,
         // mirroring the local-block view rule at call transfer.
         if let ResourceFact::View(Resource::Memory(range)) = required
-            && view_range_concretely_loadable(memory, range)
+            && view_range_concretely_loadable(at.memory(), range)
         {
             return Some(available.clone());
         }
@@ -17184,7 +17183,7 @@ fn consume_resource_fact_definitionally(
                     &required_context,
                     required,
                     definitions,
-                    &crate::kernel::ProgramPoint::of_memory(memory),
+                    at,
                     assumptions,
                 )
             },
@@ -17195,7 +17194,7 @@ fn consume_resource_fact_definitionally(
             if !assembled_composite_body_facts_hold(
                 required,
                 definitions,
-                &crate::kernel::ProgramPoint::of_memory(memory),
+                at,
                 available,
                 assumptions,
             ) {
@@ -17203,7 +17202,7 @@ fn consume_resource_fact_definitionally(
             }
             let mut remaining = available.clone();
             for child in expanded_required.facts() {
-                remaining = consume(&remaining, child, definitions, memory, assumptions, seen)?;
+                remaining = consume(&remaining, child, definitions, at, assumptions, seen)?;
             }
             return Some(remaining);
         }
@@ -17222,7 +17221,7 @@ fn consume_resource_fact_definitionally(
                         available,
                         composite,
                         definitions,
-                        &crate::kernel::ProgramPoint::of_memory(memory),
+                        at,
                         assumptions,
                     )
                 },
@@ -17233,7 +17232,7 @@ fn consume_resource_fact_definitionally(
                 &expanded_available,
                 required,
                 definitions,
-                memory,
+                at,
                 assumptions,
                 seen,
             ) {
@@ -17247,7 +17246,7 @@ fn consume_resource_fact_definitionally(
         available,
         required,
         definitions,
-        memory,
+        at,
         assumptions,
         &mut BTreeSet::new(),
     )
