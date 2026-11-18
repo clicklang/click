@@ -607,7 +607,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five pushed commits verified on upstream. |
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four pushed commits verified on upstream. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Implemented; [PR #3181](https://github.com/clicklang/click/pull/3181) has auto-merge requested. 287 focused checks, all 1,890 scaling cases, the regular proof corpus, fact stability and quality passed on integrated upstream. Integration pending. |
-| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Implemented; reader type check, 383 focused checks and quality passed; integrated scaling/corpus validation pending. |
+| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Implemented; 383 initial focused checks, 2,346 integrated scaling/affected checks and quality passed; regular corpus/fact-stability validation running. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Planned; family split may be needed. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
@@ -1026,8 +1026,9 @@ and constructor round trips are included in the broader validation.
 
 The store/reader migration type-checks. All 383 focused storage, projection,
 substitution, identity/hash, growing-DAG and related resource/API checks passed,
-as did quality checks. Integrated scaling/corpus validation and PR delivery
-are pending. Live native views, whole-list outputs and identity readers remain
+as did quality checks. On upstream `66ff4dedd`, the two isolated regular
+scaling cases and all 2,344 combined scaling/affected checks passed. Regular
+proof-corpus/fact-stability validation and PR delivery are pending. Live native views, whole-list outputs and identity readers remain
 compatibility consumers for 10r–10t, not proof or search changes.
 
 ### 10p Inventory and sequential descriptor families
@@ -1040,7 +1041,7 @@ not a change to proof rules or snapshot architecture.
 | Subslice | Owning stores | Status |
 | --- | --- | --- |
 | 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Inventoried; pending. |
-| 10p2 | Composite/token/instance `ResourceArguments` and `ResourceDescription` arguments. Preserve argument order, native identity classes and nominal resource identities. | Inventoried; pending. |
+| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Inventoried; pending. |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
