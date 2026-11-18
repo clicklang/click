@@ -339,11 +339,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let premises = atomic.as_slice();
         let scope = proof.driver().open_have(target.clone())?;
         if (has_retained_read_source(&target) || premises.iter().any(has_retained_read_source))
-            && let Some(closed) = attempt::candidate_outcome(
-                scope
-                    .driver()
-                    .apply_step(ProofStep::NormalizeUsing(premises.to_vec())),
-            )?
+            && let Some(closed) = {
+                // An exact type range can be computed even when its operand
+                // is written at a program point. Use the goal-local check
+                // before the history and retained-read compatibility rule.
+                let step = if premises.is_empty()
+                    && scope
+                        .body()
+                        .goal()
+                        .is_some_and(crate::surface::planning::solve::computes_with_known)
+                {
+                    ProofStep::Known
+                } else {
+                    ProofStep::NormalizeUsing(premises.to_vec())
+                };
+                attempt::candidate_outcome(scope.driver().apply_step(step))?
+            }
             && closed.is_complete()
         {
             return Ok(Some(closed.join()?));
