@@ -177,7 +177,7 @@ impl KernelTerm {
 mod tests {
     use super::*;
 
-    fn constructor(pointer: PointerValue) -> AlgebraicTerm {
+    fn constructor(pointer: Pointer) -> AlgebraicTerm {
         let mut value = KernelMatch::test_scrutinee(vec![
             AlgebraicValueType::Program(ProgramType::Int32Pointer),
             AlgebraicValueType::Program(ProgramType::Int32),
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn common_algebraic_equality_preserves_native_identity_and_exact_payloads() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(999670)),
             ProgramType::Int32Pointer,
         );
@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn common_algebraic_equality_observation_matches_native_guard_keys() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(999672)),
             ProgramType::Int32Pointer,
         );

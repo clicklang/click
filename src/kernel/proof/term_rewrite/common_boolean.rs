@@ -63,7 +63,7 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
                 if [(views[0], views[1]), (views[1], views[0])].into_iter().any(|(address, zero)| {
                     zero.uint64_constant() == Some(0)
                         && matches!(address, MachineOperandView::Shared(root)
-                            if matches!(root.machine_conversion_leaf(), Some(MachineTerm::PointerAddress(..))))
+                            if matches!(root.machine_conversion_leaf(), Some(MachineTerm::IntegerAddress(..))))
                 }) {
                     return Ok(KernelTerm::boolean_comparison(*format, *relation, arguments));
                 }
@@ -77,17 +77,17 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
             let (memory,address) = read.parts();
             return Ok(KernelTerm::boolean_read(memory.clone(),rewrite.boolean_address(address).ok_or(())?));
         }
-        if let KernelTermNode::PointerValueEqual(pair) = leaf.node() {
+        if let KernelTermNode::PointerEqual(pair) = leaf.node() {
             let [a,b] = pair.arguments();
-            return Ok(KernelTerm::pointer_value_equal([rewrite.boolean_pointer_value(a).ok_or(())?,rewrite.boolean_pointer_value(b).ok_or(())?]));
+            return Ok(KernelTerm::pointer_equal([rewrite.boolean_pointer_value(a).ok_or(())?,rewrite.boolean_pointer_value(b).ok_or(())?]));
         }
-        if let KernelTermNode::PointerEqual { arguments } = leaf.node() {
-            return Ok(KernelTerm::pointer_equal_raw([
+        if let KernelTermNode::AddressEqual { arguments } = leaf.node() {
+            return Ok(KernelTerm::address_equal_raw([
                 rewrite.boolean_address(&arguments[0]).ok_or(())?,
                 rewrite.boolean_address(&arguments[1]).ok_or(())?,
             ]));
         }
-        if let KernelTermNode::PointerOffsetEqual { arguments } = leaf.node() {
+        if let KernelTermNode::AddressOffsetEqual { arguments } = leaf.node() {
             use crate::kernel::{KernelAddressOffset as O, SharedAddressOffset as S};
             let offsets = S::try_map_pair(arguments, |_, node| {
                 // This entry point is pointer-variable substitution only:
@@ -101,7 +101,7 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
                 };
                 node.into_shared().map_err(|_| ())
             })?;
-            return Ok(KernelTerm::pointer_offset_equal_raw(offsets));
+            return Ok(KernelTerm::address_offset_equal_raw(offsets));
         }
         let native = B::Shared(leaf).identity_leaf();
         let result = rewrite.condition(&native);
@@ -262,11 +262,11 @@ impl TermRewrite<'_> {
     /// and opaque-domain policy. This entry has no exact-value or fact rewrite.
     fn boolean_pointer_value(
         &mut self,
-        source: &crate::kernel::SharedPointerValue,
-    ) -> Option<crate::kernel::SharedPointerValue> {
+        source: &crate::kernel::SharedPointer,
+    ) -> Option<crate::kernel::SharedPointer> {
         use crate::kernel::{
             KernelAddressOffset as O, SharedAddress as A, SharedAddressOffset as S,
-            SharedPointerValue as V,
+            SharedPointer as V,
         };
         let (from, to) = self.pointer_variable?;
         debug_assert!(
@@ -281,7 +281,7 @@ impl TermRewrite<'_> {
         });
         let selected = |address: &A| matches!(address.node().base.native_atom(),AddressBase::Symbolic(v)|AddressBase::FunctionSymbolic(v) if *v == from);
         let replacement = (selected(&p.address) && p.provenance.syntax_equal(&base))
-            .then(|| V::import(&PointerValue::new(to.clone(), p.program_type)));
+            .then(|| V::import(&Pointer::new(to.clone(), p.program_type)));
         let target_identity = A::import(&to.object_identity());
         let provenance = if let Some(target) = &replacement {
             target.node().provenance.clone()

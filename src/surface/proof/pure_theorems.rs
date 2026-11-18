@@ -239,7 +239,7 @@ pub(super) struct PureTheoremContext {
     pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
     pub(super) memory: SymbolicMemory,
-    pub(super) values: BTreeMap<String, ProgramValue>,
+    pub(super) values: ProgramValueBindings,
     pub(super) integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     pub(super) array_refs: ClickArrayRefs,
     pub(super) requires: Vec<Proposition>,
@@ -322,7 +322,7 @@ impl PureTheoremContext {
                                 left: promoted,
                                 operator: ComparisonOperator::Equal,
                                 right: ContractExpression::IntegerLiteral("0".into()),
-                            }, BTreeMap::new(), BTreeMap::new(), &state, &state, BTreeMap::new(), BTreeMap::new(),
+                            }, BTreeMap::new(), BTreeMap::new(), &state, &state, ProgramValueBindings::new(), ProgramValueBindings::new(),
                             BTreeMap::new(), &integer_values, None, &RecordedStates::new(), spec_definitions,
                             BTreeSet::new(), BTreeMap::new(),).map_err(ClickError::new)?;
                         let crate::kernel::SpecProposition::IntegerComparison { left, .. } = spec
@@ -602,7 +602,7 @@ pub(super) fn pure_induction_hypothesis(
         }
         body = Proposition::Implies(Box::new(requirement), Box::new(body));
     }
-    let smaller = Proposition::ConditionIs(
+    let smaller = Proposition::condition_is(
         if unsigned {
             ConditionTerm::uint64_less_than(value.clone(), MachineTerm::Variable(*current_variable))
         } else {
@@ -617,7 +617,7 @@ pub(super) fn pure_induction_hypothesis(
     );
     body = Proposition::Implies(Box::new(smaller), Box::new(body));
     if !unsigned {
-        let nonnegative = Proposition::ConditionIs(
+        let nonnegative = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
@@ -1589,14 +1589,14 @@ fn pure_theorem_parameter_integer_values(
 
 pub(in crate::surface) fn pure_theorem_parameter_values(
     parameters: &[FunctionParameter],
-) -> BTreeMap<String, ProgramValue> {
+) -> ProgramValueBindings {
     pure_theorem_parameter_values_with_generic_pointers(parameters, &BTreeSet::new())
 }
 
 fn pure_theorem_parameter_values_with_generic_pointers(
     parameters: &[FunctionParameter],
     generic_pointers: &BTreeSet<String>,
-) -> BTreeMap<String, ProgramValue> {
+) -> ProgramValueBindings {
     parameters
         .iter()
         .enumerate()
@@ -1926,7 +1926,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
 
 pub(in crate::surface) fn pure_theorem_array_refs(
     parameters: &[FunctionParameter],
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     memory: &SymbolicMemory,
 ) -> ClickArrayRefs {
     parameters
@@ -1941,7 +1941,7 @@ pub(in crate::surface) fn pure_theorem_array_refs(
                 parameter.name().to_string(),
                 ClickArrayRef {
                     point: crate::kernel::ProgramPoint::of_memory(memory),
-                    pointer: pointer.pointer().clone(),
+                    pointer: pointer.address().clone(),
                     element_type,
                 },
             ))
@@ -3686,7 +3686,7 @@ fn oriented_order_comparisons(proposition: &Proposition) -> Proposition {
     use crate::kernel::ConditionTerm as Condition;
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            let oriented = match condition {
+            let oriented = match condition.native_compat() {
                 Condition::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
@@ -3761,7 +3761,7 @@ fn oriented_order_comparisons(proposition: &Proposition) -> Proposition {
                 }
                 other => other.clone(),
             };
-            Proposition::ConditionIs(oriented, *value)
+            Proposition::condition_is(oriented, *value)
         }
         Proposition::Not(inner) => Proposition::Not(Box::new(oriented_order_comparisons(inner))),
         Proposition::And(left, right) => Proposition::And(
@@ -3788,7 +3788,7 @@ mod tests {
     fn axiom_comparison_states_each_order_as_less_than_or_less_equal() {
         use crate::kernel::ConditionTerm as Condition;
         let word = |index| Box::new(MachineTerm::Variable(crate::kernel::Variable(index)));
-        let fact = |condition| Proposition::ConditionIs(condition, true);
+        let fact = |condition| Proposition::condition_is(condition, true);
         let greater = Proposition::Implies(
             Box::new(fact(Condition::Compare {
                 format: MachineIntegerType::Int32,

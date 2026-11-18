@@ -54,8 +54,8 @@ pub(in crate::kernel::equality_graph) enum ConditionKind {
     UInt64Le,
     UInt64Gt,
     UInt64Ge,
+    AddressEq,
     PointerEq,
-    PointerValueEq,
     OffsetEq,
     AlgebraicEq,
     IntegerEq,
@@ -822,10 +822,13 @@ impl TermClasses {
                             pending.extend(arguments.iter().rev().map(Work::Argument));
                             continue;
                         }
-                        N::MemoryLoad { memory, pointer } => {
+                        N::MemoryLoad {
+                            point: memory,
+                            pointer,
+                        } => {
                             let head = self.intern_node(Node::AlgebraicMemoryRead(
                                 ty.clone(),
-                                memory.read_identity(),
+                                memory.shared_memory().read_identity(),
                             ));
                             let address = self.numeric_address(pointer);
                             let node = Node::Apply(head, address);
@@ -835,7 +838,8 @@ impl TermClasses {
                             // the memory history or choosing a term from facts.
                             if let Some(source) =
                                 crate::kernel::prelude::canonical_load_projection_source(
-                                    memory, pointer,
+                                    memory.shared_memory(),
+                                    pointer,
                                 )
                             {
                                 let source_head = self.intern_node(Node::AlgebraicMemoryRead(
@@ -847,7 +851,7 @@ impl TermClasses {
                                 self.close(vec![(read, source_read)]);
                             }
                             if let Some(origin) = crate::kernel::prelude::value_load_origin(
-                                memory,
+                                memory.shared_memory(),
                                 pointer,
                                 crate::kernel::ABSTRACT_VALUE_WIDTH,
                             ) {
@@ -1290,7 +1294,7 @@ impl TermClasses {
                         continue;
                     }
                     if let ProgramValue::Pointer(pointer) = value {
-                        let address = self.numeric_address(pointer.pointer());
+                        let address = self.numeric_address(pointer.address());
                         // Address, allocation origin and selected bounds are
                         // distinct congruence operands. Only a complete value
                         // equality merges the latter two domains.
@@ -1642,10 +1646,10 @@ impl TermClasses {
             .map(|constructor| constructor.as_ref().clone())
     }
 
-    pub(in crate::kernel::equality_graph) fn add_pointer_value_equality(
+    pub(in crate::kernel::equality_graph) fn add_pointer_equality(
         &mut self,
-        a: &crate::kernel::PointerValue,
-        b: &crate::kernel::PointerValue,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
     ) -> bool {
         let roots = (
             self.provenance_node(a.provenance()),
@@ -1728,8 +1732,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn pointer_values_equal(
         &mut self,
-        a: &crate::kernel::PointerValue,
-        b: &crate::kernel::PointerValue,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
     ) -> bool {
         let a = self.intern_expression(
             None,
@@ -1749,7 +1753,7 @@ impl TermClasses {
         self.root(a) == self.root(b)
     }
 
-    pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::PointerValue) {
+    pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::Pointer) {
         let root = self.root(node);
         let value = self
             .pointer_values
@@ -1762,8 +1766,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn pointer_value_representative(
         &mut self,
-        value: &crate::kernel::PointerValue,
-    ) -> crate::kernel::PointerValue {
+        value: &crate::kernel::Pointer,
+    ) -> crate::kernel::Pointer {
         let node = self.intern_expression(
             None,
             None,
@@ -1781,7 +1785,7 @@ impl TermClasses {
             .clone()
     }
 
-    fn bounds_node(&mut self, value: &crate::kernel::PointerValue) -> u64 {
+    fn bounds_node(&mut self, value: &crate::kernel::Pointer) -> u64 {
         let node = if let Some(bounds) = value.bounds() {
             let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerSubobjectBounds));
             let width = self.intern_int32(&bounds.width);
@@ -1836,7 +1840,7 @@ impl TermClasses {
         let node = self.intern_node(Node::OpaqueArgument(SharedPureApplication::intern(
             "<pointer-bounds-origin>".into(),
             vec![A::Value(ProgramValue::Pointer(
-                crate::kernel::PointerValue::new(origin.clone(), ProgramType::VoidPointer),
+                crate::kernel::Pointer::new(origin.clone(), ProgramType::VoidPointer),
             ))],
         )));
         self.bounds_origin_nodes.insert(origin, node);
@@ -1945,7 +1949,7 @@ impl TermClasses {
             return node;
         }
         self.opaque_argument(&A::Value(ProgramValue::Pointer(
-            crate::kernel::PointerValue::new(origin.clone(), ProgramType::VoidPointer),
+            crate::kernel::Pointer::new(origin.clone(), ProgramType::VoidPointer),
         )))
     }
 
@@ -2071,8 +2075,8 @@ impl TermClasses {
                 left: a,
                 right: b,
             } => (Int32AddOverflow, self.intern_int32(a), self.intern_int32(b)),
-            C::PointerValueEqual(a, b) => (
-                PointerValueEq,
+            C::PointerEqual(a, b) => (
+                PointerEq,
                 self.intern_expression(
                     None,
                     None,
@@ -2088,19 +2092,19 @@ impl TermClasses {
                     None,
                 ),
             ),
-            C::PointerEqual(a, b) => (
-                PointerEq,
+            C::AddressEqual(a, b) => (
+                AddressEq,
                 self.address(a.base.clone(), a.offset.clone()).0,
                 self.address(b.base.clone(), b.offset.clone()).0,
             ),
-            C::PointerOffsetEqual(a, b) => (OffsetEq, self.intern(a), self.intern(b)),
+            C::AddressOffsetEqual(a, b) => (OffsetEq, self.intern(a), self.intern(b)),
             C::BoolApplication(_) | C::BoolIf { .. } | C::BoolEqual(..) | C::BoolLoad(..) => {
                 return self.bool_node(condition);
             }
             _ => return None,
         };
         let node = self.intern_node(Node::Condition(kind, left, right));
-        if let C::PointerEqual(a, b) = condition
+        if let C::AddressEqual(a, b) = condition
             && a.base == b.base
         {
             // These are two views of the same predicate, not a new premise.
@@ -2134,9 +2138,9 @@ impl TermClasses {
                 op: OverflowOperation::Add,
                 ..
             } => ConditionKind::Int32AddOverflow,
+            C::AddressEqual(..) => ConditionKind::AddressEq,
             C::PointerEqual(..) => ConditionKind::PointerEq,
-            C::PointerValueEqual(..) => ConditionKind::PointerValueEq,
-            C::PointerOffsetEqual(..) => ConditionKind::OffsetEq,
+            C::AddressOffsetEqual(..) => ConditionKind::OffsetEq,
             C::BoolEqual(..) => ConditionKind::BoolEq,
             C::BoolApplication(_) | C::BoolIf { .. } | C::BoolLoad(..) => ConditionKind::BoolValue,
             _ => return None,
@@ -2188,7 +2192,7 @@ impl TermClasses {
                 self.intern_node(Node::Condition(ConditionKind::BoolEq, left, right))
             }
             C::BoolLoad(memory, pointer) => {
-                let head = self.intern_node(Node::BoolRead(memory.read_identity()));
+                let head = self.intern_node(Node::BoolRead(memory.shared_memory().read_identity()));
                 let address = self.address(pointer.base.clone(), pointer.offset.clone()).0;
                 self.intern_node(Node::Apply(head, address))
             }
@@ -2303,8 +2307,8 @@ impl TermClasses {
                 || (kind == ConditionKind::OffsetEq
                     && self
                         .condition_kinds
-                        .contains(&(ConditionKind::PointerEq, value)))
-                || (kind == ConditionKind::PointerEq
+                        .contains(&(ConditionKind::AddressEq, value)))
+                || (kind == ConditionKind::AddressEq
                     && self
                         .condition_kinds
                         .contains(&(ConditionKind::OffsetEq, value)))
@@ -2630,7 +2634,7 @@ impl TermClasses {
         {
             return true;
         }
-        let C::PointerOffsetEqual(a, b) = condition else {
+        let C::AddressOffsetEqual(a, b) = condition else {
             return false;
         };
         let left = self.intern(a);
@@ -2654,7 +2658,7 @@ impl TermClasses {
             if let Some(b) = large.get(block) {
                 for (a, b) in [(*a, *b), (*b, *a)] {
                     let address_condition =
-                        self.intern_node(Node::Condition(ConditionKind::PointerEq, a, b));
+                        self.intern_node(Node::Condition(ConditionKind::AddressEq, a, b));
                     if self
                         .condition_truth
                         .get(&self.root(address_condition))

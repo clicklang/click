@@ -125,7 +125,11 @@ fn algebraic_read_construction_keeps_growing_shared_addresses_without_exports() 
         let memory = intern_memory(SymbolicMemory::new());
         let exports = KernelTermExport::machine_export_count();
         let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
-            KernelTerm::algebraic_read(ty.clone(), memory.clone(), address.clone())
+            KernelTerm::algebraic_read(
+                ty.clone(),
+                crate::kernel::ProgramPoint::at(&memory),
+                address.clone(),
+            )
         });
         let KernelTermNode::AlgebraicRead(read) = root.node() else {
             panic!("shared read")

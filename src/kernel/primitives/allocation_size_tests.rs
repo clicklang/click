@@ -41,7 +41,7 @@ fn allocation_tokens_and_ranges_carry_the_allocation_size_kind() {
     ] {
         let token = ResourceFact::own_heap_allocation(base.clone(), &size);
         let (read_base, read_size) = token.allocation_size().expect("an allocation token");
-        assert_eq!(read_base.pointer(), &base);
+        assert_eq!(read_base.address(), &base);
         assert_eq!(read_size, size);
         assert_eq!(
             token.allocation().map(|(_, bytes)| bytes),
@@ -84,5 +84,58 @@ fn a_64_bit_size_counts_its_elements_at_uint64() {
     assert_eq!(
         AllocationSize::int32(product.bytes().clone()).element_count(4),
         None
+    );
+}
+
+#[test]
+fn allocation_size_rewrite_keeps_the_mappers_exact_call_argument_payload() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let argument = MachineTerm::Variable(Variable(10993631));
+    let inner = |argument| MachineTerm::ClickFunctionApplication {
+        name: "size_payload".into(),
+        arguments: vec![argument],
+    };
+    let before = SharedMachineIntegerTerm::intern(
+        MachineIntegerType::UInt32,
+        inner(PureFunctionArgument::Value(ProgramValue::UInt32(
+            argument.clone(),
+        ))),
+    );
+    let after = SharedMachineIntegerTerm::intern(
+        MachineIntegerType::UInt32,
+        inner(PureFunctionArgument::SharedMachine(
+            SharedMachineIntegerTerm::intern(MachineIntegerType::UInt32, argument),
+        )),
+    );
+    assert_eq!(
+        before, after,
+        "the observations have the same numeric identity"
+    );
+    assert_ne!(
+        before.structural_value(),
+        after.structural_value(),
+        "producer payloads differ"
+    );
+    let outer = |argument| MachineTerm::ClickFunctionApplication {
+        name: "size_wrapper".into(),
+        arguments: vec![PureFunctionArgument::SharedMachine(argument)],
+    };
+    let original = outer(before);
+    let replacement = outer(after.clone());
+    assert_eq!(
+        original, replacement,
+        "native equality observes the argument ID"
+    );
+    let mapped = AllocationSize::int32(original).map_bytes(|_| replacement);
+    let MachineTerm::ClickFunctionApplication { arguments, .. } = mapped.bytes() else {
+        panic!("call");
+    };
+    let PureFunctionArgument::SharedMachine(actual) = &arguments[0] else {
+        panic!("retained argument");
+    };
+    assert_eq!(
+        actual.structural_value(),
+        after.structural_value(),
+        "rewrite must keep the new producer payload"
     );
 }

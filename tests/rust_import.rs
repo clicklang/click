@@ -594,6 +594,115 @@ fn charon_iteration_project() -> Project {
     fs::write(p.root.join("borrow.click"), CHARON_ITERATION_SIDECAR).unwrap();
     p
 }
+/// An array or slice iterator's `next` binds the loop variable itself, as a
+/// range's does, or only advances when a `Some(_)` arm binds nothing: the
+/// `Option` MIR returns, its tag test, and the temporary that holds it are
+/// gone wherever only the element is read.
+#[test]
+fn charon_array_loops_bind_their_variable_without_an_option() {
+    use click::languages::rust::schema::{MirStatement, Type};
+    let p = charon_iteration_project();
+    let prepared = p.prepared().unwrap();
+    let mut nexts = 0;
+    let mut bound = 0;
+    for function in &prepared.export().functions {
+        let Some(mir) = &function.mir else { continue };
+        assert!(
+            !mir.locals
+                .iter()
+                .any(|local| matches!(local.value_type, Type::SharedArrayOption { .. })),
+            "{}",
+            function.name
+        );
+        for statement in mir.blocks.iter().flat_map(|block| &block.statements) {
+            if let MirStatement::SharedArrayNext {
+                option,
+                payload,
+                taken,
+                ..
+            } = statement
+            {
+                nexts += 1;
+                assert_eq!(option, &None, "{}: {statement:?}", function.name);
+                // A `Some(_)` arm binds nothing, so only a yielding `next`
+                // may bind a value.
+                assert!(
+                    payload.is_none() || *taken == Some(true),
+                    "{}: {statement:?}",
+                    function.name
+                );
+                bound += usize::from(payload.is_some());
+            }
+        }
+    }
+    assert!(nexts > 0 && bound > 0);
+}
+/// A source name bound in two `Some(word)` arms, or by a shadowing `let`, is
+/// two declarations, each spelled as the source spells it, as C's are: a
+/// proof's `word` is the live one, and `ordered.statement(3).local(word)` or
+/// `ordered.local(5)` names the second wherever both are written.
+#[test]
+fn charon_repeated_source_names_are_distinct_declarations() {
+    let p = charon_iteration_project();
+    let prepared = p.prepared().unwrap();
+    let mir = prepared
+        .export()
+        .functions
+        .iter()
+        .find(|function| function.name == "ordered")
+        .and_then(|function| function.mir.as_ref())
+        .unwrap();
+    assert_eq!(
+        mir.spellings.values().collect::<Vec<_>>(),
+        ["word", "word"],
+        "{:?}",
+        mir.spellings
+    );
+    let proof = "fn ordered(a: u32, b: u32) -> u32 {
+    ensures result == ((a << 1u32) ^ b);
+} by {
+    step_until(assignment(first, 0));
+    have *word == a;
+    step_until(assignment(second, 0));
+    have *word == b;
+    have *ordered.statement(3).local(word) == b;
+    have *ordered.local(5) == b;
+}";
+    let before = "fn ordered(a: u32, b: u32) -> u32 {
+    ensures result == ((a << 1u32) ^ b);
+}";
+    assert!(CHARON_ITERATION_SIDECAR.contains(before));
+    let sidecar = CHARON_ITERATION_SIDECAR.replace(before, proof);
+    verify_rust_function(&sidecar, &prepared, "ordered").unwrap();
+    // A shadowing `let`: past it, `x` is the second binding.
+    verify_rust_function(CHARON_ITERATION_SIDECAR, &prepared, "shadowed").unwrap();
+    let shadowed = CHARON_ITERATION_SIDECAR.replacen(
+        "have x == (a & 7u32) + 1u32;",
+        "have x == (a & 7u32);",
+        1,
+    );
+    assert_ne!(shadowed, CHARON_ITERATION_SIDECAR);
+    verify_rust_function(&shadowed, &prepared, "shadowed")
+        .expect_err("the shadowed `x` must not be the live one");
+    for (before, after) in [
+        // The second arm's `word` is the live one, not the first.
+        ("have *word == b;", "have *word == a;"),
+        (
+            "have *ordered.statement(3).local(word) == b;",
+            "have *ordered.statement(3).local(word) == a;",
+        ),
+        // The first arm's `word` has ended.
+        (
+            "have *ordered.local(5) == b;",
+            "have *ordered.local(3) == a;",
+        ),
+    ] {
+        let invalid = sidecar.replacen(before, after, 1);
+        assert_ne!(invalid, sidecar);
+        verify_rust_function(&invalid, &prepared, "ordered")
+            .expect_err(&format!("`{before}` -> `{after}` must fail"));
+    }
+}
 #[test]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn charon_shared_iteration_checks_order_moves_empty_arrays_and_read_authority() {
@@ -1028,6 +1137,42 @@ fn charon_chunk_project() -> Project {
     let p = Project::from_fixture("design/charon-trial/chunks");
     fs::write(p.root.join("borrow.click"), CHARON_CHUNK_SIDECAR).unwrap();
     p
+}
+/// A chunk loop's `next` binds its chunk itself: the `Option` MIR returns,
+/// its tag test and its temporary are gone.
+#[test]
+fn charon_chunk_loops_bind_their_chunk_without_an_option() {
+    use click::languages::rust::schema::{MirStatement, Type};
+    let prepared = charon_chunk_project().prepared().unwrap();
+    let mut bound = 0;
+    for function in &prepared.export().functions {
+        let Some(mir) = &function.mir else { continue };
+        assert!(
+            !mir.locals
+                .iter()
+                .any(|local| local.value_type == Type::ChunkOption),
+            "{}",
+            function.name
+        );
+        for statement in mir.blocks.iter().flat_map(|block| &block.statements) {
+            if let MirStatement::ChunkNext {
+                option,
+                payload,
+                taken,
+                ..
+            } = statement
+            {
+                assert_eq!(option, &None, "{}: {statement:?}", function.name);
+                assert!(
+                    payload.is_none() || *taken == Some(true),
+                    "{}: {statement:?}",
+                    function.name
+                );
+                bound += usize::from(payload.is_some());
+            }
+        }
+    }
+    assert!(bound > 0);
 }
 /// The imports and the slice spelling a claim about a library iterator
 /// needs.
@@ -3326,30 +3471,26 @@ const RESULT_ERROR_SIDECAR: &str =
 // equates two constructors: a clash refutes its antecedent, one variant
 // equates the fields.
 #[test]
-#[ignore = "nightly: retained Rust enum match expansion"]
-fn charon_nested_enum_discriminants_expand_as_retained_results() {
-    let p = Project::from_fixture("design/charon-trial/result-errors");
-    fs::write(p.root.join("borrow.click"), RESULT_ERROR_SIDECAR).unwrap();
-    let prepared = p.prepared().unwrap();
-    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
-        RESULT_ERROR_SIDECAR,
-        &prepared,
-        "describe.ensures_0",
-    )
-    .unwrap();
-    assert!(expanded.contains("match "), "{expanded}");
-    assert!(expanded.contains(".result"), "{expanded}");
-    assert!(!expanded.contains("__rust_checked_"), "{expanded}");
-    ProgramVerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
-}
-
-#[test]
 fn charon_result_errors_carry_a_crate_enum() {
     let p = Project::from_fixture("design/charon-trial/result-errors");
     fs::write(p.root.join("borrow.click"), RESULT_ERROR_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(RESULT_ERROR_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
+    let claim = "describe.contract";
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        RESULT_ERROR_SIDECAR,
+        &prepared,
+        claim,
+    )
+    .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("__rust_checked_"), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.report())
+    })
+    .unwrap();
     for (before, after, expected) in [
         (
             "    ensures x == 0u32 implies result == Result<u32, ParseError>::Err(ParseError::Empty);\n    ensures x > 100u32 implies result == Result<u32, ParseError>::Err(ParseError::TooBig(x));\n    ensures x != 0u32 implies x <= 100u32 implies result == Result<u32, ParseError>::Ok(x);\n}\n\n// `?`",
@@ -4291,6 +4432,17 @@ fn rust_split_at_metadata_and_reads_verify() {
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    let claim = "right_first.ensures_0";
+    let expanded =
+        click::surface::expand_program_prepared_claim_source_by_label(&sidecar, &prepared, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("__rust_checked_"), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.report())
+    })
+    .unwrap();
     assert!(prepared.export().functions.iter().flat_map(|f| f.mir.as_ref().unwrap().blocks.iter()).flat_map(|b| &b.statements).any(|s|
         matches!(s, click::languages::rust::schema::MirStatement::SliceSplit { left, right, .. } if left != right)));
     for incorrect in [

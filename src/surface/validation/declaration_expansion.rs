@@ -1955,6 +1955,10 @@ fn expand_declared_resource_tactic_with_resources(
     tactic: ProofTactic,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ProofTactic, ClickError> {
+    let expand_slot = |mut slot: Box<IteratedSlot>| -> Result<Box<IteratedSlot>, ClickError> {
+        slot.resource = expand_resource_application(slot.resource, resource_definitions, true)?;
+        Ok(slot)
+    };
     match tactic {
         ProofTactic::UnfoldResource(resource) => Ok(ProofTactic::UnfoldResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
@@ -1982,8 +1986,13 @@ fn expand_declared_resource_tactic_with_resources(
                 expand_declared_resource_clause(resource, resource_definitions)?,
             )))
         }
-        tactic @ (ProofTactic::Iterated(IteratedTactic::Take(_) | IteratedTactic::Give(_))
-        | ProofTactic::ObserveSavedMemory { .. }) => Ok(tactic),
+        ProofTactic::Iterated(IteratedTactic::UnfoldSlot(slot)) => Ok(ProofTactic::Iterated(
+            IteratedTactic::UnfoldSlot(expand_slot(slot)?),
+        )),
+        ProofTactic::Iterated(IteratedTactic::FoldSlot(slot)) => Ok(ProofTactic::Iterated(
+            IteratedTactic::FoldSlot(expand_slot(slot)?),
+        )),
+        tactic @ ProofTactic::ObserveSavedMemory { .. } => Ok(tactic),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }
 }
@@ -2416,6 +2425,22 @@ fn expand_declared_resource_clause(
                 )?),
             })
         }
+        ResourceClause::Declared { .. } => {
+            expand_resource_application(resource, resource_definitions, false)
+        }
+        resource => Ok(resource),
+    }
+}
+
+/// Resolve and type the application. A slot operand uses the declaration's
+/// clause, so it can name a family's arguments even when a whole instance
+/// of that family would require a bound model.
+fn expand_resource_application(
+    resource: ResourceClause,
+    resource_definitions: &DeclaredResourceScope,
+    allow_fields: bool,
+) -> Result<ResourceClause, ClickError> {
+    match resource {
         ResourceClause::Declared {
             type_schema,
             resource_type_arguments,
@@ -2431,10 +2456,11 @@ fn expand_declared_resource_clause(
                 resource_type_arguments,
                 resource_definitions,
             )?;
-            let info = declared_resource_info(
+            let info = declared_resource_info_with_fields(
                 &name,
                 arguments.len() + resource_arguments.len(),
                 resource_definitions,
+                allow_fields,
             )?;
             validate_resource_reference_arguments(
                 &name,

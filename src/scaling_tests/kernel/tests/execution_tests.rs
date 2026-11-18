@@ -4,6 +4,64 @@
 
 use super::*;
 
+#[test]
+fn direct_local_write_builds_loan_obligation_without_visiting_aliases() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let execute =
+        |state: &ExecutionState, statement: &ProgramStatement, assumptions: &PureFactContext| {
+            execute_execution_statement_paths(
+                state,
+                statement,
+                assumptions,
+                ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap()
+        };
+    let state = normal_state(&execute(
+        &ExecutionState::new(),
+        &program_declare("x", ProgramType::Int32),
+        &PureFactContext::new(),
+    ));
+    let slot = state.locals().slot("x").unwrap().clone();
+    let loan = active_memory_loan(MemoryRange::new(
+        Address::symbolic(Variable(930_000)),
+        0u32.into(),
+        1u32.into(),
+    ));
+    let state = state.with_loan_ledger(Some(loan));
+    let write = program_assign("x", crate::kernel::program_expression::int32_literal(1));
+
+    let mut samples = Vec::new();
+    for count in [4, 16, 64] {
+        let mut assumptions = PureFactContext::new();
+        for i in 0..count {
+            assumptions = assumptions.assume_condition(
+                ConditionTerm::address_equal(
+                    slot.clone(),
+                    Address::symbolic(Variable(931_000 + i)),
+                ),
+                true,
+            );
+        }
+        // The proof boundary publishes admitted equalities for ownership
+        // queries before the step. Measure the write against that snapshot.
+        state
+            .resources()
+            .synchronize_memory_equalities(&assumptions);
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            execute(&state, &write, &assumptions)
+        });
+        assert_eq!(paths.len(), 1);
+        loan_write_separation(&paths[0]);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}
+
 /// Selecting a verified loop rule reads each required assumption through an
 /// indexed lookup, so the work is charged to the rule's own prerequisites and
 /// does not grow with the unrelated ambient facts in scope at the loop.

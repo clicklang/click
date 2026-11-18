@@ -514,7 +514,7 @@ mod tests {
             Ty::Int32,
             MachineTerm::machine_integer_cast(Ty::Int32, Ty::Int16, x.clone()),
         );
-        let goal = Proposition::ConditionIs(ConditionTerm::equal(short, x.clone()), true);
+        let goal = Proposition::condition_is(ConditionTerm::equal(short, x.clone()), true);
         let lower =
             ConditionTerm::signed_greater_equal(x.clone(), MachineTerm::constant(-32768i32 as u32));
         let upper = ConditionTerm::signed_less_equal(x.clone(), MachineTerm::constant(32767));
@@ -527,7 +527,7 @@ mod tests {
         let both = std::collections::HashMap::from([(lower.clone(), true), (upper.clone(), true)]);
         assert_eq!(
             rewrite(&both),
-            Proposition::ConditionIs(ConditionTerm::equal(x.clone(), x.clone()), true)
+            Proposition::condition_is(ConditionTerm::equal(x.clone(), x.clone()), true)
         );
         let one = std::collections::HashMap::from([(lower, true)]);
         assert_eq!(rewrite(&one), goal);

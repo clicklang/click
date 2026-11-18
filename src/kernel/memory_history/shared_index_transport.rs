@@ -702,7 +702,7 @@ mod tests {
     fn framed_index_transport_keeps_opaque_constant_readings() {
         let _session = VerificationSession::enter();
         let after = SymbolicMemory::new();
-        let null = MachineTerm::PointerAddress(
+        let null = MachineTerm::IntegerAddress(
             Box::new(Address::null()),
             crate::kernel::AddressObjectClass::NONE,
         );
@@ -970,7 +970,7 @@ mod tests {
         let value = retained(
             ty,
             &MachineTerm::If {
-                condition: Box::new(ConditionTerm::pointer_equal(
+                condition: Box::new(ConditionTerm::address_equal(
                     Address::symbolic(Variable(1007510)),
                     Address::symbolic(Variable(1007511)),
                 )),

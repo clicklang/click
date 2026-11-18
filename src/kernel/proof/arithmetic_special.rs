@@ -2,7 +2,7 @@
 //! plans selecting those rules for ordinary proof expansion.
 use super::super::{
     Address, AddressBase, AddressOffset, ComparisonOperator, ConditionTerm, FloatClassification,
-    FloatCondition, MachineTerm, PointerValue, Proposition, SignedDefinedWidth,
+    FloatCondition, MachineTerm, Pointer, Proposition, SignedDefinedWidth,
 };
 
 use crate::kernel::binary_term;
@@ -181,7 +181,7 @@ fn bitvector_payload(root: &MachineTerm) -> Option<usize> {
                 payload = payload.checked_add(name.len())?;
                 pending.extend(arguments.iter());
             }
-            MachineTerm::PointerAddress(pointer, _) | MachineTerm::MemoryLoad(_, pointer, _) => {
+            MachineTerm::IntegerAddress(pointer, _) | MachineTerm::MemoryLoad(_, pointer, _) => {
                 // A read owns an interned state; only its written address
                 // contributes syntax payload, never the state contents.
                 payload = payload.checked_add(pointer_payload(pointer)?)?;
@@ -225,7 +225,7 @@ fn charge_map_insert(offset: &AddressOffset, map_len: usize) -> bool {
 fn charge_signed_bound(proposition: &Proposition) -> bool {
     // A native 8- or 16-bit order is the same fact as the `int32` order of
     // its widenings (rule K8), which the bound context files with it.
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format:
                 MachineIntegerType::Int32
@@ -243,7 +243,7 @@ fn charge_signed_bound(proposition: &Proposition) -> bool {
             right,
         },
         true,
-    ) = proposition
+    )) = proposition.condition_native()
     else {
         return false;
     };
@@ -331,7 +331,7 @@ fn pointer_index_equal(
     true
 }
 
-fn pointer_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
+fn address_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         match (left, right) {
@@ -388,11 +388,11 @@ fn pointer_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
     true
 }
 
-fn pointer_equal(left: &Address, right: &Address) -> bool {
+fn address_equal(left: &Address, right: &Address) -> bool {
     charge_pointer(left)
         && charge_pointer(right)
         && address_base_equal(&left.base, &right.base)
-        && pointer_offset_equal(&left.offset, &right.offset)
+        && address_offset_equal(&left.offset, &right.offset)
 }
 
 mod operand_identity;
@@ -444,7 +444,7 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
                 }
             }
             (MachineTerm::MemoryLoad(lm, lp, lk), MachineTerm::MemoryLoad(rm, rp, rk)) => {
-                if lm != rm || lk != rk || !pointer_equal(lp, rp) {
+                if lm != rm || lk != rk || !address_equal(lp, rp) {
                     return false;
                 }
             }
@@ -498,8 +498,8 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
             ) if left_name == right_name && left_arguments.len() == right_arguments.len() => {
                 pending.extend(left_arguments.iter().zip(right_arguments.iter()));
             }
-            (MachineTerm::PointerAddress(left, _), MachineTerm::PointerAddress(right, _)) => {
-                if !pointer_equal(left, right) {
+            (MachineTerm::IntegerAddress(left, _), MachineTerm::IntegerAddress(right, _)) => {
+                if !address_equal(left, right) {
                     return false;
                 }
             }
@@ -673,7 +673,7 @@ pub(crate) fn signed_definedness_operands(
     let Proposition::ConditionIs(condition, false) = proposition else {
         return None;
     };
-    match condition {
+    match condition.native_compat() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
@@ -745,7 +745,7 @@ fn signed_constant_bound_on_key(
     let Proposition::ConditionIs(condition, value) = premise else {
         return None;
     };
-    let view = comparison_view(condition, *value)?;
+    let view = comparison_view(condition.native_compat(), *value)?;
     let format = match width {
         SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
         SignedDefinedWidth::Int64 => MachineIntegerType::Int64,
@@ -871,13 +871,22 @@ fn pointer_sides(
     Option<(&AddressBase, &AddressBase)>,
 )> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::PointerEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((&left.offset, &right.offset, Some((&left.base, &right.base))))
         }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((&left.offset, &right.offset, Some((&left.base, &right.base))))
         }
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressOffsetEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((left, right, None))
         }
         _ => None,
@@ -897,7 +906,7 @@ fn scalar_bounds(premises: &[&Proposition]) -> Option<BTreeMap<MachineTerm, (i64
         let Proposition::ConditionIs(condition, true) = premise else {
             return None;
         };
-        let (left, right, strict) = match condition {
+        let (left, right, strict) = match condition.native_compat() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -982,7 +991,7 @@ fn unsigned64_order(proposition: &Proposition) -> Option<(&MachineTerm, &Machine
     let Proposition::ConditionIs(condition, true) = proposition else {
         return None;
     };
-    Some(match condition {
+    Some(match condition.native_compat() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
@@ -1066,7 +1075,7 @@ fn integer_rule_holds(
     let native = match result {
         Proposition::Not(inner) => match inner.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                negated = Proposition::ConditionIs(condition.clone(), !value);
+                negated = Proposition::condition_is(condition.clone(), !value);
                 &negated
             }
             _ => result,
@@ -1166,7 +1175,7 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
     }
     if let Proposition::ConditionIs(condition, truth) = goal
         && matches!(
-            condition,
+            condition.native_compat(),
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::LessEqual,
@@ -1181,7 +1190,7 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
             }
             context = context.assume_proposition(premise.clone());
         }
-        return context.decide_widened_sum_bound(condition) == Some(*truth);
+        return context.decide_widened_sum_bound(condition.native_compat()) == Some(*truth);
     }
     false
 }
@@ -1191,14 +1200,17 @@ fn pointer_translation(
     bound_propositions: &[&Proposition],
     goal: &Proposition,
 ) -> bool {
-    if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = goal {
-        let same_domain = |a: &PointerValue, b: &PointerValue| {
+    if let Some((ConditionTerm::PointerEqual(left, right), true)) = (goal).condition_native() {
+        let same_domain = |a: &Pointer, b: &Pointer| {
             a.provenance() == b.provenance()
                 && a.bounds() == b.bounds()
                 && a.bounds_are_known() == b.bounds_are_known()
         };
         let linked = match relation {
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::PointerEqual(a, b), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 (same_domain(left, a) && same_domain(right, b))
                     || (same_domain(left, b) && same_domain(right, a))
             }
@@ -1432,11 +1444,46 @@ fn offset_difference(goal: &AddressOffset, premise: &AddressOffset) -> Option<i1
     terms.is_empty().then_some(constant)
 }
 
+/// Literal discovery over one explicit unsigned expression. The charged walk
+/// precedes the legacy constant recognizers; no fact or memory state is read.
+pub(crate) fn unsigned_word_constant_for_discovery(
+    value: crate::kernel::MachineOperandView<'_>,
+) -> Option<u64> {
+    let word = Word(value);
+    if !word_view::charge(word) {
+        return None;
+    }
+    word_view::constants(&[word])
+        .get(&word.key())
+        .copied()
+        .flatten()
+}
+
+/// A bounded discovery hint over two explicit pointers, with no fact context.
+/// The caller still constructs its ordinary address identity and offset law.
+pub(crate) fn constant_pointer_byte_difference(left: &Address, right: &Address) -> Option<i128> {
+    if !charge_pointer(left)
+        || !charge_pointer(right)
+        || !address_base_equal(&left.base, &right.base)
+    {
+        return None;
+    }
+    offset_difference(&left.offset, &right.offset)
+}
+
+/// Goal-local alignment of null, heap, global and static addresses. This
+/// reads only the named block's registration and the written byte offset;
+/// symbolic offsets and facts about other pointers are deliberately excluded.
+pub(crate) fn intrinsic_pointer_alignment(result: &Proposition) -> bool {
+    pointer_alignment(None, result)
+}
+
 fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> bool {
     let Proposition::ConditionIs(condition, expected) = result else {
         return false;
     };
-    let Some((goal_pointer, goal_alignment)) = checked_pointer_alignment(condition) else {
+    let Some((goal_pointer, goal_alignment)) = checked_pointer_alignment(condition.native_compat())
+    else {
         return false;
     };
     if !charge_pointer(goal_pointer) {
@@ -1446,7 +1493,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         let Proposition::ConditionIs(condition, true) = proposition else {
             return None;
         };
-        checked_pointer_alignment(condition)
+        checked_pointer_alignment(condition.native_compat())
     });
     if premise.is_some() && premise_alignment.is_none() {
         return false;
@@ -1473,7 +1520,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         };
         aligned
     } else {
-        let intrinsic_alignment = if pointer_equal(goal_pointer, &Address::null()) {
+        let intrinsic_alignment = if address_equal(goal_pointer, &Address::null()) {
             // The null address is zero, so every valid power-of-two alignment
             // divides it; use the largest possible bound as an intrinsic
             // alignment sentinel.
@@ -1731,7 +1778,7 @@ impl<'a> AlignmentIndex<'a> {
                 if crate::instrumentation::deadline_exceeded_with_work(1) {
                     return None;
                 }
-                if pointer_equal(pointer, candidate.pointer) {
+                if address_equal(pointer, candidate.pointer) {
                     candidate.max_alignment = candidate.max_alignment.max(*alignment);
                     matched = true;
                     break;
@@ -1756,7 +1803,7 @@ impl<'a> AlignmentIndex<'a> {
                 if crate::instrumentation::deadline_exceeded_with_work(1) {
                     return false;
                 }
-                candidate.max_alignment >= required && pointer_equal(pointer, candidate.pointer)
+                candidate.max_alignment >= required && address_equal(pointer, candidate.pointer)
             })
         })
     }
@@ -1792,7 +1839,7 @@ fn bounded_term_hashes(roots: &[&MachineTerm]) -> Option<HashMap<usize, u64>> {
                     kind.hash(&mut hasher);
                     pointer_identity_hash(pointer)?.hash(&mut hasher);
                 }
-                MachineTerm::PointerAddress(pointer, _) => {
+                MachineTerm::IntegerAddress(pointer, _) => {
                     pointer_identity_hash(pointer)?.hash(&mut hasher)
                 }
                 binary_term!(Int32, Add, left, right)
@@ -1919,8 +1966,8 @@ fn pointer_or_masked_tag<'a>(
     right: Word<'a>,
 ) -> Option<(&'a Address, Word<'a>, u64)> {
     let (pointer, tag) = match (left.node(), right.node()) {
-        (WordNode::PointerAddress(pointer), _) => (pointer, right),
-        (_, WordNode::PointerAddress(pointer)) => (pointer, left),
+        (WordNode::IntegerAddress(pointer), _) => (pointer, right),
+        (_, WordNode::IntegerAddress(pointer)) => (pointer, left),
         _ => return None,
     };
     let (_, mask) = masked_source(tag)?;
@@ -2033,7 +2080,7 @@ fn tagged_form_inner<'a>(
                 }
                 active.insert(identity);
                 match current.node() {
-                    WordNode::PointerAddress(pointer) => store(
+                    WordNode::IntegerAddress(pointer) => store(
                         identity,
                         Some(TaggedAddress {
                             pointer: Arc::new(pointer.clone()),
@@ -2369,7 +2416,9 @@ fn word_comparison(
     let Proposition::ConditionIs(condition, truth) = proposition else {
         return None;
     };
-    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
+        condition.native_compat(),
+    )?;
     if !matches!(
         view.format,
         MachineIntegerType::Int64 | MachineIntegerType::UInt64
@@ -2411,7 +2460,8 @@ fn pointer_word_equality(
         let Proposition::ConditionIs(condition, true) = premise else {
             return false;
         };
-        let Some((pointer, alignment)) = checked_pointer_alignment(condition) else {
+        let Some((pointer, alignment)) = checked_pointer_alignment(condition.native_compat())
+        else {
             return false;
         };
         if !charge_pointer(pointer) {
@@ -2436,7 +2486,7 @@ fn pointer_word_equality(
     let goal_right_form = tagged_form(goal_right, (left, right), &alignment_index);
     let equal = match (goal_left_form, goal_right_form) {
         (Some(goal_left), Some(goal_right)) => {
-            pointer_equal(goal_left.pointer.as_ref(), goal_right.pointer.as_ref())
+            address_equal(goal_left.pointer.as_ref(), goal_right.pointer.as_ref())
                 && tagged_tag_equal(&goal_left.tag, &goal_right.tag)
         }
         _ => false,
@@ -2449,7 +2499,7 @@ fn pointer_word_equality(
             tagged_form(goal_right, (left, right), &alignment_index),
         ) {
             (Some(goal_left), Some(goal_right))
-                if pointer_equal(goal_left.pointer.as_ref(), goal_right.pointer.as_ref()) =>
+                if address_equal(goal_left.pointer.as_ref(), goal_right.pointer.as_ref()) =>
             {
                 matches!(
                     (goal_left.tag_constant, goal_right.tag_constant),
@@ -2480,7 +2530,7 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
         let Proposition::ConditionIs(condition, true) = premise else {
             return false;
         };
-        if checked_pointer_alignment(condition).is_none() {
+        if checked_pointer_alignment(condition.native_compat()).is_none() {
             return false;
         }
     }
@@ -2490,7 +2540,8 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
             let Proposition::ConditionIs(condition, true) = premise else {
                 unreachable!("alignment premises were checked above");
             };
-            checked_pointer_alignment(condition).expect("alignment premises were checked above")
+            checked_pointer_alignment(condition.native_compat())
+                .expect("alignment premises were checked above")
         })
         .collect::<Vec<_>>();
     let alignment_index = AlignmentIndex::new(&alignments);
@@ -2508,12 +2559,12 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
     let Some(right_form) = right_form else {
         return false;
     };
-    let equal = pointer_equal(left_form.pointer.as_ref(), right_form.pointer.as_ref())
+    let equal = address_equal(left_form.pointer.as_ref(), right_form.pointer.as_ref())
         && tagged_tag_equal(&left_form.tag, &right_form.tag);
     if expected {
         equal
     } else {
-        pointer_equal(left_form.pointer.as_ref(), right_form.pointer.as_ref())
+        address_equal(left_form.pointer.as_ref(), right_form.pointer.as_ref())
             && matches!(
                 (left_form.tag_constant, right_form.tag_constant),
                 (Some(left), Some(right)) if left != right
@@ -2525,7 +2576,7 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
     let Proposition::ConditionIs(finite_condition, true) = finite else {
         return false;
     };
-    let (finite_expression, finite_width) = match finite_condition {
+    let (finite_expression, finite_width) = match finite_condition.native_compat() {
         ConditionTerm::Float32(FloatCondition::Classification {
             value: expression,
             classification: FloatClassification::Finite,
@@ -2539,37 +2590,66 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
     if !charge_bitvector(finite_expression) {
         return false;
     }
-    let Proposition::ConditionIs(condition, expected) = result else {
+    let Some((condition, left, right)) = finite_float_comparison(result) else {
         return false;
     };
-    let (operator, left, right, width) = match condition {
+    let width = if matches!(condition, ConditionTerm::Float32(_)) {
+        32
+    } else {
+        64
+    };
+    charge_bitvector(left)
+        && charge_bitvector(right)
+        && bitvector_equal(left, right)
+        && width == finite_width
+        && bitvector_equal(left, finite_expression)
+}
+
+/// Extract the operands when the comparison has the polarity it would have
+/// on equal finite operands.
+fn finite_float_comparison(
+    result: &Proposition,
+) -> Option<(&ConditionTerm, &MachineTerm, &MachineTerm)> {
+    let Proposition::ConditionIs(condition, expected) = result else {
+        return None;
+    };
+    let (operator, left, right) = match condition.native_compat() {
         ConditionTerm::Float32(FloatCondition::Comparison {
             operator,
             left,
             right,
-        }) => (*operator, left.as_ref(), right.as_ref(), 32),
-        ConditionTerm::Float64(FloatCondition::Comparison {
+        })
+        | ConditionTerm::Float64(FloatCondition::Comparison {
             operator,
             left,
             right,
-        }) => (*operator, left.as_ref(), right.as_ref(), 64),
-        _ => return false,
+        }) => (*operator, left.as_ref(), right.as_ref()),
+        _ => return None,
     };
-    if !charge_bitvector(left) || !charge_bitvector(right) {
-        return false;
-    }
-    let same_result = bitvector_equal(left, right);
-    let same_finite = bitvector_equal(left, finite_expression);
-    if width != finite_width || !same_result || !same_finite {
-        return false;
-    }
     let reflexive = matches!(
         operator,
         ComparisonOperator::Equal
             | ComparisonOperator::LessEqual
             | ComparisonOperator::GreaterEqual
     );
-    *expected == reflexive
+    (*expected == reflexive).then_some((condition.native_compat(), left, right))
+}
+
+pub(super) fn finite_float_reflexivity_premise(result: &Proposition) -> Option<Proposition> {
+    let (condition, operand, other) = finite_float_comparison(result)?;
+    if operand != other {
+        return None;
+    }
+    let finite = match condition {
+        ConditionTerm::Float32(_) => {
+            ConditionTerm::float32_classification(operand.clone(), FloatClassification::Finite)
+        }
+        ConditionTerm::Float64(_) => {
+            ConditionTerm::float64_classification(operand.clone(), FloatClassification::Finite)
+        }
+        _ => unreachable!("finite reflexivity only selects float comparisons"),
+    };
+    Some(Proposition::condition_is(finite, true))
 }
 
 #[cfg(test)]
@@ -2608,7 +2688,7 @@ mod tests {
                     bounded_term_hash(&native)
                 );
             }
-            let equal = pointer_offset_equal(&pointer.offset, &pointer.offset);
+            let equal = address_offset_equal(&pointer.offset, &pointer.offset);
             assert_eq!(equal, bitvector_payload(&native).is_some());
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             root = KernelTerm::machine_binary_shared(
@@ -2644,7 +2724,7 @@ mod tests {
                 OverflowOperation::Multiply,
                 OverflowOperation::Divide,
             ] {
-                let legacy = Proposition::ConditionIs(
+                let legacy = Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format,
                         op,
@@ -2734,7 +2814,7 @@ mod tests {
                             } else {
                                 (term.clone(), literal.clone())
                             };
-                            let premise = Proposition::ConditionIs(
+                            let premise = Proposition::condition_is(
                                 ConditionTerm::Compare {
                                     format,
                                     relation,
@@ -2873,7 +2953,7 @@ mod tests {
     }
 
     fn measured_tagged_form(pointer_depth: usize, tag_depth: usize) -> (bool, usize, usize) {
-        let address = MachineTerm::PointerAddress(
+        let address = MachineTerm::IntegerAddress(
             Box::new(deep_pointer(pointer_depth)),
             crate::kernel::AddressObjectClass::NONE,
         );
@@ -2912,7 +2992,7 @@ mod tests {
             left: Box::new(MachineTerm::Variable(crate::kernel::Variable(1))),
             right: Box::new(MachineTerm::uint64_constant(1)),
         };
-        let bound = Proposition::ConditionIs(
+        let bound = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -2929,7 +3009,7 @@ mod tests {
         use crate::kernel::MachineOperandView;
         let _session = crate::kernel::VerificationSession::enter();
         let next = pointer(AddressOffset::Constant(0));
-        let address = MachineTerm::pointer_address(next.clone());
+        let address = MachineTerm::integer_address(next.clone());
         let raw = MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(
                 &(crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new())),
@@ -2947,7 +3027,7 @@ mod tests {
                 MachineOperandView::Legacy(word),
             )
         });
-        let relation = Proposition::ConditionIs(
+        let relation = Proposition::condition_is(
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 MachineIntegerType::UInt64,
                 CompareRelation::Equal,
@@ -2955,8 +3035,8 @@ mod tests {
             ),
             true,
         );
-        let alignment = Proposition::ConditionIs(ConditionTerm::pointer_aligned(next, 8), true);
-        let goal = Proposition::ConditionIs(
+        let alignment = Proposition::condition_is(ConditionTerm::pointer_aligned(next, 8), true);
+        let goal = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 address,
                 MachineTerm::uint64_bitwise_and(raw, MachineTerm::uint64_constant(!1)),
@@ -2976,7 +3056,7 @@ mod tests {
         let alignments = AlignmentIndex::new(&[]).expect("empty alignment index");
         let mut previous = 0;
         for depth in [4, 16, 64, 256, 1024] {
-            let address = MachineTerm::PointerAddress(
+            let address = MachineTerm::IntegerAddress(
                 Box::new(pointer(AddressOffset::Constant(0))),
                 crate::kernel::AddressObjectClass::NONE,
             );

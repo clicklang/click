@@ -51,8 +51,8 @@ fn exit_local_argument_context_indexing_is_linear_and_shared() {
     for size in [4, 16, 64, 256] {
         let facts = (0..size)
             .map(|index| {
-                ExecutionPureFact::new(Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(
+                ExecutionPureFact::new(Proposition::condition_is(
+                    ConditionTerm::address_equal(
                         Address::symbolic(Variable(10000 + index)),
                         Address::symbolic(Variable(20000 + index)),
                     ),
@@ -82,7 +82,7 @@ fn exit_local_argument_context_indexing_is_linear_and_shared() {
 fn exit_argument_checks_reuse_the_checked_path_context() {
     let _session = crate::kernel::VerificationSession::enter();
     let fact = |id, value| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::Variable(Variable(id)),
                 MachineTerm::constant(value),
@@ -109,7 +109,7 @@ fn exit_argument_checks_reuse_the_checked_path_context() {
         let Proposition::ConditionIs(selected_condition, _) = &selected else {
             unreachable!()
         };
-        let older_truth = Proposition::ConditionIs(selected_condition.clone(), false);
+        let older_truth = Proposition::condition_is(selected_condition.clone(), false);
         let ambient = root
             .assumptions()
             .clone()

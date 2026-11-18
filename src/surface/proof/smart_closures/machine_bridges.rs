@@ -42,16 +42,24 @@ fn integer_parts(
     &crate::kernel::SharedIntegerTerm,
 )> {
     match proposition {
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerLessEqual(a, b)
-            | ConditionTerm::IntegerLessThan(a, b)
-            | ConditionTerm::IntegerEqual(a, b),
-            true,
-        ) => Some((a, b)),
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerGreaterEqual(a, b) | ConditionTerm::IntegerGreaterThan(a, b),
-            true,
-        ) => Some((b, a)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::IntegerLessEqual(a, b)
+                | ConditionTerm::IntegerLessThan(a, b)
+                | ConditionTerm::IntegerEqual(a, b),
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some((a, b))
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::IntegerGreaterEqual(a, b) | ConditionTerm::IntegerGreaterThan(a, b),
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some((b, a))
+        }
         _ => None,
     }
 }
@@ -166,6 +174,89 @@ fn written_operands_inner(
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Replace the widened uint32-sum shortcut with its ordinary observation
+    /// identity and selected Integer proof. Native widening is value preserving;
+    /// the sum's int64 range follows from its operands' uint32 type ranges.
+    pub(in crate::surface::proof) fn try_widened_unsigned_sum_using(
+        input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_widened_unsigned_sum_using");
+        let (Some(goal), Some(surface)) = (input.goal(), input.surface_goal()) else {
+            return Ok(None);
+        };
+        let Proposition::ConditionIs(condition, _) = goal else {
+            return Ok(None);
+        };
+        if crate::kernel::PureFactContext::new()
+            .widened_unsigned_sum_bound_premises(condition.native_compat())
+            .is_none()
+            || signed_intervals::has_retained_read_source(surface)
+            || premises
+                .iter()
+                .any(signed_intervals::has_retained_read_source)
+        {
+            return Ok(None);
+        }
+        for source in premises {
+            let kernel = input.lower_cited_surface_proposition(source, "widened sum premise")?;
+            if !input.facts().listed_premise_available(&kernel, &[], false) {
+                return Ok(None);
+            }
+        }
+        // Only the goal's operations need identities; unrelated cited
+        // expressions must not introduce extra overflow obligations.
+        let identities = operation_identities(machine_observations(goal, &[]));
+        let observed = observed_native_surface_comparison(goal, surface);
+        let mut written =
+            written_integer_observations(premises.iter().chain(std::iter::once(&observed)));
+        // A returned scalar can name the entire sum without writing either
+        // widening. Raise its two operands from the retained program state.
+        // No read identities, program points, or version points are changed.
+        if let Some(view) = input.premise_fixed_state_view() {
+            let _recorded = super::super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+                view.fixed_state.recorded_states,
+            );
+            let query = crate::kernel::machine_integer::comparison::comparison_view(
+                condition.native_compat(),
+                true,
+            )
+            .expect("recognized widened sum comparison");
+            let (_, _, operands) = query.operands[0]
+                .operand_view()
+                .binary()
+                .expect("recognized widened sum operation");
+            for operand in operands {
+                let operand = operand.retain(MachineIntegerType::Int64);
+                let root = operand.shared_operand().ok_or_else(|| {
+                    input.step_error("widened unsigned sum operand has no shared term")
+                })?;
+                let source = super::super::surface_synthesis::raise_kernel_term(
+                    root,
+                    view.parameter_binding,
+                    view.fixed_state.state,
+                    &BTreeMap::new(),
+                )
+                .ok_or_else(|| {
+                    input.step_error(
+                        "cannot raise a widened unsigned sum operand from its retained source",
+                    )
+                })?;
+                written.push(observe(source));
+            }
+        }
+        let identities = identities.iter().collect::<Vec<_>>();
+        let Ok((proof, established)) =
+            Self::prove_operation_identities(input, &identities, &written, Some(premises))?
+        else {
+            return Ok(None);
+        };
+        let mut sources = premises.to_vec();
+        sources.extend(established.into_iter().map(|(_, source)| source));
+        Self::try_integer_composition_using(&proof, &sources)
+    }
+
     /// Prove one explicitly bounded shift or mask through local observation
     /// facts. The arithmetic in this route uses only the ordinary emitter.
     pub(in crate::surface::proof) fn try_machine_bridge_using(
@@ -545,30 +636,117 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 }
 
-// Numeric branch selection is one local equation followed by rewriting.
-// Arithmetic after the rewrite remains in the ordinary Integer emitter.
+// Do not detach a conditional from a binder or a program point. The
+// mathematical/native context is retained so a native arm equation does not
+// accidentally become an Integer conditional with different branch types.
+pub(super) fn conditional_candidates<'s>(
+    left: &'s ContractExpression,
+    right: &'s ContractExpression,
+    mathematical: bool,
+    remaining: &mut usize,
+) -> Result<Vec<(&'s ContractExpression, bool)>, &'static str> {
+    use ContractExpression as E;
+    let mut pending = vec![(right, mathematical, 0), (left, mathematical, 0)];
+    let mut result = Vec::new();
+    while let Some((expression, mathematical, depth)) = pending.pop() {
+        if *remaining == 0 || crate::instrumentation::deadline_exceeded_with_work(1) {
+            return Err("conditional expansion reached its work or 4096-node bound");
+        }
+        *remaining -= 1;
+        if depth >= 256 {
+            return Err("conditional expansion reached its source depth bound");
+        }
+        match expression {
+            // Visit only the selected arm, after the outer equation has been
+            // rewritten. An inactive arm may not have an evaluable domain.
+            E::If { .. } => result.push((expression, mathematical)),
+            E::IntegerContext(inner) => pending.push((inner, true, depth + 1)),
+            E::CUnary { operand, .. } => pending.push((operand, false, depth + 1)),
+            E::Negate(inner) | E::BitwiseNot(inner) => {
+                pending.push((inner, mathematical, depth + 1));
+            }
+            E::Add(a, b)
+            | E::Subtract(a, b)
+            | E::Multiply(a, b)
+            | E::Divide(a, b)
+            | E::Remainder(a, b)
+            | E::ShiftLeft(a, b)
+            | E::ShiftRight(a, b)
+            | E::RustShiftLeft(a, b)
+            | E::RustShiftRight(a, b)
+            | E::BitwiseAnd(a, b)
+            | E::BitwiseOr(a, b)
+            | E::BitwiseXor(a, b) => {
+                pending.push((b, mathematical, depth + 1));
+                pending.push((a, mathematical, depth + 1));
+            }
+            E::AlgebraicConstructor { arguments, .. } => {
+                pending.extend(arguments.iter().rev().map(|arg| (arg, false, depth + 1)));
+            }
+            E::Call { name, arguments } => {
+                let mathematical = matches!(
+                    name.rsplit("::").next(),
+                    Some("truncating_quotient" | "truncating_remainder")
+                );
+                pending.extend(
+                    arguments
+                        .iter()
+                        .rev()
+                        .map(|argument| (argument, mathematical, depth + 1)),
+                );
+            }
+            _ => {}
+        }
+    }
+    Ok(result)
+}
+
+pub(super) fn non_numeric_conditional_goal(goal: &Proposition) -> bool {
+    let goal = match goal {
+        Proposition::Not(body) => body.as_ref(),
+        _ => goal,
+    };
+    matches!(&goal, condition_source @ Proposition::ConditionIs(_, _)
+        if matches!(condition_source.condition_native(), Some((ConditionTerm::BoolEqual(..) | ConditionTerm::BoolIf { .. } | ConditionTerm::AlgebraicEqual(..), _))))
+        || matches!(
+            goal,
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+        )
+}
+
+// Branch selection emits local equations and rewrites. Arithmetic after
+// those rewrites remains in the existing ordinary proof emitters.
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
-    pub(in crate::surface::proof) fn try_conditional_bridge_using(
+    pub(in crate::surface::proof) fn rewrite_conditional_arms_using(
         input: &Proof<'a>,
         premises: &[ClickProposition],
-    ) -> Result<Option<Proof<'a>>, ClickError> {
+    ) -> Result<Option<(Proof<'a>, Vec<ClickProposition>)>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_conditional_bridge_using");
+        crate::kernel::search::record_discovery("rewrite_conditional_arms_using");
         let Some(goal) = input.goal() else {
             return Ok(None);
         };
-        if integer_parts(goal).is_none()
+        let mathematical = integer_affine_claim(goal).is_some();
+        if !mathematical
+            && !non_numeric_conditional_goal(goal)
             && !crate::kernel::machine_integer::comparison::integer_readings_with_promotions(goal)
                 .iter()
-                .any(|reading| integer_parts(reading).is_some())
+                .any(|reading| integer_affine_claim(reading).is_some())
         {
             return Ok(None);
         }
-        let Some(ClickProposition::Comparison { left, right, .. }) = input.surface_goal() else {
+        let Some(ClickProposition::Comparison { left, right, .. }) = input
+            .surface_goal()
+            .and_then(integer_composition::canonical_surface)
+        else {
             return Ok(None);
         };
-        if !matches!(left, ContractExpression::If { .. })
-            && !matches!(right, ContractExpression::If { .. })
+        let mut remaining = 4096;
+        // Ordinary arithmetic goals should not construct a selected fact
+        // context when their written expression contains no conditional.
+        if conditional_candidates(&left, &right, mathematical, &mut remaining)
+            .map_err(|message| input.step_error(message))?
+            .is_empty()
         {
             return Ok(None);
         }
@@ -582,50 +760,417 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             selected.push(kernel);
         }
         let facts = crate::kernel::proof::PureFactStore::from_ordered(&selected);
-        for expression in [left, right] {
-            let ContractExpression::If {
-                condition,
-                then_branch,
-                else_branch,
-            } = expression
+        let mut proof = input.clone();
+        let mut sources = premises.to_vec();
+        let mut changed = false;
+        for _ in 0..64 {
+            let Some(ClickProposition::Comparison { left, right, .. }) = proof
+                .surface_goal()
+                .and_then(integer_composition::canonical_surface)
             else {
-                continue;
+                break;
             };
-            for (guard, arm) in [
-                (condition.as_ref().clone(), then_branch),
-                (ClickProposition::Not(condition.clone()), else_branch),
-            ] {
-                let lowered =
-                    input.lower_cited_surface_proposition(&guard, "conditional bridge guard")?;
-                if !facts.pure_known_available(&lowered) {
-                    continue;
-                }
-                let equality = eq(expression.clone(), arm.as_ref().clone());
-                let Ok(proof) = input
-                    .driver()
-                    .apply_step(super::super::wide_arithmetic::have(
-                        equality.clone(),
-                        vec![ProofStep::Known],
-                    ))
+            let candidates = conditional_candidates(&left, &right, mathematical, &mut remaining)
+                .map_err(|message| proof.step_error(message))?;
+            let mut next = None;
+            'candidate: for (expression, mathematical) in candidates {
+                let ContractExpression::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                } = expression
                 else {
-                    continue;
+                    unreachable!("conditional candidate");
                 };
-                let rewritten = proof.driver().apply_step(ProofStep::Rewrite(equality))?;
-                if rewritten.focused_discharged() {
-                    return Ok(Some(rewritten));
+                for (guard, arm) in [
+                    (condition.as_ref().clone(), then_branch),
+                    (ClickProposition::Not(condition.clone()), else_branch),
+                ] {
+                    let lowered = proof
+                        .lower_cited_surface_proposition(&guard, "conditional bridge guard")?;
+                    if !facts.pure_known_available(&lowered)
+                        && !crate::surface::planning::solve::computes_with_known(&lowered)
+                    {
+                        continue;
+                    }
+                    let left = if mathematical {
+                        super::super::surface_synthesis::integer_typed_expression(
+                            expression.clone(),
+                        )
+                    } else {
+                        expression.clone()
+                    };
+                    let equality = compare(left, ComparisonOperator::Equal, arm.as_ref().clone());
+                    let Ok(equation) =
+                        proof
+                            .driver()
+                            .apply_step(super::super::wide_arithmetic::have(
+                                equality.clone(),
+                                vec![ProofStep::Known],
+                            ))
+                    else {
+                        continue;
+                    };
+                    let rewritten = equation
+                        .driver()
+                        .apply_step(ProofStep::Rewrite(equality.clone()))?;
+                    if rewritten.goal() == proof.goal() {
+                        continue;
+                    }
+                    next = Some((rewritten, equality));
+                    break 'candidate;
                 }
-                if Self::known_bridge_using(&rewritten, premises)?
-                    || rewritten
-                        .goal()
-                        .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)
+            }
+            let Some((rewritten, equality)) = next else {
+                break;
+            };
+            proof = rewritten;
+            sources.push(equality);
+            changed = true;
+            if proof.focused_discharged() {
+                return Ok(Some((proof, sources)));
+            }
+        }
+        if !changed {
+            return Ok(None);
+        }
+        Ok(Some((proof, sources)))
+    }
+
+    pub(in crate::surface::proof) fn try_conditional_bridge_using(
+        input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_conditional_bridge_using");
+        let Some((proof, sources)) = Self::rewrite_conditional_arms_using(input, premises)? else {
+            return Ok(None);
+        };
+        if proof.focused_discharged() {
+            return Ok(Some(proof));
+        }
+        if Self::known_bridge_using(&proof, &sources)?
+            || proof
+                .goal()
+                .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)
+        {
+            return proof.driver().apply_step(ProofStep::Known).map(Some);
+        }
+        if let Some(closed) = Self::try_integer_composition_using(&proof, &sources)? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = Self::try_widened_unsigned_sum_using(&proof, &sources)? {
+            return Ok(Some(closed));
+        }
+        Self::try_signed_interval_using(&proof, &sources)
+    }
+}
+
+#[cfg(test)]
+mod widened_sum_tests {
+    use crate::surface::{
+        expand_c_claim_source_by_label, verify_c_sources, without_implicit_solve,
+    };
+
+    fn replay(source: &str, c: &[(&str, &str)], label: &str) {
+        let expanded = expand_c_claim_source_by_label(source, c, label)
+            .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+        assert!(!expanded.contains("normalize("), "{expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, c))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    }
+
+    #[test]
+    #[ignore = "nightly: widened unsigned sums with strict expansion replay"]
+    fn widened_unsigned_sums_expand_without_normalize() {
+        for (parameters, bounds, goal) in [
+            (
+                "a: uint32, b: uint32",
+                "a <= 10u32; b <= 20u32;",
+                "a as int64 + b as int64 <= 30i64",
+            ),
+            (
+                "a: uint32, b: uint32",
+                "",
+                "a as int64 + b as int64 <= 8589934590i64",
+            ),
+            (
+                "a: uint32, b: uint8",
+                "a <= 4294967040u32;",
+                "a as int64 + b as int64 <= 4294967295i64",
+            ),
+            (
+                "a: uint8, b: uint8",
+                "",
+                "a as int64 + b as int64 <= 510i64",
+            ),
+            (
+                "a: uint16, b: uint16",
+                "",
+                "a as int64 + b as int64 <= 131070i64",
+            ),
+            ("a: uint32", "a <= 10u32;", "a as int64 + 7i64 <= 17i64"),
+            (
+                "a: uint32, b: uint32",
+                "a <= 10u32; b <= 20u32;",
+                "to_integer(a as int64 + b as int64) <= 30",
+            ),
+            (
+                "a: uint32, b: uint32",
+                "31u32 <= a;",
+                "not (a as int64 + b as int64 <= 30i64)",
+            ),
+        ] {
+            let requires = bounds
+                .split(';')
+                .filter(|p| !p.trim().is_empty())
+                .map(|p| format!("requires {p};"))
+                .collect::<String>();
+            for tactic in [format!("solve() using {{ {bounds} }};"), "solve();".into()] {
+                let source = format!(
+                    "theorem widened({parameters}) {{ {requires} ensures {goal} by {{ {tactic} }} }}"
+                );
+                replay(&source, &[], "widened.ensures_0");
+            }
+        }
+        let c = "long add_byte(unsigned sum, unsigned char byte) { unsigned word = (unsigned)byte; long wide = (long)sum + (long)word; return wide; }";
+        let source = r#"verifying "wide.c";
+            int64 add_byte(uint32 sum, uint8 byte) {
+                requires sum <= 4294967040u32;
+                ensures result <= 4294967295i64 by {
+                    step_until(function.exit);
+                    solve() using { (byte as uint32) <= 255u32; sum <= 4294967040u32; };
+                }
+            }"#;
+        replay(source, &[("wide.c", c)], "add_byte.ensures_0");
+    }
+
+    #[test]
+    #[ignore = "nightly: widened unsigned sum refusal controls"]
+    fn widened_unsigned_sums_require_the_selected_bounds() {
+        for (bounds, goal, selected) in [
+            (
+                "requires a <= 10u32; requires b <= 20u32;",
+                "a as int64 + b as int64 <= 30i64",
+                "a <= 10u32;",
+            ),
+            (
+                "requires a <= 10u32; requires b <= 20u32;",
+                "a as int64 + b as int64 <= 29i64",
+                "a <= 10u32; b <= 20u32;",
+            ),
+            ("", "a as int64 + b as int64 <= 8589934589i64", ""),
+        ] {
+            let source = format!(
+                "theorem bad(a: uint32,b: uint32) {{ {bounds} ensures {goal} by {{ solve() using {{ {selected} }}; }} }}"
+            );
+            assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod nested_conditional_tests {
+    use crate::surface::{
+        expand_c_claim_source_by_label, verify_c_sources, without_implicit_solve,
+    };
+
+    #[test]
+    #[ignore = "nightly: nested conditional expansion and strict replay"]
+    fn nested_conditionals_expand_without_normalize() {
+        let mut failures = Vec::new();
+        for (parameters, bounds, goal) in [
+            (
+                "flag: Bool, x: Integer, y: Integer",
+                "flag; x <= 5;",
+                "(if flag {x} else {y}) + 3 <= 8",
+            ),
+            (
+                "flag: Bool, x: Integer, y: Integer",
+                "not flag; y <= 5;",
+                "3 * (if flag {x} else {y}) <= 15",
+            ),
+            (
+                "flag: Bool, x: int32, y: int32",
+                "flag; x <= 5;",
+                "to_integer(if flag {x} else {y}) + 3 <= 8",
+            ),
+            (
+                "flag: Bool, x: int32, y: int32",
+                "flag;",
+                "to_integer((if flag {x} else {y}) as int64) == to_integer(x)",
+            ),
+            (
+                "flag: Bool, x: int32, y: int32",
+                "flag; 0 <= x; x <= 5; defined((if flag {x} else {y}) + 1);",
+                "to_integer((if flag {x} else {y}) + 1) <= 6",
+            ),
+            (
+                "flag: Bool, inner: Bool, x: Integer, y: Integer",
+                "flag; not inner; y <= 5;",
+                "(if flag {if inner {x} else {y}} else {0}) + 3 <= 8",
+            ),
+            (
+                "flag: Bool, inner: Bool, x: Integer, y: Integer",
+                "flag; inner; x <= 5; y <= 5;",
+                "(if flag {x} else {0}) + (if inner {y} else {0}) <= 10",
+            ),
+            (
+                "flag: Bool, inner: Bool, x: Integer",
+                "flag; inner; x <= 5;",
+                "3 + (if flag {x} else {0}) <= ((if inner {8} else {0}) : Integer)",
+            ),
+            (
+                "flag: Bool, x: uint32, y: uint32",
+                "flag; x <= 10u32;",
+                "(if flag {x} else {y}) as int64 + 1i64 <= 11i64",
+            ),
+            (
+                "flag: Bool",
+                "flag;",
+                "truncating_quotient(if flag {7} else {9}, 2) == 3",
+            ),
+            (
+                "flag: Bool",
+                "flag;",
+                "3 + (if flag {4} else {truncating_quotient(1, 0)}) == 7",
+            ),
+            (
+                "flag: Bool, x: Integer",
+                "flag; x <= 5;",
+                "not ((if flag {x} else {0}) + 3 > 8)",
+            ),
+        ] {
+            let requirements = bounds
+                .split(';')
+                .filter(|p| !p.trim().is_empty())
+                .map(|p| format!("requires {p};"))
+                .collect::<String>();
+            for tactic in [format!("solve() using {{ {bounds} }};"), "solve();".into()] {
+                let source = format!(
+                    "theorem nested({parameters}) {{ {requirements} ensures {goal} by {{ {tactic} }} }}"
+                );
+                if std::panic::catch_unwind(|| {
+                    let expanded = expand_c_claim_source_by_label(&source, &[], "nested.ensures_0")
+                        .unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
+                    assert!(!expanded.contains("normalize("), "{source}\n{expanded}");
+                    assert!(!expanded.contains("solve("), "{expanded}");
+                    without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+                        .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
+                })
+                .is_err()
                 {
-                    return rewritten.driver().apply_step(ProofStep::Known).map(Some);
-                }
-                if let Some(closed) = Self::try_integer_composition_using(&rewritten, premises)? {
-                    return Ok(Some(closed));
+                    failures.push(source);
                 }
             }
         }
-        Ok(None)
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    #[ignore = "nightly: nested conditional guard and type refusal controls"]
+    fn nested_conditionals_preserve_selected_guards_and_arm_domains() {
+        for source in [
+            "theorem bad(flag: Bool,x: Integer,y: Integer) {requires flag; requires x<=5; ensures (if flag{x}else{y})+3<=8 by {solve() using {x<=5;};}}",
+            "theorem bad(flag: Bool,inner: Bool,x: Integer,y: Integer) {requires flag; requires inner; requires x<=5; ensures (if flag{if inner{x}else{y}}else{0})+3<=8 by {solve() using {flag;x<=5;};}}",
+            "theorem bad(flag: Bool) {requires flag; ensures to_integer((if flag{4294967295u32}else{0u32}) as int64)==-1 by {solve() using {flag;};}}",
+            "theorem bad(flag: Bool) {requires flag; ensures (if flag{1}else{3})+3==6 by {solve() using {flag;};}}",
+        ] {
+            crate::surface::parse(source).unwrap();
+            assert!(verify_c_sources(source, &[]).is_err(), "{source}");
+        }
+        let source = r#"theorem bad(flag: Bool, a: uint64, d: uint64) {
+            requires flag; requires d == 64u64;
+            ensures to_integer(if flag {a << d} else {0u64}) == 0 by {
+                solve() using {flag; d == 64u64;};
+            }
+        }"#;
+        crate::surface::parse(source).unwrap();
+        assert!(verify_c_sources(source, &[]).is_err());
+    }
+}
+
+#[cfg(test)]
+#[test]
+#[ignore = "nightly: Boolean and constructor conditional expansion and strict replay"]
+fn non_numeric_conditional_arms_expand_without_normalize() {
+    use crate::surface::{
+        expand_c_claim_source_by_label, verify_c_sources, without_implicit_solve,
+    };
+
+    let prelude =
+        "spec enum Choice { Missing, Present(int32), } spec enum Wrapper { Wrap(Choice), }";
+    for (parameters, premises, goal) in [
+        (
+            "g: Bool, a: Bool, b: Bool",
+            "g == true;",
+            "(if g { a } else { b }) == a",
+        ),
+        (
+            "g: Bool",
+            "g == false;",
+            "(if g { true } else { false }) == false",
+        ),
+        (
+            "g: Bool, a: Bool",
+            "g == true; a == true;",
+            "(if g { a } else { false }) == true",
+        ),
+        (
+            "g: Bool, h: Bool, a: Bool, b: Bool, c: Bool",
+            "g == true; h == false;",
+            "(if g { if h { a } else { b } } else { c }) == b",
+        ),
+        (
+            "g: Bool, x: int32",
+            "g == true;",
+            "(if g { Choice::Present(x) } else { Choice::Missing }) == Choice::Present(x)",
+        ),
+        (
+            "g: Bool, x: int32",
+            "g == false;",
+            "Choice::Missing == (if g { Choice::Present(x) } else { Choice::Missing })",
+        ),
+        (
+            "g: Bool, h: Bool, x: int32, y: int32",
+            "g == true; h == false;",
+            "(if g { if h { Choice::Present(x) } else { Choice::Present(y) } } else { Choice::Missing }) == Choice::Present(y)",
+        ),
+        (
+            "g: Bool, x: int32",
+            "g == true;",
+            "Wrapper::Wrap(if g { Choice::Present(x) } else { Choice::Missing }) == Wrapper::Wrap(Choice::Present(x))",
+        ),
+    ] {
+        let requirements = premises
+            .split(';')
+            .filter(|p| !p.trim().is_empty())
+            .map(|p| format!("requires {};", p.trim()))
+            .collect::<String>();
+        for tactic in [
+            format!("solve() using {{ {premises} }};"),
+            "solve();".into(),
+        ] {
+            let source = format!(
+                "{prelude} theorem selected({parameters}) {{ {requirements} ensures {goal} by {{ {tactic} }} }}"
+            );
+            let expanded = expand_c_claim_source_by_label(&source, &[], "selected.ensures_0")
+                .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+            assert!(!expanded.contains("normalize("), "{expanded}");
+            assert!(!expanded.contains("solve("), "{expanded}");
+            without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+                .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+        }
+    }
+
+    for claim in [
+        "theorem omitted(g: Bool, a: Bool, b: Bool) { requires g == true; ensures (if g { a } else { b }) == a by { solve() using {}; } }",
+        "theorem omitted(g: Bool, x: int32) { requires g == true; ensures (if g { Choice::Present(x) } else { Choice::Missing }) == Choice::Present(x) by { solve() using {}; } }",
+        "theorem wrong(g: Bool, x: int32) { requires g == true; ensures (if g { Choice::Present(x) } else { Choice::Missing }) == Choice::Missing by known(); }",
+    ] {
+        let source = format!("{prelude} {claim}");
+        crate::surface::parse(&source).expect("conditional refusal should parse");
+        assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
     }
 }

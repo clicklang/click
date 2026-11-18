@@ -15,7 +15,7 @@ impl PureFactContext {
         let Proposition::ConditionIs(condition, value) = proposition else {
             return None;
         };
-        let view = comparison_view(condition, *value)?;
+        let view = comparison_view(condition.native_compat(), *value)?;
         if !matches!(
             view.format,
             MachineIntegerType::Int32 | MachineIntegerType::UInt32
@@ -129,7 +129,7 @@ impl PureFactContext {
                 right,
             });
         }
-        let less_equal = Proposition::ConditionIs(
+        let less_equal = Proposition::condition_is(
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 MachineIntegerType::Int32,
                 CompareRelation::LessEqual,
@@ -137,7 +137,7 @@ impl PureFactContext {
             ),
             true,
         );
-        let not_less_than = Proposition::ConditionIs(
+        let not_less_than = Proposition::condition_is(
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 MachineIntegerType::Int32,
                 CompareRelation::LessThan,
@@ -153,7 +153,7 @@ impl PureFactContext {
                 },
             )));
         }
-        let greater_equal = Proposition::ConditionIs(
+        let greater_equal = Proposition::condition_is(
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 MachineIntegerType::Int32,
                 CompareRelation::GreaterEqual,
@@ -161,7 +161,7 @@ impl PureFactContext {
             ),
             true,
         );
-        let not_greater_than = Proposition::ConditionIs(
+        let not_greater_than = Proposition::condition_is(
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 MachineIntegerType::Int32,
                 CompareRelation::GreaterThan,
@@ -188,7 +188,7 @@ impl PureFactContext {
         term: crate::kernel::MachineOperandView<'_>,
     ) -> Option<(i64, Box<Proposition>)> {
         let (condition, truth) = self.checked_scalar_facts.literal_equality(term)?;
-        let source = Proposition::ConditionIs(condition.clone(), *truth);
+        let source = Proposition::condition_is(condition.clone(), *truth);
         let value = SignedConstantEvidence::exact_equality_value_view(term, &source)?;
         Some((value, Box::new(source)))
     }
@@ -219,10 +219,10 @@ impl PureFactContext {
             .into_iter()
             .flatten()
         {
-            let Proposition::ConditionIs(ref condition, value) = source else {
+            let Some((condition, value)) = source.condition_native() else {
                 continue;
             };
-            let view = order_view_at_format(condition, value, MachineIntegerType::Int32)?;
+            let view = order_view_at_format(condition, *value, MachineIntegerType::Int32)?;
             let strict = view.relation == crate::kernel::machine_integer::Relation::Less;
             let [left, right] = view
                 .operands
@@ -314,7 +314,7 @@ impl PureFactContext {
         if let Some(value) = result {
             record_implicit_consulted_premises(
                 self,
-                &Proposition::ConditionIs(condition.clone(), value),
+                &Proposition::condition_is(condition.clone(), value),
             );
         }
         result
@@ -393,7 +393,7 @@ impl PureFactContext {
         // comparison. Keep this projection indexed and positive only.
         if matches!(
             condition,
-            ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..)
+            ConditionTerm::AddressEqual(..) | ConditionTerm::AddressOffsetEqual(..)
         ) && (self
             .equality_graph
             .admitted
@@ -407,7 +407,7 @@ impl PureFactContext {
         {
             return Some(true);
         }
-        if let ConditionTerm::PointerValueEqual(left, right) = condition {
+        if let ConditionTerm::PointerEqual(left, right) = condition {
             if let Some(value) = self.exact_condition_value(condition) {
                 return Some(value);
             }
@@ -419,20 +419,20 @@ impl PureFactContext {
             }
             if self.pointer_provenance_match(left, right)
                 && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                    left.pointer(),
-                    right.pointer(),
+                    left.address(),
+                    right.address(),
                     self,
                 ) || crate::kernel::memory_history::pointer_read_has_recorded_value(
-                    left.pointer(),
-                    right.pointer(),
+                    left.address(),
+                    right.address(),
                     self,
                 ))
             {
                 return Some(true);
             }
-            let address = self.decide(&ConditionTerm::pointer_equal(
-                left.pointer().clone(),
-                right.pointer().clone(),
+            let address = self.decide(&ConditionTerm::address_equal(
+                left.address().clone(),
+                right.address().clone(),
             ));
             return match address {
                 Some(false) => Some(false),
@@ -466,7 +466,7 @@ impl PureFactContext {
         // an overflow result alone does not select which bound failed.
         if let Some(query) =
             crate::kernel::machine_integer::definedness::overflow_query_of_integer_bound(
-                &Proposition::ConditionIs(condition.clone(), true),
+                &Proposition::condition_is(condition.clone(), true),
                 crate::kernel::machine_integer::definedness::defined_formats(),
             )
             && self.decide_overflow_query(&query) == Some(false)
@@ -688,7 +688,7 @@ impl PureFactContext {
                 {
                     return Some(true);
                 }
-                if let ConditionTerm::PointerEqual(left, right) = condition
+                if let ConditionTerm::AddressEqual(left, right) = condition
                     && (crate::kernel::memory_history::pointer_read_has_stored_value(
                         left, right, self,
                     ) || crate::kernel::memory_history::pointer_read_has_stored_value(
@@ -718,7 +718,7 @@ impl PureFactContext {
                 // before routing to the dedicated pointer decision rules.
                 if matches!(
                     condition,
-                    ConditionTerm::PointerOffsetEqual(_, _) | ConditionTerm::PointerEqual(_, _)
+                    ConditionTerm::AddressOffsetEqual(_, _) | ConditionTerm::AddressEqual(_, _)
                 ) {
                     return self
                         .condition_facts
@@ -779,10 +779,10 @@ impl PureFactContext {
             return Some(false);
         }
         match condition {
-            ConditionTerm::PointerEqual(left, right) => self
+            ConditionTerm::AddressEqual(left, right) => self
                 .pointers_distinct_by_nullness(left, right)
                 .or_else(|| self.pointers_distinct_by_stated_separation(left, right)),
-            ConditionTerm::PointerOffsetEqual(left, right) => self
+            ConditionTerm::AddressOffsetEqual(left, right) => self
                 .offsets_distinct_by_nullness(left, right)
                 .or_else(|| self.offsets_distinct_by_stated_separation(left, right)),
             _ => None,
@@ -798,10 +798,10 @@ impl PureFactContext {
         condition: &ConditionTerm,
     ) -> Option<bool> {
         match condition {
-            ConditionTerm::PointerEqual(left, right) => {
+            ConditionTerm::AddressEqual(left, right) => {
                 self.pointers_distinct_by_stated_separation(left, right)
             }
-            ConditionTerm::PointerOffsetEqual(left, right) => {
+            ConditionTerm::AddressOffsetEqual(left, right) => {
                 self.offsets_distinct_by_stated_separation(left, right)
             }
             _ => None,
@@ -890,7 +890,7 @@ impl PureFactContext {
         if *pointer == null {
             return Some(true);
         }
-        if let Some(value) = self.exact_condition_value(&ConditionTerm::PointerEqual(
+        if let Some(value) = self.exact_condition_value(&ConditionTerm::AddressEqual(
             Box::new(pointer.clone()),
             Box::new(null.clone()),
         )) {
@@ -1216,7 +1216,7 @@ impl PureFactContext {
             return known == value;
         }
         if self.equality_graph.knows_condition(&condition, value) {
-            record_implicit_consulted_premises(self, &Proposition::ConditionIs(condition, value));
+            record_implicit_consulted_premises(self, &Proposition::condition_is(condition, value));
             return true;
         }
         // Exact canonical shape, then at most one source per explicitly
@@ -1230,7 +1230,7 @@ impl PureFactContext {
                 crate::instrumentation::record_deterministic_work(1);
                 **fact_value == value && self.condition_matches(fact, &condition)
             })
-            .map(|(fact, fact_value)| Proposition::ConditionIs(fact.clone(), *fact_value))
+            .map(|(fact, fact_value)| Proposition::condition_is(fact.clone(), *fact_value))
             .or_else(|| {
                 let mut variables = BTreeSet::new();
                 let _ = crate::kernel::reasoning::variable_collection::collect_condition_index_variables(
@@ -1240,7 +1240,7 @@ impl PureFactContext {
                     crate::instrumentation::record_deterministic_work(1);
                     let (fact, fact_value) = self.singleton_condition_variable(*variable)?;
                     (fact_value == value && self.condition_matches(fact, &condition))
-                        .then(|| Proposition::ConditionIs(fact.clone(), fact_value))
+                        .then(|| Proposition::condition_is(fact.clone(), fact_value))
                 })
             });
         if let Some(proposition) = matched {
@@ -1263,7 +1263,7 @@ impl PureFactContext {
                 .find(|value| self.equality_graph.knows_condition(condition, *value))?;
             record_implicit_consulted_premises(
                 self,
-                &Proposition::ConditionIs(condition.clone(), value),
+                &Proposition::condition_is(condition.clone(), value),
             );
             Some(value)
         })
@@ -1287,7 +1287,7 @@ impl PureFactContext {
         let value = self.exact_condition_value_unrecorded(condition);
         if value == Some(false) && self.condition_facts.get(condition).is_none() {
             let bounds = crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(
-                &Proposition::ConditionIs(condition.clone(), false),
+                &Proposition::condition_is(condition.clone(), false),
             );
             if !bounds.is_empty() {
                 for bound in bounds {
@@ -1299,7 +1299,7 @@ impl PureFactContext {
         if let Some(value) = value {
             record_implicit_consulted_premises(
                 self,
-                &Proposition::ConditionIs(condition.clone(), value),
+                &Proposition::condition_is(condition.clone(), value),
             );
         }
         value
@@ -1308,18 +1308,18 @@ impl PureFactContext {
     fn exact_condition_value_unrecorded(&self, condition: &ConditionTerm) -> Option<bool> {
         if matches!(condition, ConditionTerm::Overflows { .. }) {
             let bounds = crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(
-                &Proposition::ConditionIs(condition.clone(), false),
+                &Proposition::condition_is(condition.clone(), false),
             );
             if !bounds.is_empty()
                 && bounds.iter().all(|bound| {
                     let Proposition::ConditionIs(condition, true) = bound else {
                         return false;
                     };
-                    Self::decide_intrinsically(condition) == Some(true)
-                        || integer_order_spellings(condition)
+                    Self::decide_intrinsically(condition.native_compat()) == Some(true)
+                        || integer_order_spellings(condition.native_compat())
                             .into_iter()
                             .any(|condition| {
-                                self.contains_known(&Proposition::ConditionIs(condition, true))
+                                self.contains_known(&Proposition::condition_is(condition, true))
                             })
                 })
             {
@@ -1342,23 +1342,20 @@ impl PureFactContext {
                         left.as_ref().clone(),
                     ))
                     .copied(),
-                ConditionTerm::PointerOffsetEqual(left, right) => self
+                ConditionTerm::AddressOffsetEqual(left, right) => self
                     .condition_facts
-                    .get(&ConditionTerm::pointer_offset_equal(
+                    .get(&ConditionTerm::address_offset_equal(
                         right.as_ref().clone(),
                         left.as_ref().clone(),
                     ))
                     .copied(),
-                ConditionTerm::PointerValueEqual(left, right) => self
-                    .condition_facts
-                    .get(&ConditionTerm::PointerValueEqual(
-                        right.clone(),
-                        left.clone(),
-                    ))
-                    .copied(),
                 ConditionTerm::PointerEqual(left, right) => self
                     .condition_facts
-                    .get(&ConditionTerm::pointer_equal(
+                    .get(&ConditionTerm::PointerEqual(right.clone(), left.clone()))
+                    .copied(),
+                ConditionTerm::AddressEqual(left, right) => self
+                    .condition_facts
+                    .get(&ConditionTerm::address_equal(
                         right.as_ref().clone(),
                         left.as_ref().clone(),
                     ))
@@ -1718,7 +1715,7 @@ impl PureFactContext {
             let Proposition::ConditionIs(condition, truth) = view.integer_proposition() else {
                 unreachable!()
             };
-            self.has_condition_fact(condition, truth)
+            self.has_condition_fact(condition.native_compat().clone(), truth)
         }
     }
 
@@ -1835,8 +1832,8 @@ impl PureFactContext {
         if left == right {
             return Some(PointerOffsetCongruenceEvidence::Exact);
         }
-        let exact_premise = Proposition::ConditionIs(
-            ConditionTerm::pointer_offset_equal(left.clone(), right.clone()),
+        let exact_premise = Proposition::condition_is(
+            ConditionTerm::address_offset_equal(left.clone(), right.clone()),
             true,
         );
         if self.contains_assumed_exact(&exact_premise) {
@@ -1844,8 +1841,8 @@ impl PureFactContext {
                 exact_premise,
             )));
         }
-        let mirrored_premise = Proposition::ConditionIs(
-            ConditionTerm::pointer_offset_equal(right.clone(), left.clone()),
+        let mirrored_premise = Proposition::condition_is(
+            ConditionTerm::address_offset_equal(right.clone(), left.clone()),
             true,
         );
         if self.contains_assumed_exact(&mirrored_premise) {
@@ -1855,7 +1852,7 @@ impl PureFactContext {
         }
         if let Some(premise) = self
             .equality_graph
-            .exact_pointer_offset_equality_source(left, right)
+            .exact_address_offset_equality_source(left, right)
         {
             return Some(PointerOffsetCongruenceEvidence::ExactPremise(Box::new(
                 premise.clone(),
@@ -2132,12 +2129,12 @@ impl PureFactContext {
                 self.simplify_bitvector_under_assumptions(value),
                 *classification,
             ),
-            ConditionTerm::PointerOffsetEqual(left, right) => {
-                ConditionTerm::pointer_offset_equal(left.as_ref().clone(), right.as_ref().clone())
+            ConditionTerm::AddressOffsetEqual(left, right) => {
+                ConditionTerm::address_offset_equal(left.as_ref().clone(), right.as_ref().clone())
             }
-            ConditionTerm::PointerValueEqual(..) => condition.clone(),
-            ConditionTerm::PointerEqual(left, right) => {
-                ConditionTerm::pointer_equal(left.as_ref().clone(), right.as_ref().clone())
+            ConditionTerm::PointerEqual(..) => condition.clone(),
+            ConditionTerm::AddressEqual(left, right) => {
+                ConditionTerm::address_equal(left.as_ref().clone(), right.as_ref().clone())
             }
             // Integer arithmetic has no memory loads; assumption-driven
             // simplification is intentionally limited to its local exact
@@ -2258,7 +2255,7 @@ impl PureFactContext {
             MachineTerm::MemoryLoad(memory, pointer, kind) => {
                 MachineTerm::MemoryLoad(memory.clone(), pointer.clone(), *kind)
             }
-            MachineTerm::PointerAddress(_, _) => term.clone(),
+            MachineTerm::IntegerAddress(_, _) => term.clone(),
             term => match (term.as_binary(), term.as_unary()) {
                 (Some((op, left, right)), _) => op.build(
                     self.simplify_bitvector_under_assumptions(left),
@@ -2601,9 +2598,11 @@ impl PureFactContext {
 /// `condition` with each read of a stored cell replaced by its stored value
 /// (`eval::comparison_form`).
 fn read_over_write_condition(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    match crate::kernel::eval::comparison_form(&Proposition::ConditionIs(condition.clone(), true))?
+    match crate::kernel::eval::comparison_form(&Proposition::condition_is(condition.clone(), true))?
     {
-        Proposition::ConditionIs(resolved, true) if &resolved != condition => Some(resolved),
+        Proposition::ConditionIs(resolved, true) if resolved.native_compat() != condition => {
+            Some(resolved.native_compat().clone())
+        }
         _ => None,
     }
 }
@@ -2776,7 +2775,7 @@ mod exact_word_order_tests {
                     assert_eq!(KernelTermExport::machine_export_count(), exports);
                     if let Some(truth) = truth {
                         assert!(
-                            used.contains(&Proposition::ConditionIs(source.clone(), truth)),
+                            used.contains(&Proposition::condition_is(source.clone(), truth)),
                             "{used:?}"
                         );
                     }
@@ -3131,7 +3130,7 @@ mod shared_equality_dispatch_tests {
                 assert_eq!(context.decide_citing(&condition, &mut used), Some(true));
                 assert!(used.complete);
                 if mask != 0 {
-                    assert_eq!(used.premises, vec![Proposition::ConditionIs(guard, true)]);
+                    assert_eq!(used.premises, vec![Proposition::condition_is(guard, true)]);
                     assert_eq!(
                         parent.decide_masked_zero(
                             V::Shared(&masked),
@@ -3223,25 +3222,25 @@ mod shared_equality_dispatch_tests {
                         Some(false),
                     ),
                     6 => {
-                        sources.push(Proposition::ConditionIs(
+                        sources.push(Proposition::condition_is(
                             ConditionTerm::integer_less_equal(observe(&product), observe(&z)),
                             true,
                         ));
-                        sources.push(Proposition::ConditionIs(
+                        sources.push(Proposition::condition_is(
                             ConditionTerm::integer_greater_equal(observe(&product), observe(&z)),
                             true,
                         ));
                         (product.clone(), z.clone(), Some(true))
                     }
                     7 => {
-                        sources.push(Proposition::ConditionIs(
+                        sources.push(Proposition::condition_is(
                             ConditionTerm::integer_less_than(observe(&product), observe(&z)),
                             true,
                         ));
                         (product.clone(), z.clone(), Some(false))
                     }
                     8 => {
-                        sources.push(Proposition::ConditionIs(
+                        sources.push(Proposition::condition_is(
                             ConditionTerm::integer_equal(observe(&x), observe(&y)),
                             true,
                         ));
@@ -3252,7 +3251,7 @@ mod shared_equality_dispatch_tests {
                         )
                     }
                     9 => {
-                        sources.push(Proposition::ConditionIs(
+                        sources.push(Proposition::condition_is(
                             ConditionTerm::integer_less_equal(observe(&product), observe(&z)),
                             false,
                         ));
@@ -3266,8 +3265,8 @@ mod shared_equality_dispatch_tests {
                             MachineTerm::Variable(Variable(981002)),
                         );
                         let width = if case == 12 { 8 } else { 4 };
-                        sources.push(Proposition::ConditionIs(
-                            ConditionTerm::pointer_offset_equal(
+                        sources.push(Proposition::condition_is(
+                            ConditionTerm::address_offset_equal(
                                 AddressOffset::scale_int32(value, width),
                                 AddressOffset::scale_int32(
                                     MachineTerm::Variable(Variable(981003)),
@@ -3279,14 +3278,14 @@ mod shared_equality_dispatch_tests {
                         (product.clone(), z.clone(), Some(case != 10))
                     }
                     13 => {
-                        sources.push(Proposition::ConditionIs(
+                        sources.push(Proposition::condition_is(
                             ConditionTerm::signed_greater_equal(
                                 MachineTerm::Variable(Variable(981001)),
                                 MachineTerm::constant(3),
                             ),
                             true,
                         ));
-                        sources.push(Proposition::ConditionIs(
+                        sources.push(Proposition::condition_is(
                             ConditionTerm::signed_less_equal(
                                 MachineTerm::Variable(Variable(981001)),
                                 MachineTerm::constant(5),
@@ -3294,7 +3293,7 @@ mod shared_equality_dispatch_tests {
                             true,
                         ));
                         for value in [3, 4] {
-                            sources.push(Proposition::ConditionIs(
+                            sources.push(Proposition::condition_is(
                                 ConditionTerm::equal(
                                     MachineTerm::Variable(Variable(981001)),
                                     MachineTerm::constant(value),
@@ -3310,7 +3309,7 @@ mod shared_equality_dispatch_tests {
                         } else {
                             ConditionTerm::integer_greater_equal(observe(&product), observe(&z))
                         };
-                        sources.push(Proposition::ConditionIs(bound, true));
+                        sources.push(Proposition::condition_is(bound, true));
                         (product.clone(), z.clone(), None)
                     }
                     _ => unreachable!(),
@@ -3369,8 +3368,8 @@ mod shared_equality_dispatch_tests {
                     MachineTerm::Variable(Variable(983002)),
                 );
                 let offset = |value| AddressOffset::scaled_int32_node(value, width);
-                let source = Proposition::ConditionIs(
-                    ConditionTerm::pointer_offset_equal(
+                let source = Proposition::condition_is(
+                    ConditionTerm::address_offset_equal(
                         offset(native_product),
                         offset(MachineTerm::Variable(Variable(983003))),
                     ),
@@ -3441,7 +3440,7 @@ mod intrinsic_context_tests {
             let address = Address::symbolic(Variable(986010));
             let value = Address::symbolic(Variable(986011));
             let application = Address::loaded_value(&memory, &address);
-            let goal = ConditionTerm::PointerEqual(Box::new(value.clone()), Box::new(application));
+            let goal = ConditionTerm::AddressEqual(Box::new(value.clone()), Box::new(application));
             assert_eq!(PureFactContext::decide_intrinsically(&goal), None);
             let before = VerificationSession::capture_state();
             let producer = PureFactContext::new();
@@ -3479,15 +3478,15 @@ mod shared_singleton_bound_evidence_tests {
         let product = IntegerTerm::Machine(observation.clone());
         let x = MachineTerm::Variable(Variable(994003));
         let named = IntegerTerm::from_machine(format, x.clone()).unwrap();
-        let lower = Proposition::ConditionIs(
+        let lower = Proposition::condition_is(
             ConditionTerm::integer_less_equal(product.clone(), named.clone()),
             true,
         );
-        let upper = Proposition::ConditionIs(
+        let upper = Proposition::condition_is(
             ConditionTerm::integer_less_equal(named, product.clone()),
             true,
         );
-        let pin = Proposition::ConditionIs(
+        let pin = Proposition::condition_is(
             ConditionTerm::integer_equal(product, IntegerTerm::constant_i64(7)),
             true,
         );
@@ -3512,12 +3511,12 @@ mod shared_singleton_bound_evidence_tests {
             // can be available to other indexes without being a graph edge.
             // This query migration must preserve the native answer either way.
             assert_eq!(
-                facts.proves_condition_from_derived_order_facts(condition, *truth),
+                facts.proves_condition_from_derived_order_facts(condition.native_compat(), *truth),
                 facts.difference_graph_proves_order(native_left, native_right, false)
             );
             assert!(
                 !PureFactContext::new()
-                    .proves_condition_from_derived_order_facts(condition, *truth)
+                    .proves_condition_from_derived_order_facts(condition.native_compat(), *truth)
             );
         }
         let (value, evidence) = facts
@@ -3565,7 +3564,7 @@ mod wide_observation_tag_regression {
         let one = MachineTerm::uint64_constant(1);
         let next = MachineTerm::uint64_add(x.clone(), one.clone());
         let tagged = MachineTerm::uint64_add(
-            MachineTerm::pointer_address(Address::symbolic(Variable(993803))),
+            MachineTerm::integer_address(Address::symbolic(Variable(993803))),
             one,
         );
         let observed = |value: &MachineTerm| {
@@ -3579,7 +3578,8 @@ mod wide_observation_tag_regression {
                 .unwrap(),
             )
         };
-        let source = Proposition::ConditionIs(ConditionTerm::uint64_equal(x.clone(), tagged), true);
+        let source =
+            Proposition::condition_is(ConditionTerm::uint64_equal(x.clone(), tagged), true);
         let parent = PureFactContext::new();
         let branch = parent.clone().assume_proposition(source.clone());
         let goal = ConditionTerm::integer_equal(observed(&x), observed(&next));

@@ -497,6 +497,24 @@ fn listed_context_pure_facts(
     facts
 }
 
+#[cfg(test)]
+thread_local! {
+    static STEP_DIAGNOSTIC_RESOURCE_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(in crate::surface) fn take_step_diagnostic_resource_reads() -> usize {
+    STEP_DIAGNOSTIC_RESOURCE_READS.with(|count| count.replace(0))
+}
+
+/// The full pre-step resource context is for diagnostic rendering.
+fn step_diagnostic_resources(state: &ExecutionState) -> &[ResourceFact] {
+    let resources = state.resources().facts();
+    #[cfg(test)]
+    STEP_DIAGNOSTIC_RESOURCE_READS.with(|count| count.set(count.get() + resources.len()));
+    resources
+}
+
 fn describe_step_proof_context(
     delta: &(impl PropositionSource + ?Sized),
     context: Option<&PureFactContext>,
@@ -575,12 +593,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
     // successor per variant, as an undecided C condition has two. Each is
     // its own proof arm: a proof `match` on the value names the fields its
     // arm learns, which a proof `if` on the test could not.
-    if let Some(split) = enum_switch_proof_match(
-        &statement,
-        &current_state,
-        context,
-        &proof_context.constants.source_layout,
-    )? {
+    if let Some(split) = enum_switch_proof_match(&statement, &current_state, context) {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached a Rust `match` of `{}`, whose variant is not known here; each variant is its own proof arm. Write `{}` here, or end the script here and let its implicit tail split it",
             split.describe_scrutinee(),
@@ -615,7 +628,6 @@ pub(super) fn execute_branch_step_from_frontier_position(
         ProgramPointKind::Entry,
         current_state.clone(),
     );
-    let current_resources = current_state.resources().facts().to_vec();
     let transition_label = format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
     let condition_transitions = certified_condition_transitions(
         &current_state,
@@ -650,7 +662,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
             describe_step_proof_context(
                 available_pure_facts,
                 context,
-                &current_resources,
+                step_diagnostic_resources(&current_state),
                 parameter_binding,
                 &[]
             )
@@ -2287,7 +2299,6 @@ fn execute_step_from_frontier_position_selecting_path(
             current_state.clone(),
         );
     }
-    let current_resources = current_state.resources().facts().to_vec();
     let transition_label = format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
     let next_opaque_call_before_step = execution.core.next_opaque_call;
     let next_kernel_variable_before_step = execution.core.kernel_variable_mark();
@@ -2858,7 +2869,7 @@ fn execute_step_from_frontier_position_selecting_path(
                         describe_step_proof_context(
                             available_pure_facts,
                             context,
-                            &current_resources,
+                            step_diagnostic_resources(&current_state),
                             parameter_binding,
                             &[],
                         )
@@ -2896,10 +2907,11 @@ fn execute_step_from_frontier_position_selecting_path(
                 } else {
                     "could not verify C operation"
                 };
+                let resources = step_diagnostic_resources(&current_state);
                 let detail = crate::surface::diagnostics::describe_unestablished_assembly_fact(
                     error,
                     &listed_context_pure_facts(available_pure_facts, context),
-                    &current_resources,
+                    resources,
                     parameter_binding,
                     &[],
                 )
@@ -2912,11 +2924,7 @@ fn execute_step_from_frontier_position_selecting_path(
                             proof_context.parsed_function,
                             parameter_binding,
                         ),
-                        describe_missing_range_end_note(
-                            error,
-                            &current_resources,
-                            parameter_binding
-                        )
+                        describe_missing_range_end_note(error, resources, parameter_binding)
                     )
                 });
                 if matches!(
@@ -2934,7 +2942,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 crate::surface::diagnostics::describe_execution_statement_site(),
                 describe_step_proof_context(
                 available_pure_facts, context,
-                    &current_resources,
+                    resources,
                     parameter_binding,
                     &[]
                 )
@@ -2984,7 +2992,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 describe_step_proof_context(
                     available_pure_facts,
                     context,
-                    &current_resources,
+                    step_diagnostic_resources(&current_state),
                     parameter_binding,
                     &[]
                 )
@@ -3024,7 +3032,7 @@ fn execute_step_from_frontier_position_selecting_path(
         execution
             .presentation
             .recorded_states
-            .record_loop_iterations(loop_index, iterations);
+            .record_loop_iterations_root(loop_index, iterations.clone());
     }
 
     execution
@@ -3142,12 +3150,35 @@ fn execute_step_from_frontier_position_selecting_path(
         region: CodeRegionRef::Region(statement_index),
         kind: ProgramPointKind::Exit,
     };
-    for equation in crate::kernel::certified_store_equations(&transition.execution_facts) {
+    let word_store_source = word_store_source(
+        &step_statement,
+        &current_state,
+        &transition.outcome,
+        &store_exit_point,
+    )
+    .filter(|_| {
+        let layout = &proof_context.constants.source_layout;
+        layout.automatic_exits(statement_index, false).is_empty()
+            && layout.automatic_exits(statement_index, true).is_empty()
+    });
+    for fact in transition.execution_facts.fact_iter() {
+        let Some(equation) = fact.certified_store_equation() else {
+            continue;
+        };
+        if let Some(surface) = &word_store_source
+            && let Some(address) = fact.certified_store_source_address()
+            && execution
+                .presentation
+                .surface_propositions
+                .record_store_source(equation, surface, address)
+        {
+            continue;
+        }
         if let Some(ClickProposition::Comparison {
             left,
             operator,
             right,
-        }) = synthesize_surface_proposition(&equation, parameter_binding, &current_state)
+        }) = synthesize_surface_proposition(equation, parameter_binding, &current_state)
         {
             let store_entry_point = ProgramPointRef {
                 region: CodeRegionRef::Region(statement_index),
@@ -3182,7 +3213,7 @@ fn execute_step_from_frontier_position_selecting_path(
             execution
                 .presentation
                 .surface_propositions
-                .record_lowering(&surface, &equation)?;
+                .record_lowering(&surface, equation)?;
         }
     }
     let execution_pure_facts = transition.execution_facts;
@@ -3674,7 +3705,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     describe_step_proof_context(
                         available_pure_facts,
                         context,
-                        &current_resources,
+                        step_diagnostic_resources(&current_state),
                         parameter_binding,
                         &execution_pure_facts,
                     )
@@ -3690,10 +3721,11 @@ fn execute_step_from_frontier_position_selecting_path(
             } else {
                 "could not verify C operation"
             };
+            let resources = step_diagnostic_resources(&current_state);
             let detail = crate::surface::diagnostics::describe_unestablished_assembly_fact(
                 &error,
                 &listed_context_pure_facts(available_pure_facts, context),
-                &current_resources,
+                resources,
                 parameter_binding,
                 &execution_pure_facts,
             )
@@ -3706,7 +3738,7 @@ fn execute_step_from_frontier_position_selecting_path(
                         proof_context.parsed_function,
                         parameter_binding,
                     ),
-                    describe_missing_range_end_note(&error, &current_resources, parameter_binding)
+                    describe_missing_range_end_note(&error, resources, parameter_binding)
                 )
             });
             if matches!(
@@ -3724,7 +3756,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 crate::surface::diagnostics::describe_execution_statement_site(),
                 describe_step_proof_context(
                 available_pure_facts, context,
-                    &current_resources,
+                    resources,
                     parameter_binding,
                     &execution_pure_facts
                 )
@@ -3908,57 +3940,40 @@ pub(super) fn condition_path_case_split_condition(
     path_case_split_condition(&cases, available, state, proof_context)
 }
 
-/// The proof `match` that separates a Rust enum match, including a retained
-/// discriminant value. The produced proof names that value by its own region.
+/// The proof `match` that separates a Rust `match` of an enum local: one arm
+/// per variant, each field bound as `<local>_<variant>_<index>` with the
+/// variant in snake case, made fresh against the function's locals. Every
+/// arm's binders differ, so all stay bound after the implicit tail finishes.
 fn enum_switch_proof_match(
     statement: &ProgramStatement,
     state: &ExecutionState,
     facts: Option<&PureFactContext>,
-    layout: &crate::surface::lowering::SourceExecutionLayout,
-) -> Result<Option<ProofMatch>, ClickError> {
+) -> Option<ProofMatch> {
     let ProgramStatement::If { condition, .. } = statement else {
-        return Ok(None);
+        return None;
     };
     let mut test = condition;
     while let ProgramExpression::Or(left, _) = test {
         test = left;
     }
     let ProgramExpression::EnumIs { value, .. } = test else {
-        return Ok(None);
+        return None;
     };
-    let (native, scrutinee, name) = match value.as_ref() {
-        ProgramExpression::Variable(name) => {
-            let Some(native) = state.locals().get_native(name) else {
-                return Ok(None);
-            };
-            (
-                native,
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
-                name.to_string(),
-            )
-        }
-        ProgramExpression::StepResult { step, .. } => {
-            let native = state
-                .step_result(*step)
-                .ok_or_else(|| ClickError::new("the enum discriminant has no retained value"))?
-                .clone()
-                .into_native();
-            let region = layout
-                .step_region(*step)
-                .and_then(|region| layout.result_code_region(region))
-                .ok_or_else(|| {
-                    ClickError::new("the retained enum discriminant has no source region")
-                })?;
-            (
-                std::borrow::Cow::Owned(native),
-                ContractExpression::RegionResult(region),
-                "value".into(),
-            )
-        }
-        _ => return Ok(None),
+    let (scrutinee, name, native) = match value.as_ref() {
+        ProgramExpression::Variable(name) => (
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
+            name.to_string(),
+            state.locals().get_native(name)?,
+        ),
+        ProgramExpression::StepResult { step, .. } => (
+            crate::surface::diagnostics::step_result_expression(*step)?,
+            "field".into(),
+            state.step_result(*step)?.native(),
+        ),
+        _ => return None,
     };
     let ProgramValue::Parameter(term) = native.as_ref() else {
-        return Ok(None);
+        return None;
     };
     if term.algebraic_type.rigid
         || matches!(
@@ -3967,7 +3982,7 @@ fn enum_switch_proof_match(
         )
         || facts.is_some_and(|facts| facts.knows_algebraic_constructor(term))
     {
-        return Ok(None);
+        return None;
     }
     let arms = term
         .algebraic_type
@@ -3993,11 +4008,11 @@ fn enum_switch_proof_match(
             }
         })
         .collect();
-    Ok(Some(ProofMatch {
+    Some(ProofMatch {
         scrutinee,
         ensuring: None,
         arms,
-    }))
+    })
 }
 
 /// `IsEmpty` as `is_empty`.
@@ -4034,7 +4049,7 @@ fn path_case_split_condition(
     let facts = cases.iter().map(|case| case.path_facts).collect::<Vec<_>>();
     let decides = |case: &PathCase<'_>, condition: &ConditionTerm, value: bool| {
         case.path_facts
-            .contains(&Proposition::ConditionIs(condition.clone(), value))
+            .contains(&Proposition::condition_is(condition.clone(), value))
     };
     let candidates = cases
         .iter()
@@ -4043,12 +4058,14 @@ fn path_case_split_condition(
             let Proposition::ConditionIs(condition, _) = fact else {
                 return None;
             };
-            let splits = [true, false]
-                .into_iter()
-                .all(|value| cases.iter().any(|case| decides(case, condition, value)));
+            let splits = [true, false].into_iter().all(|value| {
+                cases
+                    .iter()
+                    .any(|case| decides(case, condition.native_compat(), value))
+            });
             let undecided = [true, false]
                 .into_iter()
-                .all(|value| !available(&Proposition::ConditionIs(condition.clone(), value)));
+                .all(|value| !available(&Proposition::condition_is(condition.clone(), value)));
             (splits && undecided).then_some(condition)
         })
         .collect::<Vec<_>>();
@@ -4059,22 +4076,22 @@ fn path_case_split_condition(
     };
     candidates
         .iter()
-        .filter(|condition| decided_by_every_case(condition))
+        .filter(|condition| decided_by_every_case(condition.native_compat()))
         .chain(
             candidates
                 .iter()
-                .filter(|condition| !decided_by_every_case(condition)),
+                .filter(|condition| !decided_by_every_case(condition.native_compat())),
         )
         .find_map(|condition| {
             let surface = synthesize_surface_proposition(
-                &Proposition::ConditionIs((*condition).clone(), true),
+                &Proposition::condition_is((*condition).clone(), true),
                 ParameterBinding::new(
                     proof_context.parsed_function.parameters(),
                     proof_context.arguments,
                 ),
                 state,
             )?;
-            Some(((*condition).clone(), surface))
+            Some((condition.native_compat().clone(), surface))
         })
 }
 
@@ -4611,4 +4628,86 @@ mod cursor_sequence_tests {
 mod refusal_scaling_tests {
     use super::*;
     include!("../../scaling_tests/surface/proof/cursor_refusals.rs");
+}
+
+/// A word store copies the entry value of its named local. The exit spelling
+/// reads the cell through the same unchanged pointer and index bindings.
+fn word_store_source(
+    statement: &ProgramStatement,
+    entry: &ExecutionState,
+    outcome: &StatementOutcome,
+    exit_point: &ProgramPointRef,
+) -> Option<ClickProposition> {
+    use crate::kernel::{MachineTerm, ProgramType, ProgramValue};
+
+    let (pointer, value) = match statement {
+        ProgramStatement::Store { pointer, value }
+        | ProgramStatement::TypedStore {
+            pointer,
+            value,
+            value_type: ProgramType::UInt32,
+            volatile: false,
+            ..
+        } => (pointer, value),
+        _ => return None,
+    };
+    let ProgramExpression::Variable(value) = value else {
+        return None;
+    };
+    let StatementOutcome::Normal(exit) = outcome else {
+        return None;
+    };
+    let stable = |binding: &crate::kernel::BindingName, ty| {
+        entry
+            .locals()
+            .nonvolatile_scalar(binding, ty)
+            .zip(exit.locals().nonvolatile_scalar(binding, ty))
+            .is_some_and(|(before, after)| before.same_retained_root(after))
+    };
+    let (base, index) = match pointer {
+        ProgramExpression::Add(base, index) => (base.as_ref(), Some(index.as_ref())),
+        pointer => (pointer, None),
+    };
+    let ProgramExpression::Variable(pointer) = base else {
+        return None;
+    };
+    if !stable(pointer, ProgramType::UInt32Pointer) {
+        return None;
+    }
+    let index = match index {
+        None => ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+        Some(ProgramExpression::Variable(index)) if stable(index, ProgramType::Int32) => {
+            ContractExpression::Binding(index.source_spelling()?.to_owned())
+        }
+        Some(
+            index @ ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Constant { .. })),
+        ) => ContractExpression::ProgramExpression(index.clone()),
+        _ => return None,
+    };
+    entry
+        .locals()
+        .nonvolatile_scalar(value, ProgramType::UInt32)?;
+
+    let at = |point: &ProgramPointRef, expression| ContractExpression::At {
+        selector: ProgramPointSelector::ProgramPoint(point.clone()),
+        expression: Box::new(expression),
+    };
+    let entry_point = ProgramPointRef {
+        region: exit_point.region.clone(),
+        kind: ProgramPointKind::Entry,
+    };
+    let read = ContractExpression::Index(
+        Box::new(ContractExpression::Binding(
+            pointer.source_spelling()?.to_owned(),
+        )),
+        Box::new(index),
+    );
+    Some(ClickProposition::Comparison {
+        left: at(exit_point, read),
+        operator: crate::surface::ComparisonOperator::Equal,
+        right: at(
+            &entry_point,
+            ContractExpression::Binding(value.source_spelling()?.to_owned()),
+        ),
+    })
 }

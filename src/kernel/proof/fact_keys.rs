@@ -16,7 +16,7 @@ use crate::kernel::{
 };
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerComparisonOperator, IntegerTerm,
-    MachineIntegerType, PointerValue, ProgramType, ProgramValue, PureFunctionArgument,
+    MachineIntegerType, Pointer, ProgramType, ProgramValue, PureFunctionArgument,
     SharedIntegerTerm, SharedMemory, Sort, Term,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
@@ -66,7 +66,7 @@ pub(crate) enum MemoryErasedPropositionKey {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct MemoryErasedMemoryRangeKey {
     block: AddressBase,
-    offset: MemoryErasedPointerOffsetKey,
+    offset: MemoryErasedAddressOffsetKey,
     start: MemoryErasedBitvectorKey,
     end: MemoryErasedBitvectorKey,
     wide: bool,
@@ -74,7 +74,7 @@ pub(crate) struct MemoryErasedMemoryRangeKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum MemoryErasedConditionKey {
-    PointerValueEqual(MemoryErasedPointerValueKey, MemoryErasedPointerValueKey),
+    PointerEqual(MemoryErasedPointerKey, MemoryErasedPointerKey),
     AlgebraicEqual(Box<AlgebraicTerm>, Box<AlgebraicTerm>),
     Constant(bool),
     Variable(Variable),
@@ -85,8 +85,8 @@ pub(crate) enum MemoryErasedConditionKey {
     ),
     Float32(MemoryErasedFloatConditionKey),
     Float64(MemoryErasedFloatConditionKey),
-    PointerOffsetEqual(MemoryErasedPointerOffsetKey, MemoryErasedPointerOffsetKey),
-    PointerEqual(MemoryErasedPointerKey, MemoryErasedPointerKey),
+    AddressOffsetEqual(MemoryErasedAddressOffsetKey, MemoryErasedAddressOffsetKey),
+    AddressEqual(MemoryErasedAddressKey, MemoryErasedAddressKey),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -115,42 +115,42 @@ pub(crate) fn clear_state_operand_keys() {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(crate) struct MemoryErasedPointerValueKey {
+pub(crate) struct MemoryErasedPointerKey {
     program_type: ProgramType,
-    address: MemoryErasedPointerKey,
-    provenance: MemoryErasedPointerKey,
-    bounds_owner: Option<MemoryErasedPointerKey>,
-    bounds: Option<(MemoryErasedPointerKey, MemoryErasedBitvectorKey)>,
+    address: MemoryErasedAddressKey,
+    provenance: MemoryErasedAddressKey,
+    bounds_owner: Option<MemoryErasedAddressKey>,
+    bounds: Option<(MemoryErasedAddressKey, MemoryErasedBitvectorKey)>,
     bounds_known: bool,
 }
 
-impl MemoryErasedPointerValueKey {
+impl MemoryErasedPointerKey {
     fn requires_checked_match(&self) -> bool {
         self.address.requires_checked_match()
             || self.provenance.requires_checked_match()
             || self
                 .bounds_owner
                 .as_ref()
-                .is_some_and(MemoryErasedPointerKey::requires_checked_match)
+                .is_some_and(MemoryErasedAddressKey::requires_checked_match)
             || self.bounds.as_ref().is_some_and(|(start, width)| {
                 start.requires_checked_match() || width.requires_checked_match()
             })
     }
 }
 
-fn memory_erased_pointer_value_key(pointer: &PointerValue) -> MemoryErasedPointerValueKey {
-    MemoryErasedPointerValueKey {
+fn memory_erased_pointer_key(pointer: &Pointer) -> MemoryErasedPointerKey {
+    MemoryErasedPointerKey {
         program_type: pointer.program_type(),
-        address: memory_erased_pointer_key(pointer.pointer()),
-        provenance: memory_erased_pointer_key(pointer.provenance()),
+        address: memory_erased_address_key(pointer.address()),
+        provenance: memory_erased_address_key(pointer.provenance()),
         bounds_owner: if pointer.bounds_are_known() {
             None
         } else {
-            pointer.bounds_owner().map(memory_erased_pointer_key)
+            pointer.bounds_owner().map(memory_erased_address_key)
         },
         bounds: pointer.bounds().map(|bounds| {
             (
-                memory_erased_pointer_key(&bounds.start),
+                memory_erased_address_key(&bounds.start),
                 memory_erased_bitvector_key(&bounds.width),
             )
         }),
@@ -159,20 +159,20 @@ fn memory_erased_pointer_value_key(pointer: &PointerValue) -> MemoryErasedPointe
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(crate) struct MemoryErasedPointerKey {
-    block: MemoryErasedAddressBaseKey,
-    offset: Box<MemoryErasedPointerOffsetKey>,
+pub(crate) struct MemoryErasedAddressKey {
+    base: MemoryErasedAddressBaseKey,
+    offset: Box<MemoryErasedAddressOffsetKey>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum MemoryErasedAddressBaseKey {
     Exact(AddressBase),
-    Read(Box<MemoryErasedPointerKey>),
+    Read(Box<MemoryErasedAddressKey>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(crate) enum MemoryErasedPointerOffsetNode {
-    Add(MemoryErasedPointerOffsetKey, MemoryErasedPointerOffsetKey),
+pub(crate) enum MemoryErasedAddressOffsetNode {
+    Add(MemoryErasedAddressOffsetKey, MemoryErasedAddressOffsetKey),
     Int32Scaled {
         value: MemoryErasedBitvectorKey,
         byte_width: i64,
@@ -213,7 +213,7 @@ impl MemoryErasedConditionKey {
     fn requires_checked_match(&self) -> bool {
         match self {
             Self::AlgebraicEqual(_, _) => false,
-            Self::PointerValueEqual(left, right) => {
+            Self::PointerEqual(left, right) => {
                 left.requires_checked_match() || right.requires_checked_match()
             }
             Self::Comparison(_, left, right) => {
@@ -222,10 +222,10 @@ impl MemoryErasedConditionKey {
             Self::Float32(condition) | Self::Float64(condition) => {
                 condition.requires_checked_match()
             }
-            Self::PointerOffsetEqual(left, right) => {
+            Self::AddressOffsetEqual(left, right) => {
                 left.requires_checked_match() || right.requires_checked_match()
             }
-            Self::PointerEqual(left, right) => {
+            Self::AddressEqual(left, right) => {
                 left.requires_checked_match() || right.requires_checked_match()
             }
             Self::Constant(_) | Self::Variable(_) => false,
@@ -244,17 +244,17 @@ impl MemoryErasedFloatConditionKey {
     }
 }
 
-impl MemoryErasedPointerKey {
+impl MemoryErasedAddressKey {
     fn requires_checked_match(&self) -> bool {
-        matches!(self.block, MemoryErasedAddressBaseKey::Read(_))
+        matches!(self.base, MemoryErasedAddressBaseKey::Read(_))
             || self.offset.requires_checked_match()
     }
 }
 
-type MemoryErasedPointerOffsetKey = Canonical<MemoryErasedPointerOffsetNode>;
-type AlphaPointerOffsetKey = Canonical<AlphaPointerOffsetNode>;
+type MemoryErasedAddressOffsetKey = Canonical<MemoryErasedAddressOffsetNode>;
+type AlphaAddressOffsetKey = Canonical<AlphaPointerOffsetNode>;
 
-impl MemoryErasedPointerOffsetNode {
+impl MemoryErasedAddressOffsetNode {
     fn requires_checked_match(&self) -> bool {
         match self {
             Self::Add(left, right) => {
@@ -350,20 +350,25 @@ pub(crate) fn memory_erased_proposition_key(
 
 fn memory_erased_proposition_key_one(proposition: &Proposition) -> MemoryErasedPropositionKey {
     match proposition {
-        Proposition::ConditionIs(
-            condition @ crate::kernel::integer_comparison_condition!(_, _),
-            value,
-        ) => state_observation_key(condition, *value)
-            .map(|(key, value)| MemoryErasedPropositionKey::Condition(key, value))
-            .unwrap_or_else(|| MemoryErasedPropositionKey::Exact(proposition.clone())),
+        condition_source_0 @ Proposition::ConditionIs(_, value)
+            if let Some((condition @ crate::kernel::integer_comparison_condition!(_, _), _)) =
+                condition_source_0.condition_native() =>
+        {
+            state_observation_key(condition, *value)
+                .map(|(key, value)| MemoryErasedPropositionKey::Condition(key, value))
+                .unwrap_or_else(|| MemoryErasedPropositionKey::Exact(proposition.clone()))
+        }
         // `Bool` values have no state-blind key yet: they are filed
         // exactly until their checked memory bridge has a structural view.
-        Proposition::ConditionIs(condition, _) if condition.is_bool_value_form() => {
+        Proposition::ConditionIs(condition, _)
+            if condition.native_compat().is_bool_value_form() =>
+        {
             MemoryErasedPropositionKey::Exact(proposition.clone())
         }
-        Proposition::ConditionIs(condition, value) => {
-            MemoryErasedPropositionKey::Condition(memory_erased_condition_key(condition), *value)
-        }
+        Proposition::ConditionIs(condition, value) => MemoryErasedPropositionKey::Condition(
+            memory_erased_condition_key(condition.native_compat()),
+            *value,
+        ),
         Proposition::Implies(left, right) => MemoryErasedPropositionKey::Implies(
             Box::new(memory_erased_proposition_key(left)),
             Box::new(memory_erased_proposition_key(right)),
@@ -395,7 +400,7 @@ fn memory_erased_proposition_key_one(proposition: &Proposition) -> MemoryErasedP
 fn memory_erased_memory_range_key(range: &MemoryRange) -> Box<MemoryErasedMemoryRangeKey> {
     Box::new(MemoryErasedMemoryRangeKey {
         block: range.base().base.clone(),
-        offset: memory_erased_pointer_offset_key(&range.base().offset),
+        offset: memory_erased_address_offset_key(&range.base().offset),
         start: memory_erased_bitvector_key(range.bound_terms().0),
         end: memory_erased_bitvector_key(range.bound_terms().1),
         // One untyped term can bound a range of either kind, and the two
@@ -484,19 +489,19 @@ fn memory_erased_boolean_operand_key(
         );
     }
     if let Some([a, b]) = condition.pointer_offsets() {
-        return MemoryErasedConditionKey::PointerOffsetEqual(
+        return MemoryErasedConditionKey::AddressOffsetEqual(
             pointer_keys::state_offset(&a),
             pointer_keys::state_offset(&b),
         );
     }
     if let Some([a, b]) = condition.pointer_values() {
-        return MemoryErasedConditionKey::PointerValueEqual(
+        return MemoryErasedConditionKey::PointerEqual(
             pointer_keys::recorded_value(&a),
             pointer_keys::recorded_value(&b),
         );
     }
     if let Some([a, b]) = condition.pointer_addresses() {
-        return MemoryErasedConditionKey::PointerEqual(
+        return MemoryErasedConditionKey::AddressEqual(
             pointer_keys::state_address(&a),
             pointer_keys::state_address(&b),
         );
@@ -515,12 +520,10 @@ fn memory_erased_condition_key(condition: &ConditionTerm) -> MemoryErasedConditi
         );
     }
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
-            MemoryErasedConditionKey::PointerValueEqual(
-                memory_erased_pointer_value_key(left),
-                memory_erased_pointer_value_key(right),
-            )
-        }
+        ConditionTerm::PointerEqual(left, right) => MemoryErasedConditionKey::PointerEqual(
+            memory_erased_pointer_key(left),
+            memory_erased_pointer_key(right),
+        ),
 
         ConditionTerm::Constant(value) => MemoryErasedConditionKey::Constant(*value),
         ConditionTerm::AlgebraicEqual(left, right) => {
@@ -533,15 +536,15 @@ fn memory_erased_condition_key(condition: &ConditionTerm) -> MemoryErasedConditi
         ConditionTerm::Float64(float_condition) => {
             MemoryErasedConditionKey::Float64(memory_erased_float_condition_key(float_condition))
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
-            MemoryErasedConditionKey::PointerOffsetEqual(
-                memory_erased_pointer_offset_key(left),
-                memory_erased_pointer_offset_key(right),
+        ConditionTerm::AddressOffsetEqual(left, right) => {
+            MemoryErasedConditionKey::AddressOffsetEqual(
+                memory_erased_address_offset_key(left),
+                memory_erased_address_offset_key(right),
             )
         }
-        ConditionTerm::PointerEqual(left, right) => MemoryErasedConditionKey::PointerEqual(
-            memory_erased_pointer_key(left),
-            memory_erased_pointer_key(right),
+        ConditionTerm::AddressEqual(left, right) => MemoryErasedConditionKey::AddressEqual(
+            memory_erased_address_key(left),
+            memory_erased_address_key(right),
         ),
         crate::kernel::ConditionTerm::Compare { .. }
         | crate::kernel::ConditionTerm::Overflows { .. } => {
@@ -595,7 +598,7 @@ impl Drop for PointerReadKeyDepth {
     }
 }
 
-fn memory_erased_pointer_key(pointer: &Address) -> MemoryErasedPointerKey {
+fn memory_erased_address_key(pointer: &Address) -> MemoryErasedAddressKey {
     let depth = POINTER_READ_KEY_DEPTH.with(|depth| depth.replace(depth.get() + 1));
     let _restore = PointerReadKeyDepth(depth);
     // This candidate key forgets states, never proof authority. Bound
@@ -609,24 +612,24 @@ fn memory_erased_pointer_key(pointer: &Address) -> MemoryErasedPointerKey {
         }
         _ => None,
     };
-    MemoryErasedPointerKey {
-        block: read
+    MemoryErasedAddressKey {
+        base: read
             .map(|source| {
-                MemoryErasedAddressBaseKey::Read(Box::new(memory_erased_pointer_key(&source)))
+                MemoryErasedAddressBaseKey::Read(Box::new(memory_erased_address_key(&source)))
             })
             .unwrap_or_else(|| MemoryErasedAddressBaseKey::Exact(pointer.base.clone())),
-        offset: Box::new(memory_erased_pointer_offset_key(&pointer.offset)),
+        offset: Box::new(memory_erased_address_offset_key(&pointer.offset)),
     }
 }
 
-fn memory_erased_pointer_offset_key(offset: &AddressOffset) -> MemoryErasedPointerOffsetKey {
+fn memory_erased_address_offset_key(offset: &AddressOffset) -> MemoryErasedAddressOffsetKey {
     Canonical::new(match offset {
-        AddressOffset::Add(left, right) => MemoryErasedPointerOffsetNode::Add(
-            memory_erased_pointer_offset_key(left),
-            memory_erased_pointer_offset_key(right),
+        AddressOffset::Add(left, right) => MemoryErasedAddressOffsetNode::Add(
+            memory_erased_address_offset_key(left),
+            memory_erased_address_offset_key(right),
         ),
         AddressOffset::Int32Scaled { value, byte_width } => {
-            MemoryErasedPointerOffsetNode::Int32Scaled {
+            MemoryErasedAddressOffsetNode::Int32Scaled {
                 value: memory_operands::operand(value.operand_view()),
                 byte_width: *byte_width,
             }
@@ -635,12 +638,12 @@ fn memory_erased_pointer_offset_key(offset: &AddressOffset) -> MemoryErasedPoint
             value,
             byte_width,
             unsigned,
-        } => MemoryErasedPointerOffsetNode::Int64Scaled {
+        } => MemoryErasedAddressOffsetNode::Int64Scaled {
             value: memory_operands::operand(value.operand_view()),
             byte_width: *byte_width,
             unsigned: *unsigned,
         },
-        offset => MemoryErasedPointerOffsetNode::Exact(offset.clone()),
+        offset => MemoryErasedAddressOffsetNode::Exact(offset.clone()),
     })
 }
 
@@ -701,12 +704,12 @@ enum AlphaPropositionKey {
     },
     MemoryReadDefined {
         memory: AlphaStateKey,
-        pointer: AlphaPointerKey,
+        pointer: AlphaAddressKey,
         value_type: ProgramType,
     },
     MemoryLoadable {
         memory: AlphaStateKey,
-        base: AlphaPointerKey,
+        base: AlphaAddressKey,
         bytes: AlphaBitvectorKey,
         wide: bool,
     },
@@ -815,7 +818,7 @@ pub(crate) fn integer_condition_alpha_key(
     let Proposition::ConditionIs(condition, true) = proposition else {
         return None;
     };
-    let (left, right) = match condition {
+    let (left, right) = match condition.native_compat() {
         crate::kernel::integer_comparison_condition!(left, right) => (left, right),
         _ => return None,
     };
@@ -838,10 +841,7 @@ pub(crate) fn integer_condition_alpha_key(
 pub(crate) fn integer_equality_alpha_key(
     proposition: &Proposition,
 ) -> Option<IntegerEqualityAlphaKey> {
-    matches!(
-        proposition,
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, _), true)
-    )
+    matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))
     .then(|| integer_condition_alpha_key(proposition))
     .flatten()
 }
@@ -885,9 +885,9 @@ enum AlphaBitvectorKey {
         name: String,
         arguments: Vec<AlphaPureFunctionArgumentKey>,
     },
-    Load(Box<AlphaPointerKey>, LoadKind),
+    Load(Box<AlphaAddressKey>, LoadKind),
     RegisteredLoad(AlphaRegisteredLoadId),
-    Address(Box<AlphaPointerKey>),
+    Address(Box<AlphaAddressKey>),
     IntegerToMachine(MachineIntegerType, AlphaIntegerKey),
     MachineIntegerCast(MachineIntegerType, MachineIntegerType, Box<Self>),
     BoolCast(MachineIntegerType, Box<AlphaConditionKey>),
@@ -921,12 +921,12 @@ enum AlphaProgramValueKey {
         program_type: ProgramType,
         pointee_volatile: bool,
         pointee_constant: bool,
-        pointer: AlphaPointerKey,
-        provenance: AlphaPointerKey,
+        pointer: AlphaAddressKey,
+        provenance: AlphaAddressKey,
         bounds_known: bool,
-        bounds_owner: Option<AlphaPointerKey>,
+        bounds_owner: Option<AlphaAddressKey>,
         /// The subobject bounds' start key and byte width.
-        bounds: Option<(AlphaPointerKey, AlphaMachineKey)>,
+        bounds: Option<(AlphaAddressKey, AlphaMachineKey)>,
     },
 }
 
@@ -1023,7 +1023,7 @@ impl Hash for AlphaStateKey {
 enum AlphaPointerOffsetNode {
     Constant(i64),
     Variable(AlphaVariableKey),
-    Add(AlphaPointerOffsetKey, AlphaPointerOffsetKey),
+    Add(AlphaAddressOffsetKey, AlphaAddressOffsetKey),
     RegisteredLoad(AlphaRegisteredLoadId),
     Int32Scaled {
         value: Canonical<AlphaMachineKey>,
@@ -1081,9 +1081,9 @@ enum AlphaAddressBaseKey {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-struct AlphaPointerKey {
-    block: AlphaAddressBaseKey,
-    offset: AlphaPointerOffsetKey,
+struct AlphaAddressKey {
+    base: AlphaAddressBaseKey,
+    offset: AlphaAddressOffsetKey,
 }
 
 /// A compact reference to one live canonical registered-load node. The node
@@ -1140,7 +1140,7 @@ struct AlphaRegisteredLoadRecord {
     interner: Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>,
     fingerprint: u64,
     retained_state: AlphaStateKey,
-    pointer: AlphaPointerKey,
+    pointer: AlphaAddressKey,
     kind: LoadKind,
 }
 
@@ -1199,7 +1199,7 @@ fn alpha_registered_load_interner() -> Option<Arc<std::sync::Mutex<AlphaRegister
 
 fn alpha_registered_load_descriptor_fingerprint(
     retained_state: &AlphaStateKey,
-    pointer: &AlphaPointerKey,
+    pointer: &AlphaAddressKey,
     kind: LoadKind,
 ) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -1212,7 +1212,7 @@ fn alpha_registered_load_descriptor_fingerprint(
 fn intern_alpha_registered_load(
     interner: &Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>,
     retained_state: AlphaStateKey,
-    pointer: AlphaPointerKey,
+    pointer: AlphaAddressKey,
     kind: LoadKind,
 ) -> Option<AlphaRegisteredLoadId> {
     let fingerprint = alpha_registered_load_descriptor_fingerprint(&retained_state, &pointer, kind);
@@ -1255,12 +1255,12 @@ fn intern_alpha_registered_load(
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaConditionKey {
     AlgebraicEqual(Box<AlphaAlgebraicKey>, Box<AlphaAlgebraicKey>),
-    PointerValueEqual(Box<AlphaProgramValueKey>, Box<AlphaProgramValueKey>),
+    PointerEqual(Box<AlphaProgramValueKey>, Box<AlphaProgramValueKey>),
     Constant(bool),
     Variable(AlphaVariableKey),
     Binary(BitvectorComparisonOp, AlphaBitvectorKey, AlphaBitvectorKey),
-    PointerOffsetEqual(AlphaPointerOffsetKey, AlphaPointerOffsetKey),
-    PointerEqual(AlphaPointerKey, AlphaPointerKey),
+    AddressOffsetEqual(AlphaAddressOffsetKey, AlphaAddressOffsetKey),
+    AddressEqual(AlphaAddressKey, AlphaAddressKey),
     IntegerComparison(IntegerComparisonOperator, AlphaIntegerKey, AlphaIntegerKey),
     MachineComparison(MachineIntegerType, u8, AlphaMachineKey, AlphaMachineKey),
     /// The `Bool` value forms (Stage 5).
@@ -2100,7 +2100,7 @@ fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
     offset: &AddressOffset,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
-) -> Option<AlphaPointerOffsetKey> {
+) -> Option<AlphaAddressOffsetKey> {
     alpha_work_checkpoint(bindings, 1)?;
     Some(Canonical::new(match offset {
         AddressOffset::Constant(value) => AlphaPointerOffsetNode::Constant(*value),
@@ -2240,11 +2240,11 @@ fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
     pointer: &Address,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
-) -> Option<AlphaPointerKey> {
+) -> Option<AlphaAddressKey> {
     alpha_work_checkpoint(bindings, 1)?;
     let block = alpha_address_base_key::<ALLOW_LOADS>(&pointer.base, bindings, next_binder)?;
-    Some(AlphaPointerKey {
-        block,
+    Some(AlphaAddressKey {
+        base: block,
         offset: alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(
             &pointer.offset,
             bindings,
@@ -2271,7 +2271,7 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
             pointee_volatile: pointer.pointee_volatile(),
             pointee_constant: pointer.pointee_constant(),
             pointer: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
-                pointer.pointer(),
+                pointer.address(),
                 bindings,
                 next_binder,
             )?,
@@ -2401,7 +2401,10 @@ fn alpha_algebraic_key_with_bindings<const ALLOW_LOADS: bool>(
                     .collect::<Option<Vec<_>>>()?,
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => AlphaAlgebraicKey::MemoryLoad {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => AlphaAlgebraicKey::MemoryLoad {
             algebraic_type: term.algebraic_type.clone(),
             carrier: alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
                 &AlgebraicTermNode::memory_load_carrier(memory, pointer),
@@ -2667,7 +2670,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 *kind,
             )
         }
-        MachineTerm::PointerAddress(pointer, _) => AlphaBitvectorKey::Address(Box::new(
+        MachineTerm::IntegerAddress(pointer, _) => AlphaBitvectorKey::Address(Box::new(
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(pointer, bindings, next_binder)?,
         )),
         MachineTerm::IntegerToMachine { value, destination } => {
@@ -2857,11 +2860,11 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 &bindings.bitvector,
             )?)
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => AlphaConditionKey::PointerOffsetEqual(
+        ConditionTerm::AddressOffsetEqual(left, right) => AlphaConditionKey::AddressOffsetEqual(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
-        ConditionTerm::PointerValueEqual(left, right) => AlphaConditionKey::PointerValueEqual(
+        ConditionTerm::PointerEqual(left, right) => AlphaConditionKey::PointerEqual(
             Box::new(alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                 &ProgramValue::Pointer((**left).clone()),
                 bindings,
@@ -2873,7 +2876,7 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 next_binder,
             )?),
         ),
-        ConditionTerm::PointerEqual(left, right) => AlphaConditionKey::PointerEqual(
+        ConditionTerm::AddressEqual(left, right) => AlphaConditionKey::AddressEqual(
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
@@ -3156,7 +3159,7 @@ mod proposition_identity_tests {
     use crate::kernel::{ProgramValue, SymbolicMemory};
 
     fn equal(left: MachineTerm, right: MachineTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3502,19 +3505,19 @@ mod proposition_identity_tests {
         let left = Proposition::MemoryLoadable {
             memory: left_memory.clone(),
             base: pointer.clone(),
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         };
         let same = Proposition::MemoryLoadable {
             memory: left_memory,
             base: pointer.clone(),
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         };
         let changed = Proposition::MemoryLoadable {
             memory: right_memory,
             base: pointer,
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         };
         assert!(propositions_are_alpha_equal(&left, &same));
@@ -3541,7 +3544,7 @@ mod proposition_identity_tests {
         );
         let (load_memory, load_pointer) = crate::kernel::registered_load_for_variable(&load)
             .expect("registered load should retain its exact version");
-        let spelled = Proposition::ConditionIs(
+        let spelled = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3575,7 +3578,7 @@ mod proposition_identity_tests {
         let (changed_memory, changed_pointer) =
             crate::kernel::registered_load_for_variable(&changed_load)
                 .expect("changed registered load should retain its version");
-        let changed_spelled = Proposition::ConditionIs(
+        let changed_spelled = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3654,7 +3657,11 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             )
         }
         Proposition::ConditionIs(condition, value) => AlphaPropositionKey::Condition(
-            alpha_condition_key_with_bindings::<ALLOW_LOADS>(condition, bindings, next_binder)?,
+            alpha_condition_key_with_bindings::<ALLOW_LOADS>(
+                condition.native_compat(),
+                bindings,
+                next_binder,
+            )?,
             *value,
         ),
         Proposition::Predicate { name, arguments } => AlphaPropositionKey::Predicate {
@@ -3764,7 +3771,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                         next_binder,
                     )?,
                     bytes: alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                        bytes,
+                        bytes.native_compat(),
                         bindings,
                         next_binder,
                     )?,
@@ -4113,7 +4120,7 @@ mod integer_alpha_scaling_tests {
                 name: Default::default(),
                 var: Variable(binder),
                 sort: Sort::Integer,
-                body: Box::new(Proposition::ConditionIs(
+                body: Box::new(Proposition::condition_is(
                     ConditionTerm::IntegerGreaterEqual(
                         applied.into(),
                         IntegerTerm::constant_i64(0).into(),
@@ -4489,7 +4496,7 @@ mod memory_state_alpha_tests {
     }
 
     fn equality(term: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerEqual(IntegerTerm::constant_i64(9).into(), term.into()),
             true,
         )
@@ -4667,7 +4674,7 @@ mod memory_state_alpha_tests {
                 name: Default::default(),
                 var: binder,
                 sort: Sort::ProgramInt32,
-                body: Box::new(Proposition::ConditionIs(
+                body: Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -5141,7 +5148,7 @@ mod machine_quantifier_identity_tests {
                         var: Variable(981),
                         name: crate::kernel::BinderName::written("i"),
                         sort: Sort::ProgramInteger(format),
-                        body: Box::new(Proposition::ConditionIs(condition, truth)),
+                        body: Box::new(Proposition::condition_is(condition, truth)),
                     };
                     assert!(
                         propositions_are_alpha_equal(
@@ -5168,7 +5175,7 @@ mod machine_quantifier_identity_tests {
             name: "x".into(),
             var: Variable(variable),
             sort: Sort::ProgramInt64,
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 if wide {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
@@ -5220,7 +5227,7 @@ mod offset_condition_tests {
         let mut keys = Vec::new();
         for width in [1, 8] {
             for unsigned in [false, true] {
-                let source = ConditionTerm::PointerOffsetEqual(
+                let source = ConditionTerm::AddressOffsetEqual(
                     Box::new(AddressOffset::Add(
                         Box::new(AddressOffset::Constant(0)),
                         Box::new(AddressOffset::scaled_int64_node(
@@ -5256,7 +5263,7 @@ mod raw_pointer_condition_tests {
             AddressBase::ExternalObject(Variable(998610)),
             AddressBase::FunctionSymbolic(Variable(998610)),
         ] {
-            let source = ConditionTerm::PointerEqual(
+            let source = ConditionTerm::AddressEqual(
                 Box::new(Address {
                     base: block,
                     offset: AddressOffset::scaled_int64_node(
@@ -5284,7 +5291,7 @@ mod complete_pointer_condition_tests {
     #[test]
     fn complete_pointer_conditions_keep_state_domain_keys() {
         let _session = crate::kernel::VerificationSession::enter();
-        let a = PointerValue::new(
+        let a = Pointer::new(
             Address::symbolic(Variable(998620)),
             ProgramType::Int32Pointer,
         );
@@ -5297,7 +5304,7 @@ mod complete_pointer_condition_tests {
                 width: MachineTerm::constant(4),
             })),
         ] {
-            let source = ConditionTerm::PointerValueEqual(Box::new(value), Box::new(a.clone()));
+            let source = ConditionTerm::PointerEqual(Box::new(value), Box::new(a.clone()));
             let root = crate::kernel::KernelTermImport::default().condition(&source);
             let actual =
                 memory_erased_boolean_operand_key(crate::kernel::BooleanOperandView::Shared(&root));

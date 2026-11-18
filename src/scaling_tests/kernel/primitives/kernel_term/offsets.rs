@@ -101,7 +101,7 @@ fn offset_condition_rewrites_preserve_shared_offset_dags() {
                 .into_shared()
                 .unwrap();
         }
-        let source = KernelTerm::pointer_offset_equal_raw([offset.clone(), offset]);
+        let source = KernelTerm::address_offset_equal_raw([offset.clone(), offset]);
         let exports = KernelTermExport::machine_export_count();
         let ((rewritten, transported), work) =
             crate::instrumentation::measure_deterministic_work(|| {
@@ -147,7 +147,7 @@ fn growing_offset_guards_reuse_observation_normalization() {
                 offset = KernelAddressOffset::Add([offset.clone(), offset.clone()])
                     .into_shared()
                     .unwrap();
-                let guard = KernelTerm::pointer_offset_equal_raw([offset.clone(), zero.clone()]);
+                let guard = KernelTerm::address_offset_equal_raw([offset.clone(), zero.clone()]);
                 let value = KernelTerm::machine_if_shared(
                     MachineIntegerType::Int32,
                     [guard, word.clone(), word.clone()],

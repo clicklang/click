@@ -88,11 +88,12 @@ callback needs an applicable named contract. Writes to a const table remain
 rejected. A bare function designator decays to the same address as `&name` in
 value positions when that function is declared in the translation unit.
 
-Packed layout and general bit-field layouts remain outside the baseline.
-[Local integer bit-fields](c.md#local-integer-bit-fields) support named members
-in one allocation word on the x86-64 target. Typed field access through a
-pointer requires a fixed local alias. Character accesses and modeled
-`memcpy` can use the local record's representation. Named enum fields use
+Packed layout remains outside the baseline.
+[Local integer bit-fields](c.md#local-integer-bit-fields) support named and
+unnamed fields and ordinary arithmetic scalar members across multiple
+allocation words on x86-64. Typed field access through a pointer requires a
+fixed local alias. Character accesses and modeled `memcpy` can use the local
+record's representation. Named enum fields use
 the four-byte scalar ABI representation; broader
 enum shapes remain outside the documented subset. Click resource clauses can
 name supported fields and embedded aggregate places with their typed byte

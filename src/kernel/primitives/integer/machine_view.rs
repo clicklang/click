@@ -54,7 +54,7 @@ pub(crate) fn shared_machine_syntax_variables(
                 | KernelTermNode::FloatConvert { .. }
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
-                | KernelTermNode::PointerAddress { .. }
+                | KernelTermNode::IntegerAddress { .. }
                 | KernelTermNode::MemoryLoad { .. }
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::Fold(_)
@@ -126,7 +126,7 @@ pub(crate) fn shared_machine_conversion_leaves(
                     | KernelTermNode::FloatConvert { .. }
                     | KernelTermNode::BoolCast { .. }
                     | KernelTermNode::Legacy(_)
-                    | KernelTermNode::PointerAddress { .. }
+                    | KernelTermNode::IntegerAddress { .. }
                     | KernelTermNode::Call { .. }
                     | KernelTermNode::MachineIf { .. }
                     | KernelTermNode::Fold(_)

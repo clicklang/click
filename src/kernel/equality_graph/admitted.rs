@@ -15,9 +15,8 @@ pub(in crate::kernel) struct InputData {
         crate::kernel::pointer_provenance::ValueClasses<Address>,
     pub(in crate::kernel) bounds_graph: crate::kernel::pointer_provenance::ValueClasses<Address>,
     pub(in crate::kernel) pointer_value_classes:
-        crate::kernel::pointer_provenance::ValueClasses<PointerValue>,
-    pub(in crate::kernel) pointer_value_equalities:
-        crate::persistent::PersistentSet<(PointerValue, PointerValue)>,
+        crate::kernel::pointer_provenance::ValueClasses<Pointer>,
+    pub(in crate::kernel) pointer_equalities: crate::persistent::PersistentSet<(Pointer, Pointer)>,
 
     /// Conservative source-dependency selectors for parameter-store shortcuts.
     /// These record syntax, not equality classes or permission authority.
@@ -50,8 +49,8 @@ pub(in crate::kernel) struct InputData {
     >,
     /// Exact equalities between two pointers of *different* blocks, indexed
     /// under each side and carrying the fact that states them. An equality
-    /// inside one block is a `PointerOffsetEqual` that never reaches this
-    /// index (`ConditionTerm::pointer_equal`), so an entry here always says
+    /// inside one block is an `AddressOffsetEqual` that never reaches this
+    /// index (`ConditionTerm::address_equal`), so an entry here always says
     /// that two block spellings name one address. Derived incrementally from
     /// `condition_facts`, like every other index above, so asking what one
     /// pointer is proved equal to is a keyed lookup rather than a scan of

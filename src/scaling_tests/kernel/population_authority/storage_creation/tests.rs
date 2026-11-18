@@ -493,7 +493,9 @@ fn checked_empty_lookup_scales_over_unrelated_retired_populations() {
 #[test]
 fn count_lookup_does_not_scan_unrelated_authority_heads() {
     let description = member_description(AddressBase::ExternalArgument);
-    let [AlgebraicValue::Program(ProgramValue::Pointer(anchor))] = description.arguments() else {
+    let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(anchor))]) =
+        (description.arguments()).fixed_values::<1>()
+    else {
         panic!("pointer anchor")
     };
     let count = SpecExpression::CountedResourceCount {
@@ -1025,7 +1027,7 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
             }
             let entry = entry.import_observable_named_authority(&scope).unwrap();
             let count = entry.observe_symbolic(&scope).unwrap().entry_count;
-            let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+            let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
                 ConditionTerm::signed_add_overflows(count.clone(), MachineTerm::constant(1)),
                 false,
             ));

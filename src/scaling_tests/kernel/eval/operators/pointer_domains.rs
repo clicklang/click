@@ -2,19 +2,19 @@
 fn known_domains_do_not_readmit_unrelated_path_facts() {
     for count in [0u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let opaque = PointerValue::new(
+        let opaque = Pointer::new(
             Address::symbolic(Variable(1013300)),
             ProgramType::Int32Pointer,
         );
         let root = opaque.clone().with_root_bounds();
         let cached = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_value_equal(opaque.clone(), root.clone()),
+            ConditionTerm::pointer_equal(opaque.clone(), root.clone()),
             true,
         );
         for (pointer, context) in [(root, PureFactContext::new()), (opaque, cached)] {
             let facts: ExecutionFacts = (0..count)
                 .map(|i| {
-                    ExecutionPureFact::new(Proposition::ConditionIs(
+                    ExecutionPureFact::new(Proposition::condition_is(
                         ConditionTerm::Variable(Variable(1013400 + i)),
                         true,
                     ))
@@ -24,13 +24,13 @@ fn known_domains_do_not_readmit_unrelated_path_facts() {
             let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
             let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
                 assert!(
-                    subobject_access_refusal(pointer.pointer(), &pointer, 4, &facts, &[], &context)
+                    subobject_access_refusal(pointer.address(), &pointer, 4, &facts, &[], &context)
                         .is_none()
                 );
                 assert!(
                     subobject_formation_guards(
                         &pointer,
-                        &pointer.pointer().offset_by_bytes(4),
+                        &pointer.address().offset_by_bytes(4),
                         &facts,
                         &[],
                         &context,
@@ -59,14 +59,14 @@ fn known_domains_do_not_readmit_unrelated_path_facts() {
         }
         // An unresolved domain is also a read-only miss. Access authority is
         // checked separately, using the context the caller already prepared.
-        let unknown = PointerValue::new(
+        let unknown = Pointer::new(
             Address::symbolic(Variable(1013700)),
             ProgramType::Int32Pointer,
         );
         let context = PureFactContext::new();
         let facts: ExecutionFacts = (0..count)
             .map(|i| {
-                ExecutionPureFact::new(Proposition::ConditionIs(
+                ExecutionPureFact::new(Proposition::condition_is(
                     ConditionTerm::Variable(Variable(1013800 + i)),
                     true,
                 ))
@@ -75,7 +75,7 @@ fn known_domains_do_not_readmit_unrelated_path_facts() {
             .into();
         let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
         let (refusal, work) = crate::instrumentation::measure_deterministic_work(|| {
-            subobject_access_refusal(unknown.pointer(), &unknown, 4, &facts, &[], &context)
+            subobject_access_refusal(unknown.address(), &unknown, 4, &facts, &[], &context)
         });
         assert!(refusal.is_none());
         assert_eq!(

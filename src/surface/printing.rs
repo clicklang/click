@@ -1343,22 +1343,21 @@ pub(in crate::surface) fn format_resource_call(resource: &ResourceClause) -> Str
     )
 }
 
-/// One iterated-ownership tactic as it is written: `take(data[j..j + 1])`.
+/// Write one iterated-ownership tactic.
 pub(in crate::surface) fn describe_iterated_tactic(tactic: &IteratedTactic) -> String {
     format!(
         "{}({})",
         tactic.name(),
         match tactic {
-            IteratedTactic::Take(segment) | IteratedTactic::Give(segment) => {
-                match segment {
-                    IteratedElement::Current(segment) => describe_contract_segment(segment),
-                    IteratedElement::SavedBase { base, start, end } => format!(
-                        "{}[{}..{}]",
-                        describe_contract_expression(base),
-                        describe_contract_expression(start),
-                        describe_contract_expression(end),
-                    ),
-                }
+            IteratedTactic::UnfoldSlot(slot) | IteratedTactic::FoldSlot(slot) => {
+                let resource = format_resource_target(&slot.resource);
+                let target = match &slot.point {
+                    Some(point) => {
+                        format!("at({}, {resource})", describe_program_point_selector(point))
+                    }
+                    None => resource,
+                };
+                format!("{target}[{}]", describe_contract_expression(&slot.index))
             }
             IteratedTactic::Gather(resource) | IteratedTactic::Scatter(resource) => {
                 format_resource_target(resource)
@@ -1579,6 +1578,26 @@ pub(super) fn spell_source_names(context: &str, source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typed_let_source_preserves_right_associated_sums() {
+        let source = "theorem grouping(a:Integer,b:Integer,c:Integer) { requires (let value:Integer=a+(b+c);value)==a+(b+c); ensures true; }";
+        let parsed = parser::parse(source).unwrap();
+        let Requirement::Proposition(original) = &parsed.theorem_definitions()[0].requires()[0]
+        else {
+            panic!("expected a requirement");
+        };
+        let written = source_click_proposition(original);
+        let reparsed = parser::parse(&format!(
+            "theorem grouping(a:Integer,b:Integer,c:Integer) {{ requires {written}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(roundtrip) = &reparsed.theorem_definitions()[0].requires()[0]
+        else {
+            panic!("expected a requirement");
+        };
+        assert_eq!(original, roundtrip, "{written}");
+    }
 
     #[test]
     fn negative_int64_source_barrier_does_not_change_diagnostic_spelling() {

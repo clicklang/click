@@ -23,16 +23,17 @@ fn is_word32_equality(goal: &Proposition) -> bool {
     let Proposition::ConditionIs(condition, true) = goal else {
         return false;
     };
-    crate::kernel::machine_integer::comparison::structural_comparison_view(condition).is_some_and(
-        |view| {
-            !view.negated
-                && view.relation == CompareRelation::Equal
-                && matches!(
-                    view.format,
-                    MachineIntegerType::Int32 | MachineIntegerType::UInt32
-                )
-        },
+    crate::kernel::machine_integer::comparison::structural_comparison_view(
+        condition.native_compat(),
     )
+    .is_some_and(|view| {
+        !view.negated
+            && view.relation == CompareRelation::Equal
+            && matches!(
+                view.format,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32
+            )
+    })
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
@@ -212,14 +213,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("disequality_goal_equality");
         let kernel = match search_input.goal()? {
-            Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(left, right), true) => {
-                Proposition::ConditionIs(
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::IntegerNotEqual(left, right), _)) =
+                    condition_source_0.condition_native() =>
+            {
+                Proposition::condition_is(
                     ConditionTerm::IntegerEqual(left.clone(), right.clone()),
                     true,
                 )
             }
-            Proposition::ConditionIs(
-                condition @ (ConditionTerm::IntegerEqual(..)
+            condition_source_0 @ Proposition::ConditionIs(_, false)
+                if let Some((condition @ (ConditionTerm::IntegerEqual(..)
                 // An 8- or 16-bit equality is the same fact as the `int32`
                 // equality of its widenings (rule K8).
                 | ConditionTerm::Compare {
@@ -236,9 +240,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     ..
-                }),
-                false,
-            ) => Proposition::ConditionIs(condition.clone(), true),
+                }), _)) = condition_source_0.condition_native() =>
+            {
+                Proposition::condition_is(condition.clone(), true)
+            }
             _ => return None,
         };
         let surface = match search_input.surface_goal()? {
@@ -534,7 +539,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_equality_by_bounds_early");
         if let (
-            Some(Proposition::ConditionIs(
+            Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
@@ -543,8 +548,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 true,
             )),
             Some(ClickProposition::Comparison { left, right, .. }),
-        ) = (search_input.goal(), search_input.surface_goal())
-            && !writes_sum_or_difference(left, right)
+        ) = (
+            search_input.goal().and_then(Proposition::condition_native),
+            search_input.surface_goal(),
+        ) && !writes_sum_or_difference(left, right)
         {
             return Ok(None);
         }
@@ -1241,7 +1248,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
             },
             fact: fact.clone(),
-            negated_goal: ClickProposition::Not(Box::new(surface_goal.clone())),
         };
         let Ok((split_proof, split, ids)) = search_input.split_focused_if(surface_goal.clone())
         else {
@@ -1263,7 +1269,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &(else_branch),
             plan,
             &refutation,
-            &[],
+            &[ClickProposition::Not(Box::new(surface_goal.clone()))],
         )?
         else {
             return Ok(None);
@@ -1410,6 +1416,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     && definition_end_value(end).is_some_and(|end| end != value))
                 .then(|| DefinitionPlan::End {
                     unfolds: unfolds.to_vec(),
+                    value: end.clone(),
                 })
             }
         }
@@ -1426,33 +1433,86 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("refute_definition_ends");
         check_verification_deadline()?;
+        // A split may revisit a guard already established by the caller.
+        // Its impossible arm needs only the explicit conflicting guard.
+        if let Some(guard) = taken.last()
+            && let Ok(closed) = search_input
+                .driver()
+                .apply_step(ProofStep::Contradiction(guard.clone()))
+        {
+            return Ok(Some(closed));
+        }
         match plan {
-            DefinitionPlan::End { unfolds } => {
-                let mut using = taken.to_vec();
-                using.push(refutation.negated_goal.clone());
+            DefinitionPlan::End { unfolds, value } => {
+                let refuted = (|| {
+                    let equation = ClickProposition::Comparison {
+                        left: ContractExpression::Call {
+                            name: refutation.application.name.clone(),
+                            arguments: refutation.application.arguments.clone(),
+                        },
+                        operator: ComparisonOperator::Equal,
+                        right: value.clone(),
+                    };
+                    let mut scope = search_input.driver().open_have(equation.clone())?;
+                    for application in std::iter::once(&refutation.application).chain(unfolds) {
+                        if scope.is_complete() {
+                            break;
+                        }
+                        scope = scope
+                            .driver()
+                            .apply_step(ProofStep::UnfoldFunction(application.clone()))?;
+                    }
+                    if !scope.is_complete() {
+                        if let Ok(closed) = scope.driver().apply_step(ProofStep::Known) {
+                            scope = closed;
+                        } else if let Some(rewritten) =
+                            scope.driver().try_rewrite_conditional_arms_using(taken)?
+                        {
+                            scope = rewritten;
+                            if !scope.is_complete() {
+                                scope = scope.driver().apply_step(ProofStep::Known)?;
+                            }
+                        }
+                    }
+                    if let Some(goal) = scope.body().surface_goal()
+                        && !scope.is_complete()
+                    {
+                        return Err(scope.body().step_error(format!(
+                            "definition branch did not prove its literal: {}",
+                            crate::surface::printing::source_click_proposition(goal),
+                        )));
+                    }
+                    let proof = scope.join()?;
+                    let mut differs = proof.driver().open_have(refutation.differs.clone())?;
+                    differs = differs.driver().apply_step(ProofStep::Rewrite(equation))?;
+                    if !differs.is_complete() {
+                        differs = differs.driver().apply_step(ProofStep::Known)?;
+                    }
+                    differs
+                        .join()?
+                        .driver()
+                        .apply_step(ProofStep::Contradiction(refutation.fact.clone()))
+                })();
+                if let Some(closed) =
+                    attempt::candidate_outcome(refuted)?.filter(Proof::focused_discharged)
+                {
+                    return Ok(Some(closed));
+                }
+
+                // Some unfolds expose constructor matches as well as conditionals.
+                // Keep the checked route when arm equations cannot express the
+                // whole reduction.
                 let mut steps = vec![ProofStep::UnfoldFunction(refutation.application.clone())];
                 steps.extend(unfolds.iter().cloned().map(ProofStep::UnfoldFunction));
-                steps.push(ProofStep::NormalizeUsing(using));
-                let refute = |steps: Vec<ProofStep>| {
-                    search_input
-                        .driver()
-                        .apply_step(have(refutation.differs.clone(), steps))
-                        .and_then(|next| {
-                            next.driver()
-                                .apply_step(ProofStep::Contradiction(refutation.fact.clone()))
-                        })
-                };
-                // The unfolds alone can decide a `Bool` end (Stage 5): the
-                // refreshed goal is then a cited condition, and the
-                // `normalize` after them has nothing left to prove.
-                let mut unfolded = steps.clone();
-                unfolded.pop();
-                let mut known = unfolded.clone();
-                known.push(ProofStep::Known);
-                let refuted = refute(known)
-                    .or_else(|_| refute(steps))
-                    .or_else(|error| refute(unfolded).map_err(|_| error));
-                Ok(refuted.ok().filter(Proof::focused_discharged))
+                steps.push(ProofStep::NormalizeUsing(taken.to_vec()));
+                let checked = search_input
+                    .driver()
+                    .apply_step(have(refutation.differs.clone(), steps))
+                    .and_then(|next| {
+                        next.driver()
+                            .apply_step(ProofStep::Contradiction(refutation.fact.clone()))
+                    });
+                Ok(attempt::candidate_outcome(checked)?.filter(Proof::focused_discharged))
             }
             DefinitionPlan::Split {
                 condition,
@@ -1928,16 +1988,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )
             .unwrap_or_else(|| candidate.clone());
             if !matches!(
-                &query,
-                Proposition::ConditionIs(
-                    ConditionTerm::Overflows {
+                &query, condition_source_0 @ Proposition::ConditionIs(
+                    _,
+                    false
+                ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32 | MachineIntegerType::Int64,
                         op: OverflowOperation::Add | OverflowOperation::Subtract,
                         ..
-                    },
-                    false
-                )
-            ) || !seen.insert(query.clone())
+                    }, _))))
+                || !seen.insert(query.clone())
             {
                 continue;
             }
@@ -2088,15 +2147,15 @@ mod retained_match_policy_tests {
             right: Box::new(MachineTerm::constant(1)),
         };
         for condition in [common, written] {
-            assert!(is_word32_equality(&Proposition::ConditionIs(
+            assert!(is_word32_equality(&Proposition::condition_is(
                 condition.clone(),
                 true
             )));
-            assert!(!is_word32_equality(&Proposition::ConditionIs(
+            assert!(!is_word32_equality(&Proposition::condition_is(
                 condition, false
             )));
         }
-        assert!(!is_word32_equality(&Proposition::ConditionIs(
+        assert!(!is_word32_equality(&Proposition::condition_is(
             ConditionTerm::IntegerEqual(
                 crate::kernel::IntegerTerm::Variable(crate::kernel::Variable(991989)).into(),
                 crate::kernel::IntegerTerm::constant_i64(1).into()

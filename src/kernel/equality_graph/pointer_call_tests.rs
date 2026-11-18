@@ -17,21 +17,21 @@ fn argument(id: u64) -> PureFunctionArgument {
     PureFunctionArgument::Value(ProgramValue::Int32(word(id)))
 }
 fn pointer_argument(p: Address) -> PureFunctionArgument {
-    PureFunctionArgument::Value(ProgramValue::Pointer(PointerValue::new(
+    PureFunctionArgument::Value(ProgramValue::Pointer(Pointer::new(
         p,
         ProgramType::Int32Pointer,
     )))
 }
 fn equal_pointer_arguments(graph: &mut EqualityGraph, p: &Address, q: &Address) {
-    graph.add_pointer_value_equality(
-        &PointerValue::new(p.clone(), ProgramType::Int32Pointer),
-        &PointerValue::new(q.clone(), ProgramType::Int32Pointer),
+    graph.add_pointer_equality(
+        &Pointer::new(p.clone(), ProgramType::Int32Pointer),
+        &Pointer::new(q.clone(), ProgramType::Int32Pointer),
     );
 }
 
 fn equal(a: &Address, b: &Address) -> Proposition {
-    Proposition::ConditionIs(
-        ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
+    Proposition::condition_is(
+        ConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone())),
         true,
     )
 }
@@ -75,7 +75,7 @@ fn pointer_calls_keep_sorts_order_states_and_noninjectivity() {
         .store(p.clone(), ProgramValue::Int32(word(32)));
     let array = |memory: &SymbolicMemory, pointer, element_type| PureFunctionArgument::ArrayRef {
         memory: memory.clone(),
-        pointer: ProgramValue::Pointer(PointerValue::new(pointer, ProgramType::Int32Pointer)),
+        pointer: ProgramValue::Pointer(Pointer::new(pointer, ProgramType::Int32Pointer)),
         element_type,
     };
     let a = call(
@@ -163,7 +163,7 @@ fn pointer_call_evidence_stays_scoped() {
         call("get", vec![argument(51)]),
     );
     let p = Address::symbolic(Variable(52));
-    let premise = Proposition::ConditionIs(ConditionTerm::equal(word(50), word(51)), true);
+    let premise = Proposition::condition_is(ConditionTerm::equal(word(50), word(51)), true);
     let held = equal(&p, &a);
     let goal = equal(&p, &b);
     let base = PureFactContext::new().assume_proposition(held.clone());
@@ -188,12 +188,12 @@ fn pointer_call_address_equality_does_not_merge_result_domains() {
     let _session = VerificationSession::enter();
     let a = call("left", vec![argument(61)]);
     let b = call("right", vec![argument(61)]);
-    let left = PointerValue::new(a.clone(), ProgramType::Int32Pointer);
-    let right = PointerValue::new(b.clone(), ProgramType::Int32Pointer);
+    let left = Pointer::new(a.clone(), ProgramType::Int32Pointer);
+    let right = Pointer::new(b.clone(), ProgramType::Int32Pointer);
     let context = PureFactContext::new().assume_proposition(equal(&a, &b));
     assert!(!context.pointer_provenance_match(&left, &right));
     let complete = context.clone().assume_condition(
-        ConditionTerm::pointer_value_equal(left.clone(), right.clone()),
+        ConditionTerm::pointer_equal(left.clone(), right.clone()),
         true,
     );
     assert!(complete.pointer_provenance_match(&left, &right));

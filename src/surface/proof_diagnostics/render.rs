@@ -154,7 +154,7 @@ impl MemoryStateLabels {
                 } else {
                     "result"
                 };
-                self.fallback_pointer_name(pointer.pointer(), name.into());
+                self.fallback_pointer_name(pointer.address(), name.into());
             }
             _ => {}
         }
@@ -187,7 +187,7 @@ impl MemoryStateLabels {
             };
             if let crate::kernel::ProgramValue::Pointer(pointer) = value {
                 labels.immutable_pointer_name(
-                    pointer.pointer(),
+                    pointer.address(),
                     &crate::surface::surface_parameter_binding(parameter.binding_name())
                         .to_string(),
                 );
@@ -815,7 +815,7 @@ pub(crate) fn render_read_resolution(
 ) -> String {
     let _typed = TypedNotationScope::enter();
     let query = render_proposition_labeled(
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
@@ -1148,7 +1148,7 @@ pub(crate) fn render_resource_fact_labeled(
             renderer.push("owns ");
             renderer.resource(resource);
             renderer.push(" x ");
-            renderer.bitvector(quantity);
+            renderer.bitvector(quantity.native_compat());
         }
         ResourceFact::View(resource) => {
             renderer.push("views ");
@@ -1449,12 +1449,12 @@ impl Renderer<'_> {
                 self.fmt(format_args!("volatile-{operation}-event#{}(", event.id.0));
                 self.pointer(&event.pointer);
                 self.push(", ");
-                self.cvalue(&event.value);
+                self.cvalue(event.value.native_compat());
                 self.push(")");
             }
             Proposition::Equal(left, right) => self.binary_term(left, " = ", right),
             Proposition::ConditionIs(condition, value) => {
-                self.condition(condition);
+                self.condition(condition.native_compat());
                 self.push(if *value { " is true" } else { " is false" });
             }
             Proposition::Predicate { name, arguments } => {
@@ -1538,7 +1538,7 @@ impl Renderer<'_> {
                 } else {
                     ", bytes:uint32="
                 });
-                self.bitvector(bytes);
+                self.bitvector(bytes.native_compat());
                 self.push(")");
             }
             Proposition::MemoryCanStore {
@@ -1817,9 +1817,10 @@ impl Renderer<'_> {
                 let name = self.variable_name(*variable, "value");
                 self.fmt(format_args!("{name}:{}", term.algebraic_type.name))
             }
-            AlgebraicTermNode::MemoryLoad { memory, pointer } => {
-                self.bitvector(&AlgebraicTermNode::memory_load_carrier(memory, pointer))
-            }
+            AlgebraicTermNode::MemoryLoad {
+                point: memory,
+                pointer,
+            } => self.bitvector(&AlgebraicTermNode::memory_load_carrier(memory, pointer)),
             AlgebraicTermNode::Constructor { variant, fields } => {
                 self.fmt(format_args!("{}::{variant}", term.algebraic_type.name));
                 if !fields.is_empty() {
@@ -1980,17 +1981,17 @@ impl Renderer<'_> {
                 self.push(" = ");
                 self.algebraic(b);
             }
-            ConditionTerm::PointerOffsetEqual(a, b) => {
+            ConditionTerm::AddressOffsetEqual(a, b) => {
                 self.offset(a, 0);
                 self.push(" = ");
                 self.offset(b, 0);
             }
-            ConditionTerm::PointerValueEqual(a, b) => {
-                self.pointer(a.pointer());
-                self.push(" == ");
-                self.pointer(b.pointer());
-            }
             ConditionTerm::PointerEqual(a, b) => {
+                self.pointer(a.address());
+                self.push(" == ");
+                self.pointer(b.address());
+            }
+            ConditionTerm::AddressEqual(a, b) => {
                 self.pointer(a);
                 self.push(" = ");
                 self.pointer(b);
@@ -2021,7 +2022,7 @@ impl Renderer<'_> {
             }
             ConditionTerm::BoolLoad(memory, pointer) => {
                 self.push("read<Bool>(");
-                self.memory(memory.as_ref());
+                self.memory(memory.memory());
                 self.push(", pointer=");
                 self.pointer(pointer);
                 self.push(")");
@@ -2359,7 +2360,7 @@ impl Renderer<'_> {
                 }
                 self.push(" }");
             }
-            MachineTerm::PointerAddress(pointer, _) => {
+            MachineTerm::IntegerAddress(pointer, _) => {
                 self.push("address(");
                 self.pointer(pointer);
                 self.push(")");
@@ -2443,6 +2444,17 @@ impl Renderer<'_> {
             self.push(&name);
             self.push("=");
             self.bitvector(&definition);
+            return;
+        }
+        if let Some(expression) = self
+            .labels
+            .recorded_states
+            .as_ref()
+            .and_then(|states| states.produced_address_expression(p))
+        {
+            self.push(&crate::surface::diagnostics::describe_contract_expression(
+                &expression,
+            ));
             return;
         }
         // An address inside an object the caller's tables name reads as its
@@ -2540,7 +2552,7 @@ impl Renderer<'_> {
                 if let Some(ty) = identity.protected_type() {
                     self.push(", ");
                     self.push(ty.family());
-                    self.resource_arguments(ty.arguments());
+                    self.resource_arguments(&(ty.arguments()).native_values());
                 }
                 self.push(")");
             }
@@ -2550,7 +2562,7 @@ impl Renderer<'_> {
                 self.pointer(right.flag());
                 self.push(", ");
                 self.push(right.payload().family());
-                self.resource_arguments(right.payload().arguments());
+                self.resource_arguments(&(right.payload().arguments()).native_values());
                 if let Some(observed) = right.observed() {
                     self.push(", observed=");
                     self.cvalue(observed);
@@ -2565,7 +2577,7 @@ impl Renderer<'_> {
                     if index > 0 {
                         self.push(", ");
                     }
-                    self.algebraic_value(argument);
+                    self.algebraic_value(&argument.into_native());
                 }
                 if let Some(arity) = description.population_arity() {
                     for _ in 1..arity {
@@ -2596,7 +2608,7 @@ impl Renderer<'_> {
             }
             Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 self.push(name);
-                self.resource_arguments(arguments);
+                self.resource_arguments(&(arguments).native_values());
             }
             Resource::Instance(instance) => {
                 self.push("{");
@@ -2604,9 +2616,9 @@ impl Renderer<'_> {
                 self.push(&identity);
                 self.push(": ");
                 self.push(instance.name());
-                self.resource_arguments(instance.arguments());
+                self.resource_arguments(&(instance.arguments()).native_values());
                 self.push(", fields=");
-                self.resource_arguments(instance.fields());
+                self.resource_arguments(&instance.fields().native_values());
                 if !instance.resource_arguments().is_empty() {
                     self.fmt(format_args!(
                         ", {} resource references omitted",
@@ -2647,7 +2659,7 @@ impl Renderer<'_> {
                     if index > 0 {
                         self.push(", ");
                     }
-                    self.bitvector(hole);
+                    self.bitvector(hole.native_compat());
                 }
                 self.push("])");
             }
@@ -2749,9 +2761,9 @@ impl Renderer<'_> {
             }
         }
     }
-    fn outcome(&mut self, outcome: &ExpressionOutcome) {
+    fn outcome(&mut self, outcome: &ExpressionOutcome<crate::kernel::StoredProgramValue>) {
         match outcome {
-            ExpressionOutcome::Value(value) => self.cvalue(value),
+            ExpressionOutcome::Value(value) => self.cvalue(value.native_compat()),
             ExpressionOutcome::UndefinedBehavior(_) => self.push("undefined-behavior"),
             ExpressionOutcome::RuntimeError(_) => self.push("runtime-error"),
         }
@@ -2892,7 +2904,7 @@ mod tests {
                 },
             );
         }
-        let fact = Proposition::ConditionIs(
+        let fact = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2977,7 +2989,7 @@ mod tests {
     fn source_names_and_report_local_names_replace_variable_ids() {
         let mut labels = MemoryStateLabels::default();
         labels.source_name(Variable(7), "cur".into());
-        let proposition = Proposition::ConditionIs(
+        let proposition = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3003,7 +3015,7 @@ mod tests {
             name: "path".into(),
             var: Variable(7),
             sort: Sort::Algebraic(path),
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 ConditionTerm::Constant(true),
                 true,
             )),
@@ -3025,7 +3037,7 @@ mod tests {
         let mut labels = MemoryStateLabels::default();
         labels.source_name(Variable(7), "r".into());
         let equality = |variable| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -3047,7 +3059,7 @@ mod tests {
 
     #[test]
     fn deep_dag_is_bounded_and_marks_truncation() {
-        let mut proposition = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let mut proposition = Proposition::condition_is(ConditionTerm::Constant(true), true);
         for _ in 0..128 {
             proposition = Proposition::Not(Box::new(proposition));
         }
@@ -3061,7 +3073,7 @@ mod tests {
         let left = SharedIntegerTerm::from(IntegerTerm::from(11));
         let right = SharedIntegerTerm::from(IntegerTerm::from(19));
         let proposition =
-            Proposition::ConditionIs(ConditionTerm::IntegerLessThan(left, right), true);
+            Proposition::condition_is(ConditionTerm::IntegerLessThan(left, right), true);
         let rendered = render_proposition(&proposition);
         assert!(rendered.contains("integer-condition"));
         assert!(rendered.contains("<"));
@@ -3095,7 +3107,7 @@ mod tests {
                 base: crate::kernel::AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),
             },
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         }
     }
@@ -3236,9 +3248,10 @@ mod tests {
     fn trace_resource_names_its_arguments_without_debug_state() {
         let resource = ResourceFact::View(Resource::Token {
             name: "child_ref".into(),
-            arguments: std::sync::Arc::from([AlgebraicValue::Program(
-                crate::kernel::ProgramValue::Int32(MachineTerm::constant(7)),
-            )]),
+            arguments: Vec::from([AlgebraicValue::Program(crate::kernel::ProgramValue::Int32(
+                MachineTerm::constant(7),
+            ))])
+            .into(),
         });
         assert_eq!(render_resource_fact(&resource), "views child_ref(int32(7))");
     }

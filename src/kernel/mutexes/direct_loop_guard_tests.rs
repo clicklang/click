@@ -173,7 +173,7 @@ fn direct_loop_guard_is_typed_and_affine_even_when_empty() {
             .is_err()
     );
     let mut different = (*carrier(&top)).clone();
-    different.held = ConditionTerm::Constant(true);
+    different.held = ConditionTerm::Constant(true).into();
     assert!(
         top.resources
             .clone()
@@ -333,7 +333,10 @@ fn direct_loop_guard_keeps_negated_conditions_as_boolean_terms() {
         &PureFactContext::new(),
     )
     .unwrap();
-    assert!(matches!(carrier(&head).held, ConditionTerm::BoolEqual(..)));
+    assert!(matches!(
+        carrier(&head).condition(),
+        ConditionTerm::BoolEqual(..)
+    ));
     let opened = MutexContext::new(head)
         .release_current(&address(0), &PureFactContext::new())
         .unwrap();
@@ -372,7 +375,7 @@ fn direct_loop_guard_transfer_rejects_an_existing_guard_atom() {
 fn direct_loop_guard_transfer_rejects_an_existing_conditional_identity() {
     let top = head(&entry(), 717);
     let mut changed = (*carrier(&top)).clone();
-    changed.held = ConditionTerm::Constant(true);
+    changed.held = ConditionTerm::Constant(true).into();
     assert!(
         top.resources
             .clone()
@@ -384,4 +387,18 @@ fn direct_loop_guard_transfer_rejects_an_existing_conditional_identity() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/mutexes/direct_loop_guard_tests.rs");
+}
+
+#[test]
+fn conditional_guard_and_ledger_retain_one_logical_condition_root() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = head(&entry(), 10993641);
+    let guard = carrier(&state);
+    let root = guard.held.root().expect("checked condition stays common");
+    let Some(MutexEntry::ConditionalLoop { held, .. }) =
+        state.mutex_ledger.as_ref().unwrap().get(&address(0))
+    else {
+        panic!("conditional ledger");
+    };
+    assert_eq!(held.root(), Some(root));
 }

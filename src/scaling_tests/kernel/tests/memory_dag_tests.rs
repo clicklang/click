@@ -37,7 +37,7 @@ fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
     let variable = Variable(989_002);
     let word = MachineTerm::Variable(variable);
     let one = MachineTerm::constant(1);
-    let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
+    let facts = PureFactStore::from_ordered(&[Proposition::condition_is(
         ConditionTerm::equal(word.clone(), one.clone()),
         true,
     )]);
@@ -46,7 +46,7 @@ fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
         name: Default::default(),
         var: variable,
         sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::integer_equal(observed(bits), IntegerTerm::constant_i64(1)),
             true,
         )),
@@ -56,7 +56,7 @@ fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
             .with_checked_rewritten_loads(&goal(word.clone()), &goal(one))
             .is_none()
     );
-    let leaf = Proposition::ConditionIs(
+    let leaf = Proposition::condition_is(
         ConditionTerm::integer_equal(observed(word.clone()), observed(word)),
         true,
     );
@@ -79,7 +79,7 @@ fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
 fn rewritten_goal_comparison_visits_only_the_selected_proposition() {
     let facts = crate::kernel::proof::PureFactStore::default();
     for size in [4, 8, 16, 32] {
-        let leaf = Proposition::ConditionIs(
+        let leaf = Proposition::condition_is(
             ConditionTerm::equal(MachineTerm::constant(0), MachineTerm::constant(0)),
             true,
         );
@@ -266,7 +266,7 @@ fn seeded_pointer_read_evidence_does_not_enumerate_large_runs_or_alias_classes()
             seeded_pointer_read_context(&old, &current, &address, &alias);
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     address.clone(),
                     Address::symbolic(Variable(99_000 + u64::from(i))),
                 ),
@@ -429,8 +429,8 @@ fn named_state_alias_equality_does_not_depend_on_sibling_observation_origins() {
         let left = Address::symbolic(Variable(977_110));
         let middle = Address::symbolic(Variable(977_111));
         let right = Address::symbolic(Variable(977_112));
-        let first = ConditionTerm::pointer_equal(left.clone(), middle.clone());
-        let second = ConditionTerm::pointer_equal(middle, right.clone());
+        let first = ConditionTerm::address_equal(left.clone(), middle.clone());
+        let second = ConditionTerm::address_equal(middle, right.clone());
         let mut assumptions = PureFactContext::new()
             .assume_condition(first.clone(), true)
             .assume_condition(second.clone(), true);
@@ -536,7 +536,7 @@ fn kept_range_lookup_follows_exact_aliases_without_scanning_unrelated_members() 
         base: AddressBase::Symbolic(Variable(979_001)),
         offset: AddressOffset::Constant(0),
     };
-    let alias = ConditionTerm::pointer_equal(base.clone(), model_base.clone());
+    let alias = ConditionTerm::address_equal(base.clone(), model_base.clone());
     let assumptions = PureFactContext::new().assume_condition(alias.clone(), true);
     let field = memory_range(model_base, 2, 4);
     let pointer = base.offset_by_bytes(8);
@@ -746,7 +746,7 @@ fn stored_field_value_uses_indexed_base_aliases() {
         let mut context = PureFactContext::new();
         for index in 0..count {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(110_000 + index * 2)),
                     Address::symbolic(Variable(110_001 + index * 2)),
                 ),
@@ -754,7 +754,7 @@ fn stored_field_value_uses_indexed_base_aliases() {
             );
         }
         context = context.assume_condition(
-            ConditionTerm::pointer_equal(left.clone(), right.clone()),
+            ConditionTerm::address_equal(left.clone(), right.clone()),
             true,
         );
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -827,7 +827,7 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
         let mut context = PureFactContext::new();
         for index in 0..count {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(120_000 + index * 2)),
                     Address::symbolic(Variable(120_001 + index * 2)),
                 ),
@@ -836,11 +836,11 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
         }
         context = context
             .assume_condition(
-                ConditionTerm::pointer_equal(left.clone(), bridge.clone()),
+                ConditionTerm::address_equal(left.clone(), bridge.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::pointer_equal(bridge.clone(), right.clone()),
+                ConditionTerm::address_equal(bridge.clone(), right.clone()),
                 true,
             );
         let ((step, result), work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -924,10 +924,10 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
         right: Box::new(Resource::Memory(range(&read_model, end))),
     };
     let aliases = [
-        ConditionTerm::pointer_equal(write_base.clone(), write_bridge.clone()),
-        ConditionTerm::pointer_equal(write_bridge, write_model.clone()),
-        ConditionTerm::pointer_equal(read_base.clone(), read_bridge.clone()),
-        ConditionTerm::pointer_equal(read_bridge, read_model.clone()),
+        ConditionTerm::address_equal(write_base.clone(), write_bridge.clone()),
+        ConditionTerm::address_equal(write_bridge, write_model.clone()),
+        ConditionTerm::address_equal(read_base.clone(), read_bridge.clone()),
+        ConditionTerm::address_equal(read_bridge, read_model.clone()),
     ];
     let step = MemoryDerivation::Store {
         base: intern_memory(SymbolicMemory::new()),
@@ -943,7 +943,7 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
         let mut context = PureFactContext::new();
         for index in 0..count {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(base(170_000 + index * 2), base(170_001 + index * 2)),
+                ConditionTerm::address_equal(base(170_000 + index * 2), base(170_001 + index * 2)),
                 true,
             );
         }
@@ -982,7 +982,7 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
         let partial = no_separation.assume_proposition(separation(12));
         assert!(typed_store_separated_ranges_evidence(&write, 8, &read, 8, &partial).is_none());
         let overlapping = context.assume_condition(
-            ConditionTerm::pointer_equal(write_model.clone(), read_model.clone()),
+            ConditionTerm::address_equal(write_model.clone(), read_model.clone()),
             true,
         );
         assert!(!witness.checks(&step, &read, 8, &overlapping));
@@ -1182,11 +1182,11 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
         }
         let ordered = context.clone().assume_condition(order.clone(), true);
         let reversed = context.clone().assume_condition(order.clone(), false);
-        let first_edge = Proposition::ConditionIs(
+        let first_edge = Proposition::condition_is(
             ConditionTerm::signed_less_than(left_index.clone(), middle.clone()),
             true,
         );
-        let second_edge = Proposition::ConditionIs(
+        let second_edge = Proposition::condition_is(
             ConditionTerm::signed_less_equal(middle.clone(), right_index.clone()),
             true,
         );
@@ -1277,10 +1277,10 @@ fn numeric_byte_geometry_ignores_unrelated_address_classes() {
         offset: AddressOffset::Variable(Variable(id)),
     };
     let numeric_alias = |p: Address, q: Address| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::uint64_equal(
-                MachineTerm::pointer_address(p),
-                MachineTerm::pointer_address(q),
+                MachineTerm::integer_address(p),
+                MachineTerm::integer_address(q),
             ),
             true,
         )
@@ -1421,7 +1421,7 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
         let mut left = Address::symbolic(Variable(98_370));
         let mut right = Address::symbolic(Variable(98_371));
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(left.clone(), right.clone()),
+            ConditionTerm::address_equal(left.clone(), right.clone()),
             true,
         );
         for _ in 0..size {
@@ -1490,7 +1490,7 @@ fn abstract_read_congruence_scales_with_selected_reads() {
     let read = |pointer: Address| AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: memory.clone(),
+            point: crate::kernel::ProgramPoint::at(&memory.clone()),
             pointer: Box::new(pointer),
         },
     };
@@ -1498,7 +1498,7 @@ fn abstract_read_congruence_scales_with_selected_reads() {
         let mut context = PureFactContext::new();
         for i in 0..ambient {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(995_000 + 2 * i)),
                     Address::symbolic(Variable(995_001 + 2 * i)),
                 ),
@@ -1513,7 +1513,7 @@ fn abstract_read_congruence_scales_with_selected_reads() {
                 let next = read(alias.clone());
                 assert!(!context.equality_graph.are_algebraic_equal(&first, &next));
                 context = context
-                    .assume_condition(ConditionTerm::pointer_equal(anchor.clone(), alias), true);
+                    .assume_condition(ConditionTerm::address_equal(anchor.clone(), alias), true);
                 assert!(context.equality_graph.are_algebraic_equal(&first, &next));
             }
         })
@@ -1564,7 +1564,7 @@ fn abstract_read_origin_lookup_ignores_unrelated_definitions() {
         let observed = AlgebraicTerm {
             algebraic_type: parameter.algebraic_type(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory: source,
+                point: crate::kernel::ProgramPoint::at(&source),
                 pointer: Box::new(address),
             },
         };

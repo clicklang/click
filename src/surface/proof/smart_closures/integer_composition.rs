@@ -130,8 +130,8 @@ fn have(claim: ClickProposition, steps: Vec<ProofStep>) -> ProofStep {
     super::super::wide_arithmetic::have(claim, steps)
 }
 fn computational_fact(claim: ClickProposition) -> ProofStep {
-    // The local emitter below chooses known for its narrow computations.
-    // General coefficient algebra keeps the existing compatibility rule.
+    // Let run_scope prefer known and explicit algebra for goal-local
+    // identities. Other identities still use the existing checked rule.
     have(claim, vec![ProofStep::Normalize])
 }
 
@@ -192,13 +192,24 @@ pub(super) fn parts(
     proposition: &Proposition,
 ) -> Option<(&SharedIntegerTerm, bool, &SharedIntegerTerm)> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((a, false, b))
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerGreaterEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((b, false, a))
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) => Some((a, true, b)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some((a, true, b))
+        }
         _ => None,
     }
 }
@@ -222,16 +233,16 @@ fn reading(proposition: &Proposition) -> Option<Reading> {
         return None;
     };
     let truth = *truth != negative;
-    if matches!(condition, ConditionTerm::Compare { .. }) {
+    if matches!(condition.native_compat(), ConditionTerm::Compare { .. }) {
         let observed =
             crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
-                &Proposition::ConditionIs(condition.clone(), truth),
+                &Proposition::condition_is(condition.clone(), truth),
             )
             .into_iter()
             .next()?;
         return reading(&observed);
     }
-    let (a, b, equal, strict, reverse) = match (condition, truth) {
+    let (a, b, equal, strict, reverse) = match (condition.native_compat(), truth) {
         (ConditionTerm::IntegerEqual(a, b), true)
         | (ConditionTerm::IntegerNotEqual(a, b), false) => (a, b, true, false, false),
         (ConditionTerm::IntegerLessEqual(a, b), true)
@@ -263,7 +274,7 @@ fn reading_matching(proposition: &Proposition, claim: &IntegerAffineClaim) -> Op
     }
     let native = match source {
         Proposition::ConditionIs(condition, truth) => {
-            Proposition::ConditionIs(condition.clone(), *truth != negative)
+            Proposition::condition_is(condition.clone(), *truth != negative)
         }
         other => other.clone(),
     };
@@ -452,15 +463,15 @@ fn disequality_operands(proposition: &Proposition) -> Vec<(SharedIntegerTerm, Sh
     let Proposition::ConditionIs(c, v) = p else {
         return Vec::new();
     };
-    if matches!(c, ConditionTerm::Compare { .. }) {
+    if matches!(c.native_compat(), ConditionTerm::Compare { .. }) {
         return crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
-            &Proposition::ConditionIs(c.clone(), *v != negative),
+            &Proposition::condition_is(c.clone(), *v != negative),
         )
         .iter()
         .flat_map(disequality_operands)
         .collect();
     }
-    match (c, *v != negative) {
+    match (c.native_compat(), *v != negative) {
         (ConditionTerm::IntegerNotEqual(a, b), true)
         | (ConditionTerm::IntegerEqual(a, b), false) => vec![(a.clone(), b.clone())],
         _ => Vec::new(),
@@ -480,7 +491,7 @@ fn strict_node(
         .find_map(|(a, b)| {
             for reverse in [false, true] {
                 let (left, right) = if reverse { (&b, &a) } else { (&a, &b) };
-                let forward = Proposition::ConditionIs(
+                let forward = Proposition::condition_is(
                     ConditionTerm::IntegerLessEqual(left.clone(), right.clone()),
                     true,
                 );
@@ -822,16 +833,19 @@ fn run_scope<'a>(
                 scope = scope.join_nested(closed)?;
             }
             ProofStep::Normalize => {
-                let step = if scope
+                if scope
                     .body()
                     .goal()
                     .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)
                 {
-                    ProofStep::Known
+                    scope = scope.driver().apply_step(ProofStep::Known)?;
+                } else if let Some(closed) =
+                    attempt::candidate_outcome(scope.driver().try_integer_algebra())?.flatten()
+                {
+                    scope = closed;
                 } else {
-                    ProofStep::Normalize
-                };
-                scope = scope.driver().apply_step(step)?;
+                    scope = scope.driver().apply_step(ProofStep::Normalize)?;
+                }
             }
             step => scope = scope.driver().apply_step(step.clone())?,
         }
@@ -863,29 +877,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(goal) = proof.goal() else {
             return Ok(None);
         };
-        // An explicitly selected computational contradiction needs no
-        // algebraic composition or theorem arguments. Keep its written fact
-        // and its computed negation as the ordinary contradiction proof.
+        // Contradiction checks a selected false fact directly. The written
+        // citation keeps premise selection visible in the expanded proof.
         for (kernel, surface) in pairs {
             if normalizes_context_free(&Proposition::Not(Box::new(kernel.clone()))) {
-                let negated = ClickProposition::Not(Box::new(surface.clone()));
-                let scope = proof.driver().open_have(negated)?;
-                let step = if scope
-                    .body()
-                    .goal()
-                    .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)
-                {
-                    ProofStep::Known
-                } else {
-                    ProofStep::Normalize
-                };
-                let closed = scope.driver().apply_step(step)?;
-                return Ok(Some(
-                    closed
-                        .join()?
-                        .driver()
-                        .apply_step(ProofStep::Contradiction(surface.clone()))?,
-                ));
+                return proof
+                    .driver()
+                    .apply_step(ProofStep::Contradiction(surface.clone()))
+                    .map(Some);
             }
         }
         let observed_goal = observed_native_surface_comparison(goal, surface_goal);
@@ -1078,7 +1077,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         if let Some(min_plus_one) = relation.left.as_const() {
                             let min = min_plus_one - BigInt::one();
                             (
-                                Proposition::ConditionIs(
+                                Proposition::condition_is(
                                     ConditionTerm::IntegerLessEqual(
                                         IntegerTerm::constant(min.clone()).into(),
                                         relation.right,
@@ -1091,7 +1090,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             let max =
                                 relation.right.as_const().expect("upper endpoint") + BigInt::one();
                             (
-                                Proposition::ConditionIs(
+                                Proposition::condition_is(
                                     ConditionTerm::IntegerLessEqual(
                                         relation.left,
                                         IntegerTerm::constant(max.clone()).into(),
@@ -1517,7 +1516,7 @@ mod tests {
         let y: SharedIntegerTerm = IntegerTerm::Variable(Variable(871_002)).into();
         let z: SharedIntegerTerm = IntegerTerm::Variable(Variable(871_003)).into();
         let premise =
-            Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(x.clone(), y.clone()), true);
+            Proposition::condition_is(ConditionTerm::IntegerLessEqual(x.clone(), y.clone()), true);
         let surface = compare(
             ContractExpression::Binding("x".into()),
             false,
@@ -1527,7 +1526,7 @@ mod tests {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             memory: SymbolicMemory::new(),
-            values: BTreeMap::new(),
+            values: ProgramValueBindings::new(),
             integer_values: PersistentBinderMap::default(),
             array_refs: BTreeMap::new(),
             requires: vec![premise.clone()],
@@ -1539,7 +1538,7 @@ mod tests {
                 .with_inserted(name, SpecIntegerExpression::Term(term.as_ref().clone()));
         }
         for index in 1..=ambient {
-            context.requires.push(Proposition::ConditionIs(
+            context.requires.push(Proposition::condition_is(
                 ConditionTerm::IntegerLessEqual(
                     if related { x.clone() } else { z.clone() },
                     if related {
@@ -1572,7 +1571,7 @@ mod tests {
             });
         }
         let factor = BigInt::one() << depth;
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(
                 IntegerTerm::multiply(IntegerTerm::Constant(factor.clone()), x.as_ref().clone())
                     .into(),
@@ -1666,11 +1665,7 @@ mod tests {
                 let expanded =
                     expand_c_claim_source_by_label(&source, &[], "composition.ensures_0")
                         .unwrap_or_else(|error| panic!("{}", error.message()));
-                assert!(
-                    !expanded.contains("arithmetic_certificate"),
-                    "{expanded}\nComposition refusal: {:?}",
-                    super::LAST_FAILURE.with(|failure| failure.borrow_mut().take())
-                );
+                assert!(!expanded.contains("normalize("), "{expanded}");
                 assert!(!expanded.contains("solve("), "{expanded}");
                 without_implicit_solve(|| verify_c_sources(&expanded, &[]))
                     .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
@@ -1811,7 +1806,6 @@ mod tests {
         let source = "theorem composition(z: Integer) { requires 0 <= z; requires z <= 4000; ensures z <= 18446744073709551615 by { solve(); } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
     }
 
@@ -1821,7 +1815,6 @@ mod tests {
         let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { both { left => { solve() using { x <= 3; }; } right => { solve() using { x <= 3; }; } } } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
     }
 
@@ -1831,7 +1824,7 @@ mod tests {
         let source = "theorem composition(x: Integer, y: Integer) { requires x <= 3; requires y <= 4; ensures 2 * x + 3 * y <= 18 by { solve(); } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("normalize("), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
     }
@@ -1845,7 +1838,7 @@ mod tests {
         ] {
             let expanded =
                 expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
-            assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+            assert!(!expanded.contains("normalize("), "{expanded}");
             without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
         }
     }

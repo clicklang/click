@@ -116,6 +116,53 @@ fn construction_return_parameter_cleanup_scales_with_selected_parameters() {
 }
 
 #[test]
+fn call_capture_selectors_use_the_index_at_multiple_sizes() {
+    use crate::kernel::{
+        BindingName, LocalBindingId, LocalFunctionId, ProgramType, program_assign,
+        program_call_value, program_function, program_seq,
+    };
+    use crate::languages::interface::{ImportedFunction, InterfaceType};
+    use crate::surface::{CodeRegionRef, ProgramPointKind, SourcePathStep};
+
+    for count in [8, 128, 1024] {
+        let capture = LocalBindingId::temporary(LocalFunctionId::new(None, "f".into()), 0);
+        capture.initialize_program_type(ProgramType::Int32);
+        let capture = BindingName::from(capture);
+        let (call, result) = program_call_value(2 * count, "get", Vec::new());
+        let mut body = program_seq(call, program_assign(&capture, result));
+        for i in (0..count).rev() {
+            let (related, _) = program_call_value(2 * i, "get", Vec::new());
+            let (unrelated, _) = program_call_value(2 * i + 1, "other", Vec::new());
+            body = program_seq(related, program_seq(unrelated, body));
+        }
+        let function = ImportedFunction::external(InterfaceType::Int32, "f".into(), Vec::new())
+            .with_prelowered_kernel_function(program_function(
+                ProgramType::Int32,
+                "f",
+                Vec::new(),
+                body,
+            ));
+        let layout = SourceExecutionLayout::for_function(&function).unwrap();
+        let expected = layout.step_region(2 * count).unwrap();
+
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let (region, CodeRegionRef::Path(steps)) =
+                layout.call_capture_source(&capture).unwrap()
+            else {
+                panic!("the capture must use a source path");
+            };
+            assert_eq!(region, expected);
+            assert_eq!(steps, [SourcePathStep::Call("get".into(), count as usize)]);
+            assert_eq!(
+                layout.source_path_region(&steps, ProgramPointKind::Exit),
+                Ok(expected)
+            );
+        });
+        assert_eq!(work, 3, "{count} calls");
+    }
+}
+
+#[test]
 fn typed_conditional_value_layout_preserves_join_identity_and_scales() {
     use crate::kernel::{
         ProgramStatement, ProgramType, program_expression as e, program_function, program_if,
@@ -171,51 +218,4 @@ fn typed_conditional_value_layout_preserves_join_identity_and_scales() {
         samples.windows(2).all(|w| w[1] <= w[0] * 5 + 64),
         "{samples:?}"
     );
-}
-
-#[test]
-fn call_capture_selectors_use_the_index_at_multiple_sizes() {
-    use crate::kernel::{
-        BindingName, LocalBindingId, LocalFunctionId, ProgramType, program_assign,
-        program_call_value, program_function, program_seq,
-    };
-    use crate::languages::interface::{ImportedFunction, InterfaceType};
-    use crate::surface::{CodeRegionRef, ProgramPointKind, SourcePathStep};
-
-    for count in [8, 128, 1024] {
-        let capture = LocalBindingId::temporary(LocalFunctionId::new(None, "f".into()), 0);
-        capture.initialize_program_type(ProgramType::Int32);
-        let capture = BindingName::from(capture);
-        let (call, result) = program_call_value(2 * count, "get", Vec::new());
-        let mut body = program_seq(call, program_assign(&capture, result));
-        for i in (0..count).rev() {
-            let (related, _) = program_call_value(2 * i, "get", Vec::new());
-            let (unrelated, _) = program_call_value(2 * i + 1, "other", Vec::new());
-            body = program_seq(related, program_seq(unrelated, body));
-        }
-        let function = ImportedFunction::external(InterfaceType::Int32, "f".into(), Vec::new())
-            .with_prelowered_kernel_function(program_function(
-                ProgramType::Int32,
-                "f",
-                Vec::new(),
-                body,
-            ));
-        let layout = SourceExecutionLayout::for_function(&function).unwrap();
-        let expected = layout.step_region(2 * count).unwrap();
-
-        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let (region, CodeRegionRef::Path(steps)) =
-                layout.call_capture_source(&capture).unwrap()
-            else {
-                panic!("the capture must use a source path");
-            };
-            assert_eq!(region, expected);
-            assert_eq!(steps, [SourcePathStep::Call("get".into(), count as usize)]);
-            assert_eq!(
-                layout.source_path_region(&steps, ProgramPointKind::Exit),
-                Ok(expected)
-            );
-        });
-        assert_eq!(work, 3, "{count} calls");
-    }
 }

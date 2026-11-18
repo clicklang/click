@@ -118,6 +118,9 @@ pub(crate) struct SourceSites {
     /// The statement each region comes from, by region in the order the
     /// source layout numbers them; `None` for a region the lowering added.
     pub(crate) regions: Vec<Option<u32>>,
+    /// The statement each declaration the lowering places at a source
+    /// statement comes from, by the declaration's binding.
+    pub(crate) declarations: Vec<(crate::kernel::BindingName, u32)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -266,7 +269,7 @@ pub struct CallbackInterface {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordLayout {
-    pub(super) bit_field_bits: Option<std::num::NonZeroU32>,
+    pub(super) bit_field_bytes: Option<crate::kernel::BitFieldBytes>,
     pub(super) fields: BTreeMap<String, RecordField>,
     /// Declared embedded-object paths, indexed by byte offset and nominal type.
     pub(super) embedded_structs: BTreeMap<(u32, String), String>,
@@ -1154,7 +1157,7 @@ impl RecordLayout {
             fields: named_fields,
             aggregate_fields,
             aggregate_unions: Vec::new(),
-            bit_field_bits: None,
+            bit_field_bytes: None,
             size_bytes,
             alignment_bytes,
             class: None,
@@ -1178,13 +1181,6 @@ impl RecordLayout {
     }
 
     pub(crate) fn to_kernel_aggregate_layout(&self) -> crate::kernel::AggregateLayout {
-        if let Some(bits) = self.bit_field_bits {
-            return crate::kernel::AggregateLayout::bit_field_record(
-                self.size_bytes,
-                self.alignment_bytes,
-                bits,
-            );
-        }
         crate::kernel::AggregateLayout::with_unions(
             self.size_bytes,
             self.alignment_bytes,
@@ -1225,6 +1221,7 @@ impl RecordLayout {
                 })
                 .collect(),
         )
+        .with_bit_field_bytes(self.bit_field_bytes.clone())
     }
 
     pub(super) fn aggregate_fields(&self) -> &[RecordScalarField] {

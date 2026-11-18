@@ -58,10 +58,12 @@ fn impossible_arithmetic_keeps_its_term_without_scanning_the_parent() {
                 assert_eq!(unreachable.outcome, expected);
                 assert!(unreachable.facts.is_empty());
                 assert_eq!(unreachable.obligations.len(), 1);
-                assert!(impossible.contains_assumed_exact(&Proposition::ConditionIs(
-                    ConditionTerm::Constant(false),
-                    true
-                )));
+                assert!(
+                    impossible.contains_assumed_exact(&Proposition::condition_is(
+                        ConditionTerm::Constant(false),
+                        true
+                    ))
+                );
             }
         });
         samples.push((size, work));

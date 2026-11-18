@@ -10,7 +10,7 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Address::symbolic(Variable(916_100));
     let alias = Address::symbolic(Variable(916_101));
-    let source_value = PointerValue::new(source.clone(), ProgramType::UInt8Pointer);
+    let source_value = Pointer::new(source.clone(), ProgramType::UInt8Pointer);
     // Respelling a copied pointer retains its origin; address equality alone
     // cannot turn an independently originated pointer into this owner.
     let cursor = source_value.clone().with_address(alias.clone());
@@ -25,7 +25,7 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
         offset: AddressOffset::Constant(2),
     };
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(alias.clone(), target), true);
+        .assume_condition(ConditionTerm::address_equal(alias.clone(), target), true);
     let spec = ResourceSpec::new(
         ResourceTerm::Memory(
             MemorySegment::new(

@@ -784,7 +784,9 @@ impl PointerOffsetCongruenceEvidence {
                 let Proposition::ConditionIs(condition, true) = premise.as_ref() else {
                     return false;
                 };
-                let Some((premise_left, premise_right)) = condition.pointer_offset_sides() else {
+                let Some((premise_left, premise_right)) =
+                    condition.native_compat().pointer_offset_sides()
+                else {
                     return false;
                 };
                 assumptions.contains_assumed_exact(premise)
@@ -930,7 +932,7 @@ impl SignedConstantEvidence {
         let Proposition::ConditionIs(condition, value) = source else {
             return None;
         };
-        let view = comparison_view(condition, *value)?;
+        let view = comparison_view(condition.native_compat(), *value)?;
         if !matches!(
             view.format,
             MachineIntegerType::Int32 | MachineIntegerType::UInt32
@@ -1019,7 +1021,7 @@ impl DirectBitvectorEqualityEvidence {
                                         return None;
                                     };
                                     let view = crate::kernel::assumptions::order_view_at_format(
-                                        condition,
+                                        condition.native_compat(),
                                         *truth,
                                         MachineIntegerType::Int32,
                                     )?;
@@ -1073,7 +1075,7 @@ impl DirectBitvectorEqualityEvidence {
                 checks(left, left_evidence) && checks(right, right_evidence)
             }
             Self::LeAndNotLt(evidence) => {
-                let less_equal = Proposition::ConditionIs(
+                let less_equal = Proposition::condition_is(
                     crate::kernel::machine_integer::comparison::condition_for_operand_views(
                         MachineIntegerType::Int32,
                         CompareRelation::LessEqual,
@@ -1081,7 +1083,7 @@ impl DirectBitvectorEqualityEvidence {
                     ),
                     true,
                 );
-                let not_less_than = Proposition::ConditionIs(
+                let not_less_than = Proposition::condition_is(
                     crate::kernel::machine_integer::comparison::condition_for_operand_views(
                         MachineIntegerType::Int32,
                         CompareRelation::LessThan,
@@ -1095,7 +1097,7 @@ impl DirectBitvectorEqualityEvidence {
                     && assumptions.contains_assumed_exact(&evidence.not_less_than)
             }
             Self::GeAndNotGt(evidence) => {
-                let greater_equal = Proposition::ConditionIs(
+                let greater_equal = Proposition::condition_is(
                     crate::kernel::machine_integer::comparison::condition_for_operand_views(
                         MachineIntegerType::Int32,
                         CompareRelation::GreaterEqual,
@@ -1103,7 +1105,7 @@ impl DirectBitvectorEqualityEvidence {
                     ),
                     true,
                 );
-                let not_greater_than = Proposition::ConditionIs(
+                let not_greater_than = Proposition::condition_is(
                     crate::kernel::machine_integer::comparison::condition_for_operand_views(
                         MachineIntegerType::Int32,
                         CompareRelation::GreaterThan,
@@ -1163,7 +1165,7 @@ impl LoadAddressCongruenceEvidence {
         proposition: &Proposition,
         assumptions: &PureFactContext,
     ) -> bool {
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -1171,7 +1173,7 @@ impl LoadAddressCongruenceEvidence {
                 right,
             },
             true,
-        ) = proposition
+        )) = proposition.condition_native()
         else {
             return false;
         };
@@ -1319,7 +1321,6 @@ impl BitvectorEqualityDerivationStep {
     }
 }
 
-#[cfg(test)]
 impl PureFactContext {
     pub(crate) fn shares_persistent_storage_with(&self, other: &Self) -> bool {
         self.condition_facts

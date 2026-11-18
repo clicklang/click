@@ -38,7 +38,7 @@ impl Context<'_> {
         self.arrays.insert(name.into(), (length, element, false));
         Ok(program_seq(
             // Fresh storage supplies transferable authority for helper calls.
-            program_begin_aggregate_construction(name, layout),
+            program_begin_aggregate_construction(self.binding(&name), layout),
             self.assign_array(self.array_pointer(name)?, element, length, initializer)?,
         ))
     }
@@ -79,9 +79,9 @@ impl Context<'_> {
                 }
                 for e in elements {
                     let (prefix, value) = self.prepared_expr(e)?;
-                    let (capture, captured) = self.capture_operand(value, &source_type)?;
+                    let (capture, result) = self.capture_operand(value, &source_type)?;
                     captures = program_seq(captures, program_seq(prefix, capture));
-                    values.push(captured);
+                    values.push(result);
                 }
             }
             E::Repeat {
@@ -93,14 +93,17 @@ impl Context<'_> {
                 }
                 // Rust evaluates the operand once, even for a zero count.
                 let (prefix, value) = self.prepared_expr(value)?;
-                let (capture, captured) = self.capture_operand(value, &source_type)?;
-                captures = program_seq(prefix, capture);
-                values.resize(length as usize, keep_operand(&captured));
-                if let Some(last) = values.last_mut() {
-                    *last = captured;
+                let (mut capture, result) = self.capture_operand(value, &source_type)?;
+                if length == 0 {
+                    let ProgramStatement::StepValue { steps, .. } = &mut capture else {
+                        unreachable!("operand capture is a value step");
+                    };
+                    steps.clear();
                 } else {
-                    captures = program_seq(captures, discard_operand(captured));
+                    values.resize(length as usize - 1, super::observe_operand(result.clone()));
+                    values.push(result);
                 }
+                captures = program_seq(prefix, capture);
             }
             _ => {
                 let (source, source_length, source_element) = self.indexed_parts(value)?;
@@ -162,10 +165,10 @@ impl Context<'_> {
                     _ => unreachable!(),
                 };
                 let (prefix, value) = self.prepared_expr(value)?;
-                let (capture, captured) = self.capture_operand(value, &value_type)?;
+                let (capture, result) = self.capture_operand(value, &value_type)?;
                 Ok(program_seq(
                     program_seq(prefix, capture),
-                    program_write_scalar_array_region(target, captured, element, count, false),
+                    program_write_scalar_array_region(target, result, element, count, false),
                 ))
             }
             _ => {

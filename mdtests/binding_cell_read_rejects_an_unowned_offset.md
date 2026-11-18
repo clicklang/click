@@ -12,8 +12,8 @@ instantiated at the equal pointer and denote the same cells they always did, at
 the offsets the arm states. It grants nothing at any other offset, so the read
 of `parent->next` is refused although the block is now the one the C names.
 A pointer equality inside one block never reaches the alias index in the first
-place — `ConditionTerm::pointer_equal` folds that case to a
-`PointerOffsetEqual` — so no offset can be exchanged for another.
+place — `ConditionTerm::address_equal` folds that case to a
+`AddressOffsetEqual` — so no offset can be exchanged for another.
 
 ```c filename=binding_cell_read_rejects_an_unowned_offset.c
 struct cell {

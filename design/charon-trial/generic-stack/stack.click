@@ -253,19 +253,19 @@ impl<T> generic_stack::Stack<T> {
                 have at(region(40).exit, old(self.head).next) == at(region(40).entry, old(self.head).next) by {
                     preserve(at(before_pop, memory(self.head.next)), region(40));
                 }
-                have separate(statement(2).region(1).footprint, memory(self.head)) by { normalize() using {
+                have separate(region(52).footprint, memory(self.head)) by { normalize() using {
                     separate(memory(self.head), memory(self.len));
                     at(before_pop, separate(memory(*self.head), memory(self.head)));
                 }; }
-                have at(statement(2).region(1).exit, self.head) == at(statement(2).region(1).entry, self.head) by {
-                    preserve(memory(self.head), statement(2).region(1));
+                have at(region(52).exit, self.head) == at(region(52).entry, self.head) by {
+                    preserve(memory(self.head), region(52));
                 }
-                have separate(statement(2).region(6).footprint, memory(self.head)) by { normalize() using {
+                have separate(region(57).footprint, memory(self.head)) by { normalize() using {
                     separate(memory(self.head), memory(self.len));
                     at(before_pop, separate(memory(*self.head), memory(self.head)));
                 }; }
-                have at(statement(2).region(6).exit, self.head) == at(statement(2).region(6).entry, self.head) by {
-                    preserve(memory(self.head), statement(2).region(6));
+                have at(region(57).exit, self.head) == at(region(57).entry, self.head) by {
+                    preserve(memory(self.head), region(57));
                 }
                 have separate(region(60).footprint, memory(self.head)) by { normalize() using {
                     separate(memory(self.head), memory(self.len));
@@ -281,7 +281,7 @@ impl<T> generic_stack::Stack<T> {
                 have at(region(64).exit, self.head) == at(region(64).entry, self.head) by {
                     preserve(memory(self.head), region(64));
                 }
-                have at(statement(1).region(10).exit, self.head) == old(self.head.next) by { known(); }
+                have at(region(49).exit, self.head) == old(self.head.next) by { known(); }
                 have self.head == old(self.head.next) by { known(); }
                 have result == Option::Some(v) by {
                     transport(old(self.head.value) == v, result == Option::Some(v)) using {

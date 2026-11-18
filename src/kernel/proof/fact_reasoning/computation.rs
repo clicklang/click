@@ -24,7 +24,7 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     let value = match goal {
         Proposition::ConditionIs(condition, truth) => {
-            condition_value(condition).map(|value| value == *truth)
+            condition_value(condition.native_compat()).map(|value| value == *truth)
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
             algebraic_equality(left, right)
@@ -47,6 +47,7 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
         _ => None,
     };
     value == Some(expected)
+        || (expected && super::super::arithmetic_special::intrinsic_pointer_alignment(goal))
 }
 
 /// Constant operands and reflexivity only: a bounded structural check, with
@@ -198,11 +199,12 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                 // A promoted narrow operand retains its smaller intrinsic range.
                 for reading in
                     crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
-                        &Proposition::ConditionIs(condition.clone(), true),
+                        &Proposition::condition_is(condition.clone(), true),
                     )
                 {
                     if let Proposition::ConditionIs(reading, true) = reading
-                        && integer_operation_bound_comparison(&reading) == Some(true)
+                        && integer_operation_bound_comparison((&reading).native_compat())
+                            == Some(true)
                     {
                         return Some(true);
                     }
@@ -212,9 +214,9 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             // In particular, this key must never canonicalize a memory read.
             machine_affine_equality(condition, Clone::clone)
         }
+        ConditionTerm::AddressEqual(left, right) if left == right => Some(true),
         ConditionTerm::PointerEqual(left, right) if left == right => Some(true),
-        ConditionTerm::PointerValueEqual(left, right) if left == right => Some(true),
-        ConditionTerm::PointerOffsetEqual(left, right) if left == right => Some(true),
+        ConditionTerm::AddressOffsetEqual(left, right) if left == right => Some(true),
         ConditionTerm::AlgebraicEqual(left, right) => algebraic_equality(left, right),
         ConditionTerm::BoolEqual(left, right) if left == right => Some(true),
         // Float comparisons deliberately have no reflexivity rule: NaNs
@@ -675,7 +677,7 @@ pub(super) fn integer_operation_bound_comparison(condition: &ConditionTerm) -> O
             };
             if expected.is_none() {
                 expected = Some(super::super::integer_arithmetic::integer_affine_claim(
-                    &Proposition::ConditionIs(condition.clone(), true),
+                    &Proposition::condition_is(condition.clone(), true),
                 )?);
             }
             if super::super::integer_arithmetic::integer_affine_claim(&bound).as_ref()
@@ -812,11 +814,11 @@ mod tests {
                 left: Box::new(MachineTerm::constant(u32::MAX)),
                 right: Box::new(MachineTerm::constant(0)),
             };
-            assert!(computes_leaf(&Proposition::ConditionIs(
+            assert!(computes_leaf(&Proposition::condition_is(
                 condition.clone(),
                 expected
             )));
-            assert!(!computes_leaf(&Proposition::ConditionIs(
+            assert!(!computes_leaf(&Proposition::condition_is(
                 condition, !expected
             )));
         }
@@ -825,7 +827,7 @@ mod tests {
     #[test]
     fn computation_does_not_use_float_reflexivity() {
         let nan = MachineTerm::constant(0x7fc00000);
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::Float32(FloatCondition::Comparison {
                 operator: ComparisonOperator::Equal,
                 left: Box::new(nan.clone()),

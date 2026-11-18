@@ -267,16 +267,16 @@ impl DifferenceGraph {
         {
             return self.assume_condition(&widened, value);
         }
-        if let ConditionTerm::PointerValueEqual(a, b) = condition {
+        if let ConditionTerm::PointerEqual(a, b) = condition {
             if value {
                 self.assume_condition(
-                    &ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
+                    &ConditionTerm::address_equal(a.address().clone(), b.address().clone()),
                     true,
                 );
             }
             return;
         }
-        if let ConditionTerm::PointerEqual(a, b) = condition {
+        if let ConditionTerm::AddressEqual(a, b) = condition {
             if !self.pointers.assume(a, b, value) {
                 self.contradictory = true;
             }
@@ -1259,15 +1259,15 @@ impl DifferenceGraph {
         {
             return self.decide(&widened);
         }
-        if let C::PointerOffsetEqual(a, b) = condition
+        if let C::AddressOffsetEqual(a, b) = condition
             && let Some(answer) = offset_mismatch(a, b)
         {
             return Some(answer);
         }
-        if let C::PointerEqual(a, b) = condition {
+        if let C::AddressEqual(a, b) = condition {
             return self.pointers.decide(a, b);
         }
-        if let C::PointerOffsetEqual(a, b) = condition
+        if let C::AddressOffsetEqual(a, b) = condition
             && let Some(answer) = self.pointers.decide_offsets(a, b)
         {
             return Some(answer);
@@ -1299,10 +1299,10 @@ impl DifferenceGraph {
         // The same field of two bases is one cell exactly when the bases
         // are, which a pointer equality (`this == &other`) may say rather
         // than an integer one: the bases' own offset question is asked.
-        if let C::PointerOffsetEqual(a, b) = condition
+        if let C::AddressOffsetEqual(a, b) = condition
             && let Some((a, b)) = same_field_bases(a, b)
         {
-            return self.decide(&C::PointerOffsetEqual(
+            return self.decide(&C::AddressOffsetEqual(
                 Box::new(a.clone()),
                 Box::new(b.clone()),
             ));
@@ -2162,7 +2162,7 @@ fn expresses(condition: &ConditionTerm) -> bool {
     matches!(
         condition,
         C::Compare { format, .. } if format.format().bits() < 32
-    ) || matches!(condition, C::PointerEqual(..) | C::PointerValueEqual(..))
+    ) || matches!(condition, C::AddressEqual(..) | C::PointerEqual(..))
         || overflow_parts(condition).is_some()
         || offset_equality(condition).is_some()
         || matches!(
@@ -2410,13 +2410,13 @@ fn scaled_offset(offset: &crate::kernel::AddressOffset) -> Option<ScaledOffset<'
 /// compare their values, and a constant byte offset that is a whole
 /// number of elements compares the value with that count.
 fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    let ConditionTerm::PointerOffsetEqual(a, b) = condition else {
+    let ConditionTerm::AddressOffsetEqual(a, b) = condition else {
         return None;
     };
     // Field offsets from equal bases (`p->size`, `q->size`) are equal
     // exactly when the bases are.
     if let Some((a, b)) = same_field_bases(a, b) {
-        return offset_equality(&ConditionTerm::PointerOffsetEqual(
+        return offset_equality(&ConditionTerm::AddressOffsetEqual(
             Box::new(a.clone()),
             Box::new(b.clone()),
         ));
@@ -2743,7 +2743,7 @@ impl Residues {
                     }
                     _ => None,
                 }
-            } else if let V::Legacy(MachineTerm::PointerAddress(pointer, _)) = term {
+            } else if let V::Legacy(MachineTerm::IntegerAddress(pointer, _)) = term {
                 self.address_residue(pointer, depth - 1)
             } else {
                 None
@@ -2760,7 +2760,7 @@ impl Residues {
         };
         let mut best = None;
         for (base, offset) in [(left, right), (right, left)] {
-            let base = MachineTerm::PointerAddress(
+            let base = MachineTerm::IntegerAddress(
                 Box::new(Address {
                     base: pointer.base.clone(),
                     offset: base.as_ref().clone(),

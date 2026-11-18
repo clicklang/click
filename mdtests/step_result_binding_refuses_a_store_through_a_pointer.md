@@ -24,5 +24,5 @@ int32 store_three(int32* p) {
 ```
 
 ```expect
-fail: `let { result: stored } = step()` requires a scalar assignment or a used call result at the frontier
+fail: `let { result: stored } = step()` requires a scalar assignment, a used call result, or a retained scalar value at the frontier
 ```

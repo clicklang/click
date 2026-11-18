@@ -117,8 +117,7 @@ pub(crate) enum CheckedExecutionEvent {
     ReturnProposition(Box<CheckedReturnProposition>),
     PopulationAuthorityRewrite(Box<CheckedPopulationAuthorityRewrite>),
     PopulationMemberRewrite(Box<CheckedPopulationMemberRewrite>),
-    /// One iterated guarded-ownership step (`take`, `give`, `gather`,
-    /// `scatter`). Like a lifetime end, it changes only the resource context
+    /// One checked operation on iterated guarded ownership. Like a lifetime end, it changes only the resource context
     /// and is re-derived from its input state when the trace is checked.
     IteratedStep(CheckedIteratedStep),
     /// One application of a user-defined tactic: the verified rule of a
@@ -835,12 +834,12 @@ fn checks_population_authority_exchange(
     if quantity.as_const() != Some(1) {
         return Err("population authority rewrite requires unit ownership".into());
     }
-    let [crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
-        description.arguments()
+    let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+        (description.arguments()).fixed_values::<1>()
     else {
         return Err("population authority rewrite requires one pointer anchor".into());
     };
-    let anchor = pointer.pointer();
+    let anchor = pointer.address();
     let imported_retirement = !establish
         && anchor.base == crate::kernel::AddressBase::ExternalArgument
         && before
@@ -1050,12 +1049,12 @@ fn checks_population_member_exchange(
         arguments.clone(),
         crate::kernel::ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
     );
-    let Some(crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+    let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
         description.arguments().first()
     else {
         return Err("population member rewrite requires one pointer anchor".into());
     };
-    let anchor = pointer.pointer();
+    let anchor = pointer.address();
     let imported_member_exchange =
         before
             .population_effects
@@ -1693,7 +1692,7 @@ impl CheckedResourceRewrite {
         }
         let mut evaluation_assumptions = assumptions.clone();
         for imported in imported_counts.into_iter().flatten() {
-            let bound = Proposition::ConditionIs(
+            let bound = Proposition::condition_is(
                 crate::kernel::ConditionTerm::signed_greater_equal(
                     imported.entry_count,
                     imported
@@ -2314,7 +2313,7 @@ impl CheckedResourceRewrite {
                     crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
                         selected,
                         function.composite_resource_definitions(),
-                        after_state.memory(),
+                        &after_state.program_point(),
                         assumptions,
                     )
                 {
@@ -2780,6 +2779,14 @@ impl CheckedIteratedStep {
     }
 }
 
+/// Surface can request naming of cells for an ordinary observation. The
+/// kernel builds the successor's resource partition from the selected body.
+/// Borrowed and counted observations retain their existing checking route.
+pub(crate) enum ResourceObservationInput<'a> {
+    NamedCells(&'a SymbolicMemory),
+    Legacy(&'a ExecutionState),
+}
+
 /// Kernel-checked evidence for one source-ordered, non-consuming, one-layer
 /// observation of a folded composite resource. The event advances no C
 /// source; it changes only the ghost-resource representation and the exact
@@ -2796,12 +2803,35 @@ impl CheckedResourceObservation {
         &self.before_state
     }
 
+    #[cfg(test)]
     fn check(
         function: &ProgramFunction,
         before_state: &ExecutionState,
         before_facts: &PureFactStore,
         observed: &ResourceFact,
         after_state: &ExecutionState,
+        after_facts: &PureFactStore,
+        derivations: &PersistentOrderedSet<Theorem>,
+        call_events: &CheckedCallEvents,
+    ) -> Result<Self, &'static str> {
+        Self::certify(
+            function,
+            before_state,
+            before_facts,
+            observed,
+            ResourceObservationInput::Legacy(after_state),
+            after_facts,
+            derivations,
+            call_events,
+        )
+    }
+
+    fn certify(
+        function: &ProgramFunction,
+        before_state: &ExecutionState,
+        before_facts: &PureFactStore,
+        observed: &ResourceFact,
+        input: ResourceObservationInput<'_>,
         after_facts: &PureFactStore,
         derivations: &PersistentOrderedSet<Theorem>,
         call_events: &CheckedCallEvents,
@@ -2818,6 +2848,9 @@ impl CheckedResourceObservation {
             _ => true,
         };
         if counted {
+            let ResourceObservationInput::Legacy(after_state) = input else {
+                return Err("count observation requires the ledger observation rule");
+            };
             let unchanged = before_state.memory.diagnostic_identity()
                 == after_state.memory.diagnostic_identity()
                 && before_state.shares_non_memory_storage_with(after_state)
@@ -2843,7 +2876,7 @@ impl CheckedResourceObservation {
             let quantity = observed
                 .owned_quantity_term()
                 .ok_or("count observation requires owned member quantity")?;
-            let nonnegative = Proposition::ConditionIs(
+            let nonnegative = Proposition::condition_is(
                 crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
                     MachineIntegerType::Int32,
                     CompareRelation::LessEqual,
@@ -2882,9 +2915,7 @@ impl CheckedResourceObservation {
                 definition: None,
             });
         }
-        if !before_state.loan_bindings_are_consistent()
-            || !after_state.loan_bindings_are_consistent()
-        {
+        if !before_state.loan_bindings_are_consistent() {
             return Err("resource observation carries mismatched loan dependency sidecar");
         }
         let load_equality_capture =
@@ -2903,22 +2934,40 @@ impl CheckedResourceObservation {
             return Err("resource observation evidence requires a composite resource");
         };
         let definition = function
-            .composite_resource_definitions()
-            .iter()
-            .find(|definition| definition.name() == name)
+            .composite_resource_definition(name)
             .cloned()
             .ok_or("the observed composite definition is not registered on the function")?;
 
-        let mut concrete_after = after_state.clone();
-        concrete_after.set_memory(before_state.memory.clone());
-        concrete_after = concrete_after.with_resource_context(before_state.resources.clone());
-        if concrete_after != *before_state
-            || (memory_only_adds_named_cells(before_state.memory(), after_state.memory()).is_err()
-                && !crate::kernel::api::contract_certification::memories_definitionally_equal(
-                    before_state.memory(),
-                    after_state.memory(),
-                    assumptions,
-                ))
+        let named_state;
+        let (after_state, construct) = match input {
+            ResourceObservationInput::NamedCells(memory) => {
+                // The input describes memory naming only. No caller-supplied
+                // locals, resource context, or loan ledger enters construction.
+                named_state = before_state
+                    .clone()
+                    .with_memory_continuing(before_state, memory.clone());
+                (&named_state, true)
+            }
+            ResourceObservationInput::Legacy(after_state) => {
+                if !after_state.loan_bindings_are_consistent() {
+                    return Err("resource observation carries mismatched loan dependency sidecar");
+                }
+                let mut concrete_after = after_state.clone();
+                concrete_after.set_memory(before_state.memory.clone());
+                concrete_after =
+                    concrete_after.with_resource_context(before_state.resources.clone());
+                if concrete_after != *before_state {
+                    return Err("resource observation changed concrete execution state");
+                }
+                (after_state, false)
+            }
+        };
+        if memory_only_adds_named_cells(before_state.memory(), after_state.memory()).is_err()
+            && !crate::kernel::api::contract_certification::memories_definitionally_equal(
+                before_state.memory(),
+                after_state.memory(),
+                assumptions,
+            )
         {
             return Err("resource observation changed concrete execution state");
         }
@@ -2972,31 +3021,64 @@ impl CheckedResourceObservation {
                 .filter(|fact| !before_state.resources().contains_exact_representation(fact))
                 .collect::<Vec<_>>()
         };
-        let Some(resource_delta) = after_state
-            .resources()
-            .facts()
-            .strip_prefix(before_state.resources().facts())
-        else {
-            return Err("resource observation changed an existing resource representation");
-        };
-        if resource_delta != expected_views.as_slice() {
-            return Err("resource observation produced an unchecked resource delta");
-        }
-        if let Some((support_occurrence, support)) = observation_support {
-            if !after_state
+        let after_state = if construct {
+            if !before_state.loan_view_bindings().is_empty() {
+                return Err(
+                    "resource observation with loan bindings requires the loan projection rule",
+                );
+            }
+            let resources = before_state.resources().clone();
+            let witness = (!body_is_already_exposed)
+                .then(|| resources.open_structural_witness(observed, assumptions))
+                .flatten();
+            let resources = match observation_support {
+                Some((occurrence, support)) => resources
+                    .unchecked_with_supported_facts_from_occurrence_with_memory(
+                        occurrence,
+                        support,
+                        expected_views,
+                        after_state.memory(),
+                    ),
+                None => resources.unchecked_with_facts(expected_views),
+            };
+            after_state
+                .clone()
+                .with_resource_context(resources.with_opened_structural_witnesses(
+                    witness,
+                    &raw_children,
+                    true,
+                    assumptions,
+                ))
+        } else {
+            let Some(resource_delta) = after_state
                 .resources()
-                .support_occurrence_is_live(support_occurrence, support)
-            {
-                return Err("resource observation support is stale or malformed");
+                .facts()
+                .strip_prefix(before_state.resources().facts())
+            else {
+                return Err("resource observation changed an existing resource representation");
+            };
+            if resource_delta != expected_views.as_slice() {
+                return Err("resource observation produced an unchecked resource delta");
             }
-            if expected_views.iter().any(|fact| {
-                !after_state
+            if let Some((support_occurrence, support)) = observation_support {
+                if !after_state
                     .resources()
-                    .has_supported_projection(fact, support_occurrence, support)
-            }) {
-                return Err("resource observation views are missing their owned support");
+                    .support_occurrence_is_live(support_occurrence, support)
+                {
+                    return Err("resource observation support is stale or malformed");
+                }
+                if expected_views.iter().any(|fact| {
+                    !after_state.resources().has_supported_projection(
+                        fact,
+                        support_occurrence,
+                        support,
+                    )
+                }) {
+                    return Err("resource observation views are missing their owned support");
+                }
             }
-        }
+            after_state.clone()
+        };
 
         let introduced = after_facts
             .introduced_since(before_facts)
@@ -3022,7 +3104,7 @@ impl CheckedResourceObservation {
                 crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
                     observation_authority,
                     function.composite_resource_definitions(),
-                    after_state.memory(),
+                    &after_state.program_point(),
                     assumptions,
                 )
         {
@@ -3277,10 +3359,12 @@ impl OpenedContractEntry {
             // keep the entry producer's form, avoiding extra read-over-write
             // equations being admitted as independent premises.
             let selected = match fact {
-                Proposition::ConditionIs(
-                    crate::kernel::ConditionTerm::PointerValueEqual(..),
-                    _,
-                ) => contract.explicitly_states(fact),
+                condition_source_0 @ Proposition::ConditionIs(_, _)
+                    if let Some((crate::kernel::ConditionTerm::PointerEqual(..), _)) =
+                        condition_source_0.condition_native() =>
+                {
+                    contract.explicitly_states(fact)
+                }
                 _ => contract.states(fact),
             };
             if selected && kept.insert(fact.clone()) {
@@ -3456,7 +3540,7 @@ fn matched_value_premise_instances(
         crate::instrumentation::record_deterministic_work(1);
         let premise = match fact {
             crate::kernel::AtomicConnectedFact::Condition(condition, value) => {
-                Proposition::ConditionIs(condition.clone(), value)
+                Proposition::condition_is(condition.clone(), value)
             }
             crate::kernel::AtomicConnectedFact::Proposition(proposition) => proposition.clone(),
         };
@@ -5387,7 +5471,7 @@ fn interface_resources_guard_heap_frees(
             if resource
                 .allocation_size()
                 .is_some_and(|(candidate_base, candidate_bytes)| {
-                    candidate_base.pointer() == base && &candidate_bytes == bytes
+                    candidate_base.address() == base && &candidate_bytes == bytes
                 })
             {
                 return true;
@@ -5407,7 +5491,7 @@ fn interface_resources_guard_heap_frees(
                 expanded.facts().iter().any(|fact| {
                     fact.allocation_size()
                         .is_some_and(|(candidate_base, candidate_bytes)| {
-                            candidate_base.pointer() == base && &candidate_bytes == bytes
+                            candidate_base.address() == base && &candidate_bytes == bytes
                         })
                 })
             })
@@ -5773,7 +5857,7 @@ pub(super) struct CheckedInterfaceLoadDefinition {
 
 impl CheckedInterfaceLoadDefinition {
     fn check(proposition: &Proposition) -> Option<Self> {
-        let Proposition::ConditionIs(
+        let Some((
             crate::kernel::ConditionTerm::Compare {
                 format:
                     crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32,
@@ -5782,7 +5866,7 @@ impl CheckedInterfaceLoadDefinition {
                 right,
             },
             true,
-        ) = proposition
+        )) = proposition.condition_native()
         else {
             return None;
         };
@@ -6698,15 +6782,12 @@ pub(crate) fn checked_branch_fact_is_available(facts: &PureFactStore, fact: &Pro
         // shared comparison spellings use the same retained source; this
         // does not derive a weaker bound or search for a missing premise.
         || matches!(fact, Proposition::ConditionIs(condition, truth)
-            if facts.assumptions().selected_comparison_source(condition, *truth).is_some())
-        || matches!(fact, Proposition::ConditionIs(crate::kernel::ConditionTerm::Compare { .. }, _)
-            if crate::kernel::proposition_holds_without_facts(fact))
+            if facts.assumptions().selected_comparison_source(condition.native_compat(), *truth).is_some())
+        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare { .. }, _)) if crate::kernel::proposition_holds_without_facts(fact)))
         || matches!(fact, Proposition::And(left, right)
             if checked_branch_fact_is_available(facts, left)
                 && checked_branch_fact_is_available(facts, right))
-        || matches!(fact,
-            Proposition::ConditionIs(crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, true)
-                if left == right)
+        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, _)) if (left == right)))
 }
 
 /// The pointer congruence fragment may give a field read another spelling
@@ -6716,15 +6797,13 @@ pub(super) fn checked_interface_pointer_equality(
     facts: &PureFactStore,
     goal: &Proposition,
 ) -> bool {
-    matches!(
-        goal,
-        Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::PointerEqual(_, _)
-                | crate::kernel::ConditionTerm::PointerValueEqual(_, _)
-                | crate::kernel::ConditionTerm::PointerOffsetEqual(_, _),
+    matches!(&goal, condition_source_0 @ Proposition::ConditionIs(
+            _,
             true
-        )
-    ) && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
+        ) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::AddressEqual(_, _)
+                | crate::kernel::ConditionTerm::PointerEqual(_, _)
+                | crate::kernel::ConditionTerm::AddressOffsetEqual(_, _), _))))
+        && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
 }
 
 fn split_checked_evidence_statement(
@@ -7439,7 +7518,7 @@ fn retain_return_context(
                 crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
                     held,
                     definition,
-                    published.memory(),
+                    &published.program_point(),
                     executed_under,
                 )
             {
@@ -8445,7 +8524,9 @@ impl ExecutionProofCore {
             .map(|view| self.checked_call_events.new_event(view))
             .collect::<Vec<_>>();
         let before = match checked_evidence_conclusion(&theorem) {
-            Proposition::ProgramStatementVerifies { state, .. } => Some(state.as_ref()),
+            Proposition::ProgramStatementVerifies {
+                state, statement, ..
+            } => Some((state.as_ref(), statement.as_ref())),
             _ => None,
         };
         let after = match &outcome {
@@ -8458,9 +8539,10 @@ impl ExecutionProofCore {
             | StatementOutcome::Throw { state, .. } => Some(state.as_ref()),
             _ => None,
         };
-        self.last_footprint = before.zip(after).map(|(before, after)| {
-            crate::kernel::RegionFootprint::transition(
+        self.last_footprint = before.zip(after).map(|((before, statement), after)| {
+            crate::kernel::RegionFootprint::statement_transition(
                 format!("region({}).footprint", self.frontier.next_statement_index),
+                statement,
                 before,
                 after,
                 execution_facts,
@@ -10212,7 +10294,7 @@ impl ExecutionProofCore {
                 .is_some_and(|field| {
                     matches!(
                         field,
-                        crate::kernel::AlgebraicValue::Algebraic(model) if model == value
+                        crate::kernel::ResourceFieldValue::Algebraic(model) if model == value
                     )
                 })
             {
@@ -10234,7 +10316,7 @@ impl ExecutionProofCore {
             if !instance.fields().iter().any(|field| {
                 matches!(
                     field,
-                    crate::kernel::AlgebraicValue::Algebraic(model)
+                    crate::kernel::ResourceFieldValue::Algebraic(model)
                         if model.node == crate::kernel::AlgebraicTermNode::Variable(variable)
                 )
             }) {
@@ -10400,22 +10482,23 @@ impl ExecutionProofCore {
         arguments: &[ProgramExpression],
         before_facts: &PureFactStore,
         observed: &ResourceFact,
-        after_state: &ExecutionState,
+        input: ResourceObservationInput<'_>,
         after_facts: &PureFactStore,
-    ) -> Result<(), &'static str> {
+    ) -> Result<ExecutionState, &'static str> {
         if self.evidence_completed {
             return Err("a resource observation was recorded after the trace completed");
         }
-        let mut observation = CheckedResourceObservation::check(
+        let mut observation = CheckedResourceObservation::certify(
             function,
             self.reached_state(),
             before_facts,
             observed,
-            after_state,
+            input,
             after_facts,
             &self.function_entry_derivations,
             &self.checked_call_events,
         )?;
+        let successor = observation.after_state.clone();
         if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
             observation.before_state = crate::kernel::program_function_entry_state(
                 &observation.before_state,
@@ -10438,7 +10521,7 @@ impl ExecutionProofCore {
                 observation.clone(),
             )));
         }
-        Ok(())
+        Ok(successor)
     }
 
     /// Applies the verified rule of tactic `name` at the reached state and

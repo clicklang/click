@@ -65,7 +65,7 @@ fn growing_arithmetic_guards(truth: Option<bool>) {
                 let goal =
                     ConditionTerm::integer_equal(observe(root.clone()), observe(other.clone()));
                 let path = truth.map_or_else(ExecutionFacts::new, |truth| {
-                    ExecutionFacts::from(vec![ExecutionPureFact::new(Proposition::ConditionIs(
+                    ExecutionFacts::from(vec![ExecutionPureFact::new(Proposition::condition_is(
                         goal.clone(),
                         truth,
                     ))])
@@ -107,7 +107,7 @@ fn selected_obligation_lookup_ignores_unrelated_facts() {
                 context.assume_condition(ConditionTerm::Variable(Variable(914_000 + index)), true);
         }
         let context = context.assume_condition(native, false);
-        let query = Proposition::ConditionIs(observed, false);
+        let query = Proposition::condition_is(observed, false);
         let exports = KernelTermExport::machine_export_count();
         let (obligations, work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut obligations = Vec::new();

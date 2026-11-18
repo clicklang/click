@@ -1,4 +1,9 @@
 use super::*;
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/surface/proof/resources/observation_partition_tests.rs");
+}
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
 use crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision;
@@ -35,7 +40,7 @@ fn fold_resource_quantity_activity(
     }
     let zero = holds_by_lookup_or_decision(
         assumptions,
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -47,7 +52,7 @@ fn fold_resource_quantity_activity(
     );
     let positive = holds_by_lookup_or_decision(
         assumptions,
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
@@ -453,7 +458,7 @@ fn dynamic_body_fact_dependency(
     ) -> Result<(), String> {
         match proposition {
             Proposition::ConditionIs(condition, _) => walk_term(
-                &Term::Condition(condition.clone()),
+                &Term::Condition((condition.clone()).native_compat().clone()),
                 state,
                 assumptions,
                 temporary_views,
@@ -512,7 +517,7 @@ fn dynamic_body_fact_dependency(
             | Proposition::ResourceContains { .. } => Ok(()),
             Proposition::MemoryLoads { outcome, .. } => match outcome {
                 ExpressionOutcome::Value(value) => walk_term(
-                    &Term::ProgramValue(value.clone()),
+                    &Term::ProgramValue(value.native_compat().clone()),
                     state,
                     assumptions,
                     temporary_views,
@@ -524,10 +529,10 @@ fn dynamic_body_fact_dependency(
                 }
             },
             Proposition::MemoryReadDefined {
+                at,
                 memory,
                 pointer,
                 value_type,
-                ..
             } => {
                 // Definedness is an observation of the same cell as a load.
                 // Retain its access dependency, including loads in its address.
@@ -539,7 +544,12 @@ fn dynamic_body_fact_dependency(
                     binder,
                     selected,
                 )?;
-                if memory == state.memory() {
+                // The point identifies the observation even when two states
+                // share a memory view. Synthetic facts may have no point.
+                let is_current = at
+                    .and_then(|point| state.observation_point_id().map(|current| point == current))
+                    .unwrap_or_else(|| memory == state.memory());
+                if is_current {
                     check_load(
                         pointer.clone(),
                         value_type.byte_width(),
@@ -553,7 +563,7 @@ fn dynamic_body_fact_dependency(
                 Ok(())
             }
             Proposition::MemoryLoadable { bytes, .. } => walk_term(
-                &Term::Bitvector32(bytes.clone()),
+                &Term::Bitvector32(bytes.native_compat().clone()),
                 state,
                 assumptions,
                 temporary_views,
@@ -644,7 +654,7 @@ fn materialize_folded_composite_resource_memory(
         }
         let substitutions = resource_value_substitutions_with_witnesses(
             definition,
-            resource_arguments,
+            &(resource_arguments).native_values(),
             state.memory(),
             state.resources(),
             assumptions,
@@ -697,7 +707,8 @@ pub(in crate::surface) fn selected_resource_instance_arm(
         .fields()
         .iter()
         .position(|field| field.name() == matched.field)?;
-    let AlgebraicValue::Algebraic(model) = instance.fields().get(field_index)? else {
+    let crate::kernel::ResourceFieldValue::Algebraic(model) = instance.fields().get(field_index)?
+    else {
         return None;
     };
     let scopes = crate::surface::validation::resource_match_arm_scopes(
@@ -829,7 +840,7 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     click_function_environment: &ClickFunctionEnvironment,
     instance: &ResourceInstance,
     records: &[crate::kernel::ResourceBodyClauseRecord],
-    function_values: &BTreeMap<String, ProgramValue>,
+    function_values: &ProgramValueBindings,
     proof_bindings: Option<&[String]>,
 ) -> Result<Vec<ResourceClausePresentation>, ClickError> {
     let Some(first) = records.first() else {
@@ -1194,7 +1205,7 @@ pub(super) fn project_initial_composite_resource_cores(
         }
         let substitutions = resource_value_substitutions_with_witnesses(
             definition,
-            &resource_arguments,
+            &(&resource_arguments).native_values(),
             state.memory(),
             state.resources(),
             &assumptions,
@@ -1316,7 +1327,7 @@ fn project_selected_instance_arm_cells(
     };
     let Ok(substitutions) = resource_value_substitutions_for_parameters(
         arm.name(),
-        instance.arguments(),
+        &(instance.arguments()).native_values(),
         &selected.bindings,
         arm.parameters(),
     ) else {
@@ -1441,12 +1452,7 @@ pub(super) fn project_initial_resource_facts(
 ) -> Result<PureFactList, ClickError> {
     let result = ProgramValue::Int32(MachineTerm::constant(0));
     let mut facts = ProofResourcePureFacts::new(available_pure_facts.fact_store());
-    append_state_resource_context_observable_facts_with_store(
-        parameter_binding,
-        state,
-        &mut facts,
-        &format!("`{claim_label}` setup"),
-    )?;
+    append_state_resource_context_observable_facts_with_store(state, &mut facts);
     project_folded_resource_observable_facts_with_store(
         resource_environment,
         parameter_binding,
@@ -1477,12 +1483,7 @@ pub(super) fn project_outcome_resource_facts(
         return Ok(available_pure_facts);
     };
     let mut facts = ProofResourcePureFacts::new(available_pure_facts);
-    append_state_resource_context_observable_facts_with_store(
-        parameter_binding,
-        state,
-        &mut facts,
-        &format!("`{claim_label}` path {path_index}"),
-    )?;
+    append_state_resource_context_observable_facts_with_store(state, &mut facts);
     project_folded_resource_observable_facts_with_store(
         resource_environment,
         parameter_binding,
@@ -1501,24 +1502,17 @@ pub(super) fn project_outcome_resource_facts(
 }
 
 fn append_state_resource_context_observable_facts_with_store<F: ResourcePureFacts>(
-    parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     available_pure_facts: &mut F,
-    context: &str,
-) -> Result<(), ClickError> {
-    let facts = state
+) {
+    // Entry admission and subsequent proof operations construct the partition.
+    // Observe its retained composition, without admitting the held owners again.
+    for fact in state
         .resources()
-        .observable_facts(available_pure_facts.assumptions())
-        .map_err(|error| {
-            ClickError::new(format!(
-                "{context}: {}",
-                describe_resource_context_validity_error(error, parameter_binding)
-            ))
-        })?;
-    for fact in facts {
+        .observable_facts_assuming_valid(available_pure_facts.assumptions())
+    {
         available_pure_facts.insert(fact);
     }
-    Ok(())
 }
 
 fn project_folded_resource_observable_facts_with_store(
@@ -1545,8 +1539,23 @@ fn project_folded_resource_observable_facts_with_store(
     Ok(())
 }
 
+pub(super) enum ResourceObservationSuccessor {
+    NamedCells(SymbolicMemory),
+    Legacy(Box<ExecutionState>),
+}
+
+impl ResourceObservationSuccessor {
+    pub(super) fn input(&self) -> crate::kernel::proof::ResourceObservationInput<'_> {
+        use crate::kernel::proof::ResourceObservationInput;
+        match self {
+            Self::NamedCells(memory) => ResourceObservationInput::NamedCells(memory),
+            Self::Legacy(state) => ResourceObservationInput::Legacy(state),
+        }
+    }
+}
+
 pub(super) struct CheckedResourceObservation {
-    pub(super) state: ExecutionState,
+    pub(super) successor: ResourceObservationSuccessor,
     pub(super) facts: PureFactStore,
     pub(super) added_facts: Vec<Proposition>,
     pub(super) observed_resource: ResourceFact,
@@ -1567,7 +1576,7 @@ pub(super) fn observe_composite_resource_for_proof(
     tactic_index: usize,
 ) -> Result<CheckedResourceObservation, ClickError> {
     let mut facts = ProofResourcePureFacts::new(facts);
-    let (state, observed_resource) = observe_composite_resource_with_facts(
+    let (successor, observed_resource) = observe_composite_resource_with_facts(
         function,
         resource_environment,
         resource,
@@ -1581,7 +1590,7 @@ pub(super) fn observe_composite_resource_for_proof(
         tactic_index,
     )?;
     Ok(CheckedResourceObservation {
-        state,
+        successor,
         facts: facts.facts,
         added_facts: facts.added,
         observed_resource,
@@ -1601,7 +1610,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
     tactic_index: usize,
-) -> Result<(ExecutionState, ResourceFact), ClickError> {
+) -> Result<(ResourceObservationSuccessor, ResourceFact), ClickError> {
     let requested_resource = lower_resource_clause_at_state(resource, parameter_binding, &state)?;
     let assumptions = available_pure_facts.assumptions().clone();
     let viewed_resource = ResourceFact::View(requested_resource.resource().clone());
@@ -1792,7 +1801,10 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     if counts_population {
         // A population observation names checked count/quantity facts only.
         // Member bodies remain folded, with their custody and memory unchanged.
-        return Ok((state, abstract_resource));
+        return Ok((
+            ResourceObservationSuccessor::Legacy(Box::new(state)),
+            abstract_resource,
+        ));
     }
     let underlying_resource = match resource {
         ResourceClause::Quantified { resource, .. } => resource.as_ref(),
@@ -1805,7 +1817,10 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             ..
         }
     ) {
-        return Ok((state, abstract_resource));
+        return Ok((
+            ResourceObservationSuccessor::Legacy(Box::new(state)),
+            abstract_resource,
+        ));
     }
     if explicit_quantity {
         let quantity = abstract_resource
@@ -1814,7 +1829,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         let positive = quantity.as_const().is_some_and(|value| value > 0)
             || holds_by_lookup_or_decision(
                 &assumptions,
-                &Proposition::ConditionIs(
+                &Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
@@ -1828,7 +1843,10 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             // The count lower bound remains valid for zero or an undecided
             // nonnegative quantity. The population body, however, grants
             // authority only when the held quantity is proved positive.
-            return Ok((state, abstract_resource));
+            return Ok((
+                ResourceObservationSuccessor::Legacy(Box::new(state)),
+                abstract_resource,
+            ));
         }
     }
     let definition = composite_resource_law_definition(
@@ -1865,26 +1883,28 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     // A viewed composite is itself a checked loan projection.  Its children
     // are fresh occurrences, so remember the exact bundle before projecting
     // the body; equal resource terms are not sufficient to recover it later.
-    let borrowed_parent_binding = unique_borrowed_resource_dependency(&state, &abstract_resource)
-        .map_err(|message| {
-            ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `observe` refused ambiguous loan dependency: {message}"
-            ))
-        })?;
-    let witness_opening = state
-        .resources()
-        .open_structural_witness(&abstract_resource, &assumptions);
+    let construct = state.loan_view_bindings().is_empty();
+    let borrowed_parent_binding = if construct {
+        None
+    } else {
+        unique_borrowed_resource_dependency(&state, &abstract_resource)
+            .map_err(|message| {
+                ClickError::new(format!(
+                    "`{claim_label}` tactic {tactic_index}: `observe` refused ambiguous loan dependency: {message}"
+                ))
+            })?
+    };
     let (memory, contained_resources, body_projected) = apply_composite_observation_law_with_facts(
         resource_environment,
         definition,
-        resource_arguments,
+        &(resource_arguments).native_values(),
         parameter_binding,
         &state,
         &state,
         &ProgramValue::Int32(MachineTerm::constant(0)),
         available_pure_facts,
         spec_definitions,
-        false,
+        CompositeObservation::Explicit(&surface_substitutions),
         Some(function.composite_resource_definitions()),
     )
     .map_err(|message| {
@@ -1983,6 +2003,15 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             }
         }
     }
+    if construct {
+        return Ok((
+            ResourceObservationSuccessor::NamedCells(memory),
+            abstract_resource,
+        ));
+    }
+    let witness_opening = state
+        .resources()
+        .open_structural_witness(&abstract_resource, &assumptions);
     let all_viewed_contained_resources = contained_resources
         .facts()
         .iter()
@@ -2070,9 +2099,11 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         )?;
     }
     Ok((
-        state
-            .with_memory_of(&fact_state)
-            .with_resource_context_and_loan_dependencies(resources, dependency_bindings),
+        ResourceObservationSuccessor::Legacy(Box::new(
+            state
+                .with_memory_of(&fact_state)
+                .with_resource_context_and_loan_dependencies(resources, dependency_bindings),
+        )),
         abstract_resource,
     ))
 }
@@ -2122,7 +2153,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
     for contained in composite_body.contains() {
         if matches!(contained, ResourceClause::Iterated(_)) {
             // An iterated clause has no `contains(...)` or `separate(...)`
-            // spelling; its element facts come only from `take`.
+            // spelling; its element facts come from indexed `unfold`.
             continue;
         }
         let contained =
@@ -2366,14 +2397,14 @@ fn project_held_resource_observable_facts(
     apply_composite_observation_law_with_facts(
         resource_environment,
         definition,
-        resource_arguments,
+        &(resource_arguments).native_values(),
         parameter_binding,
         pre_state,
         state,
         result,
         available_pure_facts,
         spec_definitions,
-        true,
+        CompositeObservation::Implicit,
         None,
     )
     .map(|(memory, _, _)| memory)
@@ -2386,7 +2417,7 @@ fn owned_quantity_is_positive(quantity: &MachineTerm, assumptions: &PureFactCont
     quantity.as_const().is_some_and(|value| (value as i32) > 0)
         || holds_by_lookup_or_decision(
             assumptions,
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
@@ -2439,13 +2470,13 @@ fn try_select_composite_resource_body(
     })?;
     let proves_condition = |proposition: &Proposition| match proposition {
         Proposition::ConditionIs(condition, value) => {
-            assumptions.proves_condition_exact(condition, *value)
-                || assumptions.decide(condition) == Some(*value)
+            assumptions.proves_condition_exact(condition.native_compat(), *value)
+                || assumptions.decide(condition.native_compat()) == Some(*value)
         }
         Proposition::Not(body) => match body.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                assumptions.proves_condition_exact(condition, !*value)
-                    || assumptions.decide(condition) == Some(!*value)
+                assumptions.proves_condition_exact(condition.native_compat(), !*value)
+                    || assumptions.decide(condition.native_compat()) == Some(!*value)
             }
             _ => false,
         },
@@ -2456,7 +2487,7 @@ fn try_select_composite_resource_body(
     }
     let negated = match &lowered {
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(condition.clone(), !value)
+            Proposition::condition_is(condition.clone(), !value)
         }
         Proposition::Not(body) => body.as_ref().clone(),
         proposition => Proposition::Not(Box::new(proposition.clone())),
@@ -2511,6 +2542,11 @@ fn composite_resource_body_is_active_with_assumptions(
     })
 }
 
+enum CompositeObservation<'a> {
+    Explicit(&'a BTreeMap<String, ContractExpression>),
+    Implicit,
+}
+
 /// Applies the non-consuming observation law declared by a composite body.
 /// The kernel algebra handles the folded resource fact itself; Click owns this
 /// definitional layer because it requires source-level substitution and fact
@@ -2526,7 +2562,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
     result: &ProgramValue,
     available_pure_facts: &mut F,
     spec_definitions: SpecDefinitions<'_>,
-    lower_declared_source_facts: bool,
+    observation: CompositeObservation<'_>,
     compiled_definitions: Option<&[CompositeResourceDefinition]>,
 ) -> Result<(SymbolicMemory, ResourceContext, bool), String> {
     let Some(composite_body) = definition.composite_body() else {
@@ -2560,6 +2596,16 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         spec_definitions,
     )?
     else {
+        if let CompositeObservation::Explicit(substitutions) = observation {
+            let guard = composite_body
+                .condition()
+                .expect("only a guarded body can be undecided");
+            let guard = substitute_click_proposition(guard, substitutions)?;
+            return Err(format!(
+                "guard `{}` is undecided: prove it or its negation before observing the body",
+                describe_click_proposition(&guard)
+            ));
+        }
         return Ok((state.memory().clone(), ResourceContext::new(), false));
     };
     if !body_active {
@@ -2628,7 +2674,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         result,
         available_pure_facts,
         spec_definitions,
-        lower_declared_source_facts,
+        matches!(observation, CompositeObservation::Implicit),
     )?;
     Ok((memory, contained_resources, true))
 }
@@ -3247,11 +3293,13 @@ fn decided_by_kernel_condition_decision(
             decided_by_kernel_condition_decision(assumptions, left)
                 && decided_by_kernel_condition_decision(assumptions, right)
         }
-        Proposition::ConditionIs(condition, value) => assumptions.decide(condition) == Some(*value),
+        Proposition::ConditionIs(condition, value) => {
+            assumptions.decide(condition.native_compat()) == Some(*value)
+        }
         Proposition::Not(body) => matches!(
             body.as_ref(),
             Proposition::ConditionIs(condition, value)
-                if assumptions.decide(condition) == Some(!*value)
+                if assumptions.decide(condition.native_compat()) == Some(!*value)
         ),
         _ => false,
     }
@@ -3497,7 +3545,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         // A constant quantity is decided by reading it, as `fold` reads its
         // own; only a symbolic one needs a fact about it.
         let final_by_constant = quantity.as_const() == Some(1);
-        let final_unit = Proposition::ConditionIs(
+        let final_unit = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3989,15 +4037,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         available_pure_facts,
     );
 
-    append_state_resource_context_observable_facts_with_store(
-        parameter_binding,
-        &state,
-        available_pure_facts,
-        &format!(
-            "`{claim_label}` tactic {tactic_index}: `unfold({})`",
-            describe_resource_clause(resource)
-        ),
-    )?;
+    append_state_resource_context_observable_facts_with_store(&state, available_pure_facts);
 
     // `unfold` changes the proof representation of the final visible unit;
     // it does not itself perform the function contract's logical consumption.
@@ -5192,11 +5232,7 @@ fn fold_composite_resource_for_proof_with_closure(
     })
 }
 
-/// Resolves the source declaration that supplies fold, unfold, and observation
-/// laws for a composite resource fact.
-/// The hole-free iterated ownership fact the one iterated clause of
-/// `resource`'s definition denotes at the tactic's own arguments, read at
-/// `state`. `gather` forms it and `scatter` dissolves it.
+/// Lower the iterated clause of the named resource with the tactic's arguments.
 pub(super) fn iterated_template_for_resource(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
@@ -5228,27 +5264,14 @@ pub(super) fn iterated_template_for_resource(
     };
     let substitutions =
         resource_argument_substitutions(definition, resource, claim_label, tactic_index)?;
-    let clause = instantiate_resource_clause(&ResourceClause::Iterated(clause.clone()), &substitutions)
+    let clause = substitute_iterated_clause(clause, &ContractSubstitutions::new(&substitutions))
         .map_err(|message| {
             ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: could not instantiate the iterated clause of `{}`: {message}",
                 definition.name()
             ))
         })?;
-    let lowered = lower_resource_clause_at_current_locals_with_assumptions(
-        &clause,
-        parameter_binding,
-        state,
-        None,
-        assumptions,
-    )?;
-    match lowered {
-        ResourceFact::Own(Resource::Iterated(iterated), _) => Ok(iterated.as_ref().clone()),
-        _ => Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: the iterated clause of `{}` did not lower to iterated ownership",
-            definition.name()
-        ))),
-    }
+    lower_iterated_clause_at_current_locals(&clause, parameter_binding, state, assumptions)
 }
 
 fn composite_resource_law_definition<'a>(
@@ -5861,6 +5884,36 @@ void child_release(struct child* obj) {
         check_dynamic_current_fact_dependencies(true, false);
     }
 
+    #[test]
+    fn dynamic_definedness_uses_the_observation_point_for_loan_dependencies() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let earlier = ExecutionState::new().with_memory(SymbolicMemory::new());
+        let current = earlier.clone().with_memory(earlier.memory().clone());
+        let earlier_point = earlier.observation_point_id().unwrap();
+        let current_point = current.observation_point_id().unwrap();
+        assert_ne!(earlier_point, current_point);
+        assert!(earlier.memory().same_storage_roots(current.memory()));
+
+        let assumptions = PureFactContext::new();
+        let no_views = DynamicViewDependencyIndex::new(&[], &[], &assumptions);
+        let dependency_at = |at| {
+            let fact = Proposition::MemoryReadDefined {
+                at,
+                memory: earlier.memory().clone(),
+                pointer: Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(0),
+                },
+                value_type: ProgramType::Int32,
+            };
+            dynamic_body_fact_dependency(&fact, &current, &assumptions, &no_views)
+        };
+
+        assert!(dependency_at(Some(earlier_point)).unwrap().is_none());
+        assert!(dependency_at(Some(current_point)).is_err());
+        assert!(dependency_at(None).is_err());
+    }
+
     /// A guarded universal read depends on a view of every cell its guard
     /// admits, not on the one symbolic cell `p[k]`, which no view contains.
     #[test]
@@ -5873,7 +5926,7 @@ void child_release(struct child* obj) {
         let index = Variable(2_000_000);
         let index_term = || Box::new(MachineTerm::Variable(index));
         let below = |end: u32| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -5883,7 +5936,7 @@ void child_release(struct child* obj) {
                 true,
             )
         };
-        let at_least_zero = Proposition::ConditionIs(
+        let at_least_zero = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -6001,14 +6054,14 @@ void child_release(struct child* obj) {
                 value_type: crate::kernel::ProgramType::Int32,
             }
         } else {
-            Proposition::ConditionIs(condition, true)
+            Proposition::condition_is(condition, true)
         };
         let span = if symbolic_range {
             MachineTerm::Variable(Variable(2_000_017))
         } else {
             MachineTerm::constant(1)
         };
-        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

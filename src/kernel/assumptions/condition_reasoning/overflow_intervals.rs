@@ -377,11 +377,11 @@ impl PureFactContext {
             let Proposition::ConditionIs(condition, true) = bound else {
                 return false;
             };
-            Self::decide_intrinsically(condition) == Some(true)
-                || integer_order_spellings(condition)
+            Self::decide_intrinsically(condition.native_compat()) == Some(true)
+                || integer_order_spellings(condition.native_compat())
                     .into_iter()
                     .any(|condition| {
-                        self.contains_known(&Proposition::ConditionIs(condition, true))
+                        self.contains_known(&Proposition::condition_is(condition, true))
                     })
         }) {
             for bound in &bounds {
@@ -582,11 +582,11 @@ impl PureFactContext {
         left: &MachineTerm,
         right: &MachineTerm,
     ) -> bool {
-        let dividend_differs = Proposition::ConditionIs(
+        let dividend_differs = Proposition::condition_is(
             ConditionTerm::equal(left.clone(), MachineTerm::constant(i32::MIN as u32)),
             false,
         );
-        let divisor_differs = Proposition::ConditionIs(
+        let divisor_differs = Proposition::condition_is(
             ConditionTerm::equal(right.clone(), MachineTerm::constant((-1i32) as u32)),
             false,
         );
@@ -935,7 +935,7 @@ impl PureFactContext {
                     && (left.as_ref() == term && signed_width_constant(width, right).is_some()
                         || right.as_ref() == term && signed_width_constant(width, left).is_some())
                 {
-                    facts.push(Proposition::ConditionIs(condition.clone(), true));
+                    facts.push(Proposition::condition_is(condition.clone(), true));
                 }
             }
         }
@@ -1385,9 +1385,9 @@ mod tests {
         assert_eq!(not_int_min.decide(&divide), Some(false));
         // The exact exclusion as one disjunction, in either arm order.
         let dividend_differs =
-            Proposition::ConditionIs(ConditionTerm::equal(x.clone(), constant(i32::MIN)), false);
+            Proposition::condition_is(ConditionTerm::equal(x.clone(), constant(i32::MIN)), false);
         let divisor_differs =
-            Proposition::ConditionIs(ConditionTerm::equal(y.clone(), constant(-1)), false);
+            Proposition::condition_is(ConditionTerm::equal(y.clone(), constant(-1)), false);
         let either = nonzero.clone().assume_proposition(Proposition::Or(
             Box::new(dividend_differs.clone()),
             Box::new(divisor_differs.clone()),
@@ -2443,7 +2443,7 @@ mod shared_overflow_query_tests {
             &operand,
             IntegerTerm::constant(2.into()),
         );
-        let source = Proposition::ConditionIs(
+        let source = Proposition::condition_is(
             ConditionTerm::Overflows {
                 format,
                 op: OverflowOperation::Add,

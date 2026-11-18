@@ -317,8 +317,15 @@ impl Eligibility<'_, '_> {
                 self.value(left, values)? && self.value(right, values)?
             }
             CppExpression::ObserverCall {
-                callee, arguments, ..
-            } => self.arguments(arguments, values)? && self.function(callee)?,
+                callee,
+                arguments,
+                returned_member,
+                ..
+            } => {
+                returned_member.is_none()
+                    && self.arguments(arguments, values)?
+                    && self.function(callee)?
+            }
             CppExpression::AddressOf { .. }
             | CppExpression::FunctionAddress { .. }
             | CppExpression::ClosureInstance { .. }

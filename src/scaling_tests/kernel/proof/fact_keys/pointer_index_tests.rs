@@ -86,7 +86,9 @@ fn pointer_index_fact_lookup_ignores_unrelated_facts() {
         let target = make(1019041, 4);
         let miss = make(1019041, 8);
         let unrelated: Vec<_> = (0..size)
-            .map(|i| Proposition::ConditionIs(ConditionTerm::Variable(Variable(1019100 + i)), true))
+            .map(|i| {
+                Proposition::condition_is(ConditionTerm::Variable(Variable(1019100 + i)), true)
+            })
             .collect();
         let parent = crate::kernel::proof::PureFactStore::from_ordered(&unrelated);
         let child = parent.with_fact(source.clone());
