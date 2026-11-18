@@ -3847,6 +3847,7 @@ fn c_statement_calls_recording(
                 collect_function_pointer_names(statement, names)
             }
             syntax::CStatement::EndAggregateLifetimes { .. }
+            | syntax::CStatement::FillArrayTail { .. }
             | syntax::CStatement::Skip
             | syntax::CStatement::Break
             | syntax::CStatement::Continue
@@ -4129,7 +4130,8 @@ fn c_statement_calls_recording(
             syntax::CStatement::Declare {
                 initializer: None, ..
             }
-            | syntax::CStatement::DeclareStructValue { .. } => calls.push(BTreeSet::new()),
+            | syntax::CStatement::DeclareStructValue { .. }
+            | syntax::CStatement::FillArrayTail { .. } => calls.push(BTreeSet::new()),
             syntax::CStatement::Declare {
                 initializer: Some(expression),
                 ..

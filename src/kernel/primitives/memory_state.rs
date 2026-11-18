@@ -6018,10 +6018,8 @@ impl SymbolicMemory {
                             })
                 })
         };
-        if !matches!(
-            element_type,
-            ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
-        ) || !valid_region(base)
+        if !element_type.supports_scalar_array_write(copy)
+            || !valid_region(base)
             || !self.run_can_stand_for_cells_at(base)
             || (fresh
                 && (base.offset != AddressOffset::Constant(0)
@@ -6231,10 +6229,7 @@ impl SymbolicMemory {
             .checked_mul(element.byte_width())
             .filter(|bytes| *bytes <= i32::MAX as u32)
             .ok_or(RuntimeError::TypeMismatch)?;
-        if !matches!(
-            element,
-            ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
-        ) {
+        if !element.supports_scalar_array_write(copy) {
             return Err(RuntimeError::TypeMismatch);
         }
         if count == 0 {
@@ -6429,10 +6424,10 @@ impl SymbolicMemory {
     /// else to do: no typed union view to displace, and no live allocation
     /// the base may lie in to mark initialized.
     fn run_can_stand_for_cells_at(&self, base: &Address) -> bool {
-        self.heap.uninitialized_objects.is_empty()
-            && self.union_cells.is_empty()
-            && !AliasCandidates::of_block(&base.base)
-                .any_entry(&self.heap.live_allocations, |_, _| true)
+        let candidates = AliasCandidates::of_block(&base.base);
+        !candidates.any_entry(&self.heap.uninitialized_objects, |_, _| true)
+            && !candidates.any_entry(&self.union_cells, |_, _| true)
+            && !candidates.any_entry(&self.heap.live_allocations, |_, _| true)
     }
 
     /// The run of [`Self::with_seeded_cells`], its preconditions checked.

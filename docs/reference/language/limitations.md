@@ -75,9 +75,9 @@ aggregate expressions require matching struct types and copy only the selected
 branch. Static-storage positional and designated initializers, including
 function addresses in callback tables, are supported for the shapes described
 in [file-scope objects](c.md#file-scope-scalar-globals) and the struct
-reference. Mutable block-scope struct compound literals reuse automatic struct
-initialization and live until the enclosing block ends; see
-[compound literals](c.md#block-scope-struct-compound-literals) for their
+reference. Mutable block-scope [struct](c.md#block-scope-struct-compound-literals)
+and [arithmetic array](c.md#block-scope-array-compound-literals) compound
+literals live until the enclosing block ends. Their references describe
 initializer-order and qualified-type limits. Automatic/local const aggregates,
 whole-union initialization, and broader aggregate initializer forms remain
 outside the documented subset.

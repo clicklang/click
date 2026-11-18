@@ -85,3 +85,20 @@ fn compound_literal_repeatable_value_uses_only_its_binding() {
     }
     assert!(samples.windows(2).all(|sample| sample[0] == sample[1]));
 }
+
+#[test]
+fn array_compound_literal_lowering_does_not_expand_omitted_elements() {
+    let samples = [4, 1024, 1_000_000].map(|length| {
+        let source = format!(
+            "int f(void) {{ const short *p = (short[{length}]){{42}}; return p[0]; }}"
+        );
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let functions = super::super::super::parse_functions(&source).unwrap();
+            assert_eq!(functions.len(), 1);
+            functions[0].body_kernel_statement()
+        });
+        work
+    });
+    eprintln!("array compound literal lowering (small, medium, large): {samples:?}");
+    assert!(samples.iter().all(|work| *work <= samples[0] + 16));
+}

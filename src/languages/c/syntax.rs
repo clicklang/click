@@ -2486,6 +2486,12 @@ impl CStatementSite {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CStatement {
+    FillArrayTail {
+        name: BindingName,
+        element_type: InterfaceType,
+        start: u32,
+        count: u32,
+    },
     EndAggregateLifetimes {
         names: Vec<BindingName>,
         steps: Vec<u32>,
@@ -3986,7 +3992,8 @@ impl CStatement {
             | Self::DoWhile { site, .. }
             | Self::For { site, .. }
             | Self::Switch { site, .. } => Some(site),
-            Self::Skip
+            Self::FillArrayTail { .. }
+            | Self::Skip
             | Self::Break
             | Self::Continue
             | Self::Goto { .. }
@@ -4019,7 +4026,8 @@ impl CStatement {
             | Self::DoWhile { site, .. }
             | Self::For { site, .. }
             | Self::Switch { site, .. } => Some(site),
-            Self::Skip
+            Self::FillArrayTail { .. }
+            | Self::Skip
             | Self::Break
             | Self::Continue
             | Self::Goto { .. }
@@ -4106,6 +4114,24 @@ impl CStatement {
                 value_type: interface_type.map(|interface_type| interface_type.to_kernel_type()),
                 pointee_constant: *pointee_constant,
             },
+            Self::FillArrayTail {
+                name,
+                element_type,
+                start,
+                count,
+            } => {
+                let pointer = CExpression::Add(
+                    Box::new(CExpression::Variable(name.clone())),
+                    Box::new(CExpression::UInt32Literal(*start)),
+                );
+                crate::kernel::program_write_scalar_array_region(
+                    pointer.to_kernel_expression(),
+                    zero_initializer(*element_type).to_kernel_expression(),
+                    element_type.to_kernel_type(),
+                    *count,
+                    false,
+                )
+            }
             Self::EndAggregateLifetimes { names, steps, .. } => {
                 crate::kernel::ProgramStatement::EndAutomaticLifetimes {
                     names: names.clone(),
@@ -5064,6 +5090,7 @@ fn validate_function_returns(
             .try_for_each(|case| validate_function_returns(&case.body, return_type)),
         CStatement::Label { statement, .. } => validate_function_returns(statement, return_type),
         CStatement::EndAggregateLifetimes { .. }
+        | CStatement::FillArrayTail { .. }
         | CStatement::Skip
         | CStatement::Break
         | CStatement::Continue
@@ -5563,6 +5590,7 @@ fn statement_contains_control_transfer(statement: &CStatement) -> bool {
             .iter()
             .any(|case| statement_contains_control_transfer(&case.body)),
         CStatement::EndAggregateLifetimes { .. }
+        | CStatement::FillArrayTail { .. }
         | CStatement::Skip
         | CStatement::Declare { .. }
         | CStatement::DeclareStructValue { .. }
@@ -7270,6 +7298,7 @@ struct Parser {
     bit_field_records: BTreeMap<String, std::sync::Arc<bit_fields::BitFieldRecord>>,
     local_bit_fields: BTreeMap<BindingName, bit_fields::LocalBitFields>,
     bit_field_forbidden_operand: bool,
+    unevaluated_operand: bool,
     function_has_bit_fields: bool,
     structs: DeclarationMap<RecordLayout>,
     enums: DeclarationMap<CEnumDefinition>,
@@ -7887,6 +7916,7 @@ impl Parser {
             bit_field_records: BTreeMap::new(),
             local_bit_fields: BTreeMap::new(),
             bit_field_forbidden_operand: false,
+            unevaluated_operand: false,
             function_has_bit_fields: false,
             enums: DeclarationMap::new(),
             enum_constants: BTreeMap::new(),
@@ -10745,6 +10775,14 @@ impl Parser {
         }
     }
 
+    fn parse_unevaluated_type_operand(&mut self) -> Result<CExpression, CSyntaxError> {
+        let previous = std::mem::replace(&mut self.unevaluated_operand, true);
+        let operand =
+            self.without_bit_field_operands(Self::parse_expression_allow_direct_aggregate);
+        self.unevaluated_operand = previous;
+        operand
+    }
+
     /// GNU `typeof` accepts either a type-name or an expression. The
     /// expression form is inspected only for its already-modeled type; it is
     /// never emitted as an executable read, which matches the extension's
@@ -10757,8 +10795,7 @@ impl Parser {
             return Ok(parsed);
         }
 
-        let expression =
-            self.without_bit_field_operands(Self::parse_expression_allow_direct_aggregate)?;
+        let expression = self.parse_unevaluated_type_operand()?;
         self.expect(Token::RParen)?;
         if let CExpression::Variable(name) = &expression
             && self.incomplete_array_names.contains(name)
@@ -11224,11 +11261,6 @@ impl Parser {
             )
             .expect("validated local array element type")
         };
-        if incomplete && !supports_local_array_initializer(array_type) {
-            return Err(self.error_here(
-                "inferred local array element type does not support automatic initialization",
-            ));
-        }
         Ok((array_type, shape, incomplete))
     }
 
@@ -12440,6 +12472,12 @@ impl Parser {
             }
             let (mut interface_type, mut array_shape, incomplete_array) =
                 self.parse_local_array_shape(&parsed_type)?;
+            if incomplete_array && !supports_local_array_initializer(interface_type) {
+                return Err(self.error_here(
+                    "inferred local array element type does not support automatic initialization",
+                ));
+            }
+
             if parsed_type.is_volatile
                 && (array_shape.is_some()
                     || matches!(
@@ -14489,6 +14527,7 @@ impl Parser {
                 }
                 CStatement::Label { statement, .. } => statements.push(statement),
                 CStatement::EndAggregateLifetimes { .. }
+                | CStatement::FillArrayTail { .. }
                 | CStatement::Skip
                 | CStatement::Break
                 | CStatement::Continue
@@ -15067,6 +15106,7 @@ impl Parser {
     ) -> Result<CStatement, CSyntaxError> {
         match statement {
             CStatement::EndAggregateLifetimes { .. }
+            | CStatement::FillArrayTail { .. }
             | CStatement::Skip
             | CStatement::Break
             | CStatement::Continue
@@ -15480,6 +15520,20 @@ impl Parser {
             | CExpression::UInt32Literal(_)
             | CExpression::Int64Literal(_)
             | CExpression::UInt64Literal(_) => true,
+            CExpression::Variable(name)
+                if self
+                    .variable_types
+                    .get(name)
+                    .is_some_and(|ty| ty.array_length().is_some()) =>
+            {
+                // Decay computes an address, independently of the array's contents.
+                true
+            }
+            CExpression::Add(base, offset)
+                if matches!(offset.as_ref(), CExpression::Int32Literal(_)) =>
+            {
+                self.reads_only_locals_other_than(base, assigned)
+            }
             CExpression::Variable(name) => {
                 !assigned.contains(name)
                     && self.variable_types.contains_key(name)
@@ -16044,6 +16098,29 @@ impl Parser {
                 ..
             } => {
                 if aggregate_lvalue {
+                    if interface_type.array_length().is_some() {
+                        let CExpression::Variable(name) = *value else {
+                            unreachable!("an array compound literal has a hidden array binding");
+                        };
+                        // Only this initializer references the hidden name in the
+                        // frontend. Its stores use the fixed address of the array.
+                        self.variable_types.insert(name.clone(), interface_type);
+                        let body = self.lower_statement_calls(*body);
+                        self.variable_types.remove(&name);
+                        // The unevaluated contexts already used the array type.
+                        // Keep the decayed type on the value for enclosing operators.
+                        return Ok((
+                            vec![body?],
+                            CExpression::Cast {
+                                expression: Box::new(CExpression::Variable(name)),
+                                interface_type: decay_to_pointer(interface_type),
+                                struct_name: None,
+                                pointee_volatile: false,
+                                pointee_constant: false,
+                                explicit_qualification: false,
+                            },
+                        ));
+                    }
                     return Ok((vec![self.lower_statement_calls(*body)?], *value));
                 }
                 // The body runs, then the value is a step the rest of the
@@ -17410,6 +17487,16 @@ impl Parser {
         let cast_position = self.error_context();
         self.position += 1;
         let parsed_type = self.parse_type()?;
+        if self.peek() == Some(&Token::LBracket) {
+            let (interface_type, shape, incomplete) = self.parse_local_array_shape(&parsed_type)?;
+            if shape.is_some_and(|shape| shape.len() != 1) {
+                return Err(self.error_here("array compound literals require one dimension"));
+            }
+            self.expect(Token::RParen)?;
+            let bound = (!incomplete).then(|| interface_type.array_length().expect("array type"));
+            let literal = self.parse_array_compound_literal(parsed_type, bound)?;
+            return self.parse_postfix_tail(literal, true);
+        }
         self.expect(Token::RParen)?;
         if self.peek() == Some(&Token::LBrace) {
             let literal = self.parse_struct_compound_literal(parsed_type)?;
@@ -17564,6 +17651,20 @@ impl Parser {
                 ));
             }
             let target = self.without_bit_field_operands(Self::parse_unary)?;
+            if matches!(
+                target,
+                CExpression::StatementExpression {
+                    aggregate_lvalue: true,
+                    ..
+                }
+            ) && self
+                .source_expression_type(&target)
+                .is_some_and(|ty| ty.array_length().is_some())
+            {
+                return Err(self.error_here(
+                    "address of an array compound literal requires a pointer-to-array type",
+                ));
+            }
             if matches!(target, CExpression::ScalarUpdate { .. }) {
                 return Err(self.error_here("an expression update result is not an lvalue"));
             }
@@ -19633,8 +19734,7 @@ impl Parser {
             if !self.is_type_start() {
                 // `sizeof(expression)`: the operand is not evaluated; only
                 // its type is used, as for GNU `typeof`.
-                let operand =
-                    self.without_bit_field_operands(Self::parse_expression_allow_direct_aggregate)?;
+                let operand = self.parse_unevaluated_type_operand()?;
                 self.expect(Token::RParen)?;
                 if let CExpression::Variable(name) = &operand
                     && self.incomplete_array_names.contains(name)
@@ -19646,10 +19746,14 @@ impl Parser {
                 // size is the whole array's (C11 6.3.2.1p3, 6.5.3.4p2).
                 if matches!(
                     &operand,
-                    CExpression::Variable(_) | CExpression::StringLiteral(_)
+                    CExpression::Variable(_)
+                        | CExpression::StringLiteral(_)
+                        | CExpression::StatementExpression {
+                            aggregate_lvalue: true,
+                            ..
+                        }
                 ) && let Some(interface_type) = self.source_expression_type(&operand)
-                    && !interface_type.is_pointer()
-                    && interface_type.pointee_type().is_some()
+                    && interface_type.array_length().is_some()
                 {
                     return Ok(CExpression::SizeOfType {
                         interface_type,

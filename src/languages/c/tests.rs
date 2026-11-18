@@ -5274,6 +5274,7 @@ fn c_syntax_models_missing_else_and_empty_statements_as_skip() {
             }
             syntax::CStatement::Label { statement, .. } => contains_skip(statement),
             syntax::CStatement::EndAggregateLifetimes { .. }
+            | syntax::CStatement::FillArrayTail { .. }
             | syntax::CStatement::Break
             | syntax::CStatement::Continue
             | syntax::CStatement::Goto { .. }
