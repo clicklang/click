@@ -517,19 +517,25 @@ pub(crate) fn rust_iterator_method(
                 .clone()
                 .ok_or("missing count binding for enumerated iterator")?,
         ),
-        (K::Range, "start") => variable("start"),
-        (K::Range, "end") => variable("end"),
-        (K::RangeInclusive, "start()") => variable("start"),
-        (K::RangeInclusive, "end()") => variable("end"),
-        (K::RangeInclusive, "is_empty()") => {
-            return proposition_bool_value(ClickProposition::Comparison {
-                left: ContractExpression::ProgramExpression(variable("start")),
-                operator: ComparisonOperator::GreaterThan,
-                right: ContractExpression::ProgramExpression(variable("end")),
-            });
-        }
-        (K::Range, "len()") => {
-            ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
+        (K::Range, "start" | "end" | "len()")
+        | (K::RangeInclusive, "start()" | "end()" | "is_empty()") => {
+            let [start, end] = iterator
+                .range_bounds
+                .clone()
+                .ok_or("missing range bounds")?
+                .map(ProgramExpression::Variable);
+            match accessor {
+                "start" | "start()" => start,
+                "end" | "end()" => end,
+                "len()" => ProgramExpression::Subtract(Box::new(end), Box::new(start)),
+                _ => {
+                    return proposition_bool_value(ClickProposition::Comparison {
+                        left: ContractExpression::ProgramExpression(start),
+                        operator: ComparisonOperator::GreaterThan,
+                        right: ContractExpression::ProgramExpression(end),
+                    });
+                }
+            }
         }
         // A slice field reads as a slice parameter does: `iter.v` is its
         // data and `iter.v.len()` its length.
@@ -578,25 +584,25 @@ pub(crate) fn rust_iterator_method(
 pub(crate) fn rust_iterator_spelling(
     iterators: &[Option<crate::languages::interface::RustLoopIterator>],
     current: Option<usize>,
-    name: &str,
+    name: &crate::kernel::BindingName,
 ) -> Option<String> {
-    iterators.iter().enumerate().find_map(|(index, iterator)| {
-        let iterator = iterator.as_ref()?;
+    let variable = ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone()));
+    let accessor_of = |iterator: &crate::languages::interface::RustLoopIterator| {
         rust_iterator_accessors(iterator.kind)
             .iter()
-            .find_map(|accessor| {
-                (rust_iterator_method(iterator, accessor).ok()?
-                    == ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                        (name.to_string()).into(),
-                    )))
-                .then(|| {
-                    if current == Some(index) {
-                        format!("iter.{accessor}")
-                    } else {
-                        format!("loop({index}).iter.{accessor}")
-                    }
-                })
+            .find(|accessor| {
+                rust_iterator_method(iterator, accessor).ok().as_ref() == Some(&variable)
             })
+    };
+    if let Some(index) = current
+        && let Some(Some(iterator)) = iterators.get(index)
+        && let Some(accessor) = accessor_of(iterator)
+    {
+        return Some(format!("iter.{accessor}"));
+    }
+    iterators.iter().enumerate().find_map(|(index, iterator)| {
+        let accessor = accessor_of(iterator.as_ref()?)?;
+        Some(format!("loop({index}).iter.{accessor}"))
     })
 }
 

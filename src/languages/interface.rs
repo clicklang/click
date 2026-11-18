@@ -1855,6 +1855,7 @@ pub struct RustLoopIterator {
     pub local: String,
     pub kind: RustIteratorKind,
     pub(crate) count_binding: Option<crate::kernel::BindingName>,
+    pub(crate) range_bounds: Option<[crate::kernel::BindingName; 2]>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -1870,10 +1871,9 @@ pub enum RustIteratorKind {
     /// and `_chunk_size`, which a proof reads as `iter.v`, `iter.v.len()`,
     /// `iter.rem`, `iter.rem.len()` and `iter.chunk_size`.
     Chunks,
-    /// `Range`: `_start` and `_end`.
+    /// `Range`: its start and end bounds.
     Range,
-    /// `RangeInclusive`: `_start`, `_end`, and `_done`, whether it has
-    /// yielded its end.
+    /// `RangeInclusive`: its start and end bounds, which can represent emptiness.
     RangeInclusive,
     /// A crate's own struct that implements `Iterator`: the struct itself,
     /// whose `next` the loop calls. A proof reads its fields as the

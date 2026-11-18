@@ -195,6 +195,227 @@ fn nested_enum_field_type(
     Ok(Some(InterfaceType::Parameter(EnumTypes::get(field)?)))
 }
 
+fn enum_construct(
+    name: &str,
+    variant: &str,
+    fields: impl IntoIterator<Item = Result<ProgramExpression, String>>,
+) -> Result<ProgramExpression, String> {
+    let enum_type = EnumTypes::get(name)?;
+    let declared = enum_type
+        .algebraic_type()
+        .variants
+        .iter()
+        .find(|declared| declared.name == variant)
+        .map(|declared| declared.fields.clone())
+        .ok_or_else(|| format!("unknown variant `{variant}` of a Rust enum"))?;
+    // A field is converted to its declared type as an assignment is.
+    let fields = fields
+        .into_iter()
+        .zip(&declared)
+        .map(|(field, declared)| {
+            let value = field?;
+            Ok(match declared {
+                AlgebraicValueType::Program(interface_type) => {
+                    crate::kernel::program_expression::cast(value, *interface_type)
+                }
+                _ => value,
+            })
+        })
+        .collect::<Result<_, String>>()?;
+    Ok(ProgramExpression::EnumConstruct {
+        enum_type,
+        variant: variant.into(),
+        fields,
+    })
+}
+
+/// Lower the Rust panic checks for already prepared binary operands.
+fn binary_checks(
+    operator: &str,
+    left_type: &Type,
+    right_type: &Type,
+    left_operand: &ProgramExpression,
+    right_operand: &ProgramExpression,
+) -> Result<ProgramStatement, String> {
+    let mut prefix = program_skip();
+    if matches!(left_type, Type::Usize | Type::U64) {
+        let l = left_operand.clone();
+        let r = right_operand.clone();
+        let max = crate::kernel::program_expression::uint64_literal(u64::MAX);
+        // Stay unsigned at the full target width. Widening to
+        // signed i64 would lose half of the usize value range.
+        let obligation = match operator {
+            "add" => Some(crate::kernel::program_expression::less_equal(
+                l,
+                crate::kernel::program_expression::subtract(max, r),
+            )),
+            "sub" => Some(crate::kernel::program_expression::greater_equal(l, r)),
+            "mul" => Some(crate::kernel::program_expression::or(
+                crate::kernel::program_expression::equal(
+                    r.clone(),
+                    crate::kernel::program_expression::uint64_literal(0),
+                ),
+                crate::kernel::program_expression::less_equal(
+                    l,
+                    crate::kernel::program_expression::divide(max, r),
+                ),
+            )),
+            "shl" | "shr" => Some(crate::kernel::program_expression::less_than(
+                crate::kernel::program_expression::cast(r, ProgramType::UInt64),
+                crate::kernel::program_expression::uint64_literal(64),
+            )),
+            _ => None,
+        };
+        if let Some(obligation) = obligation {
+            prefix = program_seq(
+                prefix,
+                program_labeled_assert(obligation, format!("Rust {operator} panic check")),
+            );
+        }
+    }
+    // A signed shift panics in Rust unless its count is below
+    // the operand's width. C checks only the promoted word's
+    // width, which for `i8` and `i16` is 32, so the check is
+    // explicit; a negative count is a large unsigned one.
+    if left_type.is_signed_integer() && matches!(operator, "shl" | "shr") {
+        let width = left_type
+            .integer_bits()
+            .ok_or("Rust signed shift operand has no width")?;
+        let count = right_operand.clone();
+        let obligation = if right_type.integer_bits() == Some(64) {
+            crate::kernel::program_expression::less_than(
+                crate::kernel::program_expression::cast(count, ProgramType::UInt64),
+                crate::kernel::program_expression::uint64_literal(width.into()),
+            )
+        } else {
+            crate::kernel::program_expression::less_than(
+                crate::kernel::program_expression::cast(count, ProgramType::UInt32),
+                crate::kernel::program_expression::uint32_literal(width),
+            )
+        };
+        prefix = program_seq(
+            prefix,
+            program_labeled_assert(obligation, format!("Rust {operator} panic check")),
+        );
+    }
+    // Narrow signed arithmetic is computed in `int`, where it
+    // cannot overflow; Rust panics unless the result fits.
+    if matches!(left_type, Type::I8 | Type::I16) && matches!(operator, "add" | "sub" | "mul") {
+        let l = crate::kernel::program_expression::cast(left_operand.clone(), ProgramType::Int32);
+        let r = crate::kernel::program_expression::cast(right_operand.clone(), ProgramType::Int32);
+        let (minimum, maximum) = match left_type {
+            Type::I8 => (i8::MIN as i64, i8::MAX as i64),
+            _ => (i16::MIN as i64, i16::MAX as i64),
+        };
+        let wide = |value: ProgramExpression| {
+            crate::kernel::program_expression::cast(value, ProgramType::Int64)
+        };
+        let value = match operator {
+            "add" => crate::kernel::program_expression::add(wide(l), wide(r)),
+            "sub" => crate::kernel::program_expression::subtract(wide(l), wide(r)),
+            _ => crate::kernel::program_expression::multiply(wide(l), wide(r)),
+        };
+        prefix = program_seq(
+            prefix,
+            program_labeled_assert(
+                crate::kernel::program_expression::and(
+                    crate::kernel::program_expression::greater_equal(
+                        value.clone(),
+                        crate::kernel::program_expression::int64_literal(minimum),
+                    ),
+                    crate::kernel::program_expression::less_equal(
+                        value,
+                        crate::kernel::program_expression::int64_literal(maximum),
+                    ),
+                ),
+                format!("Rust {operator} panic check"),
+            ),
+        );
+    }
+    // So is narrow signed division: `MIN / -1` fits `int`, but
+    // Rust panics on it, and on its remainder.
+    if matches!(left_type, Type::I8 | Type::I16) && matches!(operator, "div" | "rem") {
+        let minimum = match left_type {
+            Type::I8 => i8::MIN as i32,
+            _ => i16::MIN as i32,
+        };
+        let l = crate::kernel::program_expression::cast(left_operand.clone(), ProgramType::Int32);
+        let r = crate::kernel::program_expression::cast(right_operand.clone(), ProgramType::Int32);
+        prefix = program_seq(
+            prefix,
+            program_labeled_assert(
+                crate::kernel::program_expression::not(crate::kernel::program_expression::and(
+                    crate::kernel::program_expression::equal(
+                        l,
+                        crate::kernel::program_expression::int32_literal(minimum as u32),
+                    ),
+                    crate::kernel::program_expression::equal(
+                        r,
+                        crate::kernel::program_expression::int32_literal(-1i32 as u32),
+                    ),
+                )),
+                format!("Rust {operator} panic check"),
+            ),
+        );
+    }
+    if matches!(left_type, Type::U8 | Type::U16 | Type::U32) {
+        let l = crate::kernel::program_expression::cast(left_operand.clone(), ProgramType::UInt32);
+        let r = crate::kernel::program_expression::cast(right_operand.clone(), ProgramType::UInt32);
+        let width = match left_type {
+            Type::U8 => 8,
+            Type::U16 => 16,
+            _ => 32,
+        };
+        let maximum = match left_type {
+            Type::U8 => 255,
+            Type::U16 => 65535,
+            _ => u32::MAX,
+        };
+        let max = crate::kernel::program_expression::uint32_literal(maximum);
+        // Stay unsigned, as `usize` does: `max - r` cannot wrap,
+        // and a guard such as `l < n` then bounds `l` directly.
+        let obligation = match operator {
+            "add" => Some(crate::kernel::program_expression::less_equal(
+                l,
+                crate::kernel::program_expression::subtract(max.clone(), r),
+            )),
+            "sub" => Some(crate::kernel::program_expression::greater_equal(l, r)),
+            "mul" => Some(crate::kernel::program_expression::or(
+                crate::kernel::program_expression::equal(
+                    r.clone(),
+                    crate::kernel::program_expression::uint32_literal(0),
+                ),
+                crate::kernel::program_expression::less_equal(
+                    l,
+                    crate::kernel::program_expression::divide(max, r),
+                ),
+            )),
+            "shl" | "shr" => Some(if right_type.integer_bits() == Some(64) {
+                crate::kernel::program_expression::less_than(
+                    crate::kernel::program_expression::cast(
+                        right_operand.clone(),
+                        ProgramType::UInt64,
+                    ),
+                    crate::kernel::program_expression::uint64_literal(width),
+                )
+            } else {
+                crate::kernel::program_expression::less_than(
+                    r,
+                    crate::kernel::program_expression::uint32_literal(width as u32),
+                )
+            }),
+            _ => None,
+        };
+        if let Some(obligation) = obligation {
+            prefix = program_seq(
+                prefix,
+                program_labeled_assert(obligation, format!("Rust {operator} panic check")),
+            );
+        }
+    }
+    Ok(prefix)
+}
+
 fn binary_value(
     operator: &str,
     left_type: &Type,
@@ -1016,7 +1237,7 @@ struct Context<'a> {
     declaration_sites: Vec<(BindingName, u32)>,
     shared_array_iterators: BTreeMap<String, ProgramType>,
     /// The range locals, with their element type.
-    ranges: BTreeMap<String, (Type, bool)>,
+    ranges: BTreeMap<String, ranges::RangeStorage>,
     /// The count of each enumerated slice iterator and the index of each yielded Option.
     enumerate_fields: BTreeMap<String, BindingName>,
     shared_array_options: BTreeMap<String, ProgramType>,
@@ -2024,219 +2245,20 @@ impl Context<'_> {
                 )?;
                 let (right_capture, right_operand, right_read) =
                     self.read_operand(right_value, right_type, no_effect(&right_prefix))?;
-                let mut prefix = program_seq(
+                let prefix = program_seq(
                     program_seq(left_prefix, left_capture),
                     program_seq(right_prefix, right_capture),
                 );
-                if matches!(left_type, Type::Usize | Type::U64) {
-                    let l = left_operand.clone();
-                    let r = right_operand.clone();
-                    let max = crate::kernel::program_expression::uint64_literal(u64::MAX);
-                    // Stay unsigned at the full target width. Widening to
-                    // signed i64 would lose half of the usize value range.
-                    let obligation = match operator.as_str() {
-                        "add" => Some(crate::kernel::program_expression::less_equal(
-                            l,
-                            crate::kernel::program_expression::subtract(max, r),
-                        )),
-                        "sub" => Some(crate::kernel::program_expression::greater_equal(l, r)),
-                        "mul" => Some(crate::kernel::program_expression::or(
-                            crate::kernel::program_expression::equal(
-                                r.clone(),
-                                crate::kernel::program_expression::uint64_literal(0),
-                            ),
-                            crate::kernel::program_expression::less_equal(
-                                l,
-                                crate::kernel::program_expression::divide(max, r),
-                            ),
-                        )),
-                        "shl" | "shr" => Some(crate::kernel::program_expression::less_than(
-                            crate::kernel::program_expression::cast(r, ProgramType::UInt64),
-                            crate::kernel::program_expression::uint64_literal(64),
-                        )),
-                        _ => None,
-                    };
-                    if let Some(obligation) = obligation {
-                        prefix = program_seq(
-                            prefix,
-                            program_labeled_assert(
-                                obligation,
-                                format!("Rust {operator} panic check"),
-                            ),
-                        );
-                    }
-                }
-                // A signed shift panics in Rust unless its count is below
-                // the operand's width. C checks only the promoted word's
-                // width, which for `i8` and `i16` is 32, so the check is
-                // explicit; a negative count is a large unsigned one.
-                if left_type.is_signed_integer() && matches!(operator.as_str(), "shl" | "shr") {
-                    let width = left_type
-                        .integer_bits()
-                        .ok_or("Rust signed shift operand has no width")?;
-                    let count = right_operand.clone();
-                    let obligation = if right_type.integer_bits() == Some(64) {
-                        crate::kernel::program_expression::less_than(
-                            crate::kernel::program_expression::cast(count, ProgramType::UInt64),
-                            crate::kernel::program_expression::uint64_literal(width.into()),
-                        )
-                    } else {
-                        crate::kernel::program_expression::less_than(
-                            crate::kernel::program_expression::cast(count, ProgramType::UInt32),
-                            crate::kernel::program_expression::uint32_literal(width),
-                        )
-                    };
-                    prefix = program_seq(
-                        prefix,
-                        program_labeled_assert(obligation, format!("Rust {operator} panic check")),
-                    );
-                }
-                // Narrow signed arithmetic is computed in `int`, where it
-                // cannot overflow; Rust panics unless the result fits.
-                if matches!(left_type, Type::I8 | Type::I16)
-                    && matches!(operator.as_str(), "add" | "sub" | "mul")
-                {
-                    let l = crate::kernel::program_expression::cast(
-                        left_operand.clone(),
-                        ProgramType::Int32,
-                    );
-                    let r = crate::kernel::program_expression::cast(
-                        right_operand.clone(),
-                        ProgramType::Int32,
-                    );
-                    let (minimum, maximum) = match left_type {
-                        Type::I8 => (i8::MIN as i64, i8::MAX as i64),
-                        _ => (i16::MIN as i64, i16::MAX as i64),
-                    };
-                    let wide = |value: ProgramExpression| {
-                        crate::kernel::program_expression::cast(value, ProgramType::Int64)
-                    };
-                    let value = match operator.as_str() {
-                        "add" => crate::kernel::program_expression::add(wide(l), wide(r)),
-                        "sub" => crate::kernel::program_expression::subtract(wide(l), wide(r)),
-                        _ => crate::kernel::program_expression::multiply(wide(l), wide(r)),
-                    };
-                    prefix = program_seq(
-                        prefix,
-                        program_labeled_assert(
-                            crate::kernel::program_expression::and(
-                                crate::kernel::program_expression::greater_equal(
-                                    value.clone(),
-                                    crate::kernel::program_expression::int64_literal(minimum),
-                                ),
-                                crate::kernel::program_expression::less_equal(
-                                    value,
-                                    crate::kernel::program_expression::int64_literal(maximum),
-                                ),
-                            ),
-                            format!("Rust {operator} panic check"),
-                        ),
-                    );
-                }
-                // So is narrow signed division: `MIN / -1` fits `int`, but
-                // Rust panics on it, and on its remainder.
-                if matches!(left_type, Type::I8 | Type::I16)
-                    && matches!(operator.as_str(), "div" | "rem")
-                {
-                    let minimum = match left_type {
-                        Type::I8 => i8::MIN as i32,
-                        _ => i16::MIN as i32,
-                    };
-                    let l = crate::kernel::program_expression::cast(
-                        left_operand.clone(),
-                        ProgramType::Int32,
-                    );
-                    let r = crate::kernel::program_expression::cast(
-                        right_operand.clone(),
-                        ProgramType::Int32,
-                    );
-                    prefix = program_seq(
-                        prefix,
-                        program_labeled_assert(
-                            crate::kernel::program_expression::not(
-                                crate::kernel::program_expression::and(
-                                    crate::kernel::program_expression::equal(
-                                        l,
-                                        crate::kernel::program_expression::int32_literal(
-                                            minimum as u32,
-                                        ),
-                                    ),
-                                    crate::kernel::program_expression::equal(
-                                        r,
-                                        crate::kernel::program_expression::int32_literal(
-                                            -1i32 as u32,
-                                        ),
-                                    ),
-                                ),
-                            ),
-                            format!("Rust {operator} panic check"),
-                        ),
-                    );
-                }
-                if matches!(left_type, Type::U8 | Type::U16 | Type::U32) {
-                    let l = crate::kernel::program_expression::cast(
-                        left_operand.clone(),
-                        ProgramType::UInt32,
-                    );
-                    let r = crate::kernel::program_expression::cast(
-                        right_operand.clone(),
-                        ProgramType::UInt32,
-                    );
-                    let width = match left_type {
-                        Type::U8 => 8,
-                        Type::U16 => 16,
-                        _ => 32,
-                    };
-                    let maximum = match left_type {
-                        Type::U8 => 255,
-                        Type::U16 => 65535,
-                        _ => u32::MAX,
-                    };
-                    let max = crate::kernel::program_expression::uint32_literal(maximum);
-                    // Stay unsigned, as `usize` does: `max - r` cannot wrap,
-                    // and a guard such as `l < n` then bounds `l` directly.
-                    let obligation = match operator.as_str() {
-                        "add" => Some(crate::kernel::program_expression::less_equal(
-                            l,
-                            crate::kernel::program_expression::subtract(max.clone(), r),
-                        )),
-                        "sub" => Some(crate::kernel::program_expression::greater_equal(l, r)),
-                        "mul" => Some(crate::kernel::program_expression::or(
-                            crate::kernel::program_expression::equal(
-                                r.clone(),
-                                crate::kernel::program_expression::uint32_literal(0),
-                            ),
-                            crate::kernel::program_expression::less_equal(
-                                l,
-                                crate::kernel::program_expression::divide(max, r),
-                            ),
-                        )),
-                        "shl" | "shr" => Some(if right_type.integer_bits() == Some(64) {
-                            crate::kernel::program_expression::less_than(
-                                crate::kernel::program_expression::cast(
-                                    right_operand.clone(),
-                                    ProgramType::UInt64,
-                                ),
-                                crate::kernel::program_expression::uint64_literal(width),
-                            )
-                        } else {
-                            crate::kernel::program_expression::less_than(
-                                r,
-                                crate::kernel::program_expression::uint32_literal(width as u32),
-                            )
-                        }),
-                        _ => None,
-                    };
-                    if let Some(obligation) = obligation {
-                        prefix = program_seq(
-                            prefix,
-                            program_labeled_assert(
-                                obligation,
-                                format!("Rust {operator} panic check"),
-                            ),
-                        );
-                    }
-                }
+                let prefix = program_seq(
+                    prefix,
+                    binary_checks(
+                        operator,
+                        left_type,
+                        right_type,
+                        &left_operand,
+                        &right_operand,
+                    )?,
+                );
                 Ok((
                     prefix,
                     binary_value(operator, left_type, right_type, left_read, right_read)?,
@@ -2599,36 +2621,7 @@ impl Context<'_> {
                 name,
                 variant,
                 fields,
-            } => {
-                let enum_type = EnumTypes::get(name)?;
-                let declared = enum_type
-                    .algebraic_type()
-                    .variants
-                    .iter()
-                    .find(|declared| declared.name == *variant)
-                    .map(|declared| declared.fields.clone())
-                    .ok_or_else(|| format!("unknown variant `{variant}` of a Rust enum"))?;
-                // A field is converted to its declared type as an assignment
-                // is: a `bool` operand is an `int` until it is stored.
-                let fields = fields
-                    .iter()
-                    .zip(&declared)
-                    .map(|(field, declared)| {
-                        let value = self.expr(field)?;
-                        Ok(match declared {
-                            AlgebraicValueType::Program(interface_type) => {
-                                crate::kernel::program_expression::cast(value, *interface_type)
-                            }
-                            _ => value,
-                        })
-                    })
-                    .collect::<Result<_, String>>()?;
-                Ok(ProgramExpression::EnumConstruct {
-                    enum_type,
-                    variant: variant.clone(),
-                    fields,
-                })
-            }
+            } => enum_construct(name, variant, fields.iter().map(|field| self.expr(field))),
             E::EnumField {
                 base,
                 variant,

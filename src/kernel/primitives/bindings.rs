@@ -83,6 +83,8 @@ enum LocalBindingKind {
     Temporary,
     LoopEscape,
     EnumerateCount,
+    RangeStart,
+    RangeEnd,
 }
 
 #[derive(Debug)]
@@ -158,8 +160,29 @@ impl LocalBindingId {
         }))
     }
 
-    pub(crate) fn is_enumerate_count(&self) -> bool {
-        self.0.kind == LocalBindingKind::EnumerateCount
+    pub(crate) fn range_bounds(owner: LocalFunctionId, ordinal: u32, ty: ProgramType) -> [Self; 2] {
+        [LocalBindingKind::RangeStart, LocalBindingKind::RangeEnd].map(|kind| {
+            Self(Arc::new(LocalDeclaration {
+                owner: owner.clone(),
+                parameter: false,
+                kind,
+                ordinal,
+                scope_depth: 0,
+                spelling: None,
+                program_type: OnceLock::from(ty),
+                array_shape: OnceLock::new(),
+                struct_name: OnceLock::new(),
+            }))
+        })
+    }
+
+    pub(crate) fn is_iterator_field(&self) -> bool {
+        matches!(
+            self.0.kind,
+            LocalBindingKind::EnumerateCount
+                | LocalBindingKind::RangeStart
+                | LocalBindingKind::RangeEnd
+        )
     }
 
     pub fn is_temporary(&self) -> bool {
@@ -258,6 +281,8 @@ impl Hash for LocalBindingId {
             LocalBindingKind::Temporary => (&self.0.owner, 2u8, self.0.ordinal).hash(state),
             LocalBindingKind::LoopEscape => (&self.0.owner, 3u8, self.0.ordinal).hash(state),
             LocalBindingKind::EnumerateCount => (&self.0.owner, 4u8, self.0.ordinal).hash(state),
+            LocalBindingKind::RangeStart => (&self.0.owner, 5u8, self.0.ordinal).hash(state),
+            LocalBindingKind::RangeEnd => (&self.0.owner, 6u8, self.0.ordinal).hash(state),
         }
     }
 }
@@ -292,8 +317,22 @@ impl std::fmt::Display for CanonicalLocalBinding<'_> {
         if id.0.kind == LocalBindingKind::LoopEscape {
             return f.write_str("<loop escape>");
         }
-        if id.is_enumerate_count() {
-            return f.write_str("<enumeration count>");
+        let range_bound = match id.0.kind {
+            LocalBindingKind::EnumerateCount => return f.write_str("<enumeration count>"),
+            LocalBindingKind::RangeStart => Some("start"),
+            LocalBindingKind::RangeEnd => Some("end"),
+            _ => None,
+        };
+        if let Some(bound) = range_bound {
+            // The fallback includes the declaration identity so symbolic
+            // storage renderings can distinguish different ranges.
+            return write!(
+                f,
+                "<range {bound} of {:?}::{}.local({})>",
+                id.source(),
+                id.function(),
+                id.ordinal()
+            );
         }
         if let Some(source) = id.source() {
             write!(f, "{source:?}::")?;

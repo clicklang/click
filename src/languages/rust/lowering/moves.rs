@@ -194,7 +194,14 @@ pub(super) fn lower(
         if let Type::Range { element, inclusive } = &local.value_type {
             declarations = program_seq(
                 declarations,
-                cx.range_storage(&local.name, element, *inclusive)?,
+                cx.range_storage(
+                    &local.name,
+                    element,
+                    *inclusive,
+                    owner,
+                    u32::try_from(index - owned_parameter_count)
+                        .map_err(|_| "MIR local index exceeds u32")?,
+                )?,
             );
             continue;
         }
@@ -1213,6 +1220,7 @@ fn loop_iterator(
                 local,
                 kind: K::User,
                 count_binding: None,
+                range_bounds: None,
             });
         }
     }
@@ -1228,16 +1236,7 @@ fn loop_iterator(
                 S::EnumerateNext { iterator, .. } => (iterator, K::Enumerate),
                 S::ChunkNext { iterator, .. } => (iterator, K::Chunks),
                 S::RangeNext { iterator, .. } => {
-                    let inclusive = mir.locals.iter().any(|local| {
-                        local.name == *iterator
-                            && matches!(
-                                local.value_type,
-                                Type::Range {
-                                    inclusive: true,
-                                    ..
-                                }
-                            )
-                    });
+                    let inclusive = cx.ranges.get(iterator)?.inclusive;
                     (
                         iterator,
                         if inclusive {
@@ -1252,6 +1251,7 @@ fn loop_iterator(
             Some(RustLoopIterator {
                 local: local.clone(),
                 kind,
+                range_bounds: cx.ranges.get(local).map(|range| range.bounds.clone()),
                 count_binding: if kind == K::Enumerate {
                     cx.enumerate_fields.get(local).cloned()
                 } else {
