@@ -2,7 +2,7 @@
 use super::*;
 
 #[test]
-fn verified_call_write_requirement_building_does_not_visit_live_loans() {
+fn verified_call_loan_requirement_building_does_not_visit_live_loans() {
     let effects = [MemoryRange::new(pointer(), 0u32.into(), 1u32.into())];
     let samples = [4, 16, 64].map(|count| {
         let mut ledger = LoanLedger::new();
@@ -22,11 +22,12 @@ fn verified_call_write_requirement_building_does_not_visit_live_loans() {
         }
         let memory = SymbolicMemory::new();
         let (requirements, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verified_call_write_requirements(
+            verified_call_loan_requirements(
                 Some(&ledger),
                 &effects,
                 || CallRequirementSite::for_requirement("write", "write", 0, &[], &memory),
                 0,
+                "verified call allocation retirement separation",
             )
         });
         assert_eq!(requirements.len(), 1);

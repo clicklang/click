@@ -3360,6 +3360,15 @@ fn execute_verified_function_applications_with_suspension(
         // lends; the caller's other active loans (its own contract inputs,
         // an enclosing call's loans) are checked here, so a summary can
         // never havoc memory that is lent elsewhere.
+        let call_site = || {
+            CallRequirementSite::for_requirement(
+                name,
+                interface_name,
+                candidate_ordinal,
+                arguments,
+                caller_state.memory(),
+            )
+        };
         let write_requirements = if suspended.is_some()
             || application.representation_copy.is_some()
             || !has_exact_write_ranges
@@ -3385,19 +3394,12 @@ fn execute_verified_function_applications_with_suspension(
             }
             Vec::new()
         } else {
-            verified_call_write_requirements(
+            verified_call_loan_requirements(
                 caller_state.loan_ledger(),
                 &transfer.memory_effects,
-                || {
-                    CallRequirementSite::for_requirement(
-                        name,
-                        interface_name,
-                        candidate_ordinal,
-                        arguments,
-                        caller_state.memory(),
-                    )
-                },
+                call_site,
                 interface.contract_requires().len(),
+                "verified call write separation",
             )
         };
         // A checked mutex-use call may execute runtime lock/unlock operations.
@@ -4563,7 +4565,11 @@ fn execute_verified_function_applications_with_suspension(
             &output_resources,
             interface,
             &allocation_assumptions,
-            post_state.loan_ledger(),
+            if suspended.is_some() {
+                post_state.loan_ledger()
+            } else {
+                None
+            },
             caller_state,
             &post_state,
         );
@@ -4571,7 +4577,7 @@ fn execute_verified_function_applications_with_suspension(
         let VerifiedAllocationDelta {
             memory,
             effects: allocation_effects,
-            retired_creations,
+            retired_allocations,
             continued_tokens,
         } = match allocation_delta {
             Ok(result) => result,
@@ -4600,10 +4606,11 @@ fn execute_verified_function_applications_with_suspension(
         };
         facts.extend(allocation_effects);
         post_state.set_memory(memory);
-        if let Some(error) = retired_creations
-            .into_iter()
-            .find_map(|block| post_state.retire_population_storage(&block).err())
-        {
+        if let Some(error) = retired_allocations.iter().find_map(|range| {
+            post_state
+                .retire_population_storage(&range.base().base)
+                .err()
+        }) {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(error),
                 facts,
@@ -5096,6 +5103,18 @@ fn execute_verified_function_applications_with_suspension(
             path.obligations.extend(write_requirements.iter().cloned());
         }
         obligations.extend(write_requirements);
+        // The retirement ranges are the consumed allocation tokens at
+        // entry. Return facts may decide continuity, but they cannot prove
+        // that retiring one of those allocations was permitted.
+        if suspended.is_none() {
+            obligations.extend(verified_call_loan_requirements(
+                entry_state.loan_ledger(),
+                &retired_allocations,
+                call_site,
+                interface.contract_requires().len() + transfer.memory_effects.len(),
+                "verified call allocation retirement separation",
+            ));
+        }
         paths.push(FunctionPath {
             outcome,
             facts,
@@ -5122,11 +5141,12 @@ fn execute_verified_function_applications_with_suspension(
     Ok(paths)
 }
 
-fn verified_call_write_requirements(
+fn verified_call_loan_requirements(
     ledger: Option<&LoanLedger>,
     effects: &[MemoryRange],
     call_site: impl FnOnce() -> CallRequirementSite,
     first_ordinal: usize,
+    context: &str,
 ) -> Vec<ProofObligation> {
     let Some(ledger) = ledger else {
         return Vec::new();
@@ -5154,7 +5174,7 @@ fn verified_call_write_requirements(
                     false,
                     None,
                 )))
-                .with_context("verified call write separation")
+                .with_context(context)
         })
         .collect()
 }
@@ -9689,34 +9709,6 @@ fn allocation_continuity(
 #[cfg(test)]
 mod allocation_continuity_tests;
 
-/// A callee that retires an allocation identity, by a definite free or by a
-/// contract that leaves continuity undecided, gives up every byte of it; a
-/// live loan over any of those bytes forbids that exactly as a direct `free`
-/// would (D6, D10). Every retire path consults the ledger that carries this
-/// call's own loans, because lending has already removed the owner from the
-/// preserved caller residual.
-fn refuse_retiring_a_lent_allocation(
-    ledger: Option<&LoanLedger>,
-    base: &Address,
-    bytes: &AllocationSize,
-    assumptions: &PureFactContext,
-) -> Result<(), VerifiedAllocationDeltaError> {
-    let Some(ledger) = ledger else {
-        return Ok(());
-    };
-    let whole_allocation = bytes.byte_range(base.clone());
-    match ledger.memory_access_refusal(
-        &whole_allocation,
-        assumptions,
-        LoanRefusalOperation::MemoryAccess,
-    ) {
-        Some(diagnostic) => Err(VerifiedAllocationDeltaError::Runtime(
-            RuntimeError::LoanRefusal(Box::new(diagnostic)),
-        )),
-        None => Ok(()),
-    }
-}
-
 /// The resource the caller keeps across a call that could still refer to an
 /// allocation the call retires, or `None` when every kept resource is known
 /// separate from it.
@@ -9804,12 +9796,12 @@ fn apply_verified_heap_allocation_delta(
     output_resources: &ResourceContext,
     interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
-    ledger: Option<&LoanLedger>,
+    worker_ledger: Option<&LoanLedger>,
     mutex_state: &ExecutionState,
     output_state: &ExecutionState,
 ) -> Result<VerifiedAllocationDelta, VerifiedAllocationDeltaError> {
     let mut effects = Vec::new();
-    let mut retired_creations = Vec::new();
+    let mut retired_allocations = Vec::new();
     let mut continued_tokens = Vec::new();
     // What the callee consumed is read where it was consumed: at the call's
     // entry. The post-call memory may have rewritten a pointer field the lent
@@ -9850,7 +9842,7 @@ fn apply_verified_heap_allocation_delta(
         .iter()
         .filter_map(|fact| {
             fact.allocation_size()
-                .map(|(base, bytes)| (fact, base.address().clone(), bytes))
+                .map(|(pointer, bytes)| (fact, pointer, bytes))
         })
         .collect::<Vec<_>>();
     // The caller's untouched resources are expanded only when the callee
@@ -9899,7 +9891,8 @@ fn apply_verified_heap_allocation_delta(
         })
         .collect::<Vec<_>>();
 
-    for (fact, base, bytes) in input_allocations {
+    for (fact, pointer, bytes) in input_allocations {
+        let base = pointer.address().clone();
         if output
             .cached_support_exposing_fact(fact, &allocation_assumptions)
             .is_some()
@@ -9946,9 +9939,9 @@ fn apply_verified_heap_allocation_delta(
             .iter()
             .filter(|(output_base, _, _)| !base.blocks_proven_distinct(output_base))
             .collect::<Vec<_>>();
+        let mut continuity_is_undecided = false;
         if !candidates.is_empty() {
             let mut retained = false;
-            let mut continuity_is_undecided = false;
             for (output_base, output_bytes, returned) in candidates {
                 match allocation_continuity(
                     &base,
@@ -9987,51 +9980,9 @@ fn apply_verified_heap_allocation_delta(
             if retained {
                 continue;
             }
-            // A contract that does not decide allocation continuity admits a
-            // deallocating implementation. Therefore no independent caller
-            // resource may still refer to the input allocation. Retire the
-            // consumed allocation occurrence without asserting a C `free`;
-            // the output occurrence is installed below even when it later
-            // proves to have the same pointer value.
-            if continuity_is_undecided {
-                if let Some(resource) = caller_resource_left_stale_by_retirement(
-                    &input,
-                    &preserved,
-                    &base,
-                    &bytes,
-                    &allocation_assumptions,
-                ) {
-                    return Err(VerifiedAllocationDeltaError::Runtime(
-                        RuntimeError::StaleResourceAfterFree {
-                            resource: Box::new(resource.clone()),
-                        },
-                    ));
-                }
-                // Lending removed the owner from the preserved residual, so
-                // the scan above cannot see a view the caller still holds
-                // over these bytes; the ledger can (docs/internals/stable-views.md).
-                refuse_retiring_a_lent_allocation(ledger, &base, &bytes, &allocation_assumptions)?;
-                let allocation_range = bytes.byte_range(base.clone());
-                if let Some(error) = super::mutexes::storage_retirement_refusal(
-                    mutex_state,
-                    &allocation_range,
-                    &allocation_assumptions,
-                ) {
-                    return Err(VerifiedAllocationDeltaError::Runtime(error));
-                }
-
-                memory = memory.retire_contract_heap_allocation_claim(
-                    &base,
-                    bytes.bytes(),
-                    &allocation_assumptions,
-                );
-                retired_creations.push(base.base.clone());
-                continue;
-            }
         }
-        // Only the untransferred caller frame survives independently across
-        // the call. Any such resource that can still refer to an allocation
-        // the contract definitely retires makes this transition unsafe.
+        // Both retirement outcomes give up the input allocation's identity.
+        // A retained caller resource must be separate from its entire extent.
         if let Some(resource) = caller_resource_left_stale_by_retirement(
             &input,
             &preserved,
@@ -10045,8 +9996,20 @@ fn apply_verified_heap_allocation_delta(
                 },
             ));
         }
-        refuse_retiring_a_lent_allocation(ledger, &base, &bytes, &allocation_assumptions)?;
         let allocation_range = bytes.byte_range(base.clone());
+        // Suspended worker admission still checks before publishing its
+        // separately recoverable state. Ordinary calls carry an obligation.
+        if let Some(diagnostic) = worker_ledger.and_then(|ledger| {
+            ledger.memory_access_refusal(
+                &allocation_range,
+                &allocation_assumptions,
+                LoanRefusalOperation::MemoryAccess,
+            )
+        }) {
+            return Err(VerifiedAllocationDeltaError::Runtime(
+                RuntimeError::LoanRefusal(Box::new(diagnostic)),
+            ));
+        }
         if let Some(error) = super::mutexes::storage_retirement_refusal(
             mutex_state,
             &allocation_range,
@@ -10055,7 +10018,20 @@ fn apply_verified_heap_allocation_delta(
             return Err(VerifiedAllocationDeltaError::Runtime(error));
         }
 
-        retired_creations.push(base.base.clone());
+        // The allocation token names the whole object. Spell its extent
+        // through a byte pointer at the root, retaining the original address
+        // and provenance but dropping any narrower pointer bounds.
+        retired_allocations
+            .push(allocation_range.with_pointer_carrier(&pointer.clone().with_root_bounds()));
+        if continuity_is_undecided {
+            // An undecided return admits a free, but does not assert one.
+            memory = memory.retire_contract_heap_allocation_claim(
+                &base,
+                bytes.bytes(),
+                &allocation_assumptions,
+            );
+            continue;
+        }
         let before_free = memory.clone();
         if memory.live_heap_block_size(&base).is_none() {
             memory = memory
@@ -10109,7 +10085,7 @@ fn apply_verified_heap_allocation_delta(
     Ok(VerifiedAllocationDelta {
         memory,
         effects: effects.into(),
-        retired_creations,
+        retired_allocations,
         continued_tokens,
     })
 }
@@ -10133,14 +10109,14 @@ fn with_continued_allocation_tokens(
 }
 
 /// The memory and facts after a verified call's allocation effects, with
-/// the consumed blocks the call retires and, for each returned allocation
+/// the complete ranges of consumed allocations the call retires and, for each returned allocation
 /// token proven to continue a consumed one under another block spelling
 /// (`result` proven equal to `p`), that returned token and the consumed
 /// token it continues.
 struct VerifiedAllocationDelta {
     memory: SymbolicMemory,
     effects: ExecutionFacts,
-    retired_creations: Vec<AddressBase>,
+    retired_allocations: Vec<MemoryRange>,
     continued_tokens: Vec<(ResourceFact, ResourceFact)>,
 }
 
