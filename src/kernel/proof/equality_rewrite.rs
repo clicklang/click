@@ -87,6 +87,9 @@ impl CheckedEqualityRewrite {
     /// A proposed surface spelling may use different load names. Accept it
     /// only through the kernel's checked, corresponding-leaf transport rule.
     pub(crate) fn try_present_as(&mut self, proposed: &Proposition) -> bool {
+        // The result holds the one form of an observation comparison; a
+        // presentation written the other way states the same goal.
+        let proposed = &crate::kernel::assumptions::canonical_observation_form(proposed);
         if proposed == &self.proposition {
             return true;
         }
@@ -3350,7 +3353,11 @@ mod tests {
             assert_eq!(rewrite.proposition(), &raw);
         }
         assert!(rewrite.try_present_as(&folded));
-        assert_eq!(rewrite.proposition(), &folded);
+        // An observation compared with a constant takes its one form.
+        assert_eq!(
+            rewrite.proposition(),
+            &crate::kernel::assumptions::canonical_observation_form(&folded)
+        );
     }
 
     #[test]
