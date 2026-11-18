@@ -2125,7 +2125,7 @@ private:
         result["value_type"] = std::move(*value_type);
       } else if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(left)) {
         const auto *call = llvm::dyn_cast<clang::CallExpr>(member->getBase()->IgnoreParens());
-        if (call != nullptr && binary->getOpcode() == clang::BO_Assign) {
+        if (call != nullptr && !member->isArrow() && binary->getOpcode() == clang::BO_Assign) {
           auto lowered = lower_returned_member(member, call, function);
           if (!lowered) return std::nullopt;
           result["kind"] = "call_store";
@@ -4778,7 +4778,8 @@ private:
     }
     llvm::json::Object result;
     if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(source)) {
-      if (const auto *call = llvm::dyn_cast<clang::CallExpr>(member->getBase()->IgnoreParens())) {
+      if (const auto *call = llvm::dyn_cast<clang::CallExpr>(member->getBase()->IgnoreParens());
+          call != nullptr && !member->isArrow()) {
         auto lowered = lower_returned_member(member, call, function);
         if (!lowered) return std::nullopt;
         llvm::json::Object projection;
