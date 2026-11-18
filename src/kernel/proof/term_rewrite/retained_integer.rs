@@ -4,16 +4,10 @@
 use super::*;
 
 impl TermRewrite<'_> {
-    #[allow(dead_code)] // Term dispatch activation follows its remaining node families.
-    pub(in crate::kernel) fn shared_integer_operand(
+    pub(super) fn reserve_shared_rewrite_variables_once(
         &mut self,
         root: &KernelTerm,
-    ) -> Option<KernelTerm> {
-        if root.ty() != &KernelType::Integer || self.integer_exact.is_some() {
-            // This partial entry point admits variable/typed substitutions.
-            // Exact-source/read-through matching is required before Term use.
-            return None;
-        }
+    ) -> Option<()> {
         if !self.source_variables_reserved {
             let mut variables = self.new_carrier_variables();
             let mut pending = vec![root];
@@ -44,6 +38,20 @@ impl TermRewrite<'_> {
                     KernelTermNode::BoolIf { arguments } => pending.extend(arguments),
                     KernelTermNode::BoolEqual { arguments } => pending.extend(arguments),
                     KernelTermNode::IntegerOperation { arguments, .. } => pending.extend(arguments),
+                    KernelTermNode::IntegerCompare { arguments, .. } => pending.extend(arguments),
+                    KernelTermNode::BoolCompare { arguments, .. }
+                    | KernelTermNode::BoolOverflow { arguments, .. } => {
+                        for operand in arguments {
+                            collect_machine_operand_carriers(
+                                MachineOperandView::Shared(operand),
+                                &mut variables,
+                            );
+                            if variables.exhausted() {
+                                self.reserve_source_variables(variables);
+                                return None;
+                            }
+                        }
+                    }
                     KernelTermNode::MachineObservation { operand, .. } => {
                         collect_machine_operand_carriers(
                             MachineOperandView::Shared(operand),
@@ -59,6 +67,20 @@ impl TermRewrite<'_> {
             }
             self.reserve_source_variables(variables);
         }
+        Some(())
+    }
+
+    #[allow(dead_code)] // Term dispatch activation follows its remaining node families.
+    pub(in crate::kernel) fn shared_integer_operand(
+        &mut self,
+        root: &KernelTerm,
+    ) -> Option<KernelTerm> {
+        if root.ty() != &KernelType::Integer || self.integer_exact.is_some() {
+            // This partial entry point admits variable/typed substitutions.
+            // Exact-source/read-through matching is required before Term use.
+            return None;
+        }
+        self.reserve_shared_rewrite_variables_once(root)?;
         self.visit(); // The native integer entry charges before its shared walk.
         if self.checked_work_exhausted() {
             return None;
@@ -74,6 +96,7 @@ impl TermRewrite<'_> {
         let key = |term: &KernelTerm| (term.id(), scope_id, disabled, shadowed, reads);
         let mut import = KernelTermImport::default();
         let mut pending = vec![(root.clone(), false)];
+        let mut guards = HashMap::new();
         while let Some((term, finish)) = pending.pop() {
             if self.checked_work_exhausted() {
                 return None;
@@ -146,8 +169,9 @@ impl TermRewrite<'_> {
                         return None;
                     }
                     if !finish {
-                        self.shared_boolean_operand(&arguments[0])?;
-                        let guard = memo.borrow()[&key(&arguments[0])].clone();
+                        let guard = self.shared_boolean_operand(&arguments[0])?;
+                        let guard = common_boolean::folded_shared_machine_condition(guard);
+                        guards.insert(term.id(), guard.clone());
                         pending.push((term.clone(), true));
                         if let Some(value) = BooleanOperandView::Shared(&guard).constant() {
                             pending.push((arguments[if value { 1 } else { 2 }].clone(), false));
@@ -157,7 +181,7 @@ impl TermRewrite<'_> {
                         }
                         continue;
                     }
-                    let guard = memo.borrow()[&key(&arguments[0])].clone();
+                    let guard = guards.remove(&term.id()).expect("rewritten Integer guard");
                     if let Some(value) = BooleanOperandView::Shared(&guard).constant() {
                         memo.borrow()[&key(&arguments[if value { 1 } else { 2 }])].clone()
                     } else {
