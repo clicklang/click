@@ -201,7 +201,7 @@ impl ParsedBlocks {
         children
     }
 
-    /// The two arm blocks of a proof `if`, `branch` or `both`.
+    /// The two arm blocks of a proof `if` or `branch` in source order.
     pub(super) fn two_arms(
         &self,
         range: &Range<usize>,
@@ -226,6 +226,20 @@ impl ParsedBlocks {
             ));
         }
         Ok(arms)
+    }
+
+    /// The blocks of `both` in conjunct order, regardless of source order.
+    pub(super) fn both_arms(
+        &self,
+        tokens: &[SourceToken],
+        range: &Range<usize>,
+    ) -> Result<[(usize, usize); 2], ClickError> {
+        let [first, second] = self.two_arms(range, "both")?;
+        if tokens[first.0 - 2].text == "right" {
+            Ok([second, first])
+        } else {
+            Ok([first, second])
+        }
     }
 
     /// The `returned` and `threw` arm blocks of

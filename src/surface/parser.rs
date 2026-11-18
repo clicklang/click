@@ -10490,58 +10490,62 @@ impl Parser {
 
     #[inline(never)]
     fn parse_both_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        let mut nested_both = 0;
-        // The left blocks that hold only a nested `both`, outermost first.
-        let mut nested_left_blocks = Vec::new();
-        let mut left_tactics = Some(loop {
+        // The first-written blocks that hold only a nested `both`,
+        // outermost first. Keep this descent iterative for deep proofs.
+        let mut nested_blocks = Vec::new();
+        let mut first_is_left;
+        let mut first_tactics = loop {
+            let nested_both = nested_blocks.len();
             if nested_both > 0 && self.proof_nesting + nested_both >= STRUCTURAL_NESTING_LIMIT {
                 return Err(self.error(format!(
                     "structural proof nesting exceeds Click's supported depth of {STRUCTURAL_NESTING_LIMIT}"
                 )));
             }
             self.expect(Token::LBrace)?;
-            self.expect_ident_spelling("left")?;
+            first_is_left = match self.peek_ident() {
+                Some("left") => true,
+                Some("right") => false,
+                _ => return Err(self.error("`both` expects a `left` or `right` arm")),
+            };
+            self.position += 1;
             self.expect(Token::FatArrow)?;
             self.expect(Token::LBrace)?;
             if self.peek_ident() == Some("both") {
-                nested_left_blocks.push((
+                nested_blocks.push((
+                    first_is_left,
                     self.positions[self.position - 1].clone(),
                     self.positions[self.position].clone(),
                 ));
                 self.position += 1;
-                nested_both += 1;
             } else {
                 break self.parse_tactics_until_rbrace()?;
             }
-        });
+        };
         self.expect(Token::RBrace)?;
 
-        let mut current = None;
-        for level in 0..=nested_both {
-            self.expect_ident_spelling("right")?;
+        loop {
+            self.expect_ident_spelling(if first_is_left { "right" } else { "left" })?;
             self.expect(Token::FatArrow)?;
-            let right_tactics = self.parse_possibly_empty_tactic_block()?;
+            let second_tactics = self.parse_possibly_empty_tactic_block()?;
             self.expect(Token::RBrace)?;
             self.skip_redundant_semicolon();
-            let left = if let Some(current) = current.take() {
-                vec![current]
+            let (left_tactics, right_tactics) = if first_is_left {
+                (first_tactics, second_tactics)
             } else {
-                left_tactics
-                    .take()
-                    .expect("the deepest both tactic has a left block")
+                (second_tactics, first_tactics)
             };
-            current = Some(ProofTactic::Both(ProofBoth {
-                left_tactics: left,
+            let current = ProofTactic::Both(ProofBoth {
+                left_tactics,
                 right_tactics,
-            }));
-            if level < nested_both {
-                if let Some((open, start)) = nested_left_blocks.pop() {
-                    self.record_proof_block(open, vec![start]);
-                }
-                self.expect(Token::RBrace)?;
-            }
+            });
+            let Some((parent_first_is_left, open, start)) = nested_blocks.pop() else {
+                return Ok(current);
+            };
+            self.record_proof_block(open, vec![start]);
+            self.expect(Token::RBrace)?;
+            first_is_left = parent_first_is_left;
+            first_tactics = vec![current];
         }
-        Ok(current.expect("the both tactic chain has a root"))
     }
 
     /// `have P;`, `have P by solve();` or `have P by { ... }`, after the word
