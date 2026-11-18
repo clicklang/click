@@ -17,6 +17,7 @@ impl ResourceContext {
             memory_equalities: std::sync::Mutex::new(pairings),
             observable_projection: Default::default(),
             storage,
+            framed_origins: self.framed_origins.clone(),
             loan_dependencies: self.loan_dependencies.clone(),
             structural_witnesses: self.structural_witnesses.clone(),
         }
@@ -158,7 +159,7 @@ impl ResourceContext {
         let fact = self.fact(entry);
         let private = fact.is_own()
             && fact.memory_range().is_some_and(|range| {
-                crate::kernel::block_is_never_address_taken_local(&range.base().block)
+                crate::kernel::block_is_never_address_taken_local(&range.base().base)
             });
         self.advance_observable_projection(previous, private, |source, composition| {
             if private {
@@ -294,7 +295,7 @@ mod tests {
 
     fn owner(name: &str) -> ResourceFact {
         ResourceFact::own_memory(MemoryRange::new(
-            Memory::local_pointer(name),
+            SymbolicMemory::local_pointer(name),
             0u32.into(),
             1u32.into(),
         ))

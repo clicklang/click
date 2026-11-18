@@ -19,7 +19,7 @@ fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownershi
     let framed = context
         .clone()
         .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-            Memory::local_pointer("framed_scalar"),
+            SymbolicMemory::local_pointer("framed_scalar"),
             0.into(),
             1.into(),
         )));
@@ -38,9 +38,9 @@ fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownershi
     ));
     let foreign =
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-            Pointer {
-                block: "local:foreign".into(),
-                offset: crate::kernel::PointerOffsetTerm::Constant(0),
+            Address {
+                base: "local:foreign".into(),
+                offset: crate::kernel::AddressOffset::Constant(0),
             },
             0.into(),
             1.into(),
@@ -57,8 +57,8 @@ fn source_state() -> (ExecutionState, ResourceFact) {
         .with_local("anchor", crate::kernel::int32(0))
         .with_population_creation_tracking();
     let pointer = state.locals.slot("anchor").unwrap().clone();
-    state.set_memory(Memory::new().with_block(pointer.block.clone(), 4));
-    state.record_population_storage_creation(pointer.block.clone());
+    state.set_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4));
+    state.record_population_storage_creation(pointer.base.clone());
     let description = crate::kernel::ResourceDescription::new(
         "reference".into(),
         vec![ProgramValue::pointer(pointer).into()].into(),
@@ -89,7 +89,7 @@ fn checked_authority_events_reject_forged_deltas() {
     .unwrap();
     let forged_memory = established
         .clone()
-        .with_memory(Memory::new().with_block("local:forged", 4));
+        .with_memory(SymbolicMemory::new().with_block("local:forged", 4));
     assert!(
         CheckedPopulationAuthorityRewrite::check(
             &before,
@@ -105,8 +105,8 @@ fn checked_authority_events_reject_forged_deltas() {
     let mut forged_event = event.clone();
     forged_event.after_state = forged_memory;
     assert!(forged_event.advance_checked(&before, &facts).is_none());
-    let missing_storage_before = before.clone().with_memory(Memory::new());
-    let missing_storage_after = established.clone().with_memory(Memory::new());
+    let missing_storage_before = before.clone().with_memory(SymbolicMemory::new());
+    let missing_storage_after = established.clone().with_memory(SymbolicMemory::new());
     assert!(
         CheckedPopulationAuthorityRewrite::check(
             &missing_storage_before,
@@ -149,7 +149,7 @@ fn checked_authority_events_reject_forged_deltas() {
         )
         .is_err()
     );
-    let forged_facts = facts.clone().with_fact(Proposition::ConditionIs(
+    let forged_facts = facts.clone().with_fact(Proposition::condition_is(
         crate::kernel::ConditionTerm::Constant(true),
         true,
     ));
@@ -279,7 +279,7 @@ fn checked_member_events_conserve_one_occurrence_and_reject_forged_deltas() {
             &member,
             true,
             &birth,
-            &one.clone().with_memory(Memory::new()),
+            &one.clone().with_memory(SymbolicMemory::new()),
             &facts,
         )
         .is_err()
@@ -306,11 +306,11 @@ fn checked_member_events_conserve_one_occurrence_and_reject_forged_deltas() {
 }
 
 #[test]
-fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
+fn member_exchange_requires_both_external_body_ownership_and_checked_span() {
     let (state, authority) = source_state();
-    let external = crate::kernel::Pointer {
-        block: crate::kernel::PointerBlock::ExternalArgument,
-        offset: crate::kernel::PointerOffsetTerm::Constant(16),
+    let external = crate::kernel::Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(16),
     };
     let Resource::PopulationAuthority(description) = authority.resource() else {
         unreachable!()
@@ -351,19 +351,19 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
             .checked_population_member_exchange(&member, true, &definition, &PureFactContext::new())
             .is_err()
     );
-    let extent = |bytes| Proposition::MemoryLoadable {
+    let span = |bytes| Proposition::MemoryLoadable {
         memory: owned.memory().clone(),
         base: external.clone(),
-        bytes: MachineTerm::constant(bytes),
+        bytes: (MachineTerm::constant(bytes)).into(),
         wide: false,
     };
-    let small = PureFactStore::default().with_fact(extent(1));
+    let small = PureFactStore::default().with_fact(span(1));
     assert!(
         owned
             .checked_population_member_exchange(&member, true, &definition, small.assumptions())
             .is_err()
     );
-    let facts = PureFactStore::default().with_fact(extent(4));
+    let facts = PureFactStore::default().with_fact(span(4));
     assert!(
         empty
             .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
@@ -384,7 +384,7 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
         )
         .is_err()
     );
-    // The checked introduction packaged the extent evidence in the owned
+    // The checked introduction packaged the span evidence in the owned
     // member. Its elimination needs custody, not the original ambient fact.
     let no_facts = PureFactContext::new();
     let (returned, _) = one
@@ -608,7 +608,7 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
         &function, &one, &facts, &member, false, &death, &zero, &exposed,
     )
     .unwrap();
-    let forged_facts = exposed.with_fact(Proposition::ConditionIs(
+    let forged_facts = exposed.with_fact(Proposition::condition_is(
         crate::kernel::ConditionTerm::Constant(false),
         true,
     ));
@@ -628,6 +628,95 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
 }
 
 #[test]
+fn consuming_private_member_publishes_definedness_at_the_current_point() {
+    use crate::kernel::{MemorySegment, SpecExpression, SpecPoint, SpecProposition};
+    use crate::kernel::{int32, program_expression, program_parameter};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let (before, authority) = source_state();
+    let Resource::PopulationAuthority(description) = authority.resource() else {
+        unreachable!()
+    };
+    let member = ResourceFact::own(Resource::Composite {
+        name: description.family().to_owned(),
+        arguments: description.arguments().to_vec().into(),
+    });
+    let pointer = before.locals.slot("anchor").unwrap().clone();
+    let memory = before.memory().clone().store(pointer.clone(), int32(7));
+    let owned = ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0.into(), 1.into()));
+    let before = before
+        .with_memory(memory)
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(owned));
+    let facts = PureFactStore::default();
+    let (before, _) = before
+        .checked_population_authority_exchange(&authority, true, facts.assumptions())
+        .unwrap();
+    let definition = CompositeResourceDefinition::new(
+        "reference",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
+            program_expression::variable("p"),
+            program_expression::int32_literal(0),
+            program_expression::int32_literal(1),
+        ))],
+        vec![SpecProposition::Defined(SpecExpression::MemoryLoad {
+            point: SpecPoint::Current,
+            pointer: Box::new(SpecExpression::ProgramExpression(
+                program_expression::variable("p"),
+            )),
+            value_type: ProgramType::Int32,
+        })],
+    )
+    .with_authorized(true);
+    let function = program_function(
+        ProgramType::Void,
+        "member",
+        vec![],
+        ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
+    )
+    .with_composite_resource_definitions(vec![definition.clone()]);
+    let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {
+        at: Some(state.observation_point_id().unwrap()),
+        memory: state.memory().clone(),
+        pointer: pointer.clone(),
+        value_type: ProgramType::Int32,
+    };
+    let birth_facts = facts.clone().with_fact(defined_at(&before));
+    let (member_state, _) = before
+        .checked_population_member_exchange(&member, true, &definition, birth_facts.assumptions())
+        .unwrap();
+    let consuming = member_state
+        .clone()
+        .with_memory(member_state.memory().clone());
+    assert_ne!(
+        consuming.observation_point_id(),
+        before.observation_point_id()
+    );
+    assert!(consuming.memory().same_storage_roots(before.memory()));
+    let (after, death) = consuming
+        .checked_population_member_exchange(&member, false, &definition, facts.assumptions())
+        .unwrap();
+    let body_facts = crate::kernel::functions::instantiate_private_member_body_facts(
+        &member,
+        &definition,
+        &consuming,
+        facts.assumptions(),
+    )
+    .unwrap();
+    assert_eq!(body_facts.declared, vec![(0, defined_at(&consuming))]);
+    let exposed = body_facts
+        .propositions
+        .into_iter()
+        .fold(facts.clone(), |facts, fact| facts.with_fact(fact));
+    CheckedPopulationMemberRewrite::check(
+        &function, &consuming, &facts, &member, false, &death, &after, &exposed,
+    )
+    .unwrap();
+}
+
+#[test]
 fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
     use crate::kernel::{MemorySegment, program_parameter};
 
@@ -639,13 +728,13 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
         name: description.family().to_owned(),
         arguments: description.arguments().to_vec().into(),
     });
-    let [crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
-        description.arguments()
+    let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+        (description.arguments()).fixed_values::<1>()
     else {
         unreachable!()
     };
     let memory = ResourceFact::own_memory(MemoryRange::new(
-        pointer.pointer().clone(),
+        pointer.address().clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));
@@ -739,7 +828,7 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
             &one,
             &facts,
             &member,
-            &opened.clone().with_memory(Memory::new()),
+            &opened.clone().with_memory(SymbolicMemory::new()),
             &facts,
             &CheckedCallEvents::default(),
         )

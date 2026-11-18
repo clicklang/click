@@ -121,7 +121,7 @@ mod tests {
     use crate::kernel::Variable;
 
     fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
+        Proposition::condition_is(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
     }
     fn inputs(ends: [i64; 4]) -> (Vec<Proposition>, IntegerTerm, IntegerTerm) {
         let a = IntegerTerm::var(Variable(181_001));

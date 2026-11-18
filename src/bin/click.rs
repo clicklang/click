@@ -434,6 +434,75 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    // Refuse an explicit false fact after the original loop's two updates,
+    // so the name regression stays negative when pointer reasoning improves.
+    #[test]
+    fn verify_trace_keeps_pointer_parameter_and_recorded_local_names() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("spell.c"),
+            r#"unsigned long spell(const unsigned char *b, unsigned long n) {
+    const unsigned char *v = b;
+    unsigned long vl = n;
+    while (4 <= vl) {
+        v = v + 4;
+        vl = vl - 4;
+    }
+    return vl;
+}
+"#,
+        )
+        .unwrap();
+        let sidecar = directory.path().join("spell.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "spell.c";
+uint64 spell(const uint8* b, uint64 n) {
+    views b[0u64..n];
+    ensures result < 4u64;
+} by {
+    step_until(loop(0));
+    loop {
+        decreases vl;
+        views b[0u64..n];
+        invariant vl <= n;
+        invariant v == b + (n - vl);
+        preserve by {
+            if 4u64 <= vl {
+                step();
+                step();
+                have false by known();
+            } else {
+                step();
+            }
+        }
+    }
+    step_until(function.exit);
+}
+"#,
+        )
+        .unwrap();
+        let trace = entry(vec![
+            "verify".into(),
+            "--trace-proof".into(),
+            "spell".into(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(
+            trace.contains("`known` requires the current goal as an available semantic fact"),
+            "{trace}"
+        );
+        assert!(trace.contains("\ngoal: false\n"), "{trace}");
+        assert!(trace.contains(" = b + uint64("), "{trace}");
+        assert!(
+            trace.contains(" = at(statement(2).statement(0).entry, v)"),
+            "{trace}"
+        );
+        assert!(!trace.contains("external argument address base"), "{trace}");
+        assert!(!trace.contains("<symbol "), "{trace}");
+    }
+
     /// Every refused statement names its goal: the requirement it could not
     /// establish at its pre-state, in source names, with the explicit form
     /// that proves it. A refused call precondition, and an overflow that the
@@ -900,7 +969,7 @@ mod tests {
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by {\n    step();\n    have exists (x: int32) { x == 0 } by {\n        obtain (x: int32) {\n            x == 0\n        };\n    }\n    solve();\n}\n",
+            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by {\n    step();\n    have exists (x: int32) { x == 0 } by {\n        let x = obtain(\n            exists (k: int32) { k == 0 }\n        );\n    }\n    solve();\n}\n",
         )
         .unwrap();
         let traced = entry([
@@ -912,20 +981,21 @@ mod tests {
         .unwrap_err();
         assert!(!traced.contains("prove it with `have` first"), "{traced}");
         assert!(
-            traced.contains("requirement `exists (x: int32) { x == 0 }` not satisfied"),
+            traced.contains("requirement `exists (k: int32) { k == 0 }` not satisfied"),
             "{traced}"
         );
         assert!(
-            traced.contains("requires: exists (x: int32) { x == 0 }"),
+            traced.contains("requires: exists (k: int32) { k == 0 }"),
             "{traced}"
         );
         assert_eq!(traced.matches("\ngoal:").count(), 1, "{traced}");
         assert!(
-            traced.contains("tactic@5:\n  obtain (x: int32) {\n      x == 0\n  };"),
+            traced
+                .contains("tactic@5:\n  let x = obtain(\n      exists (k: int32) { k == 0 }\n  );"),
             "{traced}"
         );
         assert!(!traced.contains("\nstep: "), "{traced}");
-        assert!(traced.contains("obtain (x: int32) {\n"), "{traced}");
+        assert!(traced.contains("let x = obtain(\n"), "{traced}");
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1982,7 +2052,8 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         let mut proof_body = String::from("normalize();");
         for _ in 0..STRUCTURAL_NESTING_LIMIT - 2 {
             proof_goal.push_str(" and 0 == 0");
-            proof_body = format!("both {{ {proof_body} }} and {{ normalize(); }}");
+            proof_body =
+                format!("both {{ left => {{ {proof_body} }} right => {{ normalize(); }} }}");
         }
         verify_and_profile_supported_boundary(
             "proof",
@@ -2099,7 +2170,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
                 format!(
                     "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {} }} }}\n",
                     (0..=STRUCTURAL_LIMIT).fold("normalize();".to_string(), |body, _| format!(
-                        "both {{ {body} }} and {{ normalize(); }}"
+                        "both {{ left => {{ {body} }} right => {{ normalize(); }} }}"
                     ))
                 ),
                 "too_deep_proof.ensures_0",

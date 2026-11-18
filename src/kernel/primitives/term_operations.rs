@@ -244,34 +244,34 @@ impl MachineTerm {
 impl MachineTerm {
     /// Keep pointer-to-integer casts canonical when checked rewriting turns
     /// a symbolic pointer into null, just as C cast evaluation does.
-    pub(crate) fn pointer_address(pointer: Pointer) -> Self {
+    pub(crate) fn integer_address(pointer: Address) -> Self {
         if let Some(bits) = pointer.integer_address_bits() {
             return bits.clone();
         }
-        if pointer == Pointer::null() {
+        if pointer == Address::null() {
             Self::uint64_constant(0)
         } else {
-            Self::PointerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
+            Self::IntegerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
         }
     }
 
     pub(crate) fn object_pointer_address(
-        pointer: Pointer,
+        pointer: Address,
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
-        if pointer == Pointer::null() {
+        if pointer == Address::null() {
             Self::uint64_constant(0)
         } else {
-            Self::PointerAddress(
+            Self::IntegerAddress(
                 Box::new(pointer),
                 crate::kernel::AddressObjectClass::new(class),
             )
         }
     }
 
-    pub(crate) fn address_pointer(&self) -> Option<&Pointer> {
+    pub(crate) fn address_pointer(&self) -> Option<&Address> {
         match self {
-            Self::PointerAddress(pointer, _) => Some(pointer),
+            Self::IntegerAddress(pointer, _) => Some(pointer),
             _ => None,
         }
     }
@@ -362,7 +362,7 @@ impl MachineTerm {
             bits32_constant!(value) => Some(constant_u32(*value)),
             Self::Variable(_)
             | Self::MemoryLoad(_, _, _)
-            | Self::PointerAddress(_, _)
+            | Self::IntegerAddress(_, _)
             | Self::IntegerToMachine { .. }
             | Self::PureFunctionApplication { .. }
             | Self::ClickFunctionApplication { .. }
@@ -1106,7 +1106,7 @@ fn uint64_constant(term: &MachineTerm) -> Option<u64> {
         // Null converts to the integer zero, exactly as evaluating the C
         // cast `(uint64)p` yields it. The address term reaches a proof only
         // when a pointer proved null is substituted into `(uint64)p`.
-        MachineTerm::PointerAddress(pointer, _) if **pointer == Pointer::null() => Some(0),
+        MachineTerm::IntegerAddress(pointer, _) if **pointer == Address::null() => Some(0),
         cast_term!(UInt64From32, value) => match value.as_ref() {
             bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
             _ => uint64_constant(value),
@@ -2468,7 +2468,7 @@ impl MachineTerm {
     }
 }
 
-impl PointerOffsetTerm {
+impl AddressOffset {
     pub fn constant(value: i64) -> Self {
         Self::Constant(value)
     }
@@ -2628,7 +2628,7 @@ impl ConditionTerm {
     /// be a malformed application the kernel deliberately leaves undecided.
     pub(crate) fn reflexive_value(&self) -> Option<bool> {
         match self {
-            Self::PointerValueEqual(left, right) => (left == right).then_some(true),
+            Self::PointerEqual(left, right) => (left == right).then_some(true),
 
             Self::Compare {
                 relation,
@@ -2645,8 +2645,8 @@ impl ConditionTerm {
             Self::IntegerLessThan(left, right)
             | Self::IntegerGreaterThan(left, right)
             | Self::IntegerNotEqual(left, right) => (left == right).then_some(false),
-            Self::PointerOffsetEqual(left, right) => (left == right).then_some(true),
-            Self::PointerEqual(left, right) => (left == right).then_some(true),
+            Self::AddressOffsetEqual(left, right) => (left == right).then_some(true),
+            Self::AddressEqual(left, right) => (left == right).then_some(true),
             // A `Bool` value is two-valued, so it is equivalent to itself.
             Self::BoolEqual(left, right) => (left == right).then_some(true),
             Self::AlgebraicEqual(_, _)
@@ -3044,14 +3044,14 @@ impl ConditionTerm {
     /// wrap of its own. A shared pointer base may precede them; other
     /// nested sums are refused.
     pub(crate) fn pointer_offset_uint64_association_guard(&self) -> Option<ConditionTerm> {
-        fn scalar(offset: &PointerOffsetTerm, width: i64) -> Option<SharedMachineIntegerTerm> {
+        fn scalar(offset: &AddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
             match offset {
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned: true,
                 } if *byte_width == width => Some(value.clone()),
-                PointerOffsetTerm::Constant(value) if *value >= 0 && value % width == 0 => {
+                AddressOffset::Constant(value) if *value >= 0 && value % width == 0 => {
                     Some(SharedMachineIntegerTerm::index(
                         MachineIntegerType::Int64,
                         MachineTerm::uint64_constant((value / width) as u64),
@@ -3062,18 +3062,18 @@ impl ConditionTerm {
         }
         let (left, right) = self.pointer_offset_sides()?;
         for (expanded, indexed) in [(left, right), (right, left)] {
-            let PointerOffsetTerm::Add(left, right) = expanded else {
+            let AddressOffset::Add(left, right) = expanded else {
                 continue;
             };
             let (left, indexed) = match (left.as_ref(), indexed) {
-                (PointerOffsetTerm::Add(base, index), PointerOffsetTerm::Add(other_base, sum))
+                (AddressOffset::Add(base, index), AddressOffset::Add(other_base, sum))
                     if base == other_base =>
                 {
                     (index.as_ref(), sum.as_ref())
                 }
                 _ => (left.as_ref(), indexed),
             };
-            let PointerOffsetTerm::Int64Scaled {
+            let AddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned: true,
@@ -3129,12 +3129,12 @@ impl ConditionTerm {
     /// scaled scalar or a representable constant. A shared pointer base may
     /// precede them; other nested sums and full-width indices are refused.
     pub(crate) fn pointer_offset_association_guard(&self) -> Option<[SharedMachineIntegerTerm; 2]> {
-        fn scalar(offset: &PointerOffsetTerm, width: i64) -> Option<SharedMachineIntegerTerm> {
+        fn scalar(offset: &AddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
             match offset {
-                PointerOffsetTerm::Int32Scaled { value, byte_width } if *byte_width == width => {
+                AddressOffset::Int32Scaled { value, byte_width } if *byte_width == width => {
                     Some(value.clone())
                 }
-                PointerOffsetTerm::Constant(value) if value % width == 0 => {
+                AddressOffset::Constant(value) if value % width == 0 => {
                     i32::try_from(value / width).ok().map(|value| {
                         SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
@@ -3147,21 +3147,21 @@ impl ConditionTerm {
         }
         let (left, right) = self.pointer_offset_sides()?;
         for (expanded, indexed) in [(left, right), (right, left)] {
-            let PointerOffsetTerm::Add(left, right) = expanded else {
+            let AddressOffset::Add(left, right) = expanded else {
                 continue;
             };
             // Source pointers can carry a symbolic byte offset before the
             // selected index. Cancel only an identical leading base, without
             // consulting aliases or traversing unrelated offset addends.
             let (left, indexed) = match (left.as_ref(), indexed) {
-                (PointerOffsetTerm::Add(base, index), PointerOffsetTerm::Add(other_base, sum))
+                (AddressOffset::Add(base, index), AddressOffset::Add(other_base, sum))
                     if base == other_base =>
                 {
                     (index.as_ref(), sum.as_ref())
                 }
                 _ => (left.as_ref(), indexed),
             };
-            let PointerOffsetTerm::Int32Scaled { value, byte_width } = indexed else {
+            let AddressOffset::Int32Scaled { value, byte_width } = indexed else {
                 continue;
             };
             if !(*byte_width > 0 && *byte_width <= i64::from(u32::MAX)) {
@@ -3276,16 +3276,16 @@ impl ConditionTerm {
         right: &MachineTerm,
     ) -> Option<Self> {
         match (left, right) {
-            (MachineTerm::PointerAddress(left, _), MachineTerm::PointerAddress(right, _)) => Some(
-                Self::pointer_equal(left.as_ref().clone(), right.as_ref().clone()),
+            (MachineTerm::IntegerAddress(left, _), MachineTerm::IntegerAddress(right, _)) => Some(
+                Self::address_equal(left.as_ref().clone(), right.as_ref().clone()),
             ),
-            (MachineTerm::PointerAddress(pointer, _), other)
-            | (other, MachineTerm::PointerAddress(pointer, _))
+            (MachineTerm::IntegerAddress(pointer, _), other)
+            | (other, MachineTerm::IntegerAddress(pointer, _))
                 if other.uint64_as_const() == Some(0) =>
             {
-                Some(Self::pointer_equal(
+                Some(Self::address_equal(
                     pointer.as_ref().clone(),
-                    Pointer::null(),
+                    Address::null(),
                 ))
             }
             _ => None,
@@ -3319,12 +3319,10 @@ impl ConditionTerm {
                 left: right.clone(),
                 right: left.clone(),
             },
+            Self::AddressEqual(left, right) => Self::AddressEqual(right.clone(), left.clone()),
             Self::PointerEqual(left, right) => Self::PointerEqual(right.clone(), left.clone()),
-            Self::PointerValueEqual(left, right) => {
-                Self::PointerValueEqual(right.clone(), left.clone())
-            }
-            Self::PointerOffsetEqual(left, right) => {
-                Self::PointerOffsetEqual(right.clone(), left.clone())
+            Self::AddressOffsetEqual(left, right) => {
+                Self::AddressOffsetEqual(right.clone(), left.clone())
             }
             other => other.clone(),
         }
@@ -3333,11 +3331,11 @@ impl ConditionTerm {
     /// `address(pointer) & (alignment - 1) == 0`: the low address bits are
     /// zero. This is the kernel form of the spec proposition
     /// `aligned(pointer, alignment)`; `alignment` must be a power of two.
-    pub(crate) fn pointer_aligned(pointer: Pointer, alignment: u64) -> Self {
+    pub(crate) fn pointer_aligned(pointer: Address, alignment: u64) -> Self {
         debug_assert!(alignment.is_power_of_two());
         Self::uint64_equal(
             MachineTerm::uint64_bitwise_and(
-                MachineTerm::PointerAddress(
+                MachineTerm::IntegerAddress(
                     Box::new(pointer),
                     crate::kernel::AddressObjectClass::NONE,
                 ),
@@ -3349,7 +3347,7 @@ impl ConditionTerm {
 
     /// Recognizes the alignment shape in either operand order and with any
     /// constant spelling of the mask and the zero.
-    pub(crate) fn as_pointer_alignment(&self) -> Option<(&Pointer, u64)> {
+    pub(crate) fn as_pointer_alignment(&self) -> Option<(&Address, u64)> {
         use crate::kernel::MachineOperandView as V;
         let masked = match self {
             Self::Compare {
@@ -3389,12 +3387,12 @@ impl ConditionTerm {
         else {
             return None;
         };
-        fn address(word: V<'_>) -> Option<&Pointer> {
+        fn address(word: V<'_>) -> Option<&Address> {
             let native = match word {
                 V::Legacy(native) => Some(native),
                 V::Shared(root) => root.machine_conversion_leaf(),
             }?;
-            if let MachineTerm::PointerAddress(pointer, _) = native {
+            if let MachineTerm::IntegerAddress(pointer, _) = native {
                 Some(pointer.as_ref())
             } else {
                 None
@@ -3415,11 +3413,11 @@ impl ConditionTerm {
         }
         // An address is zero exactly when its pointer is null. Two addresses
         // stay an address equality: equal addresses are not equal pointers.
-        if let (MachineTerm::PointerAddress(pointer, _), other)
-        | (other, MachineTerm::PointerAddress(pointer, _)) = (&left, &right)
+        if let (MachineTerm::IntegerAddress(pointer, _), other)
+        | (other, MachineTerm::IntegerAddress(pointer, _)) = (&left, &right)
             && other.uint64_as_const() == Some(0)
         {
-            return Self::pointer_equal(pointer.as_ref().clone(), Pointer::null());
+            return Self::address_equal(pointer.as_ref().clone(), Address::null());
         }
         match (left.bitvector64_as_const(), right.bitvector64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
@@ -3440,7 +3438,7 @@ impl ConditionTerm {
                         left: Box::new(MachineTerm::Binary {
                             format: MachineIntegerType::UInt64,
                             op: MachineBinaryOp::BitwiseAnd,
-                            left: Box::new(MachineTerm::PointerAddress(
+                            left: Box::new(MachineTerm::IntegerAddress(
                                 Box::new(pointer.clone()),
                                 crate::kernel::AddressObjectClass::NONE,
                             )),
@@ -3783,39 +3781,37 @@ impl ConditionTerm {
         }
     }
 
-    pub(in crate::kernel) fn pointer_offset_equal(
-        left: PointerOffsetTerm,
-        right: PointerOffsetTerm,
+    pub(in crate::kernel) fn address_offset_equal(
+        left: AddressOffset,
+        right: AddressOffset,
     ) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
             _ if pointer_offsets_differ_by_residue(&left, &right) => Self::Constant(false),
-            _ => Self::PointerOffsetEqual(Box::new(left), Box::new(right)),
+            _ => Self::AddressOffsetEqual(Box::new(left), Box::new(right)),
         }
     }
 
     /// The numeric consequence of an established true pointer equality.
     /// Unlike `pointer_offset_sides`, this does not describe an equivalent
     /// proposition: equal addresses alone cannot prove full-value equality.
-    pub(crate) fn true_pointer_offset_sides(
-        &self,
-    ) -> Option<(&PointerOffsetTerm, &PointerOffsetTerm)> {
+    pub(crate) fn true_pointer_offset_sides(&self) -> Option<(&AddressOffset, &AddressOffset)> {
         match self {
-            Self::PointerValueEqual(a, b) if a.block == b.block => Some((&a.offset, &b.offset)),
+            Self::PointerEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
             _ => self.pointer_offset_sides(),
         }
     }
 
     /// A common-base comparison's offset view, retaining the original
     /// condition as the supporting premise in callers' indexes.
-    pub(crate) fn pointer_offset_sides(&self) -> Option<(&PointerOffsetTerm, &PointerOffsetTerm)> {
+    pub(crate) fn pointer_offset_sides(&self) -> Option<(&AddressOffset, &AddressOffset)> {
         match self {
-            Self::PointerOffsetEqual(a, b) => Some((a, b)),
-            Self::PointerEqual(a, b) if a.block == b.block => Some((&a.offset, &b.offset)),
-            Self::PointerValueEqual(a, b)
-                if a.block == b.block
+            Self::AddressOffsetEqual(a, b) => Some((a, b)),
+            Self::AddressEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
+            Self::PointerEqual(a, b)
+                if a.base == b.base
                     && a.provenance() == b.provenance()
-                    && a.extent() == b.extent() =>
+                    && a.bounds() == b.bounds() =>
             {
                 Some((&a.offset, &b.offset))
             }
@@ -3823,11 +3819,25 @@ impl ConditionTerm {
         }
     }
 
-    pub(crate) fn pointer_value_equal(left: PointerValue, right: PointerValue) -> Self {
+    /// Pointer equality as logical lowering states it: a non-null pointer
+    /// value compared with itself keeps its `AddressEqual` node instead of
+    /// folding to `true`, so the fact raises to `p == p` and lowers back
+    /// (`docs/internals/raise-lower-principle.md`, "Lowering is structural").
+    /// Producers whose result must match a lowered goal use it too; checking
+    /// decides the reflexive comparison (`ConditionTerm::reflexive_value`).
+    pub(crate) fn logical_pointer_equal(left: Pointer, right: Pointer) -> Self {
+        if left == right && !left.is_null() {
+            let address = left.address().clone();
+            return Self::AddressEqual(Box::new(address.clone()), Box::new(address));
+        }
+        Self::pointer_equal(left, right)
+    }
+
+    pub(crate) fn pointer_equal(left: Pointer, right: Pointer) -> Self {
         if (left.provenance() == right.provenance()
-            && left.extent() == right.extent()
-            && left.extent_is_known() == right.extent_is_known()
-            && (left.extent_is_known() || left.opaque_extent() == right.opaque_extent()))
+            && left.bounds() == right.bounds()
+            && left.bounds_are_known() == right.bounds_are_known()
+            && (left.bounds_are_known() || left.bounds_owner() == right.bounds_owner()))
             || (matches!(left.program_type(), ProgramType::FunctionPointer(_))
                 && matches!(right.program_type(), ProgramType::FunctionPointer(_)))
         {
@@ -3836,27 +3846,27 @@ impl ConditionTerm {
             // use the same uint64 classes as its original word. Keep this
             // reduction out of raw pointer equality, which provenance checks
             // also use: numbers alone must never supply a pointer domain.
-            if left.pointer().integer_address_bits().is_some()
-                || right.pointer().integer_address_bits().is_some()
+            if left.address().integer_address_bits().is_some()
+                || right.address().integer_address_bits().is_some()
             {
                 return Self::uint64_equal(
-                    MachineTerm::pointer_address(left.pointer().clone()),
-                    MachineTerm::pointer_address(right.pointer().clone()),
+                    MachineTerm::integer_address(left.address().clone()),
+                    MachineTerm::integer_address(right.address().clone()),
                 );
             }
-            Self::pointer_equal(left.pointer().clone(), right.pointer().clone())
+            Self::address_equal(left.address().clone(), right.address().clone())
         } else {
             // Whether two pointers are equal does not depend on the `const`
             // of the expressions that named them, and one proposition must
             // be one term however its operands were read.
-            Self::PointerValueEqual(
+            Self::PointerEqual(
                 Box::new(left.with_pointee_constant(false)),
                 Box::new(right.with_pointee_constant(false)),
             )
         }
     }
 
-    pub fn pointer_equal(left: Pointer, right: Pointer) -> Self {
+    pub fn address_equal(left: Address, right: Address) -> Self {
         if left.blocks_proven_distinct(&right) {
             Self::Constant(false)
         } else {
@@ -3868,14 +3878,14 @@ impl ConditionTerm {
             // resolves to the same symbolic value on both sides.
             // A loaded pointer's block names an unknown address, so equal
             // displacements in it are a symbolic reflexive comparison too.
-            if left.block == right.block
+            if left.base == right.base
                 && let Self::Constant(value) =
-                    Self::pointer_offset_equal(left.offset.clone(), right.offset.clone())
-                && !(value && matches!(left.block, PointerBlock::LoadedPointer(_)))
+                    Self::address_offset_equal(left.offset.clone(), right.offset.clone())
+                && !(value && matches!(left.base, AddressBase::LoadedPointer(_)))
             {
                 return Self::Constant(value);
             }
-            Self::PointerEqual(Box::new(left), Box::new(right))
+            Self::AddressEqual(Box::new(left), Box::new(right))
         }
     }
 }
@@ -3900,7 +3910,7 @@ fn machine_constant_value(
     }
 }
 
-fn pointer_offsets_differ_by_residue(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> bool {
+fn pointer_offsets_differ_by_residue(left: &AddressOffset, right: &AddressOffset) -> bool {
     let (Some((left_scaled, left_constant)), Some((right_scaled, right_constant))) = (
         left.int32_scaled_linear_form(),
         right.int32_scaled_linear_form(),
@@ -4345,10 +4355,10 @@ impl ProgramType {
                 pointer.is_null()
                     || (pointer.program_type().pointer_types_compatible(target)
                         && if target.is_function_pointer() {
-                            pointer.block.is_function()
-                                || pointer.pointer().as_loaded_value().is_some()
+                            pointer.base.is_function()
+                                || pointer.address().as_loaded_value().is_some()
                         } else {
-                            !pointer.block.is_function()
+                            !pointer.base.is_function()
                         })
             }
             _ => false,
@@ -4430,6 +4440,13 @@ impl ProgramType {
         }
     }
 
+    pub(crate) fn supports_scalar_array_write(self, copy: bool) -> bool {
+        matches!(self, Self::Int32 | Self::UInt8 | Self::UInt32)
+            || (!copy
+                && (MachineIntegerType::from_program_type(self).is_some()
+                    || matches!(self, Self::Float32 | Self::Float64)))
+    }
+
     pub(crate) fn array_element_type(self) -> Option<Self> {
         Some(match self {
             Self::Int8Array(_) => Self::Int8,
@@ -4506,13 +4523,13 @@ pub(crate) fn single_variable_of_program_value(value: &ProgramValue) -> Option<V
 
 impl ProgramValue {
     /// An unconstrained complete C word has identity but no pointer authority.
-    pub(crate) fn complete_word(self, identity: Pointer) -> Self {
+    pub(crate) fn complete_word(self, identity: Address) -> Self {
         if !matches!(self, Self::Int64(_) | Self::UInt64(_)) {
             return self;
         }
         Self::PointerInteger(PointerIntegerValue {
             numeric: Box::new(self),
-            pointer: Box::new(PointerValue::new(identity, ProgramType::VoidPointer)),
+            pointer: Box::new(Pointer::new(identity, ProgramType::VoidPointer)),
             kind: PointerIntegerKind::Word { changed_bits: 0 },
         })
     }
@@ -4525,22 +4542,20 @@ impl ProgramValue {
         }
     }
 
-    pub(crate) fn pointer(pointer: Pointer) -> Self {
+    pub(crate) fn pointer(pointer: Address) -> Self {
         Self::typed_pointer(pointer, ProgramType::Int32Pointer)
     }
 
-    pub(crate) fn typed_pointer(pointer: Pointer, program_type: ProgramType) -> Self {
-        Self::Pointer(PointerValue::new(pointer, program_type))
+    pub(crate) fn typed_pointer(pointer: Address, program_type: ProgramType) -> Self {
+        Self::Pointer(Pointer::new(pointer, program_type))
     }
 
     pub(crate) fn typed_pointer_with_pointee_constant(
-        pointer: Pointer,
+        pointer: Address,
         program_type: ProgramType,
         pointee_constant: bool,
     ) -> Self {
-        Self::Pointer(
-            PointerValue::new(pointer, program_type).with_pointee_constant(pointee_constant),
-        )
+        Self::Pointer(Pointer::new(pointer, program_type).with_pointee_constant(pointee_constant))
     }
 
     pub(crate) fn retag_pointer(self, program_type: ProgramType) -> Self {
@@ -4560,7 +4575,7 @@ impl ProgramValue {
     }
 
     /// Records the class of the object a pointer value designates; see
-    /// [`PointerValue::with_object_class`].
+    /// [`Pointer::with_object_class`].
     pub(crate) fn with_pointer_object_class(
         self,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -4681,17 +4696,17 @@ impl LValue {
             pointee_volatile,
             constant: false,
             pointee_constant: false,
-            extent: None,
+            bounds: None,
             provenance: None,
-            extent_known: false,
-            opaque_extent: None,
+            bounds_known: false,
+            bounds_owner: None,
             access_class: None,
             object_class: None,
         }
     }
 
     pub(in crate::kernel) fn memory_with_volatile(
-        pointer: Pointer,
+        pointer: Address,
         value_type: ProgramType,
         volatile: bool,
     ) -> Self {
@@ -4699,7 +4714,7 @@ impl LValue {
     }
 
     pub(in crate::kernel) fn memory_with_qualifiers(
-        pointer: Pointer,
+        pointer: Address,
         value_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
@@ -4711,10 +4726,10 @@ impl LValue {
             pointee_volatile,
             constant: false,
             pointee_constant: false,
-            extent: None,
+            bounds: None,
             provenance: None,
-            extent_known: false,
-            opaque_extent: None,
+            bounds_known: false,
+            bounds_owner: None,
             access_class: None,
             object_class: None,
         }
@@ -4730,25 +4745,25 @@ impl LValue {
         self
     }
 
-    /// The lvalue reached through `pointer`, which keeps its extent and the
+    /// The lvalue reached through `pointer`, which keeps its bounds and the
     /// class of the object it designates.
-    pub(in crate::kernel) fn with_extent_of(mut self, pointer: &PointerValue) -> Self {
-        self.extent = pointer.extent().cloned().map(std::sync::Arc::new);
+    pub(in crate::kernel) fn with_bounds_of(mut self, pointer: &Pointer) -> Self {
+        self.bounds = pointer.bounds().cloned().map(std::sync::Arc::new);
         self.provenance = Some(std::sync::Arc::new(pointer.provenance().clone()));
-        self.extent_known = pointer.extent_is_known();
-        self.opaque_extent = pointer.opaque_extent.clone();
+        self.bounds_known = pointer.bounds_are_known();
+        self.bounds_owner = pointer.bounds_owner.clone();
         self.object_class = pointer.object_class();
         self
     }
 
-    pub(in crate::kernel) fn access_provenance(&self) -> Option<(&Pointer, Option<&Pointer>)> {
+    pub(in crate::kernel) fn access_provenance(&self) -> Option<(&Address, Option<&Address>)> {
         self.provenance.as_deref().map(|root| {
             (
                 root,
-                if self.extent_known {
+                if self.bounds_known {
                     None
                 } else {
-                    self.opaque_extent.as_deref()
+                    self.bounds_owner.as_deref()
                 },
             )
         })
@@ -4775,8 +4790,8 @@ impl LValue {
         self.object_class.clone()
     }
 
-    pub(in crate::kernel) fn extent(&self) -> Option<&SubobjectExtent> {
-        self.extent.as_deref()
+    pub(in crate::kernel) fn bounds(&self) -> Option<&SubobjectBounds> {
+        self.bounds.as_deref()
     }
 
     pub fn value_type(&self) -> ProgramType {
@@ -4799,11 +4814,11 @@ impl LValue {
         self.pointee_constant
     }
 
-    pub(in crate::kernel) fn pointer(&self, state: &ExecutionState) -> Option<Pointer> {
+    pub(in crate::kernel) fn pointer(&self, state: &ExecutionState) -> Option<Address> {
         match &self.storage {
             LValueStorage::Local { name } => {
                 let pointer = state.locals.slot(name)?.clone();
-                state.memory.has_block(&pointer.block).then_some(pointer)
+                state.memory.has_block(&pointer.base).then_some(pointer)
             }
             LValueStorage::Memory { pointer } => Some(pointer.clone()),
         }
@@ -4822,10 +4837,10 @@ impl SharedPureApplication {
     }
 }
 
-impl Pointer {
+impl Address {
     pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&MachineTerm> {
-        if self.offset == PointerOffsetTerm::Constant(0)
-            && let PointerBlock::PureFunctionApplication(application) = &self.block
+        if self.offset == AddressOffset::Constant(0)
+            && let AddressBase::PureFunctionApplication(application) = &self.base
         {
             application.integer_address_bits()
         } else {
@@ -4840,19 +4855,19 @@ impl Pointer {
     /// arithmetic appends displacement terms; remove those displacements when
     /// deciding whether the originating object base may be null.
     pub(in crate::kernel) fn object_base(&self) -> Self {
-        fn external_base(offset: &PointerOffsetTerm) -> &PointerOffsetTerm {
+        fn external_base(offset: &AddressOffset) -> &AddressOffset {
             match offset {
-                PointerOffsetTerm::Add(base, _) => external_base(base),
+                AddressOffset::Add(base, _) => external_base(base),
                 offset => offset,
             }
         }
 
         Self {
-            block: self.block.clone(),
-            offset: if self.block == PointerBlock::ExternalArgument {
+            base: self.base.clone(),
+            offset: if self.base == AddressBase::ExternalArgument {
                 external_base(&self.offset).clone()
             } else {
-                PointerOffsetTerm::Constant(0)
+                AddressOffset::Constant(0)
             },
         }
     }
@@ -4867,38 +4882,38 @@ impl Pointer {
     /// the same provenance. Pointer arithmetic appends displacement terms and
     /// therefore preserves the leading identity.
     pub(in crate::kernel) fn object_identity(&self) -> Self {
-        if self.block == PointerBlock::ExternalArgument {
+        if self.base == AddressBase::ExternalArgument {
             let base = self.object_base();
             let variable = match &base.offset {
-                PointerOffsetTerm::Variable(variable) => Some(*variable),
-                PointerOffsetTerm::Int32Scaled { value, .. }
-                | PointerOffsetTerm::Int64Scaled { value, .. } => {
+                AddressOffset::Variable(variable) => Some(*variable),
+                AddressOffset::Int32Scaled { value, .. }
+                | AddressOffset::Int64Scaled { value, .. } => {
                     value.operand_view().variable().copied()
                 }
-                PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Add(_, _) => None,
+                AddressOffset::Constant(_) | AddressOffset::Add(_, _) => None,
             };
             if let Some(variable) = variable {
                 return Self {
-                    block: PointerBlock::ExternalObject(variable),
-                    offset: PointerOffsetTerm::Constant(0),
+                    base: AddressBase::ExternalObject(variable),
+                    offset: AddressOffset::Constant(0),
                 };
             }
             return Self {
-                block: self.block.clone(),
+                base: self.base.clone(),
                 offset: base.offset,
             };
         }
 
         Self {
-            block: self.block.clone(),
-            offset: PointerOffsetTerm::Constant(0),
+            base: self.base.clone(),
+            offset: AddressOffset::Constant(0),
         }
     }
 
     pub(crate) fn null() -> Self {
         Self {
-            block: "null".into(),
-            offset: PointerOffsetTerm::Constant(0),
+            base: "null".into(),
+            offset: AddressOffset::Constant(0),
         }
     }
 
@@ -4908,60 +4923,76 @@ impl Pointer {
     /// from null, so a second displacement is judged the same way as the
     /// first.
     pub(in crate::kernel) fn is_in_null_block(&self) -> bool {
-        self.block == PointerBlock::Concrete("null".to_string())
+        self.base == AddressBase::Concrete("null".to_string())
     }
 
     /// Numeric LP64 reconstruction. This application is only an address;
     /// a complete C word carries its independent provenance beside it.
-    pub(in crate::kernel) fn integer_address(bits: MachineTerm) -> Self {
+    pub(in crate::kernel) fn from_integer_address(bits: MachineTerm) -> Self {
         if bits.uint64_as_const() == Some(0) {
             return Self::null();
         }
         Self {
-            block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+            base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "$integer-address".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::UInt64(bits))],
             )),
-            offset: PointerOffsetTerm::Constant(0),
+            offset: AddressOffset::Constant(0),
         }
     }
 
     pub(crate) fn symbolic(variable: Variable) -> Self {
         Self {
-            block: PointerBlock::Symbolic(variable),
-            offset: PointerOffsetTerm::Constant(0),
+            base: AddressBase::Symbolic(variable),
+            offset: AddressOffset::Constant(0),
         }
     }
 
     /// The base of storage the verifier introduced for an object the C
     /// abstract machine creates but the program never names. The identity must
     /// come from the single kernel variable allocator, so that it is fresh.
-    /// See [`PointerBlock::Temporary`].
+    /// See [`AddressBase::Temporary`].
     pub(crate) fn verifier_temporary(identity: Variable) -> Self {
         Self {
-            block: PointerBlock::Temporary(identity.0),
-            offset: PointerOffsetTerm::Constant(0),
+            base: AddressBase::Temporary(identity.0),
+            offset: AddressOffset::Constant(0),
         }
     }
 
     /// Name an eight-byte pointer read as a typed graph application. The
     /// caller supplies the assumption-free defining state and address.
     /// Access observations are retained separately from this identity.
-    pub(crate) fn loaded_value(memory: &SharedMemory, address: &Pointer) -> Self {
+    pub(crate) fn loaded_value(memory: &SharedMemory, address: &Address) -> Self {
         Self {
-            block: PointerBlock::LoadedPointer(crate::kernel::eval::pointer_load_identity(
+            base: AddressBase::LoadedPointer(crate::kernel::eval::pointer_load_identity(
                 memory, address,
             )),
-            offset: PointerOffsetTerm::Constant(0),
+            offset: AddressOffset::Constant(0),
         }
+    }
+
+    /// The read of the pointer cell at `address` in `memory`, identified by
+    /// its version point: the term a Click read of that place lowers to.
+    /// Two reads of an unchanged cell in different memories are this same
+    /// term. Unlike [`Self::canonical_loaded_value`], a stored pointer does
+    /// not replace the read.
+    pub(crate) fn canonical_read(memory: &SharedMemory, address: &Address) -> Self {
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(memory),
+            Box::new(address.clone()),
+            LoadKind::Int32,
+        );
+        named_pointer_read(
+            canonical_pointer_read(&read).expect("a memory load has a canonical read"),
+        )
     }
 
     /// The pointer read of `address` in `memory`, named at the canonical
     /// read of that cell, as a direct lowering of the same place names it.
-    pub(crate) fn canonical_loaded_value(memory: &SharedMemory, address: &Pointer) -> Self {
+    pub(crate) fn canonical_loaded_value(memory: &SharedMemory, address: &Address) -> Self {
         // A cell holding a complete stored pointer reads as that pointer.
         if let Some(ProgramValue::Pointer(stored)) = memory.memory().known_value(address) {
-            return stored.pointer().clone();
+            return stored.address().clone();
         }
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(memory),
@@ -4978,7 +5009,7 @@ impl Pointer {
     /// The defining address is never reconstructed from this value's block or
     /// from its pointee width.
     pub(crate) fn as_loaded_value(&self) -> Option<LoadedPointerView> {
-        let PointerBlock::LoadedPointer(identity) = self.block else {
+        let AddressBase::LoadedPointer(identity) = self.base else {
             return None;
         };
         let (defining_memory, defining_address) =
@@ -5015,9 +5046,9 @@ impl Pointer {
     /// holds, which the read-over-write authority relates to the read
     /// (`eval::pointer_read_over_write_value`). A cell holding its own read
     /// is that read.
-    pub(crate) fn version_read(memory: &SharedMemory, address: &Pointer) -> Self {
+    pub(crate) fn version_read(memory: &SharedMemory, address: &Address) -> Self {
         match Self::version_read_value(memory, address) {
-            Ok(held) => held.pointer().clone(),
+            Ok(held) => held.address().clone(),
             Err(read) => read,
         }
     }
@@ -5025,11 +5056,11 @@ impl Pointer {
     /// A logical read with the whole pointer value when the read is a
     /// value the memory already holds for the cell (its own materialized
     /// read, or static storage's symbolic initial contents), provenance and
-    /// extent included; otherwise the named read, as `Err`.
+    /// bounds included; otherwise the named read, as `Err`.
     pub(crate) fn version_read_value(
         memory: &SharedMemory,
-        address: &Pointer,
-    ) -> Result<PointerValue, Self> {
+        address: &Address,
+    ) -> Result<Pointer, Self> {
         let source = memory.unchanged_bytes_source();
         let canonical = crate::kernel::memory_history::canonical_value_load_memory(
             &source,
@@ -5040,14 +5071,14 @@ impl Pointer {
         // as the load variable of its word, reads as that read.
         let own_read = |held: &SharedMemory| match held.memory().known_value(address) {
             Some(ProgramValue::Pointer(stored))
-                if stored.pointer().as_loaded_value().is_some_and(|read| {
+                if stored.address().as_loaded_value().is_some_and(|read| {
                     read.defining_address == *address
-                        && read.displacement == PointerOffsetTerm::Constant(0)
+                        && read.displacement == AddressOffset::Constant(0)
                 }) || matches!(
-                    stored.pointer(),
-                    Pointer {
-                        block: PointerBlock::Symbolic(variable),
-                        offset: PointerOffsetTerm::Constant(0),
+                    stored.address(),
+                    Address {
+                        base: AddressBase::Symbolic(variable),
+                        offset: AddressOffset::Constant(0),
                     } if crate::kernel::registered_load_for_variable(variable)
                         .is_some_and(|(_, registered)| registered == *address)
                 ) =>
@@ -5077,29 +5108,29 @@ impl Pointer {
 
     pub(crate) fn symbolic_function(variable: Variable) -> Self {
         Self {
-            block: PointerBlock::FunctionSymbolic(variable),
-            offset: PointerOffsetTerm::Constant(0),
+            base: AddressBase::FunctionSymbolic(variable),
+            offset: AddressOffset::Constant(0),
         }
     }
 
     pub(crate) fn function(name: impl Into<String>) -> Self {
         Self {
-            block: PointerBlock::Function(name.into()),
-            offset: PointerOffsetTerm::Constant(0),
+            base: AddressBase::Function(name.into()),
+            offset: AddressOffset::Constant(0),
         }
     }
     pub(in crate::kernel) fn has_symbolic_block(&self) -> bool {
         matches!(
-            self.block,
-            PointerBlock::ExternalArgument
-                | PointerBlock::Symbolic(_)
-                | PointerBlock::LoadedPointer(_)
-                | PointerBlock::PureFunctionApplication(_)
+            self.base,
+            AddressBase::ExternalArgument
+                | AddressBase::Symbolic(_)
+                | AddressBase::LoadedPointer(_)
+                | AddressBase::PureFunctionApplication(_)
         )
     }
 
     pub(in crate::kernel) fn blocks_proven_distinct(&self, other: &Self) -> bool {
-        self.block.proven_distinct(&other.block)
+        self.base.proven_distinct(&other.base)
     }
     pub(in crate::kernel) fn offset_by_int32_elements(&self, elements: MachineTerm) -> Self {
         self.offset_by_elements(elements, 4)
@@ -5107,10 +5138,10 @@ impl Pointer {
 
     pub(crate) fn offset_by_bytes(&self, bytes: u32) -> Self {
         Self {
-            block: self.block.clone(),
-            offset: PointerOffsetTerm::add(
+            base: self.base.clone(),
+            offset: AddressOffset::add(
                 self.offset.clone(),
-                PointerOffsetTerm::Constant(i64::from(bytes)),
+                AddressOffset::Constant(i64::from(bytes)),
             ),
         }
     }
@@ -5121,17 +5152,15 @@ impl Pointer {
         byte_width: u32,
     ) -> Self {
         let displacement = match elements.operand_view().word32_constant() {
-            Some(value) => {
-                PointerOffsetTerm::Constant(i64::from(value as i32) * i64::from(byte_width))
-            }
-            None => PointerOffsetTerm::Int32Scaled {
+            Some(value) => AddressOffset::Constant(i64::from(value as i32) * i64::from(byte_width)),
+            None => AddressOffset::Int32Scaled {
                 value: elements,
                 byte_width: i64::from(byte_width),
             },
         };
         Self {
-            block: self.block.clone(),
-            offset: PointerOffsetTerm::add(self.offset.clone(), displacement),
+            base: self.base.clone(),
+            offset: AddressOffset::add(self.offset.clone(), displacement),
         }
     }
 
@@ -5141,10 +5170,10 @@ impl Pointer {
         byte_width: u32,
     ) -> Self {
         Self {
-            block: self.block.clone(),
-            offset: PointerOffsetTerm::add(
+            base: self.base.clone(),
+            offset: AddressOffset::add(
                 self.offset.clone(),
-                PointerOffsetTerm::scale_int32(elements, i64::from(byte_width)),
+                AddressOffset::scale_int32(elements, i64::from(byte_width)),
             ),
         }
     }
@@ -5157,13 +5186,13 @@ impl Pointer {
         wide: bool,
     ) -> Self {
         Self {
-            block: self.block.clone(),
-            offset: PointerOffsetTerm::add(
+            base: self.base.clone(),
+            offset: AddressOffset::add(
                 self.offset.clone(),
                 if wide {
-                    PointerOffsetTerm::scale_int64(elements, i64::from(byte_width), unsigned)
+                    AddressOffset::scale_int64(elements, i64::from(byte_width), unsigned)
                 } else {
-                    PointerOffsetTerm::scale_int32(elements, i64::from(byte_width))
+                    AddressOffset::scale_int32(elements, i64::from(byte_width))
                 },
             ),
         }
@@ -5172,8 +5201,8 @@ impl Pointer {
     /// This pointer's offset less `base`'s, exactly, when both name one block
     /// and every non-constant summand of `base` occurs in this offset; see
     /// [`offset_less_base`].
-    pub(crate) fn offset_from_base(&self, base: &Self) -> Option<PointerOffsetTerm> {
-        if self.block != base.block {
+    pub(crate) fn offset_from_base(&self, base: &Self) -> Option<AddressOffset> {
+        if self.base != base.base {
             return None;
         }
         offset_less_base(&self.offset, &base.offset)
@@ -5194,12 +5223,12 @@ impl Pointer {
     ) -> Option<SharedMachineIntegerTerm> {
         let width = i64::from(byte_width);
         match self.offset_from_base(base)? {
-            PointerOffsetTerm::Int64Scaled {
+            AddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned: true,
             } if byte_width == width => Some(value),
-            PointerOffsetTerm::Constant(bytes) if bytes >= 0 && bytes % width == 0 => {
+            AddressOffset::Constant(bytes) if bytes >= 0 && bytes % width == 0 => {
                 let root = KernelTerm::retained_native_machine_operand(
                     MachineIntegerType::UInt64,
                     &MachineTerm::uint64_constant((bytes / width) as u64),
@@ -5215,7 +5244,7 @@ impl Pointer {
         base: &Self,
         byte_width: u32,
     ) -> Option<MachineTerm> {
-        if self.block != base.block {
+        if self.base != base.base {
             return None;
         }
 
@@ -5223,15 +5252,15 @@ impl Pointer {
             return Some(MachineTerm::constant(0));
         }
 
-        if base.offset == PointerOffsetTerm::Constant(0) {
+        if base.offset == AddressOffset::Constant(0) {
             return crate::kernel::reasoning::element_index_from_offset(&self.offset, byte_width);
         }
 
         match &self.offset {
-            PointerOffsetTerm::Add(left, right) if left.as_ref() == &base.offset => {
+            AddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
                 crate::kernel::reasoning::element_index_from_offset(right, byte_width)
             }
-            PointerOffsetTerm::Add(left, right) if right.as_ref() == &base.offset => {
+            AddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
                 crate::kernel::reasoning::element_index_from_offset(left, byte_width)
             }
             _ => {
@@ -5257,7 +5286,7 @@ impl Pointer {
         base: &Self,
         byte_width: u32,
     ) -> Option<SharedMachineIntegerTerm> {
-        if self.block != base.block {
+        if self.base != base.base {
             return None;
         }
 
@@ -5268,7 +5297,7 @@ impl Pointer {
             );
         }
 
-        if base.offset == PointerOffsetTerm::Constant(0) {
+        if base.offset == AddressOffset::Constant(0) {
             return crate::kernel::reasoning::shared_element_index_from_offset(
                 &self.offset,
                 byte_width,
@@ -5276,10 +5305,10 @@ impl Pointer {
         }
 
         match &self.offset {
-            PointerOffsetTerm::Add(left, right) if left.as_ref() == &base.offset => {
+            AddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
                 crate::kernel::reasoning::shared_element_index_from_offset(right, byte_width)
             }
-            PointerOffsetTerm::Add(left, right) if right.as_ref() == &base.offset => {
+            AddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
                 crate::kernel::reasoning::shared_element_index_from_offset(left, byte_width)
             }
             _ => {
@@ -5328,20 +5357,20 @@ impl Pointer {
     ) -> Option<crate::kernel::reasoning::ExactElementDelta> {
         use crate::kernel::reasoning::{ExactElementDelta, exact_element_delta_from_offset};
 
-        if self.block != base.block {
+        if self.base != base.base {
             return None;
         }
         if self.offset == base.offset {
             return Some(ExactElementDelta::zero());
         }
-        if base.offset == PointerOffsetTerm::Constant(0) {
+        if base.offset == AddressOffset::Constant(0) {
             return exact_element_delta_from_offset(&self.offset, byte_width);
         }
         match &self.offset {
-            PointerOffsetTerm::Add(left, right) if left.as_ref() == &base.offset => {
+            AddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
                 exact_element_delta_from_offset(right, byte_width)
             }
-            PointerOffsetTerm::Add(left, right) if right.as_ref() == &base.offset => {
+            AddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
                 exact_element_delta_from_offset(left, byte_width)
             }
             _ => {
@@ -5364,15 +5393,15 @@ impl Pointer {
 /// constant is `index - c`, the form [`MachineTerm::subtract`] gives
 /// `(b + i) - (b + c)`, rather than the residue `index + (2^32 - c)`.
 fn native_element_index_of_difference(
-    difference: &PointerOffsetTerm,
+    difference: &AddressOffset,
     byte_width: u32,
 ) -> Option<MachineTerm> {
-    if let PointerOffsetTerm::Add(symbolic, constant) = difference
-        && let PointerOffsetTerm::Constant(bytes) = constant.as_ref()
+    if let AddressOffset::Add(symbolic, constant) = difference
+        && let AddressOffset::Constant(bytes) = constant.as_ref()
         && *bytes < 0
     {
         let elements = crate::kernel::reasoning::element_index_from_offset(
-            &PointerOffsetTerm::Constant(-bytes),
+            &AddressOffset::Constant(-bytes),
             byte_width,
         )?;
         return Some(MachineTerm::subtract(
@@ -5384,15 +5413,15 @@ fn native_element_index_of_difference(
 }
 
 fn element_index_of_difference(
-    difference: &PointerOffsetTerm,
+    difference: &AddressOffset,
     byte_width: u32,
 ) -> Option<SharedMachineIntegerTerm> {
-    if let PointerOffsetTerm::Add(symbolic, constant) = difference
-        && let PointerOffsetTerm::Constant(bytes) = constant.as_ref()
+    if let AddressOffset::Add(symbolic, constant) = difference
+        && let AddressOffset::Constant(bytes) = constant.as_ref()
         && *bytes < 0
     {
         let elements = crate::kernel::reasoning::shared_element_index_from_offset(
-            &PointerOffsetTerm::Constant(-bytes),
+            &AddressOffset::Constant(-bytes),
             byte_width,
         )?;
         return Some(crate::kernel::assumptions::index_binary(
@@ -5415,11 +5444,8 @@ fn element_index_of_difference(
 /// syntactically among those of `offset`, each occurrence matched once, or
 /// there is no answer and the caller keeps its own. The walk is over the two
 /// terms and nothing else.
-fn offset_less_base(
-    offset: &PointerOffsetTerm,
-    base: &PointerOffsetTerm,
-) -> Option<PointerOffsetTerm> {
-    fn summands(term: &PointerOffsetTerm) -> Option<(Vec<&PointerOffsetTerm>, i64)> {
+fn offset_less_base(offset: &AddressOffset, base: &AddressOffset) -> Option<AddressOffset> {
+    fn summands(term: &AddressOffset) -> Option<(Vec<&AddressOffset>, i64)> {
         let mut symbolic = Vec::new();
         let mut constant = 0i64;
         let mut pending = vec![term];
@@ -5429,7 +5455,7 @@ fn offset_less_base(
                 continue;
             }
             match current {
-                PointerOffsetTerm::Add(left, right) => {
+                AddressOffset::Add(left, right) => {
                     // Right first, so `left` is walked first and the
                     // summands keep their written order.
                     pending.push(right);
@@ -5450,11 +5476,11 @@ fn offset_less_base(
     let difference = rest
         .into_iter()
         .cloned()
-        .reduce(PointerOffsetTerm::add)
-        .unwrap_or(PointerOffsetTerm::Constant(0));
-    Some(PointerOffsetTerm::add(
+        .reduce(AddressOffset::add)
+        .unwrap_or(AddressOffset::Constant(0));
+    Some(AddressOffset::add(
         difference,
-        PointerOffsetTerm::Constant(constant),
+        AddressOffset::Constant(constant),
     ))
 }
 
@@ -5894,21 +5920,30 @@ mod shift_overflow_refusal_tests {
 /// condition decision answers the same comparisons the same way.
 pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::Constant(constant), value) => constant == value,
-        Proposition::ConditionIs(
-            condition @ ConditionTerm::Compare {
-                format,
-                left,
-                right,
-                ..
-            },
-            value,
-        ) if format.constant_from_term(left).is_some()
-            && format.constant_from_term(right).is_some() =>
+        condition_source_0 @ Proposition::ConditionIs(_, value)
+            if let Some((ConditionTerm::Constant(constant), _)) =
+                condition_source_0.condition_native() =>
+        {
+            constant == value
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, value)
+            if let Some((
+                condition @ ConditionTerm::Compare {
+                    format,
+                    left,
+                    right,
+                    ..
+                },
+                _,
+            )) = condition_source_0.condition_native()
+                && (format.constant_from_term(left).is_some()
+                    && format.constant_from_term(right).is_some()) =>
         {
             PureFactContext::decide_intrinsically(condition) == Some(*value)
         }
-        Proposition::ConditionIs(condition, value) => condition.reflexive_value() == Some(*value),
+        Proposition::ConditionIs(condition, value) => {
+            condition.native_compat().reflexive_value() == Some(*value)
+        }
         _ => false,
     }
 }
@@ -5966,7 +6001,7 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
             None
         }
     };
-    let truth = match condition {
+    let truth = match condition.native_compat() {
         ConditionTerm::Compare {
             format,
             relation,
@@ -5990,7 +6025,7 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
         | ConditionTerm::IntegerLessEqual(left, right)
         | ConditionTerm::IntegerGreaterThan(left, right)
         | ConditionTerm::IntegerGreaterEqual(left, right) => {
-            let relation = match condition {
+            let relation = match condition.native_compat() {
                 ConditionTerm::IntegerLessThan(..) => R::LessThan,
                 ConditionTerm::IntegerLessEqual(..) => R::LessEqual,
                 ConditionTerm::IntegerGreaterThan(..) => R::GreaterThan,
@@ -6033,7 +6068,7 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
-    let mirrored = match condition {
+    let mirrored = match condition.native_compat() {
         ConditionTerm::IntegerEqual(left, right) => {
             ConditionTerm::IntegerEqual(right.clone(), left.clone())
         }
@@ -6065,18 +6100,18 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
             left: right.clone(),
             right: left.clone(),
         },
-        ConditionTerm::PointerOffsetEqual(left, right) => {
-            ConditionTerm::PointerOffsetEqual(right.clone(), left.clone())
+        ConditionTerm::AddressOffsetEqual(left, right) => {
+            ConditionTerm::AddressOffsetEqual(right.clone(), left.clone())
+        }
+        ConditionTerm::AddressEqual(left, right) => {
+            ConditionTerm::AddressEqual(right.clone(), left.clone())
         }
         ConditionTerm::PointerEqual(left, right) => {
             ConditionTerm::PointerEqual(right.clone(), left.clone())
         }
-        ConditionTerm::PointerValueEqual(left, right) => {
-            ConditionTerm::PointerValueEqual(right.clone(), left.clone())
-        }
         _ => return None,
     };
-    Some(Proposition::ConditionIs(mirrored, *value))
+    Some(Proposition::condition_is(mirrored, *value))
 }
 
 /// The one availability rule for a premise a `using` list names, over the
@@ -6107,7 +6142,7 @@ fn listed_premise_holds_with(
         // symbolic operands from cached shape flags and uses only the named
         // expression's shared DAG, never the available-fact collection.
         || matches!(premise, Proposition::ConditionIs(condition, expected)
-            if crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(condition)
+            if crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(condition.native_compat())
                 == Some(*expected))
         || holds_by_format_range(premise)
         || available(premise)
@@ -6146,11 +6181,11 @@ mod integer_equality_citation_tests {
                 ),
             };
             assert!(listed_premise_holds(
-                &Proposition::ConditionIs(condition.clone(), true),
+                &Proposition::condition_is(condition.clone(), true),
                 |_| false
             ));
             assert!(!listed_premise_holds(
-                &Proposition::ConditionIs(condition, false),
+                &Proposition::condition_is(condition, false),
                 |_| false
             ));
         }
@@ -6162,11 +6197,11 @@ mod integer_equality_citation_tests {
         let sum: SharedIntegerTerm = IntegerTerm::Add(zero.clone(), zero.clone()).into();
         let equality = ConditionTerm::IntegerEqual(zero.clone(), sum);
         assert!(listed_premise_holds(
-            &Proposition::ConditionIs(equality.clone(), true),
+            &Proposition::condition_is(equality.clone(), true),
             |_| false
         ));
         assert!(!listed_premise_holds(
-            &Proposition::ConditionIs(equality, false),
+            &Proposition::condition_is(equality, false),
             |_| false
         ));
         let symbolic = ConditionTerm::IntegerEqual(
@@ -6174,7 +6209,7 @@ mod integer_equality_citation_tests {
             IntegerTerm::Variable(Variable(931_001)).into(),
         );
         assert!(!listed_premise_holds(
-            &Proposition::ConditionIs(symbolic, true),
+            &Proposition::condition_is(symbolic, true),
             |_| false
         ));
         let undefined = ConditionTerm::IntegerEqual(
@@ -6186,7 +6221,7 @@ mod integer_equality_citation_tests {
             zero,
         );
         assert!(!listed_premise_holds(
-            &Proposition::ConditionIs(undefined, true),
+            &Proposition::condition_is(undefined, true),
             |_| false
         ));
     }
@@ -6196,24 +6231,24 @@ mod integer_equality_citation_tests {
         let left: SharedIntegerTerm = IntegerTerm::Variable(Variable(931_011)).into();
         let right: SharedIntegerTerm = IntegerTerm::Variable(Variable(931_012)).into();
         for polarity in [true, false] {
-            let source = Proposition::ConditionIs(
+            let source = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(left.clone(), right.clone()),
                 polarity,
             );
-            let target = Proposition::ConditionIs(
+            let target = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(right.clone(), left.clone()),
                 polarity,
             );
             assert_eq!(mirrored_equality(&source), Some(target.clone()));
             assert_eq!(mirrored_equality(&target), Some(source.clone()));
             assert!(listed_premise_holds(&target, |fact| fact == &source));
-            let wrong_polarity = Proposition::ConditionIs(
+            let wrong_polarity = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(right.clone(), left.clone()),
                 !polarity,
             );
             assert!(!listed_premise_holds(&wrong_polarity, |fact| fact == &source));
         }
-        let ordered = Proposition::ConditionIs(ConditionTerm::IntegerLessThan(left, right), true);
+        let ordered = Proposition::condition_is(ConditionTerm::IntegerLessThan(left, right), true);
         assert!(mirrored_equality(&ordered).is_none());
     }
 }
@@ -6227,7 +6262,7 @@ mod connective_walk_tests {
     #[test]
     fn a_decided_connective_does_not_ask_its_right_side() {
         let side = |name: u64| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::signed_less_than(
                     MachineTerm::Variable(Variable(name)),
                     MachineTerm::constant(0),
@@ -6364,12 +6399,12 @@ fn canonical_pointer_read(bits: &MachineTerm) -> Option<MachineTerm> {
     Some(read)
 }
 
-fn named_pointer_read(read: MachineTerm) -> Pointer {
+fn named_pointer_read(read: MachineTerm) -> Address {
     let MachineTerm::MemoryLoad(memory, address, _) = &read else {
         unreachable!("selected pointer read");
     };
-    let value = Pointer::loaded_value(&memory.shared_memory().unchanged_bytes_source(), address);
-    if let PointerBlock::LoadedPointer(identity) = value.block {
+    let value = Address::loaded_value(&memory.shared_memory().unchanged_bytes_source(), address);
+    if let AddressBase::LoadedPointer(identity) = value.base {
         crate::kernel::eval::record_pointer_load_source(identity, &read);
     }
     value
@@ -6388,7 +6423,7 @@ mod format_range_premise_tests {
     }
 
     fn holds(relation: CompareRelation, left: MachineTerm, bound: i32) -> bool {
-        holds_by_format_range(&Proposition::ConditionIs(
+        holds_by_format_range(&Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,
@@ -6420,7 +6455,7 @@ mod format_range_premise_tests {
                     .unwrap()
                     .into();
             let at_least = |bound: i64| {
-                holds_by_format_range(&Proposition::ConditionIs(
+                holds_by_format_range(&Proposition::condition_is(
                     ConditionTerm::IntegerLessEqual(
                         IntegerTerm::constant_i64(bound).into(),
                         observed.clone(),
@@ -6525,7 +6560,7 @@ mod format_range_premise_tests {
                         };
                         for truth in [true, false] {
                             assert_eq!(
-                                holds_by_format_range(&Proposition::ConditionIs(
+                                holds_by_format_range(&Proposition::condition_is(
                                     condition.clone(),
                                     truth
                                 )),

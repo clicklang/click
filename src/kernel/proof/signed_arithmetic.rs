@@ -874,10 +874,11 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         },
         _ => return None,
     };
-    if !matches!(condition, ConditionTerm::Compare { .. })
+    if !matches!(condition.native_compat(), ConditionTerm::Compare { .. })
         && let Some(view) =
             crate::kernel::machine_integer::comparison::structural_native_comparison_view(
-                condition, value,
+                condition.native_compat(),
+                value,
             )
     {
         use crate::kernel::machine_integer::Relation as R;
@@ -942,8 +943,10 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             constant,
         });
     }
-    let widened = crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(condition);
-    let condition = widened.as_ref().unwrap_or(condition);
+    let widened = crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(
+        condition.native_compat(),
+    );
+    let condition = widened.as_ref().unwrap_or(condition.native_compat());
     let (relation, left, right, strict) = match (condition, value) {
         (
             ConditionTerm::Compare {
@@ -1134,7 +1137,7 @@ fn affine_difference(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{Pointer, Variable};
+    use crate::kernel::{Address, Variable};
 
     #[test]
     fn remainder_add_requires_nonnegative_bounded_dividends_and_single_residue_interval() {
@@ -1169,8 +1172,8 @@ mod tests {
     fn signed_read_atom_identity_survives_native_export() {
         use crate::kernel::{KernelTermExport, KernelTermImport, LoadKind, VerificationSession};
         let _session = VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(crate::kernel::Memory::new());
-        let address = Pointer::symbolic(Variable(997151));
+        let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
+        let address = Address::symbolic(Variable(997151));
         let read = |offset, kind| {
             MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&memory),

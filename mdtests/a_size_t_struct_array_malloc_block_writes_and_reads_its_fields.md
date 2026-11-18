@@ -2,7 +2,7 @@
 
 `malloc(n * sizeof(struct item))` with a `size_t` `n` decided
 `1 <= n <= PTRDIFF_MAX / 8` makes a 64-bit block of `n * 8u64` bytes
-(`design/heap-extents.md`). A loop over a `size_t` index writes both fields
+(`design/heap-allocation-sizes.md`). A loop over a `size_t` index writes both fields
 of every element, then the last element's field is written and read back.
 Each field address and access is placed over the element count: `p[i].value`
 is inside the block when `i < n`, which the facts about `n` decide, where
@@ -43,9 +43,12 @@ int32 fill(size_t n) {
     step();
     step();
     branch {
-        step_until(function.exit);
-        solve();
-    } else {}
+        true => {
+            step_until(function.exit);
+            solve();
+        }
+        false => {}
+    }
     step_until(loop(0));
     loop {
         decreases n - i;

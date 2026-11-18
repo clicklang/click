@@ -6,16 +6,16 @@ fn computation_refusal_is_independent_of_memory_history() {
     let mut costs = Vec::new();
     for size in [4, 16, 64, 256] {
         let _session = VerificationSession::enter();
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("computation-read".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Concrete("computation-read".into()),
+            offset: AddressOffset::Constant(0),
         };
-        let other = Pointer {
-            block: PointerBlock::Concrete("computation-write".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let other = Address {
+            base: AddressBase::Concrete("computation-write".into()),
+            offset: AddressOffset::Constant(0),
         };
         let before = crate::kernel::intern_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("computation-read", 4)
                 .with_block("computation-write", 4),
         );
@@ -35,14 +35,14 @@ fn computation_refusal_is_independent_of_memory_history() {
             LoadKind::Int32,
         );
         let read_equality =
-            Proposition::ConditionIs(ConditionTerm::equal(left.clone(), right), true);
+            Proposition::condition_is(ConditionTerm::equal(left.clone(), right), true);
         let add = |left, right| MachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
             left: Box::new(left),
             right: Box::new(right),
         };
-        let rearranged = Proposition::ConditionIs(
+        let rearranged = Proposition::condition_is(
             ConditionTerm::equal(
                 add(left.clone(), MachineTerm::constant(1)),
                 add(MachineTerm::constant(1), left),
@@ -59,7 +59,7 @@ fn computation_refusal_is_independent_of_memory_history() {
         assert!(!computes_leaf(&Proposition::MemoryLoadable {
             memory: before.memory().clone(),
             base: pointer,
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }));
     }

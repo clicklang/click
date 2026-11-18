@@ -6,13 +6,13 @@ use super::*;
 
 #[test]
 fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
-    let slot = Pointer {
-        block: "local:frame:0:input".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let slot = Address {
+        base: "local:frame:0:input".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let pointee = Pointer {
-        block: "pointee".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointee = Address {
+        base: "pointee".into(),
+        offset: AddressOffset::Constant(0),
     };
     let value = ProgramValue::typed_pointer(pointee, ProgramType::Int32Pointer);
     let layout = AggregateLayout::new(
@@ -34,8 +34,8 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         // otherwise reuse observations recorded by the first sample.
         let _session = crate::kernel::VerificationSession::enter();
         let mut entry = ExecutionState::new().with_memory(
-            Memory::new()
-                .with_block(slot.block.clone(), 8)
+            SymbolicMemory::new()
+                .with_block(slot.base.clone(), 8)
                 .store(slot.clone(), value.clone()),
         );
         entry
@@ -46,7 +46,7 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         }
         let state = entry
             .clone()
-            .with_memory(entry.memory.clone().without_local_block(&slot.block));
+            .with_memory(entry.memory.clone().without_local_block(&slot.base));
         let resolve = |expression: &mut ProgramExpression| {
             resolve_retained_aggregate_fields(
                 &entry,
@@ -69,9 +69,9 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
                 let ProgramValue::Pointer(stored) = &value else {
                     unreachable!()
                 };
-                read.pointer() != stored.pointer()
+                read.address() != stored.address()
                     && PureFactContext::new().equality_graph.knows_condition(
-                        &ConditionTerm::PointerValueEqual(
+                        &ConditionTerm::PointerEqual(
                             Box::new(read.clone()),
                             Box::new(stored.clone()),
                         ),
@@ -94,7 +94,7 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
             matches!(&expression, ProgramExpression::Load(inner) if retained(inner)),
             "{expression:?}"
         );
-        assert!(!state.memory.has_block(&slot.block));
+        assert!(!state.memory.has_block(&slot.base));
         assert!(state.resources().facts().is_empty());
     }
     assert!(work.windows(2).all(|pair| pair[0] == pair[1]), "{work:?}");

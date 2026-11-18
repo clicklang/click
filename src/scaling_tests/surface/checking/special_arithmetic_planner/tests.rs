@@ -3,12 +3,12 @@ use super::*;
 #[test]
 fn pointer_relevance_visits_shared_prefixes_once() {
     use crate::kernel::{
-        KernelTerm, KernelTermExport, KernelType, MachineOperandView as View, Pointer,
-        PointerBlock, PointerOffsetTerm, Variable,
+        Address, AddressBase, AddressOffset, KernelTerm, KernelTermExport, KernelType,
+        MachineOperandView as View, Variable,
     };
-    let target = Pointer {
-        block: PointerBlock::Concrete("unrelated".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let target = Address {
+        base: AddressBase::Concrete("unrelated".into()),
+        offset: AddressOffset::Constant(0),
     };
     let mut previous = None;
     for size in [16, 64, 256] {
@@ -28,7 +28,7 @@ fn pointer_relevance_visits_shared_prefixes_once() {
             CompareRelation::Equal,
             [View::Shared(&root), View::Shared(&root)],
         );
-        let proposition = Proposition::ConditionIs(condition, true);
+        let proposition = Proposition::condition_is(condition, true);
         let exports = KernelTermExport::machine_export_count();
         let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
             proposition_mentions_pointer(&proposition, &target)

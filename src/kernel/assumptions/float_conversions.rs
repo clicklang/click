@@ -213,7 +213,7 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
     values[&key(root, policy)]
 }
 
-pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(PointerBlock, u64)>) {
+pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(AddressBase, u64)>) {
     let mut pending = vec![root];
     let mut seen = std::collections::HashSet::new();
     while let Some(root) = pending.pop() {
@@ -237,7 +237,7 @@ pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(PointerB
                 root.machine_read_leaf().expect("scalar read"),
                 keys,
             ),
-            KernelTermNode::PointerAddress { .. } => collect_bitvector_memory_load_keys(
+            KernelTermNode::IntegerAddress { .. } => collect_bitvector_memory_load_keys(
                 root.machine_conversion_leaf().expect("address"),
                 keys,
             ),
@@ -393,9 +393,12 @@ mod tests {
     #[test]
     fn conversion_index_fingerprints_and_load_keys_match_native_policies() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(999979));
+        let pointer = Address::symbolic(Variable(999979));
         let mut policies = Vec::new();
-        for memory in [Memory::new(), Memory::new().with_block("different", 4)] {
+        for memory in [
+            SymbolicMemory::new(),
+            SymbolicMemory::new().with_block("different", 4),
+        ] {
             let source = MachineTerm::Float32Binary {
                 operator: crate::kernel::FloatBinaryOperator::Add,
                 left: Box::new(MachineTerm::MemoryLoad(

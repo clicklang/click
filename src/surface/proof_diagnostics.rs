@@ -127,6 +127,13 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
     }
 
     fn kernel_goal(&self) -> Option<&Proposition>;
+
+    /// The retained written goal when the source spelling carries pointer
+    /// information that an address rendering could lose.
+    fn written_pointer_goal(&self) -> Option<&super::ClickProposition> {
+        None
+    }
+
     fn premises(&self, limit: usize) -> Vec<&Proposition>;
     fn premise_count(&self) -> usize;
     fn proof_trace(
@@ -269,6 +276,20 @@ impl ProofFailureDiagnostic {
         self.state.as_ref()?.kernel_goal()
     }
 
+    pub(in crate::surface) fn render_goal(
+        &self,
+        labels: &mut render::MemoryStateLabels,
+    ) -> Option<String> {
+        let state = self.state.as_ref()?;
+        if let Some(goal) = state.written_pointer_goal() {
+            return Some(super::printing::source_click_proposition(goal));
+        }
+        Some(render::render_proposition_labeled(
+            state.kernel_goal()?,
+            labels,
+        ))
+    }
+
     pub(crate) fn premises(&self, limit: usize) -> Vec<&Proposition> {
         self.state
             .as_ref()
@@ -353,9 +374,9 @@ pub(crate) fn render_failed_requirement(
         if let Some(instance) = state.proposed_hidden_record()
             && let Some(record) = render::render_hidden_record_instance_labeled(
                 instance.name(),
-                instance.arguments(),
+                &(instance.arguments()).native_values(),
                 instance.schema().fields(),
-                instance.fields(),
+                &instance.fields().native_values(),
                 labels,
             )
         {
@@ -536,9 +557,9 @@ fn render_diagnostic_labeled(
         .is_some_and(|state| requirement_is_goal(state.as_ref()));
     if requirement_is_goal {
         // Printed with the requirement above.
-    } else if let Some(goal) = diagnostic.kernel_goal() {
+    } else if let Some(goal) = diagnostic.render_goal(labels) {
         rendered.push_str("\n  goal: ");
-        rendered.push_str(&render::render_proposition_labeled(goal, labels));
+        rendered.push_str(&goal);
         if let Some(history) = diagnostic
             .state
             .as_ref()
@@ -694,10 +715,10 @@ pub(crate) fn render_search_failures(summary: &str, failures: &[ProofSearchFailu
         if let Some(goal) = failure
             .diagnostic
             .as_ref()
-            .and_then(|diagnostic| diagnostic.kernel_goal())
+            .and_then(|diagnostic| diagnostic.render_goal(&mut labels))
         {
             rendered.push_str("; goal: ");
-            rendered.push_str(&render::render_proposition_labeled(goal, &mut labels));
+            rendered.push_str(&goal);
         }
     }
     if failures.len() > 8 {
@@ -742,7 +763,7 @@ mod tests {
 
     #[test]
     fn rejected_read_prerequisite_uses_the_shared_state_legend() {
-        use crate::kernel::{Memory, Pointer, ProgramType, Variable};
+        use crate::kernel::{Address, ProgramType, SymbolicMemory, Variable};
         struct Rejected(Proposition);
         impl ProofDiagnosticState for Rejected {
             fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
@@ -759,8 +780,9 @@ mod tests {
             }
         }
         let state = Rejected(Proposition::MemoryReadDefined {
-            memory: Memory::new(),
-            pointer: Pointer::symbolic(Variable(987_001)),
+            at: None,
+            memory: SymbolicMemory::new(),
+            pointer: Address::symbolic(Variable(987_001)),
             value_type: ProgramType::Int32,
         });
         let mut labels = render::MemoryStateLabels::default();
@@ -781,7 +803,7 @@ mod tests {
     #[test]
     fn rejected_resource_fact_uses_one_printer_and_state_legend() {
         let _typed = render::TypedNotationScope::enter();
-        use crate::kernel::{Memory, Pointer, ProgramType, Variable};
+        use crate::kernel::{Address, ProgramType, SymbolicMemory, Variable};
         struct Rejected(crate::kernel::proof::RejectedResourceRewriteFact);
         impl ProofDiagnosticState for Rejected {
             fn rejected_resource_fact(
@@ -800,12 +822,13 @@ mod tests {
             }
         }
         let read = |memory| Proposition::MemoryReadDefined {
+            at: None,
             memory,
-            pointer: Pointer::symbolic(Variable(987_002)),
+            pointer: Address::symbolic(Variable(987_002)),
             value_type: ProgramType::Int32,
         };
-        let rejected = read(Memory::new());
-        let allowed = read(Memory::new().with_block("changed", 4));
+        let rejected = read(SymbolicMemory::new());
+        let allowed = read(SymbolicMemory::new().with_block("changed", 4));
         let state = Rejected(crate::kernel::proof::RejectedResourceRewriteFact {
             rejected: rejected.clone(),
             allowed: vec![allowed.clone(); 13].into(),
@@ -838,7 +861,7 @@ mod tests {
     #[test]
     fn rendering_is_the_boundary_that_visits_retained_context() {
         let state = Arc::new(CountingState {
-            goal: Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
@@ -865,7 +888,7 @@ mod tests {
         use crate::kernel::{
             ConditionTerm, IntegerTerm, MachineIntegerType, MachineTerm, Variable,
         };
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::integer_equal(
                 IntegerTerm::from_machine(
                     MachineIntegerType::Int32,
@@ -923,7 +946,7 @@ mod tests {
     #[test]
     fn click_error_lazily_caches_and_preserves_structured_context() {
         let state = Arc::new(CountingState {
-            goal: Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
@@ -951,7 +974,7 @@ mod tests {
 
     #[test]
     fn reported_trace_uses_the_goals_state_labels() {
-        use crate::kernel::{MachineTerm, Memory, Pointer, PointerBlock, PointerOffsetTerm};
+        use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, SymbolicMemory};
 
         struct TracedState(Proposition);
         impl ProofDiagnosticState for TracedState {
@@ -994,15 +1017,15 @@ mod tests {
         }
         let at = |memory| Proposition::MemoryLoadable {
             memory,
-            base: Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(0),
+            base: Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
             },
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         };
         crate::surface::with_proof_trace("f", || {
-            let memory = Memory::new().with_block("shared", 1);
+            let memory = SymbolicMemory::new().with_block("shared", 1);
             crate::surface::proof_trace::record(
                 1,
                 crate::surface::proof_trace::TraceStep {
@@ -1064,7 +1087,7 @@ mod tests {
     #[test]
     fn terminal_search_report_renders_unclosed_goal_lazily() {
         let state = Arc::new(CountingState {
-            goal: Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
             calls: AtomicUsize::new(0),
         });
         let diagnostic = Arc::new(ProofFailureDiagnostic {
@@ -1105,7 +1128,7 @@ mod tests {
         assert!(report.contains("goal: true"));
     }
     fn unspelled_test_fact(variable: crate::kernel::Variable) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             crate::kernel::ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
@@ -1145,7 +1168,7 @@ mod tests {
 
     #[test]
     fn unspelled_premises_keep_entry_names_after_the_session_unwinds() {
-        use crate::kernel::{MachineTerm, Memory, ProgramExpression, ProgramValue, Variable};
+        use crate::kernel::{MachineTerm, ProgramExpression, ProgramValue, Variable};
         use crate::languages::interface::{ImportedParameter, InterfaceType};
 
         let variable = Variable(786_901);
@@ -1159,7 +1182,7 @@ mod tests {
         ))];
         render::enter_ambient_naming(
             crate::surface::ParameterBinding::new(&parameters, &arguments),
-            &Memory::new(),
+            &crate::kernel::ExecutionState::new(),
         );
         let failure = unspelled_test_failure(&[unspelled_test_fact(variable)]);
         render::clear_ambient_naming();

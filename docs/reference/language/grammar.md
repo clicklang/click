@@ -98,14 +98,14 @@ documentation inventory keep the following accepted words synchronized.
 | `all`, `any`, `fold` | Range proposition and expression methods. |
 | `prop` | Proposition value: `prop { P }`. |
 | `defined`, `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Definedness, readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
-| `old`, `at`, `c`, `rust` | Point-reading and program-binding forms: `c(name)` names a C binding where a Click name has the same name, and `rust(name)` a Rust one. |
+| `old`, `at`, `program` | Point-reading and program-binding forms: `program::name` names a program binding where a Click name has the same name. |
 | `float32_from_bits`, `float64_from_bits` | Literal-only IEEE bit-pattern expressions; see [exact float bit literals](#exact-float-bit-literals). |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
 | `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source form is available. |
 | `by`, `using` | Proof introduction and exact-premise syntax. |
 | `mark`, `step`, `step_until` | Execution tactics. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
-| `take`, `give`, `gather`, `scatter` | Iterated guarded-ownership tactics: move one element out of or into an iterated fact, and form or dissolve the whole fact. `forall` inside a resource body starts the iterated clause itself. |
+| Indexed `unfold` and `fold`, `gather`, `scatter` | Expose or restore an iterated ownership slot, or form or dissolve the whole iterated fact. `forall` inside a resource body starts the iterated clause itself. |
 | `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `known`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
@@ -333,7 +333,7 @@ position and says whether it had no reading there or contradicted the
 invariants before it.
 
 A `malloc` or `calloc` result bound directly to a complete struct pointer
-establishes that struct's class when the checked allocation extent contains
+establishes that struct's class when the checked allocation size contains
 the object and the allocator guarantees its alignment. The success branch
 records the class on both the pointer and its storage; the failure branch is
 null. Insufficient storage establishes no class. Casting an existing object,
@@ -785,11 +785,12 @@ operand that originally supplied its type context.
 
 ## Proof syntax
 
-Binary proof splits follow one rule: `then` appears exactly when there is an
-`ensuring` interface. Write `if P { ... } else { ... }` or
-`branch { ... } else { ... }` without an interface, and
-`if P ensuring { ... } then { ... } else { ... }` or
-`branch ensuring { ... } then { ... } else { ... }` with one.
+Write `if P { ... } else { ... }` or
+`if P ensuring { ... } then { ... } else { ... }`.
+A C `branch` has labeled arms in a block:
+`branch { true => { ... } false => { ... } }`.
+Its optional join interface precedes that block:
+`branch ensuring { ... } { true => { ... } false => { ... } }`.
 
 A proof is omitted, written as a single tactic call such as `by solve();`, or
 written as a `by { ... }` block of tactic statements. Tactic

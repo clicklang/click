@@ -8,13 +8,13 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
             let mut preparation = Vec::new();
             for count in [4_u64, 16, 64] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let base = Pointer {
-                    block: PointerBlock::Heap(9_970_000),
-                    offset: PointerOffsetTerm::Constant(0),
+                let base = Address {
+                    base: AddressBase::Heap(9_970_000),
+                    offset: AddressOffset::Constant(0),
                 };
-                let guards = Pointer {
-                    block: "local:iterated-exposure-guards".into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                let guards = Address {
+                    base: "local:iterated-exposure-guards".into(),
+                    offset: AddressOffset::Constant(0),
                 };
                 let template = IteratedMemory::new(
                     "cells",
@@ -39,15 +39,15 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         )));
                     } else if axis != "range premises" {
                         let alias = if axis == "aliases" {
-                            Pointer::symbolic(Variable(9_980_000 + index))
+                            Address::symbolic(Variable(9_980_000 + index))
                         } else {
-                            Pointer {
-                                block: base.block.clone(),
-                                offset: PointerOffsetTerm::Variable(Variable(9_980_000 + index)),
+                            Address {
+                                base: base.base.clone(),
+                                offset: AddressOffset::Variable(Variable(9_980_000 + index)),
                             }
                         };
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(base.clone(), alias),
+                            ConditionTerm::address_equal(base.clone(), alias),
                             true,
                         );
                     }
@@ -63,8 +63,8 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                 let (resources, inserted) = ResourceContext::new_with_equalities(&facts)
                     .unchecked_with_facts_and_occurrences(owners);
                 let retained_source = inserted.last().unwrap().1;
-                let memory = Memory::new()
-                    .with_block(guards.block.clone(), 16)
+                let memory = SymbolicMemory::new()
+                    .with_block(guards.base.clone(), 16)
                     .initialize_scalar_array(
                         &guards,
                         ProgramType::Int32,
@@ -109,10 +109,10 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                             sort: Sort::ProgramInt32,
                             body: Box::new(Proposition::Implies(
                                 Box::new(Proposition::And(
-                                    Box::new(Proposition::ConditionIs(lower, true)),
-                                    Box::new(Proposition::ConditionIs(upper, true)),
+                                    Box::new(Proposition::condition_is(lower, true)),
+                                    Box::new(Proposition::condition_is(upper, true)),
                                 )),
-                                Box::new(Proposition::ConditionIs(
+                                Box::new(Proposition::condition_is(
                                     ConditionTerm::equal(cell, 0u32.into()),
                                     true,
                                 )),
@@ -142,10 +142,10 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         sort: Sort::ProgramInt32,
                         body: Box::new(Proposition::Implies(
                             Box::new(Proposition::And(
-                                Box::new(Proposition::ConditionIs(lower, true)),
-                                Box::new(Proposition::ConditionIs(upper, true)),
+                                Box::new(Proposition::condition_is(lower, true)),
+                                Box::new(Proposition::condition_is(upper, true)),
                             )),
-                            Box::new(Proposition::ConditionIs(
+                            Box::new(Proposition::condition_is(
                                 ConditionTerm::Compare {
                                     format: MachineIntegerType::Int32,
                                     relation: CompareRelation::Equal,
@@ -167,8 +167,9 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         template: template.clone(),
                     }
                 } else {
-                    IteratedStep::Take {
-                        element: range.clone(),
+                    IteratedStep::UnfoldSlot {
+                        template: template.clone(),
+                        index: 1u32.into(),
                     }
                 };
                 let prepared = if scatter {
@@ -229,4 +230,53 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
             );
         }
     }
+}
+
+#[test]
+fn indexed_slot_selection_ignores_other_clauses_at_the_same_base() {
+    let template = |lower: u32| {
+        IteratedMemory::new(
+            "slots",
+            Address::symbolic(Variable(8_000)),
+            4,
+            2,
+            0,
+            2,
+            lower.into(),
+            (lower + 2).into(),
+            IteratedGuard::new(
+                Address::symbolic(Variable(8_001)),
+                ProgramType::Int32,
+                4,
+                true,
+                0u32.into(),
+            ),
+        )
+        .unwrap()
+    };
+    let selected = template(0);
+    let missing = template(1);
+    let held = ResourceFact::own(Resource::iterated(selected.with_hole(0u32.into())));
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let resources = (1..=size).fold(
+            ResourceContext::new().unchecked_with_fact(held.clone()),
+            |resources, i| {
+                resources
+                    .unchecked_with_fact(ResourceFact::own(Resource::iterated(template(2 * i))))
+            },
+        );
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(resources.owned_iterated_clause(&selected), Ok(&held));
+            assert!(resources.owned_iterated_clause(&missing).is_err());
+        });
+        samples.push(work);
+        let ambiguous =
+            resources.unchecked_with_fact(ResourceFact::own(Resource::iterated(selected.clone())));
+        assert!(ambiguous.owned_iterated_clause(&selected).is_err());
+    }
+    assert!(
+        samples.iter().all(|&work| work <= samples[0] + 8),
+        "{samples:?}"
+    );
 }

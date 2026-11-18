@@ -35,11 +35,11 @@ mod addresses;
 mod offsets;
 #[allow(dead_code)]
 mod pointers;
-pub(crate) use addresses::{SharedPointerAddress, SharedPointerBlock};
+pub(crate) use addresses::{SharedAddress, SharedAddressBase};
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
-pub(crate) use offsets::{KernelPointerOffset, SharedPointerOffset};
-pub(crate) use pointers::{PointerRewrite, PointerRewriteError, SharedPointerValue};
+pub(crate) use offsets::{KernelAddressOffset, SharedAddressOffset};
+pub(crate) use pointers::{PointerRewrite, PointerRewriteError, SharedPointer};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, Weak};
 
@@ -102,12 +102,12 @@ pub enum KernelTermNode {
         relation: CompareRelation,
         arguments: [KernelTerm; 2],
     },
-    PointerValueEqual(KernelPointerEquality),
-    PointerEqual {
-        arguments: [SharedPointerAddress; 2],
+    PointerEqual(KernelPointerEquality),
+    AddressEqual {
+        arguments: [SharedAddress; 2],
     },
-    PointerOffsetEqual {
-        arguments: [SharedPointerOffset; 2],
+    AddressOffsetEqual {
+        arguments: [SharedAddressOffset; 2],
     },
     IntegerCompare {
         operator: IntegerComparisonOperator,
@@ -160,26 +160,26 @@ pub enum KernelTermNode {
         destination: MachineIntegerType,
         operand: KernelTerm,
     },
-    /// Exact scalar read descriptor. The state is an opaque shared value;
+    /// Exact scalar read descriptor. The read is made at `point`;
     /// observation origins and access evidence are not part of this node.
     /// Native addresses remain an explicit input boundary during migration.
     MemoryLoad {
-        memory: SharedMemory,
-        address: SharedPointerAddress,
+        point: ProgramPoint,
+        address: SharedAddress,
         kind: LoadKind,
     },
     /// Complete formed pointer value with prepared address and metadata children.
-    PointerValue(SharedPointerValue),
-    /// A pointer argument with its selected memory state.
+    Pointer(SharedPointer),
+    /// A pointer argument with the point its array is read at.
     ArrayReference {
-        memory: SharedMemory,
+        point: ProgramPoint,
         pointer: KernelTerm,
         element_type: ProgramType,
     },
     /// Generic call structure plus the complete checked pointer result.
     PointerCall {
         call: KernelTerm,
-        value: SharedPointerValue,
+        value: SharedPointer,
     },
     /// Pointer arithmetic keeps its exact input roots beside the complete
     /// checked result payload. Formation evidence stays on the execution path.
@@ -187,18 +187,18 @@ pub enum KernelTermNode {
         operation: MachineBinaryOp,
         byte_width: u32,
         operands: [KernelTerm; 2],
-        value: SharedPointerValue,
+        value: SharedPointer,
     },
     /// Complete pointer read result and its producer-retained definition.
     /// Access authority and read-over-write evidence remain outside the term.
     PointerRead {
-        value: SharedPointerValue,
-        memory: SharedMemory,
-        address: SharedPointerAddress,
+        value: SharedPointer,
+        point: ProgramPoint,
+        address: SharedAddress,
     },
     /// Address observation retains its exact prepared address and object annotation.
-    PointerAddress {
-        address: SharedPointerAddress,
+    IntegerAddress {
+        address: SharedAddress,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     MachineObservation {
@@ -343,12 +343,12 @@ impl PartialEq for NodeKey {
                 && match (&self.0.node, &other.0.node) {
                     (
                         KernelTermNode::MemoryLoad {
-                            memory: a,
+                            point: a,
                             address: p,
                             kind: k,
                         },
                         KernelTermNode::MemoryLoad {
-                            memory: b,
+                            point: b,
                             address: q,
                             kind: l,
                         },
@@ -356,20 +356,26 @@ impl PartialEq for NodeKey {
                         // The interner is process-wide; states belong to arenas.
                         // Comparing their contents across arenas would walk unrelated
                         // memory while registering one selected read.
-                        a.arena_id() == b.arena_id() && p == q && k == l
+                        a.shared_memory().arena_id() == b.shared_memory().arena_id()
+                            && p == q
+                            && k == l
                     }
                     (
                         KernelTermNode::PointerRead {
                             value: a,
-                            memory: m,
+                            point: m,
                             address: p,
                         },
                         KernelTermNode::PointerRead {
                             value: b,
-                            memory: n,
+                            point: n,
                             address: q,
                         },
-                    ) => m.arena_id() == n.arena_id() && a == b && p == q,
+                    ) => {
+                        m.shared_memory().arena_id() == n.shared_memory().arena_id()
+                            && a == b
+                            && p == q
+                    }
                     (a, b) => a == b,
                 })
     }
@@ -384,10 +390,10 @@ impl NodeKey {
     fn new(ty: KernelType, node: KernelTermNode) -> Self {
         let mut hash = crate::id_hash::FingerprintHasher::default();
         ty.hash(&mut hash);
-        if let KernelTermNode::MemoryLoad { memory, .. }
-        | KernelTermNode::PointerRead { memory, .. } = &node
+        if let KernelTermNode::MemoryLoad { point, .. }
+        | KernelTermNode::PointerRead { point, .. } = &node
         {
-            memory.arena_id().hash(&mut hash);
+            point.shared_memory().arena_id().hash(&mut hash);
         }
         node.hash(&mut hash);
         // A fresh legacy identity belongs to its producer. Read observations
@@ -412,16 +418,16 @@ impl NodeKey {
                 .arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
-            KernelTermNode::PointerValue(_)
+            KernelTermNode::Pointer(_)
             | KernelTermNode::PointerRead { .. }
             | KernelTermNode::PointerArithmetic { .. }
             | KernelTermNode::PointerCall { .. }
             | KernelTermNode::ArrayReference { .. }
             | KernelTermNode::MemoryLoad { .. }
-            | KernelTermNode::PointerAddress { .. }
-            | KernelTermNode::PointerOffsetEqual { .. }
-            | KernelTermNode::PointerEqual { .. }
-            | KernelTermNode::PointerValueEqual(_)
+            | KernelTermNode::IntegerAddress { .. }
+            | KernelTermNode::AddressOffsetEqual { .. }
+            | KernelTermNode::AddressEqual { .. }
+            | KernelTermNode::PointerEqual(_)
             | KernelTermNode::BoolRead(_)
             | KernelTermNode::AlgebraicRead(_)
             | KernelTermNode::FloatRead(_) => true,
@@ -506,7 +512,7 @@ impl NodeKey {
             KernelTermNode::MachineLiteral(_)
             | KernelTermNode::ThreadHandle(_)
             | KernelTermNode::MemoryLoad { .. }
-            | KernelTermNode::PointerAddress { .. } => true,
+            | KernelTermNode::IntegerAddress { .. } => true,
             KernelTermNode::FloatConvert { destination, .. } => {
                 MachineIntegerType::from_program_type(*destination).is_some()
             }
@@ -530,7 +536,7 @@ impl NodeKey {
             _ => false,
         };
         let machine_conversions = match &node {
-            KernelTermNode::PointerAddress { .. } => true,
+            KernelTermNode::IntegerAddress { .. } => true,
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
@@ -732,6 +738,69 @@ impl KernelTerm {
     ) -> crate::kernel::execution_value::storage_keys::ConditionStorageKey {
         crate::kernel::execution_value::storage_keys::condition_for_root(self)
     }
+    /// Selected native program-value output for stored argument/state readers.
+    /// Reuse the existing root-owned compatibility slot; cloning or retaining
+    /// the stored value never requests this reading.
+    pub(crate) fn program_value_native_compat(&self) -> Option<&ProgramValue> {
+        if let KernelTermNode::Legacy(legacy) = self.node()
+            && let PureFunctionArgument::Value(value) = legacy.value()
+        {
+            return Some(value);
+        }
+        if let Some(value) = self
+            .pointer_native()
+            .or_else(|| self.boolean_native())
+            .or_else(|| self.algebraic_native_value())
+            .or_else(|| self.float_native_value())
+        {
+            return Some(value);
+        }
+        if !matches!(self.ty(), KernelType::Program(_)) {
+            return None;
+        }
+        let PureFunctionArgument::Value(value) = self
+            .0
+            .argument_leaf
+            .get_or_init(|| {
+                Box::new(PureFunctionArgument::Value(
+                    crate::kernel::ExecutionValue::Shared(self.clone()).into_native(),
+                ))
+            })
+            .as_ref()
+        else {
+            unreachable!("program value output cache")
+        };
+        Some(value)
+    }
+
+    /// Borrow the selected native Integer output from the existing root slot.
+    /// Storage and producer handoffs never request this compatibility reading.
+    pub(crate) fn integer_native_compat(&self) -> Option<&IntegerTerm> {
+        if self.ty() != &KernelType::Integer {
+            return None;
+        }
+        if let KernelTermNode::Legacy(legacy) = self.node()
+            && let PureFunctionArgument::Integer(value) = legacy.value()
+        {
+            return Some(value);
+        }
+        let PureFunctionArgument::Integer(value) = self
+            .0
+            .argument_leaf
+            .get_or_init(|| {
+                Box::new(PureFunctionArgument::Integer(
+                    KernelTermExport::default()
+                        .integer(self)
+                        .expect("Integer field output"),
+                ))
+            })
+            .as_ref()
+        else {
+            unreachable!("Integer output cache")
+        };
+        Some(value)
+    }
+
     #[cfg(test)]
     pub(crate) fn has_cached_native_argument(&self) -> bool {
         self.0.argument_leaf.get().is_some()
@@ -898,6 +967,9 @@ impl KernelTerm {
     pub fn variable(ty: KernelType, variable: Variable) -> Self {
         Self::intern(ty, KernelTermNode::Variable(variable))
     }
+    pub(crate) fn integer_if_raw(arguments: [Self; 3]) -> Self {
+        Self::intern(KernelType::Integer, KernelTermNode::IntegerIf { arguments })
+    }
     pub fn integer_operation(
         operator: KernelIntegerOperator,
         arguments: Vec<Self>,
@@ -1029,7 +1101,7 @@ impl KernelTerm {
             self.node(),
             KernelTermNode::Legacy(_)
                 | KernelTermNode::Call { .. }
-                | KernelTermNode::PointerAddress { .. }
+                | KernelTermNode::IntegerAddress { .. }
         ) && rewritten == original
         {
             return self.clone();
@@ -1113,11 +1185,21 @@ impl KernelTerm {
 #[derive(Default)]
 pub(crate) struct KernelTermImport {
     integers: HashMap<SharedIntegerTerm, KernelTerm>,
+    // Stored native field inputs preserve argument carrier forms. Numeric
+    // checking/producer imports keep their existing common-operand policy.
+    exact_field_inputs: bool,
     // Index producers can retain their supplied native tree unless import
     // expanded a registered read.
     pub(super) machine_input_requires_export: bool,
 }
 impl KernelTermImport {
+    pub(crate) fn for_exact_field_inputs() -> Self {
+        Self {
+            exact_field_inputs: true,
+            ..Self::default()
+        }
+    }
+
     /// Every argument family is explicit here. Native fallbacks preserve C
     /// carrier records and out-of-domain inputs; migrated expressions expose
     /// their children through the common nodes.
@@ -1158,7 +1240,7 @@ impl KernelTermImport {
                     KernelTerm::program_parameter(self.algebraic(value))
                 }
                 ProgramValue::Pointer(value) => {
-                    KernelTerm::shared_pointer_value(SharedPointerValue::import(value))
+                    KernelTerm::shared_pointer_value(SharedPointer::import(value))
                 }
                 // Void has no expression. A complete pointer/integer record is
                 // the package-7 value descriptor, not its numeric projection.
@@ -1172,8 +1254,8 @@ impl KernelTermImport {
                 element_type,
             } => match pointer {
                 ProgramValue::Pointer(pointer) => KernelTerm::shared_array_reference(
-                    intern_memory(memory.clone()),
-                    KernelTerm::shared_pointer_value(SharedPointerValue::import(pointer)),
+                    ProgramPoint::of_memory(memory),
+                    KernelTerm::shared_pointer_value(SharedPointer::import(pointer)),
                     *element_type,
                 ),
                 // Preserve the existing refusal boundary for a non-pointer
@@ -1374,8 +1456,8 @@ mod tests {
             "opaque_argument".into(),
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
-                    Box::new(Pointer::symbolic(Variable(87654328))),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
+                    Box::new(Address::symbolic(Variable(87654328))),
                     LoadKind::Int32,
                 ),
             ))],
@@ -1501,7 +1583,7 @@ mod tests {
 
     #[test]
     fn legacy_pointer_equality_does_not_discard_auxiliary_qualifiers() {
-        let pointer = PointerValue::new(Pointer::symbolic(Variable(76)), ProgramType::Int32Pointer);
+        let pointer = Pointer::new(Address::symbolic(Variable(76)), ProgramType::Int32Pointer);
         let constant = pointer.clone().with_pointee_constant(true);
         assert_eq!(
             pointer, constant,
@@ -1528,9 +1610,9 @@ mod tests {
 
     #[test]
     fn legacy_adapter_keeps_complete_pointers_and_scoped_integer_nodes() {
-        let base = Pointer::symbolic(Variable(75));
-        let root = PointerValue::new(base.clone(), ProgramType::Int32Pointer);
-        let member = root.clone().with_extent(Some(SubobjectExtent {
+        let base = Address::symbolic(Variable(75));
+        let root = Pointer::new(base.clone(), ProgramType::Int32Pointer);
+        let member = root.clone().with_bounds(Some(SubobjectBounds {
             start: base,
             width: 4u32.into(),
         }));
@@ -1682,7 +1764,7 @@ impl KernelTermExport {
             KernelTermNode::PointerRead { value, .. }
             | KernelTermNode::PointerArithmetic { value, .. }
             | KernelTermNode::PointerCall { value, .. }
-            | KernelTermNode::PointerValue(value) => {
+            | KernelTermNode::Pointer(value) => {
                 PureFunctionArgument::Value(ProgramValue::Pointer(value.export()?))
             }
             KernelTermNode::ArrayReference { .. } => {

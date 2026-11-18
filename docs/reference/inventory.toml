@@ -58,6 +58,10 @@ id = "c.type.struct-value"
 path = "reference/language/c.md#struct-subset"
 
 [[item]]
+id = "c.type.local-integer-bit-field-record"
+path = "reference/language/c.md#local-integer-bit-fields"
+
+[[item]]
 id = "c.type.function-pointer"
 path = "reference/language/c.md#supported-types"
 
@@ -342,6 +346,10 @@ id = "c.expression.statement-expression"
 path = "reference/language/c.md#supported-expressions-and-statements"
 
 [[item]]
+id = "c.expression.struct-compound-literal"
+path = "reference/language/c.md#block-scope-struct-compound-literals"
+
+[[item]]
 id = "c.expression.builtin-types-compatible"
 path = "reference/language/c.md#supported-expressions-and-statements"
 
@@ -479,7 +487,7 @@ id = "language.word.import"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.rust"
+id = "language.word.program"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -544,10 +552,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.byte_offset"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.c"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -711,15 +715,7 @@ id = "language.word.gather"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.give"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.scatter"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.take"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1179,7 +1175,7 @@ path = "reference/language/index.md#old"
 
 [[item]]
 id = "language.c-fragment"
-path = "reference/language/index.md#c"
+path = "reference/language/index.md#program-and-qualified-names"
 
 [[item]]
 id = "language.at-expression"
@@ -1415,14 +1411,6 @@ id = "tactic.construct"
 path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
-id = "tactic.take"
-path = "reference/tactics/index.md#resources-and-transport"
-
-[[item]]
-id = "tactic.give"
-path = "reference/tactics/index.md#resources-and-transport"
-
-[[item]]
 id = "tactic.gather"
 path = "reference/tactics/index.md#resources-and-transport"
 
@@ -1483,10 +1471,10 @@ path = "reference/tactics/index.md#resources-and-transport"
 id = "tactic-form.fold-resource"
 path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
-id = "tactic-form.take-element"
+id = "tactic-form.unfold-slot"
 path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
-id = "tactic-form.give-element"
+id = "tactic-form.fold-slot"
 path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.gather-resource"
@@ -5031,3 +5019,335 @@ path = "reference/library/index.md#integerquotient_negate_divisor"
 [[item]]
 id = "library.theorem.integer::remainder_negate_divisor"
 path = "reference/library/index.md#integerremainder_negate_divisor"
+
+[[item]]
+id = "library.theorem.integer::multiply_associative"
+path = "reference/library/index.md#integermultiply_associative"
+
+[[item]]
+id = "library.theorem.integer::multiply_add_left"
+path = "reference/library/index.md#integermultiply_add_left"
+
+[[item]]
+id = "library.theorem.integer::negate_as_product"
+path = "reference/library/index.md#integernegate_as_product"
+
+[[item]]
+id = "library.theorem.integer::multiply_swap_front"
+path = "reference/library/index.md#integermultiply_swap_front"
+
+[[item]]
+id = "library.theorem.integer::nonnegative_quotient_from_remainder"
+path = "reference/library/index.md#integernonnegative_quotient_from_remainder"
+
+[[item]]
+id = "library.theorem.integer::nonnegative_quotient_shift"
+path = "reference/library/index.md#integernonnegative_quotient_shift"
+
+[[item]]
+id = "library.theorem.integer::uint64_and_commute"
+path = "reference/library/index.md#integeruint64_and_commute"
+
+[[item]]
+id = "library.theorem.integer::uint64_and_associate"
+path = "reference/library/index.md#integeruint64_and_associate"
+
+[[item]]
+id = "library.theorem.integer::uint64_or_commute"
+path = "reference/library/index.md#integeruint64_or_commute"
+
+[[item]]
+id = "library.theorem.integer::uint64_and_or"
+path = "reference/library/index.md#integeruint64_and_or"
+
+[[item]]
+id = "library.theorem.integer::uint64_and_zero"
+path = "reference/library/index.md#integeruint64_and_zero"
+
+[[item]]
+id = "library.theorem.integer::uint64_or_zero"
+path = "reference/library/index.md#integeruint64_or_zero"
+
+[[item]]
+id = "library.theorem.integer::uint64_or_disjoint"
+path = "reference/library/index.md#integeruint64_or_disjoint"
+
+[[item]]
+id = "library.theorem.integer::uint64_mask_add_low"
+path = "reference/library/index.md#integeruint64_mask_add_low"
+
+[[item]]
+id = "library.theorem.integer::uint64_mask_add_high"
+path = "reference/library/index.md#integeruint64_mask_add_high"
+
+[[item]]
+id = "library.theorem.integer::uint64_mask_multiple"
+path = "reference/library/index.md#integeruint64_mask_multiple"
+
+[[item]]
+id = "library.theorem.integer::uint64_mask_keep"
+path = "reference/library/index.md#integeruint64_mask_keep"
+
+[[item]]
+id = "library.theorem.integer::uint64_mask_add_clear"
+path = "reference/library/index.md#integeruint64_mask_add_clear"
+
+[[item]]
+id = "library.theorem.integer::uint64_add_distinct"
+path = "reference/library/index.md#integeruint64_add_distinct"
+
+[[item]]
+id = "library.theorem.integer::uint64_or_add_low"
+path = "reference/library/index.md#integeruint64_or_add_low"
+
+[[item]]
+id = "library.theorem.integer::uint64_mask_subset"
+path = "reference/library/index.md#integeruint64_mask_subset"
+
+[[item]]
+id = "library.theorem.integer::uint64_or_masked"
+path = "reference/library/index.md#integeruint64_or_masked"
+
+[[item]]
+id = "library.theorem.integer::uint8_pointer_add_address_int32"
+path = "reference/library/index.md#integeruint8_pointer_add_address_int32"
+
+[[item]]
+id = "library.theorem.integer::uint8_pointer_add_address_int64"
+path = "reference/library/index.md#integeruint8_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::int8_pointer_add_address_int32"
+path = "reference/library/index.md#integerint8_pointer_add_address_int32"
+
+[[item]]
+id = "library.theorem.integer::int8_pointer_add_address_int64"
+path = "reference/library/index.md#integerint8_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::uint16_pointer_add_address_int32"
+path = "reference/library/index.md#integeruint16_pointer_add_address_int32"
+
+[[item]]
+id = "library.theorem.integer::uint16_pointer_add_address_int64"
+path = "reference/library/index.md#integeruint16_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::int16_pointer_add_address_int32"
+path = "reference/library/index.md#integerint16_pointer_add_address_int32"
+
+[[item]]
+id = "library.theorem.integer::int16_pointer_add_address_int64"
+path = "reference/library/index.md#integerint16_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::uint32_pointer_add_address_int32"
+path = "reference/library/index.md#integeruint32_pointer_add_address_int32"
+
+[[item]]
+id = "library.theorem.integer::uint32_pointer_add_address_int64"
+path = "reference/library/index.md#integeruint32_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::int32_pointer_add_address_int32"
+path = "reference/library/index.md#integerint32_pointer_add_address_int32"
+
+[[item]]
+id = "library.theorem.integer::int32_pointer_add_address_int64"
+path = "reference/library/index.md#integerint32_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::uint64_pointer_add_address_int32"
+path = "reference/library/index.md#integeruint64_pointer_add_address_int32"
+
+[[item]]
+id = "library.theorem.integer::uint64_pointer_add_address_int64"
+path = "reference/library/index.md#integeruint64_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::int64_pointer_add_address_int32"
+path = "reference/library/index.md#integerint64_pointer_add_address_int32"
+
+[[item]]
+id = "library.theorem.integer::int64_pointer_add_address_int64"
+path = "reference/library/index.md#integerint64_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::float32_pointer_add_address_int32"
+path = "reference/library/index.md#integerfloat32_pointer_add_address_int32"
+
+[[item]]
+id = "library.theorem.integer::float32_pointer_add_address_int64"
+path = "reference/library/index.md#integerfloat32_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::float64_pointer_add_address_int32"
+path = "reference/library/index.md#integerfloat64_pointer_add_address_int32"
+
+[[item]]
+id = "library.theorem.integer::float64_pointer_add_address_int64"
+path = "reference/library/index.md#integerfloat64_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::nonnegative_remainder_from_reconstruction"
+path = "reference/library/index.md#integernonnegative_remainder_from_reconstruction"
+
+[[item]]
+id = "library.theorem.integer::uint8_pointer_translate_int32"
+path = "reference/library/index.md#integeruint8_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint8_pointer_add_associate_int32"
+path = "reference/library/index.md#integeruint8_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint8_pointer_translate_uint64"
+path = "reference/library/index.md#integeruint8_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint8_pointer_add_associate_uint64"
+path = "reference/library/index.md#integeruint8_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int8_pointer_translate_int32"
+path = "reference/library/index.md#integerint8_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::int8_pointer_add_associate_int32"
+path = "reference/library/index.md#integerint8_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::int8_pointer_translate_uint64"
+path = "reference/library/index.md#integerint8_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int8_pointer_add_associate_uint64"
+path = "reference/library/index.md#integerint8_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint16_pointer_translate_int32"
+path = "reference/library/index.md#integeruint16_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint16_pointer_add_associate_int32"
+path = "reference/library/index.md#integeruint16_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint16_pointer_translate_uint64"
+path = "reference/library/index.md#integeruint16_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint16_pointer_add_associate_uint64"
+path = "reference/library/index.md#integeruint16_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int16_pointer_translate_int32"
+path = "reference/library/index.md#integerint16_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::int16_pointer_add_associate_int32"
+path = "reference/library/index.md#integerint16_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::int16_pointer_translate_uint64"
+path = "reference/library/index.md#integerint16_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int16_pointer_add_associate_uint64"
+path = "reference/library/index.md#integerint16_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint32_pointer_translate_int32"
+path = "reference/library/index.md#integeruint32_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint32_pointer_add_associate_int32"
+path = "reference/library/index.md#integeruint32_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint32_pointer_translate_uint64"
+path = "reference/library/index.md#integeruint32_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint32_pointer_add_associate_uint64"
+path = "reference/library/index.md#integeruint32_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int32_pointer_translate_int32"
+path = "reference/library/index.md#integerint32_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::int32_pointer_add_associate_int32"
+path = "reference/library/index.md#integerint32_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::int32_pointer_translate_uint64"
+path = "reference/library/index.md#integerint32_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int32_pointer_add_associate_uint64"
+path = "reference/library/index.md#integerint32_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint64_pointer_translate_int32"
+path = "reference/library/index.md#integeruint64_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint64_pointer_add_associate_int32"
+path = "reference/library/index.md#integeruint64_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint64_pointer_translate_uint64"
+path = "reference/library/index.md#integeruint64_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint64_pointer_add_associate_uint64"
+path = "reference/library/index.md#integeruint64_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int64_pointer_translate_int32"
+path = "reference/library/index.md#integerint64_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::int64_pointer_add_associate_int32"
+path = "reference/library/index.md#integerint64_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::int64_pointer_translate_uint64"
+path = "reference/library/index.md#integerint64_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int64_pointer_add_associate_uint64"
+path = "reference/library/index.md#integerint64_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::float32_pointer_translate_int32"
+path = "reference/library/index.md#integerfloat32_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::float32_pointer_add_associate_int32"
+path = "reference/library/index.md#integerfloat32_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::float32_pointer_translate_uint64"
+path = "reference/library/index.md#integerfloat32_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::float32_pointer_add_associate_uint64"
+path = "reference/library/index.md#integerfloat32_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::float64_pointer_translate_int32"
+path = "reference/library/index.md#integerfloat64_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::float64_pointer_add_associate_int32"
+path = "reference/library/index.md#integerfloat64_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::float64_pointer_translate_uint64"
+path = "reference/library/index.md#integerfloat64_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::float64_pointer_add_associate_uint64"
+path = "reference/library/index.md#integerfloat64_pointer_add_associate_uint64"

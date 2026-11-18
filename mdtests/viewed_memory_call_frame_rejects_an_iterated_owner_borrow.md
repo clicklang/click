@@ -1,5 +1,9 @@
 # A call cannot borrow a view from an iterated owner it also transfers
 
+`keep` preserves an independently held view across both calls to `touch`.
+Its caller `root` asks to borrow the same cell it transfers inside the
+iterated owner, so the call is refused for missing stable view backing.
+
 ```c filename=iterated_view_conflict.c
 void touch(int32* flags, int32* data, int32 n) {
     data[0] = 1;
@@ -34,10 +38,17 @@ void touch(int32* flags, int32* data, int32 n) {
     ensures flags[0] == 0;
 } by {
     unfold(cells(flags, data, n));
-    take(data[0..1]);
+    unfold(cells(flags, data, n)[0]);
     step();
-    have flags[0] == 0 by solve();
-    give(data[0..1]);
+    have separate(memory(data[0]), memory(flags[0])) by { known(); }
+    have separate(statement(0).footprint, memory(flags[0])) by {
+        normalize() using { separate(memory(data[0]), memory(flags[0])); };
+    }
+    have flags[0] == old(flags[0]) by {
+        preserve(memory(flags[0]), statement(0));
+    }
+    have flags[0] == 0 by { known(); }
+    fold(cells(flags, data, n)[0]);
     fold(cells(flags, data, n));
 }
 
@@ -48,14 +59,9 @@ int32 keep(int32* flags, int32* data, int32 n, int32* b) {
     requires flags[0] == 0;
     ensures result == old(*b);
 } by {
-    mark m0;
     step();
     step();
-    have *b == old(*b) by {
-        transport(at(m0, *b) == old(*b), *b == old(*b)) using {
-            at(m0, *b) == old(*b);
-        };
-    }
+    have *b == old(*b) by { known(); }
 }
 int32 root(int32* flags, int32* b) {
     owns cells(flags, b, 1);

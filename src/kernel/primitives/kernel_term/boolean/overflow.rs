@@ -160,10 +160,10 @@ mod tests {
                         format!("{:?}", KernelTermExport::condition(&actual).unwrap()),
                         format!("{expected:?}")
                     );
-                    let target = Pointer::null();
+                    let target = Address::null();
                     let expected =
                         crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
-                            &Proposition::ConditionIs(source.clone(), true),
+                            &Proposition::condition_is(source.clone(), true),
                             Variable(999201),
                             &target,
                         );
@@ -188,11 +188,11 @@ mod tests {
     #[test]
     fn overflow_conditions_keep_native_load_authority() {
         let _session = crate::kernel::VerificationSession::enter();
-        let before = crate::kernel::Memory::new()
+        let before = crate::kernel::SymbolicMemory::new()
             .with_block("overflow-read", 8)
             .with_block("overflow-other", 4);
         let after = before.clone().store(
-            crate::kernel::Memory::global_pointer("overflow-other"),
+            crate::kernel::SymbolicMemory::global_pointer("overflow-other"),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let memories = [before, after].map(crate::kernel::intern_memory);
@@ -203,7 +203,9 @@ mod tests {
                     op,
                     left: Box::new(MachineTerm::MemoryLoad(
                         ProgramPoint::at(memory),
-                        Box::new(crate::kernel::Memory::global_pointer("overflow-read")),
+                        Box::new(crate::kernel::SymbolicMemory::global_pointer(
+                            "overflow-read",
+                        )),
                         if format == MachineIntegerType::Int32 {
                             LoadKind::Int32
                         } else {
@@ -248,8 +250,8 @@ mod tests {
         let source = ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
-            left: Box::new(MachineTerm::PointerAddress(
-                Box::new(Pointer::symbolic(Variable(999210))),
+            left: Box::new(MachineTerm::IntegerAddress(
+                Box::new(Address::symbolic(Variable(999210))),
                 AddressObjectClass::NONE,
             )),
             right: Box::new(MachineTerm::uint64_constant(0)),
@@ -260,9 +262,9 @@ mod tests {
         ] {
             let root = KernelTermImport::default().condition(&source);
             let expected = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
-                &Proposition::ConditionIs(source.clone(), true),
+                &Proposition::condition_is(source.clone(), true),
                 Variable(999210),
-                &Pointer::null(),
+                &Address::null(),
             );
             let Proposition::ConditionIs(expected, true) = expected else {
                 panic!("condition");
@@ -270,7 +272,7 @@ mod tests {
             let actual = crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                 &root,
                 Variable(999210),
-                &Pointer::null(),
+                &Address::null(),
             )
             .unwrap();
             assert_eq!(

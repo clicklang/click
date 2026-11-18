@@ -75,14 +75,17 @@ int32 select_guarded(int32 key, int32 choose_left) {
             fact selected == key;
             owns ready_bundle(key);
             views ready_permit(key);
-        } then {
-            step();
-            step();
-            fold(ready_bundle(key));
-        } else {
-            step();
-            step();
-            fold(ready_bundle(key));
+        } {
+            true => {
+                step();
+                step();
+                fold(ready_bundle(key));
+            }
+            false => {
+                step();
+                step();
+                fold(ready_bundle(key));
+            }
         }
         step();
         solve();

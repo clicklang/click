@@ -20,19 +20,22 @@ use std::sync::Arc;
 mod aggregate_return_tests;
 mod construction_return;
 #[cfg(test)]
+mod exit_partition_tests;
+#[cfg(test)]
 mod literal_objects;
 mod mixed_return_resources;
+pub(in crate::kernel) use mixed_return_resources::ReturnedEntryPartition;
 mod produced_argument_supply;
 mod return_loan_backing;
 mod summary_transfer;
-pub(in crate::kernel) use mixed_return_resources::{
-    ConstructedBodyReturn, ConstructedReturnBody, EscrowRecoveryBoundary, ReturnResourceTransfer,
-    ReturnedConsumedCell, ReturnedFreshAllocation, ReturnedOwnershipPartition,
-};
 use mixed_return_resources::{
     ConstructedReturnBodies, ConsumedCellReturns, EvaluatedReturnResources, FreshAllocationReturn,
     ProducedBorrowingPiece, ProjectedReturnResource, ReturnOwnershipOrigin,
     project_return_resource_cores,
+};
+pub(in crate::kernel) use mixed_return_resources::{
+    EscrowRecoveryBoundary, FramedReturnPartition, ReturnResourceTransfer, ReturnedConsumedCell,
+    ReturnedFreshAllocation, ReturnedOwnershipPartition,
 };
 pub(in crate::kernel) use summary_transfer::SummaryResourceTransferRule;
 #[cfg(test)]
@@ -209,6 +212,10 @@ fn record_resource_clause_attempt() {
 #[derive(Clone, Copy)]
 enum ReturnResourceComposition<'a> {
     ApplyTransfers(&'a ConsumedCellReturns),
+    FramedTransfers {
+        _rule: FramedCallRule<'a>,
+        transfers: &'a ConsumedCellReturns,
+    },
     BodyReturn {
         state: &'a ExecutionState,
         frame: &'a ResourceContext,
@@ -219,9 +226,26 @@ enum ReturnResourceComposition<'a> {
 }
 
 impl<'a> ReturnResourceComposition<'a> {
+    fn for_rule(rule: Option<FramedCallRule<'a>>, transfers: &'a ConsumedCellReturns) -> Self {
+        match rule {
+            Some(rule) => Self::FramedTransfers {
+                _rule: rule,
+                transfers,
+            },
+            None => Self::ApplyTransfers(transfers),
+        }
+    }
+
+    fn frames_outputs(self) -> bool {
+        matches!(self, Self::FramedTransfers { .. })
+    }
+
     fn consumed_children(self) -> Option<&'a ConsumedCellReturns> {
         match self {
-            Self::ApplyTransfers(plan) => Some(plan),
+            Self::ApplyTransfers(plan)
+            | Self::FramedTransfers {
+                transfers: plan, ..
+            } => Some(plan),
             Self::BodyReturn {
                 consumed,
                 allocations: Some(_),
@@ -247,7 +271,9 @@ impl<'a> ReturnResourceComposition<'a> {
 
     fn restores_entry_borrows(self) -> bool {
         match self {
-            Self::ApplyTransfers(_) | Self::BodyReturn { .. } => true,
+            Self::ApplyTransfers(_) | Self::FramedTransfers { .. } | Self::BodyReturn { .. } => {
+                true
+            }
             _ => false,
         }
     }
@@ -258,15 +284,15 @@ impl<'a> ReturnResourceComposition<'a> {
         entry_borrow: bool,
         fact: &ResourceFact,
     ) -> ReturnOwnershipOrigin {
-        if entry_borrow {
-            return ReturnOwnershipOrigin::EntryBorrow;
-        }
         if let Some((creator, events)) = self.allocation_events() {
             return FreshAllocationReturn::from_created_owner(fact, creator, events)
                 .map(ReturnOwnershipOrigin::FreshAllocation)
                 .unwrap_or(ReturnOwnershipOrigin::Description);
         }
-        if let Self::ApplyTransfers(transfers) = self
+        if entry_borrow {
+            return ReturnOwnershipOrigin::EntryBorrow;
+        }
+        if let Some(transfers) = self.consumed_children()
             && let Some(transfer) = transfers.get(clause)
         {
             return ReturnOwnershipOrigin::ConsumedCell(transfer);
@@ -276,7 +302,9 @@ impl<'a> ReturnResourceComposition<'a> {
 
     fn constructed_summary_output(self, clause: usize) -> Option<&'a ResourceFact> {
         match self {
-            Self::ApplyTransfers(transfers) => transfers.constructed.get(&clause),
+            Self::ApplyTransfers(transfers) | Self::FramedTransfers { transfers, .. } => {
+                transfers.constructed.get(&clause)
+            }
             _ => None,
         }
     }
@@ -325,6 +353,7 @@ struct FunctionResourceTransfer {
     /// resources so the recovery routes see each one exactly once even
     /// when composition merges or normalizes it away.
     candidate_output_views: Vec<ResourceFact>,
+    returned_entry_partition: Option<mixed_return_resources::ReturnedEntryPartition>,
     /// Each viewed piece in the one-level frontier of an ensured owned
     /// composite, with that composite's head: the borrows a produced
     /// composite packages, which the caller side binds to exactly one loan of
@@ -489,7 +518,7 @@ fn bounded_contract_resource_frontier(resources: &ResourceContext) -> String {
 fn population_transfer_frontier<'a>(
     facts: impl Iterator<Item = &'a ResourceFact>,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Result<Vec<ResourceFact>, RuntimeError> {
     enum Work {
@@ -599,11 +628,11 @@ pub(super) fn transfer_population_call_facts<'a>(
             // the checked equality index; this moves an existing anchor and
             // grants neither allocation nor creation authority.
             let base = assumptions.equality_graph.storage_address(base);
-            if events.tracks_storage_anchor(&base.block)
-                && transferred_anchors.insert(base.block.clone())
+            if events.tracks_storage_anchor(&base.base)
+                && transferred_anchors.insert(base.base.clone())
             {
                 events = events
-                    .transfer_call_anchor(from_events, to_events, &base.block)
+                    .transfer_call_anchor(from_events, to_events, &base.base)
                     .map_err(|refusal| {
                         RuntimeError::FunctionContract(format!(
                             "allocation companion transfer refused: {refusal}"
@@ -670,14 +699,15 @@ pub(super) fn transfer_population_call_facts<'a>(
             }
             let description = authorities[0];
             if let Some((base, _)) = allocations.first() {
-                let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
-                    description.arguments()
+                let Some(
+                    [crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))],
+                ) = (description.arguments()).fixed_values::<1>()
                 else {
                     return Err(RuntimeError::FunctionContract(
                         "population call control needs one pointer anchor".into(),
                     ));
                 };
-                if *base != pointer.pointer() {
+                if *base != pointer.address() {
                     return Err(RuntimeError::FunctionContract(
                         "population call allocation does not match its authority anchor".into(),
                     ));
@@ -687,10 +717,10 @@ pub(super) fn transfer_population_call_facts<'a>(
                 // custody moved above; only real anchors have an additional
                 // creation-ledger capability to transfer.
                 if !events.recognizes_imported_population(description)
-                    && transferred_anchors.insert(base.block.clone())
+                    && transferred_anchors.insert(base.base.clone())
                 {
                     events = events
-                        .transfer_call_anchor(from_events, to_events, &base.block)
+                        .transfer_call_anchor(from_events, to_events, &base.base)
                         .map_err(|refusal| {
                             RuntimeError::FunctionContract(format!(
                                 "population call allocation transfer refused: {refusal}"
@@ -711,7 +741,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                         to_events,
                         &description,
                         false,
-                        quantity,
+                        quantity.native_compat(),
                         assumptions,
                     )
                     .map_err(|refusal| {
@@ -753,7 +783,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                 to_events,
                 &description,
                 authority_fact,
-                quantity,
+                quantity.native_compat(),
                 assumptions,
             )
             .map_err(|refusal| {
@@ -1023,7 +1053,7 @@ fn recover_candidate_stable_view_resources(
         let intrinsic_read_only = matches!(
             fact.resource(),
             Resource::Memory(range)
-                if caller_state.memory().is_read_only_block(&range.base().block)
+                if caller_state.memory().is_read_only_block(&range.base().base)
         );
         if !returned_input && !preserved_outer && !projected_from_owner && !intrinsic_read_only {
             return Err(RuntimeError::UnbackedReturnedView {
@@ -1423,7 +1453,7 @@ fn candidate_memory_ranges_relation_by_bounds(
     let Some(right_end) = right_start.checked_add(i64::from(right_length)) else {
         return CandidateMemoryRangeRelation::SeparationUnproved;
     };
-    if left_base.block != right_base.block {
+    if left_base.base != right_base.base {
         CandidateMemoryRangeRelation::SeparationUnproved
     } else if left_end <= right_start || right_end <= left_start {
         CandidateMemoryRangeRelation::Disjoint
@@ -1442,15 +1472,15 @@ enum VerifiedAllocationDeltaError {
 enum AllocationContinuity {
     Same,
     Distinct,
-    /// The blocks may be one, but the extents have different formats (D5).
+    /// The blocks may be one, but the sizes have different formats (D5).
     CrossKind,
     Undecided(ConditionTerm),
     Inconsistent,
 }
 
 fn canonical_memory_range(range: MemoryRange) -> MemoryRange {
-    let base = Pointer {
-        block: range.base().block.clone(),
+    let base = Address {
+        base: range.base().base.clone(),
         offset: crate::kernel::eval::canonical_offset_term(&range.base().offset),
     };
     let (start, end) = range.bound_terms();
@@ -2045,9 +2075,10 @@ pub(super) fn execute_program_function_call_paths(
         .selected_call_contract
         .as_deref()
     {
-        let pointer = Pointer::function(function.name());
-        let owned = contracts_from_facts(
-            assumptions.function_contract_facts_for(&pointer),
+        let pointer = Address::function(function.name());
+        let owned = contracts_for_pointer(
+            &pointer,
+            assumptions,
             execution_context.environment,
             &function.function_pointer_type(),
         );
@@ -2094,6 +2125,9 @@ pub(super) fn execute_program_function_call_paths(
                 interface: rule.function.contract_interface(),
                 storage: Some(&rule.function),
                 evidence: None,
+                framed_rule: rule
+                    .is_scoped_unselected()
+                    .then_some(FramedCallRule::ScopedHypothesis { _rule: rule }),
                 representation_copy: rule.representation_copy(),
                 value_arguments: &[],
             }],
@@ -2485,6 +2519,7 @@ fn execute_verified_function_rule(
             interface: rule.function.contract_interface(),
             storage: Some(&rule.function),
             evidence: Some(&rule.function),
+            framed_rule: Some(FramedCallRule::Verified { _rule: rule }),
             representation_copy: None,
             value_arguments: &[],
         }],
@@ -2529,6 +2564,7 @@ pub(super) fn suspend_verified_worker(
             interface: rule.function.contract_interface(),
             storage: Some(&rule.function),
             evidence: Some(&rule.function),
+            framed_rule: Some(FramedCallRule::Verified { _rule: rule }),
             representation_copy: None,
             value_arguments: &[],
         }],
@@ -2767,13 +2803,30 @@ fn instance_binder_shape(parameter: &ResourceSpec) -> Option<(&str, usize)> {
     Some((name.as_str(), arguments.len()))
 }
 
+/// Theorem and contract-premise capabilities for the Hoare frame rule.
+/// Scoped hypotheses and established named contracts remain conditional on
+/// their premises; neither becomes concrete body-safety evidence.
+#[derive(Clone, Copy)]
+enum FramedCallRule<'a> {
+    Verified {
+        _rule: &'a VerifiedFunctionRule,
+    },
+    ScopedHypothesis {
+        _rule: &'a ExternalFunctionRule,
+    },
+    Named {
+        _rule: &'a EstablishedFunctionContract,
+    },
+}
+
 /// One candidate contract application. The interface is the complete input
 /// to callback preparation. Optional concrete storage supplies only the
 /// declaration identity needed to lower a direct function's global and
 /// static names. Optional concrete evidence is consulted only by verified
 /// direct calls for body-specific safety checks and loadable literal facts.
-/// Named callbacks carry neither; external assumptions carry storage but no
-/// proof evidence.
+/// Named callbacks carry no concrete storage or body evidence; their
+/// established contract premises supply a separate frame-rule capability.
+/// External assumptions carry storage but no body proof evidence.
 #[derive(Clone, Copy)]
 struct FunctionContractApplication<'a> {
     pointer_result: Option<&'a PurePointerResult>,
@@ -2785,11 +2838,90 @@ struct FunctionContractApplication<'a> {
     interface: &'a FunctionContractInterface,
     storage: Option<&'a ProgramFunction>,
     evidence: Option<&'a ProgramFunction>,
+    /// A theorem or an established contract premise; concrete
+    /// declaration storage alone never grants this frame rule.
+    framed_rule: Option<FramedCallRule<'a>>,
     /// The checked representation-copy effect of a recognized byte-copy
     /// declaration, if this application is one.
     representation_copy: Option<RepresentationCopyEffect>,
     /// The values a named contract's fact fixed for its value parameters.
     value_arguments: &'a [ProgramValue],
+}
+
+fn representation_copy_arguments(
+    values: &[ProgramValue],
+    effect: RepresentationCopyEffect,
+) -> Option<(&Address, &Address, &ProgramValue)> {
+    let ProgramValue::Pointer(destination) = values.get(effect.destination_argument)? else {
+        return None;
+    };
+    let ProgramValue::Pointer(source) = values.get(effect.source_argument)? else {
+        return None;
+    };
+    Some((
+        destination.address(),
+        source.address(),
+        values.get(effect.bytes_argument)?,
+    ))
+}
+
+fn constant_representation_copy_count(bytes: &ProgramValue) -> Option<i64> {
+    match bytes {
+        ProgramValue::UInt64(bytes) => i64::try_from(bytes.uint64_as_const()?).ok(),
+        ProgramValue::Int32(bytes) => Some(i64::from(bytes.as_const()? as i32)),
+        _ => None,
+    }
+}
+
+/// Either the source is initialized, so an ordinary call transition can
+/// keep old destination initialization, or the transition replaces it using
+/// the exact copied span. Unknown placement cannot establish either rule.
+fn representation_copy_initialization(
+    memory: &SymbolicMemory,
+    values: &[ProgramValue],
+    effect: RepresentationCopyEffect,
+    inputs: &[CheckedResourceFact],
+    assumptions: &PureFactContext,
+) -> Result<Option<RepresentationCopyRange>, &'static str> {
+    let refusal = "memcpy with a possibly uninitialized source requires exact offsets and length and an automatic or heap destination";
+    let (destination, source, count) =
+        representation_copy_arguments(values, effect).ok_or(refusal)?;
+    let bytes = constant_representation_copy_count(count);
+    if bytes == Some(0) {
+        return Ok(None);
+    }
+    // The recognized library declaration has exactly one source view. Use
+    // its checked range (including the index kind selected when lending it).
+    let source_view = inputs
+        .iter()
+        .filter(|input| input.fact.is_view())
+        .find_map(|input| input.fact.memory_range())
+        .ok_or(refusal)?;
+    if call_initialization::representation_copy_source_is_initialized(
+        memory,
+        source_view,
+        assumptions,
+    ) {
+        return Ok(None);
+    }
+    if !destination.base.is_local_block() && !matches!(destination.base, AddressBase::Heap(_)) {
+        return Err(refusal);
+    }
+    let bytes = bytes
+        .and_then(|bytes| u32::try_from(bytes).ok())
+        .ok_or(refusal)?;
+    for address in [source, destination] {
+        address
+            .offset
+            .as_const()
+            .and_then(|start| start.checked_add(i64::from(bytes)))
+            .ok_or(refusal)?;
+    }
+    Ok(Some(RepresentationCopyRange {
+        destination: destination.clone(),
+        source: source.clone(),
+        bytes,
+    }))
 }
 
 /// Transfers initialized typed cells across a recognized byte-copy call.
@@ -2802,11 +2934,11 @@ struct FunctionContractApplication<'a> {
 /// copy's `click::bytes::equal` guarantee already justified. An untyped source has no
 /// cells, so a raw byte copy still establishes nothing typed.
 pub(in crate::kernel) fn transfer_representation_copy_cells(
-    entry_memory: &Memory,
+    entry_memory: &SymbolicMemory,
     argument_values: &[ProgramValue],
-    memory: Memory,
+    memory: SymbolicMemory,
     effect: RepresentationCopyEffect,
-) -> Memory {
+) -> SymbolicMemory {
     representation_copy_cell_moves(entry_memory, argument_values, effect)
         .into_iter()
         .fold(memory, |memory, (pointer, value)| {
@@ -2817,36 +2949,21 @@ pub(in crate::kernel) fn transfer_representation_copy_cells(
 /// The destination cells a recognized byte copy plants, in source order.
 ///
 /// The source cells are found with one bounded range query, so this work is
-/// the copied extent's cell count plus one, independent of every other cell
+/// the copied span's cell count plus one, independent of every other cell
 /// in memory.
 pub(in crate::kernel) fn representation_copy_cell_moves(
-    entry_memory: &Memory,
+    entry_memory: &SymbolicMemory,
     argument_values: &[ProgramValue],
     effect: RepresentationCopyEffect,
-) -> Vec<(Pointer, ProgramValue)> {
-    let (Some(destination), Some(source), Some(bytes)) = (
-        argument_values.get(effect.destination_argument),
-        argument_values.get(effect.source_argument),
-        argument_values.get(effect.bytes_argument),
-    ) else {
-        return Vec::new();
-    };
-    let (ProgramValue::Pointer(destination), ProgramValue::Pointer(source)) = (destination, source)
+) -> Vec<(Address, ProgramValue)> {
+    let Some((destination, source, bytes)) = representation_copy_arguments(argument_values, effect)
     else {
         return Vec::new();
     };
-    // The count is C's `size_t`; a 32-bit count is accepted as the same
-    // number when nonnegative.
-    let bytes = match bytes {
-        ProgramValue::UInt64(bytes) => bytes
-            .uint64_as_const()
-            .and_then(|bytes| i64::try_from(bytes).ok()),
-        ProgramValue::Int32(bytes) => bytes.as_const().map(|bytes| i64::from(bytes as i32)),
-        _ => None,
-    };
+    let bytes = constant_representation_copy_count(bytes);
     let (Some(source_offset), Some(destination_offset), Some(bytes)) = (
-        source.pointer().offset.as_const(),
-        destination.pointer().offset.as_const(),
+        source.offset.as_const(),
+        destination.offset.as_const(),
         bytes,
     ) else {
         return Vec::new();
@@ -2854,11 +2971,16 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     if bytes <= 0 {
         return Vec::new();
     }
-    let source_block = source.pointer().block.clone();
-    let destination_block = destination.pointer().block.clone();
-    // A checked byte copy requires the ranges be separate, so a self-copy in
-    // one block is not the recognized effect.
-    if source_block == destination_block {
+    let source_block = source.base.clone();
+    let destination_block = destination.base.clone();
+    // A checked byte copy requires disjoint ranges, including within one block.
+    let Some(destination_end) = destination_offset.checked_add(bytes) else {
+        return Vec::new();
+    };
+    if source_block == destination_block
+        && source_offset < destination_end
+        && destination_offset < source_offset.saturating_add(bytes)
+    {
         return Vec::new();
     }
     // Constant offsets order before every other offset form and among
@@ -2866,13 +2988,13 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     // `source_offset .. source_offset + bytes`. This range is therefore
     // exactly the candidate cells. A cell at `i64::MAX` cannot fit its
     // positive width, so saturating the end loses no candidate.
-    let start = Pointer {
-        block: source_block.clone(),
-        offset: PointerOffsetTerm::Constant(source_offset),
+    let start = Address {
+        base: source_block.clone(),
+        offset: AddressOffset::Constant(source_offset),
     };
-    let end = Pointer {
-        block: source_block,
-        offset: PointerOffsetTerm::Constant(source_offset.saturating_add(bytes)),
+    let end = Address {
+        base: source_block,
+        offset: AddressOffset::Constant(source_offset.saturating_add(bytes)),
     };
     crate::instrumentation::record_deterministic_work(1);
     let mut moves = Vec::new();
@@ -2896,9 +3018,9 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
             continue;
         }
         moves.push((
-            Pointer {
-                block: destination_block.clone(),
-                offset: PointerOffsetTerm::Constant(destination_cell_offset),
+            Address {
+                base: destination_block.clone(),
+                offset: AddressOffset::Constant(destination_cell_offset),
             },
             value.clone(),
         ));
@@ -3217,16 +3339,19 @@ fn execute_verified_function_applications_with_suspension(
         let primary = applicable.remove(selected_position.unwrap_or(0));
         let PreparedVerifiedFunctionCall {
             name,
-            interface_name: _interface_name,
+            interface_name,
+            candidate_ordinal,
+            has_exact_write_ranges,
             storage,
             evidence,
+            framed_rule,
             interface,
             argument_values,
             entry_state,
             entry_contract_state,
             mut transfer,
             mut facts,
-            obligations,
+            mut obligations,
             effective_assumptions,
             bindings: selected_bindings,
         } = primary;
@@ -3235,22 +3360,45 @@ fn execute_verified_function_applications_with_suspension(
         // lends; the caller's other active loans (its own contract inputs,
         // an enclosing call's loans) are checked here, so a summary can
         // never havoc memory that is lent elsewhere.
-        if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
-            transfer.memory_effects.iter().find_map(|range| {
-                ledger.memory_access_refusal(
-                    range,
-                    &effective_assumptions,
-                    LoanRefusalOperation::MemoryAccess,
-                )
-            })
-        }) {
-            paths.push(FunctionPath::new(
-                FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
-                facts,
-                obligations,
-            ));
-            continue;
-        }
+        let call_site = || {
+            CallRequirementSite::for_requirement(
+                name,
+                interface_name,
+                candidate_ordinal,
+                arguments,
+                caller_state.memory(),
+            )
+        };
+        let write_requirements = if suspended.is_some() || !has_exact_write_ranges {
+            // Worker admission has its own effect rules. Folded or guarded
+            // projections can widen an effect to a span containing bytes
+            // the callee cannot write.
+            if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
+                transfer.memory_effects.iter().find_map(|range| {
+                    ledger.memory_access_refusal(
+                        range,
+                        &effective_assumptions,
+                        LoanRefusalOperation::MemoryAccess,
+                    )
+                })
+            }) {
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
+                    facts,
+                    obligations,
+                ));
+                continue;
+            }
+            Vec::new()
+        } else {
+            verified_call_loan_requirements(
+                caller_state.loan_ledger(),
+                &transfer.memory_effects,
+                call_site,
+                interface.contract_requires().len(),
+                "verified call write separation",
+            )
+        };
         // A checked mutex-use call may execute runtime lock/unlock operations.
         // Their representation writes are authorized by the selected use
         // transfer, not by the contract's ordinary mutable footprint. Keep
@@ -3321,6 +3469,31 @@ fn execute_verified_function_applications_with_suspension(
             ));
             continue;
         }
+        let copy_initialization = if let Some(effect) = application.representation_copy
+            && !transfer.memory_effects.is_empty()
+        {
+            match representation_copy_initialization(
+                &entry_state.memory,
+                &argument_values,
+                effect,
+                &transfer.borrowed_inputs,
+                &effective_assumptions,
+            ) {
+                Ok(copy) => copy,
+                Err(message) => {
+                    paths.push(FunctionPath::new(
+                        FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
+                            message.into(),
+                        )),
+                        facts,
+                        obligations,
+                    ));
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
         let memory = if transfer.memory_effects.is_empty() {
             entry_state.memory.clone()
         } else {
@@ -3341,18 +3514,20 @@ fn execute_verified_function_applications_with_suspension(
                 &effective_assumptions,
             )
             .with_caller_before_transfer(caller_state.resources());
-            entry_state.memory.clone().with_call_memory_havoc(
+            entry_state.memory.clone().with_call_memory_havoc_with_copy(
                 memory_identity,
                 &transfer.memory_effects,
                 &effective_assumptions,
                 Some(&kept),
+                copy_initialization.as_ref(),
             )
         };
-        let exceptional_path = if let Some(payload_identity) = exceptional_payload_identity {
+        let mut exceptional_path = if let Some(payload_identity) = exceptional_payload_identity {
             Some(exceptional_direct_function_path(
                 caller_state,
                 interface,
                 evidence.or(storage),
+                framed_rule,
                 &argument_values,
                 &entry_state,
                 &entry_contract_state,
@@ -3424,7 +3599,7 @@ fn execute_verified_function_applications_with_suspension(
                 super::spec::pure_pointer_result_class(application.pointer_result, &arguments);
             if let ProgramValue::Pointer(mut pointer) = result {
                 if all_null {
-                    pointer.replace_pointer(Pointer::null());
+                    pointer.replace_pointer(Address::null());
                 }
                 ProgramValue::Pointer(pointer.with_object_type_evidence(evidence))
             } else {
@@ -3841,9 +4016,9 @@ fn execute_verified_function_applications_with_suspension(
             };
         }
         let output_resource_state =
-            with_contract_interface_argument_views(&post_state, interface, &argument_values);
+            with_bound_contract_interface_argument_views(&post_state, interface, &argument_values);
         let entry_resource_state =
-            with_contract_interface_argument_views(&entry_state, interface, &argument_values);
+            with_bound_contract_interface_argument_views(&entry_state, interface, &argument_values);
 
         // Coordinate ensures are certified by the callee independently of
         // return admission. Carry them to the ownership producer before it
@@ -3886,6 +4061,7 @@ fn execute_verified_function_applications_with_suspension(
             escrow_boundary,
             ensured_views: returned_views,
             produced_borrowing_pieces,
+            returned_entry_partition,
         } = match evaluate_contract_return_resources(
             &caller_resources_after_requirements,
             escrowed_owners(&transfer),
@@ -3897,7 +4073,7 @@ fn execute_verified_function_applications_with_suspension(
             name,
             interface,
             &prepared_outputs,
-            ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+            ReturnResourceComposition::for_rule(framed_rule, &transfer.consumed_cell_returns),
             &return_assumptions,
             budget,
         )? {
@@ -3911,6 +4087,7 @@ fn execute_verified_function_applications_with_suspension(
                 continue;
             }
         };
+        transfer.returned_entry_partition = returned_entry_partition;
         transfer.candidate_output_views = returned_views;
         transfer.produced_borrowing_pieces = produced_borrowing_pieces;
         if helper_effect.is_some()
@@ -3993,7 +4170,8 @@ fn execute_verified_function_applications_with_suspension(
                 arguments,
                 ResourceFieldSchema::new(vec![]).expect("empty schema"),
             );
-            let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+            let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+                (description.arguments()).fixed_values::<1>()
             else {
                 paths.push(resource_call_failure(
                     "final release needs one pointer anchor",
@@ -4014,16 +4192,16 @@ fn execute_verified_function_applications_with_suspension(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: quantity.clone(),
+                        left: Box::new(quantity.native_compat().clone()),
                         right: Box::new(MachineTerm::constant(0)),
                     },
                 ) {
                 MachineTerm::constant(0)
             } else {
-                *quantity
+                quantity.native_compat().clone()
             };
             let (spent, _) = match events.checked_member_exchange_quantity(
-                &pointer.pointer().block,
+                &pointer.address().base,
                 &description,
                 false,
                 &exchange_quantity,
@@ -4075,7 +4253,7 @@ fn execute_verified_function_applications_with_suspension(
             let retirement = if spent.recognizes_imported_population(&description) {
                 spent.checked_retire_imported(&description, &effective_assumptions)
             } else {
-                spent.checked_retire(&pointer.pointer().block, &description)
+                spent.checked_retire(&pointer.address().base, &description)
             };
             let (retired, _) = match retirement {
                 Ok(exchange) => exchange,
@@ -4096,10 +4274,11 @@ fn execute_verified_function_applications_with_suspension(
                 }
                 let retirement = if retired.recognizes_imported_population(additional) {
                     retired.checked_retire_imported(additional, &effective_assumptions)
-                } else if let Some(AlgebraicValue::Program(ProgramValue::Pointer(anchor))) =
-                    additional.arguments().first()
+                } else if let Some(crate::kernel::ResourceFieldValue::Program(
+                    ProgramValue::Pointer(anchor),
+                )) = additional.arguments().first()
                 {
-                    retired.checked_retire(&anchor.pointer().block, additional)
+                    retired.checked_retire(&anchor.address().base, additional)
                 } else {
                     paths.push(resource_call_failure(
                         "final release authority needs a pointer anchor",
@@ -4256,8 +4435,9 @@ fn execute_verified_function_applications_with_suspension(
                     arguments.clone(),
                     ResourceFieldSchema::new(vec![]).expect("empty schema"),
                 );
-                let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
-                    description.arguments().first()
+                let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(
+                    pointer,
+                ))) = description.arguments().first()
                 else {
                     paths.push(resource_call_failure(
                         "population helper needs one pointer anchor",
@@ -4270,14 +4450,14 @@ fn execute_verified_function_applications_with_suspension(
                     ));
                     continue 'arguments;
                 };
-                let anchor = pointer.pointer();
+                let anchor = pointer.address();
                 if produce
                     && !events.recognizes_imported_population(&description)
-                    && (anchor.offset != PointerOffsetTerm::Constant(0)
-                        || !(matches!(&anchor.block, PointerBlock::Heap(_))
-                            && post_state.memory.live_heap_block_extent(anchor).is_some()
-                            || anchor.block.is_local_block()
-                                && post_state.memory.has_block(&anchor.block)))
+                    && (anchor.offset != AddressOffset::Constant(0)
+                        || !(matches!(&anchor.base, AddressBase::Heap(_))
+                            && post_state.memory.live_heap_block_size(anchor).is_some()
+                            || anchor.base.is_local_block()
+                                && post_state.memory.has_block(&anchor.base)))
                 {
                     paths.push(resource_call_failure("Requires live base storage for R(p)"));
                     continue 'arguments;
@@ -4287,28 +4467,28 @@ fn execute_verified_function_applications_with_suspension(
                     .is_some_and(CompositeResourceDefinition::has_fixed_exclusive_memory);
                 if defer_locked_exchange {
                     deferred_exchange.push(super::threads::DeferredMemberExchange {
-                        block: anchor.block.clone(),
+                        block: anchor.base.clone(),
                         description,
                         produce,
-                        quantity: (**quantity).clone(),
+                        quantity: quantity.as_ref().clone(),
                         exclusive,
                     });
                     continue;
                 }
                 let exchange = if exclusive {
                     events.checked_exclusive_member_exchange_quantity(
-                        &anchor.block,
+                        &anchor.base,
                         &description,
                         produce,
-                        quantity,
+                        quantity.native_compat(),
                         &effective_assumptions,
                     )
                 } else {
                     events.checked_member_exchange_quantity(
-                        &anchor.block,
+                        &anchor.base,
                         &description,
                         produce,
-                        quantity,
+                        quantity.native_compat(),
                         &effective_assumptions,
                     )
                 };
@@ -4327,70 +4507,92 @@ fn execute_verified_function_applications_with_suspension(
         // Postconditions are lowered against the caller's own states, so
         // their reads are the caller's reads.
         let canonical_entry_contract_state = entry_contract_state.clone();
-        let provisional_post_contract_state =
-            with_contract_interface_argument_views(&post_state, interface, &argument_values);
-        let provisional_post_contract_state = match checked_contract_control_read_state(
-            &provisional_post_contract_state,
-            &output_resources,
-            interface,
-            &effective_assumptions,
-        ) {
-            Ok(state) => state,
-            Err(error) => {
-                paths.push(FunctionPath::new(
-                    FunctionOutcome::RuntimeError(error),
-                    facts,
-                    obligations,
-                ));
-                continue;
-            }
-        };
-        let mut provisional_facts = facts.clone();
-        provisional_facts.extend_shared(&coordinate_facts);
-        let provisional_ensure_timing = crate::instrumentation::OperationTiming::new(
-            name,
-            "verified function rule application",
-            "verified call provisional ensure lowering",
-        );
-        add_verified_function_ensure_facts_selected_with_interface(
-            &mut provisional_facts,
-            &obligations,
-            &provisional_post_contract_state,
-            &canonical_entry_contract_state,
-            interface,
-            interface
-                .contract_ensures()
-                .iter()
-                .filter(|ensure| !early_coordinates || !return_coordinate_ensure(ensure)),
-            &effective_assumptions,
-            budget,
-        )?;
-        drop(provisional_ensure_timing);
+        // With no transferred input or output resources, there is no allocation
+        // to continue, retire, or publish. Lower the ensures only against the
+        // final state, where they will be filed as call facts.
+        let allocation_delta =
+            if transfer.callee_resources.is_empty() && output_resources.is_empty() {
+                Ok(VerifiedAllocationDelta {
+                    memory: post_state.memory.clone(),
+                    effects: ExecutionFacts::new(),
+                    retired_allocations: Vec::new(),
+                    continued_tokens: Vec::new(),
+                })
+            } else {
+                let provisional_post_contract_state = with_bound_contract_interface_argument_views(
+                    &post_state,
+                    interface,
+                    &argument_values,
+                );
+                let provisional_post_contract_state = match checked_contract_control_read_state(
+                    &provisional_post_contract_state,
+                    &output_resources,
+                    interface,
+                    &effective_assumptions,
+                ) {
+                    Ok(state) => state,
+                    Err(error) => {
+                        paths.push(FunctionPath::new(
+                            FunctionOutcome::RuntimeError(error),
+                            facts,
+                            obligations,
+                        ));
+                        continue;
+                    }
+                };
+                let mut provisional_facts = facts.clone();
+                provisional_facts.extend_shared(&coordinate_facts);
+                let provisional_ensure_timing = crate::instrumentation::OperationTiming::new(
+                    name,
+                    "verified function rule application",
+                    "verified call provisional ensure lowering",
+                );
+                add_verified_function_ensure_facts_selected_with_interface(
+                    &mut provisional_facts,
+                    &obligations,
+                    &provisional_post_contract_state,
+                    &canonical_entry_contract_state,
+                    interface,
+                    interface
+                        .contract_ensures()
+                        .iter()
+                        .filter(|ensure| !early_coordinates || !return_coordinate_ensure(ensure)),
+                    &effective_assumptions,
+                    budget,
+                )?;
+                drop(provisional_ensure_timing);
 
-        let allocation_delta_timing = crate::instrumentation::OperationTiming::new(
-            name,
-            "verified function rule application",
-            "verified call heap allocation delta",
-        );
-        let allocation_assumptions =
-            assumptions_with_path_context(&effective_assumptions, &provisional_facts, &obligations);
-        let allocation_delta = apply_verified_heap_allocation_delta(
-            post_state.memory.clone(),
-            &entry_state.memory,
-            &transfer.callee_resources,
-            &caller_resources_after_requirements,
-            &output_resources,
-            interface,
-            &allocation_assumptions,
-            post_state.loan_ledger(),
-            caller_state,
-            &post_state,
-        );
-        drop(allocation_delta_timing);
+                let _allocation_delta_timing = crate::instrumentation::OperationTiming::new(
+                    name,
+                    "verified function rule application",
+                    "verified call heap allocation delta",
+                );
+                let allocation_assumptions = assumptions_with_path_context(
+                    &effective_assumptions,
+                    &provisional_facts,
+                    &obligations,
+                );
+                apply_verified_heap_allocation_delta(
+                    post_state.memory.clone(),
+                    &entry_state.memory,
+                    &transfer.callee_resources,
+                    &caller_resources_after_requirements,
+                    &output_resources,
+                    interface,
+                    &allocation_assumptions,
+                    if suspended.is_some() {
+                        post_state.loan_ledger()
+                    } else {
+                        None
+                    },
+                    caller_state,
+                    &post_state,
+                )
+            };
         let VerifiedAllocationDelta {
             memory,
             effects: allocation_effects,
-            retired_creations,
+            retired_allocations,
             continued_tokens,
         } = match allocation_delta {
             Ok(result) => result,
@@ -4419,10 +4621,11 @@ fn execute_verified_function_applications_with_suspension(
         };
         facts.extend(allocation_effects);
         post_state.set_memory(memory);
-        if let Some(error) = retired_creations
-            .into_iter()
-            .find_map(|block| post_state.retire_population_storage(&block).err())
-        {
+        if let Some(error) = retired_allocations.iter().find_map(|range| {
+            post_state
+                .retire_population_storage(&range.base().base)
+                .err()
+        }) {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(error),
                 facts,
@@ -4431,7 +4634,7 @@ fn execute_verified_function_applications_with_suspension(
             continue;
         }
         let post_contract_state =
-            with_contract_interface_argument_views(&post_state, interface, &argument_values);
+            with_bound_contract_interface_argument_views(&post_state, interface, &argument_values);
         let returned_body_state = post_contract_state.clone();
         let post_contract_state = match checked_contract_control_read_state(
             &post_contract_state,
@@ -4491,7 +4694,7 @@ fn execute_verified_function_applications_with_suspension(
             budget,
         )?;
         drop(ensure_timing);
-        {
+        if !output_resources.is_empty() {
             let ensured_assumptions =
                 assumptions_with_path_context(&effective_assumptions, &facts, &obligations);
             facts.extend(
@@ -4505,19 +4708,16 @@ fn execute_verified_function_applications_with_suspension(
                 .map(ExecutionPureFact::certified),
             );
         }
-        // The applicable interfaces share the result and post-call memory,
+        // The applicable interfaces share the result and post-call point,
         // but bind their own argument names against the original entry state.
         for additional in additional_calls {
             let mut additional_facts = additional.facts;
             let entry_fact_count = additional_facts.len();
-            let mut additional_post = additional
-                .entry_state
-                .clone()
-                .with_memory(post_state.memory.clone());
+            let mut additional_post = additional.entry_state.clone().with_memory_of(&post_state);
             if additional.interface.return_type() != ProgramType::Void {
                 set_contract_result(&mut additional_post, additional.interface, result.clone());
             }
-            let additional_post = with_contract_interface_argument_views(
+            let additional_post = with_bound_contract_interface_argument_views(
                 &additional_post,
                 additional.interface,
                 &additional.argument_values,
@@ -4649,7 +4849,8 @@ fn execute_verified_function_applications_with_suspension(
                     facts,
                     post_state.mutex_ledger.clone(),
                     creation,
-                ),
+                )
+                .with_entry_partition(transfer.returned_entry_partition),
                 obligations,
             ));
             // The internal caller checks there is exactly one completion.
@@ -4908,6 +5109,27 @@ fn execute_verified_function_applications_with_suspension(
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
         }
         let call_parameters = CallParameters::of(&entry_contract_state, interface);
+        // The checked return partition recovers this call's loans. The
+        // transition that uses it still owes separation from the caller's
+        // pre-existing loans, on both normal and exceptional paths.
+        if let Some(path) = &mut exceptional_path
+            && matches!(path.outcome, FunctionOutcome::Throw { .. })
+        {
+            path.obligations.extend(write_requirements.iter().cloned());
+        }
+        obligations.extend(write_requirements);
+        // The retirement ranges are the consumed allocation tokens at
+        // entry. Return facts may decide continuity, but they cannot prove
+        // that retiring one of those allocations was permitted.
+        if suspended.is_none() {
+            obligations.extend(verified_call_loan_requirements(
+                entry_state.loan_ledger(),
+                &retired_allocations,
+                call_site,
+                interface.contract_requires().len() + transfer.memory_effects.len(),
+                "verified call allocation retirement separation",
+            ));
+        }
         paths.push(FunctionPath {
             outcome,
             facts,
@@ -4925,13 +5147,51 @@ fn execute_verified_function_applications_with_suspension(
             ),
             call_parameters: call_parameters.clone(),
         });
-        if let Some(mut exceptional_path) = exceptional_path {
-            exceptional_path.call_parameters = call_parameters;
-            paths.push(exceptional_path);
+        if let Some(mut path) = exceptional_path {
+            path.call_parameters = call_parameters;
+            paths.push(path);
         }
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+fn verified_call_loan_requirements(
+    ledger: Option<&LoanLedger>,
+    effects: &[MemoryRange],
+    call_site: impl FnOnce() -> CallRequirementSite,
+    first_ordinal: usize,
+    context: &str,
+) -> Vec<ProofObligation> {
+    let Some(ledger) = ledger else {
+        return Vec::new();
+    };
+    let mut requirements = effects
+        .iter()
+        .enumerate()
+        .filter_map(|(index, range)| {
+            ledger
+                .memory_access_requirement(range)
+                .map(|requirement| (index, requirement))
+        })
+        .peekable();
+    if requirements.peek().is_none() {
+        return Vec::new();
+    }
+    let site = Arc::new(call_site());
+    requirements
+        .map(|(index, requirement)| {
+            ProofObligation::verification_condition(requirement)
+                .with_call_requirement_site(Arc::new(CallRequirementSource::new(
+                    site.clone(),
+                    first_ordinal + index,
+                    None,
+                    false,
+                    None,
+                )))
+                .with_context(context)
+        })
+        .collect()
 }
 
 fn refresh_call_written_locals(
@@ -4944,7 +5204,7 @@ fn refresh_call_written_locals(
     // class, never the caller's unrelated local environment.
     let mut refreshed_blocks = BTreeSet::new();
     for range in effects {
-        for block in std::iter::once(range.base().block.clone()).chain(
+        for block in std::iter::once(range.base().base.clone()).chain(
             assumptions
                 .equality_graph
                 .local_slot_alias_blocks(range.base()),
@@ -4952,9 +5212,9 @@ fn refresh_call_written_locals(
             if !refreshed_blocks.insert(block.clone()) {
                 continue;
             }
-            let slot = Pointer {
-                block,
-                offset: PointerOffsetTerm::Constant(0),
+            let slot = Address {
+                base: block,
+                offset: AddressOffset::Constant(0),
             };
             crate::kernel::eval::refresh_scalar_local_from_memory(state, &slot, assumptions);
         }
@@ -4974,11 +5234,12 @@ fn exceptional_direct_function_path(
     caller_state: &ExecutionState,
     interface: &FunctionContractInterface,
     evidence: Option<&ProgramFunction>,
+    framed_rule: Option<FramedCallRule<'_>>,
     argument_values: &[ProgramValue],
     entry_state: &ExecutionState,
     entry_contract_state: &ExecutionState,
     transfer: &FunctionResourceTransfer,
-    memory: Memory,
+    memory: SymbolicMemory,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     effective_assumptions: &PureFactContext,
@@ -4997,7 +5258,7 @@ fn exceptional_direct_function_path(
         .locals
         .set_typed(CONTRACT_EXCEPTION, payload.clone(), payload_type);
     let post_contract_state =
-        with_contract_interface_argument_views(&post_state, interface, argument_values);
+        with_bound_contract_interface_argument_views(&post_state, interface, argument_values);
     add_verified_function_ensure_facts_selected_with_interface(
         &mut facts,
         &obligations,
@@ -5025,6 +5286,7 @@ fn exceptional_direct_function_path(
         escrow_boundary,
         ensured_views,
         produced_borrowing_pieces,
+        returned_entry_partition,
         ..
     } = match evaluate_contract_return_resources(
         &transfer.caller_resources_after_requirements,
@@ -5037,7 +5299,7 @@ fn exceptional_direct_function_path(
         evidence.map_or("exceptional call", |function| function.name()),
         interface,
         &[],
-        ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+        ReturnResourceComposition::for_rule(framed_rule, &transfer.consumed_cell_returns),
         &post_assumptions,
         budget,
     )? {
@@ -5051,6 +5313,7 @@ fn exceptional_direct_function_path(
         }
     };
     let mut transfer = transfer.clone();
+    transfer.returned_entry_partition = returned_entry_partition;
     transfer.candidate_output_views = ensured_views;
     transfer.produced_borrowing_pieces = produced_borrowing_pieces;
     post_state.resources = return_resources.clone();
@@ -5112,12 +5375,17 @@ struct PreparedVerifiedFunctionCall<'a> {
     /// a source-body handle for named callbacks.
     name: &'a str,
     interface_name: &'a str,
+    candidate_ordinal: usize,
+    has_exact_write_ranges: bool,
     /// Concrete declaration identity for global and static storage lowering.
     /// This is not evidence that the function body was checked.
     storage: Option<&'a ProgramFunction>,
     /// Concrete evidence is present only for a verified direct rule. Named
     /// contracts and external assumptions deliberately carry none.
     evidence: Option<&'a ProgramFunction>,
+    /// A theorem or an established contract premise; concrete
+    /// declaration storage alone never grants this frame rule.
+    framed_rule: Option<FramedCallRule<'a>>,
     /// The body-independent interface used to prepare this application. It is
     /// explicit even when it is the concrete function's own interface, so
     /// callback and ordinary calls cannot silently grow separate evaluators.
@@ -5161,7 +5429,7 @@ fn source_load_state_for_proposition(
         }
         match item {
             Work::Proposition(Proposition::ConditionIs(condition, _)) => {
-                work.push(Work::Condition(condition));
+                work.push(Work::Condition(condition.native_compat()));
             }
             Work::Proposition(Proposition::And(left, right))
             | Work::Proposition(Proposition::Or(left, right))
@@ -5292,12 +5560,12 @@ fn checked_contract_control_read_state(
             .ok_or_else(|| RuntimeError::MissingResource {
                 resource: Box::new(fact.clone()),
             })?;
-        let children = children
-            .into_iter()
-            .filter(|child| !without_head.contains_exact_representation(child))
-            .collect::<Vec<_>>();
+        // The selected held wrapper supplies its body beside this frame.
+        // Keep the constructed successor; an equal ambient child is not a
+        // replacement for the ownership removed with the parent.
         resources = without_head
-            .try_compose_with_facts_delaying_normalization(children, assumptions)
+            .install_established_partition(children, assumptions)
+            .map(|(context, _)| context)
             .map_err(resource_context_runtime_error)?;
     }
     Ok(state.clone().with_resource_context(resources))
@@ -5521,7 +5789,7 @@ fn prepare_verified_function_call<'a>(
             parameter.binding_name().clone(),
             value.clone(),
             parameter.program_type(),
-            Memory::value_parameter_pointer(parameter.binding_name()),
+            SymbolicMemory::value_parameter_pointer(parameter.binding_name()),
             false,
             false,
             false,
@@ -5840,8 +6108,11 @@ fn prepare_verified_function_call<'a>(
             };
         }
     }
-    let entry_contract_state =
-        with_contract_interface_argument_views(&entry_state, contract_interface, &argument_values);
+    let entry_contract_state = with_bound_contract_interface_argument_views(
+        &entry_state,
+        contract_interface,
+        &argument_values,
+    );
     // The callee's pure preconditions are read in the state its entry will
     // hold: the transferred clause set, opened through the composite
     // definitions the way the callee's own entry opens it. A precondition
@@ -6092,51 +6363,56 @@ fn prepare_verified_function_call<'a>(
                 }
                 established_requirements.push(guarded);
             }
-            let contract_requirement_is_proven = !assumptions.retains_required_obligations()
-                && function_contract_requirement_is_proven(
-                    &requirement_path.proposition,
-                    &path_assumptions,
-                    environment,
-                    budget,
-                )?;
-            let requirement_is_proven = !assumptions.retains_required_obligations()
-                && super::assumptions::capture_implicit_consulted_premises(|| {
-                    if contract_requirement_is_proven {
-                        return true;
-                    }
-                    // Range bounds are the definition of this atomic source
-                    // clause. User-written logical structure still needs its
-                    // ordinary explicit proof rather than this unpacking.
-                    if matches!(requirement, SpecProposition::ResourceSeparate { .. }) {
-                        return separation_requirement_parts_are_established(
-                            &path_assumptions,
-                            &requirement_path.proposition,
-                        );
-                    }
-                    match &requirement_path.proposition {
-                        Proposition::ConditionIs(condition, value) => {
-                            path_assumptions.proves_exact(&requirement_path.proposition)
-                                || path_assumptions
-                                    .has_matching_condition_fact_for_memory_resolution(
-                                        condition, *value,
-                                    )
+            // A concrete function's refinement of a named contract consults
+            // no path fact, so it is decided even where every consulted fact
+            // must be explicit: nothing on the proof side could prove it.
+            let contract_requirement_is_proven = function_contract_requirement_is_proven(
+                &requirement_path.proposition,
+                &path_assumptions,
+                environment,
+                !assumptions.retains_required_obligations(),
+                budget,
+            )?;
+            let requirement_is_proven = contract_requirement_is_proven
+                || !assumptions.retains_required_obligations()
+                    && super::assumptions::capture_implicit_consulted_premises(|| {
+                        if contract_requirement_is_proven {
+                            return true;
                         }
-                        Proposition::ResourceSeparate { .. }
-                            if requirement_path.proposition.memory_separation().is_some() =>
-                        {
-                            let (left, right) = requirement_path
-                                .proposition
-                                .memory_separation()
-                                .expect("the guard matched a memory separation");
-                            path_assumptions.proves_exact(&requirement_path.proposition)
+                        // Range bounds are the definition of this atomic source
+                        // clause. User-written logical structure still needs its
+                        // ordinary explicit proof rather than this unpacking.
+                        if matches!(requirement, SpecProposition::ResourceSeparate { .. }) {
+                            return separation_requirement_parts_are_established(
+                                &path_assumptions,
+                                &requirement_path.proposition,
+                            );
+                        }
+                        match &requirement_path.proposition {
+                            Proposition::ConditionIs(condition, value) => {
+                                path_assumptions.proves_exact(&requirement_path.proposition)
+                                    || path_assumptions
+                                        .has_matching_condition_fact_for_memory_resolution(
+                                            condition.native_compat(),
+                                            *value,
+                                        )
+                            }
+                            Proposition::ResourceSeparate { .. }
+                                if requirement_path.proposition.memory_separation().is_some() =>
+                            {
+                                let (left, right) = requirement_path
+                                    .proposition
+                                    .memory_separation()
+                                    .expect("the guard matched a memory separation");
+                                path_assumptions.proves_exact(&requirement_path.proposition)
                                     || path_assumptions
                                         .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
                                             left, right,
                                         )
+                            }
+                            proposition => path_assumptions.proves_exact(proposition),
                         }
-                        proposition => path_assumptions.proves_exact(proposition),
-                    }
-                });
+                    });
             if requirement_is_proven {
                 super::assumptions::record_consulted_premises(
                     &path_assumptions,
@@ -6205,7 +6481,7 @@ fn prepare_verified_function_call<'a>(
     );
     drop(requirement_timing);
 
-    // The callee is given each of its ranges' extent guards on entry
+    // The callee is given each of its ranges' span guards on entry
     // (`program_function_contract_entry_facts`), among them `start <= end`. The
     // planner shows each range lies inside one the caller holds, which
     // gives every other guard from the held range's own, but not the order:
@@ -6243,7 +6519,7 @@ fn prepare_verified_function_call<'a>(
                 )));
             }
             None => {
-                let guard = Proposition::ConditionIs(order, true);
+                let guard = Proposition::condition_is(order, true);
                 if required_obligation_is_exactly_discharged(&guard_context, &guard) {
                     super::assumptions::record_consulted_premises(&guard_context, &guard);
                 } else {
@@ -6609,6 +6885,16 @@ fn prepare_verified_function_call<'a>(
                 );
         }
     }
+    let has_exact_write_ranges = if contract_interface.resource_derived_mutable_frame() {
+        projection_range_sources
+            .iter()
+            .all(|(_, source)| source.memory_own_range().is_some())
+    } else {
+        contract_interface
+            .contract_mutable()
+            .iter()
+            .all(|segment| segment.guard().is_none())
+    };
     transfer.memory_effects = mutable_ranges.clone();
     // A resource-derived call is authorized by exactly these checked inputs,
     // borrowed and consumed alike: its write set is projected from them
@@ -6652,12 +6938,12 @@ fn prepare_verified_function_call<'a>(
     // literal as an ordinary `uint8*` and no qualifier catches it.
     if let Some(range) = mutable_ranges
         .iter()
-        .find(|range| entry_state.memory.is_read_only_block(&range.base().block))
+        .find(|range| entry_state.memory.is_read_only_block(&range.base().base))
     {
         return Ok(Err(FunctionPath::new(
             FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                 "mutable footprint covers read-only storage `{}`",
-                range.base().block
+                range.base().base
             ))),
             facts,
             obligations,
@@ -6667,8 +6953,11 @@ fn prepare_verified_function_call<'a>(
     Ok(Ok(PreparedVerifiedFunctionCall {
         name: application.name,
         interface_name: application.interface_name,
+        candidate_ordinal,
+        has_exact_write_ranges,
         storage: application.storage,
         evidence: application.evidence,
+        framed_rule: application.framed_rule,
         interface: contract_interface,
         argument_values,
         entry_state,
@@ -6681,16 +6970,47 @@ fn prepare_verified_function_call<'a>(
     }))
 }
 
+/// An instantiated nominal interface together with the premise that grants
+/// it for this function value. Only fact lookup constructs this capability;
+/// a bare `FunctionContract` declaration has no frame-rule authority.
+#[derive(Clone, Debug)]
+pub(super) struct EstablishedFunctionContract {
+    contract: FunctionContract,
+    _premise: Proposition,
+}
+
+impl std::ops::Deref for EstablishedFunctionContract {
+    type Target = FunctionContract;
+    fn deref(&self) -> &Self::Target {
+        &self.contract
+    }
+}
+
+#[derive(Clone, Copy)]
+struct NamedContractApplication<'a> {
+    contract: &'a FunctionContract,
+    framed_rule: Option<FramedCallRule<'a>>,
+}
+
+impl std::ops::Deref for NamedContractApplication<'_> {
+    type Target = FunctionContract;
+    fn deref(&self) -> &Self::Target {
+        self.contract
+    }
+}
+
 /// The contracts facts attach to a function value, each with the values
 /// its fact fixes for its value parameters, that apply to a call of type
 /// `function_type`. A fact whose values do not have its contract's value
 /// parameter types contributes nothing.
-pub(super) fn contracts_from_facts(
-    facts: impl Iterator<Item = (String, Proposition)>,
+pub(super) fn contracts_for_pointer(
+    pointer: &Address,
+    assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     function_type: &ProgramType,
-) -> Vec<FunctionContract> {
-    facts
+) -> Vec<EstablishedFunctionContract> {
+    assumptions
+        .function_contract_facts_for(pointer)
         .filter_map(|(name, fact)| {
             let contract = environment.get_function_contract(&name)?;
             let Proposition::Predicate { arguments, .. } = &fact else {
@@ -6704,7 +7024,10 @@ pub(super) fn contracts_from_facts(
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
-            contract.instantiated(&values)
+            Some(EstablishedFunctionContract {
+                contract: contract.instantiated(&values)?,
+                _premise: fact,
+            })
         })
         .filter(|contract| &contract.function_pointer_type() == function_type)
         .collect()
@@ -6712,7 +7035,32 @@ pub(super) fn contracts_from_facts(
 
 pub(super) fn execute_program_function_contracts_paths(
     caller_state: &ExecutionState,
-    contracts: &[&FunctionContract],
+    contracts: &[&EstablishedFunctionContract],
+    arguments: &[ProgramExpression],
+    assumptions: &PureFactContext,
+    environment: &ExecutionEnvironment,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<FunctionPath>> {
+    let applications = contracts
+        .iter()
+        .map(|contract| NamedContractApplication {
+            contract,
+            framed_rule: Some(FramedCallRule::Named { _rule: contract }),
+        })
+        .collect::<Vec<_>>();
+    execute_named_contract_applications_paths(
+        caller_state,
+        &applications,
+        arguments,
+        assumptions,
+        environment,
+        budget,
+    )
+}
+
+fn execute_named_contract_applications_paths(
+    caller_state: &ExecutionState,
+    contracts: &[NamedContractApplication<'_>],
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
@@ -6800,15 +7148,19 @@ pub(super) fn execute_program_function_contracts_paths(
     };
     let applications = contracts
         .iter()
-        .map(|contract| FunctionContractApplication {
-            pointer_result: None,
-            name: contract.callee_name(),
-            interface_name: contract.name(),
-            interface: contract.interface(),
-            storage: None,
-            evidence: None,
-            representation_copy: None,
-            value_arguments: contract.value_arguments(),
+        .map(|application| {
+            let contract = application.contract;
+            FunctionContractApplication {
+                pointer_result: None,
+                name: contract.callee_name(),
+                interface_name: contract.name(),
+                interface: contract.interface(),
+                storage: None,
+                evidence: None,
+                framed_rule: application.framed_rule,
+                representation_copy: None,
+                value_arguments: contract.value_arguments(),
+            }
         })
         .collect::<Vec<_>>();
     execute_verified_function_applications(
@@ -7005,12 +7357,12 @@ fn call_value_arguments(
         else {
             continue;
         };
-        let agrees = |left: &AlgebraicValue, right: &AlgebraicValue| match (
+        let agrees = |left: ResourceFieldValue<'_>, right: ResourceFieldValue<'_>| match (
             left.as_program_value(),
             right.as_program_value(),
         ) {
             (Some(ProgramValue::Pointer(left)), Some(ProgramValue::Pointer(right))) => {
-                left.pointer() == right.pointer()
+                left.address() == right.address()
             }
             _ => left == right,
         };
@@ -7036,7 +7388,10 @@ fn call_value_arguments(
                 {
                     continue;
                 }
-                let Some(value) = held_arguments[position].as_program_value() else {
+                let Some(value) = held_arguments
+                    .get(position)
+                    .and_then(ResourceFieldValue::as_program_value)
+                else {
                     continue;
                 };
                 if !found.contains(value) {
@@ -7056,7 +7411,7 @@ fn call_value_arguments(
         {
             found = string_literal_instance_values(
                 definition,
-                probe_arguments,
+                &(probe_arguments).native_values(),
                 position,
                 parameter.program_type(),
                 caller_state,
@@ -7118,7 +7473,10 @@ fn separation_requirement_parts_are_established(
         }
         Proposition::ConditionIs(condition, value) => {
             required_obligation_is_exactly_discharged(assumptions, proposition)
-                || assumptions.has_matching_condition_fact_for_memory_resolution(condition, *value)
+                || assumptions.has_matching_condition_fact_for_memory_resolution(
+                    condition.native_compat(),
+                    *value,
+                )
         }
         Proposition::ResourceSeparate { .. } if proposition.memory_separation().is_some() => {
             let (left, right) = proposition
@@ -7134,24 +7492,33 @@ fn separation_requirement_parts_are_established(
     }
 }
 
+/// Whether a named-contract requirement holds by the refinement check.
+/// With `consult_facts` false, only an argument that is itself the address
+/// of a function is decided: the judgment then reads the two declarations
+/// the call names and no path fact, so a step that must make every consulted
+/// fact explicit can still take it. A pointer known to be a function only
+/// through facts is left to those facts' explicit route.
 fn function_contract_requirement_is_proven(
     proposition: &Proposition,
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
+    consult_facts: bool,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
     match proposition {
-        Proposition::And(left, right) => {
-            Ok(
-                function_contract_requirement_is_proven(left, assumptions, environment, budget)?
-                    && function_contract_requirement_is_proven(
-                        right,
-                        assumptions,
-                        environment,
-                        budget,
-                    )?,
-            )
-        }
+        Proposition::And(left, right) => Ok(function_contract_requirement_is_proven(
+            left,
+            assumptions,
+            environment,
+            consult_facts,
+            budget,
+        )? && function_contract_requirement_is_proven(
+            right,
+            assumptions,
+            environment,
+            consult_facts,
+            budget,
+        )?),
         Proposition::Predicate { name, arguments } => {
             let Some(contract_name) = FunctionContract::surface_name_from_predicate(name) else {
                 return Ok(false);
@@ -7167,17 +7534,21 @@ fn function_contract_requirement_is_proven(
             // Contract formation checks the complete value's graph class.
             // The lowered requirement keeps its structural read; it need not
             // contain the literal function that the read is known to equal.
-            let comparison_pointer = assumptions
-                .equality_graph
-                .pointer_value_representative(pointer);
-            let target = match comparison_pointer.pointer() {
-                Pointer {
-                    block: PointerBlock::Function(target),
-                    offset: PointerOffsetTerm::Constant(0),
+            let comparison_pointer = if consult_facts {
+                assumptions
+                    .equality_graph
+                    .pointer_value_representative(pointer)
+            } else {
+                pointer.clone()
+            };
+            let target = match comparison_pointer.address() {
+                Address {
+                    base: AddressBase::Function(target),
+                    offset: AddressOffset::Constant(0),
                 } => Some(target),
-                Pointer {
-                    block: PointerBlock::FunctionSymbolic(_) | PointerBlock::LoadedPointer(_),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::FunctionSymbolic(_) | AddressBase::LoadedPointer(_),
+                    offset: AddressOffset::Constant(0),
                 } if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) => None,
                 _ => return Ok(false),
             };
@@ -7207,8 +7578,12 @@ fn function_contract_requirement_is_proven(
             // has those contracts as its implementations: a closure instance
             // carries its own contract, fixed to its captured values.
             let Some(target) = target else {
-                for source in contracts_from_facts(
-                    assumptions.function_contract_facts_for(pointer.pointer()),
+                if !consult_facts {
+                    return Ok(false);
+                }
+                for source in contracts_for_pointer(
+                    pointer.address(),
+                    assumptions,
                     environment,
                     &pointer.program_type(),
                 ) {
@@ -7252,7 +7627,7 @@ pub(crate) use named_contract_refinement::*;
 /// The surface spells it in source terms.
 #[derive(Clone, Debug)]
 pub(crate) enum StorageWriteOutsideFootprint {
-    Write { pointer: Pointer, bytes: u32 },
+    Write { pointer: Address, bytes: u32 },
     Range(MemoryRange),
 }
 
@@ -7274,8 +7649,8 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     transition_resources: Option<&[CheckedResourceFact]>,
     prepared_projection: Option<&FunctionMemoryEffectProjection>,
 ) -> ExecutionResult<Option<Vec<StorageWriteOutsideFootprint>>> {
-    let is_storage = |pointer: &Pointer| pointer.block.is_static_storage_block();
-    let storage_writes: Vec<(Pointer, u32)> =
+    let is_storage = |pointer: &Address| pointer.base.is_static_storage_block();
+    let storage_writes: Vec<(Address, u32)> =
         crate::kernel::reasoning::memory_effect_write_accesses(facts)
             .into_iter()
             .filter(|(pointer, _)| is_storage(pointer))
@@ -7342,7 +7717,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
 }
 
 fn storage_write_within_owned_footprint(
-    pointer: &Pointer,
+    pointer: &Address,
     write_bytes: u32,
     owned: &[MemoryRange],
     assumptions: &PureFactContext,
@@ -7388,7 +7763,7 @@ fn storage_write_within_owned_footprint(
 /// does not cover whole elements, or any other shape, is left to the byte
 /// comparison.
 fn storage_write_within_owned_elements(
-    pointer: &Pointer,
+    pointer: &Address,
     write_bytes: u32,
     range: &MemoryRange,
     assumptions: &PureFactContext,
@@ -7585,7 +7960,7 @@ fn project_explicit_memory_segments(
 /// from its definitions at `state` ([`OwnedFootprintDerivation`]), each once.
 /// This is the one derivation of a resource-derived write footprint, for a
 /// function's frame and a loop's declared frame alike; nothing lowered from
-/// source is a second source of it. Memory it cannot name is
+/// source is a second source of it. SymbolicMemory it cannot name is
 /// [`MemoryRange::unnamed_footprint`]; `None` only when a family the fact
 /// reaches has no definition at all.
 pub(super) fn checked_owned_memory_ranges(
@@ -7693,7 +8068,7 @@ pub(in crate::kernel) fn argument_direct_composite_ranges(
     expand_composites_for_frame(
         &ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(fact.clone()),
         definitions,
-        &Memory::new(),
+        &SymbolicMemory::new(),
         &assumptions,
     )
     .map(|expanded| owned_memory_ranges_of(&expanded))
@@ -7706,7 +8081,7 @@ pub(in crate::kernel) fn argument_direct_composite_ranges(
 fn expand_composites_for_frame(
     context: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     enum Visit {
@@ -7824,7 +8199,9 @@ fn matched_instance_body_ownership(
     {
         return None;
     }
-    let AlgebraicValue::Algebraic(model) = instance.fields().get(matched.field_index)? else {
+    let crate::kernel::ResourceFieldValue::Algebraic(model) =
+        instance.fields().get(matched.field_index)?
+    else {
         return None;
     };
     let projection = ResourceFieldProjection {
@@ -7848,10 +8225,7 @@ fn matched_instance_body_ownership(
         assumptions,
     );
     if clauses.iter().any(|clause| {
-        matches!(
-            clause.proposition,
-            Proposition::ConditionIs(ConditionTerm::Constant(false), true)
-        )
+        matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(false), _))))
     }) {
         return None;
     }
@@ -7868,7 +8242,9 @@ fn matched_instance_body_ownership(
     let premises = clauses
         .into_iter()
         .filter_map(|clause| match clause.proposition {
-            Proposition::ConditionIs(condition, value) => Some((condition, value)),
+            Proposition::ConditionIs(condition, value) => {
+                Some((condition.native_compat().clone(), value))
+            }
             _ => None,
         })
         .collect();
@@ -7908,7 +8284,7 @@ fn open_unmatched_instance_body(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // This opens a held body's established footprint, as unfold does.
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
@@ -7968,7 +8344,7 @@ fn open_unmatched_instance_body(
 /// cell's base are never visited.
 ///
 /// The caller assumes the result before framing the store and records it as
-/// a path fact, so the producer (`Memory::without_possible_aliasing_cells`,
+/// a path fact, so the producer (`SymbolicMemory::without_possible_aliasing_cells`,
 /// through its ownership-first rung and the composition rung of its ladder)
 /// and every route that later re-asks the store-versus-load question (the
 /// memory-DAG `Store` hop and both transport sites, through
@@ -7976,7 +8352,7 @@ fn open_unmatched_instance_body(
 /// same composition and give the same answer.
 pub(in crate::kernel) fn store_opened_instance_composition(
     state: &ExecutionState,
-    write: &Pointer,
+    write: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
@@ -7985,8 +8361,8 @@ pub(in crate::kernel) fn store_opened_instance_composition(
         return None;
     }
     let definitions = crate::kernel::assumptions::frame_composite_definitions()?;
-    let write = Pointer {
-        block: write.block.clone(),
+    let write = Address {
+        base: write.base.clone(),
         offset: crate::kernel::memory_history::normalize_exact_memory_loads_in_pointer_offset(
             &write.offset,
             assumptions,
@@ -7996,7 +8372,7 @@ pub(in crate::kernel) fn store_opened_instance_composition(
         .owned_member_holding_access(resources, &write, bytes)?
         .clone();
     let memory = state.memory();
-    let candidates = crate::kernel::primitives::AliasCandidates::of_block(&write.block);
+    let candidates = crate::kernel::primitives::AliasCandidates::of_block(&write.base);
     let mut instances = BTreeMap::new();
     for (pointer, _) in memory.cells.candidate_logical_entries(&candidates) {
         crate::kernel::assumptions::owned_instances_naming_access_base(
@@ -8021,18 +8397,20 @@ pub(in crate::kernel) fn store_opened_instance_composition(
     if opened.is_empty() {
         return None;
     }
-    // The members must pass the check a flat context of the same ranges
-    // would: where this path's facts prove an opened range overlaps the
+    // These ranges are the selected members of the held partition, so
+    // their definition supplies separation. Retain bounded known conflicts:
+    // where this path's facts prove an opened range overlaps the
     // written member (two spellings of one descriptor, say), the context the
     // instance was held in was never realizable, and nothing is opened.
     ResourceContext::new()
-        .try_compose_with_facts_delaying_normalization(
+        .install_established_partition(
             std::iter::once(write_member)
                 .chain(opened)
                 .map(ResourceFact::own_memory),
             assumptions,
         )
         .ok()
+        .map(|(context, _)| context)
 }
 
 /// How much one owned-footprint derivation may visit: one unit per owned
@@ -8171,13 +8549,20 @@ impl<'a> OwnedFootprintDerivation<'a> {
             }
             return Some(self.ranges);
         }
-        let mut ranges = match ResourceContext::new().try_compose_with_facts(
-            self.ranges.iter().cloned().map(ResourceFact::own_memory),
+        // This is the footprint of the selected held/assumed head, including
+        // conservative unions of match arms, not admission of new ownership.
+        // Coalesce its explicit ranges without re-proving their partition.
+        let normalized = coalesce_written_resource_descriptions(
+            self.ranges
+                .into_iter()
+                .map(ResourceFact::own_memory)
+                .collect(),
             self.assumptions,
-        ) {
-            Ok(normalized) => owned_memory_ranges_of(&normalized),
-            Err(_) => self.ranges,
-        };
+        );
+        let mut ranges = normalized
+            .into_iter()
+            .filter_map(|fact| fact.memory_own_range().cloned())
+            .collect::<Vec<_>>();
         if self.reaches_unnamed {
             ranges.push(MemoryRange::unnamed_footprint());
         }
@@ -8279,7 +8664,9 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 }
             }
             Resource::MutexUse(_) | Resource::Publication(_) | Resource::MutexLive(_) => {}
-            Resource::Composite { name, arguments } => self.composite(name, arguments),
+            Resource::Composite { name, arguments } => {
+                self.composite(name, &(arguments).native_values())
+            }
             Resource::Instance(instance) => {
                 let Some(definition) = self.definition(instance.name()) else {
                     self.undefined_family = true;
@@ -8292,10 +8679,10 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 let fields = instance
                     .fields()
                     .iter()
-                    .cloned()
+                    .map(ResourceFieldValue::into_native)
                     .map(Some)
                     .collect::<Vec<_>>();
-                self.instance(definition, instance.arguments(), &fields);
+                self.instance(definition, &(instance.arguments()).native_values(), &fields);
             }
         }
     }
@@ -9053,6 +9440,10 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
     effective_assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<()> {
+    let mut ensures = ensures.peekable();
+    if ensures.peek().is_none() {
+        return Ok(());
+    }
     // Every ensure is lowered under the call's context plus the facts
     // published so far, the earlier ensures' among them. Build that context
     // once and extend it by each ensure's own new facts: rebuilding it from
@@ -9075,7 +9466,7 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
     let entry_contract_state = opened_entry_state.as_ref().unwrap_or(entry_contract_state);
     let mut ensure_assumptions =
         assumptions_with_path_context(effective_assumptions, facts, obligations);
-    for ensure in ensures {
+    while let Some(ensure) = ensures.next() {
         let published_before = facts.len();
         // A verified callee certifies that its ensures, including the memory
         // loads used to state them, are well-defined. Lower those loads into
@@ -9146,74 +9537,90 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
             let mut discharged_premises: Vec<Proposition> = Vec::new();
             while let Proposition::Implies(premise, body) = specialized {
                 let reversed_order = match premise.as_ref() {
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::GreaterThan,
-                            left,
-                            right,
-                        },
-                        value,
-                    ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessThan,
-                            left: right.clone(),
-                            right: left.clone(),
-                        },
-                        *value,
-                    )),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::GreaterEqual,
-                            left,
-                            right,
-                        },
-                        value,
-                    ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessEqual,
-                            left: right.clone(),
-                            right: left.clone(),
-                        },
-                        *value,
-                    )),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessThan,
-                            left,
-                            right,
-                        },
-                        value,
-                    ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::GreaterThan,
-                            left: right.clone(),
-                            right: left.clone(),
-                        },
-                        *value,
-                    )),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessEqual,
-                            left,
-                            right,
-                        },
-                        value,
-                    ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::GreaterEqual,
-                            left: right.clone(),
-                            right: left.clone(),
-                        },
-                        *value,
-                    )),
+                    condition_source_0 @ Proposition::ConditionIs(_, value)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::GreaterThan,
+                                left,
+                                right,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        Some(Proposition::condition_is(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessThan,
+                                left: right.clone(),
+                                right: left.clone(),
+                            },
+                            *value,
+                        ))
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, value)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::GreaterEqual,
+                                left,
+                                right,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        Some(Proposition::condition_is(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessEqual,
+                                left: right.clone(),
+                                right: left.clone(),
+                            },
+                            *value,
+                        ))
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, value)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessThan,
+                                left,
+                                right,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        Some(Proposition::condition_is(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::GreaterThan,
+                                left: right.clone(),
+                                right: left.clone(),
+                            },
+                            *value,
+                        ))
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, value)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessEqual,
+                                left,
+                                right,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        Some(Proposition::condition_is(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::GreaterEqual,
+                                left: right.clone(),
+                                right: left.clone(),
+                            },
+                            *value,
+                        ))
+                    }
                     _ => None,
                 };
                 // A closed premise, such as the constant condition left by
@@ -9264,10 +9671,15 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                 }
             }
         }
-        let published = facts.iter().skip(published_before);
-        crate::instrumentation::record_deterministic_work(published.len());
-        for fact in published {
-            ensure_assumptions = ensure_assumptions.assume_proposition(fact.proposition().clone());
+        // Only later ensures read this temporary context. The final delta
+        // will be admitted by the checked call's actual consumers.
+        if ensures.peek().is_some() {
+            let published = facts.iter().skip(published_before);
+            crate::instrumentation::record_deterministic_work(published.len());
+            for fact in published {
+                ensure_assumptions =
+                    ensure_assumptions.assume_proposition(fact.proposition().clone());
+            }
         }
     }
     Ok(())
@@ -9277,17 +9689,17 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
 /// test `continuity_requires_both_the_allocation_base_and_size` pins it, and
 /// fails when the route is denied.
 ///
-/// The two extents are compared in their common format. Extents of
+/// The two sizes are compared in their common format. Sizes of
 /// different formats are never the same allocation's (D5): a pair whose
 /// bases are not proven distinct is [`AllocationContinuity::CrossKind`].
 fn allocation_continuity(
-    input_base: &Pointer,
-    input_extent: &HeapExtent,
-    output_base: &Pointer,
-    output_extent: &HeapExtent,
+    input_base: &Address,
+    input_size: &AllocationSize,
+    output_base: &Address,
+    output_size: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> AllocationContinuity {
-    if input_extent.kind() != output_extent.kind() {
+    if input_size.kind() != output_size.kind() {
         return if pointers_proven_distinct_for_memory_resolution(
             input_base,
             output_base,
@@ -9298,15 +9710,15 @@ fn allocation_continuity(
             AllocationContinuity::CrossKind
         };
     }
-    let (input_bytes, output_bytes) = (input_extent.bytes(), output_extent.bytes());
+    let (input_bytes, output_bytes) = (input_size.bytes(), output_size.bytes());
     if pointers_proven_equal_for_memory_resolution(input_base, output_base, assumptions) {
-        let format = match input_extent.kind() {
-            HeapExtentKind::Int32 => MachineIntegerType::Int32,
-            HeapExtentKind::UInt64 => MachineIntegerType::UInt64,
+        let format = match input_size.kind() {
+            AllocationSizeKind::Int32 => MachineIntegerType::Int32,
+            AllocationSizeKind::UInt64 => MachineIntegerType::UInt64,
         };
         if program_values_proven_equal_for_memory_resolution(
-            &input_extent.token_value(),
-            &output_extent.token_value(),
+            &input_size.token_value(),
+            &output_size.token_value(),
             assumptions,
         ) {
             return AllocationContinuity::Same;
@@ -9324,7 +9736,7 @@ fn allocation_continuity(
         // consumer must settle.
         if required_obligation_is_exactly_discharged(
             assumptions,
-            &Proposition::ConditionIs(condition.clone(), false),
+            &Proposition::condition_is(condition.clone(), false),
         ) {
             AllocationContinuity::Inconsistent
         } else {
@@ -9333,7 +9745,7 @@ fn allocation_continuity(
     } else if pointers_proven_distinct_for_memory_resolution(input_base, output_base, assumptions) {
         AllocationContinuity::Distinct
     } else {
-        AllocationContinuity::Undecided(ConditionTerm::pointer_equal(
+        AllocationContinuity::Undecided(ConditionTerm::address_equal(
             input_base.clone(),
             output_base.clone(),
         ))
@@ -9342,34 +9754,6 @@ fn allocation_continuity(
 
 #[cfg(test)]
 mod allocation_continuity_tests;
-
-/// A callee that retires an allocation identity, by a definite free or by a
-/// contract that leaves continuity undecided, gives up every byte of it; a
-/// live loan over any of those bytes forbids that exactly as a direct `free`
-/// would (D6, D10). Every retire path consults the ledger that carries this
-/// call's own loans, because lending has already removed the owner from the
-/// preserved caller residual.
-fn refuse_retiring_a_lent_allocation(
-    ledger: Option<&LoanLedger>,
-    base: &Pointer,
-    bytes: &HeapExtent,
-    assumptions: &PureFactContext,
-) -> Result<(), VerifiedAllocationDeltaError> {
-    let Some(ledger) = ledger else {
-        return Ok(());
-    };
-    let whole_allocation = bytes.byte_range(base.clone());
-    match ledger.memory_access_refusal(
-        &whole_allocation,
-        assumptions,
-        LoanRefusalOperation::MemoryAccess,
-    ) {
-        Some(diagnostic) => Err(VerifiedAllocationDeltaError::Runtime(
-            RuntimeError::LoanRefusal(Box::new(diagnostic)),
-        )),
-        None => Ok(()),
-    }
-}
 
 /// The resource the caller keeps across a call that could still refer to an
 /// allocation the call retires, or `None` when every kept resource is known
@@ -9401,12 +9785,12 @@ fn refuse_retiring_a_lent_allocation(
 pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
     lent: &ResourceContext,
     kept: &'a ResourceContext,
-    base: &Pointer,
-    bytes: &HeapExtent,
+    base: &Address,
+    bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Option<&'a ResourceFact> {
     let mut lent_owners_cover_allocation = None;
-    for resource in kept.facts_that_may_refer_to_memory_block(&base.block) {
+    for resource in kept.facts_that_may_refer_to_memory_block(&base.base) {
         let owned_by_the_caller = resource.memory_own_range().is_some()
             && resource.has_proven_positive_quantity(assumptions)
             || resource.memory_view_range().is_some_and(|range| {
@@ -9436,8 +9820,8 @@ pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
 /// width or with provably equal endpoints.
 fn lent_owned_memory_covers_allocation(
     lent: &ResourceContext,
-    base: &Pointer,
-    bytes: &HeapExtent,
+    base: &Address,
+    bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> bool {
     if let Some(constant) = bytes.int32_bytes().and_then(MachineTerm::as_const)
@@ -9451,26 +9835,26 @@ fn lent_owned_memory_covers_allocation(
 }
 
 fn apply_verified_heap_allocation_delta(
-    mut memory: Memory,
-    entry_memory: &Memory,
+    mut memory: SymbolicMemory,
+    entry_memory: &SymbolicMemory,
     input_resources: &ResourceContext,
     preserved_caller_resources: &ResourceContext,
     output_resources: &ResourceContext,
     interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
-    ledger: Option<&LoanLedger>,
+    worker_ledger: Option<&LoanLedger>,
     mutex_state: &ExecutionState,
     output_state: &ExecutionState,
 ) -> Result<VerifiedAllocationDelta, VerifiedAllocationDeltaError> {
     let mut effects = Vec::new();
-    let mut retired_creations = Vec::new();
+    let mut retired_allocations = Vec::new();
     let mut continued_tokens = Vec::new();
     // What the callee consumed is read where it was consumed: at the call's
     // entry. The post-call memory may have rewritten a pointer field the lent
     // resources owned, so an allocation named through it at the post state
     // is not the allocation the caller handed over.
     let expand_allocations =
-        |resources: &ResourceContext, state: &ExecutionState, memory: &Memory| {
+        |resources: &ResourceContext, state: &ExecutionState, memory: &SymbolicMemory| {
             let projection_state = state
                 .clone()
                 .with_memory(memory.clone())
@@ -9503,8 +9887,8 @@ fn apply_verified_heap_allocation_delta(
         .facts()
         .iter()
         .filter_map(|fact| {
-            fact.allocation_extent()
-                .map(|(base, bytes)| (fact, base.pointer().clone(), bytes))
+            fact.allocation_size()
+                .map(|(pointer, bytes)| (fact, pointer, bytes))
         })
         .collect::<Vec<_>>();
     // The caller's untouched resources are expanded only when the callee
@@ -9543,9 +9927,9 @@ fn apply_verified_heap_allocation_delta(
         .iter()
         .chain(preserved.facts())
         .filter_map(|fact| {
-            fact.allocation_extent().map(|(base, bytes)| {
+            fact.allocation_size().map(|(base, bytes)| {
                 (
-                    base.pointer().clone(),
+                    base.address().clone(),
                     bytes,
                     returned_tokens.contains(&fact).then_some(fact),
                 )
@@ -9553,7 +9937,8 @@ fn apply_verified_heap_allocation_delta(
         })
         .collect::<Vec<_>>();
 
-    for (fact, base, bytes) in input_allocations {
+    for (fact, pointer, bytes) in input_allocations {
+        let base = pointer.address().clone();
         if output
             .cached_support_exposing_fact(fact, &allocation_assumptions)
             .is_some()
@@ -9576,7 +9961,7 @@ fn apply_verified_heap_allocation_delta(
             // call's own returned tokens are compared.
             for (output_base, output_bytes, returned) in &output_allocations {
                 if let Some(returned) = returned
-                    && output_base.block != base.block
+                    && output_base.base != base.base
                     && matches!(
                         allocation_continuity(
                             &base,
@@ -9600,9 +9985,9 @@ fn apply_verified_heap_allocation_delta(
             .iter()
             .filter(|(output_base, _, _)| !base.blocks_proven_distinct(output_base))
             .collect::<Vec<_>>();
+        let mut continuity_is_undecided = false;
         if !candidates.is_empty() {
             let mut retained = false;
-            let mut continuity_is_undecided = false;
             for (output_base, output_bytes, returned) in candidates {
                 match allocation_continuity(
                     &base,
@@ -9614,7 +9999,7 @@ fn apply_verified_heap_allocation_delta(
                     AllocationContinuity::Same => {
                         retained = true;
                         if let Some(returned) = returned
-                            && output_base.block != base.block
+                            && output_base.base != base.base
                             && !continued_tokens.iter().any(|(token, _)| token == *returned)
                         {
                             continued_tokens.push(((*returned).clone(), fact.clone()));
@@ -9630,9 +10015,9 @@ fn apply_verified_heap_allocation_delta(
                             RuntimeError::FunctionContract(format!(
                                 "the call consumes an allocation with {} byte count and returns \
                                  one that may be the same block with {} byte count; a heap \
-                                 block's extent keeps one format",
-                                heap_extent_kind_spelling(bytes.kind()),
-                                heap_extent_kind_spelling(output_bytes.kind()),
+                                 block's size keeps one format",
+                                allocation_size_kind_spelling(bytes.kind()),
+                                allocation_size_kind_spelling(output_bytes.kind()),
                             )),
                         ));
                     }
@@ -9641,51 +10026,9 @@ fn apply_verified_heap_allocation_delta(
             if retained {
                 continue;
             }
-            // A contract that does not decide allocation continuity admits a
-            // deallocating implementation. Therefore no independent caller
-            // resource may still refer to the input allocation. Retire the
-            // consumed allocation occurrence without asserting a C `free`;
-            // the output occurrence is installed below even when it later
-            // proves to have the same pointer value.
-            if continuity_is_undecided {
-                if let Some(resource) = caller_resource_left_stale_by_retirement(
-                    &input,
-                    &preserved,
-                    &base,
-                    &bytes,
-                    &allocation_assumptions,
-                ) {
-                    return Err(VerifiedAllocationDeltaError::Runtime(
-                        RuntimeError::StaleResourceAfterFree {
-                            resource: Box::new(resource.clone()),
-                        },
-                    ));
-                }
-                // Lending removed the owner from the preserved residual, so
-                // the scan above cannot see a view the caller still holds
-                // over these bytes; the ledger can (docs/internals/stable-views.md).
-                refuse_retiring_a_lent_allocation(ledger, &base, &bytes, &allocation_assumptions)?;
-                let allocation_range = bytes.byte_range(base.clone());
-                if let Some(error) = super::mutexes::storage_retirement_refusal(
-                    mutex_state,
-                    &allocation_range,
-                    &allocation_assumptions,
-                ) {
-                    return Err(VerifiedAllocationDeltaError::Runtime(error));
-                }
-
-                memory = memory.retire_contract_heap_allocation_claim(
-                    &base,
-                    bytes.bytes(),
-                    &allocation_assumptions,
-                );
-                retired_creations.push(base.block.clone());
-                continue;
-            }
         }
-        // Only the untransferred caller frame survives independently across
-        // the call. Any such resource that can still refer to an allocation
-        // the contract definitely retires makes this transition unsafe.
+        // Both retirement outcomes give up the input allocation's identity.
+        // A retained caller resource must be separate from its entire extent.
         if let Some(resource) = caller_resource_left_stale_by_retirement(
             &input,
             &preserved,
@@ -9699,8 +10042,20 @@ fn apply_verified_heap_allocation_delta(
                 },
             ));
         }
-        refuse_retiring_a_lent_allocation(ledger, &base, &bytes, &allocation_assumptions)?;
         let allocation_range = bytes.byte_range(base.clone());
+        // Suspended worker admission still checks before publishing its
+        // separately recoverable state. Ordinary calls carry an obligation.
+        if let Some(diagnostic) = worker_ledger.and_then(|ledger| {
+            ledger.memory_access_refusal(
+                &allocation_range,
+                &allocation_assumptions,
+                LoanRefusalOperation::MemoryAccess,
+            )
+        }) {
+            return Err(VerifiedAllocationDeltaError::Runtime(
+                RuntimeError::LoanRefusal(Box::new(diagnostic)),
+            ));
+        }
         if let Some(error) = super::mutexes::storage_retirement_refusal(
             mutex_state,
             &allocation_range,
@@ -9709,9 +10064,22 @@ fn apply_verified_heap_allocation_delta(
             return Err(VerifiedAllocationDeltaError::Runtime(error));
         }
 
-        retired_creations.push(base.block.clone());
+        // The allocation token names the whole object. Spell its extent
+        // through a byte pointer at the root, retaining the original address
+        // and provenance but dropping any narrower pointer bounds.
+        retired_allocations
+            .push(allocation_range.with_pointer_carrier(&pointer.clone().with_root_bounds()));
+        if continuity_is_undecided {
+            // An undecided return admits a free, but does not assert one.
+            memory = memory.retire_contract_heap_allocation_claim(
+                &base,
+                bytes.bytes(),
+                &allocation_assumptions,
+            );
+            continue;
+        }
         let before_free = memory.clone();
-        if memory.live_heap_block_extent(&base).is_none() {
+        if memory.live_heap_block_size(&base).is_none() {
             memory = memory
                 .with_heap_allocation_claim(base.clone(), bytes.clone())
                 .ok_or(VerifiedAllocationDeltaError::Runtime(
@@ -9744,13 +10112,13 @@ fn apply_verified_heap_allocation_delta(
             continue;
         };
         if input.satisfies_fact(fact, &allocation_assumptions)
-            || memory.live_heap_block_extent(base).is_some()
+            || memory.live_heap_block_size(base).is_some()
         {
             continue;
         }
         let (_, bytes) = fact
-            .allocation_extent()
-            .expect("an allocation token states its extent");
+            .allocation_size()
+            .expect("an allocation token states its size");
         memory = memory
             .with_heap_allocation_claim(base.clone(), bytes)
             .ok_or_else(|| {
@@ -9763,7 +10131,7 @@ fn apply_verified_heap_allocation_delta(
     Ok(VerifiedAllocationDelta {
         memory,
         effects: effects.into(),
-        retired_creations,
+        retired_allocations,
         continued_tokens,
     })
 }
@@ -9787,14 +10155,14 @@ fn with_continued_allocation_tokens(
 }
 
 /// The memory and facts after a verified call's allocation effects, with
-/// the consumed blocks the call retires and, for each returned allocation
+/// the complete ranges of consumed allocations the call retires and, for each returned allocation
 /// token proven to continue a consumed one under another block spelling
 /// (`result` proven equal to `p`), that returned token and the consumed
 /// token it continues.
 struct VerifiedAllocationDelta {
-    memory: Memory,
+    memory: SymbolicMemory,
     effects: ExecutionFacts,
-    retired_creations: Vec<PointerBlock>,
+    retired_allocations: Vec<MemoryRange>,
     continued_tokens: Vec<(ResourceFact, ResourceFact)>,
 }
 
@@ -9825,9 +10193,9 @@ pub(crate) fn initialize_program_function_globals(
 /// already held, leave `memory` unchanged.
 pub(crate) fn with_static_pointer_read_cached(
     state: &ExecutionState,
-    memory: Memory,
+    memory: SymbolicMemory,
     name: impl Into<BindingName>,
-) -> Memory {
+) -> SymbolicMemory {
     let name = name.into();
     let locals = state.locals();
     let (Some(program_type), Some(slot)) = (locals.object_type(&name), locals.slot(&name)) else {
@@ -9835,8 +10203,8 @@ pub(crate) fn with_static_pointer_read_cached(
     };
     if !locals.is_global_object(&name)
         || !program_type.is_object_pointer()
-        || !slot.block.is_static_storage_block()
-        || !memory.has_block(&slot.block)
+        || !slot.base.is_static_storage_block()
+        || !memory.has_block(&slot.base)
         || memory.known_value(slot).is_some()
     {
         return memory;
@@ -9879,18 +10247,15 @@ pub(crate) fn initialize_program_program_storage(
 /// block is one range of `count` struct-sized elements. Costs the block's
 /// runs and concrete cells, not its elements.
 fn periodic_struct_array_blocks(
-    memory: &Memory,
-    constant_offset: impl Fn(&Pointer) -> u32,
-) -> BTreeMap<PointerBlock, (u32, u32)> {
+    memory: &SymbolicMemory,
+    constant_offset: impl Fn(&Address) -> u32,
+) -> BTreeMap<AddressBase, (u32, u32)> {
     // Each run and each concrete cell examined charges a unit. Nothing here
     // stops early: the caller's next checkpoint, one visit later, does.
-    let mut runs_by_block = BTreeMap::<&PointerBlock, Vec<&CellRun>>::new();
+    let mut runs_by_block = BTreeMap::<&AddressBase, Vec<&CellRun>>::new();
     for run in memory.cells.runs() {
         crate::instrumentation::record_deterministic_work(1);
-        runs_by_block
-            .entry(&run.base().block)
-            .or_default()
-            .push(run);
+        runs_by_block.entry(&run.base().base).or_default().push(run);
     }
     let mut periodic = BTreeMap::new();
     for (block, runs) in runs_by_block {
@@ -9947,21 +10312,21 @@ fn periodic_struct_array_blocks(
 /// Every visit charges one unit and is a checkpoint; `None` means a run
 /// limit stopped the partition.
 fn initial_static_resources(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     mut count_visit: impl FnMut(),
 ) -> Option<ResourceContext> {
     let mut visit = || {
         count_visit();
         crate::instrumentation::deadline_exceeded()
     };
-    let constant_offset = |pointer: &Pointer| {
-        let PointerOffsetTerm::Constant(offset) = pointer.offset else {
+    let constant_offset = |pointer: &Address| {
+        let AddressOffset::Constant(offset) = pointer.offset else {
             unreachable!("static initializers have constant cell offsets");
         };
         u32::try_from(offset).expect("static cell offset")
     };
     // Each block's initialized spans: start, end and cell width.
-    let mut spans_by_block = BTreeMap::<PointerBlock, Vec<(u32, u32, u32)>>::new();
+    let mut spans_by_block = BTreeMap::<AddressBase, Vec<(u32, u32, u32)>>::new();
     // An array of structs whose every element holds the same cells is one
     // range of struct-sized elements, however many there are.
     let periodic = periodic_struct_array_blocks(memory, constant_offset);
@@ -9978,20 +10343,20 @@ fn initial_static_resources(
         if visit() {
             return None;
         }
-        if periodic.contains_key(&pointer.block) {
+        if periodic.contains_key(&pointer.base) {
             continue;
         }
         let offset = constant_offset(pointer);
         spans_by_block
-            .entry(pointer.block.clone())
+            .entry(pointer.base.clone())
             .or_default()
             .push((offset, offset + value.byte_width(), value.byte_width()));
     }
     for run in memory.cells.runs() {
-        if periodic.contains_key(&run.base().block) {
+        if periodic.contains_key(&run.base().base) {
             continue;
         }
-        let spans = spans_by_block.entry(run.base().block.clone()).or_default();
+        let spans = spans_by_block.entry(run.base().base.clone()).or_default();
         let width = run.value_width();
         for (low, high) in run.holes().gap_intervals(run.count()) {
             if visit() {
@@ -10047,9 +10412,9 @@ fn initial_static_resources(
                 return None;
             }
             let range = MemoryRange::new_with_element_width(
-                Pointer {
-                    block: identity.clone(),
-                    offset: PointerOffsetTerm::Constant(i64::from(start)),
+                Address {
+                    base: identity.clone(),
+                    offset: AddressOffset::Constant(i64::from(start)),
                 },
                 MachineTerm::constant(0),
                 MachineTerm::constant((end - start) / width),
@@ -10157,12 +10522,11 @@ fn evaluate_resource_population_body_resources(
                 Err(error) => return Ok(Err(error)),
             };
             if !body_resources.satisfies_fact(&fact, assumptions) {
-                body_resources = match body_resources
-                    .try_compose_with_facts_delaying_normalization([fact], assumptions)
-                {
-                    Ok(resources) => resources,
-                    Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-                };
+                body_resources =
+                    match body_resources.install_established_partition([fact], assumptions) {
+                        Ok((resources, _)) => resources,
+                        Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+                    };
             }
         }
     }
@@ -10224,7 +10588,7 @@ fn candidate_planning_resources(
     caller_resources: &ResourceContext,
     requirements: &[CheckedResourceFact],
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> ResourceContext {
     let supported = |resources: &ResourceContext, requirement: &CheckedResourceFact| {
@@ -10371,7 +10735,7 @@ fn candidate_composite_view_adapter(
     let mut gap = None;
     let facts_hold = composite_definition_facts_hold(
         definition,
-        arguments,
+        &(arguments).native_values(),
         caller_state,
         assumptions,
         budget,
@@ -10496,9 +10860,9 @@ pub(super) fn checked_frontier_coverage(
     // This whole input has already been checked by expansion. Checked
     // construction retains the trusted graph's resource payload for coverage;
     // equality selects candidates, and ordinary consumption checks authority.
-    let covering = ResourceContext::new()
-        .try_compose_with_facts(owner_frontier, assumptions)
-        .ok()?;
+    let covering = ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
+        coalesce_written_resource_descriptions(owner_frontier, assumptions),
+    );
     #[cfg(test)]
     covering.observe_composite_context();
     remove_frontier(covering, required, assumptions)
@@ -10650,8 +11014,8 @@ fn string_literal_instance_values(
         let Some(ProgramValue::Pointer(pointer)) = argument.as_program_value() else {
             return None;
         };
-        let pointer = pointer.pointer();
-        let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+        let pointer = pointer.address();
+        let AddressBase::StringLiteral { bytes, .. } = &pointer.base else {
             return None;
         };
         let offset = usize::try_from(pointer.offset.as_const()?).ok()?;
@@ -10724,9 +11088,9 @@ fn string_literal_composite_holds(
     {
         return Ok(false);
     }
-    let literal_pointer = |argument: &AlgebraicValue| {
+    let literal_pointer = |argument: ResourceFieldValue<'_>| {
         matches!(argument.as_program_value(), Some(ProgramValue::Pointer(pointer))
-            if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. }))
+            if matches!(pointer.address().base, AddressBase::StringLiteral { .. }))
     };
     let pointers_are_literal = arguments.iter().all(|argument| {
         !matches!(argument.as_program_value(), Some(ProgramValue::Pointer(_)))
@@ -10745,7 +11109,7 @@ fn string_literal_composite_holds(
                 return false;
             };
             let (base, bytes) = range.byte_footprint();
-            let PointerBlock::StringLiteral { bytes: literal, .. } = &base.block else {
+            let AddressBase::StringLiteral { bytes: literal, .. } = &base.base else {
                 return false;
             };
             match (base.offset.as_const(), bytes.as_const()) {
@@ -10761,7 +11125,14 @@ fn string_literal_composite_holds(
     if !within_literals {
         return Ok(false);
     }
-    composite_definition_facts_hold(definition, arguments, state, assumptions, budget, &mut None)
+    composite_definition_facts_hold(
+        definition,
+        &(arguments).native_values(),
+        state,
+        assumptions,
+        budget,
+        &mut None,
+    )
 }
 
 /// The pieces of a viewed composite whose checked one-level expansion is
@@ -10800,7 +11171,7 @@ fn local_storage_composite_pieces(
         let Some(range) = piece.memory_range() else {
             return Ok(None);
         };
-        if !range.base().block.is_local_block() {
+        if !range.base().base.is_local_block() {
             return Ok(None);
         }
         pieces.push(ResourceFact::view_memory(range.clone()));
@@ -10811,7 +11182,7 @@ fn local_storage_composite_pieces(
     let mut unestablished = None;
     if !composite_definition_facts_hold(
         definition,
-        arguments,
+        &(arguments).native_values(),
         state,
         assumptions,
         budget,
@@ -10901,16 +11272,17 @@ fn string_literal_fact_value(
             memory,
             pointer,
             value_type,
+            ..
         } => {
             let pointer = string_literal_pointer_with_bindings(pointer, bindings);
             let offset = pointer.offset.as_const()?;
-            let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+            let AddressBase::StringLiteral { bytes, .. } = &pointer.base else {
                 // Any other read is defined when the state holds a stored
                 // value of the read's width at that very cell, as a local
                 // array's bytes after their stores do.
-                let cell = Pointer {
-                    block: pointer.block.clone(),
-                    offset: PointerOffsetTerm::Constant(offset),
+                let cell = Address {
+                    base: pointer.base.clone(),
+                    offset: AddressOffset::Constant(offset),
                 };
                 return match memory.load(&cell) {
                     ExpressionOutcome::Value(value)
@@ -10931,7 +11303,7 @@ fn string_literal_fact_value(
                 Some(true)
             } else if let Proposition::ConditionIs(condition, value) = &leaf
                 && crate::kernel::proof::fact_reasoning::normalizes_context_free(
-                    &Proposition::ConditionIs(condition.clone(), !value),
+                    &Proposition::condition_is(condition.clone(), !value),
                 )
             {
                 Some(false)
@@ -10944,9 +11316,9 @@ fn string_literal_fact_value(
 }
 
 fn string_literal_pointer_with_bindings(
-    pointer: &Pointer,
+    pointer: &Address,
     bindings: &[(Variable, MachineTerm)],
-) -> Pointer {
+) -> Address {
     let mut pointer = pointer.clone();
     for (bound, value) in bindings {
         pointer = crate::kernel::reasoning::substitute_bitvector_variable_in_pointer(
@@ -10978,7 +11350,7 @@ fn string_literal_reads_resolved(
             return None;
         };
         let pointer = string_literal_pointer_with_bindings(&pointer, bindings);
-        let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+        let AddressBase::StringLiteral { bytes, .. } = &pointer.base else {
             return None;
         };
         let offset = pointer.offset.as_const()?;
@@ -11078,7 +11450,7 @@ pub(crate) fn guard_contract_refusal(
         .then_some("mutex authority contracts currently require preserving owned inputs")
 }
 
-fn private_aggregate_storage_owner(slot: Pointer, layout: &AggregateLayout) -> ResourceFact {
+fn private_aggregate_storage_owner(slot: Address, layout: &AggregateLayout) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new_with_element_width(
         slot,
         MachineTerm::constant(0),
@@ -11128,9 +11500,9 @@ fn prepare_contract_resource_transfer(
         preserve_explicit_representation,
         purpose,
     )?;
-    // Memory a live mutex's initialization consumed is missing because the
+    // SymbolicMemory a live mutex's initialization consumed is missing because the
     // mutex holds it; name the mutex rather than the bytes.
-    // An allocation the caller holds only in the other extent format is
+    // An allocation the caller holds only in the other size format is
     // named with both formats (D5). A wide range held in another element
     // width names the product that must not wrap.
     Ok(transfer.map_err(|error| match &error {
@@ -11148,7 +11520,7 @@ fn prepare_contract_resource_transfer(
                     .unwrap_or(error)
             }
             fact if fact.allocation().is_some() => {
-                allocation_extent_kind_refusal(&caller_state.resources, fact, assumptions)
+                allocation_size_kind_refusal(&caller_state.resources, fact, assumptions)
                     .unwrap_or(error)
             }
             _ => error,
@@ -11159,24 +11531,24 @@ fn prepare_contract_resource_transfer(
 
 /// The refusal for a required `allocation(base, bytes)` whose block the
 /// context holds with a byte count of the other format: a 32-bit (`int32`)
-/// spelling of a 64-bit (`uint64`) block's extent, or the reverse. Tokens of
-/// different formats never match (`design/heap-extents.md`, D5), so the
+/// spelling of a 64-bit (`uint64`) block's size, or the reverse. Tokens of
+/// different formats never match (`design/heap-allocation-sizes.md`, D5), so the
 /// ordinary refusal would only report the token missing. The held token is
 /// found by base through the context's argument index, as `free` finds it.
-pub(in crate::kernel) fn allocation_extent_kind_refusal(
+pub(in crate::kernel) fn allocation_size_kind_refusal(
     resources: &ResourceContext,
     required: &ResourceFact,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
-    let (required_base, required_extent) = required.allocation_extent()?;
+    let (required_base, required_size) = required.allocation_size()?;
     let query =
-        ResourceFact::own_designated_allocation(required_base.clone(), &HeapExtent::int32(0));
+        ResourceFact::own_designated_allocation(required_base.clone(), &AllocationSize::int32(0));
     let held_kind = resources
         .direct_match_candidates_for(&query, assumptions)
         .into_iter()
-        .filter_map(ResourceFact::allocation_extent)
-        .find(|(base, extent)| {
-            extent.kind() != required_extent.kind()
+        .filter_map(ResourceFact::allocation_size)
+        .find(|(base, size)| {
+            size.kind() != required_size.kind()
                 && crate::kernel::resource_arguments_proven_equal(
                     &ProgramValue::Pointer((*base).clone().with_type(ProgramType::Int32Pointer))
                         .into(),
@@ -11187,21 +11559,21 @@ pub(in crate::kernel) fn allocation_extent_kind_refusal(
                     assumptions,
                 )
         })
-        .map(|(_, extent)| extent.kind())?;
+        .map(|(_, size)| size.kind())?;
     Some(RuntimeError::FunctionContract(format!(
         "`allocation` states {} byte count, but the block's allocation token holds {} one: \
-         a heap block's extent keeps the format of its size's C type, and an `allocation` of \
+         a heap block's size keeps the format of its size's C type, and an `allocation` of \
          the other format does not name it; state the byte count in the block's format",
-        heap_extent_kind_spelling(required_extent.kind()),
-        heap_extent_kind_spelling(held_kind),
+        allocation_size_kind_spelling(required_size.kind()),
+        allocation_size_kind_spelling(held_kind),
     )))
 }
 
-/// How a diagnostic names an extent format.
-pub(in crate::kernel) fn heap_extent_kind_spelling(kind: HeapExtentKind) -> &'static str {
+/// How a diagnostic names a size format.
+pub(in crate::kernel) fn allocation_size_kind_spelling(kind: AllocationSizeKind) -> &'static str {
     match kind {
-        HeapExtentKind::Int32 => "a 32-bit (`int32`)",
-        HeapExtentKind::UInt64 => "a 64-bit (`uint64`, `size_t`)",
+        AllocationSizeKind::Int32 => "a 32-bit (`int32`)",
+        AllocationSizeKind::UInt64 => "a 64-bit (`uint64`, `size_t`)",
     }
 }
 
@@ -11274,6 +11646,7 @@ fn prepare_contract_resource_transfer_unexplained(
             resource_effect_bound: None,
             post_outputs: None,
             candidate_output_views: Vec::new(),
+            returned_entry_partition: None,
             produced_borrowing_pieces: Vec::new(),
             stable_view_plan: None,
             checked_view_frontier: Vec::new(),
@@ -11595,14 +11968,14 @@ fn prepare_contract_resource_transfer_unexplained(
     // retains intrinsic read authority. An explicitly supplied owner or view
     // takes the ordinary lend/reborrow route, including stale-binding checks.
     let unsupplied_local = |range: &MemoryRange| {
-        range.base().block.is_local_block()
-            && callee_state.memory().has_block(&range.base().block)
+        range.base().base.is_local_block()
+            && callee_state.memory().has_block(&range.base().base)
             && !callee_state
                 .memory()
                 .requires_explicit_scalar_ownership(range.base())
             && caller_state
                 .resources()
-                .has_no_explicit_memory_for_local_storage(&range.base().block, assumptions)
+                .has_no_explicit_memory_for_local_storage(&range.base().base, assumptions)
     };
     let implicit_read_views = checked_required_resources
         .iter()
@@ -11612,7 +11985,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 Resource::Memory(range)
                     if requirement.fact.is_view()
                         && (unsupplied_local(range)
-                            || callee_state.memory().is_read_only_block(&range.base().block))
+                            || callee_state.memory().is_read_only_block(&range.base().base))
             )
         })
         .cloned()
@@ -11666,7 +12039,7 @@ fn prepare_contract_resource_transfer_unexplained(
                         // not implicit local storage.
                         && caller_state
                             .resources()
-                            .facts_that_may_refer_to_memory_block(&range.base().block)
+                            .facts_that_may_refer_to_memory_block(&range.base().base)
                             .next()
                             .is_none()
                 })
@@ -11699,7 +12072,7 @@ fn prepare_contract_resource_transfer_unexplained(
     }
     let (local_read_views, intrinsic_read_views): (Vec<_>, Vec<_>) = implicit_read_views.into_iter()
         .partition(|requirement| matches!(requirement.fact.resource(), Resource::Memory(range)
-            if range.base().block.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().block)));
+            if range.base().base.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().base)));
     // A composite view whose checked body is empty on this path protects no
     // bytes and holds no token, so there is nothing to lend and nothing a
     // loan could suspend (D6: an empty permission grants no dereference).
@@ -12067,6 +12440,11 @@ fn prepare_contract_resource_transfer_unexplained(
                                 resource: Box::new(resource),
                             }
                         }
+                        super::loans::StableViewPlanError::UnestablishedOwnedBoundary(required) => {
+                            resource_context_runtime_error(
+                                ResourceContextValidityError::UnestablishedOwnedBoundary(required),
+                            )
+                        }
                         error => error
                             .loan_diagnostic(LoanRefusalOperation::Plan)
                             .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
@@ -12107,6 +12485,13 @@ fn prepare_contract_resource_transfer_unexplained(
                         fact: Box::new(fact.proposition),
                         source: fact.source,
                     }));
+                }
+                if let super::loans::StableViewPlanError::UnestablishedOwnedBoundary(required) =
+                    &error
+                {
+                    return Ok(Err(resource_context_runtime_error(
+                        ResourceContextValidityError::UnestablishedOwnedBoundary(required.clone()),
+                    )));
                 }
                 if let Some(diagnostic) = error.loan_diagnostic(LoanRefusalOperation::Plan) {
                     return Ok(Err(RuntimeError::LoanRefusal(Box::new(diagnostic))));
@@ -12269,7 +12654,7 @@ fn prepare_contract_resource_transfer_unexplained(
         if matches!(
             intrinsic_view.fact.resource(),
             Resource::Memory(range)
-                if range.base().block.is_local_block()
+                if range.base().base.is_local_block()
                     && !local_view_range_within_block(range, callee_state.memory())
         ) {
             return Ok(Err(RuntimeError::MissingResource {
@@ -12356,8 +12741,8 @@ fn prepare_contract_resource_transfer_unexplained(
         // whatever the caller keeps beyond it: `views a[0..3]` on an
         // `int32 b[2]` used to be discharged by the block merely existing.
         if let ResourceFact::View(Resource::Memory(range)) = resource
-            && range.base().block.is_local_block()
-            && callee_state.memory().has_block(&range.base().block)
+            && range.base().base.is_local_block()
+            && callee_state.memory().has_block(&range.base().base)
             && !callee_state
                 .memory()
                 .requires_explicit_scalar_ownership(range.base())
@@ -12477,6 +12862,7 @@ fn prepare_contract_resource_transfer_unexplained(
         resource_effect_bound: None,
         post_outputs: None,
         candidate_output_views: Vec::new(),
+        returned_entry_partition: None,
         produced_borrowing_pieces: Vec::new(),
         stable_view_plan,
         checked_view_frontier,
@@ -12493,11 +12879,11 @@ fn produced_memory_initialization(
     entry_state: &ExecutionState,
     post_state: &ExecutionState,
     interface: &FunctionContractInterface,
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     assumptions: &PureFactContext,
     facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<Memory, RuntimeError>> {
+) -> ExecutionResult<Result<SymbolicMemory, RuntimeError>> {
     for resource in interface.resource_ensures() {
         let Some(segment) = resource.term().memory_segment() else {
             continue;
@@ -12536,12 +12922,12 @@ fn produced_memory_initialization(
         let Resource::Memory(range) = fact.resource() else {
             continue;
         };
-        let extent = if range.wide_bounds().is_some() {
+        let byte_span = if range.wide_bounds().is_some() {
             None
         } else {
             range.byte_footprint().1.as_const()
         };
-        if extent == Some(0) {
+        if byte_span == Some(0) {
             continue;
         }
         // Transfer checking established this output's authority and bounds.
@@ -12554,31 +12940,34 @@ fn produced_memory_initialization(
         if segment.is_uninitialized() {
             memory = memory.with_uninitialized_object(
                 start,
-                extent.unwrap_or(Memory::UNBOUNDED_UNWRITTEN_EXTENT),
+                byte_span.unwrap_or(SymbolicMemory::UNBOUNDED_UNWRITTEN_SPAN),
             );
             continue;
         }
         // Initialized bytes of a length known only at the call are not
         // recorded; a read of them then needs a store or `defined` evidence.
-        let Some(extent) = extent else {
+        let Some(byte_span) = byte_span else {
             continue;
         };
         match segment.value_runs() {
             Some(runs) => {
                 for &(offset, length) in runs {
-                    if offset.checked_add(length).is_some_and(|end| end <= extent) {
+                    if offset
+                        .checked_add(length)
+                        .is_some_and(|end| end <= byte_span)
+                    {
                         memory =
                             memory.with_initialized_object(&start.offset_by_bytes(offset), length);
                     }
                 }
             }
-            None => memory = memory.with_initialized_object(&start, extent),
+            None => memory = memory.with_initialized_object(&start, byte_span),
         }
         // Only an explicit complete byte output needs this representation
         // equation. Ordinary scalar reads keep their retained roots and do
         // no extra byte-view work. Initialization is supplied above by the
         // checked output clause, never by the numeric equation.
-        if extent == 4
+        if byte_span == 4
             && range.element_width() == 1
             && segment.value_runs().is_none()
             && let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
@@ -12734,7 +13123,7 @@ fn evaluate_contract_return_resource_context(
         let mut views = opened_composite_read_views(
             entry_state.resources(),
             interface.composite_resource_definitions(),
-            entry_state.memory(),
+            &entry_state.program_point(),
             assumptions,
         );
         // A folded field-bearing instance the contract's own clauses checked
@@ -12787,61 +13176,56 @@ fn evaluate_contract_return_resource_context(
                 .unchecked_with_facts(entry_argument_views.iter().cloned()),
         )
     };
-    let entry_state_for_argument_reads =
-        if interface
-            .resource_ensures()
-            .iter()
-            .take(count)
-            .any(|resource| resource.guard().is_some())
-        {
-            let mut resources = entry_state_for_argument_reads.resources().clone();
-            for checked in entry_clauses {
-                let Resource::Composite { name, .. } = checked.fact.resource() else {
-                    continue;
-                };
-                let Some(definition) = interface.composite_resource_definition(name) else {
-                    continue;
-                };
-                if !definition
-                    .contains()
-                    .iter()
-                    .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
-                {
-                    continue;
-                }
-                // An entry checker may already have opened this control.
-                // In that case the guard must use its actual authority child.
-                if !resources.contains_exact_representation(&checked.fact) {
-                    continue;
-                }
-                let (children, _) = match entry_state_for_argument_reads
-                    .checked_authority_wrapper_body(&checked.fact, definition, assumptions)
-                {
-                    Ok(body) => body,
-                    Err(error) => return Ok(Err(RuntimeError::FunctionContract(error))),
-                };
-                let Some(without_head) =
-                    resources.without_fact_incrementally(&checked.fact, assumptions)
-                else {
-                    return Ok(Err(RuntimeError::MissingResource {
-                        resource: Box::new(checked.fact.clone()),
-                    }));
-                };
-                let missing = children
-                    .into_iter()
-                    .filter(|child| !without_head.contains_exact_representation(child))
-                    .collect::<Vec<_>>();
-                resources = match without_head
-                    .try_compose_with_facts_delaying_normalization(missing, assumptions)
-                {
-                    Ok(expanded) => expanded,
-                    Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-                };
+    let entry_state_for_argument_reads = if interface
+        .resource_ensures()
+        .iter()
+        .take(count)
+        .any(|resource| resource.guard().is_some())
+    {
+        let mut resources = entry_state_for_argument_reads.resources().clone();
+        for checked in entry_clauses {
+            let Resource::Composite { name, .. } = checked.fact.resource() else {
+                continue;
+            };
+            let Some(definition) = interface.composite_resource_definition(name) else {
+                continue;
+            };
+            if !definition
+                .contains()
+                .iter()
+                .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
+            {
+                continue;
             }
-            entry_state_for_argument_reads.with_resource_context(resources)
-        } else {
-            entry_state_for_argument_reads
-        };
+            // An entry checker may already have opened this control.
+            // In that case the guard must use its actual authority child.
+            if !resources.contains_exact_representation(&checked.fact) {
+                continue;
+            }
+            let (children, _) = match entry_state_for_argument_reads.checked_authority_wrapper_body(
+                &checked.fact,
+                definition,
+                assumptions,
+            ) {
+                Ok(body) => body,
+                Err(error) => return Ok(Err(RuntimeError::FunctionContract(error))),
+            };
+            let Some(without_head) =
+                resources.without_fact_incrementally(&checked.fact, assumptions)
+            else {
+                return Ok(Err(RuntimeError::MissingResource {
+                    resource: Box::new(checked.fact.clone()),
+                }));
+            };
+            resources = match without_head.install_established_partition(children, assumptions) {
+                Ok((expanded, _)) => expanded,
+                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+            };
+        }
+        entry_state_for_argument_reads.with_resource_context(resources)
+    } else {
+        entry_state_for_argument_reads
+    };
     // A returned control preserves the authority consumed at entry. Match
     // its source spelling against only those authenticated input controls;
     // alias equality does not create a new ledger identity.
@@ -12923,7 +13307,7 @@ fn evaluate_contract_return_resource_context(
         if let Some(Some(prepared)) = prepared_outputs.get(clause_index) {
             return Ok(Ok(prepared.clone()));
         }
-        // Memory state selection is carried by the normalized specification.
+        // SymbolicMemory state selection is carried by the normalized specification.
         // A named instance uses post fields while retaining entry identity.
         let (state, cached) = match resource.state_source() {
             ResourceStateSource::Entry => (entry_state, &mut entry_supply),
@@ -13057,7 +13441,14 @@ fn evaluate_contract_return_resource_context(
         .then(|| borrowed_resource_key(resource))
         .and_then(|key| entry_borrows.get_mut(&key))
         .and_then(VecDeque::pop_front);
-        let return_entry_borrow = entry_borrow.is_some();
+        // An instance's fields are post-state observations, so it must be
+        // evaluated rather than copied from the entry fact. Its exclusive
+        // identity nevertheless retains the checked entry borrow's custody.
+        let return_entry_borrow = entry_borrow.is_some()
+            || interface
+                .resource_transfer_rule
+                .borrowed_instance_outputs
+                .contains(&clause_index);
         let resource =
             if let Some(constructed) = composition.constructed_summary_output(clause_index) {
                 constructed.clone()
@@ -13110,7 +13501,14 @@ fn evaluate_contract_return_resource_context(
                 Ok(fact) => {
                     evaluated = match evaluated.construct_clause(
                         fact.clone(),
-                        composition.origin_for_return(clause_index, false, &fact),
+                        composition.origin_for_return(
+                            clause_index,
+                            interface
+                                .resource_transfer_rule
+                                .borrowed_instance_outputs
+                                .contains(&clause_index),
+                            &fact,
+                        ),
                         Some(clause_index),
                         composition,
                         interface,
@@ -13138,14 +13536,14 @@ fn evaluate_contract_return_resource_context(
 }
 
 /// The memory a context's owned composites hold, opened through their
-/// definitions over `memory`, as read views: the authority a clause set
+/// definitions at `at`, as read views: the authority a clause set
 /// gives to the addresses its own dependent clauses load, offered to an
 /// evaluation that reads the entry the way the entry itself did. Nothing is
 /// owned twice; a view grants a read and no more.
 fn opened_composite_read_views(
     resources: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Vec<ResourceFact> {
     if !resources
@@ -13155,12 +13553,8 @@ fn opened_composite_read_views(
     {
         return Vec::new();
     }
-    let Some(opened) = expand_all_composite_resource_facts(
-        resources,
-        definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
-        assumptions,
-    ) else {
+    let Some(opened) = expand_all_composite_resource_facts(resources, definitions, at, assumptions)
+    else {
         return Vec::new();
     };
     opened
@@ -13322,51 +13716,50 @@ fn evaluate_contract_return_resources(
     // what its body covers. Check the body against the destination before the
     // head enters it, or a contract that produces a composite over bytes the
     // destination still owns turns one owner into two.
-    if let Some(error) = crate::instrumentation::measure_operation(
-        interface_name,
-        "contract resource transition",
-        "ensured composite frontier check",
-        || {
-            // Borrowed composite arguments retain their entry identity, but
-            // their bodies can read post-call memory. Preserve the existing
-            // check against the retained frame, before adding their heads.
-            if !prepared.entry_borrow_outputs.facts().is_empty() {
-                let retained = caller_resources_after_requirements
-                    .clone()
-                    .unchecked_with_facts(
-                        prepared.transferred_memory_outputs.facts().iter().cloned(),
-                    )
-                    .unchecked_with_facts(flat_outputs.iter().cloned());
-                if let Some(error) = produced_composite_frontier_conflict(
-                    &retained,
-                    prepared
-                        .frontier_sources(ensured_resources, true)
-                        .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
-                    interface.composite_resource_definitions(),
-                    post_state.memory(),
-                    assumptions,
-                ) {
-                    return Some(error);
+    if !composition.frames_outputs()
+        && let Some(error) = crate::instrumentation::measure_operation(
+            interface_name,
+            "contract resource transition",
+            "ensured composite frontier check",
+            || {
+                // Borrowed composite arguments retain their entry identity, but
+                // their bodies can read post-call memory. Preserve the existing
+                // check against the retained frame, before adding their heads.
+                if !prepared.entry_borrow_outputs.facts().is_empty() {
+                    let retained = caller_resources_after_requirements
+                        .clone()
+                        .unchecked_with_facts(
+                            prepared.transferred_memory_outputs.facts().iter().cloned(),
+                        )
+                        .unchecked_with_facts(flat_outputs.iter().cloned());
+                    if let Some(error) = produced_composite_frontier_conflict(
+                        &retained,
+                        prepared
+                            .frontier_sources(ensured_resources, true)
+                            .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
+                        assumptions,
+                    ) {
+                        return Some(error);
+                    }
                 }
-            }
-            // Withheld escrows have their own checked finite frontier. Their
-            // boundary is checked once, when that restoration receipt is
-            // consumed, rather than by expanding their heads here.
-            let destination = prepared
-                .frame
-                .clone()
-                .unchecked_with_facts(flat_outputs.iter().cloned());
-            produced_composite_frontier_conflict(
-                &destination,
-                prepared
-                    .frontier_sources(ensured_resources, false)
-                    .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
-                interface.composite_resource_definitions(),
-                post_state.memory(),
-                assumptions,
-            )
-        },
-    ) {
+                // Withheld escrows have their own checked finite frontier. Their
+                // boundary is checked once, when that restoration receipt is
+                // consumed, rather than by expanding their heads here.
+                let destination = prepared
+                    .frame
+                    .clone()
+                    .unchecked_with_facts(return_bodies.transferred_memory_frontier().cloned())
+                    .unchecked_with_facts(flat_outputs.iter().cloned());
+                produced_composite_frontier_conflict(
+                    &destination,
+                    prepared
+                        .frontier_sources(ensured_resources, false)
+                        .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
+                    assumptions,
+                )
+            },
+        )
+    {
         return Ok(Err(error));
     }
     let ensured_views = ensured_resources
@@ -13384,6 +13777,7 @@ fn evaluate_contract_return_resources(
     // caller happened to hold silently answered a returned view; the
     // recovery routes in `recover_candidate_stable_view_resources` decide
     // that question now, over the declared output delta `candidate_output_views`.
+    let returned_entry_partition = prepared.entry_partition();
     let (return_resources, inserted_ensured_occurrences) =
         match crate::instrumentation::measure_operation(
             interface_name,
@@ -13394,7 +13788,7 @@ fn evaluate_contract_return_resources(
             Ok(resources) => resources,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
-    let Some(projected_cores_by_support) = crate::instrumentation::measure_operation(
+    let projected_cores_by_support = crate::instrumentation::measure_operation(
         interface_name,
         "contract resource transition",
         "ensured resource core projection",
@@ -13403,18 +13797,11 @@ fn evaluate_contract_return_resources(
                 ensured_resources,
                 &inserted_ensured_occurrences,
                 &return_bodies,
-                interface.composite_resource_definitions(),
-                post_state,
                 assumptions,
                 &return_resources,
             )
         },
-    ) else {
-        return Ok(Err(RuntimeError::FunctionContract(format!(
-            "could not expand ensured composite resources after call ({})",
-            bounded_contract_resource_frontier(ensured_resources)
-        ))));
-    };
+    );
     // The callee has already certified every ensured composite and its
     // instantiated body. Its duplicable cores are therefore observations of
     // certified ownership, not independent persistent caller capabilities.
@@ -13427,7 +13814,8 @@ fn evaluate_contract_return_resources(
         .iter()
         .map(|entry| (entry.source, entry.origin))
         .collect::<BTreeMap<_, _>>();
-    let mut escrow_boundary = EscrowRecoveryBoundary::default();
+    let mut escrow_boundary =
+        EscrowRecoveryBoundary::default().with_entry_partition(returned_entry_partition);
     for resource in projected_cores_by_support {
         let constructed_borrowing_pieces = resource.constructed_borrowing_pieces();
         let ProjectedReturnResource {
@@ -13436,7 +13824,7 @@ fn evaluate_contract_return_resources(
             destination: support_occurrence,
             expansion,
             projected,
-            frontier,
+            frontier: _,
             viewed_children: _,
         } = resource;
         if support.is_own() {
@@ -13452,11 +13840,6 @@ fn evaluate_contract_return_resources(
             };
             let body = if let Some(body) = return_bodies.for_return(source, &support) {
                 body.escrow_boundary()
-            } else if matches!(
-                support.resource(),
-                Resource::Composite { .. } | Resource::Instance(_)
-            ) {
-                frontier.clone()
             } else {
                 Vec::new()
             };
@@ -13476,24 +13859,7 @@ fn evaluate_contract_return_resources(
             _ => false,
         };
         if !is_population {
-            let support = super::loans::EscapingComposite {
-                head: support.clone(),
-                occurrence: support_occurrence,
-            };
-            if let Some(pieces) = constructed_borrowing_pieces {
-                produced_borrowing_pieces.extend(pieces);
-            } else {
-                produced_borrowing_pieces.extend(
-                    frontier
-                        .into_iter()
-                        .filter(|piece| piece.is_view())
-                        .map(|piece| ProducedBorrowingPiece {
-                            support: support.clone(),
-                            piece,
-                            sources: None,
-                        }),
-                );
-            }
+            produced_borrowing_pieces.extend(constructed_borrowing_pieces);
         }
         return_resources = return_resources
             .unchecked_with_supported_facts_from_occurrence_with_memory(
@@ -13514,12 +13880,14 @@ fn evaluate_contract_return_resources(
         escrow_boundary,
         ensured_views,
         produced_borrowing_pieces,
+        returned_entry_partition,
     }))
 }
 
 /// The outputs of a contract's return-resource evaluation.
 pub(crate) struct ContractReturnResources {
     /// The explicit output delta, without the caller's unrelated frame.
+    returned_entry_partition: Option<mixed_return_resources::ReturnedEntryPartition>,
     pub(crate) output_resources: ResourceContext,
     pub(crate) return_resources: ResourceContext,
     pub(in crate::kernel) escrow_boundary: EscrowRecoveryBoundary,
@@ -13549,68 +13917,39 @@ fn produced_composite_frontier_conflict<'a>(
             Option<&'a mixed_return_resources::ConstructedReturnBody>,
         ),
     >,
-    definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
+    let mut destination = destination.clone();
     for (produced, body) in ensured {
         let name = match produced.resource() {
             Resource::Composite { name, .. } => name.as_str(),
-            Resource::Instance(instance) if body.is_some() => instance.name(),
+            Resource::Instance(instance) => instance.name(),
             _ => continue,
         };
         if !produced.is_own() {
             continue;
         }
-        if let Some(body) = body {
-            match destination.admit_returned_flat_body(body, assumptions) {
-                FlatBodyAdmission::Admitted => continue,
-                FlatBodyAdmission::Conflict { piece, held } => {
-                    return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
-                        produced: Box::new(produced.clone()),
-                        piece,
-                        held,
-                    });
-                }
-                FlatBodyAdmission::Unsupported => {
-                    return Some(resource_context_runtime_error(
-                        ResourceContextValidityError::UnsupportedOwnershipBoundary,
-                    ));
-                }
-            }
-        }
-        let legacy_frontier;
-        let frontier = if let Some(body) = body {
-            body.boundary()
-        } else {
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(produced.clone());
-            // Opaque and unmigrated heads retain their legacy expansion.
-            let Some((_, children, _)) = expand_composite_resource_fact_with_children(
-                &singleton,
-                produced,
-                definitions,
-                &crate::kernel::ProgramPoint::of_memory(memory),
-                assumptions,
-            ) else {
-                continue;
-            };
-            legacy_frontier = children;
-            legacy_frontier.as_slice()
-        };
+        let body = body.expect("returned family dispatch must carry a finite body");
+        let frontier = body.boundary();
         // A token-only body holds no memory, instance, or nested composite a
         // destination fact could overlap: token units are a count, and counts
         // add rather than collide.
-        if !frontier.iter().any(|piece| {
-            piece.is_own()
-                && matches!(
-                    piece.resource(),
-                    Resource::Memory(_)
-                        | Resource::PopulationAuthority(_)
-                        | Resource::Instance(_)
-                        | Resource::Composite { .. }
-                )
-        }) {
+        if !body
+            .frontier
+            .iter()
+            .chain(body.boundary().iter())
+            .any(|piece| {
+                piece.is_own()
+                    && matches!(
+                        piece.resource(),
+                        Resource::Memory(_)
+                            | Resource::Iterated(_)
+                            | Resource::PopulationAuthority(_)
+                            | Resource::Instance(_)
+                            | Resource::Composite { .. }
+                    )
+            })
+        {
             continue;
         }
         // The frontier was evaluated for one unit, and an ordinary composite
@@ -13631,21 +13970,20 @@ fn produced_composite_frontier_conflict<'a>(
         }
         // Construction established the body's internal partition. Only its
         // boundary with the retained caller frame is new information.
-        match destination.admit_returned_frontier(frontier, assumptions) {
-            FlatBodyAdmission::Admitted => {}
-            FlatBodyAdmission::Unsupported => {
-                return Some(resource_context_runtime_error(
-                    ResourceContextValidityError::UnsupportedOwnershipBoundary,
-                ));
-            }
-            FlatBodyAdmission::Conflict { piece, held } => {
-                return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
-                    produced: Box::new(produced.clone()),
-                    piece,
-                    held,
-                });
-            }
-        }
+        let (piece, held) =
+            match destination.checked_frontier_boundary_conflict(frontier, assumptions) {
+                Ok(Some(conflict)) => conflict,
+                Ok(None) => {
+                    destination = destination.unchecked_with_facts(frontier.iter().cloned());
+                    continue;
+                }
+                Err(error) => return Some(resource_context_runtime_error(error)),
+            };
+        return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
+            produced: Box::new(produced.clone()),
+            piece: Box::new(piece),
+            held: Box::new(held),
+        });
     }
     None
 }
@@ -13786,7 +14124,7 @@ fn bind_composite_witness_values(
             .as_ref()
             .and_then(|term| {
                 if term.uint64_as_const() == Some(0) {
-                    return Some(Pointer::null());
+                    return Some(Address::null());
                 }
                 let mut used = super::eval::pointer_tags::UsedFacts::new();
                 super::eval::pointer_tags::tagged_address_form(term, assumptions, &mut used)
@@ -13819,7 +14157,7 @@ fn bind_composite_witness_values(
             word.as_ref()
                 .map(super::eval::canonical_term)
                 .hash(&mut hasher);
-            Pointer::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
+            Address::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
         });
         let value = ProgramValue::typed_pointer(pointer, witness.program_type());
         state.locals.set_typed(
@@ -13841,13 +14179,13 @@ fn held_child_witness(
     arguments: &[AlgebraicValue],
     resources: &ResourceContext,
     assumptions: &PureFactContext,
-) -> Option<Pointer> {
+) -> Option<Address> {
     // The body's own instance is never its own child.
     let own_pointers = arguments
         .iter()
         .filter_map(|argument| match argument {
             AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
-                Some(pointer.pointer().clone())
+                Some(pointer.address().clone())
             }
             _ => None,
         })
@@ -13863,9 +14201,9 @@ fn held_child_witness(
         .iter()
         .filter_map(|fact| match fact.resource() {
             Resource::Composite { name, arguments } if name == child_name => {
-                match arguments.as_ref() {
-                    [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] => {
-                        Some(pointer.pointer().clone())
+                match arguments.fixed_values::<1>() {
+                    Some([ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) => {
+                        Some(pointer.address().clone())
                     }
                     _ => None,
                 }
@@ -13876,9 +14214,9 @@ fn held_child_witness(
         // proven a different pointer.
         .filter(|pointer| {
             own_pointers.iter().all(|own| {
-                own.block != pointer.block
+                own.base != pointer.base
                     || assumptions
-                        .decide(&ConditionTerm::pointer_equal(pointer.clone(), own.clone()))
+                        .decide(&ConditionTerm::address_equal(pointer.clone(), own.clone()))
                         == Some(false)
             })
         });
@@ -14098,7 +14436,7 @@ fn is_pure_undefined_behavior_condition(proposition: &Proposition) -> bool {
         return false;
     };
     matches!(
-        condition,
+        condition.native_compat(),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
@@ -14222,10 +14560,10 @@ fn lower_selected_resource_body_clauses(
         if let Proposition::ConditionIs(condition, truth) = &path.proposition
             && let Some(condition) =
                 crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(
-                    condition,
+                    condition.native_compat(),
                 )
         {
-            path.proposition = Proposition::ConditionIs(condition, *truth);
+            path.proposition = Proposition::condition_is(condition, *truth);
         }
         // An undischarged pure undefined-behavior condition (unchecked
         // arithmetic) is exposed alongside the body fact instead of
@@ -14266,7 +14604,7 @@ fn lower_selected_resource_body_clauses(
             }
             // An asserted resource clause includes the expression domains
             // recorded by arithmetic lowering, regardless of their logical
-            // shape. Memory/access prerequisites still require evidence.
+            // shape. SymbolicMemory/access prerequisites still require evidence.
             if goal.evaluation_domain {
                 retained_conditions.push(goal.proposition().clone());
                 continue;
@@ -14323,7 +14661,7 @@ fn resource_body_fact_is_established(
     // packed-word equation. Query only exact 64-bit neighbors of the stated
     // endpoints and captured variables, using checked equality substitution. A
     // candidate must still be established by the original context.
-    if let Proposition::ConditionIs(
+    if let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
@@ -14331,7 +14669,7 @@ fn resource_body_fact_is_established(
             right,
         },
         true,
-    ) = proposition
+    )) = (proposition).condition_native()
     {
         let mut variables = std::collections::BTreeSet::new();
         crate::kernel::reasoning::variable_collection::collect_proposition_capture_variables(
@@ -14344,7 +14682,7 @@ fn resource_body_fact_is_established(
         for endpoint in endpoints {
             for (alias, evidence) in established.exact_uint64_equalities(&endpoint) {
                 crate::instrumentation::record_deterministic_work(1);
-                let equality = Proposition::ConditionIs(
+                let equality = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
@@ -14353,7 +14691,7 @@ fn resource_body_fact_is_established(
                     },
                     true,
                 );
-                let evidence = Proposition::ConditionIs(evidence.clone(), true);
+                let evidence = Proposition::condition_is(evidence.clone(), true);
                 if let Ok(candidate) =
                     crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality(
                         proposition,
@@ -14372,22 +14710,19 @@ fn resource_body_fact_is_established(
     // logical read retains its own producer identity. Reuse only the exact
     // typed read relation already checked for contract facts: it requires
     // the same recorded state and address, or a checked stored value.
-    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = proposition
+    if let Some((ConditionTerm::AddressEqual(left, right), true)) = (proposition).condition_native()
         && crate::kernel::memory_history::pointer_read_has_recorded_value(left, right, established)
     {
         return true;
     }
-    if matches!(
-        proposition,
-        Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(left, right),
-            true,
-        ) if crate::kernel::memory_history::pointer_load_offset_proven_equal(
-            left,
-            right,
-            established,
-        )
-    ) {
+    if matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(
+        _,
+        true,
+    ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressOffsetEqual(left, right), _)) if (crate::kernel::memory_history::pointer_load_offset_proven_equal(
+        left,
+        right,
+        established,
+    )))) {
         return true;
     }
     // A field of an abstract type is read at the fold's state, while the
@@ -14395,7 +14730,7 @@ fn resource_body_fact_is_established(
     // two loads denote one value when the states are proven to agree at
     // its address.
     if let Proposition::ConditionIs(condition, value) = proposition
-        && established.proves_algebraic_condition_modulo_states(condition, *value)
+        && established.proves_algebraic_condition_modulo_states(condition.native_compat(), *value)
     {
         return true;
     }
@@ -14441,7 +14776,7 @@ fn body_fact_is_established_through_a_pointer_alias(
     );
     variables.into_iter().any(|variable| {
         established
-            .exact_pointer_aliases(&Pointer::symbolic(variable))
+            .exact_pointer_aliases(&Address::symbolic(variable))
             .any(|alias| {
                 let candidate =
                     crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_address_variable(
@@ -14455,7 +14790,7 @@ fn body_fact_is_established_through_a_pointer_alias(
 }
 
 /// Exchange one exclusive instance for its immediate memory body, or back.
-/// Memory-only bodies need no open token, including guarded/matched bodies.
+/// SymbolicMemory-only bodies need no open token, including guarded/matched bodies.
 /// Recursive children require explicit independent child selections.
 #[cfg(test)]
 pub(crate) fn rewrite_resource_instance(
@@ -14580,7 +14915,13 @@ fn check_instance_resource_arguments(
                 .arguments()
                 .iter()
                 .zip(arguments.iter())
-                .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
+                .all(|(a, b)| {
+                    crate::kernel::resource_field_values_proven_equal(
+                        (a).into(),
+                        (b).into(),
+                        assumptions,
+                    )
+                })
         {
             let binder = formal.binding_name().unwrap_or("resource");
             let spelling = formal
@@ -14953,7 +15294,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             let ProgramValue::Int32(quantity) = value else {
                 return Err("instance body quantity must have type int32".into());
             };
-            let fact = Proposition::ConditionIs(
+            let fact = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
@@ -15057,12 +15398,12 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     }
     let body_specs = &body_specs[..];
     // Unfolding assumes the body the fold established, its clauses through
-    // pointers of unseen formation included (`assume_entry_clause_extents`);
+    // pointers of unseen formation included (`assume_entry_clause_spans`);
     // folding checks them.
     let body_assumptions = if unfold {
         assumptions
             .clone()
-            .assume_entry_clause_extents()
+            .assume_entry_clause_spans()
             .assume_held_resource_domains()
     } else {
         assumptions.clone()
@@ -15199,13 +15540,16 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             .iter()
             .map(|source| {
                 match source {
-                    ResourceChildField::Constructor(index) => constructor_fields.get(*index),
-                    ResourceChildField::Parent(index) => instance.fields.get(*index),
+                    ResourceChildField::Constructor(index) => constructor_fields
+                        .get(*index)
+                        .cloned()
+                        .map(StoredResourceField::Input),
+                    ResourceChildField::Parent(index) => instance.fields.stored_field(*index),
                 }
-                .cloned()
                 .ok_or("invalid child field binding")
             })
-            .collect::<Result<ResourceArguments, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
+        let fields = ResourceFieldValues::from_stored(fields);
         let identity = explicit_children[child.name.as_str()];
         if unfold && state.resources.owned_instance(identity).is_some() {
             return Err("unfold child result identity is already in use".into());
@@ -15262,14 +15606,18 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 .zip(child_instance.arguments.iter())
                 .enumerate()
                 .find(|(_, (a, b))| {
-                    !crate::kernel::instance_arguments_proven_equal(a, b, assumptions)
+                    !crate::kernel::instance_field_values_proven_equal(
+                        (a).into(),
+                        (b).into(),
+                        assumptions,
+                    )
                 })
             {
                 return Err(ResourceRewriteRefusal::ChildArgumentNotEstablished {
                     child: child.name.clone(),
                     index,
-                    actual: Box::new(a.clone()),
-                    required: Box::new(b.clone()),
+                    actual: Box::new(a.into_native()),
+                    required: Box::new(b.into_native()),
                 });
             }
             if let Some(((field, _), _)) = actual
@@ -15278,7 +15626,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 .iter()
                 .zip(actual.fields.iter().zip(child_instance.fields.iter()))
                 .find(|(_, (a, b))| {
-                    !crate::kernel::resource_arguments_proven_equal(a, b, assumptions)
+                    !crate::kernel::resource_field_values_proven_equal(*a, *b, assumptions)
                 })
             {
                 return Err(ResourceRewriteRefusal::OwnedMessage(format!(
@@ -15352,7 +15700,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         let Some(range) = fact.memory_range() else {
             continue;
         };
-        facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
+        facts.extend(crate::kernel::admitted_memory_range_span_facts(range));
         facts.push(range.loadable_fact(&state.memory));
     }
     // What a fold consumes is what holding the folded instance lets C read.
@@ -15546,7 +15894,7 @@ pub(super) fn loop_instance_guard(
     instance: &ResourceInstance,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> Result<Option<(Pointer, ConditionTerm)>, String> {
+) -> Result<Option<(Address, ConditionTerm)>, String> {
     let Ok(index) = definitions.binary_search_by(|d| {
         crate::instrumentation::record_deterministic_work(1);
         d.name().cmp(instance.name())
@@ -15641,7 +15989,10 @@ pub(super) fn loop_instance_guard(
         Ok(_) => return Err("loop guard requires a mutex pointer".into()),
         Err(message) => return Err(message.into()),
     };
-    Ok(Some((pointer.pointer().clone(), held.clone())))
+    Ok(Some((
+        pointer.address().clone(),
+        (held.clone()).native_compat().clone(),
+    )))
 }
 
 pub(in crate::kernel) fn instance_body_guard_case(
@@ -15678,7 +16029,7 @@ pub(super) fn expand_composite_resource_fact(
 pub(crate) fn checked_composite_projection_evidence(
     viewed: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<CompositeProjectionEvidence> {
     // Projection checks the selected head alone. Checked construction attaches
@@ -15737,6 +16088,21 @@ impl CompositeBodyConstruction {
     }
 }
 
+pub(in crate::kernel) struct HeldCompositeBody {
+    source: ResourceOccurrenceId,
+    frame: ResourceContext,
+    children: Vec<ResourceFact>,
+}
+
+impl HeldCompositeBody {
+    pub(in crate::kernel) fn into_parts(
+        self,
+    ) -> (ResourceOccurrenceId, ResourceContext, Vec<ResourceFact>) {
+        (self.source, self.frame, self.children)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn construct_composite_resource_body(
     context: &ResourceContext,
     composite: &ResourceFact,
@@ -15744,7 +16110,36 @@ fn construct_composite_resource_body(
     at: &ProgramPoint,
     assumptions: &PureFactContext,
     selected: Option<ResourceOccurrenceId>,
+    return_admission: Option<&mut mixed_return_resources::ReturnFrontierAdmission>,
+) -> Option<CompositeBodyConstruction> {
+    construct_composite_resource_body_with_source(
+        context,
+        composite,
+        definitions,
+        at,
+        assumptions,
+        selected,
+        return_admission,
+        CompositeBodySource::Held,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum CompositeBodySource {
+    Held,
+    Description,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn construct_composite_resource_body_with_source(
+    context: &ResourceContext,
+    composite: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    at: &ProgramPoint,
+    assumptions: &PureFactContext,
+    selected: Option<ResourceOccurrenceId>,
     mut return_admission: Option<&mut mixed_return_resources::ReturnFrontierAdmission>,
+    source_kind: CompositeBodySource,
 ) -> Option<CompositeBodyConstruction> {
     let Resource::Composite { name, arguments } = composite.resource() else {
         return None;
@@ -15774,51 +16169,15 @@ fn construct_composite_resource_body(
     // occurrence.  Expansion must transfer that exact bundle to only the
     // newly inserted child occurrences; equal children in the ambient frame
     // are not eligible destinations.
-    let borrowed_parent = if composite.is_view()
-        && let Some(selected) = selected
-    {
-        context
-            .loan_dependency(selected)
-            .cloned()
-            .map(|binding| (selected, binding))
-    } else if composite.is_view() {
-        let occurrences = context.occurrences_for_fact(composite);
-        let mut selected = None;
-        let mut saw_unbound = false;
-        for occurrence in occurrences {
-            let Some(dependency) = context.loan_dependency(occurrence) else {
-                saw_unbound = true;
-                continue;
-            };
-            if selected
-                .as_ref()
-                .is_some_and(|(_, existing)| existing != dependency)
-            {
-                return None;
-            }
-            selected = Some((occurrence, dependency.clone()));
-        }
-        if saw_unbound && selected.is_some() {
-            return None;
-        }
-        selected
+    let source = selected.or_else(|| context.first_exact_occurrence(composite))?;
+    let borrowed_parent = if composite.is_view() {
+        context.loan_dependency(source).cloned()
     } else {
         None
     };
-    let expansion_base = if let Some(selected) = selected {
-        context
-            .clone()
-            .without_exact_representation_for_occurrence(selected)?
-    } else {
-        borrowed_parent
-            .as_ref()
-            .map(|(occurrence, _)| {
-                context
-                    .clone()
-                    .without_exact_representation_for_occurrence(*occurrence)
-            })
-            .unwrap_or_else(|| context.clone().without_exact_representation(composite))?
-    };
+    let expansion_base = context
+        .clone()
+        .without_exact_representation_for_occurrence(source)?;
     let mut state = ExecutionState::at_point(at).with_resource_context(expansion_base.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
@@ -15832,18 +16191,29 @@ fn construct_composite_resource_body(
         );
     }
     let witnesses = if selected.is_some() {
-        bind_composite_witness_values(definition, arguments, &mut state, None, assumptions)?
+        bind_composite_witness_values(
+            definition,
+            &(arguments).native_values(),
+            &mut state,
+            None,
+            assumptions,
+        )?
     } else {
-        bind_composite_witnesses(definition, arguments, &mut state, assumptions)?
+        bind_composite_witnesses(
+            definition,
+            &(arguments).native_values(),
+            &mut state,
+            assumptions,
+        )?
     };
     let mut budget = ExecutionBudget::beside_live_state();
     // Opening a held composite assumes the body its fold established
-    // (`assume_entry_clause_extents`).
+    // (`assume_entry_clause_spans`).
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     let mut child_facts = Vec::new();
     let Some(body_active) = evaluate_composite_resource_body_condition(
@@ -15877,7 +16247,10 @@ fn construct_composite_resource_body(
         let Ok(Ok(child)) = child_result else {
             return None;
         };
-        state.resources = state.resources.clone().unchecked_with_fact(child.clone());
+        state.resources = state
+            .resources
+            .clone()
+            .unchecked_with_fact(resource_clause_read_supply(&child, &evaluation_assumptions));
         child_facts.push(child);
     }
     let raw_children = if composite.is_own() {
@@ -15894,99 +16267,43 @@ fn construct_composite_resource_body(
             transferred.push(admission.admit(child, assumptions)?);
         }
     }
-    let children = crate::instrumentation::measure_operation(
-        name,
-        "composite expansion",
-        "composite child composition",
-        || {
-            if return_admission.is_some() {
-                Ok(ResourceContext::new_with_equalities(assumptions)
-                    .unchecked_with_facts(raw_children.clone())
-                    .normalized_without_discovery(assumptions))
-            } else if selected.is_some() {
-                ResourceContext::new_with_equalities(assumptions)
-                    .try_compose_without_discovery_and_occurrences(child_facts, assumptions)
-                    .map(|(context, _)| context.normalized_without_discovery(assumptions))
-            } else {
-                ResourceContext::new().try_compose_with_facts(child_facts, assumptions)
-            }
-        },
-    )
-    .ok()?;
-    let children = if composite.is_own() {
-        children.facts().to_vec()
-    } else {
-        children
-            .facts()
-            .iter()
-            .map(|fact| ResourceFact::View(fact.resource().clone()))
-            .collect()
-    };
-    let mut expanded = expansion_base.clone();
-    let missing = if selected.is_some() {
-        // Preserve the producer's clause order and multiplicity. Its checked
-        // composition above certifies this raw group; insertion returns the
-        // child identities that recursion and ownership transfers consume.
+    // The held head supplies the separating body and its frame relationship.
+    // Normalize only its explicit body, never rediscover that relationship in
+    // the ambient frame or reuse an equal ambient child's occurrence.
+    let children = coalesce_written_resource_descriptions(raw_children.clone(), assumptions);
+    let emitted = if selected.is_some() || return_admission.is_some() {
         raw_children.clone()
     } else {
-        children
-            .iter()
-            .filter(|child| {
-                !expanded.contains_exact_representation(child)
-                    && !resource_context_contains_exact_owned_fact(&expanded, child, assumptions)
-            })
-            .cloned()
-            .collect::<Vec<_>>()
+        children.clone()
     };
-    let (expanded_context, inserted) = if return_admission.is_some() {
-        expanded.unchecked_with_facts_and_occurrences(missing)
-    } else {
-        expanded
-            .try_compose_certified_group_into_valid_context_delaying_normalization_with_occurrences(
-                missing,
+    let (mut expanded, inserted) =
+        if matches!(source_kind, CompositeBodySource::Description) && return_admission.is_none() {
+            // This head is an unevidenced return description. Its producer must
+            // construct its body against the already emitted description frontier.
+            expansion_base
+                .install_established_partition(emitted, assumptions)
+                .ok()?
+        } else {
+            ResourceContext::install_held_composite_body(
+                HeldCompositeBody {
+                    source,
+                    frame: expansion_base,
+                    children: emitted,
+                },
                 assumptions,
             )
-            .ok()?
-    };
-    expanded = expanded_context;
-    if let Some((_, binding)) = borrowed_parent {
-        let mut transferred_views = BTreeSet::new();
-        for (child, occurrence) in inserted.iter().cloned() {
-            if !child.is_view() {
-                continue;
-            }
-            transferred_views.insert(child.clone());
-            expanded = expanded.with_loan_dependency(
-                occurrence,
-                crate::kernel::loans::LoanViewBinding {
-                    viewed: child,
-                    ..binding.clone()
-                },
-            );
-        }
-        // Selected construction inserted and bound every raw child above.
-        // Only legacy deduplication needs to account for reused children.
-        if selected.is_none()
-            && children
-                .iter()
-                .filter(|child| child.is_view())
-                .any(|child| {
-                    if transferred_views.contains(child) {
-                        return false;
-                    }
-                    let expected = crate::kernel::loans::LoanViewBinding {
+        };
+    if let Some(binding) = borrowed_parent {
+        for (child, occurrence) in &inserted {
+            if child.is_view() {
+                expanded = expanded.with_loan_dependency(
+                    *occurrence,
+                    crate::kernel::loans::LoanViewBinding {
                         viewed: child.clone(),
                         ..binding.clone()
-                    };
-                    !expanded
-                        .view_occurrences_for_fact(child, assumptions)
-                        .iter()
-                        .any(|occurrence| expanded.loan_dependency(*occurrence) == Some(&expected))
-                })
-        {
-            // Reusing an equal ambient child would lose the source occurrence
-            // relation.  The checked expansion has no destination ID to bind.
-            return None;
+                    },
+                );
+            }
         }
     }
     Some(CompositeBodyConstruction {
@@ -16000,52 +16317,13 @@ fn construct_composite_resource_body(
     })
 }
 
-fn resource_context_contains_exact_owned_fact(
-    context: &ResourceContext,
-    required: &ResourceFact,
-    assumptions: &PureFactContext,
-) -> bool {
-    if !required.is_own() {
-        return false;
-    }
-    if let ResourceFact::Own(Resource::Memory(required_range), _) = required {
-        // The pieces lying inside the required range start inside it, so
-        // the address index's candidates for that range include them all.
-        let exact_parts = context
-            .owned_memory_candidates_for(required_range, assumptions)
-            .into_iter()
-            .filter(|available| {
-                available.memory_own_range().is_some_and(|available_range| {
-                    memory_range_covers(required_range, available_range, assumptions)
-                })
-            })
-            .collect::<Vec<_>>();
-        let exact_parts =
-            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(exact_parts);
-        return exact_parts.validity_error(assumptions).is_none()
-            && exact_parts.satisfies_fact(required, assumptions);
-    }
-    context
-        .direct_match_candidates_for(required, assumptions)
-        .into_iter()
-        .any(|available| {
-            if !available.is_own() || available.family() != required.family() {
-                return false;
-            }
-            ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(available.clone())
-                .without_fact_delaying_normalization(required, assumptions)
-                .is_some_and(|remaining| remaining.is_empty())
-        })
-}
-
 /// The proposition asserting the opposite of `proposition`, without adding a
 /// logical rule: a bare condition flips its value, a negation drops, and
 /// anything else is wrapped in one `Not`.
 fn negated_contract_proposition(proposition: &Proposition) -> Proposition {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(condition.clone(), !value)
+            Proposition::condition_is(condition.clone(), !value)
         }
         Proposition::Not(body) => body.as_ref().clone(),
         proposition => Proposition::Not(Box::new(proposition.clone())),
@@ -16123,15 +16401,15 @@ pub(crate) fn evaluate_guarded_contract_condition_with_loop_entry(
     let assumptions = &guard_assumptions;
     let proves_body_condition = |proposition: &Proposition| match proposition {
         Proposition::ConditionIs(condition, value) => {
-            assumptions.proves_condition_exact(condition, *value)
-                || assumptions.decide(condition) == Some(*value)
+            assumptions.proves_condition_exact(condition.native_compat(), *value)
+                || assumptions.decide(condition.native_compat()) == Some(*value)
                 || assumptions.proves_atomic_without_search(proposition)
         }
         Proposition::Not(body) => match body.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                assumptions.proves_condition_exact(condition, !*value)
-                    || assumptions.decide(condition) == Some(!*value)
-                    || assumptions.proves_atomic_without_search(&Proposition::ConditionIs(
+                assumptions.proves_condition_exact(condition.native_compat(), !*value)
+                    || assumptions.decide(condition.native_compat()) == Some(!*value)
+                    || assumptions.proves_atomic_without_search(&Proposition::condition_is(
                         condition.clone(),
                         !*value,
                     ))
@@ -16236,16 +16514,15 @@ pub(super) fn expand_all_composite_resource_facts_with_composites(
         let missing = expansion
             .into_iter()
             .filter(|fact| {
-                !cached.facts().contains(fact)
-                    && !resource_context_contains_exact_owned_fact(&cached, fact, assumptions)
+                !cached.contains_exact_representation(fact)
+                    && !cached.covers_exact_owned_piece(fact, assumptions)
             })
             .collect::<Vec<_>>();
+        // This is the selected held head's already established partition.
         cached = cached
-            .try_compose_certified_group_into_valid_context_delaying_normalization(
-                missing,
-                assumptions,
-            )
-            .ok()?;
+            .install_established_partition(missing, assumptions)
+            .ok()?
+            .0;
     }
     let (resources, composites) =
         expand_composite_resource_context(&cached, definitions, at, assumptions)?;
@@ -16287,13 +16564,14 @@ fn expand_checked_authority_controls(
         let children = children
             .into_iter()
             .filter(|child| {
-                !expanded.facts().contains(child)
-                    && !resource_context_contains_exact_owned_fact(&expanded, child, assumptions)
+                !expanded.contains_exact_representation(child)
+                    && !expanded.covers_exact_owned_piece(child, assumptions)
             })
             .collect::<Vec<_>>();
         expanded = expanded
-            .try_compose_with_facts_delaying_normalization(children, assumptions)
-            .ok()?;
+            .install_established_partition(children, assumptions)
+            .ok()?
+            .0;
         controls.push(fact.clone());
     }
     Some((expanded, controls))
@@ -16316,7 +16594,7 @@ pub(super) fn expose_composite_resource_fact(
     context: &ResourceContext,
     target: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     // Exposure unfolds composites until the target is held. A memory target
@@ -16421,7 +16699,10 @@ pub(super) fn function_return_resources_definitionally_established(
     let exit_memory = if exceptional {
         return_state.memory().clone()
     } else {
-        function_exit_memory(caller_state, return_state, value, function)
+        let Ok(memory) = function_exit_memory(caller_state, return_state, value, function) else {
+            return false;
+        };
+        memory
     };
     let mut claim_return_state = return_state.clone();
     claim_return_state.set_memory(exit_memory.clone());
@@ -16437,9 +16718,7 @@ pub(super) fn function_return_resources_definitionally_established(
     let Some(post_resources) = post_resources else {
         return false;
     };
-    let Ok(post_resource_facts) = post_resources.observable_facts(assumptions) else {
-        return false;
-    };
+    let post_resource_facts = post_resources.observable_facts_assuming_valid(assumptions);
     let assumptions = assumptions_with_propositions(assumptions, &post_resource_facts);
     let mut post_state = callee_state.with_memory_continuing(&claim_return_state, exit_memory);
     post_state.resources = post_resources;
@@ -16596,7 +16875,7 @@ fn consume_returned_resource_unit(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: quantity.clone(),
+            left: Box::new(quantity.native_compat().clone()),
             right: Box::new(MachineTerm::constant(1)),
         },
     );
@@ -16606,14 +16885,14 @@ fn consume_returned_resource_unit(
     let result = (|| {
         let singleton =
             ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(required.clone());
-        let expanded = expand_composite_resource_fact(
+        let (_, _, written_children) = expand_composite_resource_fact_with_children(
             &singleton,
             required,
             interface.composite_resource_definitions(),
             &state.program_point(),
             assumptions,
         )?;
-        if !unit && expanded.facts().iter().any(ResourceFact::is_own) {
+        if !unit && written_children.iter().any(ResourceFact::is_own) {
             return None;
         }
         // An empty expansion cannot manufacture a missing unit. A
@@ -16621,11 +16900,14 @@ fn consume_returned_resource_unit(
         // and a declaration with no body at all is a token that only a
         // held copy supplies: two `Permit(x)` cannot come from one. A
         // conditional body whose guard is false is refused the same way.
-        if expanded.facts().is_empty() {
+        if written_children.is_empty() {
             return None;
         }
         let mut remaining = available.clone();
-        for child in expanded.facts() {
+        // The required head is a description, not a held owner. Spend each
+        // written body occurrence before normalization can coalesce equal
+        // memory clauses; their physical overlap does not make them duplicable.
+        for child in &written_children {
             remaining = consume_returned_resource_unit(
                 remaining,
                 child,
@@ -16815,7 +17097,14 @@ pub(super) fn assembled_composite_body_facts_hold(
             parameter.program_type(),
         );
     }
-    if bind_composite_witnesses(definition, arguments, &mut state, assumptions).is_none() {
+    if bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )
+    .is_none()
+    {
         return false;
     }
     let mut budget = ExecutionBudget::beside_live_state();
@@ -16824,9 +17113,7 @@ pub(super) fn assembled_composite_body_facts_hold(
         Some(false) => return true,
         None => return false,
     }
-    let Ok(piece_facts) = resources.observable_facts(assumptions) else {
-        return false;
-    };
+    let piece_facts = resources.observable_facts_assuming_valid(assumptions);
     let assumptions = assumptions_with_propositions(assumptions, &piece_facts);
     definition.facts().iter().all(|fact| {
         let Ok(paths) = lower_spec_proposition_at_state_with_loop_entry(
@@ -16852,7 +17139,7 @@ pub(super) fn assembled_composite_body_facts_hold(
 /// True when every element of a constant-bounded memory range is concretely
 /// loadable, so a view of it is represented by the materialized cells rather
 /// than a resource fact.
-fn view_range_concretely_loadable(memory: &Memory, range: &MemoryRange) -> bool {
+fn view_range_concretely_loadable(memory: &SymbolicMemory, range: &MemoryRange) -> bool {
     let (Some(start), Some(end)) = (range.constant_start(), range.constant_end()) else {
         return false;
     };
@@ -16860,17 +17147,15 @@ fn view_range_concretely_loadable(memory: &Memory, range: &MemoryRange) -> bool 
         return false;
     }
     let width = match &range.base().offset {
-        PointerOffsetTerm::Int32Scaled { byte_width, .. } => {
-            u32::try_from(*byte_width).unwrap_or(4)
-        }
+        AddressOffset::Int32Scaled { byte_width, .. } => u32::try_from(*byte_width).unwrap_or(4),
         _ => 4,
     };
     (start..end).all(|index| {
-        let pointer = Pointer {
-            block: range.base().block.clone(),
-            offset: PointerOffsetTerm::add(
+        let pointer = Address {
+            base: range.base().base.clone(),
+            offset: AddressOffset::add(
                 range.base().offset.clone(),
-                PointerOffsetTerm::scale_int32(MachineTerm::constant(index), i64::from(width)),
+                AddressOffset::scale_int32(MachineTerm::constant(index), i64::from(width)),
             ),
         };
         memory.is_loadable_concretely(&pointer, width)
@@ -16884,12 +17169,11 @@ fn consume_resource_fact_definitionally(
     at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
-    let memory = at.memory();
     fn consume(
         available: &ResourceContext,
         required: &ResourceFact,
         definitions: &[CompositeResourceDefinition],
-        memory: &Memory,
+        at: &ProgramPoint,
         assumptions: &PureFactContext,
         seen: &mut BTreeSet<(ResourceContext, ResourceFact)>,
     ) -> Option<ResourceContext> {
@@ -16900,7 +17184,7 @@ fn consume_resource_fact_definitionally(
         // satisfiable: read access is represented by the materialized cells,
         // mirroring the local-block view rule at call transfer.
         if let ResourceFact::View(Resource::Memory(range)) = required
-            && view_range_concretely_loadable(memory, range)
+            && view_range_concretely_loadable(at.memory(), range)
         {
             return Some(available.clone());
         }
@@ -16941,7 +17225,7 @@ fn consume_resource_fact_definitionally(
                     &required_context,
                     required,
                     definitions,
-                    &crate::kernel::ProgramPoint::of_memory(memory),
+                    at,
                     assumptions,
                 )
             },
@@ -16952,7 +17236,7 @@ fn consume_resource_fact_definitionally(
             if !assembled_composite_body_facts_hold(
                 required,
                 definitions,
-                &crate::kernel::ProgramPoint::of_memory(memory),
+                at,
                 available,
                 assumptions,
             ) {
@@ -16960,7 +17244,7 @@ fn consume_resource_fact_definitionally(
             }
             let mut remaining = available.clone();
             for child in expanded_required.facts() {
-                remaining = consume(&remaining, child, definitions, memory, assumptions, seen)?;
+                remaining = consume(&remaining, child, definitions, at, assumptions, seen)?;
             }
             return Some(remaining);
         }
@@ -16979,7 +17263,7 @@ fn consume_resource_fact_definitionally(
                         available,
                         composite,
                         definitions,
-                        &crate::kernel::ProgramPoint::of_memory(memory),
+                        at,
                         assumptions,
                     )
                 },
@@ -16990,7 +17274,7 @@ fn consume_resource_fact_definitionally(
                 &expanded_available,
                 required,
                 definitions,
-                memory,
+                at,
                 assumptions,
                 seen,
             ) {
@@ -17004,7 +17288,7 @@ fn consume_resource_fact_definitionally(
         available,
         required,
         definitions,
-        memory,
+        at,
         assumptions,
         &mut BTreeSet::new(),
     )
@@ -17014,7 +17298,7 @@ pub(super) fn resource_context_definitionally_contains(
     available: &ResourceContext,
     required: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     let mut remaining = available.clone();
@@ -17039,7 +17323,7 @@ pub(super) fn resource_contexts_definitionally_equivalent_by_consumption(
     left: &ResourceContext,
     right: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     resource_context_definitionally_contains(left, right, definitions, memory, assumptions)
@@ -17062,6 +17346,9 @@ pub(crate) fn evaluate_function_resource_context(
     )
     .map(|result| result.map(|(context, _)| context))
 }
+
+mod entry_partition;
+pub(crate) use entry_partition::admit_declared_entry_resources;
 
 /// Evaluate a resource section once and retain the source metadata alongside
 /// each checked fact.  The ordinary context API below is a compatibility view
@@ -17160,7 +17447,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
     let facts = checked.iter().map(|resource| resource.fact.clone());
     let composed = if inherit_view_bindings {
         context
-            .try_compose_with_facts_delaying_normalization_with_occurrences(facts, assumptions)
+            .install_established_partition(facts, assumptions)
             .map(|(context, inserted)| {
                 let context = state.loan_view_bindings().attach_to_inserted_views(
                     state.resources(),
@@ -17169,15 +17456,23 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
                     assumptions,
                 );
                 if normalize {
-                    context.normalized(assumptions)
+                    context.normalized_without_discovery(assumptions)
                 } else {
                     context
                 }
             })
-    } else if normalize {
-        context.try_compose_with_facts(facts, assumptions)
     } else {
-        context.try_compose_into_valid_context_delaying_normalization(facts, assumptions)
+        // This evaluates a written separating clause list, not new caller
+        // ownership. The actual fold/entry/transfer operation supplies custody.
+        context
+            .install_established_partition(facts, assumptions)
+            .map(|(context, _)| {
+                if normalize {
+                    context.normalized_without_discovery(assumptions)
+                } else {
+                    context
+                }
+            })
     };
     let context = match composed {
         Ok(context) => context,
@@ -17383,8 +17678,8 @@ fn evaluate_resource_clauses_in_section(
                 if !matches!(resource.resource(), Resource::Instance(_))
                     || !evaluation_resources.contains_exact_representation(&resource)
                 {
-                    evaluation_resources =
-                        evaluation_resources.unchecked_with_fact(resource.clone());
+                    evaluation_resources = evaluation_resources
+                        .unchecked_with_fact(resource_clause_read_supply(&resource, assumptions));
                 }
                 supplied.push(resource.clone());
                 evaluated[index] = Some(resource);
@@ -17535,8 +17830,8 @@ fn evaluate_resource_clauses_in_section(
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum ResourceClauseDependencyKey {
     Fact(ResourceFact),
-    MemoryBase(Pointer),
-    MemoryBlock(PointerBlock),
+    MemoryBase(Address),
+    MemoryBlock(AddressBase),
 }
 
 /// A sparse segment-tree coordinate space for a concrete memory block.
@@ -17549,7 +17844,7 @@ enum ResourceClauseDependencyKey {
 /// fallback below instead.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct ResourceClauseIntervalSpace {
-    block: PointerBlock,
+    block: AddressBase,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -17588,7 +17883,7 @@ struct ResourceClauseWaiterIndex {
     /// its explicit block is still a sound conservative candidate boundary.
     /// Store the dependency index as well as the clause so register/remove
     /// stay symmetric when one clause waits on multiple ranges in a block.
-    concrete_block_fallback: BTreeMap<PointerBlock, BTreeSet<ResourceClauseIntervalWaiter>>,
+    concrete_block_fallback: BTreeMap<AddressBase, BTreeSet<ResourceClauseIntervalWaiter>>,
     intervals: ResourceClauseIntervalIndex,
 }
 
@@ -17605,7 +17900,7 @@ fn resource_clause_concrete_memory_interval(
     }
     Some((
         ResourceClauseIntervalSpace {
-            block: range.base().block.clone(),
+            block: range.base().base.clone(),
         },
         start,
         end,
@@ -17648,7 +17943,7 @@ fn evaluate_resource_clause_with_dependencies(
     entry_state: &ExecutionState,
     state: &ExecutionState,
     resource: &ResourceSpec,
-    selected_load_values: &BTreeMap<(Pointer, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<(Result<ResourceFact, RuntimeError>, Vec<ResourceFact>)> {
@@ -17667,6 +17962,17 @@ fn evaluate_resource_clause_with_dependencies(
     result.map(|result| (result, dependencies))
 }
 
+fn resource_clause_read_supply(fact: &ResourceFact, assumptions: &PureFactContext) -> ResourceFact {
+    match fact.resource() {
+        Resource::Memory(range)
+            if fact.is_own() && fact.has_proven_positive_quantity(assumptions) =>
+        {
+            ResourceFact::view_memory(range.clone())
+        }
+        _ => fact.clone(),
+    }
+}
+
 /// The read authority a section's already-evaluated clauses supply to the
 /// clauses that still need one.
 ///
@@ -17674,6 +17980,7 @@ fn evaluate_resource_clause_with_dependencies(
 /// readable so a later clause's base load denotes, while every owned resource
 /// stays exactly where the clause set put it. This state is a scratch
 /// evaluation frame and is never the section's result.
+
 pub(in crate::kernel) fn resource_clause_section_supply(
     state: &ExecutionState,
     supplied: &[ResourceFact],
@@ -17686,7 +17993,7 @@ pub(in crate::kernel) fn resource_clause_section_supply(
         if !matches!(fact.resource(), Resource::Instance(_))
             || !base.contains_exact_representation(fact)
         {
-            base = base.unchecked_with_fact(fact.clone());
+            base = base.unchecked_with_fact(resource_clause_read_supply(fact, assumptions));
         }
     }
     if definitions.is_empty() {
@@ -17900,7 +18207,9 @@ pub(super) fn instance_arm_read_authority(
     let Some(body) = definition.matched.as_ref() else {
         return Vec::new();
     };
-    let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        instance.fields().get(body.field_index)
+    else {
         return Vec::new();
     };
     let variants = match decide_resource_model_arm(model, assumptions) {
@@ -18011,7 +18320,7 @@ fn resource_clause_memory_views(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // These are the established clauses of the held instance.
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
@@ -18062,7 +18371,7 @@ fn resource_clause_memory_views(
 fn refutation_of_body_fact(proposition: &Proposition) -> Option<Proposition> {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            Some(Proposition::ConditionIs(condition.clone(), !value))
+            Some(Proposition::condition_is(condition.clone(), !value))
         }
         _ => None,
     }
@@ -18146,7 +18455,9 @@ fn instance_arm_refutation_facts(
     let Some(body) = definition.matched.as_ref() else {
         return Vec::new();
     };
-    let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        instance.fields().get(body.field_index)
+    else {
         return Vec::new();
     };
     // A model that already carries a constructor needs no exclusion, and only
@@ -18387,7 +18698,7 @@ fn instance_argument_class_facts(
     matched_argument_classes(definition, body)
         .into_iter()
         .filter_map(|(index, class)| match instance.arguments().get(index) {
-            Some(AlgebraicValue::Program(value @ ProgramValue::Pointer(_))) => {
+            Some(crate::kernel::ResourceFieldValue::Program(value @ ProgramValue::Pointer(_))) => {
                 // The receipt's value carries the class, as a checked call's
                 // does: that annotation is what the graph indexes.
                 let typed = value.clone().with_pointer_object_class(Some(class.clone()));
@@ -18494,7 +18805,9 @@ fn decided_instance_arm_facts(
     let Some(body) = definition.matched.as_ref() else {
         return Vec::new();
     };
-    let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        instance.fields().get(body.field_index)
+    else {
         return Vec::new();
     };
     let Some(selection) = select_resource_model_arm(model, assumptions) else {
@@ -18765,6 +19078,10 @@ pub(in crate::kernel) fn resource_context_runtime_error(
 ) -> RuntimeError {
     match error {
         ResourceContextValidityError::UnsupportedOwnershipBoundary => RuntimeError::FunctionContract(error.to_string()),
+        ResourceContextValidityError::UnestablishedOwnedBoundary(required) => {
+            RuntimeError::PendingCallObligations(vec![ProofObligation::verification_condition(*required)
+                .with_context("symbolic ownership boundary".to_string())].into())
+        }
         ResourceContextValidityError::DuplicateOwnedResourceFact(resource) => {
             RuntimeError::DuplicateResource { resource: Box::new(resource) }
         }
@@ -18965,7 +19282,7 @@ fn resolve_retained_aggregate_fields(
         } = expression
         && let Some((parameter, pointer)) = projection(pointer)
         && let Some(LocalBinding::AggregateObject { slot, .. }) = entry.locals.binding(parameter)
-        && !state.memory.has_block(&slot.block)
+        && !state.memory.has_block(&slot.base)
         && !matches!(
             value_type,
             ProgramType::Int32Array(_)
@@ -19085,7 +19402,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
     entry_state: &ExecutionState,
     state: &ExecutionState,
     resource: &ResourceSpec,
-    selected_load_values: &BTreeMap<(Pointer, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
@@ -19165,11 +19482,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 _ => state,
             };
             Ok(
-                super::mutexes::guard_resource(acquisition_state, pointer.pointer(), false)
+                super::mutexes::guard_resource(acquisition_state, pointer.address(), false)
                     .ok_or_else(|| {
                         if resource.role() == ResourceTransferRole::Borrow {
                             RuntimeError::MissingMutexGuard {
-                                mutex: pointer.pointer().clone(),
+                                mutex: pointer.address().clone(),
                             }
                         } else {
                             RuntimeError::FunctionContract(
@@ -19204,11 +19521,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 _ => state,
             };
             Ok(
-                super::mutexes::live_resource(initialization_state, pointer.pointer(), false)
+                super::mutexes::live_resource(initialization_state, pointer.address(), false)
                     .ok_or_else(|| {
                         if resource.role() == ResourceTransferRole::Borrow {
                             RuntimeError::MissingMutexLive {
-                                mutex: pointer.pointer().clone(),
+                                mutex: pointer.address().clone(),
                             }
                         } else {
                             RuntimeError::FunctionContract(
@@ -19243,7 +19560,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 ResourceStateSource::Entry => entry_state,
                 _ => state,
             };
-            let mut fact = super::mutexes::use_resource(initialization_state, pointer.pointer());
+            let mut fact = super::mutexes::use_resource(initialization_state, pointer.address());
             if let Some(protected) = protected {
                 let description = match evaluate_resource_type(
                     entry_state,
@@ -19301,7 +19618,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
             Ok(Ok(ResourceFact::own(Resource::Publication(
                 PublicationRight {
                     side: *side,
-                    flag: pointer.pointer().clone(),
+                    flag: pointer.address().clone(),
                     payload,
                     observed: None,
                 },
@@ -19373,7 +19690,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     .zip(arguments.iter())
                     .enumerate()
                     .find(|(_, (a, b))| {
-                        !crate::kernel::instance_arguments_proven_equal(a, b, assumptions)
+                        !crate::kernel::instance_field_values_proven_equal(
+                            (a).into(),
+                            (b).into(),
+                            assumptions,
+                        )
                     })
                     .map(|(index, _)| {
                         format!(
@@ -19525,7 +19846,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: Box::new(quantity.clone()),
+                        left: Box::new(quantity.native_compat().clone()),
                         right: Box::new(MachineTerm::constant(0)),
                     },
                 ) {
@@ -19541,7 +19862,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                         "declared resource quantity did not lower to owned authority".to_string(),
                     )));
                 };
-                fact = ResourceFact::own_quantity(inner, quantity);
+                fact = ResourceFact::own_quantity_stored(inner, quantity);
             }
             Ok(Ok(fact))
         }
@@ -19578,14 +19899,19 @@ pub(super) fn evaluate_iterated_resource_spec(
         Ok(ProgramValue::Pointer(pointer)) => pointer.into_pointer(),
         _ => return failure("guard base"),
     };
-    let guard_value = match evaluate_loop_effect_segment_value(
+    let guard_value = match evaluate_loop_effect_segment_value_retained(
         state,
         &spec.guard_value,
         assumptions,
         "iterated guard value",
         budget,
     )? {
-        Ok(ProgramValue::Int32(value)) => value,
+        Ok(value) if value.program_type() == ProgramType::Int32 => {
+            let Some(value) = StoredMachineTerm::from_value(value) else {
+                return failure("guard value");
+            };
+            value
+        }
         _ => return failure("guard value"),
     };
     let Some(iterated) = crate::kernel::IteratedMemory::new(
@@ -19597,7 +19923,7 @@ pub(super) fn evaluate_iterated_resource_spec(
         spec.end_offset,
         element.start,
         element.end,
-        crate::kernel::IteratedGuard::new(
+        crate::kernel::IteratedGuard::new_stored(
             guard_base,
             spec.guard_cell_type,
             spec.guard_cell_width,
@@ -19625,10 +19951,10 @@ fn evaluate_declared_quantity(
     quantity: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<MachineTerm, RuntimeError>> {
+) -> ExecutionResult<Result<crate::kernel::StoredMachineTerm, RuntimeError>> {
     let mut diagnostic = None;
     Ok(
-        match super::loops::evaluate_resource_argument_value(
+        match super::loops::evaluate_resource_argument_value_retained(
             state,
             quantity,
             assumptions,
@@ -19636,10 +19962,13 @@ fn evaluate_declared_quantity(
             budget,
             &mut diagnostic,
         )? {
-            Ok(ProgramValue::Int32(quantity)) => Ok(quantity),
-            Ok(_) => Err(RuntimeError::FunctionContract(
-                "declared resource quantity must evaluate to int32".to_string(),
-            )),
+            Ok(value) => crate::kernel::StoredMachineTerm::from_value(value)
+                .filter(|quantity| quantity.value().program_type() == ProgramType::Int32)
+                .ok_or_else(|| {
+                    RuntimeError::FunctionContract(
+                        "declared resource quantity must evaluate to int32".to_string(),
+                    )
+                }),
             Err(message) => Err(match diagnostic {
                 Some(RuntimeError::ContractResourceDiagnostic {
                     reason,
@@ -19729,11 +20058,11 @@ pub(crate) fn quantified_resource_requirement_assumptions(
             Ok(quantity) => quantity,
             Err(error) => return Ok(Err(error)),
         };
-        propositions.push(Proposition::ConditionIs(
+        propositions.push(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(quantity),
+                left: Box::new(quantity.native_compat().clone()),
                 right: Box::new(MachineTerm::constant(0)),
             },
             true,
@@ -19780,7 +20109,7 @@ fn evaluate_function_declared_resource_spec(
     argument_state_sources: &[ResourceStateSource],
     parameter_types: &[ProgramType],
     source_arguments: Option<&[String]>,
-    selected_load_values: &BTreeMap<(Pointer, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
@@ -19842,10 +20171,10 @@ fn evaluate_function_declared_resource_spec(
                 budget,
             )? {
                 Ok(ProgramValue::Pointer(address))
-                    if !argument_state.memory().has_known_cell_at(address.pointer()) =>
+                    if !argument_state.memory().has_known_cell_at(address.address()) =>
                 {
                     selected_load_values
-                        .get(&(address.pointer().clone(), *value_type))
+                        .get(&(address.address().clone(), *value_type))
                         .cloned()
                 }
                 _ => None,
@@ -19960,19 +20289,19 @@ fn evaluate_function_declared_resource_spec(
             && index == 1
             && let ProgramValue::UInt64(bytes) = value.numeric_value()
         {
-            match uint64_allocation_extent_argument(bytes, assumptions) {
+            match uint64_allocation_size_argument(bytes, assumptions) {
                 Ok(value) => value,
                 Err(error) => return Ok(Err(error)),
             }
         } else {
             value
         };
-        // A 64-bit `allocation` byte count is a `uint64` extent (D4).
-        let accepts_allocation_extent = name == ResourceFact::ALLOCATION_RESOURCE_NAME
+        // A 64-bit `allocation` byte count is a `uint64` size (D4).
+        let accepts_allocation_size = name == ResourceFact::ALLOCATION_RESOURCE_NAME
             && index == 1
             && matches!(&value, ProgramValue::UInt64(_));
         if !accepts_allocation_pointer
-            && !accepts_allocation_extent
+            && !accepts_allocation_size
             && !parameter_type.accepts(&value)
         {
             return Ok(Err(RuntimeError::FunctionContract(format!(
@@ -20020,12 +20349,12 @@ fn evaluate_function_declared_resource_spec(
 }
 
 /// The `allocation` token argument a contract's `uint64` (`size_t`) byte
-/// count states (`design/heap-extents.md`, D4).
+/// count states (`design/heap-allocation-sizes.md`, D4).
 ///
-/// A constant that fits a 32-bit extent is one, as `malloc` of a constant
-/// `size_t` size makes it (D2). Any other value is a 64-bit extent, admitted
+/// A constant that fits a 32-bit size is one, as `malloc` of a constant
+/// `size_t` size makes it (D2). Any other value is a 64-bit size, admitted
 /// under the decision `malloc` makes for one
-/// ([`crate::kernel::eval::uint64_heap_extent_bytes_are_exact`]): at most
+/// ([`crate::kernel::eval::uint64_allocation_size_bytes_are_exact`]): at most
 /// `PTRDIFF_MAX` and positive, and a product with a constant factor `k` only
 /// with its other factor decided at most `PTRDIFF_MAX / k`. A `size_t`
 /// product may wrap, and the heap reads `n * k` bytes back as `n` elements,
@@ -20034,10 +20363,10 @@ fn evaluate_function_declared_resource_spec(
 /// A clause someone else established is assumed, not decided again: a
 /// contract's own entry clauses, which every caller establishes by
 /// evaluating them under this decision, and the body of a held composite,
-/// which its fold established (`assume_entry_clause_extents`). Every other
+/// which its fold established (`assume_entry_clause_spans`). Every other
 /// evaluation decides: a requirement at a call, a clause a function produces
 /// at its exit, and one an opaque or extern call returns to its caller.
-fn uint64_allocation_extent_argument(
+fn uint64_allocation_size_argument(
     bytes: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<ProgramValue, RuntimeError> {
@@ -20046,8 +20375,8 @@ fn uint64_allocation_extent_argument(
     {
         return Ok(int32(MachineTerm::constant(constant as u32)));
     }
-    if assumptions.should_assume_entry_clause_extents()
-        || crate::kernel::eval::uint64_heap_extent_bytes_are_exact(bytes, assumptions)
+    if assumptions.should_assume_entry_clause_spans()
+        || crate::kernel::eval::uint64_allocation_size_bytes_are_exact(bytes, assumptions)
     {
         Ok(ProgramValue::UInt64(bytes.clone()))
     } else {
@@ -20314,13 +20643,13 @@ fn resource_fact_containing_allocation(
 /// Bounded by this frame's own bindings; it reads no caller state.
 fn retired_automatistorage_creation_blocks(
     state: &ExecutionState,
-    after: &Memory,
-) -> Vec<PointerBlock> {
+    after: &SymbolicMemory,
+) -> Vec<AddressBase> {
     state
         .locals
         .slots()
-        .filter(|slot| state.memory.has_block(&slot.block) && !after.has_block(&slot.block))
-        .map(|slot| slot.block.clone())
+        .filter(|slot| state.memory.has_block(&slot.base) && !after.has_block(&slot.base))
+        .map(|slot| slot.base.clone())
         .collect()
 }
 
@@ -20328,9 +20657,9 @@ type AutomaticLifetimeInput = (usize, usize, usize, usize, usize);
 
 struct AutomaticLifetimeRetirement {
     // Pin the input roots so their addresses cannot be reused during a session.
-    input: Memory,
-    blocks: Vec<PointerBlock>,
-    after: Memory,
+    input: SymbolicMemory,
+    blocks: Vec<AddressBase>,
+    after: SymbolicMemory,
 }
 
 thread_local! {
@@ -20343,7 +20672,10 @@ pub(super) fn clear_automatic_lifetime_retirement() {
 
 /// Only the physical transition is reused. Callers check current loan,
 /// mutex, population and return-value restrictions before calling this.
-fn retire_automatic_lifetime_blocks(before: &Memory, blocks: &[PointerBlock]) -> Memory {
+fn retire_automatic_lifetime_blocks(
+    before: &SymbolicMemory,
+    blocks: &[AddressBase],
+) -> SymbolicMemory {
     if blocks.is_empty() {
         return before.clone();
     }
@@ -20377,19 +20709,21 @@ fn retire_automatic_lifetime_blocks(before: &Memory, blocks: &[PointerBlock]) ->
     after
 }
 
-fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<Memory, RuntimeError> {
+fn end_inline_frame_automatic_lifetimes(
+    state: &ExecutionState,
+) -> Result<SymbolicMemory, RuntimeError> {
     let memory = &state.memory;
     let mut blocks = Vec::new();
     let mut selected = BTreeSet::new();
     for slot in state.locals.slots() {
         crate::instrumentation::record_deterministic_work(1);
-        if !block_is_frame_scoped_automatic_object(&slot.block) {
+        if !block_is_frame_scoped_automatic_object(&slot.base) {
             continue;
         }
-        if !memory.has_block(&slot.block) {
+        if !memory.has_block(&slot.base) {
             continue;
         }
-        if !selected.insert(slot.block.clone()) {
+        if !selected.insert(slot.base.clone()) {
             continue;
         }
         if let Some(error) = super::mutexes::automatic_storage_refusal(
@@ -20398,14 +20732,17 @@ fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<Memory
                 .locals
                 .name_for_slot(slot)
                 .expect("indexed local slot"),
-            &slot.block,
+            &slot.base,
         ) {
             return Err(error);
         }
-        if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
+        if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
             return Err(error);
         }
-        blocks.push(slot.block.clone());
+        if let Some(error) = state.automatic_storage_loan_refusal(&slot.base) {
+            return Err(error);
+        }
+        blocks.push(slot.base.clone());
     }
     Ok(retire_automatic_lifetime_blocks(memory, &blocks))
 }
@@ -20418,21 +20755,21 @@ fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<Memory
 fn end_function_body_automatic_lifetimes(
     state: &ExecutionState,
     function: &ProgramFunction,
-    caller: &Memory,
+    caller: &SymbolicMemory,
     returned: Option<&ProgramValue>,
-) -> Result<Memory, RuntimeError> {
+) -> Result<SymbolicMemory, RuntimeError> {
     let memory = &state.memory;
     let mut blocks = Vec::new();
     let mut selected = BTreeSet::new();
     for slot in state.locals.slots() {
         crate::instrumentation::record_deterministic_work(1);
-        if slot.block.is_local_block()
+        if slot.base.is_local_block()
             && !(function.return_aggregate_layout().is_some()
-                && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.pointer().block == slot.block))
-            && !caller.has_block(&slot.block)
-            && memory.has_block(&slot.block)
+                && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.address().base == slot.base))
+            && !caller.has_block(&slot.base)
+            && memory.has_block(&slot.base)
         {
-            if !selected.insert(slot.block.clone()) {
+            if !selected.insert(slot.base.clone()) {
                 continue;
             }
             if let Some(error) = super::mutexes::automatic_storage_refusal(
@@ -20441,33 +20778,39 @@ fn end_function_body_automatic_lifetimes(
                     .locals
                     .name_for_slot(slot)
                     .expect("indexed local slot"),
-                &slot.block,
+                &slot.base,
             ) {
                 return Err(error);
             }
-            if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
+            if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
                 return Err(error);
             }
-            blocks.push(slot.block.clone());
+            if let Some(error) = state.automatic_storage_loan_refusal(&slot.base) {
+                return Err(error);
+            }
+            blocks.push(slot.base.clone());
         }
     }
     for (_, pointer) in state.aggregate_step_objects.iter() {
         crate::instrumentation::record_deterministic_work(1);
-        if !caller.has_block(&pointer.block)
-            && memory.has_block(&pointer.block)
-            && selected.insert(pointer.block.clone())
+        if !caller.has_block(&pointer.base)
+            && memory.has_block(&pointer.base)
+            && selected.insert(pointer.base.clone())
         {
-            if let Some(error) = state.population_storage_retirement_refusal(&pointer.block) {
+            if let Some(error) = state.population_storage_retirement_refusal(&pointer.base) {
                 return Err(error);
             }
             if let Some(error) = super::mutexes::automatic_storage_refusal(
                 state,
                 "aggregate expression result",
-                &pointer.block,
+                &pointer.base,
             ) {
                 return Err(error);
             }
-            blocks.push(pointer.block.clone());
+            if let Some(error) = state.automatic_storage_loan_refusal(&pointer.base) {
+                return Err(error);
+            }
+            blocks.push(pointer.base.clone());
         }
     }
     Ok(retire_automatic_lifetime_blocks(memory, &blocks))
@@ -20475,7 +20818,7 @@ fn end_function_body_automatic_lifetimes(
 
 /// Whether this block is an automatic object a call frame minted for itself,
 /// rather than the outermost frame's `local:<name>` or a pseudo-slot.
-fn block_is_frame_scoped_automatic_object(block: &PointerBlock) -> bool {
+fn block_is_frame_scoped_automatic_object(block: &AddressBase) -> bool {
     block.starts_with("local:lifetime:") || block.starts_with("local:frame:")
 }
 
@@ -20485,20 +20828,22 @@ pub(in crate::kernel) fn function_exit_memory(
     callee_state: &ExecutionState,
     value: &ExecutionValue,
     function: &ProgramFunction,
-) -> Memory {
+) -> Result<SymbolicMemory, RuntimeError> {
     if function.return_aggregate_layout().is_some() {
-        return callee_state.memory.clone();
+        return Ok(callee_state.memory.clone());
     }
     match value.pointer() {
         Some(pointer)
-            if pointer.pointer().block.is_local_block()
-                && !caller_state.memory.has_block(&pointer.pointer().block) =>
+            if pointer.address().base.is_local_block()
+                && !caller_state.memory.has_block(&pointer.address().base) =>
         {
-            callee_state
-                .memory
-                .without_local_block(&pointer.pointer().block)
+            let block = &pointer.address().base;
+            if let Some(error) = callee_state.automatic_storage_loan_refusal(block) {
+                return Err(error);
+            }
+            Ok(callee_state.memory.without_local_block(block))
         }
-        _ => callee_state.memory.clone(),
+        _ => Ok(callee_state.memory.clone()),
     }
 }
 
@@ -20588,7 +20933,7 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
             &entry_state,
             function.resource_requires(),
             function.composite_resource_definitions(),
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         )
         .map_err(|limit| RuntimeError::FunctionContract(limit.describe()))??;
@@ -20679,7 +21024,7 @@ pub(crate) fn unreturned_allocation_at_function_exit(
         &entry_state,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        &assumptions.clone().assume_entry_clause_extents(),
+        &assumptions.clone().assume_entry_clause_spans(),
         budget,
     )? {
         Ok((_, clauses)) => clauses,
@@ -20973,6 +21318,7 @@ fn function_outcome_from_body_with_resource_transfer(
         escrow_boundary,
         ensured_views: returned_views,
         produced_borrowing_pieces,
+        returned_entry_partition,
     } = match crate::instrumentation::measure_operation(
         function.name(),
         "contract resource transition",
@@ -21010,6 +21356,7 @@ fn function_outcome_from_body_with_resource_transfer(
     };
     // Return construction consumed each output from one persistent body
     // context and installed that constructed group. Do not consume it again.
+    transfer.returned_entry_partition = returned_entry_partition;
     transfer.candidate_output_views = returned_views;
     transfer.produced_borrowing_pieces = produced_borrowing_pieces;
     let (return_resources, return_ledger, return_participant, return_view_bindings, loan_evidence) =
@@ -21321,38 +21668,17 @@ fn contract_exit_outcome_with_boundary_transfer(
             Err(error) => return Ok(Err(error)),
         }
     }
-    // A proof may hold the body's exit resources in a split representation
-    // (one owned token twice rather than a quantity of two). Execution
-    // composes its resources as it goes; compose the retained ones the same
-    // way so the completed outcome is the canonical one certification compares.
-    let exceptional = matches!(&outcome, StatementOutcome::Throw { .. });
-    let outcome = match outcome {
-        StatementOutcome::Return { value, mut state }
-        | StatementOutcome::Throw { value, mut state } => {
-            if state.loan_view_bindings().iter().next().is_none() {
-                // Validate the retained partition, then normalize its representation.
-                // Re-inserting every fact into an empty context repeated all
-                // attachment work at each explicit path completion.
-                if let Some(error) = state.resources.validity_error(assumptions) {
-                    return Ok(Err(resource_context_runtime_error(error)));
-                }
-                let resources = state.resources.clone().normalized(assumptions);
-                state = Box::new(state.with_resource_context(resources));
-            } else if state.resources.validity_error(assumptions).is_some()
-                || !state.loan_bindings_are_consistent()
-            {
-                return Ok(Err(RuntimeError::FunctionContract(
-                    "stable-view return resources are not a valid bound context".to_string(),
-                )));
-            }
-            if exceptional {
-                StatementOutcome::Throw { value, state }
-            } else {
-                StatementOutcome::Return { value, state }
-            }
-        }
-        other => other,
-    };
+    // Execution and proof rewrites construct this partition as they go.
+    // Retain its exact resources, projections, quantities and occurrence IDs;
+    // completing a path neither re-admits it nor canonicalizes the ambient
+    // frame. The binding mirror is a constant-time shared-root invariant.
+    if let StatementOutcome::Return { state, .. } | StatementOutcome::Throw { state, .. } = &outcome
+        && !state.loan_bindings_are_consistent()
+    {
+        return Ok(Err(RuntimeError::FunctionContract(
+            "stable-view return resources are not a valid bound context".into(),
+        )));
+    }
     let callee_state = if let Some(receipt) = checked_transfer {
         receipt.callee.clone()
     } else {
@@ -21972,9 +22298,9 @@ pub(super) fn function_outcome_from_body(
                 crate::kernel::eval::retire_automatic_storage_owner(
                     &mut caller_state,
                     &MemoryRange::new_with_element_width(
-                        Pointer {
-                            block: block.clone(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        Address {
+                            base: block.clone(),
+                            offset: AddressOffset::Constant(0),
                         },
                         0.into(),
                         bytes,
@@ -22053,9 +22379,9 @@ pub(super) fn function_outcome_from_body(
                 crate::kernel::eval::retire_automatic_storage_owner(
                     &mut caller_state,
                     &MemoryRange::new_with_element_width(
-                        Pointer {
-                            block: block.clone(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        Address {
+                            base: block.clone(),
+                            offset: AddressOffset::Constant(0),
                         },
                         0.into(),
                         bytes,
@@ -22132,6 +22458,9 @@ impl From<bool> for ConditionTerm {
 }
 
 #[cfg(test)]
+mod automatic_frame_loan_tests;
+
+#[cfg(test)]
 mod mutex_automatic_frame_tests;
 
 #[cfg(test)]
@@ -22171,5 +22500,8 @@ mod wide_matched_range_reader_tests;
 
 #[cfg(test)]
 mod storage_summary_footprint_tests;
+
+#[cfg(test)]
+mod iterated_operand_storage_tests;
 
 mod legacy_search;

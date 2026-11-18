@@ -68,10 +68,18 @@ pub(super) fn statement_expressions<'a>(
 ) {
     match statement {
         ProgramStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            for expression in initializer
+                .iter()
+                .chain(zero_fill.iter().flat_map(ZeroFill::expressions))
+            {
+                expressions.push((expression, false));
+            }
         }
-        | ProgramStatement::Assign { expression, .. }
+        ProgramStatement::Assign { expression, .. }
         | ProgramStatement::HeapAllocate {
             bytes: expression, ..
         }
@@ -85,7 +93,11 @@ pub(super) fn statement_expressions<'a>(
         ProgramStatement::Assert { condition, .. }
         | ProgramStatement::LoopTest { condition, .. }
         | ProgramStatement::If { condition, .. } => expressions.push((condition, true)),
-        ProgramStatement::Loop { test, .. } => expressions.push((test.execution_parts().0, true)),
+        ProgramStatement::Loop { test, .. } => {
+            if let Some(condition) = test.source_condition() {
+                expressions.push((condition, true));
+            }
+        }
         ProgramStatement::CallConstruct { arguments, .. } => {
             expressions.extend(arguments.iter().map(|argument| (argument, false)));
         }
@@ -116,9 +128,6 @@ pub(super) fn statement_expressions<'a>(
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::TryCatchInt32 { .. }
         | ProgramStatement::UnwindCleanup { .. }

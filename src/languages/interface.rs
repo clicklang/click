@@ -118,6 +118,9 @@ pub(crate) struct SourceSites {
     /// The statement each region comes from, by region in the order the
     /// source layout numbers them; `None` for a region the lowering added.
     pub(crate) regions: Vec<Option<u32>>,
+    /// The statement each declaration the lowering places at a source
+    /// statement comes from, by the declaration's binding.
+    pub(crate) declarations: Vec<(crate::kernel::BindingName, u32)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -132,7 +135,7 @@ pub struct ImportedParameter {
     /// parameter's type is the pointer that carries it.
     pub(super) reference: bool,
     pub(super) slice_length_parameter: Option<usize>,
-    pub(super) fixed_reference_extent: Option<u32>,
+    pub(super) fixed_reference_bounds: Option<u32>,
     pub(super) struct_name: Option<String>,
     pub(super) union_name: Option<String>,
     pub(super) struct_layout: Option<RecordLayout>,
@@ -266,6 +269,7 @@ pub struct CallbackInterface {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordLayout {
+    pub(super) bit_field_bytes: Option<crate::kernel::BitFieldBytes>,
     pub(super) fields: BTreeMap<String, RecordField>,
     /// Declared embedded-object paths, indexed by byte offset and nominal type.
     pub(super) embedded_structs: BTreeMap<(u32, String), String>,
@@ -1153,6 +1157,7 @@ impl RecordLayout {
             fields: named_fields,
             aggregate_fields,
             aggregate_unions: Vec::new(),
+            bit_field_bytes: None,
             size_bytes,
             alignment_bytes,
             class: None,
@@ -1216,6 +1221,7 @@ impl RecordLayout {
                 })
                 .collect(),
         )
+        .with_bit_field_bytes(self.bit_field_bytes.clone())
     }
 
     pub(super) fn aggregate_fields(&self) -> &[RecordScalarField] {
@@ -1322,8 +1328,8 @@ impl ImportedParameter {
         self
     }
 
-    pub(crate) fn with_fixed_reference_extent(mut self, bytes: u32) -> Self {
-        self.fixed_reference_extent = Some(bytes);
+    pub(crate) fn with_fixed_reference_bounds(mut self, bytes: u32) -> Self {
+        self.fixed_reference_bounds = Some(bytes);
         self
     }
 
@@ -1373,7 +1379,7 @@ impl ImportedParameter {
             array_element_width: None,
             pointee_struct_class: None,
             slice_length_parameter: None,
-            fixed_reference_extent: None,
+            fixed_reference_bounds: None,
         }
     }
 
@@ -1796,7 +1802,7 @@ pub(super) fn declared_pointer_locals(
                 body,
                 ..
             } => {
-                let (_, _, test) = loop_test.execution_parts();
+                let test = loop_test.source_region();
                 pending.push(body);
                 if let Some(test) = test {
                     pending.push(&test.statement);

@@ -81,20 +81,25 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
             // premise lowered to a constant or to an internal term says
             // neither which `using` entry was refused nor why.
             let constant_note = match &premise {
-                Proposition::ConditionIs(ConditionTerm::Constant(_), _) => {
+                condition_source_0 @ Proposition::ConditionIs(_, _)
+                    if let Some((ConditionTerm::Constant(_), _)) =
+                        condition_source_0.condition_native() =>
+                {
                     " (it is false at this instance)"
                 }
-                Proposition::ConditionIs(
-                    condition @ ConditionTerm::Compare {
-                        format,
-                        left,
-                        right,
-                        ..
-                    },
-                    expected,
-                ) if format.constant_from_term(left).is_some()
-                    && format.constant_from_term(right).is_some()
-                    && PureFactContext::new().decide(condition) == Some(!expected) =>
+                condition_source_0 @ Proposition::ConditionIs(_, expected)
+                    if let Some((
+                        condition @ ConditionTerm::Compare {
+                            format,
+                            left,
+                            right,
+                            ..
+                        },
+                        _,
+                    )) = condition_source_0.condition_native()
+                        && (format.constant_from_term(left).is_some()
+                            && format.constant_from_term(right).is_some()
+                            && PureFactContext::new().decide(condition) == Some(!expected)) =>
                 {
                     " (it is false at this instance)"
                 }
@@ -113,8 +118,8 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
             )));
         }
         // Citing a stated range cites both of its halves; see
-        // `cite_range_extent_guards`.
-        crate::surface::proof::theorem_application::cite_range_extent_guards(
+        // `cite_range_span_guards`.
+        crate::surface::proof::theorem_application::cite_range_span_guards(
             &premise,
             &mut explicit_premises,
             |guard| available.available_across_effects(guard, &[]),

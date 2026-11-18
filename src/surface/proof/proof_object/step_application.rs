@@ -10,7 +10,7 @@ use crate::kernel::{
 };
 
 fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> bool {
-    let crate::kernel::Proposition::ConditionIs(
+    let Some((
         crate::kernel::ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessThan,
@@ -18,7 +18,7 @@ fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> boo
             right,
         },
         true,
-    ) = proposition
+    )) = proposition.condition_native()
     else {
         return false;
     };
@@ -197,7 +197,7 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
         },
         _ => return None,
     };
-    let (left, right) = match condition {
+    let (left, right) = match condition.native_compat() {
         crate::kernel::ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessThan,
@@ -318,10 +318,10 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
 
 /// Whether a held `uint32` order goal has a plain variable as an operand.
 fn unsigned_order_names_a_variable(goal: &crate::kernel::Proposition) -> bool {
-    matches!(
-        goal,
-        crate::kernel::Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::Compare {
+    matches!(&goal, condition_source_0 @ crate::kernel::Proposition::ConditionIs(
+            _,
+            true,
+        ) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::UInt32,
                 relation: crate::kernel::CompareRelation::LessThan
                     | crate::kernel::CompareRelation::LessEqual
@@ -329,11 +329,8 @@ fn unsigned_order_names_a_variable(goal: &crate::kernel::Proposition) -> bool {
                     | crate::kernel::CompareRelation::GreaterEqual,
                 left,
                 right,
-            },
-            true,
-        ) if matches!(left.as_ref(), crate::kernel::MachineTerm::Variable(_))
-            || matches!(right.as_ref(), crate::kernel::MachineTerm::Variable(_))
-    )
+            }, _)) if (matches!(left.as_ref(), crate::kernel::MachineTerm::Variable(_))
+            || matches!(right.as_ref(), crate::kernel::MachineTerm::Variable(_)))))
 }
 
 /// The step as `click expand` writes it, for a step with a `using` list,
@@ -486,7 +483,7 @@ impl<'a> Proof<'a> {
         let call = match step {
             ProofStep::StepCall(transport) => transport.to_string(),
             ProofStep::StepContract(application) => format!("step({})", application.name),
-            ProofStep::Step => {
+            ProofStep::Step | ProofStep::StepBind(_) => {
                 let execution = self.execution()?;
                 let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
                     execution.view(context),
@@ -1076,7 +1073,7 @@ impl<'a> Proof<'a> {
             )));
         }
         let replacement = match (c_typed, name.written()) {
-            (true, Some(name)) => ContractExpression::CBinding(name.into()),
+            (true, Some(name)) => ContractExpression::ProgramBinding(name.into()),
             _ => name.reference(),
         };
         let renaming = BTreeMap::from([(binder.clone(), replacement)]);
@@ -1284,7 +1281,7 @@ impl<'a> Proof<'a> {
                         // ambient facts.
                         let value = match (pointer, introduced_pointer) {
                             (true, Some(interface_type)) => {
-                                ProgramValue::typed_pointer(Pointer::symbolic(variable), interface_type).with_pointer_object_class(object_class)
+                                ProgramValue::typed_pointer(Address::symbolic(variable), interface_type).with_pointer_object_class(object_class)
                             }
                             _ => match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                 Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
@@ -1527,7 +1524,7 @@ impl<'a> Proof<'a> {
         }
         match context.theorem_context.values.get(parameter) {
             Some(ProgramValue::Int32(current)) => {
-                let nonnegative = Proposition::ConditionIs(
+                let nonnegative = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
@@ -1606,11 +1603,11 @@ impl<'a> Proof<'a> {
             .map(|premise| self.lower_surface_proposition(premise, "induction premise"))
             .collect::<Result<Vec<_>, _>>()?;
         // The hypothesis is the theorem's own statement, so a range premise
-        // owes its extent halves beside it. Citing a stated range cites both
+        // owes its span halves beside it. Citing a stated range cites both
         // halves, by the one rule every `apply using` shares.
         let mut explicit_premises = Vec::with_capacity(lowered_premises.len());
         for premise in lowered_premises {
-            crate::surface::proof::theorem_application::cite_range_extent_guards(
+            crate::surface::proof::theorem_application::cite_range_span_guards(
                 &premise,
                 &mut explicit_premises,
                 |guard| self.facts().exact_available_across_effects(guard, &[]),
@@ -1814,7 +1811,7 @@ fn trace_resource_fact(
             .zip(context.arguments)
         {
             if let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument
-                && base.pointer() == range.base()
+                && base.address() == range.base()
             {
                 return crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
                     fact,
@@ -1847,7 +1844,7 @@ fn describe_known_goal(goal: &Proposition) -> &'static str {
         Proposition::ForAll { .. } => "a universal proposition",
         Proposition::Exists { .. } => "an existential proposition",
         Proposition::MemoryLoadable { .. } => "a memory-viewability fact",
-        Proposition::ConditionIs(condition, _) => match condition {
+        Proposition::ConditionIs(condition, _) => match condition.native_compat() {
             ConditionTerm::IntegerLessThan(..) => "an Integer less-than fact",
             ConditionTerm::IntegerLessEqual(..) => "an Integer less-or-equal fact",
             ConditionTerm::IntegerGreaterThan(..) => "an Integer greater-than fact",

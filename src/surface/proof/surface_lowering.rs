@@ -874,7 +874,7 @@ impl<'a> Proof<'a> {
 
     /// The scope a pure proof step's proposition is read in: this goal's
     /// retained logical binders first, then the proof locals of the scoped
-    /// proof, which is where `obtain (k: int32) { ... }` binds its witness
+    /// proof, which is where `let k = obtain(...);` binds its witness
     /// (an `Integer` or algebraic witness is reached through the local
     /// Integer and algebraic value maps instead, and a binder that stands
     /// for itself needs no substitution). A name bound by neither stays as

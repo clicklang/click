@@ -87,33 +87,39 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     } by { known(); }
 
     branch {
-        have (forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }) implies forall (path: Path) { walk(old(left), old(right), cur, path) != to } by {
-            intro();
-            instantiate(forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }, cur);
-            contradiction(visited[cur] != 0);
-        }
+        true => {
+            have (forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }) implies forall (path: Path) { walk(old(left), old(right), cur, path) != to } by {
+                intro();
+                instantiate(forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }, cur);
+                contradiction(visited[cur] != 0);
+            }
 
-        have forall (k: int32) {
-            0 <= k and k < n and old(visited[k]) == 0 and visited[k] != 0 implies
-                visited[old(left[k])] != 0 and visited[old(right[k])] != 0
-        } by {
-            intro(); intro();
-            have old(visited[k]) == 0; have visited[k] != 0;
-            contradiction(visited[k] != 0);
-        }
+            have forall (k: int32) {
+                0 <= k and k < n and old(visited[k]) == 0 and visited[k] != 0 implies
+                    visited[old(left[k])] != 0 and visited[old(right[k])] != 0
+            } by {
+                intro(); intro();
+                have old(visited[k]) == 0; have visited[k] != 0;
+                contradiction(visited[k] != 0);
+            }
 
-        step();
-        solve();
-    } else {}
-    branch {
-        have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
-            witness(Path::Here);
-            unfold(walk(old(left), old(right), cur, Path::Here));
+            step();
             solve();
         }
-        step();
-        solve();
-    } else {}
+        false => {}
+    }
+    branch {
+        true => {
+            have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
+                witness(Path::Here);
+                unfold(walk(old(left), old(right), cur, Path::Here));
+                solve();
+            }
+            step();
+            solve();
+        }
+        false => {}
+    }
     mark before_mark;
     step();
 
@@ -280,32 +286,35 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         };
     }
     branch {
-        have exists (path: Path) {
-            walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), path) == to
-        } by {
-            apply(left_result != 0 implies exists (path: Path) {
+        true => {
+            have exists (path: Path) {
                 walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), path) == to
-            }) using { left_result != 0; };
+            } by {
+                apply(left_result != 0 implies exists (path: Path) {
+                    walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), path) == to
+                }) using { left_result != 0; };
+            }
+            let rest = obtain(exists (rest: Path) {
+                walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), rest) == to
+            });
+            have walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to by {
+                unfold(walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)));
+                known();
+            }
+            apply(walk_frame(old(left), old(right), at(after_mark, left), at(after_mark, right), n, cur, Path::Left(rest)));
+            have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
+                witness(Path::Left(rest));
+                solve() using {
+                    walk(old(left), old(right), cur, Path::Left(rest)) == walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest));
+                    walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to;
+                };
+            }
+            have 0 <= to and to < n and at(after_mark, visited[to]) == 0;
+            step();
+            solve();
         }
-        obtain (rest: Path) {
-            walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), rest) == to
-        }
-        have walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to by {
-            unfold(walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)));
-            known();
-        }
-        apply(walk_frame(old(left), old(right), at(after_mark, left), at(after_mark, right), n, cur, Path::Left(rest)));
-        have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
-            witness(Path::Left(rest));
-            solve() using {
-                walk(old(left), old(right), cur, Path::Left(rest)) == walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest));
-                walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to;
-            };
-        }
-        have 0 <= to and to < n and at(after_mark, visited[to]) == 0;
-        step();
-        solve();
-    } else {}
+        false => {}
+    }
     observe(bounded_successors(left, right, n));
     have viewable(visited[0..n]) by { observe(visited[0..n]); }
     apply(unmarked_nonnegative(visited, 0, n, n));
@@ -427,9 +436,9 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 walk(at(before_right, left), at(before_right, right), at(before_right, right[cur]), path) == to
             }) using { right_result != 0; };
         }
-        obtain (right_rest: Path) {
+        let right_rest = obtain(exists (right_rest: Path) {
             walk(at(before_right, left), at(before_right, right), at(before_right, right[cur]), right_rest) == to
-        }
+        });
         have walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest)) == to by {
             unfold(walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest)));
             known();

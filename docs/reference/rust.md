@@ -1259,9 +1259,19 @@ call, `call(result_values::ok_if, 0).result`
 (`charon_a_nested_call_result_is_named_by_its_call`). A proof names a
 point by the statements as written, `statement(i)`, `S.statement(j)`,
 `S.call(f, j)` and the rest, as a C proof does; Click reads them from the
-source with `syn` (`src/languages/rust/source_statements.rs`). Other unnamed and
-ambiguous locals use collision-checked `__rust_mir_ID` identities from the
-locked artifact. These compiler identities can change when the artifact is refreshed.
+source with `syn` (`src/languages/rust/source_statements.rs`). A source name
+bound more than once, as `word` in two `Some(word)` arms, `x` in two `match`
+arms, or a shadowing `let`, is one declaration per binding, as in C: each
+starts where rustc starts its storage and ends where rustc ends it, so a
+proof's `word` names the live one. Inside `let x = x + 1;` the new `x` has the
+name from its storage start, before its value is written, as a C declarator's
+scope starts before its initializer. `f.statement(3).local(word)` names the
+`word` that statement declares, and `f.local(i)` names a declaration by its
+position among the function's locals; diagnostics write a repeated name in
+that canonical form, `"lib.rs"::f.local(5)`
+(`charon_repeated_source_names_are_distinct_declarations`). Other unnamed
+locals use collision-checked `__rust_mir_ID` identities from the locked
+artifact. These compiler identities can change when the artifact is refreshed.
 
 Conditions currently support scalar comparisons, boolean combinations,
 negation, casts, and builtin `.len()`. Calls, indexing, and arithmetic in a
@@ -1276,9 +1286,9 @@ A `return` from a loop body, from any depth, runs straight to the function's
 exit as a C `return` does, so the loop's invariants are not owed on that path
 and the contract is checked there. A labeled `break 'outer` or `continue
 'outer` from an inner loop leaves each loop it crosses: the inner loop exits
-with the escape recorded in a flag, `__rust_loop_escape_ID`, that the enclosing
-loop tests to `break` or `continue` itself. In a written `preserve`, a body
-branch that returns is a proof-level `if` whose returning arm steps to
+and the enclosing loop takes the corresponding `break` or `continue` path.
+Click keeps the routing state private. In a written `preserve`, a body branch that returns is a proof-level `if` whose
+returning arm steps to
 `function.exit`
 ([`design/charon-trial/early-exits`](https://github.com/clicklang/click/blob/master/design/charon-trial/early-exits/exits.click)).
 General iterators remain unsupported; the slice, array, range and `enumerate`
@@ -1308,8 +1318,8 @@ safety of every intermediate addition. It covers empty input and supports
 profiling, audit, and expanded-proof reverification.
 
 A loop's clauses read its pass count as `iterations`, and a Rust local of
-that name as `rust(iterations)`: in a Rust sidecar `rust(name)` names a
-program binding a Click name shadows, where a C sidecar writes `c(name)`
+that name as `program::iterations`: `program::name` names a program binding a
+Click name shadows, in Rust as in C
 ([`design/charon-trial/program-bindings`](https://github.com/clicklang/click/blob/master/design/charon-trial/program-bindings/bindings.click)).
 
 ## Slice iterator loops
@@ -1328,10 +1338,12 @@ The adapter retains Charon's native control flow, iterator calls, and `Option`
 branches. An iterator is held as the slice it still covers, the slice
 `iter.as_slice()` returns: its data and its length. `core`'s `slice::Iter`
 holds the same slice as a start and an end pointer. Each successful
-`next()` yields the element at `iter.as_slice()`, records its shared address
-in the returned option, and moves the slice on by one element before
-entering the Rust body. An exhausted iterator exits without a read,
-including for an empty slice.
+`next()` yields the element at `iter.as_slice()`, binds the loop variable to
+its shared address, and moves the slice on by one element before entering
+the Rust body; no `Option` or compiler temporary holds it, as for a range. A
+`match` on `next()` whose `Some(_)` arm binds nothing only moves the slice
+on. An exhausted iterator exits without a read, including for an empty
+slice.
 
 A proof reads a loop's iterator as `iter` inside that loop's clauses and
 phases, and as `loop(i).iter` anywhere, through Rust's own methods:
@@ -1424,19 +1436,19 @@ ranks the loop, and after it the exit guard gives `iter.start >= iter.end`.
 verifies counts over `u32`, `i32` `a..b` and `i64` ranges, the last byte a
 loop over `0..bytes.len()` reads, and nested ranges.
 
-An inclusive range `a..=b`, which the compiler builds with
-`RangeInclusive::new`, is read through `RangeInclusive`'s own `iter.start()`
-and `iter.end()`; its state also holds `iter_done`, whether it has yielded
-`b`, which its proofs still name while it awaits a Rust form.
-It yields while `iter_done == 0 and iter_start <= iter_end`; each iteration
-yields `iter_start` and then, as an ordinary branch of the loop body,
-advances it while `iter_start < iter_end` and sets `iter_done` at
-`iter_end`, so `iter_start` never passes the end, even at the type's
-maximum. `decreases iter_end - iter_start + 1 - iter_done` ranks the loop,
-and `total == iter_start + iter_done` is the count of values yielded
-([`design/charon-trial/inclusive-ranges`](https://github.com/clicklang/click/blob/master/design/charon-trial/inclusive-ranges/inclusive.click),
-including `0u8..=255`). `.rev()`, `.step_by()` and other range adapters
-remain later work.
+For an inclusive range `a..=b`, proofs use `iter.is_empty()` to tell
+whether there is another item, and `iter.start()` and `iter.end()` to
+read the bounds while the range is nonempty. A reversed range starts
+empty. A nonempty range becomes empty after yielding its endpoint, even
+when that endpoint is the largest value of the integer type.
+
+The counting proofs in
+[`design/charon-trial/inclusive-ranges`](https://github.com/clicklang/click/blob/master/design/charon-trial/inclusive-ranges/inclusive.click)
+rank the loop by the original length minus the number counted. While the
+range is nonempty, its start is the next value to count. Once it is
+empty, the count equals the original length. This also covers
+`0u8..=255`, whose count is 256. `.rev()`, `.step_by()` and other range
+adapters remain later work.
 
 ## Primitive unsigned conversions
 

@@ -22,21 +22,25 @@
 //! premise and no name a term carries depends on it.
 
 use crate::kernel::primitives::{
-    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerTerm, MachineTerm, Variable,
+    AlgebraicTerm, AlgebraicTermNode, IntegerTerm, MachineTerm, Variable,
 };
 use std::sync::Arc;
 
 /// The variable a freshly minted field value is, for all three field kinds. A
 /// value that is not a bare variable was not minted as an arbitrary model and
 /// is not registered.
-pub(crate) fn algebraic_value_variable(value: &AlgebraicValue) -> Option<Variable> {
-    match value {
-        AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => Some(*variable),
-        AlgebraicValue::Algebraic(AlgebraicTerm {
+pub(crate) fn algebraic_value_variable<'a>(
+    value: impl Into<crate::kernel::ResourceFieldValue<'a>>,
+) -> Option<Variable> {
+    match value.into() {
+        crate::kernel::ResourceFieldValue::Integer(IntegerTerm::Variable(variable)) => {
+            Some(*variable)
+        }
+        crate::kernel::ResourceFieldValue::Algebraic(AlgebraicTerm {
             node: AlgebraicTermNode::Variable(variable),
             ..
         }) => Some(*variable),
-        AlgebraicValue::Program(value) => {
+        crate::kernel::ResourceFieldValue::Program(value) => {
             match crate::kernel::spec::program_value_bitvector_term(value) {
                 Some(MachineTerm::Variable(variable)) => Some(variable),
                 _ => None,
@@ -187,7 +191,7 @@ pub(crate) fn model_field_surface(variable: Variable) -> Option<String> {
 #[derive(Clone, Debug)]
 pub(crate) struct PopulationEntryCount {
     pub(crate) family: Arc<str>,
-    pub(crate) anchor: crate::kernel::Pointer,
+    pub(crate) anchor: crate::kernel::Address,
     pub(crate) wildcards: usize,
     /// An exact member's arguments, anchor first, for the entry count of
     /// one member, `old(count(R(a, k)))`; `None` for a population's total.

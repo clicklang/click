@@ -6,7 +6,7 @@ use super::*;
 pub(in crate::kernel) enum ReadType {
     Pointer(ProgramType),
     Abstract,
-    PointerAddress,
+    IntegerAddress,
     Integer(MachineIntegerType),
 }
 
@@ -22,14 +22,14 @@ impl ReadType {
 
     pub(in crate::kernel) fn bytes(self) -> u32 {
         match self {
-            Self::Pointer(_) | Self::PointerAddress => C_POINTER_BYTE_WIDTH,
+            Self::Pointer(_) | Self::IntegerAddress => C_POINTER_BYTE_WIDTH,
             Self::Abstract => ABSTRACT_VALUE_WIDTH,
             Self::Integer(format) => format.program_type().byte_width(),
         }
     }
 }
 
-type Reads = imbl::HashMap<(SharedMemory, Pointer, ReadType), ProgramValue>;
+type Reads = imbl::HashMap<(SharedMemory, Address, ReadType), ProgramValue>;
 thread_local! {
     static READS: std::cell::RefCell<Option<Reads>> = const { std::cell::RefCell::new(None) };
 }
@@ -48,7 +48,7 @@ impl Drop for ReadScope {
     }
 }
 
-pub(super) fn record(memory: &Memory, address: &Pointer, value: &ProgramValue) {
+pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &ProgramValue) {
     if !READS.with(|reads| reads.borrow().is_some()) {
         return;
     }
@@ -72,7 +72,7 @@ pub(super) fn record(memory: &Memory, address: &Pointer, value: &ProgramValue) {
         reads.insert((memory.clone(), address.clone(), kind), value.clone());
         if matches!(kind, ReadType::Pointer(_)) {
             reads.insert(
-                (memory, address.clone(), ReadType::PointerAddress),
+                (memory, address.clone(), ReadType::IntegerAddress),
                 value.clone(),
             );
         }
@@ -83,8 +83,8 @@ pub(super) fn record(memory: &Memory, address: &Pointer, value: &ProgramValue) {
 /// to evaluate a read here. The preservation goal names its reads by lowering
 /// them before applying the primitive.
 pub(in crate::kernel) fn get(
-    memory: &Memory,
-    address: &Pointer,
+    memory: &SymbolicMemory,
+    address: &Address,
     kind: ReadType,
 ) -> Option<ProgramValue> {
     crate::instrumentation::record_deterministic_work(1);

@@ -261,6 +261,11 @@ impl<'a> BooleanOperandView<'a> {
         {
             return std::borrow::Cow::Borrowed(read);
         }
+        if let Self::Shared(root) = self
+            && let Some(value) = root.cached_condition_output()
+        {
+            return std::borrow::Cow::Borrowed(value);
+        }
         if let Some(value) = self.native_leaf() {
             return std::borrow::Cow::Borrowed(value);
         }
@@ -270,58 +275,55 @@ impl<'a> BooleanOperandView<'a> {
         std::borrow::Cow::Owned(KernelTermExport::condition(root).expect("Boolean operand"))
     }
 
-    pub(crate) fn read(self) -> Option<(SharedMemory, SharedPointerAddress)> {
+    pub(crate) fn read(self) -> Option<(ProgramPoint, SharedAddress)> {
         if let Self::Shared(root) = self
             && let KernelTermNode::BoolRead(read) = root.node()
         {
-            let (memory, address) = read.parts();
-            return Some((memory.clone(), address.clone()));
+            let (point, address) = read.parts();
+            return Some((point.clone(), address.clone()));
         }
         let ConditionTerm::BoolLoad(memory, address) = self.native_leaf()? else {
             return None;
         };
-        Some((memory.clone(), SharedPointerAddress::import(address)))
+        Some((memory.clone(), SharedAddress::import(address)))
     }
 
-    pub(crate) fn pointer_values(self) -> Option<[SharedPointerValue; 2]> {
+    pub(crate) fn pointer_values(self) -> Option<[SharedPointer; 2]> {
         if let Self::Shared(root) = self
-            && let KernelTermNode::PointerValueEqual(pair) = root.node()
+            && let KernelTermNode::PointerEqual(pair) = root.node()
         {
             return Some(pair.arguments().clone());
-        }
-        let ConditionTerm::PointerValueEqual(a, b) = self.native_leaf()? else {
-            return None;
-        };
-        Some([SharedPointerValue::import(a), SharedPointerValue::import(b)])
-    }
-
-    pub(crate) fn pointer_addresses(self) -> Option<[SharedPointerAddress; 2]> {
-        if let Self::Shared(root) = self
-            && let KernelTermNode::PointerEqual { arguments } = root.node()
-        {
-            return Some(arguments.clone());
         }
         let ConditionTerm::PointerEqual(a, b) = self.native_leaf()? else {
             return None;
         };
-        Some([
-            SharedPointerAddress::import(a),
-            SharedPointerAddress::import(b),
-        ])
+        Some([SharedPointer::import(a), SharedPointer::import(b)])
     }
 
-    pub(crate) fn pointer_offsets(self) -> Option<[SharedPointerOffset; 2]> {
+    pub(crate) fn pointer_addresses(self) -> Option<[SharedAddress; 2]> {
         if let Self::Shared(root) = self
-            && let KernelTermNode::PointerOffsetEqual { arguments } = root.node()
+            && let KernelTermNode::AddressEqual { arguments } = root.node()
         {
             return Some(arguments.clone());
         }
-        let ConditionTerm::PointerOffsetEqual(a, b) = self.native_leaf()? else {
+        let ConditionTerm::AddressEqual(a, b) = self.native_leaf()? else {
+            return None;
+        };
+        Some([SharedAddress::import(a), SharedAddress::import(b)])
+    }
+
+    pub(crate) fn pointer_offsets(self) -> Option<[SharedAddressOffset; 2]> {
+        if let Self::Shared(root) = self
+            && let KernelTermNode::AddressOffsetEqual { arguments } = root.node()
+        {
+            return Some(arguments.clone());
+        }
+        let ConditionTerm::AddressOffsetEqual(a, b) = self.native_leaf()? else {
             return None;
         };
         Some([
-            KernelPointerOffset::import(a),
-            KernelPointerOffset::import(b),
+            KernelAddressOffset::import(a),
+            KernelAddressOffset::import(b),
         ])
     }
 
@@ -589,10 +591,7 @@ impl KernelTermImport {
         crate::instrumentation::record_deterministic_work(1);
         let node = match condition {
             Old::BoolLoad(memory, address) => {
-                return KernelTerm::boolean_read(
-                    memory.clone(),
-                    SharedPointerAddress::import(address),
-                );
+                return KernelTerm::boolean_read(memory.clone(), SharedAddress::import(address));
             }
             Old::Overflows {
                 format,
@@ -604,22 +603,19 @@ impl KernelTermImport {
                 operation: *op,
                 arguments: [self.machine(*format, left), self.machine(*format, right)],
             },
-            Old::PointerValueEqual(a, b) => {
-                return KernelTerm::pointer_value_equal_raw([
-                    SharedPointerValue::import(a),
-                    SharedPointerValue::import(b),
+            Old::PointerEqual(a, b) => {
+                return KernelTerm::pointer_equal_raw([
+                    SharedPointer::import(a),
+                    SharedPointer::import(b),
                 ]);
             }
-            Old::PointerEqual(a, b) => Node::PointerEqual {
-                arguments: [
-                    SharedPointerAddress::import(a),
-                    SharedPointerAddress::import(b),
-                ],
+            Old::AddressEqual(a, b) => Node::AddressEqual {
+                arguments: [SharedAddress::import(a), SharedAddress::import(b)],
             },
-            Old::PointerOffsetEqual(a, b) => Node::PointerOffsetEqual {
+            Old::AddressOffsetEqual(a, b) => Node::AddressOffsetEqual {
                 arguments: [
-                    KernelPointerOffset::import(a),
-                    KernelPointerOffset::import(b),
+                    KernelAddressOffset::import(a),
+                    KernelAddressOffset::import(b),
                 ],
             },
             Old::Constant(value) => Node::BoolLiteral(*value),
@@ -690,8 +686,8 @@ impl KernelTermExport {
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
             Node::BoolRead(read) => {
-                let (memory, address) = read.parts();
-                Old::BoolLoad(memory.clone(), Box::new(address.export()?))
+                let (point, address) = read.parts();
+                Old::BoolLoad(point.clone(), Box::new(address.export()?))
             }
             Node::BoolOverflow {
                 format,
@@ -703,16 +699,16 @@ impl KernelTermExport {
                 left: Box::new(Self::machine(&arguments[0])?),
                 right: Box::new(Self::machine(&arguments[1])?),
             },
-            Node::PointerValueEqual(pair) => {
+            Node::PointerEqual(pair) => {
                 let [a, b] = pair.arguments();
-                Old::PointerValueEqual(Box::new(a.export()?), Box::new(b.export()?))
-            }
-            Node::PointerEqual { arguments: [a, b] } => {
                 Old::PointerEqual(Box::new(a.export()?), Box::new(b.export()?))
             }
-            Node::PointerOffsetEqual { arguments: [a, b] } => Old::PointerOffsetEqual(
-                Box::new(KernelPointerOffset::export(a)?),
-                Box::new(KernelPointerOffset::export(b)?),
+            Node::AddressEqual { arguments: [a, b] } => {
+                Old::AddressEqual(Box::new(a.export()?), Box::new(b.export()?))
+            }
+            Node::AddressOffsetEqual { arguments: [a, b] } => Old::AddressOffsetEqual(
+                Box::new(KernelAddressOffset::export(a)?),
+                Box::new(KernelAddressOffset::export(b)?),
             ),
             Node::BoolLiteral(value) => Old::Constant(*value),
             Node::Variable(variable) => Old::Variable(*variable),
@@ -904,12 +900,12 @@ mod tests {
     fn common_boolean_pointer_substitution_keeps_native_folding_policy() {
         let _session = crate::kernel::VerificationSession::enter();
         let from = Variable(971_020);
-        let pointer = Pointer::null();
+        let pointer = Address::null();
         let atom = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::PointerAddress(
-                Box::new(Pointer::symbolic(from)),
+            left: Box::new(MachineTerm::IntegerAddress(
+                Box::new(Address::symbolic(from)),
                 crate::kernel::AddressObjectClass::NONE,
             )),
             right: Box::new(MachineTerm::uint64_constant(0)),
@@ -945,16 +941,16 @@ mod tests {
     #[test]
     fn common_boolean_pointer_substitution_preserves_read_state() {
         let from = Variable(971_010);
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let source = ConditionTerm::BoolEqual(
             Box::new(ConditionTerm::BoolLoad(
-                memory.clone(),
-                Box::new(Pointer::symbolic(from)),
+                crate::kernel::ProgramPoint::at(&memory.clone()),
+                Box::new(Address::symbolic(from)),
             )),
             Box::new(ConditionTerm::Constant(true)),
         );
         let root = KernelTermImport::default().condition(&source);
-        let pointer = Pointer::symbolic(Variable(971_011));
+        let pointer = Address::symbolic(Variable(971_011));
         let actual = crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
             &root, from, &pointer,
         )
@@ -963,7 +959,10 @@ mod tests {
         assert_eq!(
             restored,
             ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::BoolLoad(memory, Box::new(pointer))),
+                Box::new(ConditionTerm::BoolLoad(
+                    crate::kernel::ProgramPoint::at(&memory),
+                    Box::new(pointer)
+                )),
                 Box::new(ConditionTerm::Constant(true)),
             )
         );
@@ -1009,9 +1008,9 @@ mod tests {
 
     #[test]
     fn boolean_view_borrows_exact_legacy_payload() {
-        let source = ConditionTerm::PointerEqual(
-            Box::new(Pointer::symbolic(Variable(964_091))),
-            Box::new(Pointer::symbolic(Variable(964_092))),
+        let source = ConditionTerm::AddressEqual(
+            Box::new(Address::symbolic(Variable(964_091))),
+            Box::new(Address::symbolic(Variable(964_092))),
         );
         // Test the explicit adapter independently of which condition families
         // have migrated to common producer nodes.

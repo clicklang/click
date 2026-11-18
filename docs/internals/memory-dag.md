@@ -10,10 +10,10 @@ change which C programs Click accepts.
 
 ## Representation
 
-`SharedMemory` is the stable identity of an interned `Memory` value. The
+`SharedMemory` is the stable identity of an interned `SymbolicMemory` value. The
 arena assigns dense identifiers. A separately stored `MemoryDerivation`
 describes the edge from an already-interned parent to a child state.
-Keeping derivations outside `Memory` means that equality, hashing, and ordering
+Keeping derivations outside `SymbolicMemory` means that equality, hashing, and ordering
 continue to describe memory values rather than the route used to produce them.
 
 Each map and set inside a state (`blocks`, `cells`, `union_cells`, the
@@ -30,10 +30,10 @@ a root, and otherwise compares elementwise, charging each compared entry to
 the deterministic work counters. Ordering stays lexicographic over entries.
 
 A rule applied at one address visits only the entries that can alias it.
-Every state collection is keyed by a `Pointer` (or a key that orders by
-one), `Pointer` orders by block first, and `PointerBlock` orders by variant,
+Every state collection is keyed by an `Address` (or a key that orders by
+one), `Address` orders by base first, and `AddressBase` orders by variant,
 so one block's entries are one key range, the `Symbolic` blocks are one range
-and the `Heap` and `Temporary` blocks come last. `PointerBlock::proven_distinct`
+and the `Heap` and `Temporary` blocks come last. `AddressBase::proven_distinct`
 separates a `Heap` or `Temporary` block from every other block except a
 `Symbolic` one, so an access into an allocation can alias only its own block
 and the symbolic range; any other access can alias at most the non-heap prefix
@@ -69,7 +69,7 @@ entry by entry; the recorded edges are unchanged. Because every result is
 derived from its base's canonical storage, a statement executed twice from
 one state (planned, then checked) is recognized as the base's recorded child
 before any structural lookup: the arena indexes each base's recorded children
-by content hash, and `Memory::eq_relative_to` compares the two results'
+by content hash, and `SymbolicMemory::eq_relative_to` compares the two results'
 changes from the base (`HashedOrdMap::eq_relative_to`, which diffs against the
 base and so walks only the changed paths). The answer is exact whatever the
 states share; only the cost depends on the sharing.
@@ -98,9 +98,9 @@ kinds:
 | `BlockDeclared` | A new non-havoc block entered the memory model. |
 | `ObjectInitializationRecorded` | Initialized-byte metadata was extended after writes already recorded in the DAG. Stored values are unchanged. |
 | `CellsForgotten` | Standalone cache projection used by bulk producers and symbolic-read reduction. Ordinary scalar program stores perform invalidation internally and record only `Store`. |
-| `HeapAllocationPending` | An allocation request has an unresolved base and extent but no successful storage yet. |
-| `HeapAllocated` | A fresh allocation identity and extent became live. |
-| `HeapFreed` | An allocation identity and extent stopped being live. |
+| `HeapAllocationPending` | An allocation request has an unresolved base and size but no successful storage yet. |
+| `HeapAllocated` | A fresh allocation identity and size became live. |
+| `HeapFreed` | An allocation identity and size stopped being live. |
 
 Entry states have no parent edge. Failed allocation returns to the existing
 pre-allocation identity instead of recording a backward edge.
@@ -163,7 +163,7 @@ cell map that has forgotten a store looks exactly like the cell map before
 that store. After `a[i] = 7; a[j] = 0;` the second write drops the possibly
 aliasing `a[i]` cell and the map is empty again, as it was at function entry.
 
-So `Memory` carries a `forgotten_from` mark: the interned identity of the
+So `SymbolicMemory` carries a `forgotten_from` mark: the interned identity of the
 state cached values were dropped from, part of equality, hashing, ordering
 and the interning key. A state means "the memory the mark denotes, with
 these cells known on top of it", so two executions reaching the same cells
@@ -203,7 +203,7 @@ onto these identities.
 
 Each point also records the memory the path had there and the steps the path
 took to reach it from its predecessor: `record_memory_derivation` adds each
-step to a log the executing `Memory` value carries (`pending_steps`, which is
+step to a log the executing `SymbolicMemory` value carries (`pending_steps`, which is
 not part of equality or the interning key and is never kept in the arena),
 and the next point takes the log. So a point's steps are the ones its own
 path took, even where the arena shares the resulting memory with another
@@ -425,7 +425,7 @@ queried footprint and read addresses. `BorrowPartitionRangeEvidence` retains
 the selected composition and both members. Its checker requires that exact
 authority to remain available, verifies the entire mutable range is contained
 by its member, checks both endpoints of the full read, and rejects overlap
-under current address equalities. Unbound views and view-only compositions
+under current integer address equalities. Unbound views and view-only compositions
 provide no such frame. Candidate indexes alone grant no separation, read
 permission, or native-object validity. The selected-member query avoids walking
 unrelated holdings or constructing pairwise separation facts.
@@ -443,10 +443,10 @@ bound substitution requires a full-width equality.
 
 `pointer_access_in_memory_range` selects the existing access rule for the
 range's domain. Native access still requires one whole element, proved
-membership and a nonwrapping byte extent. Cross-width or signed-only reasoning
+membership and a nonwrapping byte span. Cross-width or signed-only reasoning
 that cannot establish these conditions returns unknown or refuses the proof.
 It grants no permission by truncating a bound or weakening the kernel assertion.
-Loop effect frames and resource-body readable-memory facts keep native extents. Signed
+Loop effect frames and resource-body readable-memory facts keep native spans. Signed
 fold framing, iterated-element selection, allocation coverage and indexed
 certificates explicitly decline unsupported native inputs.
 

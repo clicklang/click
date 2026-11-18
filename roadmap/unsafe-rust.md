@@ -18,8 +18,8 @@ against C's.
 ## What carries over
 
 All three languages lower into one kernel. The pointer value (address,
-provenance and extent; see
-[pointer subobject extents](../design/pointer-subobject-extents.md)) and the
+provenance and bounds; see
+[pointer subobject bounds](../design/pointer-subobject-bounds.md)) and the
 `owns`/`views` permission resources are shared. These already match Rust:
 
 - provenance: a pointer reaches only the allocation it was derived from;
@@ -32,13 +32,13 @@ provenance and extent; see
 
 ## What unsafe Rust adds
 
-1. **Extent at formation.** A raw pointer derived through raw-pointer
+1. **Bounds at formation.** A raw pointer derived through raw-pointer
    operations (`&raw const s.a`, `ptr::addr_of!`, casts of a whole-struct
    pointer) may move within its allocation. Whether a raw pointer derived
    from a reference to a field may leave that field depends on the aliasing
    model: Stacked Borrows forbids it, Tree Borrows permits access within the
-   allocation. Click's member-extent rule is C's reading. The Rust frontend
-   must choose the extent the adopted model gives each formation instead of
+   allocation. Click's member-bounds rule is C's reading. The Rust frontend
+   must choose the bounds the adopted model gives each formation instead of
    applying C's rule. The pointer value already represents both.
 2. **The aliasing model.** Stacked Borrows / Tree Borrows define when `&mut`
    is exclusive, what writes through raw pointers do to outstanding
@@ -95,7 +95,7 @@ from, unless Click adopts Tree Borrows' rule for it.
 
 - A decision on the aliasing model, recorded in the Rust reference: Stacked
   Borrows, Tree Borrows, or a stated subset sound under both.
-- Raw pointers are formed with that model's extent. Both functions above
+- Raw pointers are formed with that model's bounds. Both functions above
   behave as the decision states, in fresh, expanded and rewritten checking.
 - A documented aliasing-model subset: which reference and raw-pointer
   interactions are supported, each with an accepting and a refusing

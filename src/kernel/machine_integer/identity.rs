@@ -127,7 +127,7 @@ impl IntegerOperationRangeBound {
         };
         let mut facts = forms
             .into_iter()
-            .map(|form| Proposition::ConditionIs(form, true))
+            .map(|form| Proposition::condition_is(form, true))
             .collect::<Vec<_>>();
         // 0 <= (x - y) is exactly y <= x. Retain a comparison view
         // when both observations have the same format, so a direct machine
@@ -245,19 +245,19 @@ pub(crate) fn machine_operation_of_integer_value(
 
 #[test]
 fn explicit_operation_identity_keeps_its_read_operands() {
-    use crate::kernel::{LoadKind, Memory, Pointer, ProgramValue, Variable};
+    use crate::kernel::{Address, LoadKind, ProgramValue, SymbolicMemory, Variable};
     let _session = crate::kernel::VerificationSession::enter();
     let format = MachineIntegerType::Int32;
     let x = MachineTerm::Variable(Variable(989_773));
     let y = MachineTerm::Variable(Variable(989_774));
-    let address = Pointer::symbolic(Variable(989_775));
+    let address = Address::symbolic(Variable(989_775));
     let stored = MachineTerm::logical_machine_binary(
         format,
         crate::kernel::MachineBinaryOp::Add,
         x.clone(),
         MachineTerm::constant(1),
     );
-    let memory = Memory::new().store(address.clone(), ProgramValue::Int32(stored));
+    let memory = SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(stored));
     let read = crate::kernel::canonical_form_of_load(
         crate::kernel::intern_memory_ref(&memory),
         address,
@@ -486,7 +486,7 @@ fn shared_operation_bounds_keep_legacy_overflow_authority_without_export() {
         bound: i32::MAX.into(),
         lower: false,
     };
-    let source = Proposition::ConditionIs(
+    let source = Proposition::condition_is(
         ConditionTerm::Overflows {
             format,
             op: OverflowOperation::Add,

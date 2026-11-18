@@ -36,7 +36,7 @@ fn float_read_construction_keeps_growing_shared_addresses_and_states() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut index =
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999920));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for i in 0..size {
             index = KernelTerm::machine_binary_shared(
                 MachineIntegerType::Int32,
@@ -46,9 +46,9 @@ fn float_read_construction_keeps_growing_shared_addresses_and_states() {
             memory = memory.with_block(format!("float-unrelated-{i}"), 8);
         }
         let memory = intern_memory(memory);
-        let address = SharedPointerAddress::new(
-            SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(999921))),
-            KernelPointerOffset::Int32Scaled {
+        let address = SharedAddress::new(
+            SharedAddressBase::import(&AddressBase::Symbolic(Variable(999921))),
+            KernelAddressOffset::Int32Scaled {
                 value: index,
                 byte_width: 4,
             }
@@ -58,15 +58,23 @@ fn float_read_construction_keeps_growing_shared_addresses_and_states() {
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let root = KernelTerm::float_read(format, memory.clone(), address.clone());
+                let root = KernelTerm::float_read(
+                    format,
+                    crate::kernel::ProgramPoint::at(&memory),
+                    address.clone(),
+                );
                 let KernelTermNode::FloatRead(read) = root.node() else {
                     panic!("read")
                 };
-                assert_eq!(read.parts().0.arena_id(), memory.arena_id());
+                assert_eq!(read.parts().0.shared_memory().arena_id(), memory.arena_id());
                 assert_eq!(read.parts().1, &address);
                 assert_eq!(
                     root,
-                    KernelTerm::float_read(format, memory.clone(), address.clone())
+                    KernelTerm::float_read(
+                        format,
+                        crate::kernel::ProgramPoint::at(&memory),
+                        address.clone()
+                    )
                 );
             });
             assert!(work <= 16, "size={size}, work={work}");

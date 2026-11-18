@@ -20,6 +20,8 @@ pub struct ProofCertificate {
     pub(super) steps: std::sync::Arc<Vec<ProofStep>>,
     // Presentation only: the checked C split proved this arm unreachable.
     pub(super) pruned_execution_arm: bool,
+    // Synthetic entry steps for replay when this arm is written under a proof `if`.
+    checked_branch_entry_steps: Option<u8>,
 }
 
 impl PartialEq for ProofCertificate {
@@ -93,7 +95,7 @@ pub enum ProofStep {
         start: ContractExpression,
         end: ContractExpression,
     },
-    /// `take`, `give`, `gather`, or `scatter` on iterated guarded ownership.
+    /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
     ConstructResource(ResourceClause),
     Witness(ProofWitness),
@@ -135,7 +137,7 @@ pub enum ProofStep {
         resource: ResourceClause,
         proof: Box<ProofCertificate>,
         /// The closing fold's proof of its one open body fact.
-        close_proof: Option<Box<ProofCertificate>>,
+        deferred_tail: bool,
     },
     If {
         condition: ClickProposition,
@@ -154,6 +156,7 @@ pub enum ProofStep {
         else_proof: Box<ProofCertificate>,
     },
     CallOutcomes {
+        payload_bindings: [Option<String>; 2],
         returned_proof: Box<ProofCertificate>,
         threw_proof: Box<ProofCertificate>,
     },
@@ -210,6 +213,7 @@ impl ProofCertificate {
         validate_certificate_tactics(tactics, &mut Vec::new())?;
         Ok(Self {
             pruned_execution_arm: false,
+            checked_branch_entry_steps: None,
             steps: std::sync::Arc::new(
                 tactics
                     .iter()
@@ -224,6 +228,7 @@ impl ProofCertificate {
         Self {
             steps: std::sync::Arc::new(Vec::new()),
             pruned_execution_arm: true,
+            checked_branch_entry_steps: None,
         }
     }
 
@@ -273,6 +278,7 @@ impl ProofCertificate {
         })?;
         let certificate = Self {
             pruned_execution_arm: false,
+            checked_branch_entry_steps: None,
             steps: std::sync::Arc::new(steps),
         };
         if certificate.contains_arithmetic_using() {
@@ -305,13 +311,23 @@ impl ProofCertificate {
     pub(super) fn from_validated_steps(steps: Vec<ProofStep>) -> Self {
         Self {
             pruned_execution_arm: false,
+            checked_branch_entry_steps: None,
             steps: std::sync::Arc::new(steps),
         }
     }
 
+    pub(super) fn with_checked_branch_entry_steps(mut self, count: u8) -> Self {
+        self.checked_branch_entry_steps = Some(count);
+        self
+    }
+
     pub fn to_proof_tactics(&self) -> Vec<ProofTactic> {
-        let mut tactics = Vec::with_capacity(self.steps.len());
-        for step in self.steps.iter() {
+        Self::steps_to_proof_tactics(self.steps())
+    }
+
+    fn steps_to_proof_tactics(steps: &[ProofStep]) -> Vec<ProofTactic> {
+        let mut tactics = Vec::with_capacity(steps.len());
+        for step in steps {
             // A loop's back edge closes as a function's exit does: a bundle
             // closed member by member, `have m by { ... }` for each and then
             // the bundle from those facts, is written as those `have`s, and
@@ -408,19 +424,7 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                 }
                 ProofStep::CloseInvariantsBy(proof)
                 | ProofStep::Have { proof, .. }
-                | ProofStep::Open {
-                    proof,
-                    close_proof: None,
-                    ..
-                } => pending.extend(proof.steps.iter()),
-                ProofStep::Open {
-                    proof,
-                    close_proof: Some(close_proof),
-                    ..
-                } => {
-                    pending.extend(proof.steps.iter());
-                    pending.extend(close_proof.steps.iter());
-                }
+                | ProofStep::Open { proof, .. } => pending.extend(proof.steps.iter()),
                 ProofStep::StepProved { step, proof } => {
                     pending.push(step);
                     match proof {
@@ -454,6 +458,7 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                 | ProofStep::CallOutcomes {
                     returned_proof: left_proof,
                     threw_proof: right_proof,
+                    ..
                 } => {
                     pending.extend(left_proof.steps.iter());
                     pending.extend(right_proof.steps.iter());
@@ -480,6 +485,7 @@ impl ProofCertificate {
         };
         Self {
             pruned_execution_arm: false,
+            checked_branch_entry_steps: None,
             steps: std::sync::Arc::new(
                 tactics
                     .iter()
@@ -576,11 +582,7 @@ impl ProofStep {
                         .map(Self::from_validated_tactic)
                         .collect(),
                 )),
-                close_proof: proof_open.close_proof.as_ref().map(|body| {
-                    Box::new(ProofCertificate::from_validated_steps(
-                        body.iter().map(Self::from_validated_tactic).collect(),
-                    ))
-                }),
+                deferred_tail: proof_open.deferred_tail,
             },
             ProofTactic::If(proof_if) => Self::If {
                 condition: proof_if.condition.clone(),
@@ -630,6 +632,7 @@ impl ProofStep {
                 )),
             },
             ProofTactic::CallOutcomes(proof_outcomes) => Self::CallOutcomes {
+                payload_bindings: proof_outcomes.payload_bindings.clone(),
                 returned_proof: Box::new(ProofCertificate::from_validated_steps(
                     proof_outcomes
                         .returned_tactics
@@ -918,12 +921,32 @@ impl ProofStep {
             Self::Open {
                 resource,
                 proof,
-                close_proof,
+                deferred_tail,
             } => ProofTactic::Open(ProofOpen {
                 resource: resource.clone(),
                 tactics: proof.to_proof_tactics(),
-                close_proof: close_proof.as_ref().map(|body| body.to_proof_tactics()),
+                deferred_tail: *deferred_tail,
             }),
+            Self::If {
+                ensuring,
+                then_proof,
+                else_proof,
+                ..
+            } if let (Some(then_entry), Some(else_entry)) = (
+                then_proof.checked_branch_entry_steps,
+                else_proof.checked_branch_entry_steps,
+            ) =>
+            {
+                ProofTactic::Branch(ProofBranch {
+                    ensuring: ensuring.clone(),
+                    then_tactics: ProofCertificate::steps_to_proof_tactics(
+                        &then_proof.steps()[usize::from(then_entry)..],
+                    ),
+                    else_tactics: ProofCertificate::steps_to_proof_tactics(
+                        &else_proof.steps()[usize::from(else_entry)..],
+                    ),
+                })
+            }
             Self::If {
                 condition,
                 ensuring,
@@ -954,9 +977,11 @@ impl ProofStep {
                 else_tactics: else_proof.to_proof_tactics(),
             }),
             Self::CallOutcomes {
+                payload_bindings,
                 returned_proof,
                 threw_proof,
             } => ProofTactic::CallOutcomes(ProofCallOutcomes {
+                payload_bindings: payload_bindings.clone(),
                 returned_tactics: returned_proof.to_proof_tactics(),
                 threw_tactics: threw_proof.to_proof_tactics(),
             }),
@@ -1277,17 +1302,9 @@ pub(super) fn validate_certificate_tactics(
                         unreachable!("tactic class and variant must agree")
                     };
                     path.push(CertificatePathSegment::OpenBody);
-                    validate_certificate_tactics(&proof_open.tactics, path)?;
+                    let result = validate_certificate_tactics(&proof_open.tactics, path);
                     path.pop();
-                    match &proof_open.close_proof {
-                        Some(close_proof) => {
-                            path.push(CertificatePathSegment::StepBody);
-                            let result = validate_certificate_tactics(close_proof, path);
-                            path.pop();
-                            result
-                        }
-                        None => Ok(()),
-                    }
+                    result
                 }
                 TacticClass::Control(ControlTactic::If) => {
                     let ProofTactic::If(proof_if) = tactic else {

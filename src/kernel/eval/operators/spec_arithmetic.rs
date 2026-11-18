@@ -51,7 +51,7 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
     if matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder) {
         if division == SpecDivision::CDefined {
             let zero = crate::kernel::machine_integer::range::constant_word(format, &0.into())?;
-            domain.push(Proposition::ConditionIs(
+            domain.push(Proposition::condition_is(
                 ConditionTerm::machine_compare(
                     format,
                     crate::kernel::CompareRelation::Equal,
@@ -184,7 +184,7 @@ fn apply_spec_shift_with_count_width(
     let mut domain = Vec::new();
     let mut require_false = |condition| {
         if PureFactContext::decide_intrinsically(&condition) != Some(false) {
-            domain.push(Proposition::ConditionIs(condition, false));
+            domain.push(Proposition::condition_is(condition, false));
         }
     };
     if !unsigned_count {
@@ -217,7 +217,7 @@ fn apply_spec_shift_with_count_width(
             left.clone(),
             constant(width.format(), 0),
         ));
-        domain.push(Proposition::ConditionIs(
+        domain.push(Proposition::condition_is(
             ConditionTerm::signed_shift_result_fits(width.format(), left.clone(), count.clone()),
             true,
         ));

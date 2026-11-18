@@ -5,31 +5,33 @@
 //! uses the shared kernel.
 
 use std::collections::{BTreeMap, BTreeSet};
+mod program_values;
+use crate::kernel::RetainedProgramValue;
+use program_values::ProgramValueBindings;
 use std::fmt;
 
 use crate::instrumentation::{self, TacticEvent, VerificationEvent};
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{
-    AlgebraicValue, BitvectorEqualityDerivationStep, CheckedFunctionExecution,
-    CheckedFunctionProposition, ComparisonOperator as KernelComparisonOperator,
-    CompositeResourceDefinition, ConditionOutcome, ConditionTerm, ExecutionBudget,
-    ExecutionEnvironment, ExecutionPureFact, ExecutionSemantics, ExecutionState, ExpressionOutcome,
-    FunctionContract, FunctionContractClaim, FunctionContractClaimKey, FunctionContractClaimTarget,
-    FunctionContractExecutionMode, FunctionExecutionCandidates, FunctionOutcome,
-    FunctionSpecification, LoopEarlyExit, LoopEffect, LoopEffectCheck, LoopEffectSpan,
-    LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit, MachineTerm, Memory, MemoryRange,
-    MemorySegment, Pointer, PointerBlock, PointerOffsetTerm, ProgramExpression, ProgramFunction,
-    ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,
-    PropositionDerivation, PureFactContext, Resource,
-    ResourceAccessMode as KernelResourceAccessMode, ResourceContext, ResourceContextValidityError,
-    ResourceFact, ResourceFamily, ResourceSpec, ResourceStateSource, ResourceTransferRole, Sort,
-    SpecAlgebraicExpression, SpecExpression, SpecMemory, SpecPredicateArgument, SpecProposition,
-    SpecResource, StatementOutcome, SymbolicExecution, Term, TerminationRefusal, Theorem,
-    UnsuitableCallback, Variable, VerifiedLoopRule,
-    VerifiedPureTheorem as KernelVerifiedPureTheorem, abstract_execution_state_for_join,
-    assume_universally_quantified_pure_implication, contract_refinement_context, int32,
-    loop_invariants_hold_at_entry, loop_preservation_contexts, program_assign,
-    program_condition_fact_memories, program_declare, program_do_while_preservation_contexts,
+    Address, AddressBase, AddressOffset, AlgebraicValue, BitvectorEqualityDerivationStep,
+    CheckedFunctionExecution, CheckedFunctionProposition,
+    ComparisonOperator as KernelComparisonOperator, CompositeResourceDefinition, ConditionOutcome,
+    ConditionTerm, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact, ExecutionSemantics,
+    ExecutionState, ExpressionOutcome, FunctionContract, FunctionContractClaim,
+    FunctionContractClaimKey, FunctionContractClaimTarget, FunctionContractExecutionMode,
+    FunctionExecutionCandidates, FunctionOutcome, FunctionSpecification, LoopEarlyExit, LoopEffect,
+    LoopEffectCheck, LoopEffectSpan, LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit,
+    MachineTerm, MemoryRange, MemorySegment, ProgramExpression, ProgramFunction, ProgramStatement,
+    ProgramType, ProgramValue, ProofObligation, Proposition, PropositionDerivation,
+    PureFactContext, Resource, ResourceAccessMode as KernelResourceAccessMode, ResourceContext,
+    ResourceContextValidityError, ResourceFact, ResourceFamily, ResourceSpec, ResourceStateSource,
+    ResourceTransferRole, Sort, SpecAlgebraicExpression, SpecExpression, SpecPoint,
+    SpecPredicateArgument, SpecProposition, SpecResource, StatementOutcome, SymbolicExecution,
+    SymbolicMemory, Term, TerminationRefusal, Theorem, UnsuitableCallback, Variable,
+    VerifiedLoopRule, VerifiedPureTheorem as KernelVerifiedPureTheorem,
+    abstract_execution_state_for_join, assume_universally_quantified_pure_implication,
+    contract_refinement_context, int32, loop_invariants_hold_at_entry, program_assign,
+    program_condition_fact_memories, program_declare,
     program_do_while_with_invariant_and_effect_checks, program_function,
     program_function_contract_entry_state, program_function_contract_refinement_arguments,
     program_function_contract_refinement_context, program_function_entry_state,
@@ -223,7 +225,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "outcomes",
     "by",
     "byte_offset",
-    "c",
     "call",
     "cases",
     "close_invariants",
@@ -256,12 +257,11 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "fn",
     "function",
     "gather",
-    "give",
     "have",
     "if",
     "import",
     "implies",
-    "rust",
+    "program",
     "in",
     "induct",
     "initialize",
@@ -315,7 +315,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "step_until",
     "struct",
     "tactic",
-    "take",
     "target",
     "theorem",
     "then",
@@ -456,7 +455,7 @@ pub(crate) fn loop_iterations_spelling(index: usize) -> String {
 
 /// The Rust accessors a proof reads a loop's iterator through, as written
 /// after `iter.`: a call such as `len()` or a public field such as `start`.
-pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 12] = [
+pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 13] = [
     "len()",
     "count",
     "as_slice()",
@@ -464,6 +463,7 @@ pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 12] = [
     "end",
     "start()",
     "end()",
+    "is_empty()",
     "v",
     "v.len()",
     "rem",
@@ -473,7 +473,7 @@ pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 12] = [
 
 /// The accessors of an iterator of `kind`, which are Rust's own:
 /// `ExactSizeIterator::len`, `slice::Iter::as_slice`, a `Range`'s `start`
-/// and `end` fields, a `RangeInclusive`'s `start()` and `end()`, and a
+/// and `end` fields, a `RangeInclusive`'s `start()`, `end()`, and `is_empty()`, and a
 /// `ChunksExact`'s fields `v`, `rem` and `chunk_size`.
 pub(crate) fn rust_iterator_accessors(
     kind: crate::languages::interface::RustIteratorKind,
@@ -484,7 +484,9 @@ pub(crate) fn rust_iterator_accessors(
             &["len()", "as_slice()", "count"]
         }
         crate::languages::interface::RustIteratorKind::Range => &["start", "end", "len()"],
-        crate::languages::interface::RustIteratorKind::RangeInclusive => &["start()", "end()"],
+        crate::languages::interface::RustIteratorKind::RangeInclusive => {
+            &["start()", "end()", "is_empty()"]
+        }
         // A crate's own iterator is a struct the program holds: a proof
         // reads its fields through the local, `iter.n`.
         crate::languages::interface::RustIteratorKind::User => &[],
@@ -514,6 +516,13 @@ pub(crate) fn rust_iterator_method(
         (K::Range, "end") => variable("end"),
         (K::RangeInclusive, "start()") => variable("start"),
         (K::RangeInclusive, "end()") => variable("end"),
+        (K::RangeInclusive, "is_empty()") => {
+            return proposition_bool_value(ClickProposition::Comparison {
+                left: ContractExpression::ProgramExpression(variable("start")),
+                operator: ComparisonOperator::GreaterThan,
+                right: ContractExpression::ProgramExpression(variable("end")),
+            });
+        }
         (K::Range, "len()") => {
             ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
         }
@@ -613,8 +622,7 @@ pub(crate) fn loop_iterator_bindings(
 }
 
 /// Whether a bare `name` is a Click value, `result` or a loop's
-/// `iterations`, so a program binding of that name is written `c(name)`, or
-/// `rust(name)` for a Rust source.
+/// `iterations`, so a program binding of that name is written `program::name`.
 pub(crate) fn is_click_value_name(name: impl Into<crate::kernel::BindingName>) -> bool {
     let name = name.into();
     let Some(name) = name.named() else {
@@ -2172,33 +2180,30 @@ pub enum ResourceClause {
 /// A proof step on iterated guarded ownership.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IteratedTactic {
-    /// `take(base[a..b]);` moves one element out of the iterated fact whose
-    /// elements live at `base`.
-    Take(IteratedElement),
-    /// `give(base[a..b]);` moves one element back.
-    Give(IteratedElement),
+    /// `unfold(resource(args)[i]);` opens one slot of an exposed clause.
+    UnfoldSlot(Box<IteratedSlot>),
+    /// `fold(resource(args)[i]);` restores that slot.
+    FoldSlot(Box<IteratedSlot>),
     /// `gather(resource(...));` forms the named resource's iterated fact.
     Gather(ResourceClause),
     /// `scatter(resource(...));` dissolves it.
     Scatter(ResourceClause),
 }
 
-/// A current range or a range through an explicitly selected saved pointer.
+/// One index in a resource's exposed iterated clause. A saved point selects
+/// the resource arguments only; the index and guard use the current state.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IteratedElement {
-    Current(ContractSegment),
-    SavedBase {
-        base: ContractExpression,
-        start: ContractExpression,
-        end: ContractExpression,
-    },
+pub struct IteratedSlot {
+    resource: ResourceClause,
+    point: Option<ProgramPointSelector>,
+    index: ContractExpression,
 }
 
 impl IteratedTactic {
     pub fn name(&self) -> &'static str {
         match self {
-            Self::Take(_) => "take",
-            Self::Give(_) => "give",
+            Self::UnfoldSlot(_) => "unfold",
+            Self::FoldSlot(_) => "fold",
             Self::Gather(_) => "gather",
             Self::Scatter(_) => "scatter",
         }
@@ -2229,7 +2234,7 @@ pub struct ResourceInstanceBinding {
     identity: Variable,
     children: Vec<String>,
     schema: Option<crate::kernel::ResourceFieldSchema>,
-    fields: Option<crate::kernel::ResourceArguments>,
+    fields: Option<crate::kernel::ResourceFieldValues>,
     /// Present only on an explicit proof-side resource construction.
     fold_fields: Option<Vec<(String, ContractExpression)>>,
     /// Explicit child slot, surface name, and instance identity. Shared to
@@ -3066,9 +3071,14 @@ pub(crate) fn collect_current_contract_expression_variables(
         | ContractExpression::ProgramExpression(expression) => {
             collect_program_expression_variables(expression, names);
         }
+        // A `program::name` base is skipped like a bare `program::name`: its
+        // lowered C form names the same binding, not a Click value such as
+        // the contract `result`.
         ContractExpression::Field { base, lowered, .. } => {
             collect_current_contract_expression_variables(base, names);
-            collect_program_expression_variables(lowered, names);
+            if !matches!(base.as_ref(), ContractExpression::ProgramBinding(_)) {
+                collect_program_expression_variables(lowered, names);
+            }
         }
         ContractExpression::ArrayIndex {
             base,
@@ -3080,12 +3090,14 @@ pub(crate) fn collect_current_contract_expression_variables(
             for index in indexes {
                 collect_current_contract_expression_variables(index, names);
             }
-            collect_program_expression_variables(lowered, names);
+            if !matches!(base.as_ref(), ContractExpression::ProgramBinding(_)) {
+                collect_program_expression_variables(lowered, names);
+            }
         }
         ContractExpression::Binding(name) => {
             names.insert(name.clone());
         }
-        ContractExpression::CBinding(_) | ContractExpression::ResourceWildcard => {}
+        ContractExpression::ProgramBinding(_) | ContractExpression::ResourceWildcard => {}
         ContractExpression::ResourceCount(resource) => {
             collect_current_resource_clause_variables(resource, names);
         }
@@ -3265,7 +3277,7 @@ pub enum SurfaceTerm {
         binder_index: usize,
     },
     /// A bare source-level name whose Click type is resolved from its lexical
-    /// environment. Unlike `CBinding`, this can denote either a C value or a
+    /// environment. Unlike `ProgramBinding`, this can denote either a C value or a
     /// specification-only value such as an algebraic datatype.
     Binding(String),
     /// Exhaustive elimination of an algebraic value. Its arms may produce a
@@ -3307,11 +3319,12 @@ pub enum SurfaceTerm {
         /// `base` is evaluated in a different state from the field value.
         offset_bytes: u32,
     },
-    /// A binding from the verified C function's lexical environment.
+    /// `program::name`: a binding from the verified program function's
+    /// lexical environment, in any source language.
     ///
     /// This is distinct from contract built-ins such as bare `result`, even
-    /// when the C binding has the same source name.
-    CBinding(String),
+    /// when the program binding has the same source name.
+    ProgramBinding(String),
     /// The authoritative population count of one instantiated counted
     /// resource family. This expression is only meaningful while the
     /// family's population body is in scope.
@@ -3426,8 +3439,8 @@ pub(crate) use binary_contract_expression;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickArrayRef {
-    memory: Memory,
-    pointer: Pointer,
+    point: crate::kernel::ProgramPoint,
+    pointer: Address,
     element_type: ProgramType,
 }
 
@@ -3437,13 +3450,13 @@ type ClickArrayRefs = BTreeMap<String, ClickArrayRef>;
 /// references, as `contract_environment_at_state` builds them.
 #[derive(Clone, Copy)]
 struct ContractEnvironment<'a> {
-    values: &'a BTreeMap<String, ProgramValue>,
+    values: &'a ProgramValueBindings,
     array_refs: &'a ClickArrayRefs,
     parameters: ParameterBinding<'a>,
 }
 
 impl<'a> ContractEnvironment<'a> {
-    fn new(values: &'a BTreeMap<String, ProgramValue>, array_refs: &'a ClickArrayRefs) -> Self {
+    fn new(values: &'a ProgramValueBindings, array_refs: &'a ClickArrayRefs) -> Self {
         Self {
             values,
             array_refs,
@@ -3505,23 +3518,23 @@ fn surface_parameter_binding(binding: &crate::kernel::BindingName) -> crate::ker
     }
 }
 
-/// How many recorded memories on each side of a load's own the raiser
-/// checks for it.
-const MEMORY_POINTS_NEAR: usize = 4;
-
 /// The identity of a symbolic model-field value, independent of its carrier.
-fn model_field_variable(value: &crate::kernel::AlgebraicValue) -> Option<crate::kernel::Variable> {
-    use crate::kernel::{AlgebraicTermNode, AlgebraicValue, MachineTerm};
-    match value {
-        AlgebraicValue::Algebraic(term) => match term.node {
+fn model_field_variable<'a>(
+    value: impl Into<crate::kernel::ResourceFieldValue<'a>>,
+) -> Option<crate::kernel::Variable> {
+    use crate::kernel::{AlgebraicTermNode, MachineTerm};
+    match value.into() {
+        crate::kernel::ResourceFieldValue::Algebraic(term) => match term.node {
             AlgebraicTermNode::Variable(variable) => Some(variable),
             _ => None,
         },
-        AlgebraicValue::Program(ProgramValue::Parameter(term)) => match term.node {
-            AlgebraicTermNode::Variable(variable) => Some(variable),
-            _ => None,
-        },
-        AlgebraicValue::Program(
+        crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(term)) => {
+            match term.node {
+                AlgebraicTermNode::Variable(variable) => Some(variable),
+                _ => None,
+            }
+        }
+        crate::kernel::ResourceFieldValue::Program(
             crate::kernel::integer_c_value!(MachineTerm::Variable(variable)),
         ) => Some(*variable),
         _ => None,
@@ -3554,11 +3567,17 @@ type ReadEventNames<T> =
 #[derive(Clone, Default)]
 struct RecordedHistoryMark(Option<std::sync::Arc<RecordedStateChange>>);
 
+type RecordedCallResults = crate::persistent::PersistentMap<usize, RetainedProgramValue>;
+
 /// Points one path recorded at a range of regions, with their call results.
 #[derive(Clone, Default)]
 struct RecordedRegionPoints {
-    retained_states: Vec<(ProgramPointSelector, ExecutionState)>,
-    call_results: Vec<(usize, ProgramValue)>,
+    retained_states: Vec<(
+        ProgramPointSelector,
+        ExecutionState,
+        Option<RecordedCallResults>,
+    )>,
+    call_results: Vec<(usize, RetainedProgramValue)>,
 }
 
 #[derive(Clone)]
@@ -3617,34 +3636,37 @@ struct RecordedStates {
     /// nearer state names is spelled at such a point, from that local.
     /// Filled and checked as `value_points` is.
     pointer_points: crate::persistent::PersistentMap<
-        (crate::kernel::PointerBlock, crate::kernel::BindingName),
+        (crate::kernel::AddressBase, crate::kernel::BindingName),
         ProgramPointSelector,
     >,
     /// Allocation results keep the region that introduced them, independently
     /// of later pointer reads or assignments to the result local.
-    allocation_results: crate::persistent::PersistentMap<crate::kernel::Pointer, CodeRegionRef>,
+    allocation_results: crate::persistent::PersistentMap<crate::kernel::Address, CodeRegionRef>,
     /// Values produced at call exits, independent of destination locals.
-    call_results: crate::persistent::PersistentMap<usize, ProgramValue>,
+    call_results: RecordedCallResults,
+    /// Prelowered result steps retain their result table at each citable
+    /// state. An `at` expression selects a table by its program point.
+    call_result_snapshots: imbl::OrdMap<ProgramPointSelector, RecordedCallResults>,
     /// The points inside a loop that left at several places, by the loop
     /// and its number of leaving paths: each path recorded the point at its
     /// own state, so after the loop the name has no one state.
     ambiguous_exit_points: crate::persistent::PersistentMap<ProgramPointSelector, (usize, usize)>,
     call_result_points: crate::persistent::PersistentMap<(u64, usize), ()>,
-    read_event_results: crate::persistent::PersistentMap<(usize, usize), ProgramValue>,
+    read_event_results: crate::persistent::PersistentMap<(usize, usize), RetainedProgramValue>,
     read_event_counts: crate::persistent::PersistentMap<usize, usize>,
     read_event_names: ReadEventNames<ProgramValue>,
     read_event_scalar_names: ReadEventNames<crate::kernel::MachineTerm>,
-    read_event_pointer_names: ReadEventNames<crate::kernel::Pointer>,
+    read_event_pointer_names: ReadEventNames<crate::kernel::Address>,
     /// The call that produced each algebraic value a call returned, a Rust
     /// enum's: the value is spelled `<region>.result`.
     algebraic_call_results: crate::persistent::PersistentMap<crate::kernel::AlgebraicTerm, usize>,
     /// The call that produced each pointer a call returned, by the
     /// pointer's address: the value is spelled `<region>.result`, which
     /// lowers to the exact returned value.
-    pointer_call_results: crate::persistent::PersistentMap<crate::kernel::Pointer, usize>,
+    pointer_call_results: crate::persistent::PersistentMap<crate::kernel::Address, usize>,
     /// Each exited loop's pass count, the head's `iterations`, which the
     /// facts past the loop state over: spelled `loop(i).iterations`.
-    loop_iterations: crate::persistent::PersistentMap<usize, crate::kernel::IntegerTerm>,
+    loop_iterations: crate::persistent::PersistentMap<usize, crate::kernel::KernelTerm>,
     /// The loop whose pass count each variable is: one lookup spells it.
     loop_iteration_variables: crate::persistent::PersistentMap<crate::kernel::Variable, usize>,
     /// The recorded point at which each scalar model-field value was first
@@ -3669,7 +3691,7 @@ struct RecordedStates {
     cell_points: crate::persistent::PersistentMap<(u64, usize), ProgramPointSelector>,
     /// The memory of the state inserted last, against which the next insert
     /// finds the cells it changed.
-    last_memory: Option<crate::kernel::Memory>,
+    last_memory: Option<crate::kernel::SymbolicMemory>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -3705,7 +3727,8 @@ impl Default for RecordedStates {
             value_points: crate::persistent::PersistentMap::default(),
             pointer_points: crate::persistent::PersistentMap::default(),
             allocation_results: crate::persistent::PersistentMap::default(),
-            call_results: crate::persistent::PersistentMap::default(),
+            call_results: RecordedCallResults::default(),
+            call_result_snapshots: imbl::OrdMap::new(),
             ambiguous_exit_points: crate::persistent::PersistentMap::default(),
             call_result_points: crate::persistent::PersistentMap::default(),
             read_event_results: Default::default(),
@@ -3774,84 +3797,6 @@ fn recorded_state_node_allocations() -> usize {
     RECORDED_STATE_NODE_ALLOCATIONS.with(std::cell::Cell::get)
 }
 
-/// A lazy bounded traversal of the persistent state tree. Each visited
-/// node consumes work and checks cancellation, including tombstones/exits.
-struct RecordedStateRange<'a> {
-    stack: Vec<&'a RecordedStateNode>,
-    lower: ProgramPointSelector,
-    upper: ProgramPointSelector,
-    descending: bool,
-    stopped: bool,
-}
-
-impl<'a> RecordedStateRange<'a> {
-    fn new(
-        root: Option<&'a RecordedStateNode>,
-        lower: ProgramPointSelector,
-        upper: ProgramPointSelector,
-        descending: bool,
-    ) -> Self {
-        let mut result = Self {
-            stack: Vec::new(),
-            lower,
-            upper,
-            descending,
-            stopped: false,
-        };
-        result.seek(root);
-        result
-    }
-
-    fn seek(&mut self, mut node: Option<&'a RecordedStateNode>) {
-        while let Some(current) = node {
-            if crate::instrumentation::deadline_exceeded() {
-                self.stopped = true;
-                self.stack.clear();
-                return;
-            }
-            if current.selector < self.lower {
-                node = current.right.as_deref();
-            } else if current.selector > self.upper {
-                node = current.left.as_deref();
-            } else {
-                self.stack.push(current);
-                node = if self.descending {
-                    current.right.as_deref()
-                } else {
-                    current.left.as_deref()
-                };
-            }
-        }
-    }
-}
-
-impl<'a> Iterator for RecordedStateRange<'a> {
-    type Item = (&'a ProgramPointSelector, &'a ExecutionState);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while !self.stopped {
-            if crate::instrumentation::deadline_exceeded() {
-                self.stopped = true;
-                self.stack.clear();
-                return None;
-            }
-            let node = self.stack.pop()?;
-            self.seek(if self.descending {
-                node.left.as_deref()
-            } else {
-                node.right.as_deref()
-            });
-            if self.stopped {
-                return None;
-            }
-            if let Some(state) = &node.state {
-                return Some((&node.selector, state));
-            }
-        }
-        None
-    }
-}
-
 impl RecordedStates {
     fn record_effect(&mut self, effect: Option<&std::sync::Arc<crate::kernel::RegionFootprint>>) {
         if let Some(effect) = effect {
@@ -3894,7 +3839,7 @@ impl RecordedStates {
         }
         let before_state = self.get(&before).ok_or("missing footprint entry")?;
         let after_state = self.get(&after).ok_or("missing footprint exit")?;
-        let memory_is = |a: &crate::kernel::Memory, b: &crate::kernel::Memory| {
+        let memory_is = |a: &crate::kernel::SymbolicMemory, b: &crate::kernel::SymbolicMemory| {
             crate::kernel::intern_memory_ref(a) == crate::kernel::intern_memory_ref(b)
         };
         let covered = if start == end {
@@ -4112,11 +4057,11 @@ impl RecordedStates {
     }
 
     fn record_read_events(&mut self, index: usize, facts: &crate::kernel::ExecutionFacts) {
-        self.record_read_event_values(
+        self.record_read_retained_event_values(
             index,
             facts.iter().filter_map(|fact| {
                 crate::instrumentation::record_deterministic_work(1);
-                fact.volatile_read_result()
+                fact.volatile_read_retained_result().cloned()
             }),
         );
     }
@@ -4126,11 +4071,19 @@ impl RecordedStates {
         index: usize,
         values: impl Iterator<Item = &'a ProgramValue>,
     ) {
+        self.record_read_retained_event_values(index, values.map(|value| value.clone().into()));
+    }
+
+    fn record_read_retained_event_values(
+        &mut self,
+        index: usize,
+        values: impl Iterator<Item = crate::kernel::ExecutionValue>,
+    ) {
         // Only this completed statement's output is visited, never prior facts.
         for event in 0..self.read_event_counts.get(&index).copied().unwrap_or(0) {
             crate::instrumentation::record_deterministic_work(1);
             let key = (index, event);
-            if let Some(value) = self.read_event_results.get(&key).cloned() {
+            if let Some(value) = self.read_event_native(&key).cloned() {
                 self.read_event_results.remove(&key);
                 Self::remove_read_event_name(&mut self.read_event_names, &value, key);
                 match &value {
@@ -4140,7 +4093,7 @@ impl RecordedStates {
                     ProgramValue::Pointer(pointer) => {
                         Self::remove_read_event_name(
                             &mut self.read_event_pointer_names,
-                            pointer.pointer(),
+                            pointer.address(),
                             key,
                         );
                     }
@@ -4152,7 +4105,8 @@ impl RecordedStates {
         for value in values {
             crate::instrumentation::record_deterministic_work(1);
             let key = (index, count);
-            self.read_event_results.insert(key, value.clone());
+            let retained = RetainedProgramValue::from(value);
+            let value = retained.native_compat();
             Self::add_read_event_name(&mut self.read_event_names, value, key);
             match value {
                 ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
@@ -4161,12 +4115,13 @@ impl RecordedStates {
                 ProgramValue::Pointer(pointer) => {
                     Self::add_read_event_name(
                         &mut self.read_event_pointer_names,
-                        pointer.pointer(),
+                        pointer.address(),
                         key,
                     );
                 }
                 _ => {}
             }
+            self.read_event_results.insert(key, retained);
             count += 1;
         }
         if count == 0 {
@@ -4178,8 +4133,7 @@ impl RecordedStates {
 
     fn read_event_values(&self, index: usize) -> impl Iterator<Item = &ProgramValue> {
         (0..self.read_event_counts.get(&index).copied().unwrap_or(0)).map(move |event| {
-            self.read_event_results
-                .get(&(index, event))
+            self.read_event_native(&(index, event))
                 .expect("recorded read")
         })
     }
@@ -4199,13 +4153,33 @@ impl RecordedStates {
         Some(self.read_event_region(index, event))
     }
 
-    fn read_event_naming_pointer(&self, value: &crate::kernel::Pointer) -> Option<CodeRegionRef> {
+    fn read_event_naming_pointer(&self, value: &crate::kernel::Address) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let &(index, event) = self.read_event_pointer_names.get(value)?.last()?;
         Some(self.read_event_region(index, event))
     }
 
     fn region_result_value(&self, region: &CodeRegionRef) -> Result<ProgramValue, String> {
+        self.region_result_value_at(region, None)
+    }
+
+    fn call_results_at(&self, selector: &ProgramPointSelector) -> Option<&RecordedCallResults> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.call_result_snapshots
+            .get(&self.recorded_spelling(selector.clone()))
+    }
+
+    fn records_call_snapshots(&self) -> bool {
+        self.source_layout
+            .as_ref()
+            .is_some_and(lowering::SourceExecutionLayout::snapshots_step_results)
+    }
+
+    fn region_result_value_at(
+        &self,
+        region: &CodeRegionRef,
+        selector: Option<&ProgramPointSelector>,
+    ) -> Result<ProgramValue, String> {
         if let CodeRegionRef::Path(steps) = region
             && let Some((SourcePathStep::ReadEvent(event), parent)) = steps.split_last()
         {
@@ -4214,8 +4188,7 @@ impl RecordedStates {
                 _ => self.result_region_index(&CodeRegionRef::Path(parent.to_vec()))?,
             };
             return self
-                .read_event_results
-                .get(&(index, *event))
+                .read_event_native(&(index, *event))
                 .cloned()
                 .ok_or_else(|| {
                     format!(
@@ -4225,13 +4198,32 @@ impl RecordedStates {
                 });
         }
         let index = self.result_region_index(region)?;
-        if let Some(result) = self.call_results.get(&index) {
+        if let Some(selector) = selector
+            && self.records_call_snapshots()
+            && self
+                .source_layout
+                .as_ref()
+                .is_some_and(|layout| layout.call_number(index).is_some())
+        {
+            return self
+                .call_results_at(selector)
+                .and_then(|results| results.get(&index))
+                .map(RetainedProgramValue::native_compat)
+                .cloned()
+                .ok_or_else(|| {
+                    format!(
+                        "`{}.result` has no recorded non-void result at `{}`",
+                        diagnostics::describe_code_region_ref(region),
+                        diagnostics::describe_program_point_selector(selector)
+                    )
+                });
+        }
+        if let Some(result) = self.call_result_native(&index) {
             return Ok(result.clone());
         }
         if self.read_event_counts.get(&index) == Some(&1) {
             return Ok(self
-                .read_event_results
-                .get(&(index, 0))
+                .read_event_native(&(index, 0))
                 .expect("recorded read")
                 .clone());
         }
@@ -4279,9 +4271,11 @@ impl RecordedStates {
                 && seen.insert(entry.selector.clone())
                 && let Some(state) = self.get(&entry.selector)
             {
-                points
-                    .retained_states
-                    .push((entry.selector.clone(), state.clone()));
+                points.retained_states.push((
+                    entry.selector.clone(),
+                    state.clone(),
+                    self.call_result_snapshots.get(&entry.selector).cloned(),
+                ));
                 if *kind == ProgramPointKind::Exit
                     && let Some(value) = self.call_results.get(index)
                 {
@@ -4299,7 +4293,7 @@ impl RecordedStates {
     /// read of one is refused naming the paths.
     fn record_ambiguous_exit_points(&mut self, loop_index: usize, paths: &[RecordedRegionPoints]) {
         for points in paths {
-            for (selector, _) in &points.retained_states {
+            for (selector, _, _) in &points.retained_states {
                 crate::instrumentation::record_deterministic_work(1);
                 self.ambiguous_exit_points
                     .insert(selector.clone(), (loop_index, paths.len()));
@@ -4323,56 +4317,106 @@ impl RecordedStates {
     /// Records points another path recorded, as `recorded_since` returned
     /// them.
     fn record_region_points(&mut self, points: &RecordedRegionPoints) {
-        for (selector, state) in &points.retained_states {
+        for (selector, state, results) in &points.retained_states {
             self.insert(selector.clone(), state.clone());
+            self.set_call_result_snapshot(selector, results.clone());
         }
         for (index, value) in &points.call_results {
-            self.record_call_result(*index, Some(value.clone()));
+            self.record_retained_call_result(*index, Some(value.clone()));
         }
     }
 
+    fn set_call_result_snapshot(
+        &mut self,
+        selector: &ProgramPointSelector,
+        results: Option<RecordedCallResults>,
+    ) {
+        if let Some(results) = results {
+            self.call_result_snapshots.insert(selector.clone(), results);
+        } else {
+            self.call_result_snapshots.remove(selector);
+        }
+    }
+
+    /// Some transition certificates expose the return value separately
+    /// from the state recorded at the call's exit.
+    fn record_call_transition_result(&mut self, index: usize, value: RetainedProgramValue) {
+        if self.records_call_snapshots() {
+            let exit = ProgramPointSelector::from(ProgramPointRef {
+                region: CodeRegionRef::Region(index),
+                kind: ProgramPointKind::Exit,
+            });
+            if let Some(results) = self.call_result_snapshots.get_mut(&exit) {
+                results.insert(index, value.clone());
+            }
+        }
+        self.record_retained_call_result(index, Some(value));
+    }
+
     fn record_call_result(&mut self, index: usize, value: Option<ProgramValue>) {
+        self.record_retained_call_result(index, value.map(RetainedProgramValue::from));
+    }
+
+    fn call_result_native(&self, index: &usize) -> Option<&ProgramValue> {
+        self.call_results
+            .get(index)
+            .map(RetainedProgramValue::native_compat)
+    }
+
+    fn read_event_native(&self, key: &(usize, usize)) -> Option<&ProgramValue> {
+        self.read_event_results
+            .get(key)
+            .map(RetainedProgramValue::native_compat)
+    }
+
+    fn record_retained_call_result(&mut self, index: usize, value: Option<RetainedProgramValue>) {
         crate::instrumentation::record_deterministic_work(1);
         // A pointer-sized integer is named by its numeric value.
         if let Some(ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term)) = self
-            .call_results
-            .get(&index)
+            .call_result_native(&index)
             .map(ProgramValue::numeric_value)
         {
             self.call_result_points
                 .remove(&(crate::kernel::held_term_fingerprint(term), index));
         }
-        if let Some(ProgramValue::Parameter(term)) = self.call_results.get(&index)
+        if let Some(ProgramValue::Parameter(term)) = self
+            .call_results
+            .get(&index)
+            .map(RetainedProgramValue::native_compat)
             && self.algebraic_call_results.get(term.as_ref()) == Some(&index)
         {
             self.algebraic_call_results.remove(term.as_ref());
         }
-        if let Some(ProgramValue::Pointer(pointer)) = self.call_results.get(&index)
-            && self.pointer_call_results.get(pointer.pointer()) == Some(&index)
+        if let Some(ProgramValue::Pointer(pointer)) = self
+            .call_results
+            .get(&index)
+            .map(RetainedProgramValue::native_compat)
+            && self.pointer_call_results.get(pointer.address()) == Some(&index)
         {
-            self.pointer_call_results.remove(pointer.pointer());
+            self.pointer_call_results.remove(pointer.address());
         }
         self.call_results.remove(&index);
-        if let Some(value) = value.filter(|value| *value != ProgramValue::Void) {
+        if let Some(value) = value.filter(|value| value.native_compat() != &ProgramValue::Void) {
+            let native = value.native_compat();
             if let ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) =
-                value.numeric_value()
+                native.numeric_value()
             {
                 self.call_result_points
                     .insert((crate::kernel::held_term_fingerprint(term), index), ());
             }
             // The first call to produce an algebraic value names it.
-            if let ProgramValue::Parameter(term) = &value
+            if let ProgramValue::Parameter(term) = native
                 && self.algebraic_call_results.get(term.as_ref()).is_none()
             {
                 self.algebraic_call_results
                     .insert(term.as_ref().clone(), index);
             }
             // So does the first call to return a pointer.
-            if let ProgramValue::Pointer(pointer) = &value
-                && self.pointer_call_results.get(pointer.pointer()).is_none()
+            if let ProgramValue::Pointer(pointer) = native
+                && self.pointer_call_results.get(pointer.address()).is_none()
             {
                 self.pointer_call_results
-                    .insert(pointer.pointer().clone(), index);
+                    .insert(pointer.address().clone(), index);
             }
             self.call_results.insert(index, value);
         }
@@ -4380,20 +4424,30 @@ impl RecordedStates {
 
     /// Records the pass count `iterations` of loop `loop_index`'s head,
     /// which the facts of a path past the loop state over.
+    #[cfg(test)]
     pub(crate) fn record_loop_iterations(
         &mut self,
         loop_index: usize,
         iterations: &crate::kernel::IntegerTerm,
     ) {
-        if let Some(crate::kernel::IntegerTerm::Variable(prior)) =
-            self.loop_iterations.get(&loop_index)
+        let root = crate::kernel::KernelTermImport::default().integer(&iterations.clone().into());
+        self.record_loop_iterations_root(loop_index, root);
+    }
+
+    pub(crate) fn record_loop_iterations_root(
+        &mut self,
+        loop_index: usize,
+        iterations: crate::kernel::KernelTerm,
+    ) {
+        if let Some(prior) = self.loop_iterations.get(&loop_index)
+            && let crate::kernel::KernelTermNode::Variable(prior) = prior.node()
         {
             self.loop_iteration_variables.remove(prior);
         }
-        if let crate::kernel::IntegerTerm::Variable(variable) = iterations {
+        if let crate::kernel::KernelTermNode::Variable(variable) = iterations.node() {
             self.loop_iteration_variables.insert(*variable, loop_index);
         }
-        self.loop_iterations.insert(loop_index, iterations.clone());
+        self.loop_iterations.insert(loop_index, iterations);
     }
 
     /// The loop whose pass count `variable` is: one lookup.
@@ -4402,17 +4456,58 @@ impl RecordedStates {
         variable: crate::kernel::Variable,
     ) -> Option<usize> {
         let index = *self.loop_iteration_variables.get(&variable)?;
-        matches!(self.loop_iterations.get(&index), Some(crate::kernel::IntegerTerm::Variable(held)) if *held == variable)
+        matches!(self.loop_iterations.get(&index).map(|root| root.node()), Some(crate::kernel::KernelTermNode::Variable(held)) if *held == variable)
             .then_some(index)
     }
 
-    /// Each exited loop's pass count under its spelling, `loop(i).iterations`.
+    /// Selected diagnostic output; retained loop counts remain common roots.
     pub(crate) fn loop_iteration_bindings(
         &self,
-    ) -> impl Iterator<Item = (String, &crate::kernel::IntegerTerm)> {
-        self.loop_iterations
-            .iter()
-            .map(|(index, term)| (loop_iterations_spelling(*index), term))
+    ) -> impl Iterator<Item = (String, crate::kernel::IntegerTerm)> {
+        self.loop_iterations.iter().map(|(index, term)| {
+            (
+                loop_iterations_spelling(*index),
+                crate::kernel::KernelTermExport::default()
+                    .integer(term)
+                    .expect("recorded Integer output")
+                    .as_ref()
+                    .clone(),
+            )
+        })
+    }
+
+    /// A capture in a recorded state names the call result in that
+    /// snapshot. An unqualified capture names the path's current result.
+    fn call_capture_expression(
+        &self,
+        binding: &crate::kernel::BindingName,
+        value: &crate::kernel::StoredExecutionValue,
+        selector: Option<&ProgramPointSelector>,
+    ) -> Option<ContractExpression> {
+        if !binding
+            .local_id()
+            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+        {
+            return None;
+        }
+        let layout = self.source_layout.as_ref()?;
+        let (index, source) = layout.call_capture_source(binding)?;
+        let results = match selector {
+            Some(point) => self.call_results_at(point)?,
+            None => &self.call_results,
+        };
+        let recorded = results.get(&index)?.native_compat();
+        if recorded.program_type() != value.program_type() || recorded != value.native().as_ref() {
+            return None;
+        }
+        let expression = ContractExpression::RegionResult(source);
+        Some(match selector {
+            Some(selector) => ContractExpression::At {
+                selector: selector.clone(),
+                expression: Box::new(expression),
+            },
+            None => expression,
+        })
     }
 
     /// Each recorded call's result with the source spelling that names it,
@@ -4430,7 +4525,7 @@ impl RecordedStates {
                         "{}.result",
                         diagnostics::describe_code_region_ref(&CodeRegionRef::Path(steps))
                     ),
-                    value,
+                    value.native_compat(),
                 ))
             })
             .collect()
@@ -4443,7 +4538,7 @@ impl RecordedStates {
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.algebraic_call_results.get(term)?;
-        matches!(self.call_results.get(&index), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
+        matches!(self.call_result_native(&index), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
             .then_some(CodeRegionRef::Region(index))
     }
 
@@ -4451,11 +4546,11 @@ impl RecordedStates {
     /// lookup, checked against the recorded value.
     fn call_result_naming_pointer(
         &self,
-        pointer: &crate::kernel::Pointer,
+        pointer: &crate::kernel::Address,
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.pointer_call_results.get(pointer)?;
-        matches!(self.call_results.get(&index), Some(ProgramValue::Pointer(held)) if held.pointer() == pointer)
+        matches!(self.call_result_native(&index), Some(ProgramValue::Pointer(held)) if held.address() == pointer)
             .then_some(CodeRegionRef::Region(index))
     }
 
@@ -4473,7 +4568,7 @@ impl RecordedStates {
                 return None;
             }
             crate::instrumentation::record_deterministic_work(1);
-            if matches!(self.call_results.get(index).map(ProgramValue::numeric_value), Some(ProgramValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
+            if matches!(self.call_result_native(index).map(ProgramValue::numeric_value), Some(ProgramValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
             {
                 return Some(CodeRegionRef::Region(*index));
             }
@@ -4626,6 +4721,22 @@ impl RecordedStates {
         Some((selector, self.get_exact(selector)?))
     }
 
+    /// The recorded point a read of `pointer` in `memory` is made at, with its
+    /// state. A read names the canonical projection of the memory it reads
+    /// (`reasoning::memory_resolution`), which no point records; the kernel
+    /// records the memory each projection was built from when it builds it,
+    /// so the read is made at the point recording that source. Two lookups.
+    fn point_reading_load(
+        &self,
+        memory: &crate::kernel::SharedMemory,
+        pointer: &crate::kernel::Address,
+    ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
+        self.point_reading_memory(memory).or_else(|| {
+            let source = crate::kernel::load_projection_source(memory, pointer)?;
+            self.point_reading_memory(&source)
+        })
+    }
+
     /// A recorded point at which a scalar local held exactly `term`, the
     /// local's name, and that point's state: one index range over the
     /// locals that held a term of this fingerprint, each checked there.
@@ -4680,7 +4791,7 @@ impl RecordedStates {
         }
         for (name, block) in state
             .locals()
-            .changed_pointer_blocks(self.last_locals.as_ref())
+            .changed_address_bases(self.last_locals.as_ref())
         {
             crate::instrumentation::record_deterministic_work(1);
             let key = (block.clone(), name.clone());
@@ -4763,7 +4874,7 @@ impl RecordedStates {
             state
                 .memory()
                 .fresh_allocation_identity(value)
-                .map(|value| value.pointer().clone())
+                .map(|value| value.address().clone())
         };
         let region = CodeRegionRef::Region(*index);
         if let Some(old) = prior.and_then(result)
@@ -4778,46 +4889,75 @@ impl RecordedStates {
         }
     }
 
-    fn allocation_result(&self, pointer: &crate::kernel::Pointer) -> Option<CodeRegionRef> {
+    fn allocation_result(&self, pointer: &crate::kernel::Address) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         self.allocation_results.get(pointer).cloned()
     }
 
-    /// The recorded points whose memories are nearest `memory` in the order
-    /// memories were made, with their states: those at or after it, nearest
-    /// first, where a read made in `memory` between recorded points (inside
-    /// a call's region) is next recorded, then those before it, newest
-    /// first, where a read made after the last recorded point still read
-    /// the same bytes. A memory equal to an earlier one shares its identity,
-    /// so the order is not exact; the caller checks each for the unchanged
-    /// read. At most [`MEMORY_POINTS_NEAR`] are offered on each side.
-    fn points_near_memory(
+    /// Name the address of frontend-owned storage by its producing region.
+    fn produced_address_expression(
         &self,
-        memory: &crate::kernel::SharedMemory,
-    ) -> impl Iterator<Item = (&ProgramPointSelector, &ExecutionState)> {
-        let identity = memory.read_identity();
-        let after = self
-            .memory_points
-            .range(identity..)
-            .take_while(move |(found, _)| found.0 == identity.0)
-            .take(MEMORY_POINTS_NEAR);
-        let before = self
-            .memory_points
-            .range(..identity)
-            .rev()
-            .take_while(move |(found, _)| found.0 == identity.0)
-            .take(MEMORY_POINTS_NEAR);
-        after
-            .chain(before)
-            .filter_map(|(_, selector)| Some((selector, self.get_exact(selector)?)))
+        pointer: &crate::kernel::Address,
+    ) -> Option<ContractExpression> {
+        use crate::kernel::AddressBase;
+        match &pointer.base {
+            AddressBase::AutomaticLocal { binding, .. } if binding.is_temporary() => {
+                self.call_result_address_expression(pointer)
+            }
+            AddressBase::Heap(_) => Self::displaced_result_address(pointer, |base| {
+                Some(ContractExpression::RegionAllocation(
+                    self.allocation_result(base)?,
+                ))
+            }),
+            _ => None,
+        }
+    }
+
+    fn call_result_address_expression(
+        &self,
+        pointer: &crate::kernel::Address,
+    ) -> Option<ContractExpression> {
+        if let Some(region) = self.call_result_naming_pointer(pointer) {
+            return Some(ContractExpression::RegionResult(region));
+        }
+        Self::displaced_result_address(pointer, |base| {
+            Some(ContractExpression::RegionResult(
+                self.call_result_naming_pointer(base)?,
+            ))
+        })
+    }
+
+    fn displaced_result_address(
+        pointer: &crate::kernel::Address,
+        name_base: impl FnOnce(&crate::kernel::Address) -> Option<ContractExpression>,
+    ) -> Option<ContractExpression> {
+        use crate::kernel::{Address, AddressOffset};
+        let AddressOffset::Constant(bytes) = pointer.offset else {
+            return None;
+        };
+        let bytes = u32::try_from(bytes).ok()?;
+        if bytes == 0 {
+            return name_base(pointer);
+        }
+        let base = Address {
+            base: pointer.base.clone(),
+            offset: AddressOffset::Constant(0),
+        };
+        Some(ContractExpression::CUnary {
+            operand: Box::new(name_base(&base)?),
+            lowered: ProgramExpression::PointerOffsetBytes {
+                pointer: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
+                bytes,
+            },
+        })
     }
 
     /// The recorded points at which some local held a pointer into `block`,
     /// with their states, in the locals' name order: at most
     /// [`POINTER_POINTS_OFFERED`], each checked against its state.
-    fn points_holding_pointer_block<'a>(
+    fn points_holding_address_base<'a>(
         &'a self,
-        block: &'a crate::kernel::PointerBlock,
+        block: &'a crate::kernel::AddressBase,
     ) -> impl Iterator<Item = (&'a ProgramPointSelector, &'a ExecutionState)> {
         let mut key = (block.clone(), crate::kernel::BindingName::from(""));
         let mut found = self.pointer_points.get_key_value(&key);
@@ -4900,7 +5040,7 @@ impl RecordedStates {
             .insert(selector.clone(), self.effect_log.len());
         let prior = self.get(&selector).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), Some(&state));
-        if let Some(id) = state.program_point_id() {
+        if let Some(id) = state.observation_point_id() {
             self.point_names.insert(id, selector.clone());
         }
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
@@ -4920,13 +5060,27 @@ impl RecordedStates {
                     .and_then(|layout| match layout.call_number(*index) {
                         Some(call) => state
                             .step_result(call)
-                            .map(|value| value.clone().into_native()),
-                        None => layout
-                            .call_result_local(*index)
-                            .and_then(|local| state.locals().get(local))
-                            .map(|value| value.clone().into_native()),
+                            .map(|value| RetainedProgramValue::from(value.clone().into_value())),
+                        None => {
+                            let local = layout.call_result_local(*index)?;
+                            if let Some(value) = state.locals().get(local) {
+                                return Some(RetainedProgramValue::from(
+                                    value.clone().into_value(),
+                                ));
+                            }
+                            local.local_id().filter(|id| id.is_temporary())?;
+                            let address = state.locals().aggregate_object_pointer(local)?;
+                            Some(RetainedProgramValue::from(ProgramValue::typed_pointer(
+                                address.clone(),
+                                crate::kernel::ProgramType::UInt8Pointer,
+                            )))
+                        }
                     });
-            self.record_call_result(*index, result);
+            self.record_retained_call_result(*index, result);
+        }
+        if self.records_call_snapshots() {
+            self.call_result_snapshots
+                .insert(selector.clone(), self.call_results.clone());
         }
         self.record_value_points(&selector, &state);
         self.version = std::sync::Arc::new(RecordedStateVersion {
@@ -4974,6 +5128,7 @@ impl RecordedStates {
     fn remove<K: RecordedStateKey + ?Sized>(&mut self, key: &K) -> Option<ExecutionState> {
         let selector = self.recorded_spelling(key.to_selector());
         let prior = self.get(key).cloned();
+        self.call_result_snapshots.remove(&selector);
         self.update_allocation_result(&selector, prior.as_ref(), None);
         if let ProgramPointSelector::ProgramPoint(ProgramPointRef {
             region: CodeRegionRef::Region(index),
@@ -5060,13 +5215,29 @@ impl RecordedStates {
         // A pass count both arms left the loop with stays.
         for (index, iterations) in self.loop_iterations.iter() {
             if other.loop_iterations.get(index) == Some(iterations) {
-                common.record_loop_iterations(*index, iterations);
+                common.record_loop_iterations_root(*index, iterations.clone());
             }
         }
         for selector in changed {
             match (self.get(&selector), other.get(&selector)) {
                 (Some(left), Some(right)) if left == right => {
                     common.insert(selector.clone(), left.clone());
+                    if let (Some(left), Some(right)) = (
+                        self.call_result_snapshots.get(&selector),
+                        other.call_result_snapshots.get(&selector),
+                    ) {
+                        let mut results = left.clone();
+                        for (index, left, _) in left.diff(right) {
+                            if left.is_some() {
+                                results.remove(index);
+                            }
+                        }
+                        common
+                            .call_result_snapshots
+                            .insert(selector.clone(), results);
+                    } else {
+                        common.call_result_snapshots.remove(&selector);
+                    }
                     if let ProgramPointSelector::ProgramPoint(ProgramPointRef {
                         region: CodeRegionRef::Region(index),
                         kind: ProgramPointKind::Exit,
@@ -5111,39 +5282,6 @@ impl RecordedStates {
         self.iter_newest_first().map(|(selector, _)| selector)
     }
 
-    /// Statement entries at/before the anchor in reverse order, then later
-    /// entries in forward order. Seek through the persistent tree rather than
-    /// materializing and sorting every state before the first candidate.
-    fn statement_entries_nearest(
-        &self,
-        anchor: usize,
-    ) -> impl Iterator<Item = (&ProgramPointRef, &ExecutionState)> {
-        let selector = |index, kind| {
-            ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Region(index),
-                kind,
-            })
-        };
-        RecordedStateRange::new(
-            self.version.root.as_deref(),
-            selector(0, ProgramPointKind::Entry),
-            selector(anchor, ProgramPointKind::Entry),
-            true,
-        )
-        .chain(RecordedStateRange::new(
-            self.version.root.as_deref(),
-            selector(anchor, ProgramPointKind::Exit),
-            selector(usize::MAX, ProgramPointKind::Exit),
-            false,
-        ))
-        .filter_map(|(selector, state)| match selector {
-            ProgramPointSelector::ProgramPoint(point) if point.kind == ProgramPointKind::Entry => {
-                Some((point, state))
-            }
-            _ => None,
-        })
-    }
-
     /// Bounded, newest-first source points for diagnostic reconstruction.
     /// History can repeat a key; only its currently recorded state is returned.
     fn recent(&self, limit: usize) -> Vec<(&ProgramPointSelector, &ExecutionState)> {
@@ -5184,6 +5322,10 @@ impl RecordedStates {
             let mut state = state.clone();
             if keep(selector, &mut state) {
                 retained.insert(selector.clone(), state);
+                retained.set_call_result_snapshot(
+                    selector,
+                    self.call_result_snapshots.get(selector).cloned(),
+                );
                 if let ProgramPointSelector::ProgramPoint(ProgramPointRef {
                     region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Exit,
@@ -5428,7 +5570,7 @@ fn recorded_state_entries<'a>(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecArrayRef {
-    memory: SpecMemory,
+    point: SpecPoint,
     pointer: SpecExpression,
     element_type: ProgramType,
 }
@@ -5439,15 +5581,15 @@ struct SpecElaborationContext {
     integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     algebraic_values: PersistentBinderMap<SpecAlgebraicExpression>,
     array_refs: PersistentBinderMap<SpecArrayRef>,
-    /// The memory a bound array name reads in, when its binding names a state
+    /// The point a bound array name reads at, when its binding names a state
     /// of its own. A theorem argument that names another state (`old(a)`,
     /// `at(mark, a)`) binds the parameter to that state's array reference, and
-    /// an array reference is a memory as well as a pointer; without this the
-    /// clause's indexing would read the application's current memory. Only a
+    /// an array reference is a point as well as a pointer; without this the
+    /// clause's indexing would read at the application's current point. Only a
     /// binding that names another state appears here, so an ordinary array
-    /// name keeps reading through `current_memory` and carries no state.
-    array_memories: PersistentBinderMap<SpecMemory>,
-    current_memory: SpecMemory,
+    /// name keeps reading at `current_point` and carries no state.
+    array_points: PersistentBinderMap<SpecPoint>,
+    current_point: SpecPoint,
     current_loop_entry: Option<usize>,
     function_contract: bool,
     /// The context is the function entry (`old(...)`), so a resource count
@@ -5457,6 +5599,7 @@ struct SpecElaborationContext {
     /// a resource count there is that state's population, which the spec
     /// form cannot name and the elaboration evaluates.
     reference_state: Option<ExecutionState>,
+    call_result_point: Option<ProgramPointSelector>,
     /// Bare `result` names the internal contract-return binding here;
     /// explicit C bindings keep their source identifier and value.
     contract_result_in_scope: bool,
@@ -5473,12 +5616,13 @@ impl Default for SpecElaborationContext {
             integer_values: PersistentBinderMap::default(),
             algebraic_values: PersistentBinderMap::default(),
             array_refs: PersistentBinderMap::default(),
-            array_memories: PersistentBinderMap::default(),
-            current_memory: SpecMemory::Current,
+            array_points: PersistentBinderMap::default(),
+            current_point: SpecPoint::Current,
             current_loop_entry: None,
             at_function_entry: false,
             function_contract: false,
             reference_state: None,
+            call_result_point: None,
             contract_result_in_scope: false,
             contract_result: None,
             checking_definedness: false,
@@ -5487,16 +5631,16 @@ impl Default for SpecElaborationContext {
 }
 
 impl SpecElaborationContext {
-    fn with_current_memory(current_memory: SpecMemory) -> Self {
+    fn with_current_point(current_point: SpecPoint) -> Self {
         Self {
-            current_memory,
+            current_point,
             ..Self::default()
         }
     }
 
     /// A loop clause's context. `iterations` is the loop's pass count, which
     /// each loop phase binds where it lowers the invariant; a program binding
-    /// of that name is `c(iterations)`.
+    /// of that name is `program::iterations`.
     fn for_loop_invariant(loop_index: usize) -> Self {
         Self {
             current_loop_entry: Some(loop_index),
@@ -5519,8 +5663,8 @@ impl SpecElaborationContext {
 
     fn old_state(
         &self,
-        entry_values: &BTreeMap<String, ProgramValue>,
-        entry_memory: &Memory,
+        entry_values: &ProgramValueBindings,
+        entry: &crate::kernel::ProgramPoint,
     ) -> Result<Self, String> {
         if self.function_contract {
             return Ok(Self {
@@ -5528,12 +5672,13 @@ impl SpecElaborationContext {
                 integer_values: self.integer_values.clone(),
                 algebraic_values: self.algebraic_values.clone(),
                 array_refs: PersistentBinderMap::default(),
-                array_memories: PersistentBinderMap::default(),
-                current_memory: SpecMemory::FunctionEntry,
+                array_points: PersistentBinderMap::default(),
+                current_point: SpecPoint::FunctionEntry,
                 current_loop_entry: None,
                 function_contract: true,
                 at_function_entry: true,
                 reference_state: None,
+                call_result_point: None,
                 contract_result_in_scope: false,
                 contract_result: None,
                 checking_definedness: self.checking_definedness,
@@ -5563,12 +5708,13 @@ impl SpecElaborationContext {
             integer_values: self.integer_values.clone(),
             algebraic_values: self.algebraic_values.clone(),
             array_refs: PersistentBinderMap::default(),
-            array_memories: PersistentBinderMap::default(),
-            current_memory: SpecMemory::Fixed(entry_memory.clone()),
+            array_points: PersistentBinderMap::default(),
+            current_point: SpecPoint::At(entry.clone()),
             current_loop_entry: None,
             function_contract: false,
             at_function_entry: true,
             reference_state: None,
+            call_result_point: None,
             // The return value is a logical proof binding, like `let`.
             // Historical C reads still use their own entry bindings.
             contract_result_in_scope: self.contract_result_in_scope,
@@ -5747,7 +5893,7 @@ pub enum SourceProof {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertifiedStatementTransition {
     pub(crate) native_step: std::sync::Arc<crate::kernel::SymbolicExecutionPath>,
-    pub(crate) call_result: Option<ProgramValue>,
+    pub(crate) call_result: Option<RetainedProgramValue>,
     /// The call's by-value aggregate parameters as it bound them, recorded
     /// as the call region's parameter point (`R.parameter(name)`).
     pub(crate) call_parameters: Option<crate::kernel::CallParameters>,
@@ -5770,7 +5916,7 @@ pub struct CertifiedStatementTransition {
     pub(crate) loop_invariant_correspondence: Vec<(usize, Proposition)>,
     /// The loop head's pass count the facts state over, recorded so a proof
     /// past the loop spells it `loop(i).iterations`.
-    pub(crate) loop_iterations: Option<crate::kernel::IntegerTerm>,
+    pub(crate) loop_iterations: Option<crate::kernel::KernelTerm>,
     pub(crate) prerequisite_derivations: Vec<PropositionDerivation>,
     /// Exact entry-state facts consumed while planning this
     /// transition. Kept outside the kernel theorem so collecting certificate
@@ -5883,7 +6029,7 @@ pub enum ProofTactic {
         start: ContractExpression,
         end: ContractExpression,
     },
-    /// `take`, `give`, `gather`, or `scatter` on iterated guarded ownership.
+    /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
     ConstructResource(ResourceClause),
     Witness(ProofWitness),
@@ -6187,13 +6333,13 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "take-element",
-        syntax: "take(base[a..b])",
+        id: "unfold-slot",
+        syntax: "unfold(resource(args)[i])",
         class: "simple",
     },
     PublicTacticForm {
-        id: "give-element",
-        syntax: "give(base[a..b])",
+        id: "fold-slot",
+        syntax: "fold(resource(args)[i])",
         class: "simple",
     },
     PublicTacticForm {
@@ -6303,7 +6449,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "obtain",
-        syntax: "obtain (",
+        syntax: "= obtain(",
         class: "simple",
     },
     PublicTacticForm {
@@ -6449,13 +6595,7 @@ impl ProofTactic {
                     .collect(),
             },
             Self::Have(have) => vec![Obligation(Source(&have.proof))],
-            Self::Open(open) => {
-                let mut children = vec![Continuing(Script(&open.tactics))];
-                if let Some(close) = &open.close_proof {
-                    children.push(Obligation(Script(close)));
-                }
-                children
-            }
+            Self::Open(open) => vec![Continuing(Script(&open.tactics))],
             Self::If(proof_if) => vec![
                 Continuing(Script(&proof_if.then_tactics)),
                 Continuing(Script(&proof_if.else_tactics)),
@@ -6637,36 +6777,17 @@ impl ProofHave {
 pub struct ProofOpen {
     resource: ResourceClause,
     tactics: Vec<ProofTactic>,
-    /// `open(r) { ... } by { ... }`: the proof of the one body fact the
-    /// scope's closing fold leaves open, as `fold(r) by { ... }` proves a
-    /// fold's.
-    close_proof: Option<Vec<ProofTactic>>,
+    // The captured tail of a deferred close, merged into the matching scope
+    // when the outcome proof is assembled.
+    deferred_tail: bool,
 }
 
 impl ProofOpen {
-    /// The proof a deferred close of `open(resource)` recorded for the body
-    /// fact its closing fold left open: an `open` with no body, which the
-    /// certificate attaches to the scope it closes as that scope's `by`.
-    pub(crate) fn deferred_close_proof(
-        resource: ResourceClause,
-        close_proof: Vec<ProofTactic>,
-    ) -> Self {
-        Self {
-            resource,
-            tactics: Vec::new(),
-            close_proof: Some(close_proof),
-        }
-    }
-
-    /// The `have`s a deferred close of `open(resource)` proved for the
-    /// several body facts its closing fold left open: an `open` with an
-    /// empty `by`, which the certificate appends to the block of the scope
-    /// it closes. A written `by` is never empty.
     pub(crate) fn deferred_block_tail(resource: ResourceClause, haves: Vec<ProofTactic>) -> Self {
         Self {
             resource,
             tactics: haves,
-            close_proof: Some(Vec::new()),
+            deferred_tail: true,
         }
     }
 }
@@ -6926,6 +7047,8 @@ pub struct ProofBranch {
 /// Explicit proof arms for the checked edge of one potentially throwing call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofCallOutcomes {
+    /// Optional proof names for the returned and thrown payloads, in that order.
+    pub payload_bindings: [Option<String>; 2],
     pub returned_tactics: Vec<ProofTactic>,
     pub threw_tactics: Vec<ProofTactic>,
 }
@@ -7541,7 +7664,7 @@ impl<'a> ParameterBinding<'a> {
 pub(crate) struct ParameterNaming {
     pub(crate) parameters: std::sync::Arc<[crate::languages::interface::ImportedParameter]>,
     pub(crate) arguments: std::sync::Arc<[ProgramExpression]>,
-    pointer_sources: BTreeMap<Pointer, usize>,
+    pointer_sources: BTreeMap<Address, usize>,
 }
 
 impl ParameterNaming {
@@ -7557,7 +7680,7 @@ impl ParameterNaming {
                 BTreeMap::new(),
                 |mut sources, (index, argument)| {
                     if let ProgramExpression::Value(ProgramValue::Pointer(pointer)) = argument {
-                        sources.entry(pointer.pointer().clone()).or_insert(index);
+                        sources.entry(pointer.address().clone()).or_insert(index);
                     }
                     sources
                 },
@@ -7567,7 +7690,7 @@ impl ParameterNaming {
 
     pub(crate) fn pointer_source(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
     ) -> Option<(
         &crate::languages::interface::ImportedParameter,
         &ProgramExpression,
@@ -7644,7 +7767,7 @@ impl<'a> SpecDefinitions<'a> {
         self
     }
 
-    fn pointer_element_width(&self, pointer: &crate::kernel::PointerValue) -> Result<u32, String> {
+    fn pointer_element_width(&self, pointer: &crate::kernel::Pointer) -> Result<u32, String> {
         if let Some(crate::kernel::effective_type::CAccessClass::Struct(class)) =
             pointer.object_class()
         {
@@ -7904,7 +8027,7 @@ fn contract_expression_reads_memory(
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::ProgramExpression(
             ProgramExpression::Variable(crate::kernel::BindingName::Named(_))
             | ProgramExpression::Value(_),
@@ -9864,7 +9987,7 @@ impl StructuralClause {
     /// declared-resource arguments, and the `decreases` measure may spell a
     /// proof `match` arm's bindings or a `let { ... } = unfold(...)` name, which are in
     /// scope for a loop written inside that arm exactly as for a `have` goal
-    /// there. Memory segments are left as written; they name C places.
+    /// there. SymbolicMemory segments are left as written; they name C places.
     pub(in crate::surface) fn with_substituted_bindings(
         &self,
         substitutions: &BinderMap<ContractExpression>,
@@ -10572,14 +10695,10 @@ impl ClickError {
                 if !requirement.is_empty() {
                     context.push(requirement);
                 }
-                if let Some(goal) = state
-                    .kernel_goal()
-                    .filter(|_| !proof_diagnostics::requirement_is_goal(state.as_ref()))
+                if !proof_diagnostics::requirement_is_goal(state.as_ref())
+                    && let Some(goal) = diagnostic.render_goal(&mut labels)
                 {
-                    context.push(format!(
-                        "goal: {}",
-                        proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)
-                    ));
+                    context.push(format!("goal: {goal}"));
                 }
                 if diagnostic.checks.is_some() {
                     let recent = state

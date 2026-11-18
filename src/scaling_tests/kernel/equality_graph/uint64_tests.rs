@@ -17,7 +17,7 @@ fn integer_address_queries_ignore_unrelated_equations_and_reuse_definitions() {
             );
         }
         let bits = MachineTerm::Variable(Variable(960_004));
-        let decoded = Pointer::integer_address(bits.clone());
+        let decoded = Address::from_integer_address(bits.clone());
         assert!(graph.are_uint64_equal(&raw_address(&decoded), &bits));
         let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -41,8 +41,8 @@ fn wide_congruence_queries_do_not_scan_unrelated_equalities() {
     let mut previous = None;
     for size in [16_u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
-        let p = Pointer::symbolic(Variable(940_001));
-        let q = Pointer::symbolic(Variable(940_002));
+        let p = Address::symbolic(Variable(940_001));
+        let q = Address::symbolic(Variable(940_002));
         let a = MachineTerm::Variable(Variable(940_003));
         let b = MachineTerm::Variable(Variable(940_004));
         let mut graph = EqualityGraph::default();
@@ -100,10 +100,10 @@ fn an_aliased_read_uses_its_store_equation_without_scanning_unrelated_cells_or_a
     let mut previous = None;
     for size in [16_u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
-        let mut memory = Memory::new().with_block("cells", 8 * (size as u32 + 1));
-        let cell = |i: u64| Pointer {
-            block: "cells".into(),
-            offset: PointerOffsetTerm::Constant(8 * i as i64),
+        let mut memory = SymbolicMemory::new().with_block("cells", 8 * (size as u32 + 1));
+        let cell = |i: u64| Address {
+            base: "cells".into(),
+            offset: AddressOffset::Constant(8 * i as i64),
         };
         for i in 0..=size {
             memory = memory.store(
@@ -114,10 +114,10 @@ fn an_aliased_read_uses_its_store_equation_without_scanning_unrelated_cells_or_a
         let memory = intern_memory(memory);
         let mut context = PureFactContext::new();
         for i in 0..size {
-            let other = Pointer::symbolic(Variable(970_000 + i));
+            let other = Address::symbolic(Variable(970_000 + i));
             context = context.assume_proposition(alias(&other, &cell(i)));
         }
-        let read_at = Pointer::symbolic(Variable(979_999));
+        let read_at = Address::symbolic(Variable(979_999));
         context = context.assume_proposition(alias(&read_at, &cell(size)));
         let read = word(&memory, &read_at, 8);
         let stored = MachineTerm::uint64_constant(size);
@@ -148,16 +148,16 @@ fn an_aliased_read_query_does_not_walk_its_own_alias_class() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
-        let stored_at = Pointer {
-            block: "cells".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let stored_at = Address {
+            base: "cells".into(),
+            offset: AddressOffset::Constant(0),
         };
-        let memory = intern_memory(Memory::new().with_block("cells", 8).store(
+        let memory = intern_memory(SymbolicMemory::new().with_block("cells", 8).store(
             stored_at.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
         ));
         let mut context = PureFactContext::new();
-        let link = |i: u64| Pointer::symbolic(Variable(972_000 + i));
+        let link = |i: u64| Address::symbolic(Variable(972_000 + i));
         context = context.assume_proposition(alias(&link(0), &stored_at));
         for i in 1..=size {
             context = context.assume_proposition(alias(&link(i), &link(i - 1)));
@@ -192,15 +192,15 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
     let mut related = Vec::new();
     for size in [16_u64, 64, 256] {
         let _session = VerificationSession::enter();
-        let read_at = Pointer::symbolic(Variable(973_000));
-        let mut memory = Memory::new().with_block("other", 8 * size as u32);
+        let read_at = Address::symbolic(Variable(973_000));
+        let mut memory = SymbolicMemory::new().with_block("other", 8 * size as u32);
         let mut graph = EqualityGraph::default();
         // One unresolved read of `read_at` in each of `size` states.
         for i in 0..size {
             memory = memory.store(
-                Pointer {
-                    block: "other".into(),
-                    offset: PointerOffsetTerm::Constant(8 * i as i64),
+                Address {
+                    base: "other".into(),
+                    offset: AddressOffset::Constant(8 * i as i64),
                 },
                 ProgramValue::UInt64(MachineTerm::uint64_constant(i)),
             );
@@ -209,8 +209,8 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_equality(
-                &Pointer::symbolic(Variable(974_000)),
-                &Pointer::symbolic(Variable(974_001)),
+                &Address::symbolic(Variable(974_000)),
+                &Address::symbolic(Variable(974_001)),
             );
         });
         if let Some(previous) = unrelated {
@@ -218,7 +218,7 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
         }
         unrelated = Some(work);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            graph.add_equality(&Pointer::symbolic(Variable(974_002)), &read_at);
+            graph.add_equality(&Address::symbolic(Variable(974_002)), &read_at);
             graph.are_uint64_equal(
                 &MachineTerm::uint64_constant(1),
                 &MachineTerm::uint64_constant(1),
@@ -246,7 +246,7 @@ fn a_recorded_address_fact_is_found_through_its_word_class_without_scanning() {
         }
         let read = word(9_000);
         let recorded = word(9_001);
-        let address = MachineTerm::pointer_address(Pointer::symbolic(Variable(976_000)));
+        let address = MachineTerm::integer_address(Address::symbolic(Variable(976_000)));
         context = context
             .assume_proposition(fact(recorded.clone(), address))
             .assume_proposition(fact(read.clone(), recorded.clone()));
@@ -286,7 +286,7 @@ fn shared_wide_endpoint_queries_reuse_growing_prefixes() {
             .unwrap();
         let observe =
             |root| IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
-        let address = MachineTerm::pointer_address(Pointer::symbolic(Variable(984102)));
+        let address = MachineTerm::integer_address(Address::symbolic(Variable(984102)));
         let mut context = PureFactContext::new().assume_proposition(fact(name.clone(), address));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

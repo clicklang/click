@@ -24,6 +24,36 @@ int32 g(uint32 tag, int32 *p, int32 **restored) {
     have to_integer((tag + p[0] as uint32) as int32) == to_integer(tag + p[0] as uint32) by {
         solve() using { 0 <= to_integer(tag + p[0] as uint32); to_integer(tag + p[0] as uint32) <= 2000; };
     }
+    step();
+    step();
+    branch {
+        true => {
+            step_until(function.exit);
+            solve();
+        }
+        false => {}
+    }
+    have separate(memory((src as (uint8*))[0..16]), memory(p[0..1])) by { solve(); }
+    step();
+    step();
+    branch {
+        true => {
+            step_until(function.exit);
+            solve();
+        }
+        false => {}
+    }
+    have separate(memory(buf[0..16]), memory(p[0..1])) by { solve(); }
+    step();
+    step();
+    branch {
+        true => {
+            step_until(function.exit);
+            solve();
+        }
+        false => {}
+    }
+    have separate(memory((dst as (uint8*))[0..16]), memory(p[0..1])) by { solve(); }
 }
 
 int use_copy() {

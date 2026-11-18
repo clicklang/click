@@ -96,6 +96,19 @@ pub(crate) fn prepare_function_contract_entry_cases(
         })
         .map(|fact| fact.proposition().clone())
         .collect();
+    // An unconditional finite entry has one case and its producer already
+    // expanded it. Guarded and recursive definitions use the existing
+    // case-specific route, where a branch can expose a different body.
+    let reuse_entry = !function
+        .contract_interface()
+        .composite_definitions_need_entry_cases
+        && function
+            .resource_requires()
+            .iter()
+            .chain(function.resource_ensures())
+            .all(|clause| clause.guard().is_none());
+    #[cfg(test)]
+    let produced_state = resources.state.clone();
     let closing_entry = Arc::new(RetainedClosingEntry::from_producer(
         state.clone(),
         function,
@@ -106,11 +119,27 @@ pub(crate) fn prepare_function_contract_entry_cases(
         base_assumptions.clone(),
         closing_facts,
     ));
+    if reuse_entry {
+        return Ok(PreparedContractEntryCases {
+            identity: Arc::new(()),
+            guard_cases: vec![Vec::new()],
+            function: function.clone(),
+            closing_entry: closing_entry.clone(),
+            closing_footprint: std::sync::OnceLock::new(),
+            cases: vec![PreparedContractEntryCase {
+                #[cfg(test)]
+                assumptions: base_assumptions,
+                #[cfg(test)]
+                entry_state: produced_state,
+                closing_entry,
+            }],
+        });
+    }
     let resource_condition_cases = contract_resource_condition_cases(
         state,
         function,
         arguments,
-        &base_assumptions.clone().assume_entry_clause_extents(),
+        &base_assumptions.clone().assume_entry_clause_spans(),
     )
     .ok_or("could not enumerate the undecided resource guards of the contract entry")?;
     let raw_entry_state = program_function_entry_state(state, function, arguments)
@@ -176,7 +205,7 @@ pub(crate) fn contract_resource_condition_cases(
         &entry_state,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        &assumptions.clone().assume_entry_clause_extents(),
+        &assumptions.clone().assume_entry_clause_spans(),
         &mut budget,
     )
     .ok()?
@@ -304,7 +333,7 @@ pub(crate) fn contract_resource_condition_cases(
 fn negate_contract_case_proposition(proposition: &Proposition) -> Proposition {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(condition.clone(), !*value)
+            Proposition::condition_is(condition.clone(), !*value)
         }
         Proposition::Not(body) => body.as_ref().clone(),
         proposition => Proposition::Not(Box::new(proposition.clone())),
@@ -343,7 +372,7 @@ fn certification_binary(
 
 fn pointer_offset_bytes(
     assumptions: &PureFactContext,
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
 ) -> Option<SharedMachineIntegerTerm> {
     let literal =
         |n| SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, MachineTerm::constant(n));
@@ -355,10 +384,10 @@ fn pointer_offset_bytes(
     let le =
         |a: Operand<'_>, b: Operand<'_>| certification_proves_signed_le_views(assumptions, a, b);
     match offset {
-        PointerOffsetTerm::Constant(_)
-        | PointerOffsetTerm::Variable(_)
-        | PointerOffsetTerm::Int64Scaled { .. } => None,
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Constant(_)
+        | AddressOffset::Variable(_)
+        | AddressOffset::Int64Scaled { .. } => None,
+        AddressOffset::Add(left, right) => {
             let left = pointer_offset_bytes(assumptions, left)?;
             let right = pointer_offset_bytes(assumptions, right)?;
             let sum = certification_binary(
@@ -374,7 +403,7 @@ fn pointer_offset_bytes(
                 && le(right.operand_view(), sum.operand_view()))
             .then_some(sum)
         }
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+        AddressOffset::Int32Scaled { value, byte_width } => {
             let width = u32::try_from(*byte_width).ok().filter(|width| *width > 0)?;
             let limit = MachineTerm::constant(max / width);
             (le(Operand::Legacy(&zero), value.operand_view())
@@ -399,8 +428,8 @@ fn pointer_offset_bytes(
 /// offset extends the fact offset additively.
 fn pointer_offset_byte_delta(
     assumptions: &PureFactContext,
-    goal_offset: &PointerOffsetTerm,
-    fact_offset: &PointerOffsetTerm,
+    goal_offset: &AddressOffset,
+    fact_offset: &AddressOffset,
 ) -> Option<SharedMachineIntegerTerm> {
     if goal_offset == fact_offset {
         return Some(SharedMachineIntegerTerm::intern(
@@ -408,7 +437,7 @@ fn pointer_offset_byte_delta(
             MachineTerm::constant(0),
         ));
     }
-    if let PointerOffsetTerm::Add(left, right) = goal_offset {
+    if let AddressOffset::Add(left, right) = goal_offset {
         if left.as_ref() == fact_offset {
             return pointer_offset_bytes(assumptions, right);
         }
@@ -458,6 +487,7 @@ pub fn execution_state_justifies_loadability_obligation(
             memory,
             pointer,
             value_type,
+            ..
         } => {
             if assumptions.proves_exact(obligation) {
                 return true;
@@ -465,7 +495,7 @@ pub fn execution_state_justifies_loadability_obligation(
             let loadable = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer.clone(),
-                bytes: MachineTerm::constant(value_type.byte_width()),
+                bytes: (MachineTerm::constant(value_type.byte_width())).into(),
                 wide: false,
             };
             execution_state_justifies_loadability_obligation(state, &loadable, assumptions)
@@ -492,11 +522,15 @@ pub fn execution_state_justifies_loadability_obligation(
                     None => crate::kernel::resource_context_has_symbolic_range_read(
                         state.resources(),
                         base,
-                        bytes,
+                        bytes.native_compat(),
                         assumptions,
                     ),
                 }
-                || assumptions.proves_memory_loadable_for_memory_resolution(memory, base, bytes)
+                || assumptions.proves_memory_loadable_for_memory_resolution(
+                    memory,
+                    base,
+                    bytes.native_compat(),
+                )
                 || symbolic_base_aliases_a_held_cell(memory, base, assumptions)
         }
         _ => true,
@@ -511,11 +545,11 @@ pub fn execution_state_justifies_loadability_obligation(
 /// are read by key and an alias of an alias is not followed, so the work is
 /// bounded by the equalities stated about this one pointer.
 fn symbolic_base_aliases_a_held_cell(
-    memory: &Memory,
-    base: &Pointer,
+    memory: &SymbolicMemory,
+    base: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
-    if !matches!(base.block, PointerBlock::Symbolic(_)) {
+    if !matches!(base.base, AddressBase::Symbolic(_)) {
         return false;
     }
     let Some(offset) = base
@@ -525,9 +559,9 @@ fn symbolic_base_aliases_a_held_cell(
     else {
         return false;
     };
-    let object = Pointer {
-        block: base.block.clone(),
-        offset: PointerOffsetTerm::Constant(0),
+    let object = Address {
+        base: base.base.clone(),
+        offset: AddressOffset::Constant(0),
     };
     assumptions.exact_pointer_aliases(&object).any(|alias| {
         crate::instrumentation::record_deterministic_work(1);
@@ -597,7 +631,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                 else {
                     return false;
                 };
-                if fact_base.block != base.block {
+                if fact_base.base != base.base {
                     return false;
                 }
                 // Loadability of a covering span transports across differences in
@@ -619,11 +653,14 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                 // constant-size cell even when its symbolic byte offset is too wide
                 // for this rule's signed arithmetic.
                 if assumptions
-                    .simplify_bitvector_under_assumptions(bytes)
+                    .simplify_bitvector_under_assumptions(bytes.native_compat())
                     .as_const()
                     .is_some_and(|byte_width| {
                         assumptions.proves_loadable_cell_from_region_elements(
-                            fact_base, fact_bytes, base, byte_width,
+                            fact_base,
+                            fact_bytes.native_compat(),
+                            base,
+                            byte_width,
                         )
                     })
                 {
@@ -639,11 +676,11 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                     MachineIntegerType::Int32,
                 );
                 let width = assumptions.simplify_machine_operand_under_assumptions(
-                    Operand::Legacy(bytes),
+                    bytes.operand_view(),
                     MachineIntegerType::Int32,
                 );
                 let span = assumptions.simplify_machine_operand_under_assumptions(
-                    Operand::Legacy(fact_bytes),
+                    fact_bytes.operand_view(),
                     MachineIntegerType::Int32,
                 );
                 if let (Some(delta), Some(width), Some(span)) = (
@@ -713,7 +750,7 @@ fn certification_proves_signed_le_views(
         CompareRelation::LessEqual,
         [left, right],
     );
-    assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), true))
+    assumptions.proves_exact(&Proposition::condition_is(condition.clone(), true))
         || assumptions.proves_order_condition_for_memory_resolution(&condition, true)
 }
 
@@ -784,7 +821,7 @@ fn collect_shallow_term_variables(term: &MachineTerm, variables: &mut BTreeSet<V
         // the base expression (for example the owner parameter), not to
         // that index.
         MachineTerm::MemoryLoad(_, _, _) => {}
-        MachineTerm::PointerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {}
+        MachineTerm::IntegerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {}
     }
 }
 
@@ -858,27 +895,26 @@ fn forall_loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Proposi
 /// holds. A proposition about a load's value supplies no validity evidence.
 pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
     assumptions: &PureFactContext,
-    memory: &Memory,
-    base: &Pointer,
+    memory: &SymbolicMemory,
+    base: &Address,
 ) -> bool {
     if crate::kernel::assumptions::reasoning_interrupted() {
         return false;
     }
     fn collect_shallow_offset_variables(
-        offset: &PointerOffsetTerm,
+        offset: &AddressOffset,
         variables: &mut BTreeSet<Variable>,
     ) {
         match offset {
-            PointerOffsetTerm::Constant(_) => {}
-            PointerOffsetTerm::Variable(variable) => {
+            AddressOffset::Constant(_) => {}
+            AddressOffset::Variable(variable) => {
                 variables.insert(*variable);
             }
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 collect_shallow_offset_variables(left, variables);
                 collect_shallow_offset_variables(right, variables);
             }
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
                 collect_shallow_operand_variables(value.operand_view(), variables);
             }
         }
@@ -895,7 +931,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
     }
 
     let mut target_variables = BTreeSet::new();
-    if let PointerBlock::Symbolic(variable) = base.block {
+    if let AddressBase::Symbolic(variable) = base.base {
         target_variables.insert(variable);
     }
     collect_shallow_offset_variables(&base.offset, &mut target_variables);
@@ -1240,8 +1276,10 @@ pub enum ContractEntryFactOrigin {
     ResourceQuantity,
     /// Disjointness of the transferred and the borrowed entry clauses.
     Partition,
-    /// A guard that a stated memory range's extent is well formed.
-    Extent,
+    /// A guard that a stated memory range's byte span is well formed.
+    Span,
+    /// A fact that a pointer's opaque bounds cover a stated range.
+    Bounds,
     /// Loadability of a stated clause range at the entry memory.
     ClauseLoadable,
     /// Initialized typed reads promised by an admitted input clause.
@@ -1530,7 +1568,7 @@ fn program_function_contract_entry_facts(
         function.contract_interface().value_parameters(),
     ] {
         for (index, parameter) in parameters.iter().enumerate() {
-            if let Some(bytes) = parameter.fixed_reference_extent {
+            if let Some(bytes) = parameter.fixed_reference_bounds {
                 let pointer_value = entry_state
                     .locals
                     .get_native(parameter.binding_name().clone());
@@ -1538,13 +1576,13 @@ fn program_function_contract_entry_facts(
                     return Err("array reference entry argument is not a pointer value".into());
                 };
                 if let Some(coverage) = pointer.opaque_coverage_fact(&MemoryRange::new_wide(
-                    pointer.pointer().clone(),
+                    pointer.address().clone(),
                     MachineTerm::uint64_constant(0),
                     MachineTerm::uint64_constant(u64::from(bytes)),
                     1,
                 )) {
                     assumptions =
-                        entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
+                        entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
                 }
             }
             let Some(length_index) = parameter.slice_length_parameter else {
@@ -1570,8 +1608,8 @@ fn program_function_contract_entry_facts(
                 .byte_width();
             assumptions = entry_facts.assume(
                 assumptions,
-                ContractEntryFactOrigin::Extent,
-                Proposition::ConditionIs(
+                ContractEntryFactOrigin::Span,
+                Proposition::condition_is(
                     ConditionTerm::uint64_less_equal(
                         length.clone(),
                         MachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width)),
@@ -1580,13 +1618,13 @@ fn program_function_contract_entry_facts(
                 ),
             );
             if let Some(coverage) = pointer.opaque_coverage_fact(&MemoryRange::new_wide(
-                pointer.pointer().clone(),
+                pointer.address().clone(),
                 MachineTerm::uint64_constant(0),
                 length.clone(),
                 width,
             )) {
                 assumptions =
-                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
+                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
             }
         }
     }
@@ -1608,7 +1646,7 @@ fn program_function_contract_entry_facts(
             .clone()
             .allow_symbolic_contract_loads()
             .prefer_symbolic_external_loads()
-            .assume_entry_clause_extents();
+            .assume_entry_clause_spans();
         let paths = match lower_spec_proposition_at_state_with_loop_entry(
             &entry_state,
             requirement,
@@ -1744,7 +1782,7 @@ fn program_function_contract_entry_facts(
             &entry_state,
             function.resource_requires(),
             function.composite_resource_definitions(),
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
             Ok(Ok(evaluated)) => evaluated,
@@ -1761,6 +1799,19 @@ fn program_function_contract_entry_facts(
                 ));
             }
         };
+    let required_resources = crate::kernel::admit_declared_entry_resources(
+        required_resources,
+        &required_entry_clauses,
+        &entry_state,
+        function.composite_resource_definitions(),
+        &assumptions,
+    )
+    .map_err(|error| {
+        format!(
+            "could not construct the contract entry partition: {}",
+            describe_certification_runtime_error(&error),
+        )
+    })?;
     // The entry partition: a transferred clause and a borrowed `views`
     // clause of this contract denote disjoint memory. The proof side spells
     // the same facts from the same clause list
@@ -1788,18 +1839,17 @@ fn program_function_contract_entry_facts(
             continue;
         };
         let mut well_formed = true;
-        for guard in crate::kernel::admitted_memory_range_extent_facts(range) {
+        for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
-                    assumptions.decide(condition) == Some(false)
+                    assumptions.decide(condition.native_compat()) == Some(false)
                 }
                 _ => false,
             };
             if guard_is_false {
                 well_formed = false;
             } else {
-                assumptions =
-                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, guard);
+                assumptions = entry_facts.assume(assumptions, ContractEntryFactOrigin::Span, guard);
             }
         }
         // A range its own guards refute states no memory to read.
@@ -1844,10 +1894,11 @@ fn program_function_contract_entry_facts(
                 base: range
                     .base()
                     .offset_by_elements(range.start().clone(), width),
-                bytes: MachineTerm::multiply(
+                bytes: (MachineTerm::multiply(
                     MachineTerm::subtract(range.end().clone(), range.start().clone()),
                     MachineTerm::constant(width),
-                ),
+                ))
+                .into(),
                 wide: false,
             },
         );
@@ -1855,7 +1906,7 @@ fn program_function_contract_entry_facts(
     for fact in required_resources.facts() {
         if let Some(coverage) = fact.allocation_bounds_fact(&assumptions) {
             assumptions =
-                entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
+                entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
         }
         // Owned ranges carry their byte-count guards exactly as viewed ranges
         // do: the clause states the same range, and the loadability rules read
@@ -1863,16 +1914,15 @@ fn program_function_contract_entry_facts(
         let Some(range) = fact.memory_view_range().or_else(|| fact.memory_own_range()) else {
             continue;
         };
-        for guard in crate::kernel::admitted_memory_range_extent_facts(range) {
+        for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
-                    assumptions.decide(condition) == Some(false)
+                    assumptions.decide(condition.native_compat()) == Some(false)
                 }
                 _ => false,
             };
             if !guard_is_false {
-                assumptions =
-                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, guard);
+                assumptions = entry_facts.assume(assumptions, ContractEntryFactOrigin::Span, guard);
             }
         }
     }
@@ -1895,21 +1945,20 @@ fn program_function_contract_entry_facts(
     for fact in expanded_resources.facts() {
         if let Some(coverage) = fact.allocation_bounds_fact(&assumptions) {
             assumptions =
-                entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
+                entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
         }
         let Some(range) = fact.memory_view_range().or_else(|| fact.memory_own_range()) else {
             continue;
         };
-        for guard in crate::kernel::admitted_memory_range_extent_facts(range) {
+        for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
-                    assumptions.decide(condition) == Some(false)
+                    assumptions.decide(condition.native_compat()) == Some(false)
                 }
                 _ => false,
             };
             if !guard_is_false {
-                assumptions =
-                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, guard);
+                assumptions = entry_facts.assume(assumptions, ContractEntryFactOrigin::Span, guard);
             }
         }
     }
@@ -2007,7 +2056,7 @@ fn program_function_contract_entry_facts(
                     Resource::Footprint(fp) => fp.source.clone(),
                     Resource::Parameter(v) => format!("resource parameter {v:?}"),
                     Resource::Memory(range) => {
-                        format!("memory in {}", range.base().block)
+                        format!("memory in {}", range.base().base)
                     }
                     Resource::PopulationAuthority(description) => {
                         format!("population authority for {}", description.family())
@@ -2074,7 +2123,7 @@ fn program_function_contract_entry_facts(
         let Some(mut arguments) = arguments
             .iter()
             .map(|argument| {
-                let AlgebraicValue::Program(value) = argument else {
+                let crate::kernel::ResourceFieldValue::Program(value) = argument else {
                     return None;
                 };
                 Some(Some(SpecExpression::Value(value.clone())))
@@ -2179,26 +2228,10 @@ fn program_function_contract_entry_facts(
             obligation.proposition().clone(),
         );
     }
-    let observable_facts = entry_resources
-        .observable_facts(&assumptions)
-        .map_err(|error| {
-            let detail = match error {
-                ResourceContextValidityError::UnsupportedOwnershipBoundary => {
-                    "ownership separation lacks indexed evidence"
-                }
-                ResourceContextValidityError::DuplicateOwnedResourceFact(_) => {
-                    "the same resource is owned twice"
-                }
-                ResourceContextValidityError::InvalidExclusiveAccess(_) => {
-                    "a field-bearing resource instance or mutex guard is not owned exclusively"
-                }
-                ResourceContextValidityError::OverlappingOwnedMemoryResources { .. } => {
-                    "two owned memory resources overlap"
-                }
-            };
-            format!("the contract entry resources are not a valid context: {detail}")
-        })?;
-    for proposition in observable_facts {
+    // Entry lowering and body construction already established this declared
+    // partition. Observation retains it without repeating ownership admission.
+    let partition_facts = entry_resources.observable_facts_assuming_valid(&assumptions);
+    for proposition in partition_facts {
         assumptions = entry_facts.assume(
             assumptions,
             ContractEntryFactOrigin::Observable,
@@ -2683,9 +2716,9 @@ fn certified_function_path_parts<'a>(
 
 fn resource_contexts_definitionally_equal(
     function: &ProgramFunction,
-    left_memory: &Memory,
+    left_memory: &SymbolicMemory,
     left: &ResourceContext,
-    right_memory: &Memory,
+    right_memory: &SymbolicMemory,
     right: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2701,9 +2734,9 @@ fn resource_contexts_definitionally_equal(
 
 pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions(
     composite_resource_definitions: &[CompositeResourceDefinition],
-    left_memory: &Memory,
+    left_memory: &SymbolicMemory,
     left: &ResourceContext,
-    right_memory: &Memory,
+    right_memory: &SymbolicMemory,
     right: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2765,7 +2798,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
         })
     };
     let definitionally_covers =
-        |available: &ResourceContext, required: &ResourceContext, memory: &Memory| {
+        |available: &ResourceContext, required: &ResourceContext, memory: &SymbolicMemory| {
             required.facts().iter().all(|fact| {
                 expose_composite_resource_fact(
                     available,
@@ -2851,7 +2884,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
                             other: &ResourceContext,
                             other_composites: &[ResourceFact],
                             other_expanded: &ResourceContext,
-                            other_memory: &Memory| {
+                            other_memory: &SymbolicMemory| {
         composites.iter().all(|composite| {
             other_composites.contains(composite)
                 || other.satisfies_fact(composite, assumptions)
@@ -2916,9 +2949,9 @@ fn freshen_proposition_bodies(
     ) {
         let pointer = match sort {
             Sort::ProgramPointer(ProgramType::FunctionPointer(_)) => {
-                Pointer::symbolic_function(fresh)
+                Address::symbolic_function(fresh)
             }
-            Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => Pointer::symbolic(fresh),
+            Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => Address::symbolic(fresh),
             _ => unreachable!("pointer freshening only handles pointer sorts"),
         };
         (
@@ -2972,10 +3005,10 @@ pub(crate) fn substitute_quantified_body_capture_free(
         ) {
             let pointer = match sort {
                 Sort::ProgramPointer(ProgramType::FunctionPointer(_)) => {
-                    Pointer::symbolic_function(target)
+                    Address::symbolic_function(target)
                 }
                 Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => {
-                    Pointer::symbolic(target)
+                    Address::symbolic(target)
                 }
                 _ => unreachable!("pointer substitution only handles pointer sorts"),
             };
@@ -3048,10 +3081,14 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
             Proposition::ConditionIs(right_condition, right_value),
         ) => {
             left_value == right_value
-                && (retained_syntax::conditions_equal(left_condition, right_condition)
-                    || condition_with_canonicalized_loads(left_condition)
-                        .zip(condition_with_canonicalized_loads(right_condition))
-                        .is_some_and(|(left, right)| left == right))
+                && (retained_syntax::conditions_equal(
+                    left_condition.native_compat(),
+                    right_condition.native_compat(),
+                ) || condition_with_canonicalized_loads(left_condition.native_compat())
+                    .zip(condition_with_canonicalized_loads(
+                        right_condition.native_compat(),
+                    ))
+                    .is_some_and(|(left, right)| left == right))
         }
         (
             Proposition::Equal(Term::Algebraic(al), Term::Algebraic(ar)),
@@ -3072,8 +3109,8 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
             },
         ) => {
             canonicalize_pointer_loads(left_base) == canonicalize_pointer_loads(right_base)
-                && canonicalize_atomic_loads(left_bytes)
-                    == canonicalize_atomic_loads(right_bytes)
+                && canonicalize_atomic_loads(left_bytes.native_compat())
+                    == canonicalize_atomic_loads(right_bytes.native_compat())
                 // Loadability depends on the state's blocks, not its
                 // cached cell values. Retired automatic blocks are part of
                 // the state marker too.
@@ -3090,15 +3127,15 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
 /// resolver once per atom at top level, never inside the resolution
 /// recursion.
 fn pointer_offsets_equal_with_resolved_atoms(
-    left: &PointerOffsetTerm,
-    right: &PointerOffsetTerm,
+    left: &AddressOffset,
+    right: &AddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
-    let resolve = |offset: &PointerOffsetTerm| {
+    let resolve = |offset: &AddressOffset| {
         let (atoms, mut constant) = crate::kernel::reasoning::offset_atoms_and_constant(offset);
         let mut unresolved = Vec::new();
         for atom in atoms {
-            if let PointerOffsetTerm::Int32Scaled { value, byte_width } = &atom
+            if let AddressOffset::Int32Scaled { value, byte_width } = &atom
                 && let Some(known) =
                     assumptions.known_signed_constant_after_normalization_view(value.operand_view())
             {
@@ -3131,13 +3168,13 @@ fn pointer_offsets_equal_with_resolved_atoms(
                 assumptions,
             )
     };
-    let atoms_match = |left: &PointerOffsetTerm, right: &PointerOffsetTerm| {
+    let atoms_match = |left: &AddressOffset, right: &AddressOffset| {
         if left == right
-            || assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+            || assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
                 left.clone(),
                 right.clone(),
             )) == Some(true)
-            || assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+            || assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
                 right.clone(),
                 left.clone(),
             )) == Some(true)
@@ -3145,11 +3182,11 @@ fn pointer_offsets_equal_with_resolved_atoms(
             return true;
         }
         let (
-            PointerOffsetTerm::Int32Scaled {
+            AddressOffset::Int32Scaled {
                 value: left_value,
                 byte_width: left_width,
             },
-            PointerOffsetTerm::Int32Scaled {
+            AddressOffset::Int32Scaled {
                 value: right_value,
                 byte_width: right_width,
             },
@@ -3216,7 +3253,7 @@ pub(crate) fn condition_holds_by_instantiated_fact(
                             *instance_value == value
                                 && program_condition_facts_equivalent_for_memory_resolution(
                                     body,
-                                    &Proposition::ConditionIs(condition.clone(), value),
+                                    &Proposition::condition_is(condition.clone(), value),
                                     assumptions,
                                 )
                                 && premises.into_iter().all(premise_holds)
@@ -3281,24 +3318,24 @@ pub(crate) fn condition_holds_by_memory_resolution(
         // Two complete reads of one cell carry one value even where each spells
         // its coordinate from its own base (`n + 8` and `old(n) + 8`), as the
         // state-modulo condition matchers already accept.
-        (ConditionTerm::PointerValueEqual(left, right), true) => assumptions
-            .contains_known(&Proposition::ConditionIs(condition.clone(), true))
+        (ConditionTerm::PointerEqual(left, right), true) => assumptions
+            .contains_known(&Proposition::condition_is(condition.clone(), true))
             || (assumptions.pointer_provenance_match(left, right)
                 && (pointers_proven_equal_for_memory_resolution(
-                    left.pointer(),
-                    right.pointer(),
+                    left.address(),
+                    right.address(),
                     assumptions,
                 ) || crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
-                    left.pointer(),
-                    right.pointer(),
+                    left.address(),
+                    right.address(),
                     assumptions,
                 ))),
-        (ConditionTerm::PointerEqual(left, right), true) => {
+        (ConditionTerm::AddressEqual(left, right), true) => {
             pointers_proven_equal_for_memory_resolution(left, right, assumptions)
                 || assumptions.pointers_known_equal(left, right)
                 || pointer_read_has_recorded_value(left, right, assumptions)
         }
-        (ConditionTerm::PointerOffsetEqual(left, right), true) => {
+        (ConditionTerm::AddressOffsetEqual(left, right), true) => {
             pointer_offsets_proven_equal_for_memory_resolution(left, right, assumptions)
                 || pointer_offsets_equal_with_resolved_atoms(left, right, assumptions)
         }
@@ -3397,7 +3434,7 @@ pub(super) fn resources_certify_loadability(
             || crate::kernel::resource_context_has_symbolic_range_read(
                 resources,
                 base,
-                bytes,
+                bytes.native_compat(),
                 assumptions,
             ))
 }
@@ -3422,15 +3459,15 @@ mod shared_contract_operand_tests {
     #[test]
     fn shared_contract_read_matches_stored_arithmetic_without_export() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: "contract-expression-cell".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "contract-expression-cell".into(),
+            offset: AddressOffset::Constant(0),
         };
         let written = MachineTerm::add(
             MachineTerm::Variable(Variable(1017151)),
             MachineTerm::constant(7),
         );
-        let before = crate::kernel::Memory::new().with_block("contract-expression-cell", 4);
+        let before = crate::kernel::SymbolicMemory::new().with_block("contract-expression-cell", 4);
         let after = before
             .clone()
             .store(pointer.clone(), ProgramValue::Int32(written.clone()));
@@ -3469,12 +3506,12 @@ mod shared_contract_operand_tests {
     #[test]
     fn shared_contract_index_equality_keeps_read_states_and_sources() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: "contract-index".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "contract-index".into(),
+            offset: AddressOffset::Constant(0),
         };
         let load = |id| {
-            let memory = crate::kernel::Memory::new()
+            let memory = crate::kernel::SymbolicMemory::new()
                 .with_block("contract-index", 4)
                 .store(
                     pointer.clone(),
@@ -3488,7 +3525,7 @@ mod shared_contract_operand_tests {
         };
         let a = load(1017152);
         let b = load(1017153);
-        let offset = |term| PointerOffsetTerm::Int32Scaled {
+        let offset = |term| AddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, term),
             byte_width: 4,
         };
@@ -3517,7 +3554,7 @@ mod shared_contract_operand_tests {
     fn shared_byte_offsets_keep_bounds_and_width_authority() {
         let _session = crate::kernel::VerificationSession::enter();
         let x = MachineTerm::Variable(Variable(1017121));
-        let offset = PointerOffsetTerm::Int32Scaled {
+        let offset = AddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, x.clone()),
             byte_width: 4,
         };
@@ -3534,7 +3571,7 @@ mod shared_contract_operand_tests {
         assert!(
             pointer_offset_bytes(
                 &bounded,
-                &PointerOffsetTerm::Int64Scaled {
+                &AddressOffset::Int64Scaled {
                     value: SharedMachineIntegerTerm::index(
                         MachineIntegerType::Int64,
                         MachineTerm::int64_from_32(x)
@@ -3633,6 +3670,25 @@ mod prepared_entry_cases_tests {
             function,
             arguments,
         )
+    }
+
+    #[test]
+    fn unconditional_case_shares_the_produced_closing_entry() {
+        let (state, function, arguments) = fixture(0, 0);
+        let opened = crate::kernel::proof::OpenedContractEntry::open(
+            &state,
+            &function,
+            &arguments,
+            &Vec::<Proposition>::new(),
+            &ExecutionEnvironment::new(),
+        )
+        .unwrap();
+        let prepared = opened.prepared_cases();
+        assert_eq!(prepared.case_count(), 1);
+        assert!(Arc::ptr_eq(
+            &prepared.cases[0].closing_entry,
+            &prepared.closing_entry
+        ));
     }
 
     #[test]

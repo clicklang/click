@@ -20,7 +20,7 @@ fn completed_candidate_forks_share_source_state_and_all_path_storage() {
             .map(|_| {
                 let facts = (0..fact_count)
                     .map(|index| {
-                        ExecutionPureFact::new(Proposition::ConditionIs(
+                        ExecutionPureFact::new(Proposition::condition_is(
                             ConditionTerm::signed_less_than(
                                 MachineTerm::Variable(Variable(950_000 + index)),
                                 MachineTerm::constant(0),
@@ -82,7 +82,7 @@ fn terminal_candidate_publications_retain_records_and_payloads() {
             vec![],
             program_return(crate::kernel::program_expression::int32_literal(0)),
         );
-        let proposition = Proposition::ConditionIs(
+        let proposition = Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::Variable(Variable(970_000)),
                 MachineTerm::constant(0),
@@ -149,7 +149,7 @@ fn terminal_candidate_publications_retain_records_and_payloads() {
 #[test]
 fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
     let state = ExecutionState::new();
-    let public = ExecutionPureFact::certified(Proposition::ConditionIs(
+    let public = ExecutionPureFact::certified(Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(971_000)),
             MachineTerm::constant(0),
@@ -184,7 +184,7 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
     let delta = retained.facts().clone();
     std::sync::Arc::make_mut(&mut retained.data).completion_delta = Some(delta);
     let source = &retained;
-    let new_public = ExecutionPureFact::new(Proposition::ConditionIs(
+    let new_public = ExecutionPureFact::new(Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(971_001)),
             MachineTerm::constant(1),
@@ -424,9 +424,9 @@ fn borrowed_contract_input_roots_are_shared_across_proof_units_of_one_function()
 /// it instead of proving a vacuous body under it.
 #[test]
 fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
-    let pointer = crate::kernel::Pointer {
-        block: "buffer".into(),
-        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+    let pointer = crate::kernel::Address {
+        base: "buffer".into(),
+        offset: crate::kernel::AddressOffset::Constant(0),
     };
     let viewed = ResourceFact::view_memory(MemoryRange::new(
         pointer.clone(),
@@ -439,7 +439,7 @@ fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
         MachineTerm::constant(2),
     ));
     let state = ExecutionState::new()
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 8))
+        .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 8))
         .with_resource_context(
             ResourceContext::new().unchecked_with_facts([viewed.clone(), owned.clone()]),
         );
@@ -486,7 +486,7 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
         owner_occurrence,
         &owner,
         [viewed.clone()],
-        &Memory::new(),
+        &SymbolicMemory::new(),
     );
     let function = borrowed_input_view_function("reject_derived_input");
     let refusal = execution_state_with_borrowed_contract_inputs(
@@ -511,17 +511,17 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
 
 /// The aggregate-copy path is the same shape at a wider width: the copy's
 /// target is owned, its source is readable, and the lent range inside the
-/// target refuses the whole-struct write at the ledger (R01 aggregate case;
-/// docs/internals/stable-views.md).
+/// target cannot discharge the whole-struct separation obligation (R01
+/// aggregate case in docs/internals/stable-views.md).
 #[test]
-fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
-    let target = Pointer {
-        block: "target".into(),
-        offset: PointerOffsetTerm::Constant(0),
+fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
+    let target = Address {
+        base: "target".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let source = Pointer {
-        block: "source".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let source = Address {
+        base: "source".into(),
+        offset: AddressOffset::Constant(0),
     };
     let owned_target = own_memory_fact(target.clone(), 0, 2);
     let owned_source = own_memory_fact(source.clone(), 0, 2);
@@ -587,21 +587,21 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
         ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("an owner-authorized aggregate copy over a lent field has a checked outcome");
-    let Proposition::ProgramFunctionVerifies { outcome, .. } = theorem.proposition() else {
-        panic!("expected a function execution proposition");
+    let Proposition::Implies(requirement, execution) = theorem.proposition() else {
+        panic!("the aggregate copy must remain conditional on loan separation");
     };
-    let FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)) = outcome else {
-        panic!("expected a loan refusal, got {outcome:?}");
+    let Proposition::ResourceSeparate { left, right } = requirement.as_ref() else {
+        panic!("expected the explicit loan separation premise");
     };
-    assert_eq!(diagnostic.category(), LoanRefusalCategory::ActiveDependency);
-    assert_eq!(
-        diagnostic.operation(),
-        crate::kernel::LoanRefusalOperation::MemoryAccess
-    );
-    assert_eq!(
-        diagnostic.subject().conflicting_resource_fact(),
-        Some(&view_memory_fact(target, 1, 2))
-    );
+    assert!(!PureFactContext::new().proves_resource_separate(left, right));
+    assert_eq!(right.as_ref(), view_memory_fact(target, 1, 2).resource());
+    assert!(matches!(
+        execution.as_ref(),
+        Proposition::ProgramFunctionVerifies {
+            outcome: FunctionOutcome::Return { .. },
+            ..
+        }
+    ));
 }
 
 /// The loan barrier exists for exactly one shape: a write the ordinary
@@ -610,9 +610,9 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
 /// check now runs first.
 #[test]
 fn owner_authorized_write_into_a_lent_range_is_refused() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let owned = own_memory_fact(pointer.clone(), 0, 2);
     let viewed = view_memory_fact(pointer.clone(), 0, 1);
@@ -690,9 +690,9 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
 /// would change nothing (R01's same-value negative; docs/internals/stable-views.md).
 #[test]
 fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let owned = own_memory_fact(pointer.clone(), 0, 2);
     let viewed = view_memory_fact(pointer.clone(), 0, 1);
@@ -718,8 +718,8 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
         },
     );
     // The cell already holds 9; the body stores 9 into it.
-    let populated = Memory::new()
-        .with_block(pointer.block.clone(), 8)
+    let populated = SymbolicMemory::new()
+        .with_block(pointer.base.clone(), 8)
         .store(pointer.clone(), int32(9));
     let state = ExecutionState::new()
         .with_memory(populated.clone())
@@ -769,9 +769,9 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
 
 #[test]
 fn local_declaration_allocates_stack_object_for_address_of() {
-    let local_pointer = Pointer {
-        block: "local:x".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local_pointer = Address {
+        base: "local:x".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new();
     let statement = program_seq(
@@ -784,20 +784,24 @@ fn local_declaration_allocates_stack_object_for_address_of() {
         ),
     );
     let final_state = ExecutionState::new().with_local("x", int32(5)).with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_declared_scalar_block("local:x".into(), 4, ProgramType::Int32)
             .store(local_pointer, int32(5)),
     );
-    let final_state = final_state.with_resource_context(
-        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
-            MemoryRange::new_with_element_width(Memory::local_pointer("x"), 0.into(), 4.into(), 1),
-        )),
-    );
+    let final_state =
+        final_state.with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                SymbolicMemory::local_pointer("x"),
+                0.into(),
+                4.into(),
+                1,
+            )),
+        ));
     let mut final_state = final_state;
     final_state.locals.set_uninitialized_with_all_qualifiers(
         "x",
         ProgramType::Int32,
-        Memory::local_pointer("x"),
+        SymbolicMemory::local_pointer("x"),
         false,
         false,
         false,
@@ -848,7 +852,7 @@ fn addressable_parameter_gets_a_fresh_callee_stack_slot() {
         .slot("n")
         .expect("parameter slot")
         .clone();
-    assert!(caller_slot.block.starts_with("local:frame:0:"));
+    assert!(caller_slot.base.starts_with("local:frame:0:"));
     assert_eq!(
         caller_state.memory().cells.get(&caller_slot),
         Some(int32(3))
@@ -917,7 +921,7 @@ fn symbolic_execution_reports_branch_facts() {
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition.clone(), true)),
+            Box::new(Proposition::condition_is(condition.clone(), true)),
             Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(program_max_body()),
@@ -940,7 +944,7 @@ fn symbolic_execution_reports_branch_facts() {
     assert_eq!(
         execution.paths()[1].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition, false)),
+            Box::new(Proposition::condition_is(condition, false)),
             Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(program_max_body()),
@@ -1052,7 +1056,7 @@ fn symbolic_execution_uses_no_overflow_fact() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(no_overflow, false)),
+            Box::new(Proposition::condition_is(no_overflow, false)),
             Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
@@ -1104,7 +1108,7 @@ fn symbolic_add_uses_exact_intervals_to_rule_out_overflow() {
 
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::equal(
                 binary_node!(
                     Int32,
@@ -1140,7 +1144,7 @@ fn symbolic_increment_uses_int_max_bound_to_rule_out_overflow() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(x_lt_int_max, true)),
+            Box::new(Proposition::condition_is(x_lt_int_max, true)),
             Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
@@ -1266,11 +1270,11 @@ fn signed_addition_ranges_nested_additions_only_when_each_level_is_safe() {
 
 #[test]
 fn signed_addition_matches_interval_facts_across_unchanged_states() {
-    let cell = Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(660)), 4),
+    let cell = Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(660)), 4),
     };
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before.clone().with_block("local:temporary", 4);
     let before_load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(before))),
@@ -1303,9 +1307,9 @@ fn signed_addition_matches_interval_facts_across_unchanged_states() {
 
 #[test]
 fn pointer_store_through_local_address_updates_named_lvalue() {
-    let local_pointer = Pointer {
-        block: "local:x".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local_pointer = Address {
+        base: "local:x".into(),
+        offset: AddressOffset::Constant(0),
     };
     let statement = program_seq(
         program_declare("x", ProgramType::Int32),
@@ -1318,20 +1322,24 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
         ),
     );
     let final_state = ExecutionState::new().with_local("x", int32(5)).with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_declared_scalar_block("local:x".into(), 4, ProgramType::Int32)
             .store(local_pointer, int32(5)),
     );
-    let final_state = final_state.with_resource_context(
-        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
-            MemoryRange::new_with_element_width(Memory::local_pointer("x"), 0.into(), 4.into(), 1),
-        )),
-    );
+    let final_state =
+        final_state.with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                SymbolicMemory::local_pointer("x"),
+                0.into(),
+                4.into(),
+                1,
+            )),
+        ));
     let mut final_state = final_state;
     final_state.locals.set_uninitialized_with_all_qualifiers(
         "x",
         ProgramType::Int32,
-        Memory::local_pointer("x"),
+        SymbolicMemory::local_pointer("x"),
         false,
         false,
         false,
@@ -1362,34 +1370,35 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
 
 #[test]
 fn memory_load_store_are_native_theorems() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let value = int32(7);
-    let theorem = prove_memory_load_after_store_same(Memory::new(), pointer.clone(), value.clone());
+    let theorem =
+        prove_memory_load_after_store_same(SymbolicMemory::new(), pointer.clone(), value.clone());
 
     assert_eq!(
         theorem.proposition(),
         &Proposition::MemoryLoads {
-            memory: Memory::new().store(pointer.clone(), value.clone()),
+            memory: SymbolicMemory::new().store(pointer.clone(), value.clone()),
             pointer,
-            outcome: ExpressionOutcome::Value(value),
+            outcome: ExpressionOutcome::Value((value).into()),
         }
     );
 }
 
 #[test]
 fn store_preserves_distinct_memory_cell_frame() {
-    let stored_pointer = Pointer {
-        block: "left".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let stored_pointer = Address {
+        base: "left".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let loaded_pointer = Pointer {
-        block: "right".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let loaded_pointer = Address {
+        base: "right".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().store(loaded_pointer.clone(), int32(42));
+    let memory = SymbolicMemory::new().store(loaded_pointer.clone(), int32(42));
     let theorem = prove_memory_load_after_store_other(
         memory.clone(),
         stored_pointer.clone(),
@@ -1403,23 +1412,23 @@ fn store_preserves_distinct_memory_cell_frame() {
         &Proposition::MemoryLoads {
             memory: memory.store(stored_pointer, int32(9)),
             pointer: loaded_pointer,
-            outcome: ExpressionOutcome::Value(int32(42)),
+            outcome: ExpressionOutcome::Value((int32(42)).into()),
         }
     );
 }
 
 #[test]
 fn missing_memory_load_is_native_undefined_behavior() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(4),
     };
-    let theorem = prove_memory_load(Memory::new(), pointer.clone());
+    let theorem = prove_memory_load(SymbolicMemory::new(), pointer.clone());
 
     assert_eq!(
         theorem.proposition(),
         &Proposition::MemoryLoads {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             pointer,
             outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
         }
@@ -1428,8 +1437,8 @@ fn missing_memory_load_is_native_undefined_behavior() {
 
 #[test]
 fn function_execution_theorem_retains_non_assumable_verification_conditions() {
-    let verification_condition = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
-    let conclusion = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    let verification_condition = Proposition::condition_is(ConditionTerm::Constant(false), true);
+    let conclusion = Proposition::condition_is(ConditionTerm::Constant(true), true);
     let theorem = Theorem::new(wrap_proof_facts(
         conclusion,
         &PureFactContext::new(),
@@ -1563,7 +1572,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
     };
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -1660,36 +1669,33 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
         path.obligations()
     );
     assert!(path.facts().iter().any(|fact| {
-        matches!(
-            fact.proposition(),
-            Proposition::ConditionIs(
-                ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: _, right },
+        matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(
+                _,
                 true
-            ) if right.as_const() == Some(1)
-        )
+            ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: _, right }, _)) if (right.as_const() == Some(1))))
     }));
 }
 
 #[test]
 fn verified_function_rule_does_not_publish_one_spec_alias_path() {
-    let stored = Pointer {
-        block: "heap".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let stored = Address {
+        base: "heap".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let queried = Pointer {
-        block: stored.block.clone(),
-        offset: PointerOffsetTerm::Variable(Variable(900_002)),
+    let queried = Address {
+        base: stored.base.clone(),
+        offset: AddressOffset::Variable(Variable(900_002)),
     };
     let q = SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("q"));
     let reflexive_load = SpecProposition::Comparison {
         left: SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(q.clone()),
             value_type: ProgramType::Int32,
         },
         operator: ComparisonOperator::Equal,
         right: SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(q),
             value_type: ProgramType::Int32,
         },
@@ -1724,7 +1730,11 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
     let execution = prove_symbolic_program_execution_paths_with_environment(
         ExecutionState::new()
             .with_population_creation_tracking()
-            .with_memory(Memory::new().with_block("heap", 8).store(stored, int32(0))),
+            .with_memory(
+                SymbolicMemory::new()
+                    .with_block("heap", 8)
+                    .store(stored, int32(0)),
+            ),
         program_call_then_assign(
             2,
             "result",
@@ -1743,18 +1753,15 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
         path.obligations()
     );
     assert!(!path.facts().iter().any(|fact| {
-        matches!(
-            fact.proposition(),
-            Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(_, _), _)
-        )
+        matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressOffsetEqual(_, _), _))))
     }));
 }
 
 #[test]
 fn opaque_pointer_result_can_alias_its_argument() {
-    let argument = Pointer {
-        block: "heap".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let argument = Address {
+        base: "heap".into(),
+        offset: AddressOffset::Constant(0),
     };
     let helper = program_function(
         ProgramType::Int32Pointer,
@@ -1791,7 +1798,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
     let execution = prove_symbolic_program_execution_paths_with_environment(
         ExecutionState::new()
             .with_population_creation_tracking()
-            .with_local("result", ProgramValue::pointer(Pointer::null())),
+            .with_local("result", ProgramValue::pointer(Address::null())),
         program_call_then_assign(
             3,
             "result",
@@ -1833,8 +1840,8 @@ fn opaque_pointer_result_can_alias_its_argument() {
     );
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(result.pointer().clone(), argument),
+        &Proposition::condition_is(
+            ConditionTerm::address_equal(result.address().clone(), argument),
             true,
         )
     ));
@@ -2185,7 +2192,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 };
                 assert!(crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
-                    &Proposition::ConditionIs(
+                    &Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
@@ -2197,7 +2204,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 ));
                 assert!(!crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
-                    &Proposition::ConditionIs(
+                    &Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
@@ -2226,7 +2233,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 };
                 assert!(crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
-                    &Proposition::ConditionIs(
+                    &Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
@@ -2238,7 +2245,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 ));
                 assert!(!crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
-                    &Proposition::ConditionIs(
+                    &Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
@@ -2342,7 +2349,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         );
         assert!(crate::kernel::search::ProofSearch::proves(
             &(assumptions),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -2354,7 +2361,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         ));
         assert!(!crate::kernel::search::ProofSearch::proves(
             &(assumptions),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -2425,11 +2432,11 @@ fn exceptional_direct_rule_boundary_excludes_resource_transitions() {
 
 #[test]
 fn effect_endpoint_comparison_ignores_function_local_cells() {
-    let local = Pointer {
-        block: "local:temporary".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local = Address {
+        base: "local:temporary".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let before = Memory::new().with_block("local:temporary", 4);
+    let before = SymbolicMemory::new().with_block("local:temporary", 4);
     let after = before.clone().store(local, int32(7));
 
     assert!(
@@ -2440,9 +2447,9 @@ fn effect_endpoint_comparison_ignores_function_local_cells() {
         )
     );
 
-    let external = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let external = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let changed_external = after.store(external, int32(9));
     assert!(
@@ -2456,14 +2463,14 @@ fn effect_endpoint_comparison_ignores_function_local_cells() {
 
 #[test]
 fn effect_endpoint_allows_resource_allocation_bookkeeping() {
-    let allocation = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(64),
+    let allocation = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(64),
     };
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before
         .clone()
-        .with_heap_allocation_claim(allocation, HeapExtent::int32(16))
+        .with_heap_allocation_claim(allocation, AllocationSize::int32(16))
         .expect("a fresh symbolic allocation claim should be registerable");
 
     assert!(
@@ -2481,7 +2488,7 @@ fn bool_cast_range_is_rule_c1_of_the_cast() {
     let flag = ConditionTerm::Variable(Variable(1));
     let cast = MachineTerm::bool_cast(MachineIntegerType::Int32, flag.clone());
     let equals = |constant| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::equal(cast.clone(), MachineTerm::constant(constant)),
             true,
         )
@@ -2866,7 +2873,7 @@ fn completion_accepts_a_case_arm_recorded_after_the_return() {
     };
     let (candidates, function, trace) = early_return_inputs(returning);
     let root = crate::kernel::proof::PureFactStore::default();
-    let then_fact = Proposition::ConditionIs(
+    let then_fact = Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(1_000_050)),
             MachineTerm::constant(5),
@@ -3602,9 +3609,9 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     use crate::kernel::api::completion_key;
     let x = MachineTerm::Variable(Variable(1));
     let y = MachineTerm::Variable(Variable(2));
-    let truth = |value: bool| Proposition::ConditionIs(ConditionTerm::Constant(value), true);
+    let truth = |value: bool| Proposition::condition_is(ConditionTerm::Constant(value), true);
     let equal = |left: &MachineTerm, right: &MachineTerm, value: bool| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3621,7 +3628,7 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     assert_eq!(completion_key(&equal(&x, &x, false)), truth(false));
     // A constant condition folds to the canonical truth value.
     assert_eq!(
-        completion_key(&Proposition::ConditionIs(
+        completion_key(&Proposition::condition_is(
             ConditionTerm::Constant(false),
             false
         )),
@@ -3629,7 +3636,7 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     );
     // Negating a constant stays in the canonical truth form.
     assert_eq!(
-        completion_key(&Proposition::Not(Box::new(Proposition::ConditionIs(
+        completion_key(&Proposition::Not(Box::new(Proposition::condition_is(
             ConditionTerm::Constant(false),
             true,
         )))),
@@ -3643,7 +3650,7 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     // Constant premises and conjuncts disappear.
     assert_eq!(
         completion_key(&Proposition::Implies(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::Constant(false),
                 false
             )),
@@ -4028,16 +4035,16 @@ fn a_recursion_anchor_is_part_of_the_environment_identity() {
 /// kernel sites read two equal blocks as one object. A called frame runs on
 /// the caller's memory with its own locals map, so it cannot see the caller's
 /// objects; if it minted the plain `local:<name>` anyway, the callee's object
-/// and the caller's would be one block, one extent and one cell map.
+/// and the caller's would be one block, one allocation size and one cell map.
 #[test]
 fn a_called_frames_declaration_does_not_take_the_callers_block() {
-    let callers = Pointer {
-        block: "local:x".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let callers = Address {
+        base: "local:x".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("local:x", 4)
                 .store(callers.clone(), int32(1)),
         )
@@ -4069,9 +4076,9 @@ fn a_called_frames_declaration_does_not_take_the_callers_block() {
 /// block to a new object would revive every stale pointer to the old one.
 #[test]
 fn a_declaration_does_not_take_a_block_whose_lifetime_ended() {
-    let retired = PointerBlock::from("local:x");
+    let retired = AddressBase::from("local:x");
     let state = ExecutionState::new().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("local:x", 4)
             .without_local_block(&retired),
     );
@@ -4097,7 +4104,7 @@ fn a_declaration_does_not_take_a_block_whose_lifetime_ended() {
             .locals()
             .slot("x")
             .expect("the new object's slot")
-            .block,
+            .base,
         &retired
     );
 }
@@ -4389,23 +4396,23 @@ fn path_exists_at_program_point(
     ty: &AlgebraicType,
     binder: u64,
     argument: u64,
-    memory: Memory,
+    memory: SymbolicMemory,
     target: u32,
 ) -> Proposition {
     Proposition::Exists {
         name: "path".into(),
         var: Variable(binder),
         sort: Sort::Algebraic(ty.clone()),
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::ClickFunctionApplication {
                     name: "walk".into(),
                     arguments: vec![
                         PureFunctionArgument::ArrayRef {
                             memory,
-                            pointer: ProgramValue::pointer(Pointer {
-                                block: "graph".into(),
-                                offset: PointerOffsetTerm::Constant(0),
+                            pointer: ProgramValue::pointer(Address {
+                                base: "graph".into(),
+                                offset: AddressOffset::Constant(0),
                             }),
                             element_type: ProgramType::Int32,
                         },
@@ -4426,11 +4433,11 @@ fn path_exists_at_program_point(
 fn certification_recognizes_only_the_same_algebraic_existential() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = AlgebraicType::parameter("Path".into());
-    let before = Memory::new().with_block("graph", 4);
+    let before = SymbolicMemory::new().with_block("graph", 4);
     let after = before.clone().store(
-        Pointer {
-            block: "graph".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "graph".into(),
+            offset: AddressOffset::Constant(0),
         },
         int32(1),
     );
@@ -4496,7 +4503,7 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
     // A future freshening rule must not assume a reserved numeric range alone
     // makes its first identity absent from an arbitrary kernel fact context.
     let would_be_witness = Variable(1 << 44);
-    let assumed = Proposition::ConditionIs(
+    let assumed = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -4509,7 +4516,7 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
         name: Default::default(),
         var: binder,
         sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -4536,7 +4543,7 @@ fn kernel_fresh_identity_cannot_be_forged_by_the_numeric_constructor() {
 fn conditional_path_universal(
     ty: &AlgebraicType,
     binder: u64,
-    memory: Memory,
+    memory: SymbolicMemory,
     target: u32,
 ) -> Proposition {
     let Proposition::Exists {
@@ -4553,7 +4560,7 @@ fn conditional_path_universal(
             name: Default::default(),
             var: Variable(binder + 1),
             sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 ConditionTerm::equal(MachineTerm::Variable(Variable(binder + 1)), 0.into()),
                 true,
             )),
@@ -4571,7 +4578,7 @@ fn conditional_path_universal(
 fn certification_keeps_conditional_universal_guards_states_and_sorts() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = AlgebraicType::parameter("Path".into());
-    let memory = Memory::new().with_block("graph", 4);
+    let memory = SymbolicMemory::new().with_block("graph", 4);
     let fact = conditional_path_universal(&ty, 100, memory.clone(), 0);
     let proof_facts =
         crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&fact));
@@ -4603,9 +4610,9 @@ fn certification_keeps_conditional_universal_guards_states_and_sorts() {
         0,
     )));
     let after = memory.store(
-        Pointer {
-            block: "graph".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "graph".into(),
+            offset: AddressOffset::Constant(0),
         },
         int32(1),
     );
@@ -4614,13 +4621,13 @@ fn certification_keeps_conditional_universal_guards_states_and_sorts() {
 
 #[test]
 fn aggregate_copy_requires_write_authority_for_each_destination_field() {
-    let target = Pointer {
-        block: "target".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let target = Address {
+        base: "target".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let source = Pointer {
-        block: "source".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let source = Address {
+        base: "source".into(),
+        offset: AddressOffset::Constant(0),
     };
     let layout = AggregateLayout::new(
         8,
@@ -4684,7 +4691,7 @@ fn aggregate_copy_requires_write_authority_for_each_destination_field() {
     }
 }
 
-// Allocation grants only its exact byte extent, never initialization; taking
+// Allocation grants only its exact byte span, never initialization; taking
 // that owner away must block both named and pointer-mediated local accesses.
 #[test]
 fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
@@ -4701,7 +4708,7 @@ fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
         panic!("scalar declaration");
     };
     let state = state.as_ref().clone();
-    let pointer = Memory::local_pointer("word");
+    let pointer = SymbolicMemory::local_pointer("word");
     let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         pointer.clone(),
         0.into(),
@@ -4799,7 +4806,7 @@ fn cloned_functions_and_specifications_share_their_contracts() {
         (0..8)
             .map(|index| ProgramExpression::Value(int32(index)))
             .collect(),
-        vec![Proposition::ConditionIs(ConditionTerm::Constant(true), true); 8],
+        vec![Proposition::condition_is(ConditionTerm::Constant(true), true); 8],
         FunctionOutcome::Return {
             value: int32(0).into(),
             state: Box::new(ExecutionState::new()),

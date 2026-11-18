@@ -288,7 +288,7 @@ statement, which has nothing after it to walk twice.
 An invariant's side conditions are invariant content. These are what its
 terms need to denote a value: that `i + 1` does not overflow in
 `to_integer(i + 1)`, that an integer converted back to `int32` fits, or the
-extent half of a stated range (see [Viewable ranges](viewability.md)). The
+span half of a stated range (see [Viewable ranges](viewability.md)). The
 head, the body and the exit assume them with the invariant, so the entry and
 every back edge owe them: each is an entry goal of its own beside the
 invariant's body, proved by that invariant's proof, and a member of the
@@ -1181,7 +1181,10 @@ preserve by {
     branch ensuring {
         fact t >= 0;
         fact t <= 100;
-    } then { step(); } else { step(); }
+    } {
+        true => { step(); }
+        false => { step(); }
+    }
     step();
 }
 ```

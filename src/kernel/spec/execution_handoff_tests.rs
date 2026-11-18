@@ -414,22 +414,22 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
     let class = crate::kernel::effective_type::CAccessClass::Scalar(
         crate::kernel::effective_type::CScalarClass::Int,
     );
-    let source = PointerValue::new(
-        Pointer::symbolic(Variable(999982)),
+    let source = Pointer::new(
+        Address::symbolic(Variable(999982)),
         ProgramType::VoidPointer,
     )
-    .with_address(Pointer::symbolic(Variable(999981)))
-    .with_opaque_extent(Some(Arc::new(Pointer::symbolic(Variable(999983)))))
+    .with_address(Address::symbolic(Variable(999981)))
+    .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(999983)))))
     .with_pointee_volatile(true)
     .with_pointee_constant(true)
-    .with_extent(Some(SubobjectExtent {
-        start: Pointer::symbolic(Variable(999984)),
+    .with_bounds(Some(SubobjectBounds {
+        start: Address::symbolic(Variable(999984)),
         width: MachineTerm::Variable(Variable(999985)),
     }))
     .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(class, 3, 999986, false)));
-    let payload = SharedPointerValue::import(&source);
-    let memory = intern_memory(Memory::new());
-    let address = SharedPointerAddress::import(&Memory::global_pointer("pointer-slot"));
+    let payload = SharedPointer::import(&source);
+    let memory = intern_memory(SymbolicMemory::new());
+    let address = SharedAddress::import(&SymbolicMemory::global_pointer("pointer-slot"));
     let roots = [
         KernelTerm::shared_pointer_value(payload.clone()),
         KernelTerm::shared_pointer_call(
@@ -440,13 +440,17 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
             ),
             payload.clone(),
         ),
-        KernelTerm::shared_pointer_read(payload.clone(), memory.clone(), address.clone()),
+        KernelTerm::shared_pointer_read(
+            payload.clone(),
+            crate::kernel::ProgramPoint::at(&memory),
+            address.clone(),
+        ),
     ];
     for root in roots {
         let field = AlgebraicFieldResult::from_program(SpecValue::Shared(root.clone()))
             .without_pointer_constant()
             .into_kernel();
-        let expected = SharedPointerValue::import(&source.clone().with_pointee_constant(false));
+        let expected = SharedPointer::import(&source.clone().with_pointee_constant(false));
         assert!(
             field
                 .pointer_payload()
@@ -462,19 +466,19 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
             payload.node().provenance
         );
         match (root.node(), field.node()) {
-            (KernelTermNode::PointerValue { .. }, KernelTermNode::PointerValue { .. }) => {}
+            (KernelTermNode::Pointer { .. }, KernelTermNode::Pointer { .. }) => {}
             (
                 KernelTermNode::PointerCall { call: a, .. },
                 KernelTermNode::PointerCall { call: b, .. },
             ) => assert_eq!(a, b),
             (
                 KernelTermNode::PointerRead {
-                    memory: a,
+                    point: a,
                     address: p,
                     ..
                 },
                 KernelTermNode::PointerRead {
-                    memory: b,
+                    point: b,
                     address: q,
                     ..
                 },
@@ -535,17 +539,17 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
 }
 
 #[test]
-fn explicit_pointer_cast_lowering_keeps_native_extent_rules() {
+fn explicit_pointer_cast_lowering_keeps_native_bounds_rules() {
     let _session = crate::kernel::VerificationSession::enter();
-    for (source, target, keeps_extent) in [
+    for (source, target, keeps_bounds) in [
         (ProgramType::VoidPointer, ProgramType::VoidPointer, false),
         (ProgramType::Int32Pointer, ProgramType::UInt8Pointer, false),
         (ProgramType::Int8Pointer, ProgramType::UInt8Pointer, true),
     ] {
-        let pointer = PointerValue::new(Pointer::symbolic(Variable(999940)), source)
+        let pointer = Pointer::new(Address::symbolic(Variable(999940)), source)
             .with_pointee_constant(true)
-            .with_extent(Some(SubobjectExtent {
-                start: Pointer::symbolic(Variable(999940)),
+            .with_bounds(Some(SubobjectBounds {
+                start: Address::symbolic(Variable(999940)),
                 width: MachineTerm::constant(4),
             }));
         let expression = SpecExpression::Cast(
@@ -572,7 +576,7 @@ fn explicit_pointer_cast_lowering_keeps_native_extent_rules() {
         let ProgramValue::Pointer(expected) = old.value.into_native() else {
             panic!()
         };
-        assert_eq!(expected.extent().is_some(), keeps_extent);
+        assert_eq!(expected.bounds().is_some(), keeps_bounds);
         assert!(
             actual
                 .value
@@ -580,7 +584,7 @@ fn explicit_pointer_cast_lowering_keeps_native_extent_rules() {
                 .unwrap()
                 .pointer_payload()
                 .unwrap()
-                .same_source_payload(&SharedPointerValue::import(&expected))
+                .same_source_payload(&SharedPointer::import(&expected))
         );
         assert_eq!(actual.facts, old.facts);
         assert_eq!(actual.obligations, old.obligations);
@@ -723,8 +727,8 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
         algebraic_type: algebraic_type.clone(),
         node: AlgebraicTermNode::Variable(Variable(999960)),
     };
-    let pointer = PointerValue::new(
-        Pointer::symbolic(Variable(999961)),
+    let pointer = Pointer::new(
+        Address::symbolic(Variable(999961)),
         ProgramType::Int32Pointer,
     )
     .with_pointee_constant(true);
@@ -805,7 +809,7 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
             arguments[6]
                 .pointer_payload()
                 .unwrap()
-                .same_source_payload(&SharedPointerValue::import(&pointer))
+                .same_source_payload(&SharedPointer::import(&pointer))
         );
         let old = evaluate(true);
         assert_eq!(actual.facts, old.facts);

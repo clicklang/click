@@ -8,8 +8,9 @@ returns `bool`; at `Cons(v, Nil)` its `else` end is `list::contains(Nil, x)`,
 which the implicit closer follows into the definition to `false`. So the fact
 `list::contains(Cons(v, Nil), x)` forces `v == x`. The proof the implicit closer writes is
 the one written by hand: `if v == x`, `known`; otherwise
-`have not list::contains(..)` by unfolding both applications and normalizing
-with `not (v == x)`, then `contradiction`.
+unfold both applications to show that the original call equals `false`.
+Use that equation to prove `not list::contains(..)`, then close with
+`contradiction`.
 
 The fact may name the list through a connected equation, and the goal may be
 a postcondition spelled over `result`.

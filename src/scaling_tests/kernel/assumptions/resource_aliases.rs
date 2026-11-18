@@ -3,17 +3,17 @@ fn read_validity_misses_do_not_walk_pointer_aliases() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(880_000));
+        let base = Address::symbolic(Variable(880_000));
         let mut context = PureFactContext::new();
         for index in 0..size {
             context
                 .equality_graph
-                .add_equality(&base, &Pointer::symbolic(Variable(880_001 + index)));
+                .add_equality(&base, &Address::symbolic(Variable(880_001 + index)));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
                 assert!(!context.has_memory_read_defined_evidence(
-                    &Memory::new(),
+                    &SymbolicMemory::new(),
                     &base,
                     ProgramType::Int32
                 ));
@@ -34,9 +34,9 @@ fn kept_frame_misses_do_not_walk_aliases_or_unrelated_ranges() {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = |id| Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(890_000 + id)),
+            let pointer = |id| Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(890_000 + id)),
             };
             let query = pointer(0);
             let mut context = PureFactContext::new();
@@ -44,7 +44,7 @@ fn kept_frame_misses_do_not_walk_aliases_or_unrelated_ranges() {
             for index in 1..=size {
                 if aliases {
                     context = context.assume_condition(
-                        ConditionTerm::pointer_equal(query.clone(), pointer(index)),
+                        ConditionTerm::address_equal(query.clone(), pointer(index)),
                         true,
                     );
                 } else {
@@ -84,30 +84,32 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Pointer {
-            block: PointerBlock::Heap(900_000),
-            offset: PointerOffsetTerm::Constant(0),
+        let source = Address {
+            base: AddressBase::Heap(900_000),
+            offset: AddressOffset::Constant(0),
         };
         let field = source.offset_by_bytes(4);
-        let memory = Memory::new()
-            .with_heap_allocation_claim(source.clone(), HeapExtent::int32(16))
+        let memory = SymbolicMemory::new()
+            .with_heap_allocation_claim(source.clone(), AllocationSize::int32(16))
             .unwrap();
         let mut context =
             PureFactContext::new().assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: field.clone(),
                 value_type: ProgramType::Int32,
             });
         let mut query = source.clone();
         for index in 0..size {
-            query = Pointer::symbolic(Variable(900_001 + index));
+            query = Address::symbolic(Variable(900_001 + index));
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(source.clone(), query.clone()),
+                ConditionTerm::address_equal(source.clone(), query.clone()),
                 true,
             );
             context = context.assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
-                pointer: Pointer::symbolic(Variable(910_000 + index)),
+                pointer: Address::symbolic(Variable(910_000 + index)),
                 value_type: ProgramType::Int32,
             });
         }
@@ -153,19 +155,20 @@ fn read_validity_state_buckets_keep_exact_hits_and_bounded_misses() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Pointer::symbolic(Variable(920_000));
-        let other = Pointer::symbolic(Variable(920_001));
-        let mut memory = Memory::new();
+        let source = Address::symbolic(Variable(920_000));
+        let other = Address::symbolic(Variable(920_001));
+        let mut memory = SymbolicMemory::new();
         let mut context = PureFactContext::new();
         for index in 0..size {
             memory = memory.store(other.clone(), ProgramValue::Int32((index as u32).into()));
             context = context.assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: source.clone(),
                 value_type: ProgramType::Int32,
             });
         }
-        let missing = Memory::new();
+        let missing = SymbolicMemory::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
                 assert!(context.has_memory_read_defined_evidence(

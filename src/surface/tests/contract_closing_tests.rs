@@ -15,6 +15,7 @@ fn proof(steps: &str) -> String {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_00")]
 fn explicit_contract_closing_uses_ordinary_known_steps() {
     let source = proof("normalize(); known(); known(); known();");
     let mut verified = without_implicit_solve(|| verify_c_sources(&source, C))
@@ -35,6 +36,7 @@ fn explicit_contract_closing_uses_ordinary_known_steps() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_00")]
 fn implicit_contract_closing_expands_into_explicit_steps() {
     let source = proof("solve();");
     verify_c_sources(&source, C).unwrap();
@@ -45,6 +47,7 @@ fn implicit_contract_closing_expands_into_explicit_steps() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_00")]
 fn per_clause_contract_closing_expands_after_its_source_proof() {
     let source = r#"verifying "closing.c";
         int32 value() { ensures result == 7 by { step_until(function.exit); }; }
@@ -55,6 +58,7 @@ fn per_clause_contract_closing_expands_after_its_source_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_00")]
 fn omitted_closing_steps_leave_their_obligations_open() {
     for (count, goal) in [
         (0, "joint returned resources"),
@@ -76,6 +80,7 @@ fn omitted_closing_steps_leave_their_obligations_open() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_01")]
 fn written_solve_closes_only_one_selected_closing_goal() {
     let source = proof("normalize(); solve();");
     let error = without_implicit_solve(|| verify_c_sources(&source, C)).unwrap_err();
@@ -88,6 +93,7 @@ fn written_solve_closes_only_one_selected_closing_goal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_01")]
 fn expansion_writes_each_closing_step_and_requires_them_when_cold() {
     let source = proof("normalize();");
     let expanded = expand_function_proof_source(&source, C, "value").unwrap();
@@ -106,11 +112,12 @@ fn expansion_writes_each_closing_step_and_requires_them_when_cold() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_01")]
 fn proposition_closers_name_the_pending_closing_goal() {
     for closer in [
         "normalize();",
         "solve() using {};",
-        "both { known(); } and { known(); }",
+        "both { left => { known(); } right => { known(); } }",
     ] {
         let source = proof(&format!("normalize(); {closer}"));
         let error = verify_c_sources(&source, C).unwrap_err();
@@ -127,6 +134,7 @@ fn proposition_closers_name_the_pending_closing_goal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_01")]
 fn footprint_refusal_names_the_goal_and_the_solver_that_failed() {
     let inputs = [(
         "writes.c",
@@ -192,6 +200,7 @@ const SOURCE_CELLS_C: &[(&str, &str)] = &[(
 )];
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_02")]
 fn grouped_source_only_claims_complete_and_expand_as_ordinary_proofs() {
     let source = source_only_clauses(true, 1);
     verify_c_sources(&source, SOURCE_CELLS_C).unwrap();
@@ -201,11 +210,13 @@ fn grouped_source_only_claims_complete_and_expand_as_ordinary_proofs() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_02")]
 fn separate_source_only_clauses_complete_their_own_cells() {
     verify_c_sources(&source_only_clauses(false, 1), SOURCE_CELLS_C).unwrap();
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_02")]
 fn proving_one_source_only_clause_cannot_cover_a_false_sibling() {
     for grouped in [false, true] {
         assert!(verify_c_sources(&source_only_clauses(grouped, 9), SOURCE_CELLS_C).is_err());
@@ -213,6 +224,7 @@ fn proving_one_source_only_clause_cannot_cover_a_false_sibling() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_02")]
 fn concrete_and_avoided_loops_need_no_summary_measure() {
     let c = [(
         "concrete_exits.c",
@@ -248,6 +260,7 @@ fn an_empty_loop_summary_does_not_publish_concrete_exit_evidence() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_03")]
 fn completed_descent_covers_a_concretely_avoided_recursive_loop() {
     let c = [(
         "retained_descent.c",
@@ -267,6 +280,7 @@ fn completed_descent_covers_a_concretely_avoided_recursive_loop() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_03")]
 fn retained_context_does_not_discharge_an_unproved_recursive_descent() {
     let c = [(
         "unproved_descent.c",
@@ -283,6 +297,7 @@ fn retained_context_does_not_discharge_an_unproved_recursive_descent() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_03")]
 fn reassigned_numeric_parameter_descent_expands_into_ordinary_steps() {
     let c = [(
         "numeric_descent.c",
@@ -317,4 +332,33 @@ fn anonymous_resource_descent_completes_and_expands_without_a_source_walk() {
     let expanded = expand_function_proof_source(&source, &inputs, "walk").unwrap();
     without_implicit_solve(|| verify_c_sources(&expanded, &inputs))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "contract_closing_tests.rs",
+    marker: "contract_closing_batch_",
+    contract_closing_batch_00: [
+        explicit_contract_closing_uses_ordinary_known_steps,
+        implicit_contract_closing_expands_into_explicit_steps,
+        per_clause_contract_closing_expands_after_its_source_proof,
+        omitted_closing_steps_leave_their_obligations_open,
+    ],
+    contract_closing_batch_01: [
+        written_solve_closes_only_one_selected_closing_goal,
+        expansion_writes_each_closing_step_and_requires_them_when_cold,
+        proposition_closers_name_the_pending_closing_goal,
+        footprint_refusal_names_the_goal_and_the_solver_that_failed,
+    ],
+    contract_closing_batch_02: [
+        grouped_source_only_claims_complete_and_expand_as_ordinary_proofs,
+        separate_source_only_clauses_complete_their_own_cells,
+        proving_one_source_only_clause_cannot_cover_a_false_sibling,
+        concrete_and_avoided_loops_need_no_summary_measure,
+    ],
+    contract_closing_batch_03: [
+        completed_descent_covers_a_concretely_avoided_recursive_loop,
+        retained_context_does_not_discharge_an_unproved_recursive_descent,
+        reassigned_numeric_parameter_descent_expands_into_ordinary_steps,
+    ],
 }

@@ -1,10 +1,10 @@
-# A viewable-range invariant whose extent is false at entry is refused at entry
+# A viewable-range invariant whose span is false at entry is refused at entry
 
-The loop head assumes the extent half of a stated range, `0 <= k` for
+The loop head assumes the span half of a stated range, `0 <= k` for
 `viewable(a[0..k])`, as invariant content. That is sound only because the
 entry owes it. Here `k` is `-1` on entry, so `a[0..-1]` runs backwards and the
 invariant is false before the first iteration. Its lowering at the entry state
-has no reading at all: it prunes a range it already decides is not an extent.
+has no reading at all: it prunes a range it already decides is not a span.
 An invariant with no reading must owe the impossible goal rather than nothing,
 or the head's `0 <= k` would be assumed with nobody having proved it, and the
 false `ensures result >= 0` would follow at the exit.
@@ -49,5 +49,5 @@ int32 walk(int32 *a, int32 n) {
 ```
 
 ```expect
-fail: loop 0 invariant 2 entry: this invariant cannot hold here: a memory range it states runs backwards, so it is not a byte extent: its end is 1 element before its start
+fail: loop 0 invariant 2 entry: this invariant cannot hold here: a memory range it states runs backwards, so it is not a byte span: its end is 1 element before its start
 ```

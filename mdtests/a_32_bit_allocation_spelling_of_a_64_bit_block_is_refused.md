@@ -1,10 +1,10 @@
 # A 32-bit `allocation` spelling of a 64-bit block is refused
 
 `malloc(n * sizeof(uint32_t))` with a `size_t` count holds the token
-`allocation(p, n * 4u64)`, a 64-bit extent. A callee that states the block as
-`allocation(p, m * 4)` with an `int32` count names a 32-bit extent. A
-block's extent keeps the format of its size's C type, and tokens of the two
-formats never match (`design/heap-extents.md`, D5); the refusal names both.
+`allocation(p, n * 4u64)`, a 64-bit size. A callee that states the block as
+`allocation(p, m * 4)` with an `int32` count names a 32-bit size. A
+block's size keeps the format of its size's C type, and tokens of the two
+formats never match (`design/heap-allocation-sizes.md`, D5); the refusal names both.
 
 ```c filename=a_32_bit_allocation_spelling_of_a_64_bit_block_is_refused.c
 #include <stdint.h>

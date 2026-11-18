@@ -10,10 +10,10 @@ down.
 The store `occupied[i] = 0` writes a guard cell while the window owns the
 element `data[i]` outright, so the iterated fact cannot hold it and the store
 rule opens a hole at `i`. The stored value makes the guard true, so the hole
-stays open until `give(data[i..i + 1])` moves the element back into the fact.
+stays open until `fold(arena_window(data, occupied, capacity, start, end)[i])` moves the element back into the fact.
 The proof then extends the free range by one cell: the new cell from the
 store, the rest preserved explicitly across the decrement and store before
-returning ownership with `give`.
+restoring the slot with indexed `fold`.
 
 `src/surface/tests/expansion_tests.rs` expands this fixture's proof and
 reverifies the result; `click audit` agrees.
@@ -143,7 +143,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                 have to_integer(at(opened, i) - 1) <= to_integer(end);
                 known();
             }
-            give(data[i..i + 1]);
+            fold(arena_window(data, occupied, capacity, start, end)[i]);
             let w = fold(arena_window(data, occupied, capacity, start, end), { next: i });
             have 0 <= to_integer(0 - start + at(region(3).entry, i) - 1) by {
                 solve() using {

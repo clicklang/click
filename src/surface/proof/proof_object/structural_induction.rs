@@ -5,6 +5,11 @@ use crate::surface::proof::pure_theorems::{
 };
 
 impl<'a> Proof<'a> {
+    pub(in crate::surface::proof) fn uses_structural_induction(&self) -> bool {
+        matches!(self.context.as_ref(), ProofContext::Pure(context)
+            if context.induction_setup.as_ref().is_some_and(|setup| setup.structural_parameters.is_some()))
+    }
+
     pub(in crate::surface::proof) fn structural_induction_setup(
         &self,
     ) -> Option<&PureStructuralInductionBranchSetup> {
@@ -98,7 +103,7 @@ impl<'a> Proof<'a> {
             .iter()
             .rev()
             .fold(conclusion.clone(), |body, premise| {
-                let body = crate::kernel::stated_loadable_extent_guards(premise)
+                let body = crate::kernel::stated_loadable_span_guards(premise)
                     .into_iter()
                     .rev()
                     .fold(body, |body, guard| {

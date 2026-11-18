@@ -76,10 +76,10 @@ fn unsigned_congruence_propagates_late_aliases_without_injectivity_or_signed_coe
 #[test]
 fn unsigned_congruence_keeps_load_states_and_widths_distinct() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("unsigned", 4));
-    let pointer = Pointer {
-        block: "unsigned".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let before = intern_memory(SymbolicMemory::new().with_block("unsigned", 4));
+    let pointer = Address {
+        base: "unsigned".into(),
+        offset: AddressOffset::Constant(0),
     };
     let after = intern_memory(before.memory().clone().store(
         pointer.clone(),
@@ -171,10 +171,10 @@ fn fact_transport_uses_graph_int32_congruence_without_the_legacy_index() {
 #[test]
 fn fact_transport_uses_registered_load_congruence_only_in_one_state() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("int32", 16));
-    let pointer = |index| Pointer {
-        block: "int32".into(),
-        offset: PointerOffsetTerm::scale_int32(index, 4),
+    let before = intern_memory(SymbolicMemory::new().with_block("int32", 16));
+    let pointer = |index| Address {
+        base: "int32".into(),
+        offset: AddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(load_variable_for_cell_with_origin(
@@ -204,9 +204,9 @@ fn fact_transport_uses_registered_load_congruence_only_in_one_state() {
 #[test]
 fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_state_scope() {
     let _session = VerificationSession::enter();
-    let pointer = Pointer {
-        block: "resolved-int32".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "resolved-int32".into(),
+        offset: AddressOffset::Constant(0),
     };
     let (a, b) = (var(31), var(32));
     let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
@@ -219,7 +219,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_state_scope() {
         )
     };
     let before = intern_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("resolved-int32", 4)
             .store(pointer.clone(), ProgramValue::Int32(sum(a.clone()))),
     );
@@ -228,7 +228,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_state_scope() {
         ProgramValue::Int32(MachineTerm::constant(9)),
     ));
     let byte_memory = intern_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("resolved-int32", 1)
             .store(pointer.clone(), ProgramValue::UInt8(byte(sum(a.clone())))),
     );
@@ -275,9 +275,9 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_state_scope() {
 #[test]
 fn two_resolved_four_byte_loads_compare_values_with_state_scope() {
     let _session = VerificationSession::enter();
-    let pointer = |offset| Pointer {
-        block: "two-resolved-int32".into(),
-        offset: PointerOffsetTerm::Constant(offset),
+    let pointer = |offset| Address {
+        base: "two-resolved-int32".into(),
+        offset: AddressOffset::Constant(offset),
     };
     let (a, b) = (var(41), var(42));
     let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
@@ -292,7 +292,7 @@ fn two_resolved_four_byte_loads_compare_values_with_state_scope() {
     let left_pointer = pointer(0);
     let right_pointer = pointer(4);
     let before = intern_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("two-resolved-int32", 8)
             .store(left_pointer.clone(), ProgramValue::Int32(sum(a.clone())))
             .store(right_pointer.clone(), ProgramValue::Int32(sum(b.clone()))),
@@ -301,11 +301,15 @@ fn two_resolved_four_byte_loads_compare_values_with_state_scope() {
         right_pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant(9)),
     ));
-    let byte_memory = intern_memory(Memory::new().with_block("two-resolved-int32", 8).store(
-        right_pointer.clone(),
-        ProgramValue::UInt8(byte(sum(b.clone()))),
-    ));
-    let load = |memory: &SharedMemory, pointer: &Pointer, width| {
+    let byte_memory = intern_memory(
+        SymbolicMemory::new()
+            .with_block("two-resolved-int32", 8)
+            .store(
+                right_pointer.clone(),
+                ProgramValue::UInt8(byte(sum(b.clone()))),
+            ),
+    );
+    let load = |memory: &SharedMemory, pointer: &Address, width| {
         let kind = if width == 1 {
             crate::kernel::LoadKind::UInt8
         } else {
@@ -338,10 +342,10 @@ fn two_resolved_four_byte_loads_compare_values_with_state_scope() {
 #[test]
 fn direct_composite_int32_argument_uses_graph_with_state_scope() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("resource-value", 8));
-    let pointer = |index| Pointer {
-        block: "resource-value".into(),
-        offset: PointerOffsetTerm::scale_int32(index, 4),
+    let before = intern_memory(SymbolicMemory::new().with_block("resource-value", 8));
+    let pointer = |index| Address {
+        base: "resource-value".into(),
+        offset: AddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(load_variable_for_cell_with_origin(
@@ -384,10 +388,10 @@ fn direct_composite_int32_argument_uses_graph_with_state_scope() {
 #[test]
 fn resource_instance_int32_field_uses_graph_with_state_scope() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("instance-value", 8));
-    let pointer = |index| Pointer {
-        block: "instance-value".into(),
-        offset: PointerOffsetTerm::scale_int32(index, 4),
+    let before = intern_memory(SymbolicMemory::new().with_block("instance-value", 8));
+    let pointer = |index| Address {
+        base: "instance-value".into(),
+        offset: AddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(load_variable_for_cell_with_origin(
@@ -443,10 +447,10 @@ fn resource_instance_int32_field_uses_graph_with_state_scope() {
 #[test]
 fn certification_uses_graph_int32_equality_with_state_scope() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("certified-int32", 8));
-    let pointer = |index| Pointer {
-        block: "certified-int32".into(),
-        offset: PointerOffsetTerm::scale_int32(index, 4),
+    let before = intern_memory(SymbolicMemory::new().with_block("certified-int32", 8));
+    let pointer = |index| Address {
+        base: "certified-int32".into(),
+        offset: AddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(load_variable_for_cell_with_origin(
@@ -466,7 +470,7 @@ fn certification_uses_graph_int32_equality_with_state_scope() {
     let left = sum(load(&before, a.clone()));
     let right = sum(load(&before, b.clone()));
     let later = sum(load(&after, b.clone()));
-    let goal = |right| Proposition::ConditionIs(eq(&left, &right), true);
+    let goal = |right| Proposition::condition_is(eq(&left, &right), true);
     let certifies = |context: &PureFactContext, goal: &Proposition| {
         crate::kernel::PureFactContext::settles_exactly(context, goal)
     };
@@ -484,10 +488,10 @@ fn certification_uses_graph_int32_equality_with_state_scope() {
 #[test]
 fn reordered_sum_matches_graph_equal_load_addends_in_one_state() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("int32", 16));
-    let pointer = |index| Pointer {
-        block: "int32".into(),
-        offset: PointerOffsetTerm::scale_int32(index, 4),
+    let before = intern_memory(SymbolicMemory::new().with_block("int32", 16));
+    let pointer = |index| Address {
+        base: "int32".into(),
+        offset: AddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(load_variable_for_cell_with_origin(
@@ -524,16 +528,16 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
     let mut graph = EqualityGraph::default();
     graph.add_int32_equality(&a, &b);
     assert!(!graph.are_offsets_equal(
-        &PointerOffsetTerm::Variable(Variable(1)),
-        &PointerOffsetTerm::Variable(Variable(2)),
+        &AddressOffset::Variable(Variable(1)),
+        &AddressOffset::Variable(Variable(2)),
     ));
     assert!(!graph.are_equal(
-        &Pointer::symbolic(Variable(1)),
-        &Pointer::symbolic(Variable(2))
+        &Address::symbolic(Variable(1)),
+        &Address::symbolic(Variable(2))
     ));
     assert!(graph.are_offsets_equal(
-        &PointerOffsetTerm::scale_int32(a.clone(), 4),
-        &PointerOffsetTerm::scale_int32(b.clone(), 4),
+        &AddressOffset::scale_int32(a.clone(), 4),
+        &AddressOffset::scale_int32(b.clone(), 4),
     ));
     let plus_one = |value| {
         binary_node!(
@@ -555,8 +559,8 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
     assert!(graph.are_int32_equal(&minus_one(a.clone()), &minus_one(b.clone())));
     assert!(!graph.are_int32_equal(&plus_one(a), &minus_one(b)));
     graph.add_offset_equality(
-        &PointerOffsetTerm::Variable(Variable(3)),
-        &PointerOffsetTerm::Variable(Variable(4)),
+        &AddressOffset::Variable(Variable(3)),
+        &AddressOffset::Variable(Variable(4)),
     );
     assert!(!graph.are_int32_equal(&var(3), &var(4)));
     assert!(!graph.are_int32_equal(&MachineTerm::constant(0), &MachineTerm::constant(1)));
@@ -567,12 +571,12 @@ fn int32_restriction_and_contradiction_preserve_support() {
     let (a, b, c) = (var(10), var(11), var(12));
     let ab = eq(&a, &b);
     let bc = eq(&b, &c);
-    let offset = |i| PointerOffsetTerm::Variable(Variable(i));
-    let pq = ConditionTerm::pointer_equal(
-        Pointer::symbolic(Variable(20)),
-        Pointer::symbolic(Variable(21)),
+    let offset = |i| AddressOffset::Variable(Variable(i));
+    let pq = ConditionTerm::address_equal(
+        Address::symbolic(Variable(20)),
+        Address::symbolic(Variable(21)),
     );
-    let xy = ConditionTerm::pointer_offset_equal(offset(30), offset(31));
+    let xy = ConditionTerm::address_offset_equal(offset(30), offset(31));
     let context = PureFactContext::new()
         .assume_condition(ab.clone(), true)
         .assume_condition(bc.clone(), true)
@@ -591,8 +595,8 @@ fn int32_restriction_and_contradiction_preserve_support() {
 #[test]
 fn int32_load_identity_keeps_states_separate() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("int32", 8));
-    let pointer = Pointer::symbolic(Variable(40));
+    let before = intern_memory(SymbolicMemory::new().with_block("int32", 8));
+    let pointer = Address::symbolic(Variable(40));
     let after = intern_memory(before.memory().clone().store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant(9)),
@@ -617,7 +621,7 @@ fn int32_load_identity_keeps_states_separate() {
         .assume_condition(eq(&named, &a), true);
     assert!(context.equality_graph.are_int32_equal(&load(&before), &a));
     assert!(!context.equality_graph.are_int32_equal(&load(&after), &a));
-    let scale = |value| PointerOffsetTerm::scale_int32(value, 4);
+    let scale = |value| AddressOffset::scale_int32(value, 4);
     assert!(
         context
             .equality_graph
@@ -645,9 +649,9 @@ fn int32_load_identity_keeps_states_separate() {
 fn offset_premises_support_scalar_graph_edges() {
     let (a, b, c) = (var(70), var(71), var(72));
     let offset_eq = |left: MachineTerm, right: MachineTerm| {
-        ConditionTerm::pointer_offset_equal(
-            PointerOffsetTerm::scale_int32(left, 4),
-            PointerOffsetTerm::scale_int32(right, 4),
+        ConditionTerm::address_offset_equal(
+            AddressOffset::scale_int32(left, 4),
+            AddressOffset::scale_int32(right, 4),
         )
     };
     let scaled = offset_eq(a.clone(), b.clone());
@@ -664,9 +668,9 @@ fn offset_premises_support_scalar_graph_edges() {
     let mut context = PureFactContext::new();
     for width in [0, 1, 8] {
         context = context.assume_condition(
-            ConditionTerm::pointer_offset_equal(
-                PointerOffsetTerm::scaled_int32_node(a.clone(), width),
-                PointerOffsetTerm::scaled_int32_node(b.clone(), width),
+            ConditionTerm::address_offset_equal(
+                AddressOffset::scaled_int32_node(a.clone(), width),
+                AddressOffset::scaled_int32_node(b.clone(), width),
             ),
             true,
         );
@@ -685,12 +689,9 @@ mod scaling_tests {
 #[test]
 fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
     let _session = VerificationSession::enter();
-    let offset = |i: u64| PointerOffsetTerm::Variable(Variable(995_000 + i));
-    let input = ConditionTerm::PointerOffsetEqual(
-        Box::new(PointerOffsetTerm::Add(
-            Box::new(offset(0)),
-            Box::new(offset(1)),
-        )),
+    let offset = |i: u64| AddressOffset::Variable(Variable(995_000 + i));
+    let input = ConditionTerm::AddressOffsetEqual(
+        Box::new(AddressOffset::Add(Box::new(offset(0)), Box::new(offset(1)))),
         Box::new(offset(2)),
     );
     let facts = PureFactContext::new().assume_condition(input.clone(), true);
@@ -710,16 +711,16 @@ fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
 fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
     let _session = VerificationSession::enter();
     let pointer = |id| {
-        PointerValue::new(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(var(id), 4),
+        Pointer::new(
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(var(id), 4),
             },
             ProgramType::Int32Pointer,
         )
     };
     let (left, right) = (pointer(941_001), pointer(941_002));
-    let equality = ConditionTerm::pointer_value_equal(left.clone(), right.clone());
+    let equality = ConditionTerm::pointer_equal(left.clone(), right.clone());
     assert!(equality.pointer_offset_sides().is_none());
     let context = PureFactContext::new().assume_condition(equality.clone(), true);
     assert!(
@@ -761,12 +762,12 @@ fn recorded_shared_index_members_keep_source_order_without_exporting() {
     };
     let left = shared(&x);
     let right = shared(&y);
-    let equality = ConditionTerm::PointerOffsetEqual(
-        Box::new(PointerOffsetTerm::Int32Scaled {
+    let equality = ConditionTerm::AddressOffsetEqual(
+        Box::new(AddressOffset::Int32Scaled {
             value: left.clone(),
             byte_width: 4,
         }),
-        Box::new(PointerOffsetTerm::Int32Scaled {
+        Box::new(AddressOffset::Int32Scaled {
             value: right.clone(),
             byte_width: 4,
         }),

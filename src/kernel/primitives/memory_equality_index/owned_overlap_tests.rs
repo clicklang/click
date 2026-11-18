@@ -1,9 +1,15 @@
 use super::*;
 
-fn at(id: u64) -> Pointer {
-    Pointer::symbolic(Variable(8_750_000 + id))
+mod scaling_tests {
+    include!(
+        "../../../scaling_tests/kernel/primitives/memory_equality_index/owned_overlap_tests.rs"
+    );
 }
-fn owner(base: Pointer, start: u32, end: u32) -> ResourceFact {
+
+fn at(id: u64) -> Address {
+    Address::symbolic(Variable(8_750_000 + id))
+}
+fn owner(base: Address, start: u32, end: u32) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base,
         start.into(),
@@ -18,7 +24,7 @@ fn indexed_ownership_overlap_keeps_geometry_and_persistent_branches() {
     let q = at(0);
     let p = at(1);
     let facts = empty.clone().assume_condition(
-        ConditionTerm::pointer_equal(p.clone(), q.offset_by_bytes(2)),
+        ConditionTerm::address_equal(p.clone(), q.offset_by_bytes(2)),
         true,
     );
     let held = owner(q.clone(), 4, 8);
@@ -96,7 +102,7 @@ fn a_query_read_definition_is_registered_in_the_paired_namespace() {
     ));
     resources.synchronize_memory_equalities(&facts);
     let field = at(11);
-    let memory = Memory::new().store(
+    let memory = SymbolicMemory::new().store(
         field.clone(),
         ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
     );
@@ -108,7 +114,7 @@ fn a_query_read_definition_is_registered_in_the_paired_namespace() {
         C_POINTER_BYTE_WIDTH,
         &retained_state,
     );
-    let read = Pointer::loaded(&MachineTerm::Variable(variable)).unwrap();
+    let read = Address::loaded(&MachineTerm::Variable(variable)).unwrap();
     facts.register_pointer_read(&read, &retained_state, &field);
     let _operation = crate::kernel::search::FastOperationScope::enter(
         "ownership through a newly registered read",
@@ -147,17 +153,17 @@ fn incomplete_indexes_refuse_but_cold_maintained_coordinates_decide() {
 
 #[test]
 fn pooled_literal_ownership_keeps_the_existing_memory_algebra_policy() {
-    let literal = |identity| Pointer {
-        block: PointerBlock::StringLiteral {
+    let literal = |identity| Address {
+        base: AddressBase::StringLiteral {
             identity: StringLiteralId::new(identity, 0),
             bytes: b"ok\0".to_vec(),
         },
-        offset: PointerOffsetTerm::Constant(0),
+        offset: AddressOffset::Constant(0),
     };
     let left = literal("overlap:left");
     let right = literal("overlap:right");
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(left.clone(), right.clone()),
+        ConditionTerm::address_equal(left.clone(), right.clone()),
         true,
     );
     let resources =
@@ -177,9 +183,9 @@ fn pooled_literal_ownership_keeps_the_existing_memory_algebra_policy() {
 #[test]
 fn cold_ownership_uses_produced_intervals_without_preparing_a_graph() {
     let facts = PureFactContext::new();
-    let p = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Variable(Variable(8_760_010)),
+    let p = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(8_760_010)),
     };
     let long = owner(p.clone(), 0, 100);
     // A nested old interval must not hide the long interval from a query.
@@ -259,9 +265,9 @@ fn symbolic_boundary_uses_direct_bounds_and_does_not_invent_an_overlap() {
 fn a_complete_empty_class_is_clear_even_at_a_symbolic_coordinate() {
     let _session = crate::kernel::VerificationSession::enter();
     let held = owner(at(90), 0, 4);
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Variable(Variable(8_918_000)),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(8_918_000)),
     };
     let query = owner(pointer.clone(), 0, 4);
     let facts = PureFactContext::new();
@@ -275,7 +281,7 @@ fn a_complete_empty_class_is_clear_even_at_a_symbolic_coordinate() {
     // A whole-pointer alias can make affine coordinates incomplete. It must
     // never be mistaken for an empty owner class after extending the facts.
     let alias = facts.clone().assume_condition(
-        ConditionTerm::pointer_equal(pointer, held.memory_own_range().unwrap().base().clone()),
+        ConditionTerm::address_equal(pointer, held.memory_own_range().unwrap().base().clone()),
         true,
     );
     context.synchronize_memory_equalities(&alias);
@@ -291,9 +297,9 @@ fn a_complete_empty_class_is_clear_even_at_a_symbolic_coordinate() {
 
 #[test]
 fn cold_automatic_partitions_use_the_storage_index_and_exclude_opaque_owners() {
-    let local = |name: &str| Pointer {
-        block: PointerBlock::Concrete(format!("local:{name}")),
-        offset: PointerOffsetTerm::Constant(0),
+    let local = |name: &str| Address {
+        base: AddressBase::Concrete(format!("local:{name}")),
+        offset: AddressOffset::Constant(0),
     };
     let facts = PureFactContext::new();
     let context = ResourceContext::new()
@@ -314,7 +320,7 @@ fn cold_automatic_partitions_use_the_storage_index_and_exclude_opaque_owners() {
     ));
     let named_pointer = facts
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(local("first"), at(92)), true);
+        .assume_condition(ConditionTerm::address_equal(local("first"), at(92)), true);
     assert!(matches!(
         context.constant_owned_overlap(&owner(local("third"), 0, 4), &named_pointer),
         ConstantOwnedOverlap::Clear
@@ -333,7 +339,7 @@ fn cold_automatic_partitions_use_the_storage_index_and_exclude_opaque_owners() {
     ));
     let alias = facts
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(opaque, local("third")), true);
+        .assume_condition(ConditionTerm::address_equal(opaque, local("third")), true);
     assert!(!matches!(
         mixed.constant_owned_overlap(&owner(local("third"), 0, 4), &alias),
         ConstantOwnedOverlap::Clear
@@ -354,17 +360,17 @@ fn hidden_local_coverage_is_invalidated_when_addressability_changes() {
     let facts = PureFactContext::new();
     let root = ResourceContext::new_with_equalities(&facts).unchecked_with_facts([
         owner(
-            Pointer {
-                block: "local:hidden_a".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "local:hidden_a".into(),
+                offset: AddressOffset::Constant(0),
             },
             0,
             4,
         ),
         owner(
-            Pointer {
-                block: "local:hidden_b".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "local:hidden_b".into(),
+                offset: AddressOffset::Constant(0),
             },
             0,
             4,
@@ -377,11 +383,11 @@ fn hidden_local_coverage_is_invalidated_when_addressability_changes() {
     ));
     crate::kernel::clear_never_address_taken_locals();
     let aliased = facts.assume_condition(
-        ConditionTerm::pointer_equal(
+        ConditionTerm::address_equal(
             at(100),
-            Pointer {
-                block: "local:hidden_a".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "local:hidden_a".into(),
+                offset: AddressOffset::Constant(0),
             },
         ),
         true,

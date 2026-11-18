@@ -35,7 +35,7 @@
 //! state holding both whenever any stated composition does. The answer it
 //! derives from that state is the one `S` would give: owned members of a
 //! valid composition are disjoint, so each object finds the same member.
-use super::{MemoryRange, OwnedMemberKey, Pointer, PointerBlock, ResourceContext};
+use super::{Address, AddressBase, MemoryRange, OwnedMemberKey, ResourceContext};
 use crate::persistent::{PersistentMap, PersistentSet};
 
 /// How far in size a predecessor candidate may be from the state it
@@ -47,8 +47,8 @@ const NEAREST_SIZES: usize = 2;
 pub(in crate::kernel) struct CompositionMemberIndex {
     /// Each admitted composition, by admission ordinal in this context.
     compositions: PersistentMap<u32, ResourceContext>,
-    by_base: PersistentMap<Pointer, PersistentSet<u32>>,
-    by_block: PersistentMap<PointerBlock, PersistentSet<u32>>,
+    by_base: PersistentMap<Address, PersistentSet<u32>>,
+    by_block: PersistentMap<AddressBase, PersistentSet<u32>>,
     by_member: PersistentMap<OwnedMemberKey, PersistentSet<u32>>,
     /// The last state admitted from each storage origin. Holding it keeps
     /// the origin alive, so its address is never reused as a key.
@@ -135,7 +135,7 @@ impl CompositionMemberIndex {
     /// each once.
     pub(in crate::kernel) fn listed_under_members<'k>(
         &self,
-        blocks: impl IntoIterator<Item = &'k PointerBlock>,
+        blocks: impl IntoIterator<Item = &'k AddressBase>,
         members: impl IntoIterator<Item = &'k OwnedMemberKey>,
     ) -> Vec<&ResourceContext> {
         self.listed_in(
@@ -156,18 +156,18 @@ impl CompositionMemberIndex {
         self.by_base = self
             .by_base
             .with_inserted(base.clone(), at_base.with_value(ordinal));
-        let at_block = self.by_block.get(&base.block).cloned().unwrap_or_default();
+        let at_block = self.by_block.get(&base.base).cloned().unwrap_or_default();
         self.by_block = self
             .by_block
-            .with_inserted(base.block.clone(), at_block.with_value(ordinal));
+            .with_inserted(base.base.clone(), at_block.with_value(ordinal));
     }
 
     /// The admitted compositions listed under any of `bases` or `blocks`, and
     /// the root, in admission order, each once.
     pub(in crate::kernel) fn listed_under<'k>(
         &self,
-        bases: impl IntoIterator<Item = &'k Pointer>,
-        blocks: impl IntoIterator<Item = &'k PointerBlock>,
+        bases: impl IntoIterator<Item = &'k Address>,
+        blocks: impl IntoIterator<Item = &'k AddressBase>,
     ) -> Vec<&ResourceContext> {
         self.listed_in(
             bases
@@ -187,7 +187,7 @@ impl CompositionMemberIndex {
     /// reasoning retains the complete candidate query.
     pub(in crate::kernel) fn directly_listed_under_bases<'k>(
         &self,
-        bases: impl IntoIterator<Item = &'k Pointer>,
+        bases: impl IntoIterator<Item = &'k Address>,
     ) -> Vec<&ResourceContext> {
         // With no listed deltas, only the root can answer. Avoid probing
         // every written base again for each cached read in this common case.

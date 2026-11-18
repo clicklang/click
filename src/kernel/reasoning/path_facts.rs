@@ -12,9 +12,9 @@ use crate::kernel::{
 /// The second condition is what distinguishes the states for an
 /// `ExternalArgument` allocation, whose block survives `free`.
 pub(in crate::kernel) fn memory_range_still_available(
-    range_memory: &Memory,
-    current_memory: &Memory,
-    base: &Pointer,
+    range_memory: &SymbolicMemory,
+    current_memory: &SymbolicMemory,
+    base: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     // A pointer read's synthetic block is not the storage it designates.
@@ -22,7 +22,7 @@ pub(in crate::kernel) fn memory_range_still_available(
     let stored = crate::kernel::eval::pointer_read_over_immediate_store(base);
     let base = stored.as_ref().unwrap_or(base);
     range_memory == current_memory
-        || range_memory.has_block(&base.block) == current_memory.has_block(&base.block)
+        || range_memory.has_block(&base.base) == current_memory.has_block(&base.base)
             && range_memory.is_ended_local_address(base)
                 == current_memory.is_ended_local_address(base)
             && range_memory.freed_heap_allocation_may_contain(base, assumptions)
@@ -76,7 +76,7 @@ pub(in crate::kernel) fn wrap_proof_facts(
         proposition,
         |body, (condition, value)| {
             Proposition::Implies(
-                Box::new(Proposition::ConditionIs(condition.clone(), *value)),
+                Box::new(Proposition::condition_is(condition.clone(), *value)),
                 Box::new(body),
             )
         },
@@ -214,15 +214,22 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             sequence_terms_equal_by_elements(left, right)
         }
         Proposition::Equal(left, right) => left == right,
-        Proposition::ConditionIs(ConditionTerm::Constant(actual), expected) => actual == expected,
+        condition_source_0 @ Proposition::ConditionIs(_, expected)
+            if let Some((ConditionTerm::Constant(actual), _)) =
+                condition_source_0.condition_native() =>
+        {
+            actual == expected
+        }
         Proposition::ConditionIs(condition, expected) => {
-            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
-                .or_else(|| {
-                    crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(
-                        condition,
-                    )
-                })
-                .is_some_and(|actual| actual == *expected)
+            crate::kernel::machine_integer::comparison::closed_condition_value(
+                condition.native_compat(),
+            )
+            .or_else(|| {
+                crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(
+                    condition.native_compat(),
+                )
+            })
+            .is_some_and(|actual| actual == *expected)
         }
         Proposition::And(left, right) => solve_builtin_prop(left) && solve_builtin_prop(right),
         Proposition::Or(left, right) => solve_builtin_prop(left) || solve_builtin_prop(right),
@@ -273,15 +280,22 @@ pub(in crate::kernel) fn conjunction_order_facts_are_inconsistent(
 
 pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> bool {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::Constant(actual), expected) => actual != expected,
+        condition_source_0 @ Proposition::ConditionIs(_, expected)
+            if let Some((ConditionTerm::Constant(actual), _)) =
+                condition_source_0.condition_native() =>
+        {
+            actual != expected
+        }
         Proposition::ConditionIs(condition, expected) => {
-            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
-                .or_else(|| {
-                    crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(
-                        condition,
-                    )
-                })
-                .is_some_and(|actual| actual != *expected)
+            crate::kernel::machine_integer::comparison::closed_condition_value(
+                condition.native_compat(),
+            )
+            .or_else(|| {
+                crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(
+                    condition.native_compat(),
+                )
+            })
+            .is_some_and(|actual| actual != *expected)
         }
         Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) => {
             sequence_terms_definitely_distinct(left, right)
@@ -447,10 +461,10 @@ fn program_values_definitely_distinct(left: &ProgramValue, right: &ProgramValue)
 /// consumers and at every certificate that re-checks them, while refusing
 /// costs an answer none of them can use.
 pub(in crate::kernel) fn element_index_from_offset(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     element_width: u32,
 ) -> Option<MachineTerm> {
-    if let PointerOffsetTerm::Constant(bytes) = offset {
+    if let AddressOffset::Constant(bytes) = offset {
         return element_index_literal(*bytes, element_width).map(MachineTerm::constant);
     }
     shared_element_index_from_offset(offset, element_width)
@@ -460,7 +474,7 @@ pub(in crate::kernel) fn element_index_from_offset(
 /// The same residue extraction retaining shared index operands. Native-output
 /// callers keep `element_index_from_offset`; evidence checking uses this view.
 pub(in crate::kernel) fn shared_element_index_from_offset(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     element_width: u32,
 ) -> Option<crate::kernel::SharedMachineIntegerTerm> {
     use crate::kernel::{
@@ -472,11 +486,11 @@ pub(in crate::kernel) fn shared_element_index_from_offset(
     let constant = |n: u32| S::intern(T::Int32, MachineTerm::constant(n));
     let root = |v: &S| KernelTerm::retained_machine_operand(T::Int32, v.operand_view());
     match offset {
-        PointerOffsetTerm::Add(a, b) => {
-            if a.as_ref() == &PointerOffsetTerm::Constant(0) {
+        AddressOffset::Add(a, b) => {
+            if a.as_ref() == &AddressOffset::Constant(0) {
                 return shared_element_index_from_offset(b, element_width);
             }
-            if b.as_ref() == &PointerOffsetTerm::Constant(0) {
+            if b.as_ref() == &AddressOffset::Constant(0) {
                 return shared_element_index_from_offset(a, element_width);
             }
             let a = shared_element_index_from_offset(a, element_width)?;
@@ -491,12 +505,12 @@ pub(in crate::kernel) fn shared_element_index_from_offset(
                 ),
             )
         }
-        PointerOffsetTerm::Int32Scaled { value, byte_width }
+        AddressOffset::Int32Scaled { value, byte_width }
             if *byte_width == i64::from(element_width) =>
         {
             Some(value.clone())
         }
-        PointerOffsetTerm::Int32Scaled { value, byte_width } if element_width == 1 => {
+        AddressOffset::Int32Scaled { value, byte_width } if element_width == 1 => {
             let width = u32::try_from(*byte_width).ok()?;
             match width {
                 0 => Some(constant(0)),
@@ -511,7 +525,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset(
                 ),
             }
         }
-        PointerOffsetTerm::Constant(bytes) => {
+        AddressOffset::Constant(bytes) => {
             element_index_literal(*bytes, element_width).map(constant)
         }
         _ => None,
@@ -529,11 +543,11 @@ pub(in crate::kernel) fn shared_element_index_from_offset(
 /// the proof establishes explicitly. No low-word fact establishes high bits.
 #[cfg(test)]
 pub(in crate::kernel) fn element_index_from_offset_with_facts(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> Option<MachineTerm> {
-    if let PointerOffsetTerm::Constant(bytes) = offset {
+    if let AddressOffset::Constant(bytes) = offset {
         return element_index_literal(*bytes, element_width).map(MachineTerm::constant);
     }
     shared_element_index_from_offset_with_facts(offset, element_width, assumptions)
@@ -541,7 +555,7 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
 }
 
 pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> Option<crate::kernel::SharedMachineIntegerTerm> {
@@ -558,11 +572,11 @@ pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
         return Some(index);
     }
     match offset {
-        PointerOffsetTerm::Add(left, right) => Some(shared_offset_sum(
+        AddressOffset::Add(left, right) => Some(shared_offset_sum(
             shared_element_index_from_offset_with_facts(left, element_width, assumptions)?,
             shared_element_index_from_offset_with_facts(right, element_width, assumptions)?,
         )),
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -599,7 +613,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
                 if bounded(V::Legacy(alias)) {
                     crate::kernel::assumptions::record_implicit_consulted_premises(
                         assumptions,
-                        &Proposition::ConditionIs(fact.clone(), true),
+                        &Proposition::condition_is(fact.clone(), true),
                     );
                     return Some(low_word(V::Legacy(alias)));
                 }
@@ -626,7 +640,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
                     if bounded(V::Shared(&candidate)) {
                         crate::kernel::assumptions::record_implicit_consulted_premises(
                             assumptions,
-                            &Proposition::ConditionIs(fact.clone(), true),
+                            &Proposition::condition_is(fact.clone(), true),
                         );
                         return Some(low_word(V::Shared(&candidate)));
                     }
@@ -643,7 +657,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
 ///
 /// [`element_index_from_offset`] answers with one `MachineTerm`, and that
 /// is a lossy answer for anything but an equality. A byte offset is
-/// mathematical `i64` — [`PointerOffsetTerm::scale_int32`] sign-extends its
+/// mathematical `i64` — [`AddressOffset::scale_int32`] sign-extends its
 /// index before scaling, and `Add` adds exactly — while a `MachineTerm` is
 /// modular, so collapsing a sum of offsets into [`MachineTerm::add`] keeps
 /// the delta only *modulo* `2^32`. A membership or order conclusion drawn from
@@ -772,18 +786,16 @@ impl ExactElementDelta {
 /// [`element_index_from_offset`] for a caller that needs the delta's value and
 /// not merely its residue. See [`ExactElementDelta`].
 pub(in crate::kernel) fn exact_element_delta_from_offset(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     element_width: u32,
 ) -> Option<ExactElementDelta> {
     if element_width == 0 {
         return None;
     }
     match offset {
-        PointerOffsetTerm::Add(left, right) => {
-            exact_element_delta_from_offset(left, element_width)?
-                .add(exact_element_delta_from_offset(right, element_width)?)
-        }
-        PointerOffsetTerm::Int32Scaled { value, byte_width }
+        AddressOffset::Add(left, right) => exact_element_delta_from_offset(left, element_width)?
+            .add(exact_element_delta_from_offset(right, element_width)?),
+        AddressOffset::Int32Scaled { value, byte_width }
             if *byte_width == i64::from(element_width) =>
         {
             Some(ExactElementDelta {
@@ -791,31 +803,31 @@ pub(in crate::kernel) fn exact_element_delta_from_offset(
                 constant: 0,
             })
         }
-        PointerOffsetTerm::Constant(offset) if offset % i64::from(element_width) == 0 => Some(
+        AddressOffset::Constant(offset) if offset % i64::from(element_width) == 0 => Some(
             ExactElementDelta::constant(offset / i64::from(element_width)),
         ),
         // An `Int64Scaled` index scales its *64-bit* value, which is not the
         // signed value of the 32-bit term holding it, so the term cannot stand
         // for the delta. A constant one has already been folded into
         // `Constant` by `scale_int64`.
-        PointerOffsetTerm::Constant(_)
-        | PointerOffsetTerm::Variable(_)
-        | PointerOffsetTerm::Int32Scaled { .. }
-        | PointerOffsetTerm::Int64Scaled { .. } => None,
+        AddressOffset::Constant(_)
+        | AddressOffset::Variable(_)
+        | AddressOffset::Int32Scaled { .. }
+        | AddressOffset::Int64Scaled { .. } => None,
     }
 }
 
 pub(in crate::kernel) fn common_pointer_offset_element_width(
-    left: &PointerOffsetTerm,
-    right: &PointerOffsetTerm,
+    left: &AddressOffset,
+    right: &AddressOffset,
 ) -> Option<u32> {
-    fn offset_element_width(offset: &PointerOffsetTerm) -> Option<u32> {
+    fn offset_element_width(offset: &AddressOffset) -> Option<u32> {
         match offset {
-            PointerOffsetTerm::Int32Scaled { byte_width, .. }
-            | PointerOffsetTerm::Int64Scaled { byte_width, .. } => {
+            AddressOffset::Int32Scaled { byte_width, .. }
+            | AddressOffset::Int64Scaled { byte_width, .. } => {
                 u32::try_from(*byte_width).ok().filter(|width| *width > 0)
             }
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 match (offset_element_width(left), offset_element_width(right)) {
                     (Some(left), Some(right)) if left == right => Some(left),
                     (Some(width), None) | (None, Some(width)) => Some(width),
@@ -823,7 +835,7 @@ pub(in crate::kernel) fn common_pointer_offset_element_width(
                     _ => None,
                 }
             }
-            PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => None,
+            AddressOffset::Constant(_) | AddressOffset::Variable(_) => None,
         }
     }
 
@@ -835,10 +847,10 @@ pub(in crate::kernel) fn common_pointer_offset_element_width(
 }
 
 pub(in crate::kernel) fn shared_pointer_byte_offset_from_base(
-    pointer: &Pointer,
-    base: &Pointer,
+    pointer: &Address,
+    base: &Address,
 ) -> Option<SharedMachineIntegerTerm> {
-    if pointer.block != base.block {
+    if pointer.base != base.base {
         return None;
     }
     if pointer.offset == base.offset {
@@ -846,7 +858,7 @@ pub(in crate::kernel) fn shared_pointer_byte_offset_from_base(
             MachineOperandView::Legacy(&MachineTerm::constant(0)).retain(MachineIntegerType::Int32),
         );
     }
-    if base.offset == PointerOffsetTerm::Constant(0) {
+    if base.offset == AddressOffset::Constant(0) {
         return shared_byte_offset_from_pointer_offset(&pointer.offset);
     }
 
@@ -858,8 +870,8 @@ pub(in crate::kernel) fn shared_pointer_byte_offset_from_base(
     // checks independent of harmless grouping differences in pointer
     // arithmetic.
     fn offset_from_nested_base(
-        offset: &PointerOffsetTerm,
-        base: &PointerOffsetTerm,
+        offset: &AddressOffset,
+        base: &AddressOffset,
     ) -> Option<SharedMachineIntegerTerm> {
         if offset == base {
             return Some(
@@ -867,7 +879,7 @@ pub(in crate::kernel) fn shared_pointer_byte_offset_from_base(
                     .retain(MachineIntegerType::Int32),
             );
         }
-        let PointerOffsetTerm::Add(left, right) = offset else {
+        let AddressOffset::Add(left, right) = offset else {
             return None;
         };
         if left.as_ref() == base {
@@ -914,9 +926,9 @@ fn element_index_literal(bytes: i64, width: u32) -> Option<u32> {
 }
 
 pub(in crate::kernel) fn byte_offset_from_pointer_offset(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
 ) -> Option<MachineTerm> {
-    if let PointerOffsetTerm::Constant(bytes) = offset {
+    if let AddressOffset::Constant(bytes) = offset {
         return element_index_literal(*bytes, 1).map(MachineTerm::constant);
     }
     shared_byte_offset_from_pointer_offset(offset).map(|index| index.structural_value().clone())
@@ -937,19 +949,19 @@ fn shared_offset_sum(
 }
 
 pub(in crate::kernel) fn shared_byte_offset_from_pointer_offset(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
 ) -> Option<crate::kernel::SharedMachineIntegerTerm> {
     use crate::kernel::{KernelTerm, MachineIntegerType as T, MachineOperandView as V};
     let constant = |n| V::Legacy(&MachineTerm::constant(n)).retain(T::Int32);
     match offset {
-        PointerOffsetTerm::Constant(offset) => (i32::MIN as i64..=i32::MAX as i64)
+        AddressOffset::Constant(offset) => (i32::MIN as i64..=i32::MAX as i64)
             .contains(offset)
             .then_some(constant((*offset as i32) as u32)),
-        PointerOffsetTerm::Add(left, right) => Some(shared_offset_sum(
+        AddressOffset::Add(left, right) => Some(shared_offset_sum(
             shared_byte_offset_from_pointer_offset(left)?,
             shared_byte_offset_from_pointer_offset(right)?,
         )),
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+        AddressOffset::Int32Scaled { value, byte_width } => {
             let width = u32::try_from(*byte_width).ok()?;
             match width {
                 0 => Some(constant(0)),
@@ -970,10 +982,10 @@ pub(in crate::kernel) fn shared_byte_offset_from_pointer_offset(
                 ),
             }
         }
-        PointerOffsetTerm::Int64Scaled { byte_width: 0, .. } => Some(constant(0)),
+        AddressOffset::Int64Scaled { byte_width: 0, .. } => Some(constant(0)),
         // A 64-bit index is not a 32-bit byte residue, even when its stride
         // is one. Callers that need its numeric value must use a 64-bit bound.
-        PointerOffsetTerm::Int64Scaled { .. } | PointerOffsetTerm::Variable(_) => None,
+        AddressOffset::Int64Scaled { .. } | AddressOffset::Variable(_) => None,
     }
 }
 
@@ -1010,10 +1022,10 @@ pub(in crate::kernel) fn element_count_from_bytes(
 /// `uint64`, or a `uint64` constant divisible by `w`.
 ///
 /// Reading `n * w` as `n` elements needs the product not to have wrapped. A
-/// heap block's `uint64` extent is admitted only once `n <= PTRDIFF_MAX / w`
+/// heap block's `uint64` size is admitted only once `n <= PTRDIFF_MAX / w`
 /// is decided for each constant factor `w` of a top-level product
 /// (`allocation_size_validity_refusal` in `eval/statements.rs`), so this is
-/// for such extents only, never for an arbitrary `uint64` term.
+/// for such sizes only, never for an arbitrary `uint64` term.
 pub(in crate::kernel) fn uint64_element_count_from_bytes(
     bytes: &MachineTerm,
     element_width: u32,
@@ -1041,20 +1053,20 @@ pub(in crate::kernel) fn uint64_element_count_from_bytes(
     }
 }
 
-/// An admitted 64-bit heap extent and a byte count `bytes` in the extent's
+/// An admitted 64-bit allocation size and a byte count `bytes` in the size's
 /// elements: `(n, ceil(bytes / k))` for `n * k` with a constant `k`, else
-/// `(extent, bytes)`. Then `bytes <= extent` iff `ceil(bytes / k) <= n`, and
-/// `extent < bytes` iff `n < ceil(bytes / k)`.
+/// `(size, bytes)`. Then `bytes <= size` iff `ceil(bytes / k) <= n`, and
+/// `size < bytes` iff `n < ceil(bytes / k)`.
 ///
 /// Like [`uint64_element_count_from_bytes`], this is exact only for a heap
-/// extent admitted with `n <= PTRDIFF_MAX / k` decided
-/// (`uint64_heap_extent_bytes_are_exact` in `eval/statements.rs`), so that
+/// size admitted with `n <= PTRDIFF_MAX / k` decided
+/// (`uint64_allocation_size_bytes_are_exact` in `eval/statements.rs`), so that
 /// `n * k` did not wrap; never for an arbitrary `uint64` term.
-pub(in crate::kernel) fn uint64_extent_in_elements(
-    extent: &MachineTerm,
+pub(in crate::kernel) fn uint64_size_in_elements(
+    size: &MachineTerm,
     bytes: u64,
 ) -> (&MachineTerm, MachineTerm) {
-    if let binary_term!(UInt64, Multiply, left, right) = extent {
+    if let binary_term!(UInt64, Multiply, left, right) = size {
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (_, Some(width)) if width > 0 => {
                 return (left, MachineTerm::uint64_constant(bytes.div_ceil(width)));
@@ -1065,7 +1077,7 @@ pub(in crate::kernel) fn uint64_extent_in_elements(
             _ => {}
         }
     }
-    (extent, MachineTerm::uint64_constant(bytes))
+    (size, MachineTerm::uint64_constant(bytes))
 }
 
 /// A byte offset `index * stride + field` into an array of `stride`-byte
@@ -1088,12 +1100,13 @@ pub(in crate::kernel) struct ScaledElementOffset {
 /// elements: a caller's bound `0 <= i <= n` with `n <= PTRDIFF_MAX / w`
 /// rules out its overflow.
 pub(in crate::kernel) fn scaled_element_offset(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
 ) -> Option<ScaledElementOffset> {
     let (scaled, field) = match offset {
-        PointerOffsetTerm::Add(left, right) => match (left.as_ref(), right.as_ref()) {
-            (scaled, PointerOffsetTerm::Constant(field))
-            | (PointerOffsetTerm::Constant(field), scaled) => (scaled, *field),
+        AddressOffset::Add(left, right) => match (left.as_ref(), right.as_ref()) {
+            (scaled, AddressOffset::Constant(field)) | (AddressOffset::Constant(field), scaled) => {
+                (scaled, *field)
+            }
             _ => return None,
         },
         scaled => (scaled, 0),
@@ -1102,7 +1115,7 @@ pub(in crate::kernel) fn scaled_element_offset(
         KernelTerm, MachineBinaryOp, MachineIntegerType as Ty, SharedMachineIntegerTerm,
     };
     let (index, signed, stride) = match scaled {
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+        AddressOffset::Int32Scaled { value, byte_width } => {
             let root = KernelTerm::retained_machine_operand(Ty::Int32, value.operand_view());
             let wide = root.checking_legacy_machine_conversion(Ty::Int32, Ty::Int64);
             (
@@ -1111,7 +1124,7 @@ pub(in crate::kernel) fn scaled_element_offset(
                 *byte_width,
             )
         }
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width: 1,
             unsigned: false,
@@ -1125,7 +1138,7 @@ pub(in crate::kernel) fn scaled_element_offset(
             }
             _ => (value.clone(), true, 1),
         },
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -1220,7 +1233,7 @@ fn add_path_fact_with_visibility_after_effect(
         return add_condition_path_fact_with_visibility(
             facts,
             assumptions,
-            condition,
+            condition.native_compat().clone(),
             value,
             public,
             certified_after_effect,
@@ -1319,7 +1332,7 @@ fn add_condition_path_fact_with_visibility(
         .iter()
         .filter_map(|fact| match fact.proposition() {
             Proposition::ConditionIs(existing_condition, existing_value)
-                if existing_condition == &condition =>
+                if existing_condition.native_compat() == &condition =>
             {
                 Some(*existing_value)
             }
@@ -1330,7 +1343,7 @@ fn add_condition_path_fact_with_visibility(
         return (existing == value).then_some(());
     }
 
-    let proposition = Proposition::ConditionIs(condition, value);
+    let proposition = Proposition::condition_is(condition, value);
     facts.push(if public {
         ExecutionPureFact::new(proposition)
     } else {
@@ -1339,25 +1352,25 @@ fn add_condition_path_fact_with_visibility(
     Some(())
 }
 
-pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
+pub(in crate::kernel) fn add_address_offset_equality_execution_pure_facts(
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
-    left: PointerOffsetTerm,
-    right: PointerOffsetTerm,
+    left: AddressOffset,
+    right: AddressOffset,
     value: bool,
 ) -> Option<()> {
     add_condition_path_fact(
         facts,
         assumptions,
-        ConditionTerm::pointer_offset_equal(left.clone(), right.clone()),
+        ConditionTerm::address_offset_equal(left.clone(), right.clone()),
         value,
     )?;
 
     // A single wide stride is exact, not modular multiplication. Dividing
     // a constant multiple by its nonzero stride gives an equivalent native
     // index comparison in both polarities, without truncating to 32 bits.
-    let wide_index_condition = |scaled: &PointerOffsetTerm, constant: &PointerOffsetTerm| {
-        let PointerOffsetTerm::Int64Scaled {
+    let wide_index_condition = |scaled: &AddressOffset, constant: &AddressOffset| {
+        let AddressOffset::Int64Scaled {
             value: index,
             byte_width,
             unsigned,
@@ -1365,7 +1378,7 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
         else {
             return None;
         };
-        let PointerOffsetTerm::Constant(target) = constant else {
+        let AddressOffset::Constant(target) = constant else {
             return None;
         };
         if target.checked_rem(*byte_width)? != 0 {
@@ -1463,8 +1476,8 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
 /// one of the offsets the index reaches; the offset equality then folds to
 /// false (see `pointer_offsets_differ_by_residue`).
 pub(in crate::kernel) fn single_scaled_index_equal_to_constant<'term>(
-    scaled: &'term PointerOffsetTerm,
-    constant: &PointerOffsetTerm,
+    scaled: &'term AddressOffset,
+    constant: &AddressOffset,
 ) -> Option<(&'term SharedMachineIntegerTerm, i32)> {
     let target = constant.as_const()?;
     let (leaves, offset) = scaled.int32_scaled_linear_form()?;
@@ -1495,7 +1508,13 @@ pub(in crate::kernel) fn add_proof_obligation_with_context(
     context: Option<&str>,
 ) -> Option<()> {
     if let Proposition::ConditionIs(condition, value) = proposition {
-        return add_condition_obligation(obligations, assumptions, condition, value, context);
+        return add_condition_obligation(
+            obligations,
+            assumptions,
+            condition.native_compat().clone(),
+            value,
+            context,
+        );
     }
 
     // Obligation suppression keeps two routes: the exact fact index, and the
@@ -1537,18 +1556,18 @@ fn bare_condition_is_decided(assumptions: &PureFactContext, proposition: &Propos
         relation: CompareRelation::Equal,
         left,
         right,
-    } = condition
+    } = condition.native_compat()
         && *value
         && assumptions.uint64_values_known_equal(left, right)
     {
         crate::kernel::assumptions::record_implicit_consulted_premises(assumptions, proposition);
         return true;
     }
-    if PureFactContext::decide_intrinsically(condition) == Some(*value) {
+    if PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value) {
         return true;
     }
     !assumptions.should_defer_non_exact_condition_reasoning()
-        && assumptions.decide(condition) == Some(*value)
+        && assumptions.decide(condition.native_compat()) == Some(*value)
 }
 
 /// Retain logical input evidence from the incoming checked context only.
@@ -1564,13 +1583,13 @@ pub(in crate::kernel) fn call_input_fact_is_already_known(
             || assumptions.proves_exact(side)
             || assumptions.contains_known(side)
             || matches!(side, Proposition::ConditionIs(condition, value)
-                if PureFactContext::decide_intrinsically(condition) == Some(*value)
-                    || !matches!(condition,
+                if PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value)
+                    || !matches!(condition.native_compat(),
                         ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. }
                         | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, .. }
-                        | ConditionTerm::PointerValueEqual(..)
-                    | ConditionTerm::PointerEqual(..)
-                        | ConditionTerm::PointerOffsetEqual(..))
+                        | ConditionTerm::PointerEqual(..)
+                    | ConditionTerm::AddressEqual(..)
+                        | ConditionTerm::AddressOffsetEqual(..))
                         && bare_condition_is_decided(assumptions, side))
     };
     crate::kernel::primitives::first_unavailable_connective_side(proposition, &available).is_none()
@@ -1712,7 +1731,9 @@ fn selected_obligation_is_stated(assumptions: &PureFactContext, proposition: &Pr
     }
     match proposition {
         Proposition::ConditionIs(condition, truth) => {
-            let Some(source) = assumptions.selected_comparison_source(condition, *truth) else {
+            let Some(source) =
+                assumptions.selected_comparison_source(condition.native_compat(), *truth)
+            else {
                 return false;
             };
             crate::kernel::assumptions::record_implicit_consulted_premises(assumptions, source);
@@ -1843,10 +1864,10 @@ pub(in crate::kernel) fn add_condition_obligation(
     value: bool,
     context: Option<&str>,
 ) -> Option<()> {
-    if assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), value)) {
+    if assumptions.proves_exact(&Proposition::condition_is(condition.clone(), value)) {
         return Some(());
     }
-    if assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), !value)) {
+    if assumptions.proves_exact(&Proposition::condition_is(condition.clone(), !value)) {
         return None;
     }
     if let Some(known) = PureFactContext::decide_intrinsically(&condition) {
@@ -1862,7 +1883,7 @@ pub(in crate::kernel) fn add_condition_obligation(
         .iter()
         .filter_map(|obligation| match obligation.proposition() {
             Proposition::ConditionIs(existing_condition, existing_value)
-                if existing_condition == &condition =>
+                if existing_condition.native_compat() == &condition =>
             {
                 Some(*existing_value)
             }
@@ -1933,8 +1954,9 @@ fn merge_obligations_with_changes(
                 }
             }
             if let Proposition::ConditionIs(condition, value) = obligation.proposition()
-                && (assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), !*value))
-                    || PureFactContext::decide_intrinsically(condition)
+                && (assumptions
+                    .proves_exact(&Proposition::condition_is(condition.clone(), !*value))
+                    || PureFactContext::decide_intrinsically(condition.native_compat())
                         .is_some_and(|known| known != *value)
                     || obligations.iter().any(|existing| {
                         matches!(
@@ -2157,7 +2179,7 @@ pub(in crate::kernel) fn decide_with_facts(
     [true, false]
         .into_iter()
         .find(|value| {
-            assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), *value))
+            assumptions.proves_exact(&Proposition::condition_is(condition.clone(), *value))
         })
         .or_else(|| {
             // Exact observations retain their operands while selecting the
@@ -2178,7 +2200,7 @@ pub(in crate::kernel) fn decide_with_facts(
             // the context's exact index. Select an existing source before
             // constructing a difference graph; no operand is materialized.
             facts.fact_iter().find_map(|fact| match fact.proposition() {
-                Proposition::ConditionIs(existing, value) if existing == condition => Some(*value),
+                Proposition::ConditionIs(existing, value) if existing.native_compat() == condition => Some(*value),
                 source => [true, false].into_iter().find(|truth| {
                     crate::kernel::assumptions::observation_comparisons::same_comparison(
                         condition, *truth, source,
@@ -2190,7 +2212,7 @@ pub(in crate::kernel) fn decide_with_facts(
             let extra = facts
                 .fact_iter()
                 .filter_map(|fact| match fact.proposition() {
-                    Proposition::ConditionIs(condition, value) => Some((condition.clone(), *value)),
+                    Proposition::ConditionIs(condition, value) => Some((condition.native_compat().clone(), *value)),
                     _ => None,
                 })
                 .collect::<Vec<_>>();
@@ -2354,7 +2376,7 @@ mod mandatory_integer_obligation_tests {
                 interface,
                 0,
                 &[],
-                &Memory::new(),
+                &SymbolicMemory::new(),
             )),
             ordinal,
             Some(ordinal),
@@ -2494,7 +2516,7 @@ mod mandatory_integer_obligation_tests {
         let new_fact = ExecutionPureFact::new(predicate("new fact"));
         let left_facts = ExecutionFacts::from(vec![old_fact]);
         let right_facts = ExecutionFacts::from(vec![upgraded.clone(), new_fact.clone()]);
-        let mandatory = ProofObligation::verification_condition(Proposition::ConditionIs(
+        let mandatory = ProofObligation::verification_condition(Proposition::condition_is(
             ConditionTerm::Constant(false),
             true,
         ))
@@ -2565,14 +2587,14 @@ mod mandatory_integer_obligation_tests {
         let base = PureFactContext::new();
         let left = vec![ProofObligation::condition(condition.clone(), true)];
         let prepared = assumptions_with_path_context(&base, &[], &left);
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let right = ExecutionFacts::from(vec![
             ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
                 before: memory.clone(),
                 after: memory,
                 writes: vec![],
             }),
-            ExecutionPureFact::certified(Proposition::ConditionIs(condition, false)),
+            ExecutionPureFact::certified(Proposition::condition_is(condition, false)),
         ]);
         let merged = merge_prepared_execution_path(
             &ExecutionFacts::new(),
@@ -2609,7 +2631,7 @@ mod mandatory_integer_obligation_tests {
         let base = PureFactContext::new();
         let left = vec![ProofObligation::condition(condition.clone(), true)];
         let prepared = assumptions_with_path_context(&base, &[], &left);
-        let right = ExecutionFacts::from(vec![ExecutionPureFact::new(Proposition::ConditionIs(
+        let right = ExecutionFacts::from(vec![ExecutionPureFact::new(Proposition::condition_is(
             condition, false,
         ))]);
         assert!(
@@ -2628,7 +2650,7 @@ mod mandatory_integer_obligation_tests {
 
     #[test]
     fn integer_conversion_obligation_merge_preserves_kind_and_context() {
-        let proposition = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+        let proposition = Proposition::condition_is(ConditionTerm::Constant(false), true);
         let required = ProofObligation::verification_condition(proposition.clone())
             .with_context("Integer argument definedness");
         let base = PureFactContext::new();
@@ -2702,8 +2724,8 @@ mod native_observation_guard_tests {
                     ],
                 );
                 for truth in [false, true] {
-                    let source = Proposition::ConditionIs(native.clone(), truth);
-                    let query = Proposition::ConditionIs(observed.clone(), truth);
+                    let source = Proposition::condition_is(native.clone(), truth);
+                    let query = Proposition::condition_is(observed.clone(), truth);
                     let parent = PureFactContext::new();
                     let context = parent.clone().assume_proposition(source.clone());
                     let discharge = |context: &PureFactContext, query| {
@@ -2734,11 +2756,14 @@ mod native_observation_guard_tests {
                         1
                     );
                     assert_eq!(
-                        discharge(&context, Proposition::ConditionIs(observed.clone(), !truth))
-                            .len(),
+                        discharge(
+                            &context,
+                            Proposition::condition_is(observed.clone(), !truth)
+                        )
+                        .len(),
                         1
                     );
-                    let missing = Proposition::ConditionIs(
+                    let missing = Proposition::condition_is(
                         ConditionTerm::equal(variable(850_013), variable(850_014)),
                         true,
                     );
@@ -2818,7 +2843,7 @@ mod native_observation_guard_tests {
                 );
                 assert_eq!(decide_with_facts(&context, &no_path_facts, &other), None);
                 let path = ExecutionFacts::from(vec![ExecutionPureFact::new(
-                    Proposition::ConditionIs(native.clone(), truth),
+                    Proposition::condition_is(native.clone(), truth),
                 )]);
                 assert_eq!(decide_with_facts(&empty, &path, &observed), Some(truth));
                 assert_eq!(decide_with_facts(&empty, &path, &not_equal), Some(!truth));
@@ -2875,7 +2900,7 @@ mod native_observation_guard_tests {
             );
             if let Some(truth) = truth {
                 let path = ExecutionFacts::from(vec![ExecutionPureFact::new(
-                    Proposition::ConditionIs(source, truth),
+                    Proposition::condition_is(source, truth),
                 )]);
                 assert_eq!(decide_with_facts(&empty, &path, &goal), Some(truth));
                 assert_eq!(decide_with_facts(&empty, &path, &opposite), Some(!truth));
@@ -2917,15 +2942,15 @@ mod shared_reconstruction_tests {
         SharedMachineIntegerTerm as S,
     };
 
-    fn scaled(value: S, width: i64, wide: bool) -> PointerOffsetTerm {
+    fn scaled(value: S, width: i64, wide: bool) -> AddressOffset {
         if wide {
-            PointerOffsetTerm::Int64Scaled {
+            AddressOffset::Int64Scaled {
                 value,
                 byte_width: width,
                 unsigned: true,
             }
         } else {
-            PointerOffsetTerm::Int32Scaled {
+            AddressOffset::Int32Scaled {
                 value,
                 byte_width: width,
             }
@@ -2947,7 +2972,7 @@ mod shared_reconstruction_tests {
             let offset = if ty == T::Int32 {
                 scaled(index.clone(), 8, false)
             } else {
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value: index.clone(),
                     byte_width: 8,
                     unsigned: ty == T::UInt64,
@@ -3057,7 +3082,7 @@ mod shared_reconstruction_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let x = MachineTerm::Variable(Variable(1018204));
         let y = MachineTerm::Variable(Variable(1018205));
-        let offset = PointerOffsetTerm::Add(
+        let offset = AddressOffset::Add(
             Box::new(scaled(S::index(T::Int32, x.clone()), 4, false)),
             Box::new(scaled(S::index(T::Int32, y.clone()), 4, false)),
         );
@@ -3077,9 +3102,9 @@ mod shared_reconstruction_tests {
         let exports = KernelTermExport::machine_export_count();
         assert!(!empty.element_index_rebuild_is_exact_for_width(&offset, 4));
         assert!(bounded.element_index_rebuild_is_exact_for_width(&offset, 4));
-        let wraps = PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::Constant(i64::from(i32::MAX) * 4)),
-            Box::new(PointerOffsetTerm::Constant(4)),
+        let wraps = AddressOffset::Add(
+            Box::new(AddressOffset::Constant(i64::from(i32::MAX) * 4)),
+            Box::new(AddressOffset::Constant(4)),
         );
         assert!(!empty.element_index_rebuild_is_exact_for_width(&wraps, 4));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -3097,7 +3122,7 @@ mod certified_merge_tests {
 
     #[test]
     fn certified_outputs_do_not_become_path_guards() {
-        let condition = |id| Proposition::ConditionIs(ConditionTerm::Variable(Variable(id)), true);
+        let condition = |id| Proposition::condition_is(ConditionTerm::Variable(Variable(id)), true);
         let branch = condition(991_010);
         let produced = condition(991_011);
         let required = condition(991_012);
@@ -3137,7 +3162,7 @@ mod certified_merge_tests {
             MachineTerm::Variable(Variable(1024000)),
             MachineTerm::constant(7),
         );
-        let proposition = Proposition::ConditionIs(condition.clone(), true);
+        let proposition = Proposition::condition_is(condition.clone(), true);
         let context = PureFactContext::new().assume_condition(condition, true);
         let prefix: ExecutionFacts = vec![ExecutionPureFact::new(proposition.clone())].into();
         let produced: ExecutionFacts = vec![ExecutionPureFact::certified(proposition)].into();

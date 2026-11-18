@@ -26,13 +26,13 @@ fn provenance_queries_ignore_unrelated_origins() {
 
 #[test]
 fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
-    let value = |id| PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer);
+    let value = |id| Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer);
     let a = value(870_001);
     let b = value(870_002);
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
+            ConditionTerm::address_equal(a.address().clone(), b.address().clone()),
             true,
         );
         let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
@@ -41,9 +41,9 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
         for index in 0..size {
             let unrelated = value(880_000 + index * 2);
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
-                    unrelated.pointer().clone(),
-                    value(880_001 + index * 2).pointer().clone(),
+                ConditionTerm::address_equal(
+                    unrelated.address().clone(),
+                    value(880_001 + index * 2).address().clone(),
                 ),
                 true,
             );
@@ -53,13 +53,13 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(resources.permits_designated_memory_read(
-                b.pointer(),
+                b.address(),
                 Some(b.access_provenance()),
                 4,
                 &context
             ));
             assert!(!resources.permits_designated_memory_read(
-                a.pointer(),
+                a.address(),
                 Some(a.access_provenance()),
                 4,
                 &context
@@ -86,8 +86,8 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
 
 #[test]
 fn pointer_integer_round_trips_ignore_unrelated_facts() {
-    let pointer = PointerValue::new(
-        Pointer::symbolic(Variable(992_001)),
+    let pointer = Pointer::new(
+        Address::symbolic(Variable(992_001)),
         ProgramType::Int32Pointer,
     );
     let mut samples = Vec::new();
@@ -134,16 +134,16 @@ fn pointer_integer_round_trips_ignore_unrelated_facts() {
 #[test]
 fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
     let _session = VerificationSession::enter();
-    let value = |id| PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer);
-    let equality = |a: &PointerValue, b: &PointerValue| {
-        Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(Box::new(a.clone()), Box::new(b.clone())),
+    let value = |id| Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer);
+    let equality = |a: &Pointer, b: &Pointer| {
+        Proposition::condition_is(
+            ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
         )
     };
     let reconstructed = |id| {
         let word = ProgramValue::UInt64(MachineTerm::Variable(Variable(id)))
-            .complete_word(Pointer::symbolic(Variable(id + 1)));
+            .complete_word(Address::symbolic(Variable(id + 1)));
         let value = crate::kernel::eval::cast_program_value_to_type(
             word,
             ProgramType::Int32Pointer,
@@ -192,34 +192,34 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
-        let cell = |name: String| Pointer {
-            block: name.into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let cell = |name: String| Address {
+            base: name.into(),
+            offset: AddressOffset::Constant(0),
         };
         let selected = cell("zz-recent-pointer-origin".into());
-        let mut memory = Memory::new().with_block(selected.block.clone(), 8);
+        let mut memory = SymbolicMemory::new().with_block(selected.base.clone(), 8);
         let mut older = Vec::new();
         for index in 0..size {
             let pointer = cell(format!("older-pointer-origin-{index:04}"));
-            memory = memory.with_block(pointer.block.clone(), 8);
+            memory = memory.with_block(pointer.base.clone(), 8);
             older.push(pointer);
         }
         let before = intern_memory_ref(&memory);
-        let read = |retained_state: &SharedMemory, pointer: &Pointer| {
-            PointerValue::from_read(
-                Pointer::loaded_value(retained_state, pointer),
+        let read = |retained_state: &SharedMemory, pointer: &Address| {
+            Pointer::from_read(
+                Address::loaded_value(retained_state, pointer),
                 ProgramType::Int32Pointer,
                 retained_state,
                 pointer,
             )
         };
-        let value = PointerValue::new(
-            Pointer::symbolic(Variable(994_001)),
+        let value = Pointer::new(
+            Address::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );
-        let fact = |pointer: &Pointer| {
-            Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(
+        let fact = |pointer: &Address| {
+            Proposition::condition_is(
+                ConditionTerm::PointerEqual(
                     Box::new(read(&before, pointer)),
                     Box::new(value.clone()),
                 ),
@@ -240,7 +240,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
             &context,
         );
         let writes = [MemoryRange::new(
-            Pointer::symbolic(Variable(994_002)),
+            Address::symbolic(Variable(994_002)),
             0u32.into(),
             1u32.into(),
         )];

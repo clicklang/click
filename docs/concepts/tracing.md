@@ -418,14 +418,14 @@ equalities or a complete execution history.
 Each trace addition uses `adds:` followed by the same proposition form used
 for `goal:` and requirements. Typed diagnostic notation is used wherever a
 source expression would hide checked identities. This includes pointer and scalar equalities,
-viewability with byte extents, model/function equalities, resource containment,
+viewability with byte spans, model/function equalities, resource containment,
 validated resource-composition entries, and distinct volatile-write events.
 
 A refused subobject access retains its bounds requirement on the `goal:`
 line. Concrete bounds use byte-range containment. Opaque bounds print
 `subobject bounds of P cover bytes [A, B)`: `P` identifies the pointer
 whose bounds are needed, while `[A, B)` is the attempted access. This is
-bounds evidence, not merely address equality or ownership at that address.
+bounds evidence, not merely integer address equality or ownership at that address.
 The refusal does not establish that the access is invalid on every execution;
 it can also mean the proof has not established its bounds.
 

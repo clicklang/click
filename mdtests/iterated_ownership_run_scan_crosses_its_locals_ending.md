@@ -103,9 +103,12 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     };
                 }
                 branch {
-                    step();
-                } else {
-                    contradiction(not (occupied[i] == 0));
+                    true => {
+                        step();
+                    }
+                    false => {
+                        contradiction(not (occupied[i] == 0));
+                    }
                 }
                 step();
                 have hi == at(iteration, i) by {
@@ -173,9 +176,12 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 }
             } else {
                 branch {
-                    contradiction(occupied[i] == 0);
-                } else {
-                    step();
+                    true => {
+                        contradiction(occupied[i] == 0);
+                    }
+                    false => {
+                        step();
+                    }
                 }
                 step();
                 have 0 <= i;

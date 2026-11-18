@@ -26,8 +26,7 @@ const RUN_QUARANTINED: &str = "CLICK_RUN_QUARANTINED";
 /// Rewrites the checked-in C++ imports instead of comparing them.
 const REFRESH_CPP_IMPORTS: &str = "CLICK_REFRESH_CPP_IMPORTS";
 const BUBBLE_SORT3_WORK_LIMIT: usize = 100_000;
-/// The explicit frame refusal takes about 175,000 units with scoped failure
-/// reuse, versus 513,000 when its proof routes repeat the same questions.
+/// Pin the explicit frame refusal under a fixed work limit.
 const PROMPT_EXPLICIT_FRAME_FAILURE_WORK_LIMIT: usize = 250_000;
 
 /// Known-broken mdtests, skipped by default so the suite is a meaningful
@@ -43,6 +42,13 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    "pointer_offset_explicit_bridge.md", // 0.81s focused: explicit scalar-pointer law applications
+    "nested_conditional_explicit_arm_equations.md", // 0.89s focused: arithmetic, observations and casts
+    "widened_unsigned_sum_returned_identity.md",    // 1.19s focused: explicit returned-sum identity
+    "widened_unsigned_sum_observation_identity.md", // 0.63s focused: widening and reassociation
+    "aligned_address_word_library.md", // 0.9s focused: 36 explicit word and scalar-pointer law applications
+    "loop_numeric_descent_on_exit.md", // 1.09s focused: split final and continuing preservation paths
+    "loop_numeric_descent_on_generated_exit.md", // 0.58s in parallel: generated preservation of a false next test
     "a_returned_member_domain_supports_a_logical_read.md", // 2.3s: member-result resource fold and logical read
     "scalar_induction_after_helper_facts.md", // 0.78s in the parallel induction fixture selection
     "witness_mixed_type_values.md", // 1.36s focused: pointer, Integer, and machine binders
@@ -50,6 +56,7 @@ const NIGHTLY: &[&str] = &[
     "modeled_pthread_copied_handle_join_twice.md", // forwarded handle must consume one right
     "shared_loop_test_and_update.md", // 1.2s focused: ranked pre/post-test call proofs
     "shared_loop_post_test_ends_body_scope.md", // 0.8s focused: post-test after an expired body array
+    "a_summarized_pure_loop_does_not_record_its_test_state.md", // 0.84s focused; fast layout coverage checks the test selector
     "a_fixed_range_transfer_preserves_the_retained_tail.md", // 0.55s focused: typed byte-range call and return
     "consumed_scalar_transfer_mixes_with_a_borrowed_return.md", // 0.67s focused: two-parameter call and caller return
     "aliased_packaged_views_keep_their_selected_whole_loan.md", // 0.71s focused: selected whole-loan recovery
@@ -191,7 +198,7 @@ const NIGHTLY: &[&str] = &[
     "entry_alignment_premise_expands.md",                                      // 1.4s
     "execute_order_reasoning_terminates.md",                                   // 0.7s
     "expand_sequential_null_checks.md",                                        // 1.4s
-    "explicit_transport_failure_is_prompt.md",                                 // 1.5s
+    "explicit_preserve_failure_is_prompt.md",                                  // 1.5s
     "field_borrow_parent_drop.md",                                             // 0.7s
     "field_borrow_parent_drop_rejects_stale_value.md",                         // 0.7s
     "field_derived_precise_effect_after_metadata_write.md",                    // 4.4s
@@ -451,9 +458,18 @@ fn mdtests() {
         })
         .collect::<Vec<_>>();
     let filtered = if let Ok(filter) = std::env::var("MDTEST_FILTER") {
+        // A whole file name selects just that file; anything else selects
+        // every file whose name contains it.
+        let exact = filter.ends_with(".md");
         paths.retain(|path| {
-            path.file_name()
-                .is_some_and(|name| name.to_string_lossy().contains(&filter))
+            path.file_name().is_some_and(|name| {
+                let name = name.to_string_lossy();
+                if exact {
+                    name == filter
+                } else {
+                    name.contains(&filter)
+                }
+            })
         });
         true
     } else {
@@ -542,7 +558,7 @@ fn mdtests() {
     // Which producers still end a step on a state older than itself, so
     // that the step is recorded on no history. A knowledge-losing forget
     // cannot: its mark makes the result a node no earlier state can be
-    // (`Memory::mark_forgotten_from`). Anything else here is a producer
+    // (`SymbolicMemory::mark_forgotten_from`). Anything else here is a producer
     // whose steps are invisible to every history-based rule, and this line
     // is how a corpus run names it.
     eprintln!(
@@ -586,12 +602,27 @@ fn run_mdtest_in_thread(path: &Path) -> Result<(), String> {
     let result = limits::spawn("mdtest verifier", thread_name, move || {
         run_mdtest_attempt(&path)
     })?;
+    let seconds = started.elapsed().as_secs_f64();
     eprintln!(
-        "mdtest `{name}` {} in {:.2}s",
+        "mdtest `{name}` {} in {seconds:.2}s",
         if result.is_ok() { "passed" } else { "failed" },
-        started.elapsed().as_secs_f64()
+    );
+    click::nightly_report::record(
+        "mdtests",
+        &click::nightly_report::NightlyResult {
+            kind: "mdtest",
+            name: path_file_name(&name),
+            passed: result.is_ok(),
+            seconds,
+            message: result.as_ref().err().map(String::as_str),
+        },
     );
     result
+}
+
+/// The file name the report's `MDTEST_FILTER=<name>` selects.
+fn path_file_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
 }
 
 fn run_mdtest_attempt(path: &Path) -> Result<(), String> {
@@ -617,7 +648,7 @@ fn run_mdtest_attempt(path: &Path) -> Result<(), String> {
     if !budgets_disabled
         && path
             .file_name()
-            .is_some_and(|name| name == "explicit_transport_failure_is_prompt.md")
+            .is_some_and(|name| name == "explicit_preserve_failure_is_prompt.md")
     {
         return instrumentation::with_tactic_work_limits(
             instrumentation::TacticWorkLimits {
@@ -767,7 +798,7 @@ fn check_expectation(
             path.display()
         )),
         (MdTestExpectation::FailContains(expected), Err((message, report))) => {
-            if let Some(internal) = ["Memory {", "HeapMemory {", "pointer(pointer "]
+            if let Some(internal) = ["SymbolicMemory {", "HeapMemory {", "pointer(pointer "]
                 .into_iter()
                 .find(|internal| report.contains(internal))
             {

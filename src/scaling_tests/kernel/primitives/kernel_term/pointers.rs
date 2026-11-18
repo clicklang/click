@@ -18,7 +18,7 @@ fn complete_pointer_import_retains_persistent_evidence_without_traversal() {
         }
         Arc::make_mut(source.qualifiers.as_mut().unwrap()).object_type_evidence = Some(evidence);
         let ((shared, output), work) = crate::instrumentation::measure_deterministic_work(|| {
-            let shared = SharedPointerValue::import(&source);
+            let shared = SharedPointer::import(&source);
             let output = shared.export().unwrap();
             (shared, output)
         });
@@ -38,7 +38,7 @@ fn complete_pointer_import_retains_persistent_evidence_without_traversal() {
             .as_ref()
             .unwrap();
         assert!(before.premises.ptr_eq(&after.premises));
-        let named = SharedPointerValue::import(&source);
+        let named = SharedPointer::import(&source);
         let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
             named.same_source_payload(&shared)
         });
@@ -61,9 +61,9 @@ fn complete_pointer_import_retains_persistent_evidence_without_traversal() {
 }
 
 #[test]
-fn complete_pointer_construction_retains_shared_extent_width_dags() {
+fn complete_pointer_construction_retains_shared_bounds_width_dags() {
     for size in [16, 64, 256] {
-        let source = SharedPointerValue::import(&complete_source());
+        let source = SharedPointer::import(&complete_source());
         let mut value = source.node().clone();
         let mut width =
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1000011));
@@ -75,13 +75,13 @@ fn complete_pointer_construction_retains_shared_extent_width_dags() {
             );
         }
         Arc::make_mut(value.qualifiers.as_mut().unwrap())
-            .extent
+            .bounds
             .as_mut()
             .unwrap()
             .width = width.clone();
         let exports = KernelTermExport::machine_export_count();
         let (shared, work) =
-            crate::instrumentation::measure_deterministic_work(|| SharedPointerValue::new(value));
+            crate::instrumentation::measure_deterministic_work(|| SharedPointer::new(value));
         assert_eq!(work, 1);
         assert_eq!(
             &shared
@@ -89,16 +89,16 @@ fn complete_pointer_construction_retains_shared_extent_width_dags() {
                 .qualifiers
                 .as_ref()
                 .unwrap()
-                .extent
+                .bounds
                 .as_ref()
                 .unwrap()
                 .width,
             &width
         );
-        let equivalent = SharedPointerValue::new(shared.node().clone());
+        let equivalent = SharedPointer::new(shared.node().clone());
         let mut different = shared.node().clone();
         Arc::make_mut(different.qualifiers.as_mut().unwrap()).constant = false;
-        let different = SharedPointerValue::new(different);
+        let different = SharedPointer::new(different);
         let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
             (
                 shared.same_source_payload(&equivalent),

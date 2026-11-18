@@ -58,7 +58,7 @@ fn child_witness_aliases_use_the_published_point_index() {
             ResourceFact::view_composite(
                 "list".into(),
                 vec![ProgramValue::typed_pointer(
-                    Pointer::symbolic(Variable(id)),
+                    Address::symbolic(Variable(id)),
                     ProgramType::Int32Pointer,
                 )],
             )
@@ -96,14 +96,14 @@ fn child_witness_aliases_use_the_published_point_index() {
         }
         resources.synchronize_memory_equalities(&assumptions);
         let state = state.with_resource_context(resources);
-        let aliased = assumptions.assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(
-                Box::new(PointerValue::new(
-                    Pointer::symbolic(Variable(2)),
+        let aliased = assumptions.assume_proposition(Proposition::condition_is(
+            ConditionTerm::PointerEqual(
+                Box::new(Pointer::new(
+                    Address::symbolic(Variable(2)),
                     ProgramType::Int32Pointer,
                 )),
-                Box::new(PointerValue::new(
-                    Pointer::symbolic(Variable(50)),
+                Box::new(Pointer::new(
+                    Address::symbolic(Variable(50)),
                     ProgramType::Int32Pointer,
                 )),
             ),

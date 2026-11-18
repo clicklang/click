@@ -259,7 +259,7 @@ fn lower_function(
             names.require(&source.declaration_id)?.to_owned(),
         ),
         next_temporary: 0,
-        next_call_result: std::cell::Cell::new(0),
+        next_result_step: std::cell::Cell::new(0),
         places,
         records,
         constants,
@@ -469,7 +469,7 @@ struct LoweringContext<'a> {
     next_load_occurrence: u32,
     temporary_owner: LocalFunctionId,
     next_temporary: u32,
-    next_call_result: std::cell::Cell<u32>,
+    next_result_step: std::cell::Cell<u32>,
     unwind_cleanups: bool,
     /// The packs the call being lowered needs, with their unpacks and the
     /// derived class's address: one for each reference argument that
@@ -545,18 +545,46 @@ impl<'a> Polymorphism<'a> {
     }
 }
 
+fn value_step(
+    step: u32,
+    expression: ProgramExpression,
+    value_type: ProgramType,
+) -> ProgramStatement {
+    ProgramStatement::StepValue {
+        aggregate_layout: None,
+        steps: vec![step],
+        expression,
+        value_type: Some(value_type),
+        pointee_constant: false,
+    }
+}
+
+fn value_result(step: u32) -> ProgramExpression {
+    ProgramExpression::StepResult {
+        step,
+        origin: crate::kernel::StepOrigin::Value("scalar evaluation".into()),
+        ends: true,
+    }
+}
+
 impl LoweringContext<'_> {
-    fn call_then_assign(
+    fn result_step(&self) -> u32 {
+        let step = self.next_result_step.get();
+        self.next_result_step.set(
+            step.checked_add(1)
+                .expect("too many value steps in one function"),
+        );
+        crate::instrumentation::record_deterministic_work(1);
+        step
+    }
+
+    fn retain_value(
         &self,
-        target: impl Into<BindingName>,
-        function: impl Into<String>,
-        arguments: Vec<ProgramExpression>,
-    ) -> ProgramStatement {
-        let id = self.next_call_result.get();
-        self.next_call_result
-            .set(id.checked_add(1).expect("too many calls in one function"));
-        let (call, value) = crate::kernel::program_call_value(id, function, arguments);
-        program_seq(call, program_assign(target, value))
+        expression: ProgramExpression,
+        value_type: ProgramType,
+    ) -> (ProgramStatement, ProgramExpression) {
+        let step = self.result_step();
+        (value_step(step, expression, value_type), value_result(step))
     }
 
     /// `call`, after the packs its arguments need and before their unpacks:
@@ -1318,6 +1346,7 @@ impl LoweringContext<'_> {
             | CppStatement::ReturnAggregateCall { .. }
             | CppStatement::ReturnRecord { .. }
             | CppStatement::Return { .. }
+            | CppStatement::ReturnVoid { .. }
             | CppStatement::ReturnCall { .. }
             | CppStatement::Throw { .. }
             | CppStatement::ThrowIosFailure { .. }
@@ -1350,69 +1379,58 @@ impl LoweringContext<'_> {
                 callee,
                 arguments,
                 value_type,
+                field,
+                compound_operator,
                 value,
                 ..
             } => {
-                let element = scalar::reference_element(value_type)
-                    .ok_or("unsupported C++ call store referent")?;
-                let element_type = element.kind.kernel_type();
-                // The right operand is read first; the call then yields the
-                // referent's address.
-                let stored = self.fresh_temporary(element_type)?;
-                let read = program_seq(
-                    program_declare(stored.clone(), element_type),
-                    program_assign(stored.clone(), self.lower_expression(value)?),
-                );
-                let target = self.call_name(callee, arguments)?;
-                let (prefix, arguments) = self.normalize_arguments(arguments)?;
-                let address = self.fresh_temporary(element_pointer_type(element)?)?;
-                Ok(program_seq(
+                let (stored_type, offset) = if let Some(field) = field {
+                    let (field_type, offset) =
+                        self.records.resolve_returned_field(value_type, field)?;
+                    (cpp_scalar_kernel_type(field_type)?, Some(offset))
+                } else {
+                    let element = scalar::reference_element(value_type)
+                        .ok_or("unsupported C++ call store referent")?;
+                    (element.kind.kernel_type(), None)
+                };
+                // C++17 sequences the right operand before the call.
+                let expression = self.lower_expression(value)?;
+                let (read, operand) = self.retain_value(expression, stored_type);
+                let evaluation = self.normalize_scalar(ScalarInput::Call {
+                    callee,
+                    arguments,
+                    value_type,
+                    conversions: &[],
+                })?;
+                let pointer = match offset {
+                    Some(offset) => crate::kernel::program_expression::pointer_offset_bytes(
+                        evaluation.value,
+                        offset,
+                    ),
+                    None => evaluation.value,
+                };
+                let value = match compound_operator {
+                    Some(operator) => {
+                        use super::CppCompoundAssignment;
+                        use crate::kernel::program_expression::{add, subtract};
+
+                        let previous = self.lower_typed_load(pointer.clone(), stored_type)?;
+                        match operator {
+                            CppCompoundAssignment::Add => add(previous, operand),
+                            CppCompoundAssignment::Subtract => subtract(previous, operand),
+                        }
+                    }
+                    None => operand,
+                };
+                Ok(evaluate_then(
                     read,
                     evaluate_then(
-                        prefix,
-                        program_seq(
-                            program_seq(
-                                program_declare(address.clone(), element_pointer_type(element)?),
-                                self.coerced(self.call_then_assign(
-                                    address.clone(),
-                                    target,
-                                    arguments,
-                                )),
-                            ),
-                            program_typed_store(
-                                crate::kernel::program_expression::variable(address),
-                                crate::kernel::program_expression::variable(stored),
-                                element_type,
-                            ),
-                        ),
+                        evaluation.prefix,
+                        program_typed_store(pointer, value, stored_type),
                     ),
                 ))
             }
         }
-    }
-
-    /// Capture the result before destruction. A throwing return call takes the
-    /// same cleanup chain on its exceptional edge and never produces a return.
-    fn lower_captured_return(
-        &mut self,
-        mut evaluation: ProgramStatement,
-        capture: BindingName,
-        value_type: ProgramType,
-        cleanups: &[&CppCleanup],
-        unwind_cleanups: &[&CppCleanup],
-        can_throw: bool,
-    ) -> Result<ProgramStatement, String> {
-        if can_throw && self.unwind_cleanups && !unwind_cleanups.is_empty() {
-            evaluation = program_unwind_cleanup(evaluation, self.lower_cleanups(unwind_cleanups)?);
-        }
-        let mut result = program_seq(program_declare(capture.clone(), value_type), evaluation);
-        for cleanup in cleanups {
-            result = program_seq(result, self.lower_cleanup(cleanup)?);
-        }
-        Ok(program_seq(
-            result,
-            program_return(crate::kernel::program_expression::variable(capture)),
-        ))
     }
 
     /// Each sequence starts with the objects live on entry. Construction adds
@@ -1461,6 +1479,7 @@ impl LoweringContext<'_> {
                 let layout = self.record_layout(name)?;
                 let (prefix, actual) = self.normalize_arguments(arguments)?;
                 let temporary = self.fresh_aggregate_capture(name)?;
+                let (materialize, address) = self.retain_materialized(&temporary);
                 // The RHS is a separate object: the live LHS may be read by
                 // the factory and cannot serve as unwritten construction storage.
                 Ok(evaluate_then(
@@ -1474,10 +1493,13 @@ impl LoweringContext<'_> {
                                 actual,
                             )),
                             program_seq(
-                                program_copy_aggregate(
-                                    self.lower_place(target)?,
-                                    crate::kernel::program_expression::variable(temporary.clone()),
-                                    layout,
+                                program_seq(
+                                    materialize,
+                                    program_copy_aggregate(
+                                        self.lower_place(target)?,
+                                        address,
+                                        layout,
+                                    ),
                                 ),
                                 program_end_automatic_lifetimes(vec![(temporary)]),
                             ),
@@ -1530,6 +1552,7 @@ impl LoweringContext<'_> {
                 };
                 let layout = self.record_layout(name)?;
                 let capture = self.fresh_aggregate_capture(name)?;
+                let (materialize, address) = self.retain_materialized(&capture);
                 let mut result = program_seq(
                     program_declare_aggregate(capture.clone(), layout.clone()),
                     program_copy_aggregate(
@@ -1538,12 +1561,17 @@ impl LoweringContext<'_> {
                         layout,
                     ),
                 );
+                result = program_seq(result, materialize);
                 for cleanup in state.exit(0) {
                     result = program_seq(result, self.lower_cleanup(cleanup)?);
                 }
-                Ok(program_seq(
-                    result,
-                    program_return(crate::kernel::program_expression::variable(capture)),
+                Ok(program_seq(result, program_return(address)))
+            }
+            CppStatement::ReturnVoid { .. } => {
+                let cleanups = self.lower_cleanups(&state.exit(0).collect::<Vec<_>>())?;
+                Ok(evaluate_then(
+                    cleanups,
+                    program_return(ProgramExpression::Value(crate::kernel::ProgramValue::Void)),
                 ))
             }
             CppStatement::Return { value, .. } => {
@@ -1602,23 +1630,17 @@ impl LoweringContext<'_> {
                 Ok(operation)
             }
             CppStatement::ThrowIosFailure { .. } => {
-                let payload = ProgramType::Parameter(crate::kernel::TypeParameterName::intern(
-                    "std::ios_base::failure",
-                ));
-                let capture = self.fresh_temporary(payload)?;
-                let construction = program_seq(
-                    program_declare(capture.clone(), payload),
-                    self.call_then_assign(
-                        capture.clone(),
-                        super::standard_library::IOS_FAILURE_FACTORY.to_string(),
-                        Vec::new(),
-                    ),
+                let (construction, payload) = crate::kernel::program_call_value(
+                    self.result_step(),
+                    super::standard_library::IOS_FAILURE_FACTORY,
+                    Vec::new(),
                 );
-                let throw =
-                    ProgramStatement::Throw(crate::kernel::program_expression::variable(capture));
                 Ok(program_seq(
                     construction,
-                    self.lower_throwing_statement(throw, state.exit(unwind_base))?,
+                    self.lower_throwing_statement(
+                        ProgramStatement::Throw(payload),
+                        state.exit(unwind_base),
+                    )?,
                 ))
             }
             CppStatement::Throw { value, .. } => {
@@ -1772,13 +1794,41 @@ impl LoweringContext<'_> {
             } => {
                 let target = self.call_name(callee, arguments)?;
                 let (prefix, arguments) = self.normalize_arguments(arguments)?;
-                // A converted result always has a callee-typed temporary.
+                // Keep the callee's own type until the source conversion
+                // reads the value, including reference loads.
                 let capture_type = cpp_return_scalar_type(value_type)?;
-                let capture = match destination.filter(|_| conversions.is_empty()) {
-                    Some(name) => name.into(),
-                    None => self.fresh_temporary(capture_type)?,
+                let (mut call, raw) =
+                    crate::kernel::program_call_value(self.result_step(), target, arguments);
+                let ProgramStatement::CallResult {
+                    result_type,
+                    result_pointee_constant,
+                    ..
+                } = &mut call
+                else {
+                    unreachable!("a value-producing call")
                 };
-                let mut value = crate::kernel::program_expression::variable(capture.clone());
+                let pointee_constant = scalar::returns_constant_element(value_type);
+                *result_type = Some(capture_type);
+                *result_pointee_constant = pointee_constant;
+                let (operation, mut value) =
+                    if let Some(name) = destination.filter(|_| conversions.is_empty()) {
+                        (
+                            program_seq(
+                                program_declare_with_all_qualifiers(
+                                    name.clone(),
+                                    capture_type,
+                                    false,
+                                    false,
+                                    false,
+                                    pointee_constant,
+                                ),
+                                self.coerced(program_seq(call, program_assign(name.clone(), raw))),
+                            ),
+                            crate::kernel::program_expression::variable(name),
+                        )
+                    } else {
+                        (self.coerced(call), raw)
+                    };
                 let mut result_type = capture_type;
                 for conversion in conversions {
                     if conversion.cast_kind == super::CppScalarCastKind::ReferenceLoad {
@@ -1805,20 +1855,7 @@ impl LoweringContext<'_> {
                     result_type = target.kernel_type();
                 }
                 Ok(ScalarEvaluation {
-                    prefix: evaluate_then(
-                        prefix,
-                        program_seq(
-                            program_declare_with_all_qualifiers(
-                                capture.clone(),
-                                capture_type,
-                                false,
-                                false,
-                                false,
-                                scalar::returns_constant_element(value_type),
-                            ),
-                            self.coerced(self.call_then_assign(capture.clone(), target, arguments)),
-                        ),
-                    ),
+                    prefix: evaluate_then(prefix, operation),
                     value,
                     value_type: result_type,
                     may_throw: true,
@@ -1852,20 +1889,11 @@ impl LoweringContext<'_> {
         for argument in arguments {
             let retained_state = if let CppCallArgument::Value { value } = argument {
                 if has_nested && super::schema::field_scalar_argument(value) {
-                    let capture =
-                        self.fresh_temporary(cpp_return_scalar_type(value.value_type())?)?;
+                    let value_type = cpp_return_scalar_type(value.value_type())?;
                     let expression = self.lower_expression(value)?;
-                    evaluation = evaluate_then(
-                        evaluation,
-                        program_seq(
-                            program_declare(
-                                capture.clone(),
-                                cpp_return_scalar_type(value.value_type())?,
-                            ),
-                            program_assign(capture.clone(), expression),
-                        ),
-                    );
-                    Some(crate::kernel::program_expression::variable(capture))
+                    let (read, captured) = self.retain_value(expression, value_type);
+                    evaluation = evaluate_then(evaluation, read);
+                    Some(captured)
                 } else {
                     None
                 }
@@ -1882,42 +1910,24 @@ impl LoweringContext<'_> {
             } else if let CppCallArgument::Value {
                 value:
                     CppExpression::ClosureInstance {
-                        function,
-                        captures,
-                        value_type,
-                        ..
+                        function, captures, ..
                     },
             } = argument
             {
                 // A lambda made for a `std::function` argument is the value
                 // its instance function returns for the captured values.
-                let capture = self.fresh_temporary(
-                    super::interface::function_pointer_signature(value_type)?
-                        .pointer_type()
-                        .to_kernel_type(),
-                )?;
                 let mut values = Vec::with_capacity(captures.len());
                 for value in captures {
                     values.push(self.lower_expression(value)?);
                 }
                 let closure = self.names.require(&function.declaration_id)?;
-                evaluation = evaluate_then(
-                    evaluation,
-                    program_seq(
-                        program_declare(
-                            capture.clone(),
-                            super::interface::function_pointer_signature(value_type)?
-                                .pointer_type()
-                                .to_kernel_type(),
-                        ),
-                        self.call_then_assign(
-                            capture.clone(),
-                            crate::languages::rust::names::closure_instance_name(closure),
-                            values,
-                        ),
-                    ),
+                let (call, returned) = crate::kernel::program_call_value(
+                    self.result_step(),
+                    crate::languages::rust::names::closure_instance_name(closure),
+                    values,
                 );
-                lowered.push(crate::kernel::program_expression::variable(capture));
+                evaluation = evaluate_then(evaluation, call);
+                lowered.push(returned);
             } else if matches!(
                 argument,
                 CppCallArgument::Construct { .. }
@@ -1974,10 +1984,9 @@ impl LoweringContext<'_> {
                         self.coerced(operation),
                     ),
                 );
-                lowered.push(crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(capture.clone()),
-                    ProgramType::UInt8Pointer,
-                ));
+                let (materialize, address) = self.retain_materialized(&capture);
+                evaluation = evaluate_then(evaluation, materialize);
+                lowered.push(address);
                 temporaries.push(capture);
             } else if let CppCallArgument::Call {
                 callee,
@@ -2021,18 +2030,17 @@ impl LoweringContext<'_> {
                 program_return(evaluation.value),
             ));
         }
-        let capture = self.fresh_temporary(evaluation.value_type)?;
-        self.lower_captured_return(
-            evaluate_then(
-                evaluation.prefix,
-                program_assign(capture.clone(), evaluation.value),
-            ),
-            capture,
-            evaluation.value_type,
-            cleanups,
-            unwind_cleanups,
-            evaluation.may_throw,
-        )
+        // Evaluate the return expression before any destructor can change
+        // its operands. A throwing call runs only the exceptional cleanups.
+        let (capture, value) = self.retain_value(evaluation.value, evaluation.value_type);
+        let mut prefix = evaluate_then(evaluation.prefix, capture);
+        if evaluation.may_throw && self.unwind_cleanups && !unwind_cleanups.is_empty() {
+            prefix = program_unwind_cleanup(prefix, self.lower_cleanups(unwind_cleanups)?);
+        }
+        for cleanup in cleanups {
+            prefix = program_seq(prefix, self.lower_cleanup(cleanup)?);
+        }
+        Ok(program_seq(prefix, program_return(value)))
     }
 
     fn normalize_expression(
@@ -2052,18 +2060,40 @@ impl LoweringContext<'_> {
             CppExpression::ObserverCall {
                 callee,
                 arguments,
-                value_type,
+                value_type: result_type,
+                returned_member,
                 ..
             } => {
                 if self.unwind_cleanups {
                     return Err("C++ expression observers currently require the normal-only exception profile".into());
                 }
-                return self.normalize_scalar(ScalarInput::Call {
+                let Some(member) = returned_member else {
+                    return self.normalize_scalar(ScalarInput::Call {
+                        callee,
+                        arguments,
+                        value_type: result_type,
+                        conversions: &[],
+                    });
+                };
+                let (field_type, offset) = self
+                    .records
+                    .resolve_returned_field(&member.reference_type, &member.field)?;
+                let pointee_constant = scalar::returns_constant_element(field_type);
+                let evaluation = self.normalize_scalar(ScalarInput::Call {
                     callee,
                     arguments,
-                    value_type,
+                    value_type: &member.reference_type,
                     conversions: &[],
-                });
+                })?;
+                let pointer = crate::kernel::program_expression::pointer_offset_bytes(
+                    evaluation.value,
+                    offset,
+                );
+                (
+                    evaluation.prefix,
+                    self.lower_qualified_typed_load(pointer, value_type, pointee_constant)?,
+                    evaluation.may_throw,
+                )
             }
             CppExpression::LogicalNot { value, .. } => {
                 let input = self.normalize_expression(value)?;
@@ -2140,30 +2170,28 @@ impl LoweringContext<'_> {
                 let lhs = self.normalize_expression(left)?;
                 let rhs = self.normalize_expression(right)?;
                 if *operator == CppBinaryOperator::LogicalAnd {
-                    let capture = self.fresh_temporary(ProgramType::Bool)?;
+                    let step = self.result_step();
                     let prefix = evaluate_then(
                         lhs.prefix,
-                        program_seq(
-                            program_declare(capture.clone(), ProgramType::Bool),
-                            program_if(
-                                lhs.value,
-                                evaluate_then(
-                                    rhs.prefix,
-                                    program_assign(capture.clone(), rhs.value),
+                        program_if(
+                            lhs.value,
+                            evaluate_then(
+                                rhs.prefix,
+                                value_step(step, rhs.value, ProgramType::Bool),
+                            ),
+                            value_step(
+                                step,
+                                crate::kernel::program_expression::cast(
+                                    ProgramExpression::Value(int32(0)),
+                                    ProgramType::Bool,
                                 ),
-                                program_assign(
-                                    capture.clone(),
-                                    crate::kernel::program_expression::cast(
-                                        ProgramExpression::Value(int32(0)),
-                                        ProgramType::Bool,
-                                    ),
-                                ),
+                                ProgramType::Bool,
                             ),
                         ),
                     );
                     return Ok(ScalarEvaluation {
                         prefix,
-                        value: crate::kernel::program_expression::variable(capture),
+                        value: value_result(step),
                         value_type: ProgramType::Bool,
                         may_throw: lhs.may_throw || rhs.may_throw,
                     });
@@ -2194,6 +2222,15 @@ impl LoweringContext<'_> {
         let id = LocalBindingId::temporary(self.temporary_owner.clone(), ordinal);
         id.initialize_program_type(program_type);
         Ok(id.into())
+    }
+
+    /// Publish the address after construction or copying has completed.
+    /// The full expression still owns the storage and retires it separately.
+    fn retain_materialized(&self, binding: &BindingName) -> (ProgramStatement, ProgramExpression) {
+        self.retain_value(
+            crate::kernel::program_expression::variable(binding.clone()),
+            ProgramType::UInt8Pointer,
+        )
     }
 
     fn fresh_aggregate_capture(&mut self, record: &str) -> Result<BindingName, String> {
@@ -2650,13 +2687,9 @@ impl LoweringContext<'_> {
             // The byte-array lvalue denotes the complete record footprint.
             // Checked address formation validates it without reading fields.
             let bytes = self.record_layout(name)?.size_bytes();
-            (
-                ProgramExpression::Subobject {
-                    pointer: Box::new(pointer),
-                    width: bytes,
-                },
-                ProgramType::UInt8Array(bytes),
-            )
+            // The array lvalue checks the whole footprint without selecting
+            // a new subobject. Keep the source pointer's designation/bounds.
+            (pointer, ProgramType::UInt8Array(bytes))
         } else {
             (pointer, ProgramType::Int32)
         };
@@ -2889,7 +2922,10 @@ fn lower_binary_value(
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<ProgramType, String> {
-    if scalar::record_pointee(value_type).is_some() {
+    if scalar::record_pointee(value_type).is_some()
+        || matches!(value_type, CppType::LvalueReference { .. })
+            && scalar::record_referent(value_type).is_some()
+    {
         return Ok(ProgramType::Int32Pointer);
     }
     if let CppType::Pointer { pointee } = value_type {

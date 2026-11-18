@@ -10,7 +10,7 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
     let mut samples = Vec::new();
     for size in [0, 64, 128, 512] {
         let mut memory =
-            Memory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32);
+            SymbolicMemory::new().with_declared_scalar_block(word(0).base, 4, ProgramType::UInt32);
         for byte in 0..3 {
             memory = memory.store(
                 word(byte),
@@ -19,9 +19,9 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
         }
         for index in 0..size {
             memory = memory.with_block(format!("global:other{index}"), 4).store(
-                Pointer {
-                    block: format!("global:other{index}").into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: format!("global:other{index}").into(),
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramValue::UInt32(index.into()),
             );
@@ -58,15 +58,15 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
 fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
     let mut works = Vec::new();
     for unrelated in [8_u32, 32, 128, 512] {
-        let mut memory = Memory::new().store(
+        let mut memory = SymbolicMemory::new().store(
             word(0),
             ProgramValue::UInt64(MachineTerm::uint64_constant(0x0102_0304_0506_0708)),
         );
         for index in 0..unrelated {
             memory = memory.store(
-                Pointer {
-                    block: PointerBlock::from(format!("global:unrelated{index}").as_str()),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::from(format!("global:unrelated{index}").as_str()),
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramValue::UInt32(index.into()),
             );
@@ -95,7 +95,7 @@ fn declared_word_read_representation_ignores_unrelated_memory() {
     for size in [8, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut memory =
-            Memory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32);
+            SymbolicMemory::new().with_declared_scalar_block(word(0).base, 4, ProgramType::UInt32);
         for index in 0..size {
             memory = memory.with_block(format!("unrelated:{index}"), 4);
         }

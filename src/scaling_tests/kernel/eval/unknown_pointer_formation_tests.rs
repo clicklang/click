@@ -7,10 +7,10 @@ fn split_formation_selects_the_owned_piece_beside_unrelated_owners() {
         let _session = crate::kernel::VerificationSession::enter();
         let (p, position, facts, mut resources, _) = split_formation_fixture();
         for i in 0..size {
-            let other = PointerValue::new(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::scale_int32(
+            let other = Pointer::new(
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::scale_int32(
                         MachineTerm::Variable(Variable(932_000 + i)),
                         4,
                     ),
@@ -88,7 +88,7 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
         let before = crate::persistent::persistent_node_allocations();
         let result = pointer_offset_by_elements_paths(
             &ExecutionState::new(),
-            PointerValue::new(Pointer::null(), ProgramType::Int32Pointer),
+            Pointer::new(Address::null(), ProgramType::Int32Pointer),
             MachineTerm::Variable(Variable(934_001)),
             4,
             false,

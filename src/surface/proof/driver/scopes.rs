@@ -3,6 +3,87 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    /// Expand a mathematical identity inside its owned have body.
+    pub(in crate::surface::proof) fn try_integer_algebra(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_integer_algebra(&self.proof.body)?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Emit local word laws in an owned have body.
+    pub(in crate::surface::proof) fn try_address_words_using(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_address_words_using(
+            &self.proof.body,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Rewrite selected conditional arms inside an owned have body.
+    pub(in crate::surface::proof) fn try_rewrite_conditional_arms_using(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some((body, _)) = crate::kernel::search::ProofSearch::rewrite_conditional_arms_using(
+            &self.proof.body,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Construct a selected scalar interval leaf without normalization.
+    pub(in crate::surface::proof) fn try_interval_fact_using(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_interval_fact_using(
+            &self.proof.body,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Construct a signed addition certificate from the selected bounds.
+    pub(in crate::surface::proof) fn try_int32_addition_using(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_int32_addition_using(
+            &self.proof.body,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Run only the ordinary Integer emitter in a selected have body.
     pub(in crate::surface::proof) fn try_integer_composition_using(
         &self,
@@ -66,60 +147,40 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         self.proof.with_completed_execution_if(body)
     }
 
-    /// Schedule a resource close's outstanding body fact, retaining its proof
-    /// as the open scope's `by`. The primitive close only reports obligations.
+    /// Retain proofs of a resource close's body facts inside the scope.
     pub(in crate::surface::proof) fn complete_scope(&self) -> Result<Proof<'a>, ClickError> {
         let scope = self.proof;
         let ProofScopeStructure::Open {
             resource,
             source_index,
             preserve_exposed_body,
-            written_close_proof,
         } = scope.structure.as_ref()
         else {
             return scope.clone().join();
         };
-        if scope.body.is_at_function_exit() {
-            return scope.close_open_scope_from(
-                &scope.body,
-                resource,
-                *source_index,
-                *preserve_exposed_body,
-                written_close_proof,
-            );
-        }
-        let (closed, close_proof) = scope.body.driver().close_scope_with_body_fact_proof(
-            resource,
-            written_close_proof.as_deref(),
-            &|body| {
-                scope.close_open_scope_from(
-                    body,
-                    resource,
-                    *source_index,
-                    *preserve_exposed_body,
-                    written_close_proof,
-                )
-            },
-        )?;
-        let (body, close_proof) = match close_proof {
-            None => return Ok(closed),
-            Some(crate::surface::proof::ScopeCloseProof::By(close_proof)) => {
-                (scope.body.certificate(), Some(close_proof))
-            }
-            Some(crate::surface::proof::ScopeCloseProof::BlockTail(haves)) => {
-                let mut steps = scope.body.certificate().steps().to_vec();
-                steps.extend(haves.steps().iter().cloned());
-                (ProofCertificate::from_steps(steps)?, None)
-            }
+        let close = |body: &Proof<'a>| {
+            scope.close_open_scope_from(body, resource, *source_index, *preserve_exposed_body)
         };
+        if scope.body.is_at_function_exit() {
+            return close(&scope.body);
+        }
+        let (closed, tail) = scope
+            .body
+            .driver()
+            .close_scope_with_body_fact_proof(resource, &close)?;
+        let Some(tail) = tail else {
+            return Ok(closed);
+        };
+        let mut steps = scope.body.certificate().steps().to_vec();
+        steps.extend(tail.steps().iter().cloned());
         Ok(Proof {
             node: ProofNode::step_child(
                 &scope.root.node,
                 closed.focused_branch_id(),
                 Arc::new(ProofStep::Open {
                     resource: resource.clone(),
-                    proof: Box::new(body),
-                    close_proof,
+                    proof: Box::new(ProofCertificate::from_steps(steps)?),
+                    deferred_tail: false,
                 }),
             ),
             ..closed
@@ -284,6 +345,24 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
+    /// Preserve the selected sources in an owned signed-domain proof.
+    pub(in crate::surface::proof) fn try_restricted_signed_definedness_closure(
+        &self,
+        premises: &[(crate::kernel::Proposition, ClickProposition)],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_restricted_signed_definedness_closure(
+                &self.proof.body,
+                premises,
+            )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Closes the body's `int32` or `int64` definedness goal from the
     /// operands' indexed constant bounds.
     pub(in crate::surface::proof) fn try_signed_definedness_closure(
@@ -343,6 +422,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
                     &(driver_proof.body),
                     true,
                 )?
+            && !checkable.ends_in_empty_normalize_using()
         {
             body = checkable;
         }

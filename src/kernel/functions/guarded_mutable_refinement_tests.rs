@@ -39,9 +39,9 @@ fn entry_state() -> ExecutionState {
         .with_local("active", int32(MachineTerm::Variable(Variable(980_001))))
         .with_local(
             "cells",
-            ProgramValue::pointer(Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(0),
+            ProgramValue::pointer(Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
             }),
         )
 }
@@ -114,7 +114,7 @@ fn unrelated_concrete_guard_does_not_refine_named_guard() {
 }
 
 fn active_is_zero(value: bool) -> PureFactContext {
-    PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(980_001)),
             MachineTerm::constant(0),

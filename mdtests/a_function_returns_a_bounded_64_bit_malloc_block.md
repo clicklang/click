@@ -1,7 +1,7 @@
 # A function returns a bounded 64-bit `malloc` block
 
 `make` returns `malloc(n * sizeof(uint32_t))` for a bounded `size_t` count,
-a block with a 64-bit extent, possibly null. A resource that owns
+a block with a 64-bit size, possibly null. A resource that owns
 `allocation(p, n * 4u64)` and `p[0..n]` when `p` is not null carries it to
 the caller, which hands it to `dispose` to free. The token crosses both
 calls: `make` produces it at its exit, and `dispose` consumes it.

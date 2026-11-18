@@ -25,6 +25,7 @@ run_quality_checks() {
     find src/scaling_tests -name '*.rs' -print0 | xargs -0 rustfmt --edition 2024 --check
     scripts/test-setup-environment.sh
     python3 -I scripts/test-check-nightly.py
+    python3 -I scripts/test-nightly-report.py
     scripts/mdbook-build.sh
     scripts/docs-lint.sh
 }
@@ -111,8 +112,7 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
         exit 1
     fi
     # Charon and its compiler runtime are a separate artifact under `rust/`,
-    # about half of the whole build output, fetched only by the shards whose
-    # tests start the Rust compiler.
+    # fetched only by the shards whose tests start the Rust compiler.
     if [[ -n "$needs_charon" ]]; then
         mkdir -p target/charon/debug
         tar -xzf "$artifacts/rust/charon.tar.gz" -C target/charon/debug
@@ -166,25 +166,46 @@ if [[ "${1:-}" == "--nightly" ]]; then
     export CLICK_NIGHTLY=1
 fi
 
+ci_build=""
 ci_artifacts=""
 nextest_args=("$@")
 if [[ -n "$nightly" ]]; then
     nextest_args+=(--run-ignored all --profile nightly)
 fi
 if [[ "${1:-}" == "--ci-prepare" ]]; then
+    ci_build=1
     ci_artifacts="${2:?usage: scripts/check.sh --ci-prepare ARTIFACTS}"
-    nextest_args=()
+elif [[ "${1:-}" == "--ci-warm-cache" ]]; then
+    ci_build=1
 fi
 
 # A few expansion regressions recurse deeply enough to overflow the default
 # per-test thread stack on otherwise healthy runners.
 export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
 
+# With `CLICK_NIGHTLY_REPORT_DIR` set, the nightly records each phase's time
+# and exit status, and keeps nextest's JUnit results, for
+# `scripts/nightly-report.py` (`docs/internals/testing.md`, "Nightly report").
+report_dir="${CLICK_NIGHTLY_REPORT_DIR:-}"
+record_phase() {
+    [[ -n "$report_dir" ]] || return 0
+    mkdir -p "$report_dir"
+    printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$report_dir/phases.tsv"
+}
+keep_junit() {
+    local junit="${CARGO_TARGET_DIR:-target}/nextest/nightly/junit.xml"
+    [[ -n "$report_dir" && -f "$junit" ]] || return 0
+    mkdir -p "$report_dir"
+    mv "$junit" "$report_dir/junit-$1.xml"
+}
+
 clippy_status=0
-if [[ -z "$ci_artifacts" ]]; then
+if [[ -z "$ci_build" ]]; then
     run_quality_checks
     if [[ -n "$nightly" ]]; then
+        phase_started=$SECONDS
         cargo clippy --all-targets -- -D warnings || clippy_status=$?
+        record_phase clippy $((SECONDS - phase_started)) "$clippy_status"
         if [[ "$clippy_status" -ne 0 ]]; then
             echo "warning: Clippy failed; continuing with nightly tests" >&2
         fi
@@ -198,7 +219,7 @@ fi
 # everything else. CI builds both and runs every suite; set
 # CLICK_REQUIRE_FRONTENDS=1 to make a missing toolchain an error here too.
 # An installed toolchain whose build fails is always an error.
-if [[ -n "$ci_artifacts" ]]; then
+if [[ -n "$ci_build" ]]; then
     CLICK_REQUIRE_FRONTENDS=1
 fi
 skipped_frontends=()
@@ -268,34 +289,49 @@ if ! command -v cargo-nextest >/dev/null 2>&1; then
     exit 1
 fi
 
-if [[ -n "$ci_artifacts" ]]; then
-    mkdir -p "$ci_artifacts"
+if [[ -n "$ci_build" ]]; then
+    archive_args=()
+    if [[ -n "$ci_artifacts" ]]; then
+        mkdir -p "$ci_artifacts"
+        archive_args=(--archive "$ci_artifacts/tests.tar.zst")
+    fi
     # CI restores `master`'s incremental state. rustc 1.98.1 can panic
     # reusing it ("encountered incremental compilation error with
     # evaluate_obligation") after a change to an auto-trait's inputs, and
     # does so on every retry. Clearing the incremental state and building
     # once more removes that failure; a real compile error fails again.
-    if ! scripts/fast-gate-build.sh --archive "$ci_artifacts/tests.tar.zst"; then
+    if ! scripts/fast-gate-build.sh "${archive_args[@]}" > /dev/null; then
         echo "warning: build failed; retrying without the restored incremental state" >&2
         rm -rf "${CARGO_TARGET_DIR:-target}/debug/incremental"
-        scripts/fast-gate-build.sh --archive "$ci_artifacts/tests.tar.zst"
+        scripts/fast-gate-build.sh "${archive_args[@]}" > /dev/null
     fi
+    [[ -n "$ci_artifacts" ]] || exit 0
     tar -cf "$ci_artifacts/exporter.tar" \
         -C "$(dirname "$CLICK_CPP_EXPORTER")" "$(basename "$CLICK_CPP_EXPORTER")"
     mkdir -p "$ci_artifacts/rust"
     tar -czf "$ci_artifacts/rust/charon.tar.gz" \
         -C "$(dirname "$CLICK_CHARON")" "$(basename "$CLICK_CHARON")" charon-driver
-    scripts/charon-runtime.sh pack "$ci_artifacts/rust/rust-runtime.tar.gz"
+    scripts/charon-runtime.sh pack "$ci_artifacts/rust/rust-runtime.tar.zst"
     exit 0
 fi
 
 suite_status=$clippy_status
 if [[ -n "$nightly" ]]; then
     # Report both nightly selections even when the first one fails.
+    phase_started=$SECONDS
+    phase_status=0
     cargo nextest run "${unit_targets[@]}" --filterset "$unit_filter" "${nextest_args[@]}" \
-        || suite_status=$?
+        || phase_status=$?
+    record_phase tests $((SECONDS - phase_started)) "$phase_status"
+    keep_junit tests
+    [[ "$phase_status" -eq 0 ]] || suite_status=$phase_status
+    phase_started=$SECONDS
+    phase_status=0
     cargo nextest run "${fixture_targets[@]}" --filterset "$fixture_filter" \
-        --test-threads 1 --no-capture "${nextest_args[@]}" || suite_status=$?
+        --test-threads 1 --no-capture "${nextest_args[@]}" || phase_status=$?
+    record_phase fixtures $((SECONDS - phase_started)) "$phase_status"
+    keep_junit fixtures
+    [[ "$phase_status" -eq 0 ]] || suite_status=$phase_status
 else
     # Keep this file for both runs. nextest uses the executable directly;
     # it does not ask Cargo to compile it again for each selected suite.

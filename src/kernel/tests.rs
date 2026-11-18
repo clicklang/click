@@ -5,9 +5,9 @@ mod callback_signature_tests;
 mod one_byte_one_name_tests;
 
 fn checked_memory_load_equality(
-    left: &Memory,
-    right: &Memory,
-    pointer: &Pointer,
+    left: &SymbolicMemory,
+    right: &SymbolicMemory,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     checked_atomic_load_equality(
@@ -27,14 +27,14 @@ fn checked_memory_load_equality(
 
 /// Instantiate the explicit elements law and discharge its written premise.
 pub(in crate::kernel) fn explicit_signed_elements(
-    base: Pointer,
+    base: Address,
     ty: ProgramType,
     i: MachineTerm,
     j: MachineTerm,
     facts: PureFactContext,
 ) -> PureFactContext {
     let law = crate::kernel::prove_separation_elements(
-        PointerValue::new(base, ty.pointer_to().unwrap()),
+        Pointer::new(base, ty.pointer_to().unwrap()),
         ty.byte_width(),
         MachineIntegerType::Int32,
         i,
@@ -57,9 +57,9 @@ pub(in crate::kernel) fn explicit_signed_elements(
 /// certificate. Tests supply the selected transition and prove its separation;
 /// the logical read producers provide both observations without reconstruction.
 pub(in crate::kernel) fn explicit_frame(
-    before: &Memory,
-    after: &Memory,
-    address: &Pointer,
+    before: &SymbolicMemory,
+    after: &SymbolicMemory,
+    address: &Address,
     ty: ProgramType,
     effects: &[Proposition],
     facts: &PureFactContext,
@@ -109,7 +109,7 @@ pub(in crate::kernel) fn explicit_frame(
         right: Box::new(kept),
     };
     let _reads = ReadScope::enter();
-    let observe = |memory: &Memory| {
+    let observe = |memory: &SymbolicMemory| {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
             memory,
             address.clone(),
@@ -133,7 +133,7 @@ pub(in crate::kernel) fn explicit_frame(
             ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
         }
         (ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::pointer_value_equal(a.clone(), b.clone())
+            ConditionTerm::pointer_equal(a.clone(), b.clone())
         }
         (ProgramValue::Int32(a), ProgramValue::Int32(b)) => {
             ConditionTerm::equal(a.clone(), b.clone())
@@ -149,7 +149,7 @@ pub(in crate::kernel) fn explicit_frame(
         }
         other => panic!("unsupported test observation: {other:?}"),
     };
-    let result = Proposition::ConditionIs(condition, true);
+    let result = Proposition::condition_is(condition, true);
     crate::kernel::proof::preservation::apply(&separation, None, &result, |p| p == &separation)
         .expect("explicit preservation");
     Some((old, new, result))
@@ -261,7 +261,7 @@ fn kernel_source_reads_no_environment_variable() {
 }
 
 fn memory_range(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> MemoryRange {
@@ -269,7 +269,7 @@ fn memory_range(
 }
 
 fn view_memory_fact(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> ResourceFact {
@@ -277,7 +277,7 @@ fn view_memory_fact(
 }
 
 fn own_memory_fact(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> ResourceFact {
@@ -285,7 +285,7 @@ fn own_memory_fact(
 }
 
 fn view_memory_context(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> ResourceContext {
@@ -293,7 +293,7 @@ fn view_memory_context(
 }
 
 fn own_memory_context(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> ResourceContext {
@@ -311,10 +311,10 @@ fn assert_checkable_derivation(assumptions: &PureFactContext, proposition: &Prop
     );
 }
 
-fn arc_pointer(offset: i64) -> Pointer {
-    Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Constant(offset),
+fn arc_pointer(offset: i64) -> Address {
+    Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::Constant(offset),
     }
 }
 

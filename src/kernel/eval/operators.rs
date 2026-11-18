@@ -106,7 +106,7 @@ fn add_arithmetic_branch_fact(
                     *format, op, left, right,
                 ))
             }
-            OverflowOperation::ShiftLeft => Some(Proposition::ConditionIs(
+            OverflowOperation::ShiftLeft => Some(Proposition::condition_is(
                 ConditionTerm::signed_shift_result_fits(*format, *left.clone(), *right.clone()),
                 true,
             )),
@@ -127,7 +127,7 @@ fn add_arithmetic_branch_fact(
     add_condition_path_fact(facts, assumptions, condition, value)
 }
 
-fn pointer_types_compatible(left: &PointerValue, right: &PointerValue) -> bool {
+fn pointer_types_compatible(left: &Pointer, right: &Pointer) -> bool {
     left.program_type()
         .pointer_types_compatible(right.program_type())
         || left.is_null()
@@ -444,7 +444,7 @@ fn retain_tagged_representation(
             else {
                 continue;
             };
-            if &form.pointer != record.pointer.pointer() {
+            if &form.pointer != record.pointer.address() {
                 continue;
             }
             record.kind = PointerIntegerKind::Tagged;
@@ -1167,7 +1167,7 @@ fn apply_program_int128_multiply(
     let observed = IntegerTerm::from_machine(destination, term.clone()).expect("typed wide result");
     let definition = ConditionTerm::integer_equal(observed, product);
     if definition != ConditionTerm::Constant(true) {
-        facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+        facts.push(ExecutionPureFact::certified(Proposition::condition_is(
             definition, true,
         )));
     }
@@ -1332,23 +1332,23 @@ fn apply_program_int128_division_like(
             (Some(false), _) | (_, Some(false)) => (None, None, Some(false)),
             (Some(true), Some(true)) => (None, None, Some(true)),
             (Some(true), None) => (
-                Some(Proposition::ConditionIs(minus_one.clone(), false)),
-                Some(Proposition::ConditionIs(minus_one, true)),
+                Some(Proposition::condition_is(minus_one.clone(), false)),
+                Some(Proposition::condition_is(minus_one, true)),
                 None,
             ),
             (None, Some(true)) => (
-                Some(Proposition::ConditionIs(min.clone(), false)),
-                Some(Proposition::ConditionIs(min, true)),
+                Some(Proposition::condition_is(min.clone(), false)),
+                Some(Proposition::condition_is(min, true)),
                 None,
             ),
             (None, None) => (
                 Some(Proposition::Or(
-                    Box::new(Proposition::ConditionIs(min.clone(), false)),
-                    Box::new(Proposition::ConditionIs(minus_one.clone(), false)),
+                    Box::new(Proposition::condition_is(min.clone(), false)),
+                    Box::new(Proposition::condition_is(minus_one.clone(), false)),
                 )),
                 Some(Proposition::And(
-                    Box::new(Proposition::ConditionIs(min, true)),
-                    Box::new(Proposition::ConditionIs(minus_one, true)),
+                    Box::new(Proposition::condition_is(min, true)),
+                    Box::new(Proposition::condition_is(minus_one, true)),
                 )),
                 None,
             ),
@@ -1358,27 +1358,27 @@ fn apply_program_int128_division_like(
             // Keep the complete contract guard available even when a known
             // operand simplified the path guard to a single condition.
             let equality_safe = Proposition::Or(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::integer_equal(
                         left.clone(),
                         IntegerTerm::constant(i128::MIN.into()),
                     ),
                     false,
                 )),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1)),
                     false,
                 )),
             );
             let inequality_safe = Proposition::Or(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::integer_not_equal(
                         left.clone(),
                         IntegerTerm::constant(i128::MIN.into()),
                     ),
                     true,
                 )),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(-1)),
                     true,
                 )),
@@ -1449,7 +1449,7 @@ fn apply_program_int128_division_like(
     let observed = IntegerTerm::from_machine(destination, term.clone()).expect("typed wide result");
     let definition = ConditionTerm::integer_equal(observed, result);
     if definition != ConditionTerm::Constant(true) {
-        facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+        facts.push(ExecutionPureFact::certified(Proposition::condition_is(
             definition, true,
         )));
     }
@@ -1734,7 +1734,7 @@ pub(in crate::kernel) fn apply_program_bitwise_binary(
             (ScalarWidth::UInt64, BitwiseOperation::And)
         ) && let Some(equation) = bounded_uint64_tag_equation(&value, assumptions)
         {
-            facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
+            facts.push(ExecutionPureFact::new(Proposition::condition_is(
                 equation, true,
             )));
         }
@@ -1851,7 +1851,7 @@ pub(in crate::kernel) fn apply_program_bitwise_not(
 }
 
 pub(super) fn pointer_value_step_width(
-    pointer: &PointerValue,
+    pointer: &Pointer,
     expression_width: Option<u32>,
 ) -> Option<u32> {
     // GNU C treats void-pointer arithmetic as byte arithmetic. Other
@@ -1874,30 +1874,30 @@ fn pointer_operation_step_width(
     }
 }
 
-fn pointer_element_index(pointer: &Pointer, byte_width: u32) -> Option<MachineTerm> {
+fn pointer_element_index(pointer: &Address, byte_width: u32) -> Option<MachineTerm> {
     pointer_index_from_offset_term(&pointer.offset, byte_width)
 }
 
 fn pointer_element_indices(
-    left: &Pointer,
-    right: &Pointer,
+    left: &Address,
+    right: &Address,
     byte_width: u32,
 ) -> Option<(MachineTerm, MachineTerm)> {
     let zero = MachineTerm::constant(0);
     let relative = match (&left.offset, &right.offset) {
         (left, right) if left == right => Some((zero.clone(), zero.clone())),
         (
-            PointerOffsetTerm::Add(left_base, left_addend),
-            PointerOffsetTerm::Add(right_base, right_addend),
+            AddressOffset::Add(left_base, left_addend),
+            AddressOffset::Add(right_base, right_addend),
         ) if left_base == right_base => Some((
             pointer_index_from_offset_term(left_addend, byte_width)?,
             pointer_index_from_offset_term(right_addend, byte_width)?,
         )),
-        (PointerOffsetTerm::Add(base, addend), right) if base.as_ref() == right => Some((
+        (AddressOffset::Add(base, addend), right) if base.as_ref() == right => Some((
             pointer_index_from_offset_term(addend, byte_width)?,
             zero.clone(),
         )),
-        (left, PointerOffsetTerm::Add(base, addend)) if base.as_ref() == left => Some((
+        (left, AddressOffset::Add(base, addend)) if base.as_ref() == left => Some((
             zero.clone(),
             pointer_index_from_offset_term(addend, byte_width)?,
         )),
@@ -1945,12 +1945,12 @@ fn uint32_order_condition(
 
 fn apply_same_object_pointer_operation(
     state: &ExecutionState,
-    left: Pointer,
-    right: Pointer,
+    left: Address,
+    right: Address,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    apply: impl FnOnce(Pointer, Pointer, ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
+    apply: impl FnOnce(Address, Address, ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
 ) -> Vec<ExpressionPath> {
     let left_is_null = pointer_object_is_null_condition(&left);
     apply_pointer_object_nonnull_guard(
@@ -1987,7 +1987,7 @@ fn apply_same_object_pointer_operation(
 
 fn apply_pointer_object_nonnull_guard(
     state: &ExecutionState,
-    pointer: &Pointer,
+    pointer: &Address,
     is_null: ConditionTerm,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -2006,7 +2006,7 @@ fn apply_pointer_object_nonnull_guard(
 
 fn pointer_has_object_provenance_evidence(
     state: &ExecutionState,
-    pointer: &Pointer,
+    pointer: &Address,
     assumptions: &PureFactContext,
     facts: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
@@ -2045,9 +2045,15 @@ fn pointer_has_object_provenance_evidence(
                 };
                 // A wide fact's count is an unsigned 64-bit term.
                 let positive = if *wide {
-                    ConditionTerm::uint64_less_than(MachineTerm::constant(0), bytes.clone())
+                    ConditionTerm::uint64_less_than(
+                        MachineTerm::constant(0),
+                        bytes.native_compat().clone(),
+                    )
                 } else {
-                    ConditionTerm::signed_greater_than(bytes.clone(), MachineTerm::constant(0))
+                    ConditionTerm::signed_greater_than(
+                        bytes.native_compat().clone(),
+                        MachineTerm::constant(0),
+                    )
                 };
                 crate::kernel::reasoning::memory_range_still_available(
                     memory,
@@ -2093,31 +2099,31 @@ fn apply_pointer_provenance_guard(
 }
 
 pub(in crate::kernel) fn pointer_object_identity_condition(
-    left: &Pointer,
-    right: &Pointer,
+    left: &Address,
+    right: &Address,
 ) -> ConditionTerm {
-    ConditionTerm::pointer_equal(left.object_identity(), right.object_identity())
+    ConditionTerm::address_equal(left.object_identity(), right.object_identity())
 }
 
-pub(in crate::kernel) fn pointer_object_is_null_condition(pointer: &Pointer) -> ConditionTerm {
+pub(in crate::kernel) fn pointer_object_is_null_condition(pointer: &Address) -> ConditionTerm {
     pointer_is_null_condition(pointer.object_base())
 }
 
 pub(in crate::kernel) fn pointer_same_object_proposition(
-    left: &Pointer,
-    right: &Pointer,
+    left: &Address,
+    right: &Address,
 ) -> Proposition {
     Proposition::And(
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             pointer_object_is_null_condition(left),
             false,
         )),
         Box::new(Proposition::And(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 pointer_object_is_null_condition(right),
                 false,
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 pointer_object_identity_condition(left, right),
                 true,
             )),
@@ -2139,12 +2145,12 @@ pub(in crate::kernel) fn pointer_same_object_proposition(
 /// deliberately never separated.
 fn compared_pointer_holders_composition(
     state: &ExecutionState,
-    left: &Pointer,
-    right: &Pointer,
+    left: &Address,
+    right: &Address,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Proposition)> {
     let resources = state.resources();
-    let holder = |pointer: &Pointer| {
+    let holder = |pointer: &Address| {
         assumptions
             .pointer_equality_component(pointer)
             .into_iter()
@@ -2152,9 +2158,7 @@ fn compared_pointer_holders_composition(
                 crate::instrumentation::record_deterministic_work(1);
                 assumptions
                     .owned_member_holding_access(resources, &spelling, 1)
-                    .filter(|range| {
-                        !matches!(range.base().block, PointerBlock::StringLiteral { .. })
-                    })
+                    .filter(|range| !matches!(range.base().base, AddressBase::StringLiteral { .. }))
                     .cloned()
             })
     };
@@ -2167,14 +2171,11 @@ fn compared_pointer_holders_composition(
         left: Box::new(Resource::Memory(left_member.clone())),
         right: Box::new(Resource::Memory(right_member.clone())),
     };
-    let composition = ResourceContext::new()
-        .try_compose_with_facts_delaying_normalization(
-            [left_member, right_member]
-                .into_iter()
-                .map(ResourceFact::own_memory),
-            assumptions,
-        )
-        .ok()?;
+    let composition = ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
+        [left_member, right_member]
+            .into_iter()
+            .map(ResourceFact::own_memory),
+    );
     Some((composition, separation))
 }
 
@@ -2555,7 +2556,7 @@ pub(in crate::kernel) fn pointer_index_term(
 
 fn pointer_offset_by_elements_paths(
     state: &ExecutionState,
-    pointer: PointerValue,
+    pointer: Pointer,
     offset: MachineTerm,
     byte_width: u32,
     unsigned: bool,
@@ -2565,7 +2566,7 @@ fn pointer_offset_by_elements_paths(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let value = pointer;
-    let pointer = value.pointer().clone();
+    let pointer = value.address().clone();
 
     // C11 6.5.6p8 defines additive pointer arithmetic only for a pointer that
     // designates an element of an array object or one past its end. A null
@@ -2579,7 +2580,7 @@ fn pointer_offset_by_elements_paths(
         (true, false) => MachineTerm::int64_constant(0),
         (false, _) => MachineTerm::constant(0),
     };
-    let zero = Proposition::ConditionIs(
+    let zero = Proposition::condition_is(
         if wide {
             ConditionTerm::int64_equal(offset.clone(), zero_term)
         } else {
@@ -2595,7 +2596,7 @@ fn pointer_offset_by_elements_paths(
         context.proves_exact(&zero)
             || context.contains_known(&zero)
             || matches!(&zero, Proposition::ConditionIs(condition, value)
-                if PureFactContext::decide_intrinsically(condition) == Some(*value))
+                if PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value))
             || (wide && context.wide_constant_from_equalities(&offset) == Some(0))
     };
     let displaces = !(zero_is_known(assumptions)
@@ -2612,7 +2613,7 @@ fn pointer_offset_by_elements_paths(
     // Only a literal zero offset spells the result as the pointer itself;
     // an offset the facts prove zero keeps its written displacement.
     let literally_zero = matches!(&zero, Proposition::ConditionIs(condition, value)
-        if PureFactContext::decide_intrinsically(condition) == Some(*value));
+        if PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value));
     let result = if literally_zero {
         pointer.clone()
     } else {
@@ -2674,15 +2675,15 @@ fn pointer_offset_by_elements_paths(
     let membership =
         held_range_membership(state, assumptions, &facts, &pointer, &checked, byte_width);
     if !matches!(membership, HeldRangeMembership::Inside) {
-        let Some(bounds) = pointer_block_bounds(state, &checked, byte_width, assumptions) else {
+        let Some(bounds) = address_base_bounds(state, &checked, byte_width, assumptions) else {
             return Vec::new();
         };
         guards.extend(bounds);
         // C11 6.5.6p8 defines the sum only for a result inside the array
         // object or one past its end. When the state does not record the
-        // block's extent (every pointer parameter, and every symbolic or
+        // block's size (every pointer parameter, and every symbolic or
         // loaded pointer), the ranges it holds in that block are the only
-        // extent it knows, so the result must lie in one of them, one-past
+        // bounds it knows, so the result must lie in one of them, one-past
         // end included. A range decided to exclude the result drops out: when
         // the facts exclude it from every range the formation is refused, and
         // when exactly one range is left undecided its bounds are owed, as
@@ -2693,7 +2694,7 @@ fn pointer_offset_by_elements_paths(
         // with no range that resolves the result owes nothing here; the
         // access through the pointer is what is refused then. Displacing by
         // zero is left alone, as for null.
-        if displaces && state.memory().block_size(&checked.block).is_none() {
+        if displaces && state.memory().block_size(&checked.base).is_none() {
             match membership {
                 HeldRangeMembership::Inside => {
                     unreachable!("a contained pointer owes no formation guard")
@@ -2801,15 +2802,15 @@ fn byte_product_no_overflow(
 
 pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     state: &ExecutionState,
-    pointer: PointerValue,
+    pointer: Pointer,
     bytes: u32,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let value = pointer;
-    let pointer = value.pointer().clone();
-    if pointer.block.is_function() && bytes != 0 {
+    let pointer = value.address().clone();
+    if pointer.base.is_function() && bytes != 0 {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType),
             facts,
@@ -2817,7 +2818,7 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
         }];
     }
     let result = pointer.offset_by_bytes(bytes);
-    let Some(mut guards) = pointer_block_bounds(state, &result, 1, assumptions) else {
+    let Some(mut guards) = address_base_bounds(state, &result, 1, assumptions) else {
         return Vec::new();
     };
     match subobject_formation_guards(
@@ -2846,8 +2847,8 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     )
 }
 
-fn pointer_index_from_offset(pointer: &Pointer, byte_width: u32) -> Option<MachineTerm> {
-    if pointer.block != PointerBlock::ExternalArgument {
+fn pointer_index_from_offset(pointer: &Address, byte_width: u32) -> Option<MachineTerm> {
+    if pointer.base != AddressBase::ExternalArgument {
         return pointer_index_from_offset_term(&pointer.offset, byte_width);
     }
 
@@ -2864,10 +2865,7 @@ fn pointer_index_from_offset(pointer: &Pointer, byte_width: u32) -> Option<Machi
         .or_else(|| pointer_arithmetic_index(&pointer.offset, byte_width))
 }
 
-fn pointer_index_from_offset_term(
-    offset: &PointerOffsetTerm,
-    byte_width: u32,
-) -> Option<MachineTerm> {
+fn pointer_index_from_offset_term(offset: &AddressOffset, byte_width: u32) -> Option<MachineTerm> {
     if byte_width == 1 {
         byte_offset_from_pointer_offset(offset)
     } else {
@@ -2885,13 +2883,13 @@ fn pointer_index_from_concrete_offset(offset: i64, byte_width: u32) -> Option<Ma
         .then_some(MachineTerm::constant((index as i32) as u32))
 }
 
-fn pointer_arithmetic_index(offset: &PointerOffsetTerm, byte_width: u32) -> Option<MachineTerm> {
-    let PointerOffsetTerm::Add(left, right) = offset else {
+fn pointer_arithmetic_index(offset: &AddressOffset, byte_width: u32) -> Option<MachineTerm> {
+    let AddressOffset::Add(left, right) = offset else {
         return None;
     };
     let right = pointer_index_from_offset_term(right, byte_width)?;
     let left = match left.as_ref() {
-        PointerOffsetTerm::Add(..) => pointer_arithmetic_index(left, byte_width)?,
+        AddressOffset::Add(..) => pointer_arithmetic_index(left, byte_width)?,
         // The first addend is the pointer's opaque base. It is not an
         // element displacement, even if its byte representation happens to
         // be aligned.
@@ -2900,16 +2898,16 @@ fn pointer_arithmetic_index(offset: &PointerOffsetTerm, byte_width: u32) -> Opti
     Some(MachineTerm::add(left, right))
 }
 
-fn pointer_offset_contains_int64_scaled(offset: &PointerOffsetTerm) -> bool {
+fn pointer_offset_contains_int64_scaled(offset: &AddressOffset) -> bool {
     match offset {
-        PointerOffsetTerm::Int64Scaled { .. } => true,
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Int64Scaled { .. } => true,
+        AddressOffset::Add(left, right) => {
             pointer_offset_contains_int64_scaled(left)
                 || pointer_offset_contains_int64_scaled(right)
         }
-        PointerOffsetTerm::Constant(_)
-        | PointerOffsetTerm::Variable(_)
-        | PointerOffsetTerm::Int32Scaled { .. } => false,
+        AddressOffset::Constant(_)
+        | AddressOffset::Variable(_)
+        | AddressOffset::Int32Scaled { .. } => false,
     }
 }
 
@@ -2964,7 +2962,10 @@ fn exact_offset_operation(
         let Proposition::ConditionIs(condition, value) = bound else {
             unreachable!("ordinary range bound");
         };
-        guards.push(PointerFormationGuard { condition, value });
+        guards.push(PointerFormationGuard {
+            condition: condition.native_compat().clone(),
+            value,
+        });
     }
     let op = match operation {
         Operation::Add => MachineBinaryOp::Add,
@@ -3004,19 +3005,19 @@ fn exact_offset_operation(
 }
 
 fn exact_pointer_offset_i64_with_guards(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     guards: &mut Vec<PointerFormationGuard>,
 ) -> Option<SharedMachineIntegerTerm> {
     use crate::kernel::machine_integer::Operation;
     use MachineIntegerType as T;
     use MachineOperandView as V;
     match offset {
-        PointerOffsetTerm::Constant(value) => Some(SharedMachineIntegerTerm::intern(
+        AddressOffset::Constant(value) => Some(SharedMachineIntegerTerm::intern(
             T::Int64,
             MachineTerm::int64_constant(*value),
         )),
-        PointerOffsetTerm::Variable(_) => None,
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Variable(_) => None,
+        AddressOffset::Add(left, right) => {
             let left = exact_pointer_offset_i64_with_guards(left, guards)?;
             let right = exact_pointer_offset_i64_with_guards(right, guards)?;
             Some(exact_offset_operation(
@@ -3026,7 +3027,7 @@ fn exact_pointer_offset_i64_with_guards(
                 guards,
             ))
         }
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+        AddressOffset::Int32Scaled { value, byte_width } => {
             let left = value
                 .operand_view()
                 .retain(T::Int32)
@@ -3038,10 +3039,11 @@ fn exact_pointer_offset_i64_with_guards(
                 guards,
             ))
         }
-        PointerOffsetTerm::Int64Scaled { byte_width: 0, .. } => Some(
-            SharedMachineIntegerTerm::intern(T::Int64, MachineTerm::int64_constant(0)),
-        ),
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled { byte_width: 0, .. } => Some(SharedMachineIntegerTerm::intern(
+            T::Int64,
+            MachineTerm::int64_constant(0),
+        )),
+        AddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -3080,17 +3082,17 @@ fn formation_comparison(
     )
 }
 
-fn pointer_block_bounds(
+fn address_base_bounds(
     state: &ExecutionState,
-    pointer: &Pointer,
+    pointer: &Address,
     byte_width: u32,
     assumptions: &PureFactContext,
 ) -> Option<Vec<PointerFormationGuard>> {
-    // The block's byte count is read through its extent kind: a 32-bit
-    // extent (in `0..=INT32_MAX`) zero extends into the 64-bit comparisons
-    // and is an `int32` in the 32-bit ones. A 64-bit extent (at most
+    // The block's byte count is read through its size kind: a 32-bit
+    // size (in `0..=INT32_MAX`) zero extends into the 64-bit comparisons
+    // and is an `int32` in the 32-bit ones. A 64-bit size (at most
     // `PTRDIFF_MAX`) is compared with a sign-extended 32-bit offset instead.
-    let Some(extent) = state.memory().block_extent(&pointer.block).cloned() else {
+    let Some(allocation_size) = state.memory().block_allocation_size(&pointer.base).cloned() else {
         return Some(Vec::new());
     };
 
@@ -3099,7 +3101,9 @@ fn pointer_block_bounds(
     // rebuilding them through a wrapping int32 term.
     if let (Some(offset), Some(size)) = (
         pointer.offset.as_const(),
-        extent.int32_bytes().and_then(MachineTerm::as_const),
+        allocation_size
+            .int32_bytes()
+            .and_then(MachineTerm::as_const),
     ) {
         if offset < 0 || offset > i64::from(size) {
             return Some(vec![PointerFormationGuard {
@@ -3113,13 +3117,14 @@ fn pointer_block_bounds(
         return Some(Vec::new());
     }
 
-    if extent.kind() == HeapExtentKind::UInt64
-        && let Some(guards) = wide_element_block_bounds(&pointer.offset, &extent, assumptions)
+    if allocation_size.kind() == AllocationSizeKind::UInt64
+        && let Some(guards) =
+            wide_element_block_bounds(&pointer.offset, &allocation_size, assumptions)
     {
         return Some(guards);
     }
 
-    if let PointerOffsetTerm::Int64Scaled {
+    if let AddressOffset::Int64Scaled {
         value,
         byte_width: scale,
         unsigned,
@@ -3129,10 +3134,10 @@ fn pointer_block_bounds(
         // Compare the original 64-bit element count to the number of elements
         // the block can hold. Rebuilding it as a 32-bit residue can certify an
         // index several GiB past the block as a small in-bounds number.
-        // A 64-bit extent states its element count where its byte count
+        // A 64-bit size states its element count where its byte count
         // spells one (it was admitted exact, so `n * w` holds `n`).
-        let wide_count = (extent.kind() == HeapExtentKind::UInt64)
-            .then(|| extent.element_count(u32::try_from(*scale).ok()?))
+        let wide_count = (allocation_size.kind() == AllocationSizeKind::UInt64)
+            .then(|| allocation_size.element_count(u32::try_from(*scale).ok()?))
             .flatten();
         let limit = if let Some(count) = wide_count {
             if *unsigned {
@@ -3141,14 +3146,14 @@ fn pointer_block_bounds(
                 MachineTerm::int64_from_uint64_bits(count)
             }
         } else if *unsigned {
-            let bytes = extent.uint64_bytes();
+            let bytes = allocation_size.uint64_bytes();
             if *scale == 1 {
                 bytes
             } else {
                 MachineTerm::uint64_divide(bytes, MachineTerm::uint64_constant(*scale as u64))
             }
         } else {
-            let bytes = extent.int64_bytes();
+            let bytes = allocation_size.int64_bytes();
             if *scale == 1 {
                 bytes
             } else {
@@ -3206,7 +3211,7 @@ fn pointer_block_bounds(
                     MachineIntegerType::Int64,
                     CompareRelation::LessEqual,
                     offset.operand_view(),
-                    MachineOperandView::Legacy(&extent.int64_bytes()),
+                    MachineOperandView::Legacy(&allocation_size.int64_bytes()),
                 ),
                 value: true,
             },
@@ -3214,10 +3219,10 @@ fn pointer_block_bounds(
         return Some(guards);
     }
 
-    if extent.kind() == HeapExtentKind::UInt64 {
-        return wide_block_bounds_of_32_bit_offset(&pointer.offset, &extent);
+    if allocation_size.kind() == AllocationSizeKind::UInt64 {
+        return wide_block_bounds_of_32_bit_offset(&pointer.offset, &allocation_size);
     }
-    let block_size = extent.int32_bytes().cloned()?;
+    let block_size = allocation_size.int32_bytes().cloned()?;
     if byte_width == 1
         && let Some(guards) = strided_block_bounds(&pointer.offset, &block_size)
     {
@@ -3259,43 +3264,42 @@ fn pointer_block_bounds(
     ])
 }
 
-/// The formation bound of an address in a block with a 64-bit extent `n *
+/// The formation bound of an address in a block with a 64-bit size `n *
 /// k` (a constant `k`), stated over its elements: a constant byte offset `c`
-/// is `ceil(c / k) <= n` (`c <= bytes` for another extent), and `i * k + c`
+/// is `ceil(c / k) <= n` (`c <= bytes` for another size), and `i * k + c`
 /// with `0 <= c < k` (a field of element `i` of a struct array,
 /// [`scaled_element_offset`]) is `0 <= i` and `i <= n` when `c == 0`, else
 /// `i < n` ([`wide_index_bound_conditions`]).
 ///
 /// The byte spelling `offset <= n * k` compares with the wrapping `uint64`
 /// product, which the facts about `n` do not decide. The element spelling is
-/// equivalent because the extent was admitted with `n <= PTRDIFF_MAX / k`
-/// decided (`uint64_heap_extent_bytes_are_exact` in `eval/statements.rs`),
-/// so `n * k` is the mathematical byte count, as [`HeapExtent::element_count`]
+/// equivalent because the size was admitted with `n <= PTRDIFF_MAX / k`
+/// decided (`uint64_allocation_size_bytes_are_exact` in `eval/statements.rs`),
+/// so `n * k` is the mathematical byte count, as [`AllocationSize::element_count`]
 /// reads it; then `0 <= i <= n` also rules out overflow of an `int64`
-/// product `i * k`. `None` for another offset or extent shape, which the
+/// product `i * k`. `None` for another offset or size shape, which the
 /// caller compares in bytes.
 ///
 /// [`scaled_element_offset`]: crate::kernel::reasoning::scaled_element_offset
 /// [`wide_index_bound_conditions`]: crate::kernel::reasoning::wide_index_bound_conditions
 fn wide_element_block_bounds(
-    offset: &PointerOffsetTerm,
-    extent: &HeapExtent,
+    offset: &AddressOffset,
+    size: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Option<Vec<PointerFormationGuard>> {
     let guard = |condition| PointerFormationGuard {
         condition,
         value: true,
     };
-    if let PointerOffsetTerm::Constant(bytes) = offset {
+    if let AddressOffset::Constant(bytes) = offset {
         let bytes = u64::try_from(*bytes).ok()?;
-        let (count, bound) =
-            crate::kernel::reasoning::uint64_extent_in_elements(extent.bytes(), bytes);
+        let (count, bound) = crate::kernel::reasoning::uint64_size_in_elements(size.bytes(), bytes);
         return Some(vec![guard(ConditionTerm::uint64_less_equal(
             bound,
             count.clone(),
         ))]);
     }
-    if matches!(offset, PointerOffsetTerm::Int32Scaled { .. }) {
+    if matches!(offset, AddressOffset::Int32Scaled { .. }) {
         // A bare 32-bit index keeps its own rule.
         return None;
     }
@@ -3303,7 +3307,7 @@ fn wide_element_block_bounds(
     if !(0..element.stride).contains(&element.field) {
         return None;
     }
-    let count = extent.element_count(u32::try_from(element.stride).ok()?)?;
+    let count = size.element_count(u32::try_from(element.stride).ok()?)?;
     Some(
         crate::kernel::reasoning::wide_index_bound_conditions(
             &element.index,
@@ -3319,25 +3323,25 @@ fn wide_element_block_bounds(
 }
 
 /// The formation bound of a pointer with a 32-bit offset into a block with a
-/// 64-bit extent, at 64 bits: `0 <= i <= count` for one scaled `int32` index
-/// `i` (with the block's element count where its extent spells one), else
+/// 64-bit size, at 64 bits: `0 <= i <= count` for one scaled `int32` index
+/// `i` (with the block's element count where its size spells one), else
 /// `0 <= offset <= bytes` over the exact 64-bit byte offset. An offset with
 /// no exact reading has no checked normal path.
 fn wide_block_bounds_of_32_bit_offset(
-    offset: &PointerOffsetTerm,
-    extent: &HeapExtent,
+    offset: &AddressOffset,
+    size: &AllocationSize,
 ) -> Option<Vec<PointerFormationGuard>> {
-    if let PointerOffsetTerm::Int32Scaled {
+    if let AddressOffset::Int32Scaled {
         value,
         byte_width: scale,
     } = offset
         && *scale > 0
     {
-        let limit = match extent.element_count(u32::try_from(*scale).ok()?) {
+        let limit = match size.element_count(u32::try_from(*scale).ok()?) {
             Some(count) => MachineTerm::int64_from_uint64_bits(count),
-            None if *scale == 1 => extent.int64_bytes(),
+            None if *scale == 1 => size.int64_bytes(),
             None => {
-                MachineTerm::int64_divide(extent.int64_bytes(), MachineTerm::int64_constant(*scale))
+                MachineTerm::int64_divide(size.int64_bytes(), MachineTerm::int64_constant(*scale))
             }
         };
         return Some(vec![
@@ -3382,7 +3386,7 @@ fn wide_block_bounds_of_32_bit_offset(
                 MachineIntegerType::Int64,
                 CompareRelation::LessEqual,
                 offset.operand_view(),
-                MachineOperandView::Legacy(&extent.int64_bytes()),
+                MachineOperandView::Legacy(&size.int64_bytes()),
             ),
             value: true,
         },
@@ -3401,20 +3405,16 @@ fn wide_block_bounds_of_32_bit_offset(
 /// spelling `0 <= i * stride + field <= bytes` says the same thing in terms
 /// a linear order check cannot read.
 fn strided_block_bounds(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     block_size: &MachineTerm,
 ) -> Option<Vec<PointerFormationGuard>> {
     let (index, stride, field) = match offset {
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => (value, *byte_width, 0),
-        PointerOffsetTerm::Add(left, right) => match (left.as_ref(), right.as_ref()) {
-            (
-                PointerOffsetTerm::Int32Scaled { value, byte_width },
-                PointerOffsetTerm::Constant(field),
-            )
-            | (
-                PointerOffsetTerm::Constant(field),
-                PointerOffsetTerm::Int32Scaled { value, byte_width },
-            ) => (value, *byte_width, *field),
+        AddressOffset::Int32Scaled { value, byte_width } => (value, *byte_width, 0),
+        AddressOffset::Add(left, right) => match (left.as_ref(), right.as_ref()) {
+            (AddressOffset::Int32Scaled { value, byte_width }, AddressOffset::Constant(field))
+            | (AddressOffset::Constant(field), AddressOffset::Int32Scaled { value, byte_width }) => {
+                (value, *byte_width, *field)
+            }
             _ => return None,
         },
         _ => return None,
@@ -3454,12 +3454,12 @@ fn strided_block_bounds(
 
 /// How a formed pointer relates to the memory ranges the state holds in its
 /// block: the `owns` and `views` ranges of the current resources and of
-/// every admitted composition, and the `viewable` extents the facts hold for
+/// every admitted composition, and the `viewable` spans the facts hold for
 /// its object. A range contains the pointer when `start <= index <= end` in
 /// the range's own element coordinates, so the one-past end counts.
 ///
 /// This is intentionally a small, structural query. Every lookup is keyed:
-/// the ranges by the pointer's block, the extents by its object identity,
+/// the ranges by the pointer's block, the spans by its object identity,
 /// and the pointer is resolved against each range's base by exact offset
 /// arithmetic, never by searching the resource algebra. `ExternalArgument`
 /// is the one block every pointer parameter shares, so a formation there
@@ -3491,10 +3491,10 @@ struct HeldRangeSurvey {
     /// The undecided resource ranges: whether the displaced operand is the
     /// range's base, and the guards that place the result inside it.
     undecided: Vec<(bool, Vec<PointerFormationGuard>)>,
-    /// A `viewable` extent is undecided. Its byte-scaled bounds are not the
+    /// A `viewable` span is undecided. Its byte-scaled bounds are not the
     /// element shape the formation guard rules read, so it is never a guard
     /// source, and it keeps a resource range from standing in for it alone.
-    undecided_extent: bool,
+    undecided_span: bool,
 }
 
 impl HeldRangeSurvey {
@@ -3554,7 +3554,7 @@ impl HeldRangeSurvey {
                         ],
                     ));
                 } else {
-                    self.undecided_extent = true;
+                    self.undecided_span = true;
                 }
                 false
             }
@@ -3565,9 +3565,9 @@ impl HeldRangeSurvey {
         let Self {
             refuted,
             mut undecided,
-            undecided_extent,
+            undecided_span,
         } = self;
-        if undecided_extent {
+        if undecided_span {
             return HeldRangeMembership::Unknown;
         }
         match undecided.len() {
@@ -3603,8 +3603,8 @@ fn held_range_membership(
     state: &ExecutionState,
     assumptions: &PureFactContext,
     facts: &(impl ExecutionFactSource + ?Sized),
-    operand: &Pointer,
-    pointer: &Pointer,
+    operand: &Address,
+    pointer: &Address,
     byte_width: u32,
 ) -> HeldRangeMembership {
     let mut survey = HeldRangeSurvey::default();
@@ -3614,11 +3614,11 @@ fn held_range_membership(
     for resources in std::iter::once(state.resources()).chain(
         assumptions
             .composition_members
-            .listed_under([], [&pointer.block]),
+            .listed_under([], [&pointer.base]),
     ) {
         #[cfg(test)]
         HELD_RANGE_COMPOSITIONS.with(|visits| visits.set(visits.get() + 1));
-        for fact in resources.memory_facts_in_block(&pointer.block) {
+        for fact in resources.memory_facts_in_block(&pointer.base) {
             let Some(range) = fact.memory_range() else {
                 continue;
             };
@@ -3701,7 +3701,7 @@ fn held_range_membership(
             facts,
             MachineOperandView::Legacy(&MachineTerm::constant(0)),
             offset.operand_view(),
-            MachineOperandView::Legacy(bytes),
+            bytes.operand_view(),
             true,
             false,
             false,
@@ -3714,8 +3714,8 @@ fn held_range_membership(
 }
 
 fn pointer_index_from_base(
-    pointer: &Pointer,
-    base: &Pointer,
+    pointer: &Address,
+    base: &Address,
     byte_width: u32,
 ) -> Option<SharedMachineIntegerTerm> {
     match byte_width {
@@ -3758,11 +3758,11 @@ fn simplify_program_int32_add_operand(
 }
 
 /// Splits the paths on the formation guards. The formed value keeps the
-/// operand's type, volatility and subobject extent. It drops the operand's
+/// operand's type, volatility and subobject bounds. It drops the operand's
 /// `const` pointee qualifier, as formation always has; the write-through-const
 /// check reads the lvalue's static type.
 fn apply_pointer_formation_guards(
-    pointer: PointerValue,
+    pointer: Pointer,
     guards: Vec<PointerFormationGuard>,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -4237,7 +4237,7 @@ fn apply_program_uint32_division_like(
         MachineTerm::constant(0),
     );
     obligations.push(
-        ProofObligation::verification_condition(Proposition::ConditionIs(zero, false))
+        ProofObligation::verification_condition(Proposition::condition_is(zero, false))
             .with_context("unsigned division requires a nonzero divisor"),
     );
     vec![ExpressionPath {
@@ -5601,7 +5601,7 @@ pub(in crate::kernel) fn evaluate_program_logical_or_paths(
 /// that one past the end of one object may equal the start of another: the
 /// two are equal exactly when the objects are adjacent, which the kernel does
 /// not model. The decision procedure answers a distinct-block
-/// `PointerEqual` false from the blocks alone, so that configuration is
+/// `AddressEqual` false from the blocks alone, so that configuration is
 /// excluded here, before the condition is built: when the facts decide it
 /// the comparison is refused, and when they leave it open a refused path
 /// carrying the configuration is owed beside the comparison, whose own path
@@ -5614,8 +5614,8 @@ pub(in crate::kernel) fn evaluate_program_logical_or_paths(
 /// kernel's objects are nonempty.
 fn apply_pointer_adjacency_guard(
     state: &ExecutionState,
-    left: &Pointer,
-    right: &Pointer,
+    left: &Address,
+    right: &Address,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -5668,7 +5668,7 @@ fn apply_pointer_adjacency_guard(
 /// The pointer's displacement from its object's base: its offset for a block
 /// based at offset zero, and the summands after the parameter's opaque base
 /// for argument memory. `None` when the offset does not spell the base.
-fn pointer_object_displacement(pointer: &Pointer) -> Option<PointerOffsetTerm> {
+fn pointer_object_displacement(pointer: &Address) -> Option<AddressOffset> {
     pointer.offset_from_base(&pointer.object_base())
 }
 
@@ -5676,10 +5676,10 @@ fn pointer_object_displacement(pointer: &Pointer) -> Option<PointerOffsetTerm> {
 /// `None` when it cannot be: a pointer at its object's start, or one at a
 /// constant offset other than the block's constant size. A displacement the
 /// terms do not resolve, and any nonzero displacement into a block whose
-/// extent the state does not record, may be the end.
+/// bounds the state does not record, may be the end.
 fn pointer_at_block_end_condition(
     state: &ExecutionState,
-    pointer: &Pointer,
+    pointer: &Address,
 ) -> Option<ConditionTerm> {
     let Some(displacement) = pointer_object_displacement(pointer) else {
         return Some(ConditionTerm::Constant(true));
@@ -5687,11 +5687,11 @@ fn pointer_at_block_end_condition(
     if displacement.as_const() == Some(0) {
         return None;
     }
-    // The end is compared as a 32-bit offset; a 64-bit extent may be it.
+    // The end is compared as a 32-bit offset; a 64-bit bounds may be it.
     let Some(size) = state
         .memory()
-        .block_extent(&pointer.block)
-        .and_then(HeapExtent::int32_bytes)
+        .block_allocation_size(&pointer.base)
+        .and_then(AllocationSize::int32_bytes)
         .cloned()
     else {
         return Some(ConditionTerm::Constant(true));
@@ -5709,7 +5709,7 @@ fn pointer_at_block_end_condition(
 
 /// The condition under which `pointer` is the start of its object, or `None`
 /// when a constant displacement says it is not.
-fn pointer_at_object_start_condition(pointer: &Pointer) -> Option<ConditionTerm> {
+fn pointer_at_object_start_condition(pointer: &Address) -> Option<ConditionTerm> {
     let Some(displacement) = pointer_object_displacement(pointer) else {
         return Some(ConditionTerm::Constant(true));
     };
@@ -5724,10 +5724,10 @@ fn pointer_at_object_start_condition(pointer: &Pointer) -> Option<ConditionTerm>
 }
 
 pub(in crate::kernel) fn pointer_equality_condition(
-    left: Pointer,
-    right: Pointer,
+    left: Address,
+    right: Address,
 ) -> ConditionTerm {
-    ConditionTerm::pointer_equal(left, right)
+    ConditionTerm::address_equal(left, right)
 }
 
 /// What a C `==` between two pointers establishes: their addresses are
@@ -5735,37 +5735,37 @@ pub(in crate::kernel) fn pointer_equality_condition(
 /// holds although only the second may be read through. The comparison is
 /// therefore an equality of the two `uint64` addresses, not the kernel's
 /// pointer equality, and grants no permission from one pointer to the other
-/// (`design/pointer-subobject-extents.md`, Phase B). Equal pointers still
+/// (`design/pointer-subobject-bounds.md`, Phase B). Equal pointers still
 /// decide it true. A null operand is a null test, which C makes exact.
 pub(in crate::kernel) fn program_pointer_comparison_condition(
-    left: Pointer,
-    right: Pointer,
+    left: Address,
+    right: Address,
 ) -> ConditionTerm {
-    if left == Pointer::null() || right == Pointer::null() {
+    if left == Address::null() || right == Address::null() {
         return pointer_equality_condition(left, right);
     }
     ConditionTerm::uint64_equal(
-        MachineTerm::pointer_address(left),
-        MachineTerm::pointer_address(right),
+        MachineTerm::integer_address(left),
+        MachineTerm::integer_address(right),
     )
 }
 
-pub(in crate::kernel) fn pointer_is_null_condition(pointer: Pointer) -> ConditionTerm {
-    pointer_equality_condition(pointer, Pointer::null())
+pub(in crate::kernel) fn pointer_is_null_condition(pointer: Address) -> ConditionTerm {
+    pointer_equality_condition(pointer, Address::null())
 }
 
-/// Whether the `bytes` bytes at `pointer` stay inside `extent`; zero bytes
+/// Whether the `bytes` bytes at `pointer` stay inside `bounds`; zero bytes
 /// asks for a position, the one-past end included
-/// (`design/pointer-subobject-extents.md`). Each returned guard must hold.
-/// `None` when the address has no byte offset from the extent's start in
-/// the address's own spelling; [`subobject_extent_proven`] then decides it
+/// (`design/pointer-subobject-bounds.md`). Each returned guard must hold.
+/// `None` when the address has no byte offset from the bounds' start in
+/// the address's own spelling; [`subobject_bounds_proven`] then decides it
 /// through the fact context.
-fn subobject_extent_guards(
-    pointer: &Pointer,
-    extent: &SubobjectExtent,
+fn subobject_bounds_guards(
+    pointer: &Address,
+    bounds: &SubobjectBounds,
     bytes: u32,
 ) -> Option<Vec<PointerFormationGuard>> {
-    let offset = shared_pointer_byte_offset_from_base(pointer, &extent.start)?;
+    let offset = shared_pointer_byte_offset_from_base(pointer, &bounds.start)?;
     Some(vec![
         PointerFormationGuard {
             condition: crate::kernel::assumptions::index_comparison(
@@ -5784,25 +5784,25 @@ fn subobject_extent_guards(
                     MachineOperandView::Legacy(&MachineTerm::constant(bytes)),
                 )
                 .operand_view(),
-                MachineOperandView::Legacy(&extent.width),
+                MachineOperandView::Legacy(&bounds.width),
             ),
             value: true,
         },
     ])
 }
 
-/// Whether the facts prove the `bytes` bytes at `pointer` inside `extent`,
-/// resolving the address against the extent's start as a held range's
+/// Whether the facts prove the `bytes` bytes at `pointer` inside `bounds`,
+/// resolving the address against the bounds' start as a held range's
 /// base is resolved.
-fn subobject_extent_proven(
-    pointer: &Pointer,
-    extent: &SubobjectExtent,
+fn subobject_bounds_proven(
+    pointer: &Address,
+    bounds: &SubobjectBounds,
     bytes: u32,
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
 ) -> bool {
-    if let Some(guards) = subobject_extent_guards(pointer, extent, bytes)
+    if let Some(guards) = subobject_bounds_guards(pointer, bounds, bytes)
         && guards.iter().all(|guard| {
             decide_with_facts(assumptions, facts, &guard.condition) == Some(guard.value)
         })
@@ -5812,34 +5812,40 @@ fn subobject_extent_proven(
     assumptions_with_path_context(assumptions, facts, obligations).pointer_access_in_range(
         pointer,
         bytes,
-        &extent.start,
+        &bounds.start,
         &MachineTerm::constant(0),
-        &extent.width,
+        &bounds.width,
         1,
     )
 }
 
 /// Refuses a read or write of `bytes` bytes at `pointer` outside the
-/// subobject extent of the pointer it was reached through.
-pub(in crate::kernel) fn subobject_access_refusal(
-    pointer: &Pointer,
-    extent: Option<&SubobjectExtent>,
+/// subobject bounds of the pointer it was reached through. The caller reuses
+/// its prepared access context for read-only domain lookup.
+pub(in crate::kernel) fn subobject_access_refusal<'a>(
+    pointer: &Address,
+    source: impl Into<crate::kernel::assumptions::PointerDomainSource<'a>>,
     bytes: u32,
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
 ) -> Option<UndefinedBehavior> {
-    let extent = extent?;
-    if subobject_extent_proven(pointer, extent, bytes, facts, obligations, assumptions) {
+    let crate::kernel::assumptions::PointerDomain::Selected(bounds) =
+        assumptions.pointer_domain(source)
+    else {
+        return None;
+    };
+    let bounds = &bounds;
+    if subobject_bounds_proven(pointer, bounds, bytes, facts, obligations, assumptions) {
         return None;
     }
-    // Retain the selected access and its actual designated extent. Construct
+    // Retain the selected access and its actual designated bounds. Construct
     // this diagnostic only after checking has refused the access.
     let required = Proposition::ResourceContains {
         parent: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
-            extent.start.clone(),
+            bounds.start.clone(),
             0u32.into(),
-            extent.width.clone(),
+            bounds.width.clone(),
             1,
         ))),
         child: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
@@ -5860,8 +5866,8 @@ pub(in crate::kernel) fn subobject_access_refusal(
 /// it is used. An access whose class, or whose object's class, is unknown is
 /// not checked.
 pub(in crate::kernel) fn effective_type_refusal(
-    memory: &Memory,
-    pointer: &Pointer,
+    memory: &SymbolicMemory,
+    pointer: &Address,
     lvalue: &LValue,
 ) -> Option<UndefinedBehavior> {
     effective_type_refusal_of(
@@ -5884,8 +5890,8 @@ pub(in crate::kernel) enum AccessKind {
 
 /// [`effective_type_refusal`] given the lvalue's two classes.
 pub(in crate::kernel) fn effective_type_refusal_of(
-    memory: &Memory,
-    pointer: &Pointer,
+    memory: &SymbolicMemory,
+    pointer: &Address,
     access: Option<crate::kernel::effective_type::CAccessClass>,
     object_class: Option<crate::kernel::effective_type::CAccessClass>,
     kind: AccessKind,
@@ -5904,29 +5910,37 @@ pub(in crate::kernel) fn effective_type_refusal_of(
 }
 
 /// The formation guards a pointer arithmetic result owes to its operand's
-/// subobject extent. A result whose position cannot be related to the
-/// extent is refused outright.
+/// subobject bounds. A result whose position cannot be related to the
+/// bounds is refused outright.
 fn subobject_formation_guards(
-    value: &PointerValue,
-    result: &Pointer,
+    value: &Pointer,
+    result: &Address,
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
     resources: &ResourceContext,
 ) -> Result<Vec<PointerFormationGuard>, ()> {
-    let Some(extent) = value.extent() else {
-        if value.extent_is_known()
-            || value.opaque_extent().is_none()
-            || result == value.pointer()
-            || assumptions.should_assume_entry_clause_extents()
+    let domain = assumptions.pointer_domain(value);
+    let path_context = (domain == crate::kernel::assumptions::PointerDomain::Unknown)
+        .then(|| assumptions_with_path_context(assumptions, facts, obligations));
+    let context = path_context.as_ref().unwrap_or(assumptions);
+    let domain = if path_context.is_some() {
+        context.pointer_domain(value)
+    } else {
+        domain
+    };
+    let crate::kernel::assumptions::PointerDomain::Selected(bounds) = domain else {
+        if domain == crate::kernel::assumptions::PointerDomain::Root
+            || value.bounds_owner().is_none()
+            || result == value.address()
+            || assumptions.should_assume_entry_clause_spans()
             // Spec offsets name mathematical addresses, as SpecExpression::PointerOffset
             // does. Executed C arithmetic must establish its bounds here.
             || crate::kernel::eval::SpecificationAccessScope::is_active()
         {
             return Ok(Vec::new());
         }
-        let context = assumptions_with_path_context(assumptions, facts, obligations);
-        if context.pointers_known_equal(result, value.pointer())
+        if context.pointers_known_equal(result, value.address())
             || context.opaque_pointer_covers(value, result, 0)
         {
             return Ok(Vec::new());
@@ -5934,18 +5948,18 @@ fn subobject_formation_guards(
         return resources
             .permits_designated_pointer_position(
                 result,
-                value.pointer(),
+                value.address(),
                 value.access_provenance(),
-                &context,
+                context,
             )
             .then(Vec::new)
             .ok_or(());
     };
-    // Address equality establishes position without changing the extent.
-    if subobject_extent_proven(result, extent, 0, facts, obligations, assumptions) {
+    // Address equality establishes position without changing the bounds.
+    if subobject_bounds_proven(result, &bounds, 0, facts, obligations, assumptions) {
         return Ok(Vec::new());
     }
-    match subobject_extent_guards(result, extent, 0) {
+    match subobject_bounds_guards(result, &bounds, 0) {
         Some(guards) => Ok(guards),
         None => Err(()),
     }
@@ -5955,22 +5969,27 @@ fn subobject_formation_guards(
 /// its address. A pointer that already designates a subobject may select
 /// only a part of it.
 pub(in crate::kernel) fn subobject_paths(
-    pointer: PointerValue,
+    pointer: Pointer,
     width: u32,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     resources: &ResourceContext,
 ) -> Vec<ExpressionPath> {
-    // A pointer type alone does not establish the extent of an enclosing
+    // A pointer type alone does not establish the bounds of an enclosing
     // object. Entry clauses establish their selected member's full bounds;
     // subsequent selections consume that evidence or a matching held range.
-    if pointer.extent().is_none() && !pointer.extent_is_known() && pointer.opaque_extent().is_some()
+    let domain = assumptions.pointer_domain(&pointer);
+    let path_context = (domain == crate::kernel::assumptions::PointerDomain::Unknown)
+        .then(|| assumptions_with_path_context(assumptions, &facts, &obligations));
+    let context = path_context.as_ref().unwrap_or(assumptions);
+    if context.pointer_domain(&pointer) == crate::kernel::assumptions::PointerDomain::Unknown
+        && pointer.bounds_owner().is_some()
     {
-        if assumptions.should_assume_entry_clause_extents() {
+        if assumptions.should_assume_entry_clause_spans() {
             if let Some(coverage) =
                 pointer.opaque_coverage_fact(&MemoryRange::new_with_element_width(
-                    pointer.pointer().clone(),
+                    pointer.address().clone(),
                     0u32.into(),
                     width.into(),
                     1,
@@ -5979,13 +5998,12 @@ pub(in crate::kernel) fn subobject_paths(
                 facts.push(ExecutionPureFact::new(coverage));
             }
         } else {
-            let context = assumptions_with_path_context(assumptions, &facts, &obligations);
-            if !context.opaque_pointer_covers(&pointer, pointer.pointer(), width)
+            if !context.opaque_pointer_covers(&pointer, pointer.address(), width)
                 && !resources.permits_designated_storage_read(
-                    pointer.pointer(),
+                    pointer.address(),
                     Some(pointer.access_provenance()),
                     width,
-                    &context,
+                    context,
                 )
             {
                 return vec![ExpressionPath {
@@ -5994,12 +6012,12 @@ pub(in crate::kernel) fn subobject_paths(
                             required: Box::new(
                                 pointer
                                     .opaque_coverage_fact(&MemoryRange::new_with_element_width(
-                                        pointer.pointer().clone(),
+                                        pointer.address().clone(),
                                         0u32.into(),
                                         width.into(),
                                         1,
                                     ))
-                                    .expect("the refused pointer has an opaque extent"),
+                                    .expect("the refused pointer has a bounds owner"),
                             ),
                         },
                     ),
@@ -6010,12 +6028,12 @@ pub(in crate::kernel) fn subobject_paths(
         }
     }
     if let Some(refusal) = subobject_access_refusal(
-        pointer.pointer(),
-        pointer.extent(),
+        pointer.address(),
+        &pointer,
         width,
         &facts,
         &obligations,
-        assumptions,
+        context,
     ) {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::UndefinedBehavior(refusal),
@@ -6023,8 +6041,8 @@ pub(in crate::kernel) fn subobject_paths(
             obligations,
         }];
     }
-    let start = pointer.pointer().clone();
-    let narrowed = pointer.with_extent(Some(SubobjectExtent::constant(start, width)));
+    let start = pointer.address().clone();
+    let narrowed = pointer.with_bounds(Some(SubobjectBounds::constant(start, width)));
     vec![ExpressionPath {
         outcome: ExpressionOutcome::Value(ProgramValue::Pointer(narrowed)),
         facts,
@@ -6038,7 +6056,7 @@ mod wide_range_reader_tests {
     // Object provenance uses native nonemptiness, never the range's low word.
     #[test]
     fn wide_nonempty_owned_range_supplies_object_provenance() {
-        let base = Pointer::symbolic(Variable(985_100));
+        let base = Address::symbolic(Variable(985_100));
         let wide = MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),
@@ -6067,7 +6085,7 @@ mod word_tag_tests {
             Box::new(MachineTerm::Variable(Variable(997_070))),
         );
         let value =
-            ProgramValue::UInt64(bits.clone()).complete_word(Pointer::symbolic(Variable(997_071)));
+            ProgramValue::UInt64(bits.clone()).complete_word(Address::symbolic(Variable(997_071)));
         (bits, value)
     }
 
@@ -6166,7 +6184,7 @@ mod unknown_pointer_formation_tests;
 mod held_range_scaling_tests {
     use super::*;
 
-    fn owner_of(base: &Pointer) -> Proposition {
+    fn owner_of(base: &Address) -> Proposition {
         Proposition::ResourceComposition(ResourceContext::new().unchecked_with_fact(
             ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 base.clone(),
@@ -6186,13 +6204,13 @@ mod held_range_scaling_tests {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let base = Pointer::symbolic(Variable(992_000));
+            let base = Address::symbolic(Variable(992_000));
             // The first composition is the index's unlisted root, read by
             // every question; keep the range out of it.
             let facts = (0..size)
                 .fold(PureFactContext::new(), |facts, index| {
                     facts
-                        .assume_proposition(owner_of(&Pointer::symbolic(Variable(992_100 + index))))
+                        .assume_proposition(owner_of(&Address::symbolic(Variable(992_100 + index))))
                 })
                 .assume_proposition(owner_of(&base));
             let pointer = base.offset_by_int32_elements(MachineTerm::constant(1));
@@ -6231,3 +6249,89 @@ mod held_range_scaling_tests {
 #[cfg(test)]
 #[path = "operators/retained_formation_tests.rs"]
 mod retained_formation_tests;
+
+#[cfg(test)]
+mod pointer_domain_tests {
+    use super::*;
+    use crate::kernel::assumptions::PointerDomain;
+
+    #[test]
+    fn arithmetic_and_access_check_admitted_bounds_without_adopting_them() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let value = Pointer::new(
+            Address::symbolic(Variable(1013100)),
+            ProgramType::Int32Pointer,
+        );
+        let selected = value.clone().with_bounds(Some(SubobjectBounds {
+            start: value.address().clone(),
+            width: 4u32.into(),
+        }));
+        let facts = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(value.clone(), selected.clone()),
+            true,
+        );
+        let state = ExecutionState::new();
+        let next = pointer_offset_by_bytes_paths(
+            &state,
+            value.clone(),
+            4,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &facts,
+        );
+        assert_eq!(next.len(), 1);
+        assert_eq!(
+            next[0].outcome,
+            ExpressionOutcome::Value(ProgramValue::Pointer(
+                value
+                    .clone()
+                    .with_address(value.address().offset_by_bytes(4))
+            ))
+        );
+        let beyond = pointer_offset_by_bytes_paths(
+            &state,
+            value.clone(),
+            8,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &facts,
+        );
+        assert!(
+            beyond
+                .iter()
+                .all(|p| !matches!(p.outcome, ExpressionOutcome::Value(_)))
+        );
+        assert!(beyond.iter().any(|p| matches!(
+            p.outcome,
+            ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic)
+        )));
+        for (offset, bytes, refused) in [(0, 4, false), (4, 0, false), (4, 4, true), (0, 8, true)] {
+            assert_eq!(
+                subobject_access_refusal(
+                    &value.address().offset_by_bytes(offset),
+                    &value,
+                    bytes,
+                    &ExecutionFacts::new(),
+                    &[],
+                    &facts
+                )
+                .is_some(),
+                refused
+            );
+        }
+        assert_eq!(value.bounds(), None);
+        assert!(matches!(
+            facts.pointer_domain(&value),
+            PointerDomain::Selected(_)
+        ));
+        // Bounds learned on one branch do not authorize another branch.
+        assert_eq!(
+            PureFactContext::new().pointer_domain(&value),
+            PointerDomain::Unknown
+        );
+    }
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/eval/operators/pointer_domains.rs");
+    }
+}

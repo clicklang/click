@@ -44,13 +44,13 @@ fn model_argument_guard_work(prepare: bool) {
     let theorems = TheoremEnvironment::new(parsed.theorem_definitions());
     let mut baseline = None;
     for size in [4usize, 16, 64, 256] {
-        let mut values = BTreeMap::from([(
+        let mut values = ProgramValueBindings::from([(
             "x".into(),
             ProgramValue::Int32(crate::kernel::MachineTerm::Variable(
                 crate::kernel::Variable(90_000),
             )),
         )]);
-        let memory = crate::kernel::Memory::new();
+        let memory = crate::kernel::SymbolicMemory::new();
         let arrays = ClickArrayRefs::new();
         let lowered = lower_pure_theorem_proposition(
             "argument guard scaling",
@@ -98,7 +98,7 @@ fn model_argument_guard_work(prepare: bool) {
         let root = Proof::for_pure_goal(
             "argument guard scaling",
             &requires,
-            Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(false), true),
+            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true),
             &context,
             definitions,
             &theorems,

@@ -47,13 +47,13 @@ pub struct CheckedExecutedScalarReferenceAccess<'a, 'e> {
 /// execution path. This is an execution record, not a loan-recovery right.
 #[derive(Debug)]
 pub struct CheckedExecutedScalarReferenceEnd<'e> {
-    pointer: &'e crate::kernel::Pointer,
+    pointer: &'e crate::kernel::Address,
     ending: crate::kernel::ExecutedReferenceAccess<'e>,
     execution: &'e crate::kernel::SymbolicExecution,
     path_index: usize,
 }
 impl CheckedExecutedScalarReferenceEnd<'_> {
-    pub fn pointer(&self) -> &crate::kernel::Pointer {
+    pub fn address(&self) -> &crate::kernel::Address {
         self.pointer
     }
     pub fn execution(&self) -> &crate::kernel::SymbolicExecution {
@@ -62,16 +62,16 @@ impl CheckedExecutedScalarReferenceEnd<'_> {
     pub fn path_index(&self) -> usize {
         self.path_index
     }
-    pub fn ending_pointer(&self) -> &crate::kernel::Pointer {
-        self.ending.pointer()
+    pub fn ending_pointer(&self) -> &crate::kernel::Address {
+        self.ending.address()
     }
 }
 impl CheckedExecutedScalarReferenceAccess<'_, '_> {
     pub fn source_access(&self) -> &CheckedScalarReferenceAccess<'_> {
         self.access
     }
-    pub fn pointer(&self) -> &crate::kernel::Pointer {
-        self.event.pointer()
+    pub fn address(&self) -> &crate::kernel::Address {
+        self.event.address()
     }
     pub fn execution(&self) -> &crate::kernel::SymbolicExecution {
         self.execution
@@ -138,7 +138,7 @@ impl CheckedScalarReferenceEnd<'_> {
         use crate::kernel::ExecutedReferenceBoundary;
         #[derive(Default)]
         struct Candidate<'e> {
-            birth: Option<(&'e crate::kernel::Pointer, usize)>,
+            birth: Option<(&'e crate::kernel::Address, usize)>,
             ending: Option<(crate::kernel::ExecutedReferenceAccess<'e>, usize)>,
             births: usize,
             endings: usize,
@@ -210,7 +210,7 @@ impl CheckedScalarReferenceEnd<'_> {
                 }
                 let (pointer, birth_order) = candidate.birth?;
                 let (ending, end_order) = candidate.ending?;
-                (birth_order < end_order && pointer == ending.pointer()).then_some(
+                (birth_order < end_order && pointer == ending.address()).then_some(
                     CheckedExecutedScalarReferenceEnd {
                         pointer,
                         ending,
@@ -220,6 +220,9 @@ impl CheckedScalarReferenceEnd<'_> {
                 )
             })
             .collect()
+    }
+    pub fn import_identity(&self) -> &str {
+        self.import_identity
     }
     pub fn function(&self) -> &Function {
         self.function
@@ -831,6 +834,7 @@ mod tests {
             span: Span { line: 1, column: 1 },
             mir: Some(MirBody {
                 return_place: "__rust_mir_0".into(),
+                spellings: Default::default(),
                 locals: vec![
                     place("child", reference_type()),
                     place("alias", reference_type()),
@@ -1188,12 +1192,12 @@ mod tests {
         use crate::kernel::*;
         let (functions, _) =
             super::super::lowering::lower_with_identity(export, Some(identity)).unwrap();
-        let pointer = Pointer {
-            block: "executed-child".into(),
-            offset: crate::kernel::PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "executed-child".into(),
+            offset: crate::kernel::AddressOffset::Constant(0),
         };
-        let memory = Memory::new()
-            .with_block(pointer.block.clone(), if owned { 4 } else { 0 })
+        let memory = SymbolicMemory::new()
+            .with_block(pointer.base.clone(), if owned { 4 } else { 0 })
             .store(pointer.clone(), int32(4));
         let state = ExecutionState::new()
             .with_memory(memory)
@@ -1253,7 +1257,7 @@ mod tests {
         assert_eq!(bindings.len(), 2, "{execution:?}");
         let endings = certificate.bind_executed_endings(&execution);
         assert_eq!(endings.len(), 1, "{execution:?}");
-        assert_eq!(endings[0].pointer(), endings[0].ending_pointer());
+        assert_eq!(endings[0].address(), endings[0].ending_pointer());
         assert!(std::ptr::eq(endings[0].execution(), &execution));
         assert_eq!(endings[0].path_index(), 0);
         let mut kinds: Vec<_> = bindings
@@ -1270,10 +1274,10 @@ mod tests {
         );
         for binding in bindings {
             assert_eq!(
-                binding.pointer(),
-                &crate::kernel::Pointer {
-                    block: "executed-child".into(),
-                    offset: crate::kernel::PointerOffsetTerm::Constant(0)
+                binding.address(),
+                &crate::kernel::Address {
+                    base: "executed-child".into(),
+                    offset: crate::kernel::AddressOffset::Constant(0)
                 }
             );
             assert!(std::ptr::eq(binding.execution(), &execution));

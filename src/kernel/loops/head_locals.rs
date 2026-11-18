@@ -12,7 +12,7 @@ struct LoopHeadLocal {
     name: BindingName,
     program_type: ProgramType,
     value: ProgramValue,
-    slot: Option<Pointer>,
+    slot: Option<Address>,
 }
 
 impl<'a> LoopHeadLocals<'a> {
@@ -36,12 +36,12 @@ impl<'a> LoopHeadLocals<'a> {
             };
             // These are loop-interface requirements: the back edge checks
             // that a pointer returns to this subobject and object class.
-            let value = with_retained_extent(value, entry.locals.get(&name));
+            let value = with_retained_bounds(value, entry.locals.get(&name));
             let value = with_retained_object_class(value, entry.locals.get(&name));
             let slot = entry
                 .locals
                 .slot(&name)
-                .filter(|pointer| entry.memory.has_block(&pointer.block))
+                .filter(|pointer| entry.memory.has_block(&pointer.base))
                 .cloned();
             values.push(LoopHeadLocal {
                 name,
@@ -78,14 +78,14 @@ mod tests {
     #[test]
     fn head_locals_keep_entry_and_construct_matching_stack_cells() {
         let _session = crate::kernel::VerificationSession::enter();
-        let slot = Memory::local_pointer("changed");
+        let slot = SymbolicMemory::local_pointer("changed");
         let entry = ExecutionState::new()
             .with_local("changed", int32(3))
             .with_local("retained", int32(7))
             .with_local("logical", int32(9))
             .with_memory(
-                Memory::new()
-                    .with_block(slot.block.clone(), 4)
+                SymbolicMemory::new()
+                    .with_block(slot.base.clone(), 4)
                     .store(slot.clone(), int32(3)),
             );
         let before = entry.clone();
@@ -109,7 +109,7 @@ mod tests {
         assert!(
             !head
                 .memory
-                .has_block(&Memory::local_pointer("logical").block)
+                .has_block(&SymbolicMemory::local_pointer("logical").base)
         );
         assert!(head.locals.get("absent").is_none());
     }

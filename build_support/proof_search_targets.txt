@@ -32,6 +32,7 @@ derive_or_rule
 derive_proposition
 derive_proposition_using
 derive_solve_atomic_proposition
+signed_order_chain_premises
 derive_solve_proposition
 derive_solve_proposition_without_exact_goal
 derive_structural_rule
@@ -246,3 +247,17 @@ apply_division_have
 known_bridge_using
 try_machine_bridge_using
 try_conditional_bridge_using
+
+try_integer_algebra
+try_quotient_shift_using
+try_address_words_using
+
+try_int32_addition_using
+try_interval_fact_using
+try_widened_unsigned_sum_using
+rewrite_conditional_arms_using
+try_pointer_translation_using
+try_pointer_translation_closure
+try_bounded_cast_identity_using
+try_bounded_cast_identity_closure
+try_rewrite_conditional_arms_using

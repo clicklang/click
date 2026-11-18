@@ -661,8 +661,10 @@ signed components owe `0 <= x`. The unsigned countdown idiom
 (`mdtests/an_unsigned_count_down_loop_owes_an_unsigned_descent.md`).
 Explicitly observing a machine expression, as in
 `decreases to_integer(3u32 - x)`, retains its wrapping arithmetic. A back
-edge on which that expression wraps upward is refused
-(`mdtests/an_unsigned_measure_that_wraps_upward_is_refused.md`). A plain
+edge on which that expression wraps upward is refused if the loop can
+continue (`mdtests/an_unsigned_measure_that_wraps_upward_is_refused.md`). When
+the next test is provably false, the exit owes no descent
+(`mdtests/loop_numeric_descent_on_exit.md`). A plain
 `decreases 3 - x` cannot wrap; it instead owes Integer nonnegativity and
 strict descent. A `long` loop's `length - i` likewise ranks by an Integer
 difference, without a signed 64-bit overflow obligation.
@@ -1323,7 +1325,7 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
 ```
 
 Nothing is lent by writing it and nothing is returned. Like every stated range
-it carries its valid-extent facts, which the theorem's proof assumes and an
+it carries its valid-span facts, which the theorem's proof assumes and an
 application owes; see [Viewable ranges](../../concepts/viewability.md). An
 `apply ... using` list holds propositions, so the premise is named there as
 `viewable(v[lo..hi])`.
@@ -1436,9 +1438,12 @@ its condition as a logical case split:
 <!-- verified-example: mdtests/proof_branch_old_state_interface.md -->
 ```click
 branch {
-    step();
-} else {
-    step();
+    true => {
+        step();
+    }
+    false => {
+        step();
+    }
 }
 step();
 ```
@@ -1487,10 +1492,13 @@ optional common-frontier interface to `branch`:
 ```click
 branch ensuring {
     fact y >= 0;
-} then {
-    step();
-} else {
-    step();
+} {
+    true => {
+        step();
+    }
+    false => {
+        step();
+    }
 }
 step();
 ```
@@ -1763,7 +1771,7 @@ proposition, and an unmet one is reported by its text. An `ensures` label
 names its postcondition claim. A loop `invariant` may be labeled the same
 way, and the label names it where a failure reports it: "loop 0 invariant
 `bounded` entry" for `invariant bounded: i <= n;`. To open an available existential precondition, write its
-proposition with `obtain (...) { ... };`.
+proposition with `let k = obtain(exists (x: Type) { ... });`.
 
 `viewable(base[start..end])` and `memory(base[start..end])` use half-open
 integer element ranges. The byte count is derived from the base pointer's
@@ -1891,7 +1899,7 @@ chunk without placing it in the whole range
 A stored cursor can name the same window when a checked equality relates it
 to the input's native index. Address normalization and the cursor's indexed
 alias are checked separately; the alias supplies no access authority and the
-complete extent still needs its unsigned bounds. The cursor and short-extent
+complete span still needs its unsigned bounds. The cursor and short-span
 regressions are in
 `mdtests/a_callee_takes_a_wide_window_through_a_checked_cursor.md`.
 
@@ -2722,8 +2730,8 @@ cannot depend on reading that same memory. A guarded body may directly contain
 the resource being defined. This direct self-recursion is the supported
 recursive form; unguarded recursion and mutual resource cycles are rejected.
 
-`observe` keeps a guarded resource opaque when neither the guard nor its
-negation is known. Explicit `fold` and `unfold` require the guard to be decided.
+Automatic projection keeps a guarded body opaque while its guard is undecided.
+Explicit `observe`, `fold`, and `unfold` require the guard to be decided.
 When active, they expose or consume exactly one body layer, leaving a recursive
 child such as `list(node->next)` folded. This makes proof cost depend on the
 number of explicit list operations, not the unknown length of the list.
@@ -2979,15 +2987,18 @@ Without an `if`, the clause owns every element; it must then be the
 one-cell element `base[k..k + 1]`, and it is exactly the range `owns
 base[lo..hi]` and lowers to it.
 
-Four simple steps move ownership in and out of an unfolded iterated fact.
-Each reads the one fact it names, one guard cell or one quantified guard fact,
-and the indices currently taken out:
+Once the resource is open, `unfold(arena_cells(data, occupied, capacity)[i]);`
+exposes just the element at `i`. The iterated clause supplies its memory
+range. `fold(arena_cells(data, occupied, capacity)[i]);` restores that element.
+Both require its guard to hold. The resource arguments select the exact
+held clause. If C has reassigned an argument, an explicit point can select
+the old arguments, as in
+`fold(at(opened, arena_cells(data, occupied, capacity))[i]);`.
+The index and guard are still read in the current state.
+See `mdtests/indexed_iterated_ownership.md`.
 
-- `take(data[j..j + 1]);` moves element `j` out as ordinary owned memory. The
-  index must be known to lie in the range, its guard must be known true, and
-  it must not already be out. The fact then makes no claim about `j`.
-- `give(data[j..j + 1]);` moves it back. The guard at `j` must be known true
-  and `j` must be out.
+Two operations convert the whole iterated fact:
+
 - `gather(arena_cells(data, occupied, capacity));` forms the fact the
   resource's clause denotes from the range its elements cover, when a
   quantified fact says every guard is true, or from nothing when every guard
@@ -2998,11 +3009,11 @@ The guard is read against the current cells, so a C store to a guard cell
 changes which elements the fact claims. Such a store is allowed only at an
 index where the fact claims nothing: an index out of range, an index taken
 out, an index whose guard is known false, or an index whose element this
-context owns outright. After the store the index stays out until `give`
-returns its element, unless the stored value makes the guard false. So the
-allocation protocol is `take` then mark
+context owns outright. After the store the slot stays open until indexed `fold`
+restores its element, unless the stored value makes the guard false. So the
+allocation protocol is indexed `unfold` then mark
 (`mdtests/iterated_ownership_allocate_one.md`), the free protocol is clear
-then `give` (`mdtests/iterated_ownership_release_one.md`), and marking a
+then indexed `fold` (`mdtests/iterated_ownership_release_one.md`), and marking a
 cell the fact still holds is refused
 (`mdtests/iterated_ownership_rejects_guard_store_while_held.md`). A fold of
 the declaring resource requires the fact with nothing taken out, so it
@@ -3012,7 +3023,7 @@ to guard cells that does not pass through a C store, such as a call's
 effect, drops the fact instead.
 
 The fact itself grants no access: a store to `data[j]` needs the element
-taken out first (`mdtests/iterated_ownership_rejects_store_without_take.md`).
+taken out first (`mdtests/iterated_ownership_rejects_store_with_closed_slot.md`).
 A loop takes one element per iteration from a fact inside its own resource
 (`mdtests/iterated_ownership_claim_loop.md`,
 `mdtests/iterated_ownership_release_loop.md`), and freed cells are reused by
@@ -3421,7 +3432,7 @@ and [`authority_count_defined_at_max_rejected.md`](https://github.com/clicklang/
 **Declaration:** `abstract resource allocation(base: int32*, bytes: int32);`
 
 **Meaning:** Owns the lifetime authority for the live heap block whose base
-pointer is `base` and whose extent is `bytes` bytes. A successful `malloc`,
+pointer is `base` and whose size is `bytes` bytes. A successful `malloc`,
 `calloc` or `realloc` produces it beside ownership of the block's cells, and a
 nonnull `free(p)` consumes it with complete ownership of the block, and is
 refused when it is not held. The kernel names it
@@ -3436,7 +3447,7 @@ writes `produces allocation(result, bytes);`
 The declared byte count is an `int32`, and argument 1 also accepts a
 `uint64` (`size_t`) count, as argument 0 accepts any data pointer. `malloc`,
 `calloc` or `realloc` of a symbolic `size_t` size proved to fit `PTRDIFF_MAX`
-makes a block with a 64-bit extent, whose token holds a `uint64` byte count: a sidecar states it
+makes a block with a 64-bit size, whose token holds a `uint64` byte count: a sidecar states it
 as `allocation(p, n * 4u64)` or `allocation(p, bytes)`, and returns it, passes
 it to a callee, or frees it like any other. A `uint64` count is admitted
 under `malloc`'s no-wrap decision (`1 <= bytes <= PTRDIFF_MAX`, or
@@ -3448,7 +3459,7 @@ refusal names both formats ([C allocation](c.md#heap-allocation)). A signed
 **Verified use:** [`mdtests/heap_malloc_struct_null_check_free.md`](https://github.com/clicklang/click/blob/master/mdtests/heap_malloc_struct_null_check_free.md),
 [`mdtests/external_allocator_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/external_allocator_contract.md),
 [`mdtests/a_bounded_size_t_element_count_allocates_a_64_bit_block.md`](https://github.com/clicklang/click/blob/master/mdtests/a_bounded_size_t_element_count_allocates_a_64_bit_block.md),
-[`mdtests/an_extern_allocator_states_a_size_t_extent.md`](https://github.com/clicklang/click/blob/master/mdtests/an_extern_allocator_states_a_size_t_extent.md),
+[`mdtests/an_extern_allocator_states_a_size_t_allocation_size.md`](https://github.com/clicklang/click/blob/master/mdtests/an_extern_allocator_states_a_size_t_allocation_size.md),
 and [`mdtests/a_callee_frees_a_64_bit_block_it_consumes.md`](https://github.com/clicklang/click/blob/master/mdtests/a_callee_frees_a_64_bit_block_it_consumes.md).
 
 ### `__builtin_constant_p`
@@ -3783,7 +3794,7 @@ predicate, it becomes an entry-state Click array ref. For example,
 `permutation::permutation(p, old(p), 0, 2)` compares post-state `p` to entry-state `p`.
 See [Surface Click and Kernel Click](../../concepts/surface-and-kernel.md).
 
-## `c(...)`
+## `program::` and qualified names
 
 ### File-qualified C objects
 
@@ -3862,15 +3873,18 @@ qualify functions as values or arrays of structs.
 Aliases must be unique and cannot share a name with a specification datatype.
 Existing unqualified references and `verifying "file.c";` remain unchanged.
 
-### Explicit C binding references
+### Program binding references
 
-`c(name)` explicitly refers to the binding named `name` in the verified C
-program. It is distinct from Click built-ins and contract bindings with the
-same name. In particular, bare `result` is the function's contract result,
-while `c(result)` is a C parameter or local named `result`. The contract return
+`program::name` explicitly refers to the binding named `name` in the verified
+program, resolved as the program itself resolves it at that point: its
+parameters and locals, then file statics and globals. The form is the same in
+every source language. It is distinct from Click built-ins and contract
+bindings with the same name. In particular, bare `result` is the function's
+contract result, while `program::result` is a parameter or local named
+`result`. The contract return
 value has a separate internal binding, so a postcondition can use both names.
 After function exit, a parameter reference denotes its logical input value.
-Use `old(c(result))` or `at(function.entry, c(result))` to refer explicitly to
+Use `old(program::result)` or `at(function.entry, program::result)` to refer explicitly to
 the parameter's entry value.
 
 C locals exist only while they are in scope. After function exit, refer to a
@@ -3878,21 +3892,21 @@ local through a recorded point:
 
 <!-- verified-example: mdtests/c_local_named_result_state.md -->
 ```click
-result == at(region(2).entry, c(result))
+result == at(region(2).entry, program::result)
 ```
 
-The AST retains this distinction; `c(result)` is not converted to an ordinary
+The AST retains this distinction; `program::result` is not converted to an ordinary
 string variable and cannot be reinterpreted as contract `result`. Expansion
 uses this form when an explicit proof must name an overlapping C
 binding.
 
 The same holds for every Click value name: in a loop's clauses and phases bare
-`iterations` is the loop's pass count, and `c(iterations)` a program variable
-named `iterations`; diagnostics print that variable as `c(iterations)`
-([`a_c_local_named_iterations_is_written_c_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_c_iterations.md)).
-A Rust sidecar writes the form in its own language, `rust(name)`, and refuses
-`c(name)`; a C or C++ sidecar refuses `rust(name)`
-([`a_c_sidecar_names_a_program_binding_c_not_rust.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_sidecar_names_a_program_binding_c_not_rust.md),
+`iterations` is the loop's pass count, and `program::iterations` a program variable
+named `iterations`; diagnostics print that variable as `program::iterations`
+([`a_c_local_named_iterations_is_written_program_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_program_iterations.md)).
+The earlier language-named forms `c(name)` and `rust(name)` are refused with
+the replacement, and a source alias cannot be named `program`
+([`a_language_named_program_binding_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_language_named_program_binding_is_refused.md),
 [`design/charon-trial/program-bindings`](https://github.com/clicklang/click/blob/master/design/charon-trial/program-bindings/bindings.click)).
 
 Returning a pointer does not extend an automatic object's lifetime. A returned
@@ -3951,7 +3965,7 @@ before it and counted from zero there:
 | `S.call(j)` | `S`'s `j`th call of any callee, a call through a function pointer included, in the order the calls run |
 | `call(f, j)` | the function's `j`th call of `f`, counting all its calls of `f` in the order they run |
 | `call(j)` | the function's `j`th call of any callee, in the order the calls run |
-| `loop(i).test()` | the test of loop `i` whose condition calls a function, after those calls; refused for a pure condition, which is tested at the head |
+| `loop(i).test()` | the decision of loop `i`, after any condition preparation; pure conditions have the same test region |
 | `S.assignment(x, j)` | `S`'s `j`th atomic region of its own that assigns local `x` |
 | `S.read(j)` | `S`'s `j`th atomic region of its own with an explicit scalar memory load |
 | `S.and(j)`, `S.or(j)`, `S.ternary(j)` | `S`'s `j`th `&&`, `\|\|` or ternary operator whose operands make steps, where it decides which run; `.result` is its value on the path |
@@ -4003,8 +4017,10 @@ It still names that result after every local or cell that held it has lost it,
 and a fact the call produced lowers from it exactly
 (`mdtests/a_call_result_is_spelled_by_its_call.md`,
 `mdtests/a_discarded_call_result_keeps_its_call_name.md`). Allocation regions also
-expose their nullable return through `.result`; void calls and other regions
-that do not produce a result are refused
+expose their nullable return through `.result`. In C++, the region that
+reserves storage for a materialized object exposes its address through
+`.result` before construction. Reading a field still requires initialized
+storage. Void calls and other regions that do not produce a result are refused
 (`mdtests/a_void_call_has_no_result_value.md`). Click writes a value only the frontend's
 temporary for a call held this way
 (`mdtests/an_unbound_call_result_is_reported_by_its_call.md`).
@@ -4101,7 +4117,7 @@ The contract `result` exists only once the function returns, so `old(...)` and
 refused where they are written (`mdtests/old_of_result_is_refused.md`,
 `mdtests/an_entry_point_cannot_name_result.md`). A proof mark can name it,
 since a proof may place the mark after the return. A C binding named `result`
-is still written `c(result)` inside `at(...)` or `old(...)`.
+is still written `program::result` inside `at(...)` or `old(...)`.
 
 `at(function.exit, ...)` reads the state the function returns in. It is
 available where `result` is: in a postcondition and in a proof step after
@@ -4363,7 +4379,7 @@ footprint; explicit byte fragments must cover padding too. See the
 [byte-field regression](https://github.com/clicklang/click/blob/master/mdtests/whole_struct_reassembles_from_byte_fields.md)
 and [tail-padding regression](https://github.com/clicklang/click/blob/master/mdtests/whole_struct_reassembles_from_padded_byte_field.md).
 A file-scope struct named in `owns g` or `views g` covers that complete
-object, with the same extent and declared field types as `*p` when `p == &g`.
+object, with the same size and declared field types as `*p` when `p == &g`.
 The same rule applies to a qualified name such as `unit::g`; a pointer-valued
 global named alone still denotes its pointer slot.
 

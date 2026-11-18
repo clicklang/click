@@ -5,8 +5,8 @@ use crate::kernel::{KernelMatchArm, KernelTerm, KernelTermExport, KernelTermImpo
 fn match_dependencies_visit_shared_arm_bodies_once() {
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let current = Memory::new();
-        let pointer = Pointer::symbolic(Variable(991930));
+        let current = SymbolicMemory::new();
+        let pointer = Address::symbolic(Variable(991930));
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(&(intern_memory_ref(&current))),
             Box::new(pointer.clone()),

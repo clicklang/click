@@ -9,17 +9,17 @@ use super::*;
 #[test]
 fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = |id| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+    let base = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
     };
     let written = base(160_001).offset_by_bytes(8);
     let address = base(160_002).offset_by_bytes(8);
-    let alias = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(base(160_001), base(160_002)),
+    let alias = Proposition::condition_is(
+        ConditionTerm::address_equal(base(160_001), base(160_002)),
         true,
     );
-    let endpoint = |memory: Memory| MemoryDagCell::Unwritten {
+    let endpoint = |memory: SymbolicMemory| MemoryDagCell::Unwritten {
         node: intern_memory(memory),
         path: Vec::new(),
     };
@@ -27,12 +27,12 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
     let sizes = [4u64, 16, 64, 256];
     for count in sizes {
         let mut context = PureFactContext::new().assume_proposition(alias.clone());
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..count {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
-                    Pointer::symbolic(Variable(170_000 + index * 2)),
-                    Pointer::symbolic(Variable(170_001 + index * 2)),
+                ConditionTerm::address_equal(
+                    Address::symbolic(Variable(170_000 + index * 2)),
+                    Address::symbolic(Variable(170_001 + index * 2)),
                 ),
                 true,
             );
@@ -41,7 +41,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
                 ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
         }
-        let stored = Pointer::symbolic(Variable(180_000 + count));
+        let stored = Address::symbolic(Variable(180_000 + count));
         memory = memory.store(
             written.clone(),
             ProgramValue::typed_pointer(stored.clone(), ProgramType::Int32Pointer),
@@ -52,7 +52,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         });
         assert_eq!(
             value,
-            Some(PointerValue::new(stored.clone(), ProgramType::Int32Pointer))
+            Some(Pointer::new(stored.clone(), ProgramType::Int32Pointer))
         );
         samples.push(work);
         for (kind, bytes) in [
@@ -88,7 +88,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         assert!(
             pointer_value_at_stopping_store(
                 &cell,
-                &Pointer::symbolic(Variable(190_000 + count)).offset_by_bytes(8),
+                &Address::symbolic(Variable(190_000 + count)).offset_by_bytes(8),
                 LoadKind::Int32,
                 8,
                 &context
@@ -97,18 +97,15 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         );
         let overwritten = endpoint(memory.clone().store(
             written.clone(),
-            ProgramValue::typed_pointer(Pointer::null(), ProgramType::Int32Pointer),
+            ProgramValue::typed_pointer(Address::null(), ProgramType::Int32Pointer),
         ));
         assert_eq!(
             pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Int32, 8, &context),
-            Some(PointerValue::new(
-                Pointer::null(),
-                ProgramType::Int32Pointer
-            ))
+            Some(Pointer::new(Address::null(), ProgramType::Int32Pointer))
         );
         assert_ne!(
             pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Int32, 8, &context),
-            Some(PointerValue::new(stored, ProgramType::Int32Pointer))
+            Some(Pointer::new(stored, ProgramType::Int32Pointer))
         );
         for offset in [0, 4, 32] {
             let changed = endpoint(memory.clone().store(

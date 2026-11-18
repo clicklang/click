@@ -271,6 +271,19 @@ pub(super) fn common_variables(
         }
         let mut leaf_variables = BTreeSet::new();
         match term.node() {
+            KernelTermNode::IntegerCompare { .. } if term.cached_condition_output().is_some() => {
+                // This compatibility consumer already owns the exact native
+                // Integer operands. Reuse their existing variable reader rather
+                // than rebuilding common summaries of the same prefix.
+                collect_boolean_variables(
+                    crate::kernel::BooleanOperandView::Native(
+                        term.cached_condition_output()
+                            .expect("retained condition output"),
+                    ),
+                    mode,
+                    &mut leaf_variables,
+                );
+            }
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 // Each opaque leaf gets its complete intrinsic answer. A seen
                 // set belonging to another leaf would discard shared payload
@@ -283,7 +296,8 @@ pub(super) fn common_variables(
                 );
             }
             KernelTermNode::BoolRead(read) => {
-                let (memory, address) = read.parts();
+                let (point, address) = read.parts();
+                let memory = point.shared_memory();
                 match mode {
                     FoldVariableRead::ExpressionFree => {
                         collect_shared_memory_bitvector_variables(memory, &mut leaf_variables);
@@ -317,7 +331,7 @@ pub(super) fn common_variables(
                     _ => {}
                 }
             }
-            KernelTermNode::PointerValueEqual(pair) => {
+            KernelTermNode::PointerEqual(pair) => {
                 for value in pair.arguments() {
                     for address in value.addresses() {
                         super::retained_pointers::collect_address_variables_with_summaries(
@@ -329,7 +343,7 @@ pub(super) fn common_variables(
                     }
                 }
             }
-            KernelTermNode::PointerEqual { arguments } => {
+            KernelTermNode::AddressEqual { arguments } => {
                 for address in arguments {
                     super::retained_pointers::collect_address_variables_with_summaries(
                         address,
@@ -339,7 +353,7 @@ pub(super) fn common_variables(
                     );
                 }
             }
-            KernelTermNode::PointerOffsetEqual { arguments } => {
+            KernelTermNode::AddressOffsetEqual { arguments } => {
                 super::retained_pointers::collect_offset_variables_with_summaries(
                     arguments,
                     mode,
@@ -358,14 +372,14 @@ pub(super) fn common_variables(
             KernelTermNode::PointerRead { value, .. }
             | KernelTermNode::PointerArithmetic { value, .. }
             | KernelTermNode::PointerCall { value, .. }
-            | KernelTermNode::PointerValue(value) => {
+            | KernelTermNode::Pointer(value) => {
                 super::retained_pointers::collect_pointer_variables(
                     value,
                     mode,
                     &mut leaf_variables,
                 );
             }
-            KernelTermNode::PointerAddress { address, .. } => {
+            KernelTermNode::IntegerAddress { address, .. } => {
                 if !matches!(
                     mode,
                     FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders
@@ -628,16 +642,17 @@ mod tests {
     #[test]
     fn float_readers_preserve_state_address_and_native_collection_modes() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory(Memory::new().with_block("float-read-history", 4).store(
-            Memory::global_pointer("float-read-history"),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(999811))),
-        ));
-        let pointer = Pointer {
-            block: PointerBlock::Symbolic(Variable(999812)),
-            offset: PointerOffsetTerm::scaled_int32_node(
-                MachineTerm::Variable(Variable(999813)),
-                4,
-            ),
+        let memory = intern_memory(
+            SymbolicMemory::new()
+                .with_block("float-read-history", 4)
+                .store(
+                    SymbolicMemory::global_pointer("float-read-history"),
+                    ProgramValue::Int32(MachineTerm::Variable(Variable(999811))),
+                ),
+        );
+        let pointer = Address {
+            base: AddressBase::Symbolic(Variable(999812)),
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(999813)), 4),
         };
         for format in [
             crate::kernel::KernelFloatType::Float32,
@@ -677,8 +692,8 @@ mod tests {
         ] {
             let left = Box::new(MachineTerm::Variable(Variable(999933)));
             let right = Box::new(MachineTerm::MemoryLoad(
-                ProgramPoint::at(&(intern_memory(Memory::new()))),
-                Box::new(Pointer::symbolic(Variable(999934))),
+                ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
+                Box::new(Address::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
             let native = match format {
@@ -726,8 +741,8 @@ mod tests {
         ] {
             let left = Box::new(MachineTerm::Variable(Variable(999933)));
             let right = Box::new(MachineTerm::MemoryLoad(
-                ProgramPoint::at(&(intern_memory(Memory::new()))),
-                Box::new(Pointer::symbolic(Variable(999934))),
+                ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
+                Box::new(Address::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
             let native = match format {
@@ -937,15 +952,17 @@ mod tests {
             algebraic_type: crate::kernel::TypeParameterName::intern("AlgebraicReaderT")
                 .algebraic_type(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory: crate::kernel::intern_memory(
-                    Memory::new().with_block("algebraic-reader", 8).store(
-                        Memory::global_pointer("algebraic-reader"),
-                        ProgramValue::UInt64(MachineTerm::Variable(Variable(999741))),
-                    ),
-                ),
-                pointer: Box::new(Pointer {
-                    block: PointerBlock::Symbolic(Variable(999742)),
-                    offset: PointerOffsetTerm::scaled_int32_node(
+                point: crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
+                    SymbolicMemory::new()
+                        .with_block("algebraic-reader", 8)
+                        .store(
+                            SymbolicMemory::global_pointer("algebraic-reader"),
+                            ProgramValue::UInt64(MachineTerm::Variable(Variable(999741))),
+                        ),
+                )),
+                pointer: Box::new(Address {
+                    base: AddressBase::Symbolic(Variable(999742)),
+                    offset: AddressOffset::scaled_int32_node(
                         MachineTerm::Variable(Variable(999743)),
                         4,
                     ),
@@ -1010,8 +1027,10 @@ mod tests {
                 IntegerTerm::Variable(Variable(999562)).into(),
             )),
             else_condition: Box::new(ConditionTerm::BoolLoad(
-                crate::kernel::intern_memory(Memory::new()),
-                Box::new(Pointer::symbolic(Variable(999563))),
+                crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
+                    SymbolicMemory::new(),
+                )),
+                Box::new(Address::symbolic(Variable(999563))),
             )),
         });
         let application = SharedPureApplication::intern(
@@ -1054,17 +1073,17 @@ mod tests {
         );
         for source in [
             ConditionTerm::BoolLoad(
-                crate::kernel::intern_memory(
-                    crate::kernel::Memory::new()
+                crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
+                    crate::kernel::SymbolicMemory::new()
                         .with_block("bool-dependencies", 4)
                         .store(
-                            crate::kernel::Memory::global_pointer("bool-dependencies"),
+                            crate::kernel::SymbolicMemory::global_pointer("bool-dependencies"),
                             ProgramValue::Int32(MachineTerm::Variable(Variable(970_030))),
                         ),
-                ),
-                Box::new(Pointer {
-                    block: PointerBlock::Symbolic(Variable(970_031)),
-                    offset: PointerOffsetTerm::scaled_int32_node(
+                )),
+                Box::new(Address {
+                    base: AddressBase::Symbolic(Variable(970_031)),
+                    offset: AddressOffset::scaled_int32_node(
                         MachineTerm::Variable(Variable(970_032)),
                         4,
                     ),
@@ -1079,26 +1098,23 @@ mod tests {
                 }),
                 right: Box::new(MachineTerm::Variable(Variable(970_021))),
             },
-            ConditionTerm::PointerValueEqual(
+            ConditionTerm::PointerEqual(
                 Box::new(
-                    PointerValue::new(
-                        Pointer::symbolic(Variable(970_010)),
+                    Pointer::new(
+                        Address::symbolic(Variable(970_010)),
                         ProgramType::Int32Pointer,
                     )
-                    .with_extent(Some(SubobjectExtent {
-                        start: Pointer::symbolic(Variable(970_011)),
+                    .with_bounds(Some(SubobjectBounds {
+                        start: Address::symbolic(Variable(970_011)),
                         width: MachineTerm::Variable(Variable(970_012)),
                     })),
                 ),
-                Box::new(PointerValue::new(
-                    Pointer::null(),
-                    ProgramType::Int32Pointer,
-                )),
+                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
             ),
-            ConditionTerm::PointerOffsetEqual(
-                Box::new(PointerOffsetTerm::Add(
-                    Box::new(PointerOffsetTerm::Variable(Variable(970_005))),
-                    Box::new(PointerOffsetTerm::scaled_int32_node(
+            ConditionTerm::AddressOffsetEqual(
+                Box::new(AddressOffset::Add(
+                    Box::new(AddressOffset::Variable(Variable(970_005))),
+                    Box::new(AddressOffset::scaled_int32_node(
                         MachineTerm::IntegerToMachine {
                             value: IntegerTerm::Variable(Variable(970_006)).into(),
                             destination: MachineIntegerType::Int32,
@@ -1106,28 +1122,28 @@ mod tests {
                         4,
                     )),
                 )),
-                Box::new(PointerOffsetTerm::scaled_int64_node(
+                Box::new(AddressOffset::scaled_int64_node(
                     MachineTerm::Variable(Variable(970_007)),
                     8,
                     true,
                 )),
             ),
-            ConditionTerm::PointerEqual(
-                Box::new(Pointer {
-                    block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+            ConditionTerm::AddressEqual(
+                Box::new(Address {
+                    base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                         "raw_pointer_dependency".into(),
                         vec![PureFunctionArgument::Integer(
                             IntegerTerm::Variable(Variable(970_008)).into(),
                         )],
                     )),
-                    offset: PointerOffsetTerm::scaled_int32_node(
+                    offset: AddressOffset::scaled_int32_node(
                         MachineTerm::Variable(Variable(970_009)),
                         4,
                     ),
                 }),
-                Box::new(Pointer {
-                    block: PointerBlock::ExternalObject(Variable(970_010)),
-                    offset: PointerOffsetTerm::scaled_int64_node(
+                Box::new(Address {
+                    base: AddressBase::ExternalObject(Variable(970_010)),
+                    offset: AddressOffset::scaled_int64_node(
                         MachineTerm::Variable(Variable(970_011)),
                         8,
                         false,
@@ -1501,8 +1517,8 @@ mod mixed_argument_tests {
                 ],
             },
         };
-        let pointer = ProgramValue::Pointer(PointerValue::new(
-            Pointer::symbolic(Variable(1008512)),
+        let pointer = ProgramValue::Pointer(Pointer::new(
+            Address::symbolic(Variable(1008512)),
             ProgramType::Int32Pointer,
         ));
         let arguments = [
@@ -1510,7 +1526,7 @@ mod mixed_argument_tests {
             PureFunctionArgument::Value(ProgramValue::Parameter(Box::new(value))),
             PureFunctionArgument::Value(pointer.clone()),
             PureFunctionArgument::ArrayRef {
-                memory: Memory::new(),
+                memory: SymbolicMemory::new(),
                 pointer,
                 element_type: ProgramType::Int32,
             },

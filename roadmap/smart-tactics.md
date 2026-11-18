@@ -168,7 +168,7 @@ follow it. None of these whole-operation rows is marked complete.
 | Check a write against loans; pay for selected conflict/evidence, not all loans or aliases | `LoanLedger::permits_memory_access_with_assumptions`, called by memory-access checking | `kernel/loans/tests.rs`: `write_barrier_does_not_enumerate_overlapping_loans`, `writes_without_active_memory_loans_do_not_walk_pointer_aliases` | L1: aliases with active loans and symbolic-loan comparisons. Zero-loan and concrete-overlap controls do not finish this operation. |
 | Apply a modular call, transfer resources and finish it; pay for selected contract and effects | `kernel/functions.rs`: `execute_verified_function_applications_with_suspension`, `call_kept_ownership`; `kernel/proof/execution.rs` | source `a_call_ignores_unrelated_owned_objects`; `kernel/functions/stable_view_call_tests.rs`: `returning_one_borrowed_owner_does_not_rebuild_its_memory_block` | C1: resource-family selection and selected-address composite candidates; non-direct member-count preparation is now flat. E1: execution/publication/completion accounting. |
 | Split/join branches and enter/exit loops; pay for explicit arms/interfaces and actual changes | `kernel/api.rs`: `abstract_c_state_for_interface_join_across`; `kernel/loops.rs`; `kernel/proof/execution.rs` | `kernel/loops/contract_exit_join_tests.rs`, `kernel/loops/frame_resource_tests.rs`; branch availability and interface-join controls | J1 coverage gap: fixed-delta joins across growing stable state; loop-head abstraction uses a different policy. Existing growth allowances do not establish ambient independence. |
-| Apply an explicit equality, arithmetic certificate or preservation step; pay for written nodes/premises | `kernel/proof/{preservation,integer_arithmetic,term_rewrite}.rs` | `kernel/proof/preservation.rs`: history independence, explicit-step linearity, selected resource fields; `kernel/proof/integer_arithmetic/tests.rs`: repeated premise and shared-DAG controls | Coverage gap: map every Surface certificate driver through lowering, premise lookup, application and publication; preserve cold expansion/replay evidence. Do not re-enter discovery during application. |
+| Apply an explicit equality, arithmetic step or preservation step; pay for written nodes/premises | `kernel/proof/{preservation,integer_arithmetic,term_rewrite}.rs` | `kernel/proof/preservation.rs`: history independence, explicit-step linearity, selected resource fields; `kernel/proof/integer_arithmetic/tests.rs`: repeated premise and shared-DAG controls | Coverage gap: map every Surface certificate driver through lowering, premise lookup, application and publication; preserve cold expansion/replay evidence. Do not re-enter discovery during application. |
 | Introduce binders, apply logical rules and publish checked results; pay for explicit proof structure | `ProofObject::apply_intro`, `ProofFacts::freshen_integer_forall_body`, proof execution event recording | selected term-rewrite, fact-key and event-publication controls | Q1 deferred nested-quantifier work; E1 deferred/revalidation candidates. A helper's flat lookup says nothing about repeated whole-body copying. |
 
 Test paths in the evidence column are relative to `src/scaling_tests/`.
@@ -195,18 +195,16 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 13 | 27 |
-| `examples/` | 17 | 108 |
+| `mdtests/` | 1 | 1 |
+| `examples/` | 12 | 93 |
 | `library/` | 0 | 0 |
-| Total | 30 | 135 |
+| Total | 13 | 94 |
 
-The 8 mdtests with failure expectations still require migration while retaining
-their semantic refusals. Positive fixtures also supply exact input text
-to expansion/mutation tests; migrate those inputs together with their tests,
-rather than replacing a smart test input with an already-expanded proof. Positive fixtures also need full-file verification:
-selected-tactic expansion verifies a prefix, so it does not establish that the
-rewritten proof's remaining suffix closes. Remaining groups include historical
-initializedness, computed range bounds, loop frames, and call preservation.
+Positive fixtures also supply exact input text to expansion and mutation tests.
+Migrate those inputs together with their tests and keep the smart proof inputs.
+Verify the full file as well, because selected-tactic expansion checks only a
+prefix. Remaining groups include historical initializedness, computed range
+bounds, loop frames, and call preservation.
 The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
 ### Remaining PR-sized chunks
@@ -223,10 +221,7 @@ pattern is understood but the complete family has not yet been validated.
 | ID | Work | Confidence |
 | --- | --- | --- |
 | 11 | Remaining loop-frame mdtests | Medium |
-| 13 | Named-root aliased-pointer baseline diagnosis/repair | Uncertain |
-| 14 | Named-root fixture migration after baseline repair | Medium |
 | 15 | Remaining fold, resource-observation, count mdtests | Medium |
-| 16 | Remaining negative mdtests, preserving semantic refusals | Medium |
 | 17 | Red-black insertion baseline diagnosis/repair | Uncertain |
 | 18 | Insertion: field and parent-link preservation | Medium |
 | 19 | Insertion: inner/double rotations | Medium |
@@ -259,11 +254,6 @@ pattern is understood but the complete family has not yet been validated.
 ### Excluded or still unconfirmed
 
 Do not count these as additional confirmed generated-output families:
-
-- `named_root_call_preserves_aliased_pointer_field` reaches its unchanged
-  deterministic smart-work limit while proving `cursor->left == rid` after the
-  helper call. Repair that proof explicitly before migrating its written sites;
-  a successful expansion prefix is not a passing whole-fixture regression.
 
 - Computed lower endpoint `p[index + 1..length]`, nested upper endpoint
   `p[index..index + 1 + 1]`, and native upper endpoint
@@ -400,13 +390,12 @@ not all unfolding routes or Surface materialization.
 active regression. Fresh measurements at `da5639eb1d` are flat at 228 units
 for adjacent constant intervals and 74 for overlap refusal with 4/16/64
 aliases; its former "still grows" annotation was stale for that shape.
-Early return-group admission is also flat for constant endpoints (261 and
-93 units respectively). The separate diagnostic
-`symbolic_return_group_admission_work` measures two fixed output descriptions
-with a symbolic upper endpoint: work is 337 / 349 / 397 for adjacency and
-382 / 550 / 1222 for overlap refusal at the same alias counts. It retains
-correct-result controls without claiming a fast bound. These are admission
-measurements, not a complete source-call curve. See
+Symbolic return boundaries now use bounded producer-published interval and
+address indexes or an explicit separation premise for the actual frame.
+The automatic ownership-discovery fallback is removed. Active admission
+scaling covers growing owners, aliases, explicit frame proofs, and removed
+owner history; unsupported relationships refuse without discovery. These are
+admission measurements, not a complete source-call curve. See
 [early return-group evidence](../docs/internals/verification-efficiency.md#early-return-group-evidence).
 
 Executed-body returns now construct their group by consuming each output from
@@ -416,9 +405,8 @@ the Boolean custody pass afterward. Folded-head post-memory boundary checks
 remain. Summary application now retains a clause-level rule for unchanged flat
 footprints, including parameter bounds, and binds it to the selected entry
 reservation. Justified outputs and checked entry borrows avoid early group
-admission; unmatched and description-only outputs retain compatibility
-admission. Keep those paths separate when measuring the symbolic
-diagnostic above. The executed-body regressions cover alias/body/frame growth,
+admission; unmatched and description-only outputs require checked
+admission, with an explicit separation obligation for unsupported boundaries. The executed-body regressions cover alias/body/frame growth,
 selected splits and duplicate refusal; this does not close every raw-admission
 or consumption route.
 
@@ -427,8 +415,8 @@ one-level composite children to consumed input clauses. Unguarded parameter-only
 children keep entry origin; conversions, loads, and unmatched footprints
 retain their boundary checks. Composite scaling grows selected body parts as
 well as retained same-block owners and both alias shapes at 4/16/64.
-Iterated `take`/`scatter` now construct their exposed ownership from the checked
-hole/guard exchange without admission or block normalization; their exposure
+Indexed `unfold` and `scatter` construct their exposed ownership from the checked
+hole/guard exchange without admission or block normalization. Their exposure
 regression grows retained owners and aliases and retains occurrence support.
 Scatter guard preparation now selects an indexed whole-range equality source
 without enumerating universals or replaying its conclusion. Its regression
@@ -465,7 +453,7 @@ The pointee-store route generates a separation obligation without alias
 search. The source write regression is flat at 179 charged units with one loan
 and 4/16/64 aliases (110 without a loan); these measurements cover this route,
 not the remaining callers below. Explicit source proofs retain typed subobject
-extent and provenance. The `contains_element` law supports signed 32-bit and
+bounds and provenance. The `contains_element` law supports signed 32-bit and
 unsigned 64-bit interval bounds without wrapping the selected upper endpoint.
 Exact pointer argument spellings use an entry-built index; enclosing recorded
 requirement clauses use the existing conjunct index. Keep the position-drift,

@@ -680,7 +680,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let array_refs = array_refs_for_parameters(
             parameter_binding.parameters,
             &values,
-            fixed_state.state.memory(),
+            &fixed_state.state.program_point(),
         );
         let (values, array_refs) =
             contract_environment_at_state(&values, &array_refs, fixed_state.state);
@@ -791,17 +791,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         ),
                     )
                 })?;
-            // The checker adds a cited range's extent guards to the evidence
+            // The checker adds a cited range's span guards to the evidence
             // when they are available and refuses otherwise; propose the
             // range only where it will be accepted.
             if let Some(guard) =
-                crate::surface::proof::theorem_application::missing_theorem_extent_guard(
+                crate::surface::proof::theorem_application::missing_theorem_span_guard(
                     &requirement,
                     |guard| search_input.facts().available_across_effects(guard, &[]),
                 )
             {
                 return Err(search_input.step_error(format!(
-                    "theorem application `{}` requires a memory range whose extent guard `{}` is not an available fact",
+                    "theorem application `{}` requires a memory range whose span guard `{}` is not an available fact",
                     application.name,
                     crate::surface::proof_diagnostics::render::render_proposition(&guard),
                 )));
@@ -1143,11 +1143,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     )
                 )));
             }
-            // The checker adds the range's extent guards to the evidence
+            // The checker adds the range's span guards to the evidence
             // when they are available and refuses otherwise; propose the
             // range only where it will be accepted.
             if let Some(guard) =
-                crate::surface::proof::theorem_application::missing_theorem_extent_guard(
+                crate::surface::proof::theorem_application::missing_theorem_span_guard(
                     &requirement,
                     |guard| {
                         search_input
@@ -1157,7 +1157,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 )
             {
                 return Err(search_input.step_error(format!(
-                    "theorem `{}` requirement {} states a memory range whose extent guard `{}` is not an available fact",
+                    "theorem `{}` requirement {} states a memory range whose span guard `{}` is not an available fact",
                     application.name,
                     requirement_index + 1,
                     crate::surface::proof_diagnostics::render::render_proposition(&guard),

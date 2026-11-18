@@ -42,7 +42,7 @@ pub(super) fn recursive_definition() -> CompositeResourceDefinition {
 }
 
 pub(super) fn recursive_output(
-    pointer: Pointer,
+    pointer: Address,
     remaining: MachineTerm,
     facts: &PureFactContext,
 ) -> EvaluatedReturnResources {
@@ -64,13 +64,13 @@ pub(super) fn recursive_output(
 #[test]
 fn recursive_return_retains_one_explicit_frontier_and_its_actual_child_identity() {
     let facts = PureFactContext::new();
-    let pointer = Pointer::symbolic(Variable(8_860_000));
+    let pointer = Address::symbolic(Variable(8_860_000));
     let evaluated = recursive_output(pointer, MachineTerm::constant(64), &facts);
     let source = evaluated.occurrences[0].source;
     let state = ExecutionState::new();
     let bodies =
         ConstructedReturnBodies::construct(&evaluated, &[recursive_definition()], &state, &facts);
-    assert!(bodies.1.is_empty());
+    assert!(!bodies.0.is_empty());
     let body = bodies.get(source).unwrap();
     assert_eq!(body.transfers.len(), 2);
     assert_eq!(body.expansion.len(), 2);
@@ -97,12 +97,9 @@ fn recursive_return_retains_one_explicit_frontier_and_its_actual_child_identity(
         &evaluated.resources,
         &transfers,
         &bodies,
-        &[],
-        &state,
         &facts,
         &destination,
-    )
-    .unwrap();
+    );
     assert_eq!(projections[0].expansion, body.expansion);
     assert_eq!(projections[0].frontier, body.frontier);
 }
@@ -114,7 +111,7 @@ fn recursive_empty_and_undecided_guards_retain_the_correct_finite_boundary() {
         (MachineTerm::constant(0), false),
         (MachineTerm::Variable(Variable(8_860_001)), true),
     ] {
-        let evaluated = recursive_output(Pointer::symbolic(Variable(8_860_002)), remaining, &facts);
+        let evaluated = recursive_output(Address::symbolic(Variable(8_860_002)), remaining, &facts);
         let source = evaluated.occurrences[0].source;
         let bodies = ConstructedReturnBodies::construct(
             &evaluated,
@@ -142,10 +139,10 @@ fn recursive_empty_and_undecided_guards_retain_the_correct_finite_boundary() {
 
 #[test]
 fn recursive_visible_memory_still_refuses_a_held_alias_and_preserves_branches() {
-    let pointer = Pointer::symbolic(Variable(8_860_003));
-    let alias = Pointer::symbolic(Variable(8_860_004));
+    let pointer = Address::symbolic(Variable(8_860_003));
+    let alias = Address::symbolic(Variable(8_860_004));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(pointer.clone(), alias.clone()),
+        ConditionTerm::address_equal(pointer.clone(), alias.clone()),
         true,
     );
     let evaluated = recursive_output(pointer, MachineTerm::constant(64), &facts);
@@ -171,8 +168,6 @@ fn recursive_visible_memory_still_refuses_a_held_alias_and_preserves_branches() 
                     .unwrap(),
                 Some(body),
             )),
-            &[],
-            &Memory::new(),
             &facts,
         )
     };
@@ -210,7 +205,7 @@ fn viewed_recursive_children_remain_folded_views_with_emitted_identities() {
     )
     .unwrap();
     let evaluated = recursive_output(
-        Pointer::symbolic(Variable(8_860_005)),
+        Address::symbolic(Variable(8_860_005)),
         MachineTerm::constant(3),
         &facts,
     );

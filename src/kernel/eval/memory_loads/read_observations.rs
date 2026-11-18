@@ -2,7 +2,7 @@
 //! Capture/restore shares persistent roots; selected shared reads use an ID lookup.
 use super::*;
 
-type Key = ((u32, u32), Pointer, LoadKind);
+type Key = ((u32, u32), Address, LoadKind);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(super) struct Id(u64);
@@ -10,7 +10,7 @@ pub(super) struct Id(u64);
 #[derive(Clone)]
 struct Record {
     memory: SharedMemory,
-    pointer: Pointer,
+    pointer: Address,
     kind: LoadKind,
     origin: SharedMemory,
     epoch: u64,
@@ -25,7 +25,7 @@ pub(super) struct State {
     keys: imbl::HashMap<Key, Id>,
     records: imbl::HashMap<Id, Record>,
     terms: imbl::HashMap<u64, Id>,
-    latest: imbl::HashMap<(u64, Id), (SharedMemory, Pointer)>,
+    latest: imbl::HashMap<(u64, Id), (SharedMemory, Address)>,
 }
 
 thread_local! {
@@ -44,7 +44,7 @@ pub(super) fn clear() {
     STATE.with(|state| *state.borrow_mut() = State::default());
 }
 
-pub(super) fn existing(memory: &SharedMemory, pointer: &Pointer, kind: LoadKind) -> Option<Id> {
+pub(super) fn existing(memory: &SharedMemory, pointer: &Address, kind: LoadKind) -> Option<Id> {
     crate::instrumentation::record_deterministic_work(1);
     STATE.with(|state| {
         state
@@ -57,7 +57,7 @@ pub(super) fn existing(memory: &SharedMemory, pointer: &Pointer, kind: LoadKind)
 
 pub(super) fn record(
     memory: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     kind: LoadKind,
     origin: &SharedMemory,
     bytes: u32,
@@ -67,7 +67,7 @@ pub(super) fn record(
 
 pub(super) fn record_untyped(
     memory: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     kind: LoadKind,
     origin: &SharedMemory,
 ) -> Id {
@@ -83,7 +83,7 @@ pub(super) fn record_untyped(
 
 fn record_with_width(
     memory: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     kind: LoadKind,
     origin: &SharedMemory,
     bytes: u32,
@@ -152,7 +152,7 @@ pub(super) fn select(id: Id) {
     });
 }
 
-pub(super) fn selected(memory: &SharedMemory, pointer: &Pointer, kind: LoadKind) -> bool {
+pub(super) fn selected(memory: &SharedMemory, pointer: &Address, kind: LoadKind) -> bool {
     existing(memory, pointer, kind).is_some_and(|id| {
         STATE.with(|state| {
             state
@@ -297,8 +297,8 @@ mod tests {
     #[test]
     fn a_typed_producer_replaces_an_untyped_canonical_reads_guessed_width() {
         let _session = VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
-        let pointer = Pointer::symbolic(Variable(998_709));
+        let memory = intern_memory(SymbolicMemory::new());
+        let pointer = Address::symbolic(Variable(998_709));
         let untyped = canonical_scalar_read(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
@@ -340,8 +340,8 @@ mod tests {
     #[test]
     fn inspecting_an_unobserved_read_does_not_capture_its_width_or_origin() {
         let _session = VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
-        let pointer = Pointer::symbolic(Variable(998_707));
+        let memory = intern_memory(SymbolicMemory::new());
+        let pointer = Address::symbolic(Variable(998_707));
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
@@ -365,11 +365,11 @@ mod tests {
     }
 
     fn cyclic_frame_read(index: u64) -> (Proposition, Variable) {
-        let pointer = Pointer {
-            block: format!("local:frame-origin-{index}").into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: format!("local:frame-origin-{index}").into(),
+            offset: AddressOffset::Constant(0),
         };
-        let memory = intern_memory(Memory::new().with_block(pointer.block.clone(), 4));
+        let memory = intern_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4));
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
@@ -377,9 +377,9 @@ mod tests {
         );
         let bound = Variable(998_800 + index);
         let range = MemoryRange::new_with_element_width(
-            Pointer {
-                block: "frame-target".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "frame-target".into(),
+                offset: AddressOffset::Constant(0),
             },
             0u32.into(),
             MachineTerm::add_at(
@@ -399,7 +399,7 @@ mod tests {
         // contains a range bound that refers to the same structural version.
         record(&memory, &pointer, LoadKind::Int32, &origin, 4);
         (
-            Proposition::ConditionIs(ConditionTerm::equal(read, 0u32.into()), true),
+            Proposition::condition_is(ConditionTerm::equal(read, 0u32.into()), true),
             bound,
         )
     }
@@ -425,11 +425,11 @@ mod tests {
     #[test]
     fn structural_observations_need_no_reserved_name_and_restore_branch_metadata() {
         let _session = VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
-        let pointer = Pointer::symbolic(Variable(998_701));
+        let memory = intern_memory(SymbolicMemory::new());
+        let pointer = Address::symbolic(Variable(998_701));
         let read = KernelTerm::scalar_read_descriptor(
             MachineIntegerType::Int32,
-            &memory,
+            &crate::kernel::ProgramPoint::at(&memory),
             &pointer,
             LoadKind::Int32,
         )
@@ -460,10 +460,11 @@ mod tests {
     #[test]
     fn structural_observations_distinguish_read_kind_and_state() {
         let _session = VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(998_702));
-        let before = intern_memory(Memory::new());
-        let after =
-            intern_memory(Memory::new().store(pointer.clone(), ProgramValue::Int32(1u32.into())));
+        let pointer = Address::symbolic(Variable(998_702));
+        let before = intern_memory(SymbolicMemory::new());
+        let after = intern_memory(
+            SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(1u32.into())),
+        );
         let first = record(&before, &pointer, LoadKind::Int32, &before, 4);
         let other_kind = record(&before, &pointer, LoadKind::Int16, &before, 2);
         let other_time = record(&after, &pointer, LoadKind::Int32, &after, 8);
@@ -486,8 +487,8 @@ mod tests {
     #[test]
     fn ordinary_integer_producers_retain_reads_without_reserved_variables() {
         let _session = VerificationSession::enter();
-        let memory = Memory::new();
-        let pointer = Pointer::symbolic(Variable(998_704));
+        let memory = SymbolicMemory::new();
+        let pointer = Address::symbolic(Variable(998_704));
         for ty in [
             ProgramType::Int8,
             ProgramType::UInt8,
@@ -533,9 +534,9 @@ mod tests {
     #[test]
     fn selecting_a_read_keeps_its_address_when_another_read_was_stored_there() {
         let _session = VerificationSession::enter();
-        let source = Pointer::symbolic(Variable(998_705));
-        let destination = Pointer::symbolic(Variable(998_706));
-        let memory = intern_memory(Memory::new());
+        let source = Address::symbolic(Variable(998_705));
+        let destination = Address::symbolic(Variable(998_706));
+        let memory = intern_memory(SymbolicMemory::new());
         let held = canonical_form_of_load(memory.clone(), source, LoadKind::Int32);
         let after = intern_memory(
             memory

@@ -7,7 +7,7 @@ fn class() -> CAccessClass {
 }
 fn value(index: u64) -> ProgramValue {
     ProgramValue::typed_pointer(
-        Pointer::symbolic(Variable(index)),
+        Address::symbolic(Variable(index)),
         ProgramType::Int32Pointer,
     )
 }

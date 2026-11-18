@@ -68,7 +68,7 @@ fn requirement_source_bindings(
 
 pub(super) struct TheoremApplicationContext<'a> {
     pub(super) parameters: ParameterBinding<'a>,
-    pub(super) values: &'a BTreeMap<String, ProgramValue>,
+    pub(super) values: &'a ProgramValueBindings,
     pub(super) array_refs: &'a ClickArrayRefs,
     pub(super) algebraic_values: &'a BTreeMap<String, SpecAlgebraicExpression>,
     pub(super) pre_state: &'a ExecutionState,
@@ -83,10 +83,10 @@ pub(super) struct TheoremApplicationContext<'a> {
     pub(super) pointer_element_widths: BTreeMap<String, u32>,
 }
 
-/// Adds a cited range premise's extent guards to an explicit evidence list.
+/// Adds a cited range premise's span guards to an explicit evidence list.
 ///
 /// Citing a stated range cites what the range says: `loadable(p[a..b])`
-/// means `a..b` is a valid 32-bit byte extent and those bytes are loadable,
+/// means `a..b` is a valid 32-bit byte span and those bytes are loadable,
 /// and theorem instantiation asks the application for both halves. A `using`
 /// list that names the range has therefore named both, and the endpoint
 /// spelling of the `fits` half is an unsigned comparison the surface cannot
@@ -97,33 +97,33 @@ pub(super) struct TheoremApplicationContext<'a> {
 /// Every checker that turns a `using` list into evidence (`apply using` in
 /// pure and fixed-state proofs, `transport using`) calls this one rule, and
 /// smart theorem selection proposes a range premise only when
-/// [`missing_theorem_extent_guard`] finds nothing this rule would leave out.
-pub(super) fn cite_range_extent_guards(
+/// [`missing_theorem_span_guard`] finds nothing this rule would leave out.
+pub(super) fn cite_range_span_guards(
     premise: &Proposition,
     evidence: &mut Vec<Proposition>,
     available: impl Fn(&Proposition) -> bool,
 ) {
-    for guard in crate::kernel::stated_loadable_extent_guard_spellings(premise) {
+    for guard in crate::kernel::stated_loadable_span_guard_spellings(premise) {
         if !evidence.contains(&guard) && available(&guard) {
             evidence.push(guard);
         }
     }
 }
 
-/// The first extent guard a theorem requirement owes that an application
+/// The first span guard a theorem requirement owes that an application
 /// citing the requirement cannot supply.
 ///
 /// This is the search-side mirror of the check in
 /// `instantiate_theorem_application_with_assumptions`: that check asks for
-/// each count-form guard among the evidence, and [`cite_range_extent_guards`]
+/// each count-form guard among the evidence, and [`cite_range_span_guards`]
 /// puts it there exactly when it is available. A selector that lists the
 /// range requirement therefore owes nothing more when this returns `None`,
 /// and would be refused by the checker when it returns a guard.
-pub(super) fn missing_theorem_extent_guard(
+pub(super) fn missing_theorem_span_guard(
     requirement: &Proposition,
     available: impl Fn(&Proposition) -> bool,
 ) -> Option<Proposition> {
-    crate::kernel::stated_loadable_extent_guards(requirement)
+    crate::kernel::stated_loadable_span_guards(requirement)
         .into_iter()
         .find(|guard| {
             !available(guard)
@@ -294,9 +294,9 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                         format!("theorem `{}` premise", theorem.name()),
                     ),
             )?;
-            for guard in crate::kernel::stated_loadable_extent_guards(&lowered) {
+            for guard in crate::kernel::stated_loadable_span_guards(&lowered) {
                 crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
-                    ClickError::new("theorem range requires a valid extent")
+                    ClickError::new("theorem range requires a valid span")
                         .with_unresolved_requirement(&ProofObligation::verification_condition(
                             guard,
                         )),
@@ -342,12 +342,12 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             );
         }
         // A range premise states two things, and the theorem's own proof
-        // assumed both: that `a..b` is a valid 32-bit byte extent, and that
+        // assumed both: that `a..b` is a valid 32-bit byte span, and that
         // those bytes are loadable. Applying it owes both, or a range that is
-        // vacuously loadable because its extent wrapped would hand the theorem
-        // the valid-extent fact it never established. The guards are spelled
+        // vacuously loadable because its span wrapped would hand the theorem
+        // the valid-span fact it never established. The guards are spelled
         // over the element count, which is the spelling a proof can write.
-        for guard in crate::kernel::stated_loadable_extent_guards(&lowered) {
+        for guard in crate::kernel::stated_loadable_span_guards(&lowered) {
             if listed_comparison_fact_is_available(&guard, available)
                 || matches!(normalize_proposition(&guard), NormalizedProposition::True)
             {
@@ -365,8 +365,8 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                         crate::surface::diagnostics::value_naming_tables(context.values);
                     format!(
                         "theorem `{}` requirement {} `{}` states a memory range, so applying it \
-                         needs that range to be a valid 32-bit byte extent here: `{}` is not an \
-                         available fact. A range's extent is `(end - start) * width` in 32-bit \
+                         needs that range to be a valid 32-bit byte span here: `{}` is not an \
+                         available fact. A range's span is `(end - start) * width` in 32-bit \
                          arithmetic, and without that bound it can wrap to fewer bytes than its \
                          element count names",
                         theorem.name(),
@@ -1023,6 +1023,23 @@ fn evaluate_native_theorem_argument(
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &BTreeSet<String>,
 ) -> Result<ProgramValue, String> {
+    evaluate_retained_theorem_argument(
+        argument,
+        context,
+        assumptions,
+        spec_definitions,
+        opaque_click_functions,
+    )
+    .map(crate::kernel::ExecutionValue::into_native)
+}
+
+fn evaluate_retained_theorem_argument(
+    argument: &ContractExpression,
+    context: &TheoremApplicationContext<'_>,
+    assumptions: &PureFactContext,
+    spec_definitions: SpecDefinitions<'_>,
+    opaque_click_functions: &BTreeSet<String>,
+) -> Result<crate::kernel::ExecutionValue, String> {
     let algebraic_values = contract_expression_referenced_names(argument)
         .into_iter()
         .filter_map(|name| {
@@ -1033,7 +1050,7 @@ fn evaluate_native_theorem_argument(
                 .map(|value| (name, value))
         })
         .collect();
-    evaluate_fixed_state_expression_through_kernel_with_algebraic_and_integer_values(
+    capture_fixed_state_retained_expression_with_guards(
         argument,
         assumptions,
         ContractEnvironment::new(context.values, context.array_refs)
@@ -1049,6 +1066,7 @@ fn evaluate_native_theorem_argument(
         spec_definitions,
         opaque_click_functions,
     )
+    .map(|(root, _)| crate::kernel::ExecutionValue::Shared(root))
 }
 
 pub(super) fn theorem_application_bindings(
@@ -1059,7 +1077,7 @@ pub(super) fn theorem_application_bindings(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<
     (
-        BTreeMap<String, ProgramValue>,
+        ProgramValueBindings,
         ClickArrayRefs,
         BTreeMap<String, SpecAlgebraicExpression>,
         PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
@@ -1067,7 +1085,7 @@ pub(super) fn theorem_application_bindings(
     String,
 > {
     let active_functions = BTreeSet::new();
-    let mut values = BTreeMap::new();
+    let mut values = ProgramValueBindings::new();
     let mut array_refs = BTreeMap::new();
     let mut algebraic_values = BTreeMap::new();
     // Callee parameters are substituted simultaneously.  Keep the caller's
@@ -1243,15 +1261,15 @@ pub(super) fn theorem_application_bindings(
         // parent (`parent_consistent(t, 0)`).
         if crate::surface::lowering::argument_is_null_pointer_constant(argument, parameter_type) {
             let pointer = ProgramValue::typed_pointer(
-                crate::kernel::Pointer::null(),
+                crate::kernel::Address::null(),
                 parameter_type.to_kernel_type(),
             );
             if let Some(element_type) = click_array_element_type(parameter_type) {
                 array_refs.insert(
                     parameter.name().to_string(),
                     ClickArrayRef {
-                        memory: context.post_state.memory().clone(),
-                        pointer: crate::kernel::Pointer::null(),
+                        point: context.post_state.program_point(),
+                        pointer: crate::kernel::Address::null(),
                         element_type,
                     },
                 );
@@ -1260,11 +1278,23 @@ pub(super) fn theorem_application_bindings(
             continue;
         }
         if parameter_is_click_array_ref(parameter) {
+            let algebraic_bindings = contract_expression_referenced_names(argument)
+                .into_iter()
+                .filter_map(|name| {
+                    context
+                        .algebraic_values
+                        .get(&name)
+                        .cloned()
+                        .map(|value| (name, value))
+                })
+                .collect();
             let (array_ref, pointer_value) = evaluate_fixed_state_array_ref_through_kernel(
                 argument,
                 assumptions,
                 ContractEnvironment::new(context.values, context.array_refs)
                     .with_parameters(context.parameters),
+                algebraic_bindings,
+                context.integer_values,
                 FixedStateFrame::new(
                     context.pre_state,
                     context.post_state,
@@ -1329,14 +1359,15 @@ pub(super) fn theorem_application_bindings(
             values.insert(parameter.name().to_string(), value);
             array_refs.insert(parameter.name().to_string(), array_ref);
         } else {
-            let value = evaluate_native_theorem_argument(
+            let value = RetainedProgramValue::from(evaluate_retained_theorem_argument(
                 argument,
                 context,
                 assumptions,
                 spec_definitions,
                 &active_functions,
-            )?;
-            if !program_value_matches_click_type(&value, parameter_type) {
+            )?);
+            let native = value.native_compat();
+            if !program_value_matches_click_type(native, parameter_type) {
                 let (naming_parameters, naming_arguments) =
                     crate::surface::diagnostics::value_naming_tables(context.values);
                 return Err(format!(
@@ -1345,13 +1376,13 @@ pub(super) fn theorem_application_bindings(
                     parameter.name(),
                     describe_interface_type(parameter_type),
                     crate::surface::diagnostics::describe_program_value(
-                        &value,
+                        native,
                         ParameterBinding::new(&naming_parameters, &naming_arguments)
                     ),
-                    crate::kernel::program_type_spelling(value.program_type())
+                    crate::kernel::program_type_spelling(native.program_type())
                 ));
             }
-            values.insert(parameter.name().to_string(), value);
+            values.insert_retained(parameter.name().to_string(), value);
         }
     }
     Ok((values, array_refs, algebraic_values, integer_values))
@@ -1368,6 +1399,12 @@ pub(super) fn theorem_application_pointer_element_widths(
         .iter()
         .zip(&application.arguments)
         .filter_map(|(parameter, argument)| {
+            // A numeric address is still a scalar argument. Importing its
+            // source pointer's stride would make scalar addition look like
+            // pointer arithmetic while lowering the instantiated clause.
+            if !parameter_is_click_array_ref(parameter) {
+                return None;
+            }
             let declared_width = parameter.struct_name().and_then(|name| {
                 if parameter
                     .interface_type()
@@ -1424,7 +1461,7 @@ pub(in crate::surface::proof) fn theorem_application_bound_array_memories(
     theorem: &TheoremDefinition,
     application: &TheoremApplication,
     array_refs: &ClickArrayRefs,
-) -> BTreeMap<String, SpecMemory> {
+) -> BTreeMap<String, SpecPoint> {
     theorem
         .parameters()
         .iter()
@@ -1439,7 +1476,7 @@ pub(in crate::surface::proof) fn theorem_application_bound_array_memories(
             let array_ref = array_refs.get(parameter.name())?;
             Some((
                 parameter.name().to_string(),
-                SpecMemory::Fixed(array_ref.memory.clone()),
+                SpecPoint::At(array_ref.point.clone()),
             ))
         })
         .collect()
@@ -1454,7 +1491,7 @@ fn pointer_element_width_for_argument(
     known: &BTreeMap<String, u32>,
 ) -> Option<u32> {
     match argument {
-        ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
+        ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
             known.get(name).copied()
         }
         ContractExpression::ProgramExpression(expression)
@@ -1783,7 +1820,7 @@ theorem nested_count(value: int32) {
         let theorem = &parsed.theorem_definitions()[0];
         let pre_state = ExecutionState::new().with_local("x", int32(7u32));
         let post_state = pre_state.clone().with_local("x", int32(9u32));
-        let values = BTreeMap::new();
+        let values = ProgramValueBindings::new();
         let arrays = BTreeMap::new();
         let algebraic = BTreeMap::new();
         let integers = PersistentBinderMap::default();
@@ -1936,7 +1973,7 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     // A side the comparison reads natively: a machine parameter or a literal.
     let parameter = |side: &ContractExpression| match side {
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) if machine.contains(name.as_str()) => Some(name.clone()),
@@ -2072,7 +2109,7 @@ pub(super) fn theorem_resource_argument_bindings(
             },
         )?;
         let Proposition::ResourceContains { parent, .. } = lowered else {
-            return Err("resource argument has unresolved extent requirements".into());
+            return Err("resource argument has unresolved span requirements".into());
         };
         bindings.insert(
             parameter.name().to_string(),

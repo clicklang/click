@@ -5,18 +5,18 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
     let _session = VerificationSession::enter();
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)
-            .map(|i| SharedPointerAddress::import(&Pointer::symbolic(Variable(1013000 + i))))
+            .map(|i| SharedAddress::import(&Address::symbolic(Variable(1013000 + i))))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let cell = Memory::global_pointer("shared-check-scaling");
-            let before = Memory::new().with_block("shared-check-scaling", 16);
+            let cell = SymbolicMemory::global_pointer("shared-check-scaling");
+            let before = SymbolicMemory::new().with_block("shared-check-scaling", 16);
             let after = before
                 .clone()
                 .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(1)));
             let make = |memory| {
-                let native = Pointer {
-                    block: PointerBlock::Concrete("shared-check-array".into()),
-                    offset: PointerOffsetTerm::Int32Scaled {
+                let native = Address {
+                    base: AddressBase::Concrete("shared-check-array".into()),
+                    offset: AddressOffset::Int32Scaled {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             MachineTerm::MemoryLoad(
@@ -28,12 +28,12 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
                         byte_width: 4,
                     },
                 };
-                let initial = SharedPointerAddress::import(&native);
+                let initial = SharedAddress::import(&native);
                 let mut offset = initial.node().offset.clone();
                 for _ in 0..size {
                     offset = O::Add([offset.clone(), offset]).into_shared().unwrap();
                 }
-                SharedPointerAddress::new(initial.node().block.clone(), offset)
+                SharedAddress::new(initial.node().base.clone(), offset)
             };
             let a = make(before);
             let b = make(after);

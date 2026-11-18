@@ -40,17 +40,23 @@ int32 run(void* p, void* q) {
     step();
     step();
     branch {
-        have count(ticket(p)) == 1;
-        unfold(ticket(p));
-        step(); solve();
-    } else {}
+        true => {
+            have count(ticket(p)) == 1;
+            unfold(ticket(p));
+            step(); solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step();
-        unfold(ticket(p));
-        have count(ticket(q)) == 1;
-        step(); solve();
-    } else {}
+        true => {
+            step();
+            unfold(ticket(p));
+            have count(ticket(q)) == 1;
+            step(); solve();
+        }
+        false => {}
+    }
     step();
     unfold(ticket(p));
     step();

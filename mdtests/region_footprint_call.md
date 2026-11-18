@@ -16,7 +16,10 @@ void beside_call(int *p, int *q, int *r) {
     requires separate(memory(*q), memory(*r));
     ensures *r == old(*r);
 } by {
-    step();
+    step() {
+        requires separate(memory(p[0..1]), memory(r[0..1])) by known();
+        requires separate(memory(q[0..1]), memory(r[0..1])) by known();
+    }
     have separate(statement(0).footprint, memory(*r)) by {
         normalize() using {
             separate(memory(*p), memory(*r));

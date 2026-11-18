@@ -176,7 +176,7 @@ An execution proof carries a C frontier. The execution vocabulary is:
 - `step()` for one simple deterministic transition;
 - `step_until(target)` for a forward prefix, up to a statement, region,
   loop, assignment, read, back edge, or `function.exit`, never splitting;
-- `branch ensuring { ... } then { ... } else { ... }` for the C `if` at
+- `branch ensuring { ... } { true => { ... } false => { ... } }` for the C `if` at
   the frontier and its single joined continuation; and
 - `loop { ... }` for the C loop exactly at the current frontier.
 

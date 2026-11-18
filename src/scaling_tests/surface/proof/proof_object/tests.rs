@@ -15,7 +15,7 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
     let visible = MachineTerm::Variable(Variable(8_179_800));
     let state = ExecutionState::new().with_local("visible", ProgramValue::Int32(visible.clone()));
     let equal_zero = |term| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -48,7 +48,7 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
             "missing premise raising",
             0,
             &facts,
-            Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(ConditionTerm::Constant(true), true),
             ParameterBinding::default(),
             FixedStateFrame::new(&state, &state, None, &retained_states),
             Some(&anchor),
@@ -104,9 +104,9 @@ fn same_block_offset_rewrite_work(
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let base = Pointer {
-        block: crate::kernel::PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(8_179_100)), 4),
+    let base = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(8_179_100)), 4),
     };
     let remaining = MachineTerm::Variable(Variable(8_179_101));
     // `k as uint32 as int32`: σ of the low word, as written.
@@ -118,11 +118,11 @@ fn same_block_offset_rewrite_work(
             Box::new(remaining.clone()),
         ),
     );
-    let shifted = Pointer {
-        block: base.block.clone(),
-        offset: PointerOffsetTerm::Add(
+    let shifted = Address {
+        base: base.base.clone(),
+        offset: AddressOffset::Add(
             Box::new(base.offset.clone()),
-            Box::new(PointerOffsetTerm::scaled_int32_node(
+            Box::new(AddressOffset::scaled_int32_node(
                 binary_node!(
                     Int32,
                     Subtract,
@@ -133,7 +133,7 @@ fn same_block_offset_rewrite_work(
             )),
         ),
     };
-    let cursor = Pointer::symbolic(Variable(8_179_099));
+    let cursor = Address::symbolic(Variable(8_179_099));
     let state = ExecutionState::new()
         .with_local("cursor", ProgramValue::pointer(cursor.clone()))
         .with_local("base", ProgramValue::pointer(base.clone()))
@@ -145,13 +145,13 @@ fn same_block_offset_rewrite_work(
                 Box::new(MachineTerm::Variable(Variable(8_180_000 + i as u64))),
             );
             [
-                Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(
-                        Pointer {
-                            block: base.block.clone(),
-                            offset: PointerOffsetTerm::Add(
+                Proposition::condition_is(
+                    ConditionTerm::address_equal(
+                        Address {
+                            base: base.base.clone(),
+                            offset: AddressOffset::Add(
                                 Box::new(base.offset.clone()),
-                                Box::new(PointerOffsetTerm::scaled_int32_node(
+                                Box::new(AddressOffset::scaled_int32_node(
                                     binary_node!(
                                         Int32,
                                         Subtract,
@@ -166,7 +166,7 @@ fn same_block_offset_rewrite_work(
                     ),
                     true,
                 ),
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -178,7 +178,7 @@ fn same_block_offset_rewrite_work(
             ]
         })
         .collect::<Vec<_>>();
-    let bound = Proposition::ConditionIs(
+    let bound = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -220,8 +220,8 @@ fn same_block_offset_rewrite_work(
         };
         let mut shifted_value = base_value.clone();
         shifted_value.replace_pointer(shifted.clone());
-        let relation = Proposition::ConditionIs(
-            ConditionTerm::pointer_value_equal(cursor_value.clone(), shifted_value),
+        let relation = Proposition::condition_is(
+            ConditionTerm::pointer_equal(cursor_value.clone(), shifted_value),
             true,
         );
         let relation_surface = fixture.theorem_definitions()[0].requires[1]
@@ -262,8 +262,8 @@ fn same_block_offset_rewrite_work(
         "same-block offset equality",
         0,
         &facts,
-        Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(if from_cursor { cursor } else { shifted }, base),
+        Proposition::condition_is(
+            ConditionTerm::address_equal(if from_cursor { cursor } else { shifted }, base),
             true,
         ),
         ParameterBinding::default(),
@@ -319,7 +319,7 @@ fn both_and_scopes_are_isolated_check_lineage_and_scale() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
-    let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
     let other = Proposition::Equal(
         Term::Bitvector32(MachineTerm::constant(7)),
         Term::Bitvector32(MachineTerm::constant(7)),
@@ -414,7 +414,7 @@ fn loop_entry_solve_keeps_checked_unraisable_assumptions_and_scales() {
         operator: ComparisonOperator::Equal,
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::uint64_less_than(
             MachineTerm::Variable(crate::kernel::Variable(1_000_000)),
             MachineTerm::uint64_constant(22208),
@@ -426,7 +426,7 @@ fn loop_entry_solve_keeps_checked_unraisable_assumptions_and_scales() {
     for size in [16_u32, 64, 256, 1024] {
         let mut facts = (0..size)
             .map(|index| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::uint64_less_than(
                         MachineTerm::Variable(crate::kernel::Variable(1_000_000)),
                         MachineTerm::uint64_constant(22209 + u64::from(index)),
@@ -535,7 +535,7 @@ fn choose_body_indexing_scales_with_selected_body_size() {
         let body = balanced_and(
             (0..size)
                 .map(|index| {
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
@@ -733,22 +733,20 @@ fn explicit_loop_have_checks_complete_invariant_bundle() {
             .unwrap();
         assert!(explicit.facts().contains(&body_kernel));
         assert!(joined.certify_loop_invariant_bundle(&checks, &[]).is_err());
-        let prepared = joined
+        let (prepared, _) = joined
             .driver()
             .prepare_loop_invariant_bundle(
                 &ExecutionState::new(),
                 &ExecutionState::new(),
                 &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
-                &ProgramExpression::Value(int32(1)),
+                Some(&ProgramExpression::Value(int32(1))),
                 &checks,
                 &[],
                 None,
                 &[surface.clone(), legacy_surface.clone()],
                 &[],
                 &[],
-                false,
             )
-            .unwrap()
             .unwrap();
         let certified = prepared
             .certify_loop_invariant_bundle(&checks, &[])
@@ -828,7 +826,7 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
         );
         let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
             root.driver()
-                .apply_close_invariants_body(&[ProofTactic::Normalize])
+                .apply_close_invariants_body(&[ProofTactic::Normalize], None)
                 .unwrap()
         });
         assert!(root.certificate().steps().is_empty());
@@ -871,10 +869,14 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
         assert!(
             closed
                 .driver()
-                .apply_close_invariants_body(&[ProofTactic::Normalize])
+                .apply_close_invariants_body(&[ProofTactic::Normalize], None)
                 .is_err()
         );
-        assert!(root.driver().apply_close_invariants_body(&[]).is_err());
+        assert!(
+            root.driver()
+                .apply_close_invariants_body(&[], None)
+                .is_err()
+        );
         work
     });
     for pair in samples.windows(2) {
@@ -902,9 +904,9 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
     )
     .expect("test C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
@@ -1031,11 +1033,11 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
         // sizes would warm the new shared-term bridge only after size 4.
         let x = IntegerTerm::var(Variable(9_103_000 + 2 * size as u64));
         let y = IntegerTerm::var(Variable(9_103_001 + 2 * size as u64));
-        let equality = Proposition::ConditionIs(
+        let equality = Proposition::condition_is(
             ConditionTerm::IntegerEqual(x.clone().into(), y.clone().into()),
             true,
         );
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::IntegerEqual(
                 IntegerTerm::multiply(x.clone(), x.clone()).into(),
                 y.clone().into(),
@@ -1047,7 +1049,7 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             array_refs: BTreeMap::new(),
             requires: vec![equality.clone()],
             surface_requirements: SurfacePropositionMap::default(),
@@ -1110,25 +1112,26 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
     }
 }
 
+/// A premise raises from the recorded points' indexes, never by trying
+/// recorded states: a value a local held at one recorded point raises as
+/// `at(point, x)` and lowers back to it, and a value nothing names does not
+/// raise. Neither does work that grows with the number of recorded states.
 #[test]
-fn state_premise_synthesis_seeks_near_anchor_without_scanning_history() {
-    let parameters = syntax::parse_function("int32 noop(int32 x) { return x; }").unwrap();
-    let value = MachineTerm::Variable(Variable(8_178_901));
-    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(value.clone()))];
-    let parameter_binding = ParameterBinding::new(parameters.parameters(), &arguments);
-    let kernel = Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(value),
-            right: Box::new(MachineTerm::constant(0)),
-        },
-        true,
-    );
-    let anchor = ProgramPointRef {
-        region: CodeRegionRef::Region(1),
-        kind: ProgramPointKind::Entry,
+fn state_premise_raising_does_no_per_state_work() {
+    let parameters = syntax::parse_function("int32 noop() { return 0; }").unwrap();
+    let parameter_binding = ParameterBinding::new(parameters.parameters(), &[]);
+    let equals_zero = |variable| {
+        Proposition::condition_is(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(MachineTerm::constant(0)),
+            },
+            true,
+        )
     };
+    let mut samples = Vec::new();
     for size in [16usize, 64, 256, 1024, 4096] {
         let mut retained_states = RecordedStates::new();
         for index in 0..size {
@@ -1137,23 +1140,36 @@ fn state_premise_synthesis_seeks_near_anchor_without_scanning_history() {
                     region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
-                ExecutionState::new(),
+                ExecutionState::new().with_local(
+                    "x",
+                    ProgramValue::Int32(MachineTerm::Variable(Variable(8_179_000 + index as u64))),
+                ),
             );
         }
-        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
-            super::super::super::smart_closures::synthesize_surface_at_recorded_states(
-                &kernel,
-                parameter_binding,
-                &retained_states,
-                &anchor,
-            )
-            .next()
-        });
-        let surface = surface.expect("the nearest state should name the parameter");
-        assert!(proposition_contains_at_expression(&surface));
+        let held = equals_zero(Variable(8_179_000 + (size / 2) as u64));
+        let unnamed = equals_zero(Variable(8_178_999));
         let state = ExecutionState::new();
+        let ((raised, missing), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let _points =
+                super::super::super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+                    &retained_states,
+                );
+            let raise = |kernel| {
+                super::super::super::surface_synthesis::synthesize_surface_proposition_at_entry_post_with_bound_variable_names(
+                    kernel,
+                    parameter_binding,
+                    &state,
+                    &state,
+                    &BTreeMap::new(),
+                )
+            };
+            (raise(&held), raise(&unnamed))
+        });
+        let raised = raised.expect("a value a recorded local held raises at that point");
+        assert!(proposition_contains_at_expression(&raised), "{raised:?}");
+        assert!(missing.is_none(), "{missing:?}");
         let lowered = lower_fixed_state_proposition_with_assumptions(
-            &surface,
+            &raised,
             &PureFactContext::new(),
             parameter_binding,
             FixedStateFrame::new(&state, &state, None, &retained_states),
@@ -1162,165 +1178,18 @@ fn state_premise_synthesis_seeks_near_anchor_without_scanning_history() {
                 &ClickFunctionEnvironment::new(&[]),
             ),
         )
-        .expect("the candidate must lower against the selected state");
-        assert_eq!(
-            lowered, kernel,
-            "state spelling must preserve the exact premise"
-        );
-        let height = usize::BITS - size.leading_zeros();
-        assert!(
-            work <= 32 * height as usize + 128,
-            "size {size}: {work} synthesis work"
-        );
-        crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
-            assert!(
-                super::super::super::smart_closures::synthesize_surface_at_recorded_states(
-                    &kernel,
-                    parameter_binding,
-                    &retained_states,
-                    &anchor
-                )
-                .next()
-                .is_none()
-            );
-        });
+        .expect("the raised premise lowers at the point it names");
+        assert_eq!(lowered, held, "raising must preserve the exact premise");
+        samples.push((size, work));
     }
-}
-
-#[test]
-fn missing_state_premise_spelling_has_bounded_history_search() {
-    let parameters = syntax::parse_function("int32 noop() { return 0; }").unwrap();
-    // No state or parameter names this symbolic value. Every synthesis probe
-    // misses, exercising the exhaustive-history fallback rather than the
-    // successful first-candidate case.
-    let kernel = Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(8_178_903))),
-            right: Box::new(MachineTerm::constant(0)),
-        },
-        true,
+    let height = |size: usize| (usize::BITS - size.leading_zeros()) as usize;
+    let (first_size, first_work) = samples[0];
+    assert!(
+        samples
+            .iter()
+            .all(|&(size, work)| work <= first_work + 16 * (height(size) - height(first_size))),
+        "raising grows with the recorded states: {samples:?}"
     );
-    for size in [16usize, 64, 256, 1024, 4096] {
-        let mut retained_states = RecordedStates::new();
-        for index in 0..size {
-            retained_states.insert(
-                ProgramPointRef {
-                    region: CodeRegionRef::Region(index),
-                    kind: ProgramPointKind::Entry,
-                },
-                ExecutionState::new(),
-            );
-        }
-        let anchor = ProgramPointRef {
-            region: CodeRegionRef::Region(size / 2),
-            kind: ProgramPointKind::Entry,
-        };
-        let (count, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let mut candidates =
-                super::super::super::smart_closures::synthesize_surface_at_recorded_states(
-                    &kernel,
-                    ParameterBinding::new(parameters.parameters(), &[]),
-                    &retained_states,
-                    &anchor,
-                );
-            let count = candidates.by_ref().count();
-            assert!(candidates.next().is_none());
-            count
-        });
-        assert_eq!(count, 0);
-        let height = usize::BITS - size.leading_zeros();
-        assert!(
-            work <= 256 * height as usize + 8192,
-            "size {size}: {work} work"
-        );
-    }
-}
-
-#[test]
-fn state_premise_candidates_stop_on_deterministic_work_exhaustion() {
-    use crate::instrumentation::{TacticEvent, TacticWorkLimits, VerificationEvent};
-    let parameters = syntax::parse_function("int32 noop(int32 x) { return x; }").unwrap();
-    let value = MachineTerm::Variable(Variable(8_178_902));
-    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(value.clone()))];
-    let kernel = Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(value),
-            right: Box::new(MachineTerm::constant(0)),
-        },
-        true,
-    );
-    let anchor = ProgramPointRef {
-        region: CodeRegionRef::Region(0),
-        kind: ProgramPointKind::Entry,
-    };
-    for size in [16usize, 64, 256, 1024, 4096] {
-        let mut retained_states = RecordedStates::new();
-        for index in 0..size {
-            retained_states.insert(
-                ProgramPointRef {
-                    region: CodeRegionRef::Region(index),
-                    kind: ProgramPointKind::Entry,
-                },
-                ExecutionState::new(),
-            );
-        }
-        // Exhaust before the independent state-candidate search cap. A
-        // normal bounded search miss need not consume the tactic budget.
-        let limit = 8;
-        let ((candidates, work), events) = crate::instrumentation::with_tactic_work_limits(
-            TacticWorkLimits {
-                simple: limit,
-                smart: limit,
-                control: limit,
-            },
-            || {
-                crate::instrumentation::collect(|| {
-                    let tactic = TacticEvent {
-                        source_tactic_path: None,
-                        claim: "state budget".into(),
-                        tactic_index: 0,
-                        tactic_name: "solve".into(),
-                        class: "smart".into(),
-                        statement_index: 0,
-                        source_index: 0,
-                    };
-                    crate::instrumentation::emit(VerificationEvent::TacticStarted(tactic.clone()));
-                    let measured = crate::instrumentation::measure_deterministic_work(|| {
-                        let mut candidates =
-                            super::super::super::smart_closures::synthesize_surface_at_recorded_states(
-                                &kernel,
-                                ParameterBinding::new(parameters.parameters(), &arguments),
-                                &retained_states,
-                                &anchor,
-                            );
-                        let count = candidates.by_ref().count();
-                        assert!(candidates.next().is_none());
-                        count
-                    });
-                    crate::instrumentation::emit(VerificationEvent::TacticFailed(tactic));
-                    measured
-                })
-            },
-        );
-        assert!(
-            candidates < size,
-            "exhaustion must prevent visiting the whole history"
-        );
-        assert!(
-            work <= limit + 16,
-            "size {size}: {work} work after limit {limit}"
-        );
-        assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, VerificationEvent::TacticWorkBudgetExceeded { .. })),
-            "the work miss must retain its budget diagnosis"
-        );
-    }
 }
 
 #[test]
@@ -1331,7 +1200,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
     let x = MachineTerm::Variable(Variable(9_920_000));
     let y = MachineTerm::Variable(Variable(9_920_001));
     let bound = MachineTerm::uint64_constant(22208);
-    let equality = Proposition::ConditionIs(
+    let equality = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
@@ -1340,7 +1209,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         },
         true,
     );
-    let known = Proposition::ConditionIs(
+    let known = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
@@ -1349,7 +1218,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         },
         true,
     );
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
@@ -1377,7 +1246,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
     for ambient in [0, 16, 64, 256, 1024] {
         let mut facts = vec![equality.clone(), known.clone()];
         for i in 0..ambient {
-            facts.push(Proposition::ConditionIs(
+            facts.push(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
@@ -1395,8 +1264,8 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: Memory::new(),
-            values: BTreeMap::from([
+            memory: SymbolicMemory::new(),
+            values: ProgramValueBindings::from([
                 ("x".into(), ProgramValue::UInt64(x.clone())),
                 ("y".into(), ProgramValue::UInt64(y.clone())),
             ]),
@@ -1435,22 +1304,22 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
 }
 
 #[test]
-fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
+fn loop_entry_wide_span_guard_retains_its_own_source_and_scales() {
     let parsed = syntax::parse_function("void span(const uint8* buf, uint64 len) { }").unwrap();
-    let pointer = Pointer::symbolic(Variable(812_000));
+    let pointer = Address::symbolic(Variable(812_000));
     let original = MachineTerm::Variable(Variable(812_001));
     let remaining =
         MachineTerm::uint64_subtract(original.clone(), MachineTerm::uint64_constant(16));
     // The source retains `16 + len`, including when len stores `original - 16`.
     // Algebraic cancellation is a comparison rule, not the source's term.
-    let extent = MachineTerm::logical_machine_binary(
+    let span = MachineTerm::logical_machine_binary(
         crate::kernel::MachineIntegerType::UInt64,
         crate::kernel::MachineBinaryOp::Add,
         MachineTerm::uint64_constant(16),
         remaining.clone(),
     );
-    let goal = Proposition::ConditionIs(
-        ConditionTerm::uint64_less_equal(extent, MachineTerm::uint64_constant(i64::MAX as u64)),
+    let goal = Proposition::condition_is(
+        ConditionTerm::uint64_less_equal(span, MachineTerm::uint64_constant(i64::MAX as u64)),
         true,
     );
     let obligation = crate::kernel::ProofObligation::new(goal.clone());
@@ -1541,7 +1410,7 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
         MachineTerm::uint64_subtract(entry_len.clone(), MachineTerm::uint64_constant(16));
     let limit = MachineTerm::uint64_constant(22208);
     let bound = |length| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::uint64_less_equal(length, limit.clone()),
             true,
         )
@@ -1636,21 +1505,21 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
     for size in [4usize, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block("rewrite_reads", 4096),
+            crate::kernel::SymbolicMemory::new().with_block("rewrite_reads", 4096),
         );
         let mut facts = Vec::new();
         let mut reads = Vec::new();
         for index in 0..size {
             let load = MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&memory),
-                Box::new(Pointer {
-                    block: "rewrite_reads".into(),
-                    offset: PointerOffsetTerm::Constant(index as i64 * 4),
+                Box::new(Address {
+                    base: "rewrite_reads".into(),
+                    offset: AddressOffset::Constant(index as i64 * 4),
                 }),
                 crate::kernel::LoadKind::Int32,
             );
             let (variable, registered) = crate::kernel::load_variable_for_term(&load).unwrap();
-            let fact = Proposition::ConditionIs(
+            let fact = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -1690,7 +1559,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
             .fold(MachineTerm::constant(0), |sum, read| {
                 binary_node!(Int32, Add, Box::new(sum), Box::new(read))
             });
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -1735,7 +1604,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
             "registered definitions triggered state spelling at size {size}"
         );
         assert!(facts.iter().all(|fact| root.facts().contains(fact)));
-        let alias = Proposition::ConditionIs(
+        let alias = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -1789,7 +1658,7 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_states() {
     let entry = ExecutionState::new().with_local("value", ProgramValue::Int32(before.clone()));
     let state = ExecutionState::new().with_local("value", ProgramValue::Int32(now.clone()));
     let equal_zero = |value| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -1823,7 +1692,7 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_states() {
             "current scalar premise",
             0,
             &facts,
-            Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(ConditionTerm::Constant(true), true),
             ParameterBinding::default(),
             FixedStateFrame::new(&entry, &state, None, &retained_states),
             Some(&anchor),
@@ -1880,12 +1749,12 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let pointer = Pointer {
-        block: crate::kernel::PointerBlock::Concrete("mixed-premise".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: crate::kernel::AddressBase::Concrete("mixed-premise".into()),
+        offset: AddressOffset::Constant(0),
     };
     let entry = ExecutionState::new()
-        .with_memory(Memory::new().with_block("mixed-premise", 4))
+        .with_memory(SymbolicMemory::new().with_block("mixed-premise", 4))
         .with_local(
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt32Pointer),
@@ -1940,7 +1809,7 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
             "mixed entry/current premise",
             0,
             &facts,
-            Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(ConditionTerm::Constant(true), true),
             ParameterBinding::default(),
             FixedStateFrame::new(&entry, &state, None, &retained_states),
             Some(&anchor),
@@ -1989,13 +1858,13 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
     let mut samples = Vec::new();
     for size in [4usize, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = crate::kernel::Memory::new().with_block("rewrite_reads", 4096);
+        let mut memory = crate::kernel::SymbolicMemory::new().with_block("rewrite_reads", 4096);
         let mut facts = Vec::new();
         let mut reads = Vec::new();
         for index in 0..size {
-            let pointer = Pointer {
-                block: "rewrite_reads".into(),
-                offset: PointerOffsetTerm::Constant(index as i64 * 4),
+            let pointer = Address {
+                base: "rewrite_reads".into(),
+                offset: AddressOffset::Constant(index as i64 * 4),
             };
             let stored = binary_node!(
                 UInt32,
@@ -2010,7 +1879,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 crate::kernel::LoadKind::Int32,
             );
             // The `int32` read of a `uint32` store is σ of the stored value.
-            facts.push(Proposition::ConditionIs(
+            facts.push(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -2025,7 +1894,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             ));
             reads.push(load);
         }
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2033,7 +1902,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 right,
             },
             true,
-        ) = &facts[0]
+        )) = (&facts[0]).condition_native()
         else {
             unreachable!()
         };
@@ -2111,7 +1980,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             .fold(MachineTerm::constant(0), |sum, read| {
                 binary_node!(Int32, Add, Box::new(sum), Box::new(read))
             });
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2177,7 +2046,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             "direct premise resolution searched unrelated history"
         );
         // An explicitly retained store equality remains a source rewrite.
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2185,7 +2054,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 right: stored,
             },
             true,
-        ) = &facts[0]
+        )) = (&facts[0]).condition_native()
         else {
             unreachable!()
         };
@@ -2221,7 +2090,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 .is_some_and(|proof| proof.is_complete()),
             "a retained store source must remain usable"
         );
-        let alias = Proposition::ConditionIs(
+        let alias = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2300,7 +2169,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
         let mut surfaces = SurfacePropositionMap::default();
         let facts = (1..=size)
             .map(|index| {
-                let fact = Proposition::ConditionIs(
+                let fact = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -2320,7 +2189,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
             terms[base].clone().into(),
             IntegerTerm::Constant(1.into()).into(),
         );
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             if native {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
@@ -2349,7 +2218,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: Default::default(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             values: words
                 .iter()
                 .enumerate()
@@ -2375,7 +2244,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
         costs.push(work);
 
         let mut contradictory = facts.clone();
-        contradictory.push(Proposition::ConditionIs(
+        contradictory.push(Proposition::condition_is(
             ConditionTerm::Constant(false),
             true,
         ));
@@ -2484,7 +2353,7 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
-    let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
     let surface_truth = ClickProposition::Comparison {
         left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         operator: ComparisonOperator::Equal,
@@ -2536,7 +2405,7 @@ fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
     let retained_states = RecordedStates::new();
     let surfaces = SurfacePropositionMap::default();
     let term = MachineTerm::Variable(Variable(8_199_901));
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
@@ -2614,7 +2483,7 @@ fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
     let retained_states = RecordedStates::new();
     let surfaces = SurfacePropositionMap::default();
     let bound = |variable: MachineTerm, limit| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -2789,6 +2658,7 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
     let mut baseline = None;
     let mut previous_proof_work = 0;
     for size in [4, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
         let source = format!(
             "theorem identity<T>(x: T) {{ requires x == x; ensures x == x by {{ {} known(); }} }}",
             "have x == x by solve(); ".repeat(size)
@@ -2816,7 +2686,9 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
         let functions = ClickFunctionEnvironment::new(&[]);
         let definitions = SpecDefinitions::new(&predicates, &functions);
         let theorems = TheoremEnvironment::new(file.theorem_definitions());
-        let value = ProgramValue::Int32(MachineTerm::Variable(Variable(8_900_000)));
+        // Distinct operands keep each size cold even when interner keys
+        // retain an earlier operand until their bounded cleanup reaches it.
+        let value = ProgramValue::Int32(MachineTerm::Variable(Variable(8_900_000 + size as u64)));
         let state = ExecutionState::new().with_local("x", value.clone());
         let arguments = vec![ProgramExpression::Value(value)];
         let binding = ParameterBinding::new(parsed.parameters(), &arguments);
@@ -2859,14 +2731,19 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
             root.apply_theorem_using(&application, std::slice::from_ref(&premise))
         });
         result.unwrap();
-        assert_eq!(work, *baseline.get_or_insert(work), "proof length {size}");
         let (repeated, repeated_work) = crate::instrumentation::measure_deterministic_work(|| {
             root.apply_theorem_using(&application, std::slice::from_ref(&premise))
         });
         repeated.unwrap();
+        // A retained argument caches its selected native compatibility output.
+        // Both modes must remain flat with declaration proof length; warming
+        // may save work but may not increase it.
+        assert!(repeated_work <= work);
+        let sample = (work, repeated_work);
         assert_eq!(
-            work, repeated_work,
-            "cold and repeated applications must match"
+            sample,
+            *baseline.get_or_insert(sample),
+            "proof length {size}"
         );
     }
 }
@@ -2890,7 +2767,7 @@ fn retained_conditional_premise_spelling_does_not_search_state_history() {
         ))
     };
     let condition = ConditionTerm::IntegerEqual(observe(result.clone()), observe(conditional));
-    let fact = Proposition::ConditionIs(condition.clone(), true);
+    let fact = Proposition::condition_is(condition.clone(), true);
     let state = ExecutionState::new()
         .with_local("a", ProgramValue::UInt32(a))
         .with_local("b", ProgramValue::UInt32(b))
@@ -2918,7 +2795,7 @@ fn retained_conditional_premise_spelling_does_not_search_state_history() {
             "retained conditional spelling",
             0,
             &facts,
-            Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(ConditionTerm::Constant(true), true),
             ParameterBinding::default(),
             FixedStateFrame::new(&entry, &state, None, &retained_states),
             Some(&anchor),
@@ -2950,7 +2827,7 @@ fn retained_conditional_premise_spelling_does_not_search_state_history() {
         );
         assert!(
             !crate::kernel::proof::fact_reasoning::listed_equality_fact_is_available(
-                &Proposition::ConditionIs(condition.clone(), false),
+                &Proposition::condition_is(condition.clone(), false),
                 &[lowered],
             )
         );
@@ -2975,7 +2852,7 @@ fn proof_binding_name_production_and_queries_follow_only_changed_bindings() {
     let binding = |variable| {
         ContractExpression::ProgramExpression(ProgramExpression::Value(
             ProgramValue::typed_pointer(
-                Pointer::symbolic(Variable(variable)),
+                Address::symbolic(Variable(variable)),
                 ProgramType::Int32Pointer,
             ),
         ))

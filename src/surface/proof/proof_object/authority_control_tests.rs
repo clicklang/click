@@ -120,7 +120,7 @@ fn opening_control_retains_loaded_pointer_facts() {
         .join()
         .unwrap();
     let opened = named
-        .begin_open(open.resource.clone(), 3, None)
+        .begin_open(open.resource.clone(), 3)
         .expect("recording open must retain its constructed pointer-identity facts");
     let introduced = opened
         .body()
@@ -128,10 +128,7 @@ fn opening_control_retains_loaded_pointer_facts() {
         .introduced_since(named.facts())
         .unwrap();
     assert!(
-        introduced.iter().any(|fact| matches!(
-            fact,
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(..), true)
-        )),
+        introduced.iter().any(|fact| matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(..), _))))),
         "open must retain the newly constructed pointer identity: {introduced:?}"
     );
     assert!(root.certificate().steps().is_empty());

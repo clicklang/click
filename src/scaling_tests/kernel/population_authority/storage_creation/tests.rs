@@ -11,12 +11,12 @@ fn creation_lookup_and_call_transport_ignore_unrelated_events() {
     for size in sizes {
         let mut events = CreationEvents::new();
         for id in 0..size {
-            events = events.created(PointerBlock::Heap(id));
-            events = events.member_created(&PointerBlock::Heap(id), "reference");
-            events = events.pending_creation(PointerBlock::Symbolic(Variable(id)));
+            events = events.created(AddressBase::Heap(id));
+            events = events.member_created(&AddressBase::Heap(id), "reference");
+            events = events.pending_creation(AddressBase::Symbolic(Variable(id)));
         }
-        let selected = PointerBlock::Heap(size / 2);
-        let pending_block = PointerBlock::Symbolic(Variable(10_000 + size));
+        let selected = AddressBase::Heap(size / 2);
+        let pending_block = AddressBase::Symbolic(Variable(10_000 + size));
         let ((), measured) = crate::persistent::measure_persistent_work(|| {
             assert!(events.created_here(&selected));
             assert_eq!(
@@ -30,12 +30,12 @@ fn creation_lookup_and_call_transport_ignore_unrelated_events() {
             let started = events.pending_creation(pending_block.clone());
             let resolved = started
                 .enter_call()
-                .resolve_pending(&pending_block, Some(PointerBlock::Heap(size)));
-            assert!(!resolved.created_here(&PointerBlock::Heap(size)));
+                .resolve_pending(&pending_block, Some(AddressBase::Heap(size)));
+            assert!(!resolved.created_here(&AddressBase::Heap(size)));
             assert!(
                 resolved
                     .return_to(&events)
-                    .created_here(&PointerBlock::Heap(size))
+                    .created_here(&AddressBase::Heap(size))
             );
         });
         assert!(measured > 0);
@@ -46,7 +46,7 @@ fn creation_lookup_and_call_transport_ignore_unrelated_events() {
 
 #[test]
 fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let entry = CreationEvents::new()
         .import_observable_contract_population(&description, 0)
         .unwrap();
@@ -61,7 +61,7 @@ fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
         let (after, work) = crate::persistent::measure_persistent_work(|| {
             entry
                 .checked_member_exchange_quantity(
-                    &PointerBlock::ExternalArgument,
+                    &AddressBase::ExternalArgument,
                     &description,
                     true,
                     &MachineTerm::constant(amount),
@@ -85,7 +85,7 @@ fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
 
 #[test]
 fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
-    let block = PointerBlock::ExternalArgument;
+    let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
     let quantity = MachineTerm::Variable(Variable(940_150));
     let assumptions = PureFactContext::new()
@@ -275,7 +275,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
 #[test]
 fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
     let quantity = MachineTerm::Variable(Variable(940_131));
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::signed_greater_equal(quantity.clone(), MachineTerm::constant(0)),
         true,
@@ -321,7 +321,7 @@ fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
                 let held = if born_batch {
                     authority
                         .checked_member_exchange_quantity(
-                            &PointerBlock::ExternalArgument,
+                            &AddressBase::ExternalArgument,
                             &description,
                             true,
                             &quantity,
@@ -370,9 +370,9 @@ fn opaque_population_lookup_and_exchange_ignore_unrelated_imports() {
             ResourceDescription::new(
                 "reference".into(),
                 vec![
-                    ProgramValue::pointer(Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: PointerOffsetTerm::Variable(Variable(950_000 + id)),
+                    ProgramValue::pointer(Address {
+                        base: AddressBase::ExternalArgument,
+                        offset: AddressOffset::Variable(Variable(950_000 + id)),
                     })
                     .into(),
                 ]
@@ -398,7 +398,7 @@ fn opaque_population_lookup_and_exchange_ignore_unrelated_imports() {
             assert!(events.owns_population_authority(&selected));
             assert_eq!(events.observe_symbolic(&selected).unwrap().delta, 0);
             let (spent, _) = events
-                .checked_member_exchange(&PointerBlock::ExternalArgument, &selected, false)
+                .checked_member_exchange(&AddressBase::ExternalArgument, &selected, false)
                 .unwrap();
             assert_eq!(spent.observe_symbolic(&selected).unwrap().delta, -1);
             assert_eq!(spent.observe_symbolic(&neighbor).unwrap().delta, 0);
@@ -425,9 +425,9 @@ fn opaque_transfer_and_finish_index_scale_with_selected_population() {
             ResourceDescription::new(
                 "reference".into(),
                 vec![
-                    ProgramValue::pointer(Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: PointerOffsetTerm::Variable(Variable(970_000 + id)),
+                    ProgramValue::pointer(Address {
+                        base: AddressBase::ExternalArgument,
+                        offset: AddressOffset::Variable(Variable(970_000 + id)),
                     })
                     .into(),
                 ]
@@ -474,14 +474,14 @@ fn checked_empty_lookup_scales_over_unrelated_retired_populations() {
     for size in [64_u64, 256, 1024] {
         let mut events = CreationEvents::new();
         for id in 0..size {
-            let block = PointerBlock::Heap(990_000 + id);
+            let block = AddressBase::Heap(990_000 + id);
             let description = member_description(block.clone());
             events = events.created(block.clone());
             events = events.checked_establish(&block, &description).unwrap().0;
             events = events.checked_retire(&block, &description).unwrap().0;
             events = events.retired(&block).unwrap();
         }
-        let selected = member_description(PointerBlock::Heap(990_000 + size / 2));
+        let selected = member_description(AddressBase::Heap(990_000 + size / 2));
         let ((), measured) = crate::persistent::measure_persistent_work(|| {
             assert!(events.checked_empty_population(&selected));
         });
@@ -492,8 +492,10 @@ fn checked_empty_lookup_scales_over_unrelated_retired_populations() {
 
 #[test]
 fn count_lookup_does_not_scan_unrelated_authority_heads() {
-    let description = member_description(PointerBlock::ExternalArgument);
-    let [AlgebraicValue::Program(ProgramValue::Pointer(anchor))] = description.arguments() else {
+    let description = member_description(AddressBase::ExternalArgument);
+    let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(anchor))]) =
+        (description.arguments()).fixed_values::<1>()
+    else {
         panic!("pointer anchor")
     };
     let count = SpecExpression::CountedResourceCount {
@@ -518,7 +520,7 @@ fn count_lookup_does_not_scan_unrelated_authority_heads() {
         ));
         for index in 0..size {
             let other =
-                member_description(PointerBlock::Symbolic(Variable(9_860_000 + index as u64)));
+                member_description(AddressBase::Symbolic(Variable(9_860_000 + index as u64)));
             resources = resources
                 .unchecked_with_fact(ResourceFact::own(Resource::PopulationAuthority(other)));
         }
@@ -551,7 +553,7 @@ fn count_lookup_does_not_scan_unrelated_authority_heads() {
 
 #[test]
 fn exact_symbolic_births_use_numeric_custody_and_scale() {
-    let block = PointerBlock::ExternalArgument;
+    let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
     let quantity = MachineTerm::Variable(Variable(990_001));
     let samples = [16, 64, 256].map(|size| {
@@ -653,7 +655,7 @@ fn exact_symbolic_births_use_numeric_custody_and_scale() {
 
 #[test]
 fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated_state() {
-    let block = PointerBlock::ExternalArgument;
+    let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
     let first_quantity = MachineTerm::Variable(Variable(992_001));
     let second_quantity = MachineTerm::Variable(Variable(992_002));
@@ -878,9 +880,9 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
 
 #[test]
 fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
-    let anchor = ProgramValue::pointer(Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let anchor = ProgramValue::pointer(Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
@@ -978,9 +980,9 @@ fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
 #[test]
 fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports() {
     for wildcard in [false, true] {
-        let anchor = ProgramValue::pointer(Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let anchor = ProgramValue::pointer(Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         });
         let schema = ResourceFieldSchema::new(vec![(
             "serial".into(),
@@ -1025,7 +1027,7 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
             }
             let entry = entry.import_observable_named_authority(&scope).unwrap();
             let count = entry.observe_symbolic(&scope).unwrap().entry_count;
-            let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+            let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
                 ConditionTerm::signed_add_overflows(count.clone(), MachineTerm::constant(1)),
                 false,
             ));
@@ -1112,9 +1114,9 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
 
 #[test]
 fn imported_named_death_receipts_are_indexed_beside_growing_related_members() {
-    let anchor = ProgramValue::pointer(Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let anchor = ProgramValue::pointer(Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),

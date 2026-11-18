@@ -69,7 +69,7 @@ impl StatedForm<'_> {
 pub(in crate::surface::proof) struct StatedSite<'a> {
     form: StatedForm<'a>,
     state: &'a ExecutionState,
-    values: &'a BTreeMap<String, ProgramValue>,
+    values: &'a ProgramValueBindings,
     /// The `Integer` bindings in scope where the statement is written, which
     /// name a theorem's `Integer` binders.
     integer_values: Option<&'a PersistentBinderMap<crate::kernel::SpecIntegerExpression>>,
@@ -86,7 +86,7 @@ impl<'a> StatedSite<'a> {
     pub(in crate::surface::proof) fn new(
         form: StatedForm<'a>,
         state: &'a ExecutionState,
-        values: &'a BTreeMap<String, ProgramValue>,
+        values: &'a ProgramValueBindings,
     ) -> Self {
         Self {
             form,
@@ -218,9 +218,9 @@ fn spell_condition(
     }
     let ordinary_query =
         crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(condition)
-            .map(|query| Proposition::ConditionIs(query, false));
+            .map(|query| Proposition::condition_is(query, false));
     if let Proposition::ConditionIs(condition, false) = ordinary_query.as_ref().unwrap_or(condition)
-        && let Some(operation) = overflowing_operation(condition)
+        && let Some(operation) = overflowing_operation(condition.native_compat())
         && let Some(operation) = site.spell_term(&operation)
     {
         return SpelledCondition {
@@ -232,7 +232,7 @@ fn spell_condition(
         };
     }
     if let Proposition::ConditionIs(condition, true) = condition
-        && let Some((side, value, bound)) = conversion_bound(condition, labels)
+        && let Some((side, value, bound)) = conversion_bound(condition.native_compat(), labels)
     {
         // The bound remains actionable even when this lowering supplied no
         // exact source names for the converted Integer value.
@@ -256,7 +256,7 @@ fn spell_condition(
             site.spell_proposition(&Proposition::MemoryLoadable {
                 memory: site.state.memory().clone(),
                 base: pointer.clone(),
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             })
             .as_ref(),
@@ -431,8 +431,8 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
 
 /// The cell read by the equation naming one memory read, when this condition
 /// is such an equation.
-fn load_definition_cell(condition: &Proposition) -> Option<&Pointer> {
-    let Proposition::ConditionIs(
+fn load_definition_cell(condition: &Proposition) -> Option<&Address> {
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -440,7 +440,7 @@ fn load_definition_cell(condition: &Proposition) -> Option<&Pointer> {
             right,
         },
         true,
-    ) = condition
+    )) = condition.condition_native()
     else {
         return None;
     };
@@ -500,7 +500,7 @@ fn loadability_explanation(
                 base: range_base,
                 bytes: range_bytes,
                 ..
-            } => range_base.block == base.block && range_bytes != bytes,
+            } => range_base.base == base.base && range_bytes != bytes,
             _ => false,
         })?;
     let spelled = site.spell_proposition(covering).map_or_else(
@@ -508,21 +508,21 @@ fn loadability_explanation(
         |surface| crate::surface::diagnostics::describe_click_proposition(&surface),
     );
     // Reading that range at element granularity needs it to be a valid 32-bit
-    // byte extent. A range stated in this scope carries that; one this proof
+    // byte span. A range stated in this scope carries that; one this proof
     // established itself does not, and saying which fact is missing is the
     // difference between a usable refusal and "not true".
-    let missing_extent = crate::kernel::stated_loadable_extent_guards(covering)
+    let missing_span = crate::kernel::stated_loadable_span_guards(covering)
         .into_iter()
         .find(|guard| !established_condition(assumptions, guard));
-    if let Some(guard) = missing_extent {
+    if let Some(guard) = missing_span {
         let guard = site.spell_proposition(&guard).map_or_else(
             || render::render_proposition_labeled(&guard, labels),
             |surface| crate::surface::diagnostics::describe_click_proposition(&surface),
         );
         return Some(format!(
             "`{spelled}` is a premise here and was consulted, but it is not a valid 32-bit byte \
-             extent in this scope: `{guard}` is not an established fact. A range's extent is \
-             `(end - start) * width` in 32-bit arithmetic, so without that bound the extent can \
+             span in this scope: `{guard}` is not an established fact. A range's span is \
+             `(end - start) * width` in 32-bit arithmetic, so without that bound the span can \
              wrap to fewer bytes than its element count names — a count of `1 << 30` four-byte \
              elements scales to `0` — and the range would not cover the cell it appears to. \
              State that bound where the range is stated"
@@ -883,7 +883,7 @@ pub(in crate::surface) fn walk_written_expressions(
         | ContractExpression::Binding(_)
         | ContractExpression::QualifiedC { .. }
         | ContractExpression::ProgramExpression(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. }

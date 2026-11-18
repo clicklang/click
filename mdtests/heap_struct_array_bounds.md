@@ -1,7 +1,7 @@
 # heap struct arrays retain element bounds
 
 An indexed heap struct array may access only elements within the allocated
-struct-sized extent. The verifier must reject an out-of-bounds member access.
+struct-sized size. The verifier must reject an out-of-bounds member access.
 
 ```c filename=heap_struct_array_bounds.c
 struct item {

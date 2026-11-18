@@ -132,11 +132,11 @@ impl Contradictions {
     fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
         crate::instrumentation::record_deterministic_work(1);
         self.adjust_polarity(canonical_contradiction_condition(condition), value);
-        if value && let ConditionTerm::PointerValueEqual(left, right) = condition {
+        if value && let ConditionTerm::PointerEqual(left, right) = condition {
             // Full pointer equality entails address equality, while its
             // negation makes no claim about addresses.
             let address =
-                ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone());
+                ConditionTerm::address_equal(left.address().clone(), right.address().clone());
             self.adjust_polarity(canonical_contradiction_condition(&address), true);
         }
         let observation =

@@ -1,7 +1,7 @@
 # A `size_t` `calloc` count with no upper bound is refused
 
 A 64-bit `calloc` count is admitted only where the facts decide
-`1 <= n <= PTRDIFF_MAX / w` (`design/heap-extents.md`, stage 4). Here they
+`1 <= n <= PTRDIFF_MAX / w` (`design/heap-allocation-sizes.md`, stage 4). Here they
 give no upper bound, so the guard is undecided and the `calloc` is refused;
 unlike `malloc`, `calloc` has no wrapped product to fall back on.
 

@@ -49,7 +49,7 @@ fn check_integer_rewrite_of_nested_native_bounds(ty: &str, suffix: &str) {
         requires y <= 20;
         ensures x <= 10{suffix} and x <= 20{suffix} by {{
             rewrite(to_integer(x), y);
-            both {{ known(); }} and {{ known(); }}
+            both {{ left => {{ known(); }} right => {{ known(); }} }}
         }}
     }}"#
     );
@@ -95,9 +95,12 @@ theorem prefix_bound(n: uint64) {
   rewrite(to_integer(n - n % 4u64), to_integer(n) - truncating_remainder(to_integer(n), 4));
   unfold(prefix(to_integer(n)));
   both {
-   solve() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
-  } and {
-   known();
+      left => {
+       solve() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
+      }
+      right => {
+       known();
+      }
   }
  }
 }
@@ -226,23 +229,45 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     let source = r#"
         theorem pair(x: int32) {
             ensures x == x and (x <= x and x >= x) by {
-                both { normalize(); } and {
-                    both { normalize(); } and { normalize(); }
+                both {
+                    left => { normalize(); }
+                    right => {
+                        both { left => { normalize(); } right => { normalize(); } }
+                    }
                 }
             }
         }
     "#;
     verify_c_sources(source, &[]).expect("nested exact conjunction proofs");
+    let right_first = r#"
+        theorem pair(x: int32) {
+            ensures (x == 0 implies x == 0) and ((x == 1 implies x == 1) and x == x) by {
+                both {
+                    right => {
+                        both { right => { normalize(); } left => { intro(); known(); } }
+                    }
+                    left => { intro(); known(); }
+                }
+            }
+        }
+    "#;
+    verify_c_sources(right_first, &[]).expect("nested right-first conjunction proofs");
     for bad in [
-        source.replacen("both { normalize(); }", "both { }", 1),
+        source.replacen("left => { normalize(); }", "left => { }", 1),
         source.replace("x >= x", "x > x"),
-        source.replace("} and {", "} else {"),
+        source.replacen("right => { normalize(); }", "", 1),
+        source.replacen("right =>", "left =>", 1),
+        right_first.replace("left =>", "right =>"),
+        source.replace(
+            "both { left => { normalize(); } right => { normalize(); } }",
+            "both { normalize(); } and { normalize(); }",
+        ),
     ] {
         assert!(verify_c_sources(&bad, &[]).is_err());
     }
     let leaking = r#"theorem leak(x: int32) {
         ensures (x == 0 implies x == 0) and x == 0 by {
-            both { intro(); known(); } and { known(); }
+            both { left => { intro(); known(); } right => { known(); } }
         }
     }"#;
     assert!(
@@ -257,7 +282,7 @@ fn both_and_outcome_expands_and_rechecks() {
     let c = "int32 identity(int32 x) { return x; }";
     let source = r#"verifying "identity.c";
         int32 identity(int32 x) { ensures result == x and result <= x; } by {
-            step(); both { solve(); } and { solve(); }
+            step(); both { right => { solve(); } left => { known(); } }
         }
     "#;
     let sources = [("identity.c", c)];
@@ -265,8 +290,12 @@ fn both_and_outcome_expands_and_rechecks() {
     let expanded =
         expand_checked_grouped_claim(source, &verified_for_expansion, "identity").unwrap();
     assert!(expanded.contains("both {"), "{expanded}");
+    assert!(
+        expanded.find("left => {").unwrap() < expanded.find("right => {").unwrap(),
+        "{expanded}"
+    );
     verify_c_sources(&expanded, &sources).expect("expanded child proofs");
-    let position = expansion::position_at_offset(source, source.find("both {").unwrap());
+    let position = expansion::position_at_offset(source, source.find("solve();").unwrap());
     let selected =
         expand_c_tactic_source_at(source, &sources, position.line, position.column).unwrap();
     verify_c_sources(&selected, &sources).expect("selected both expansion");
@@ -277,7 +306,7 @@ fn both_and_outcome_expands_and_rechecks() {
 fn parses_frontier_branch_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { branch { step(); } else { step_until(function.exit); } }",
+        "== 2 by { branch { true => { step(); } false => { step_until(function.exit); } } }",
     );
     let file = parse(&source).expect("frontier branch tactic should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -299,7 +328,7 @@ fn parses_frontier_branch_tactic() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_04")]
 fn parses_frontier_branch_ensuring_interface() {
-    let source = FILL3_CLICK.replace("== 2;", "== 2 by { branch ensuring { fact i >= 0; owns p[0..3]; } then { step(); } else { step_until(function.exit); } }",
+    let source = FILL3_CLICK.replace("== 2;", "== 2 by { branch ensuring { fact i >= 0; owns p[0..3]; } { true => { step(); } false => { step_until(function.exit); } } }",
     );
     let file = parse(&source).expect("frontier branch ensuring interface should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -344,11 +373,14 @@ fn linear_frontier_branch_uses_the_checked_structural_join() {
             ensures returns_one: result == 1;
         } by {
             branch {
-                unfold(selected(x));
-                step();
-            } else {
-                unfold(selected(x));
-                step();
+                true => {
+                    unfold(selected(x));
+                    step();
+                }
+                false => {
+                    unfold(selected(x));
+                    step();
+                }
             }
             step();
             solve();
@@ -403,7 +435,7 @@ fn terminal_frontier_branch_seals_without_a_body_rerun() {
         int32 choose_sign(int32 x) {
             ensures result == 1 or result == 2;
         } by {
-            branch { step(); } else { step(); }
+            branch { true => { step(); } false => { step(); } }
             solve();
         }
     "#;
@@ -442,8 +474,8 @@ fn successive_shared_continuation_branches_seal_without_path_multiplication() {
         int32 two_branches(int32 x, int32 y) {
             ensures result == x;
         } by {
-            branch {} else {}
-            branch {} else {}
+            branch { true => {} false => {} }
+            branch { true => {} false => {} }
             step();
             solve();
         }
@@ -482,7 +514,7 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
         int32 constant_negative(int32 x) {
             requires x < 0;
             ensures returns_one: result == 1 by {
-                branch { step(); } else { step(); }
+                branch { true => { step(); } false => { step(); } }
                 step();
                 solve();
             }

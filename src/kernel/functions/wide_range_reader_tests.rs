@@ -1,8 +1,8 @@
 use super::*;
-// Both symbolic bases and native extents reach call-framing readers.
+// Both symbolic bases and native spans reach call-framing readers.
 #[test]
 fn wide_call_ranges_are_undecided() {
-    let base = Pointer::symbolic(Variable(984_000));
+    let base = Address::symbolic(Variable(984_000));
     let wide = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(3),
@@ -22,9 +22,9 @@ fn wide_call_ranges_are_undecided() {
 // Wide resource bodies are opened, folded and queried without constructing
 // signed loadability facts in the instance and ordinary-composite paths.
 #[test]
-fn wide_resource_body_loadability_preserves_native_extent() {
+fn wide_resource_body_loadability_preserves_native_span() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer::symbolic(Variable(984_010));
+    let base = Address::symbolic(Variable(984_010));
     let segment = MemorySegment::new(
         ProgramExpression::Value(ProgramValue::pointer(base.clone())),
         crate::kernel::program_expression::uint64_literal(0),
@@ -82,7 +82,7 @@ fn wide_resource_body_loadability_preserves_native_extent() {
     let loadable = evaluate_composite_resource_loadable_propositions(
         &composite,
         &definitions,
-        state.memory(),
+        &state.program_point(),
         &facts,
     )
     .unwrap();

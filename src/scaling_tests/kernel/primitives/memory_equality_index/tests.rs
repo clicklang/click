@@ -15,12 +15,12 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
     let mut samples = Vec::new();
     for size in [2u32, 4, 8, 16] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let field = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
-        let before = Memory::new();
-        let read = |context: &PureFactContext, memory: &Memory, address: &Pointer| {
+        let before = SymbolicMemory::new();
+        let read = |context: &PureFactContext, memory: &SymbolicMemory, address: &Address| {
             let retained_state = crate::kernel::intern_memory_ref(memory);
             let variable = crate::kernel::load_variable_for_cell_with_origin(
                 &retained_state,
@@ -29,7 +29,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
                 C_POINTER_BYTE_WIDTH,
                 &retained_state,
             );
-            let pointer = Pointer::loaded(&MachineTerm::Variable(variable)).unwrap();
+            let pointer = Address::loaded(&MachineTerm::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &retained_state, address);
             pointer
         };
@@ -38,7 +38,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         // Its unknown value is retained as the initial opaque read.
         let before = before.store(
             field.clone(),
-            ProgramValue::Pointer(PointerValue::new(source.clone(), ProgramType::Int32Pointer)),
+            ProgramValue::Pointer(Pointer::new(source.clone(), ProgramType::Int32Pointer)),
         );
         let count = MachineTerm::Variable(Variable(999_321));
         let range = |base| MemoryRange::new_with_element_width(base, 0u32.into(), count.clone(), 4);
@@ -67,13 +67,13 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(range(unrelated)));
         }
         resources.synchronize_memory_equalities(&context);
-        let local = Pointer {
-            block: PointerBlock::Concrete("local:frame-counter".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let local = Address {
+            base: AddressBase::Concrete("local:frame-counter".into()),
+            offset: AddressOffset::Constant(0),
         };
         let after = before
             .clone()
-            .with_block(local.block.clone(), 4)
+            .with_block(local.base.clone(), 4)
             .store(source.offset_by_bytes(4), ProgramValue::Int32(7u32.into()))
             .store(local, ProgramValue::Int32(8u32.into()));
         let current = read(&context, &after, &field);
@@ -136,42 +136,42 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
     let mut samples = Vec::new();
     for count in [0_u64, 4, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(989_200)), 1),
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(989_200)), 1),
         };
         let prefix = MachineTerm::Variable(Variable(989_201));
         let local = MachineTerm::Variable(Variable(989_202));
         let full = MachineTerm::Variable(Variable(989_203));
-        let batch = Pointer::symbolic(Variable(989_204));
-        let query = Pointer::symbolic(Variable(989_205));
+        let batch = Address::symbolic(Variable(989_204));
+        let query = Address::symbolic(Variable(989_205));
         let global = base.offset_by_typed_elements(full.clone(), 1, true, true);
         let mut aliases = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     batch.clone(),
                     base.offset_by_typed_elements(prefix, 1, true, true),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     query.clone(),
                     batch.offset_by_elements(MachineTerm::Variable(Variable(989_206)), 1),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     query.clone(),
                     batch.offset_by_typed_elements(local, 1, true, true),
                 ),
                 true,
             )
-            .assume_condition(ConditionTerm::pointer_equal(query.clone(), global), true);
+            .assume_condition(ConditionTerm::address_equal(query.clone(), global), true);
         for i in 0..count {
             aliases = aliases.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     query.clone(),
                     batch.offset_by_elements(MachineTerm::Variable(Variable(990_000 + i)), 1),
                 ),
@@ -238,15 +238,15 @@ fn wide_read_keeps_native_index_beside_a_narrow_alias() {
     let mut samples = Vec::new();
     for count in [16_u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let bytes = Pointer::symbolic(Variable(986_000));
-        let alternate = Pointer::symbolic(Variable(986_001));
+        let bytes = Address::symbolic(Variable(986_000));
+        let alternate = Address::symbolic(Variable(986_001));
         let native_index = MachineTerm::Variable(Variable(986_002));
         let narrow = alternate.offset_by_elements(MachineTerm::Variable(Variable(986_003)), 1);
         let wide = bytes.offset_by_typed_elements(native_index.clone(), 1, true, true);
-        let query = Pointer::symbolic(Variable(986_004));
+        let query = Address::symbolic(Variable(986_004));
         let mut facts = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(query.clone(), narrow), true)
-            .assume_condition(ConditionTerm::pointer_equal(query.clone(), wide), true)
+            .assume_condition(ConditionTerm::address_equal(query.clone(), narrow), true)
+            .assume_condition(ConditionTerm::address_equal(query.clone(), wide), true)
             .assume_condition(
                 ConditionTerm::uint64_less_than(
                     native_index.clone(),
@@ -264,8 +264,8 @@ fn wide_read_keeps_native_index_beside_a_narrow_alias() {
         ));
         for item in 0..count {
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(
-                    Pointer::symbolic(Variable(987_000 + item)),
+                ConditionTerm::address_equal(
+                    Address::symbolic(Variable(987_000 + item)),
                     query.clone(),
                 ),
                 true,
@@ -294,11 +294,11 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
     let mut samples = Vec::new();
     for count in [4_u64, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let bytes = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(988_400)), 1),
+        let bytes = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(988_400)), 1),
         };
-        let cursor = Pointer::symbolic(Variable(988_402));
+        let cursor = Address::symbolic(Variable(988_402));
         let remaining = MachineTerm::Variable(Variable(988_403));
         let advance = MachineTerm::Variable(Variable(988_404));
         let length = MachineTerm::Variable(Variable(988_410));
@@ -322,24 +322,20 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             true,
             true,
         );
-        let bytes_value = crate::kernel::PointerValue::new(
-            bytes.clone(),
-            crate::kernel::ProgramType::UInt8Pointer,
-        );
-        let cursor_value = crate::kernel::PointerValue::new(
-            cursor.clone(),
-            crate::kernel::ProgramType::UInt8Pointer,
-        );
+        let bytes_value =
+            crate::kernel::Pointer::new(bytes.clone(), crate::kernel::ProgramType::UInt8Pointer);
+        let cursor_value =
+            crate::kernel::Pointer::new(cursor.clone(), crate::kernel::ProgramType::UInt8Pointer);
         let aliases = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::pointer_value_equal(
+                ConditionTerm::pointer_equal(
                     cursor_value.clone(),
                     bytes_value.clone().with_address(wide),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::pointer_value_equal(
+                ConditionTerm::pointer_equal(
                     cursor_value.clone(),
                     bytes_value.clone().with_address(narrow),
                 ),
@@ -374,8 +370,8 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         }
         for item in 0..count {
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(
-                    Pointer::symbolic(Variable(989_000 + item)),
+                ConditionTerm::address_equal(
+                    Address::symbolic(Variable(989_000 + item)),
                     cursor.clone(),
                 ),
                 true,
@@ -388,9 +384,9 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         resources.synchronize_memory_equalities(&facts);
         let query = cursor.offset_by_typed_elements(advance.clone(), 1, true, true);
         let permits = |resources: &ResourceContext,
-                       query: &Pointer,
+                       query: &Address,
                        facts: &PureFactContext,
-                       provenance: (&Pointer, Option<&Pointer>)| {
+                       provenance: (&Address, Option<&Address>)| {
             resources.permits_designated_pointer_position(query, &cursor, provenance, facts)
         };
         let (permitted, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -414,8 +410,8 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             &query,
             &facts,
             (
-                &Pointer::symbolic(Variable(988_406)),
-                cursor_value.opaque_extent()
+                &Address::symbolic(Variable(988_406)),
+                cursor_value.bounds_owner()
             )
         ));
         assert!(!permits(
@@ -449,24 +445,24 @@ fn constant_base_interior_lookup_scales_with_selected_range() {
     let mut samples = Vec::new();
     for count in [16_u32, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let parent = Pointer::symbolic(Variable(950_000));
-        let model = Pointer::symbolic(Variable(950_001));
-        let parameter = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(950_002)), 4),
+        let parent = Address::symbolic(Variable(950_000));
+        let model = Address::symbolic(Variable(950_001));
+        let parameter = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(950_002)), 4),
         };
-        let old_read = Pointer {
-            block: parent.block.clone(),
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(950_003)), 4),
+        let old_read = Address {
+            base: parent.base.clone(),
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(950_003)), 4),
         };
-        let cursor = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(950_004)), 4),
+        let cursor = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(950_004)), 4),
         };
         let prefix = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(parameter, parent), true)
+            .assume_condition(ConditionTerm::address_equal(parameter, parent), true)
             .assume_condition(
-                ConditionTerm::pointer_equal(old_read.clone(), model.clone()),
+                ConditionTerm::address_equal(old_read.clone(), model.clone()),
                 true,
             );
         let resources = ResourceContext::new().unchecked_with_facts((0..count).map(|index| {
@@ -482,8 +478,8 @@ fn constant_base_interior_lookup_scales_with_selected_range() {
         // search through all the other spans relative to that same base.
         let facts = prefix
             .clone()
-            .assume_condition(ConditionTerm::pointer_equal(cursor.clone(), old_read), true)
-            .assume_condition(ConditionTerm::pointer_equal(cursor.clone(), model), true);
+            .assume_condition(ConditionTerm::address_equal(cursor.clone(), old_read), true)
+            .assume_condition(ConditionTerm::address_equal(cursor.clone(), model), true);
         resources.synchronize_memory_equalities(&facts);
         let required = ResourceFact::own_memory(MemoryRange::new_with_element_width(
             cursor.clone(),
@@ -522,24 +518,24 @@ fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
     let mut previous = None;
     for count in [4_u32, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let parent = Pointer::symbolic(Variable(940_000));
-        let model = Pointer::symbolic(Variable(940_001));
-        let parameter = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(940_002)), 4),
+        let parent = Address::symbolic(Variable(940_000));
+        let model = Address::symbolic(Variable(940_001));
+        let parameter = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(940_002)), 4),
         };
-        let old_read = Pointer {
-            block: parent.block.clone(),
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(940_003)), 4),
+        let old_read = Address {
+            base: parent.base.clone(),
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(940_003)), 4),
         };
-        let cursor = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(940_004)), 4),
+        let cursor = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(940_004)), 4),
         };
         let prefix = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(parameter, parent), true)
+            .assume_condition(ConditionTerm::address_equal(parameter, parent), true)
             .assume_condition(
-                ConditionTerm::pointer_equal(old_read.clone(), model.clone()),
+                ConditionTerm::address_equal(old_read.clone(), model.clone()),
                 true,
             );
         let resources = ResourceContext::new().unchecked_with_facts((0..count).map(|index| {
@@ -556,10 +552,10 @@ fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
         let facts = prefix
             .clone()
             .assume_condition(
-                ConditionTerm::pointer_equal(cursor.clone(), old_read.clone()),
+                ConditionTerm::address_equal(cursor.clone(), old_read.clone()),
                 true,
             )
-            .assume_condition(ConditionTerm::pointer_equal(cursor.clone(), model), true);
+            .assume_condition(ConditionTerm::address_equal(cursor.clone(), model), true);
         resources.synchronize_memory_equalities(&facts);
         let (permitted, work) = crate::instrumentation::measure_deterministic_work(|| {
             resources.permits_memory_read(&cursor.offset_by_bytes(16), 8, &facts)
@@ -578,11 +574,11 @@ fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
 
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
-fn mixed_extent_read_hits_and_misses_do_not_scan_unrelated_ranges() {
+fn mixed_span_read_hits_and_misses_do_not_scan_unrelated_ranges() {
     let mut samples = Vec::new();
     for size in [16_u32, 64, 256, 1024] {
-        let base = Pointer::symbolic(Variable(851_030));
-        let alias = Pointer::symbolic(Variable(851_031));
+        let base = Address::symbolic(Variable(851_030));
+        let alias = Address::symbolic(Variable(851_031));
         let mut resources = ResourceContext::new()
             .unchecked_with_fact(view(&base, 0, 4))
             .unchecked_with_fact(view(&base, 1, 2));
@@ -592,11 +588,11 @@ fn mixed_extent_read_hits_and_misses_do_not_scan_unrelated_ranges() {
         }
         let empty = PureFactContext::new();
         resources.synchronize_memory_equalities(&empty);
-        let facts = empty.assume_condition(ConditionTerm::pointer_equal(base, alias.clone()), true);
+        let facts = empty.assume_condition(ConditionTerm::address_equal(base, alias.clone()), true);
         resources.synchronize_memory_equalities(&facts);
-        let at = |offset| Pointer {
-            block: alias.block.clone(),
-            offset: PointerOffsetTerm::Constant(offset),
+        let at = |offset| Address {
+            base: alias.base.clone(),
+            offset: AddressOffset::Constant(offset),
         };
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -628,7 +624,7 @@ fn mixed_extent_read_hits_and_misses_do_not_scan_unrelated_ranges() {
 fn a_read_does_not_materialize_all_covering_views() {
     let mut samples = Vec::new();
     for size in [16_u32, 64, 256, 1024] {
-        let base = Pointer::symbolic(Variable(851_040));
+        let base = Address::symbolic(Variable(851_040));
         let facts = PureFactContext::new();
         let mut resources = ResourceContext::new();
         for end in 1..=size {
@@ -652,16 +648,16 @@ fn logical_field_coordinates_keep_symbolic_offsets_without_scanning_aliases() {
     let mut samples = Vec::new();
     for size in [4u64, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let owner = Pointer::symbolic(Variable(955_930))
+        let owner = Address::symbolic(Variable(955_930))
             .offset_by_elements(MachineTerm::Variable(Variable(955_931)), 4);
-        let alias = Pointer::symbolic(Variable(955_932));
+        let alias = Address::symbolic(Variable(955_932));
         let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
             MemoryRange::new_with_element_width(owner.clone(), 2u32.into(), 4u32.into(), 4),
         ));
         for i in 0..size {
             resources = resources.unchecked_with_fact(ResourceFact::view_memory(
                 MemoryRange::new_with_element_width(
-                    Pointer::symbolic(Variable(956_000 + i)),
+                    Address::symbolic(Variable(956_000 + i)),
                     0u32.into(),
                     4u32.into(),
                     4,
@@ -672,14 +668,14 @@ fn logical_field_coordinates_keep_symbolic_offsets_without_scanning_aliases() {
         let mut context = PureFactContext::new()
             .assume_proposition(Proposition::ResourceComposition(resources))
             .assume_condition(
-                ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
+                ConditionTerm::address_equal(owner.clone(), alias.clone()),
                 true,
             );
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     alias.clone(),
-                    Pointer::symbolic(Variable(957_000 + i)),
+                    Address::symbolic(Variable(957_000 + i)),
                 ),
                 true,
             );
@@ -713,8 +709,8 @@ fn prepared_access_provenance_misses_do_not_scan_overlapping_suppliers() {
     for size in [8u32, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
-        let base = Pointer::symbolic(Variable(960_000));
-        let unrelated_origin = Pointer::symbolic(Variable(960_001));
+        let base = Address::symbolic(Variable(960_000));
+        let unrelated_origin = Address::symbolic(Variable(960_001));
         let mut resources = ResourceContext::new_with_equalities(&facts);
         for end in 1..=size {
             resources = resources.unchecked_with_fact(ResourceFact::view_memory(MemoryRange::new(
@@ -756,8 +752,8 @@ fn prepared_object_provenance_lookup_does_not_enumerate_same_object_views() {
     for size in [8u32, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
-        let base = Pointer::symbolic(Variable(961_000));
-        let missing = Pointer::symbolic(Variable(961_001));
+        let base = Address::symbolic(Variable(961_000));
+        let missing = Address::symbolic(Variable(961_001));
         let mut resources = ResourceContext::new_with_equalities(&facts);
         for end in 1..=size {
             resources = resources.unchecked_with_fact(ResourceFact::view_memory(MemoryRange::new(
@@ -787,8 +783,8 @@ fn prepared_write_and_storage_refusals_do_not_scan_owner_buckets() {
     for size in [8u32, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
-        let base = Pointer::symbolic(Variable(962_000));
-        let missing = Pointer::symbolic(Variable(962_001));
+        let base = Address::symbolic(Variable(962_000));
+        let missing = Address::symbolic(Variable(962_001));
         let query = base.offset_by_bytes(4);
         let mut resources = ResourceContext::new_with_equalities(&facts);
         for end in 1..=size {
@@ -843,13 +839,13 @@ fn check_constant_owner_overlap_population(views: bool, late: bool) {
     let mut samples = Vec::new();
     for count in [4_u32, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let q = Pointer::symbolic(Variable(8_770_000));
-        let p = Pointer::symbolic(Variable(8_770_001));
+        let q = Address::symbolic(Variable(8_770_000));
+        let p = Address::symbolic(Variable(8_770_001));
         let empty = PureFactContext::new();
         let facts = empty
             .clone()
-            .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
-        let range = |base: Pointer, a: u32, b: u32| {
+            .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
+        let range = |base: Address, a: u32, b: u32| {
             MemoryRange::new_with_element_width(base, a.into(), b.into(), 1)
         };
         let mut frame = ResourceContext::new_with_equalities(if late { &empty } else { &facts });
@@ -912,21 +908,21 @@ fn cold_singleton_return_checks_do_not_enumerate_loaded_pointer_alias_stars() {
     let mut samples = Vec::new();
     for count in [4u64, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Pointer::symbolic(Variable(9_980_000));
+        let field = Address::symbolic(Variable(9_980_000));
         let memory = crate::kernel::intern_memory_ref(
-            &Memory::new().with_block(field.block.clone(), C_POINTER_BYTE_WIDTH),
+            &SymbolicMemory::new().with_block(field.base.clone(), C_POINTER_BYTE_WIDTH),
         );
-        let query = Pointer::loaded_value(&memory, &field);
-        let held = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(9_980_001)), 4),
+        let query = Address::loaded_value(&memory, &field);
+        let held = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(9_980_001)), 4),
         };
         let mut facts = PureFactContext::new();
         for index in 0..count {
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     query.clone(),
-                    Pointer::symbolic(Variable(9_981_000 + index)),
+                    Address::symbolic(Variable(9_981_000 + index)),
                 ),
                 true,
             );
@@ -950,7 +946,7 @@ fn cold_singleton_return_checks_do_not_enumerate_loaded_pointer_alias_stars() {
         });
         samples.push(work);
         let aliased =
-            facts.assume_condition(ConditionTerm::pointer_equal(query.clone(), held), true);
+            facts.assume_condition(ConditionTerm::address_equal(query.clone(), held), true);
         assert!(matches!(
             frame.constant_owned_overlap(
                 &ResourceFact::own_memory(range(query, 4u32.into())),

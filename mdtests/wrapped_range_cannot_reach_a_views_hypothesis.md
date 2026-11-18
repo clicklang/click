@@ -7,8 +7,8 @@ as ih` recomputes the clause's byte-count guards at the substituted argument and
 makes them premises of the hypothesis, and `apply(ih(1073741824))` owes the
 range itself at that argument.
 
-A range is viewable for free exactly when its extent is decidably zero, and an
-extent is decidably zero only when its endpoints are decided — at which point
+A range is viewable for free exactly when its span is decidably zero, and an
+span is decidably zero only when its endpoints are decided — at which point
 the shared definition decides the range invalid and the lowering keeps no path
 for it. So the range premise `ih(1073741824)` needs cannot be stated at all, and
 the theorem is refused rather than proved from a hypothesis stronger than
@@ -34,5 +34,5 @@ theorem a_cell_from_a_wrapped_views_hypothesis(v: int32[], n: int32) {
 ```
 
 ```expect
-fail: a memory range is too wide to be a 32-bit byte extent
+fail: a memory range is too wide to be a 32-bit byte span
 ```

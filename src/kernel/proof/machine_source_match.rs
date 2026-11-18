@@ -192,8 +192,8 @@ mod tests {
     #[test]
     fn boolean_cast_sources_keep_native_argument_equality() {
         let _session = VerificationSession::enter();
-        let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(999464)),
+        let pointer = Pointer::new(
+            Address::symbolic(Variable(999464)),
             ProgramType::Int32Pointer,
         );
         let values = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {
@@ -221,9 +221,9 @@ mod tests {
     #[test]
     fn selected_opaque_sources_keep_types_states_and_refusals() {
         let _session = VerificationSession::enter();
-        let memory = intern_memory(Memory::new().with_block("opaque-source", 16));
+        let memory = intern_memory(SymbolicMemory::new().with_block("opaque-source", 16));
         let later = intern_memory(memory.memory().clone().with_block("later", 16));
-        let pointer = Memory::global_pointer("opaque-source");
+        let pointer = SymbolicMemory::global_pointer("opaque-source");
         let opaque = |memory: SharedMemory, name| MachineTerm::If {
             condition: ConditionTerm::Variable(Variable(name)).into(),
             then_term: MachineTerm::MemoryLoad(

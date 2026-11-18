@@ -59,13 +59,14 @@ impl KernelTermImport {
                         pending.push(Task::Call(&term.algebraic_type, name, arguments));
                         pending.extend(arguments.iter().rev().map(Task::Argument));
                     }
-                    AlgebraicTermNode::MemoryLoad { memory, pointer } => {
-                        values.push(KernelTerm::algebraic_read(
-                            term.algebraic_type.clone(),
-                            memory.clone(),
-                            SharedPointerAddress::import(pointer),
-                        ))
-                    }
+                    AlgebraicTermNode::MemoryLoad {
+                        point: memory,
+                        pointer,
+                    } => values.push(KernelTerm::algebraic_read(
+                        term.algebraic_type.clone(),
+                        memory.clone(),
+                        SharedAddress::import(pointer),
+                    )),
                 },
                 Task::If(ty, condition) => {
                     let else_term = values.pop().expect("else branch");
@@ -221,11 +222,11 @@ impl KernelTermExport {
                         let KernelType::Algebraic(ty) = root.ty() else {
                             unreachable!()
                         };
-                        let (memory, address) = read.parts();
+                        let (point, address) = read.parts();
                         values.push(PureFunctionArgument::Algebraic(AlgebraicTerm {
                             algebraic_type: ty.clone(),
                             node: AlgebraicTermNode::MemoryLoad {
-                                memory: memory.clone(),
+                                point: point.clone(),
                                 pointer: Box::new(address.export()?),
                             },
                         }));
@@ -391,8 +392,8 @@ mod tests {
     #[test]
     fn algebraic_constructor_match_keys_keep_native_field_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(999620)),
+        let pointer = Pointer::new(
+            Address::symbolic(Variable(999620)),
             ProgramType::Int32Pointer,
         );
         let make = |pointer| {
@@ -415,8 +416,8 @@ mod tests {
                 arms: vec![AlgebraicBitvectorMatchArm {
                     variant: "Arm".into(),
                     bindings: vec![
-                        AlgebraicValue::Program(ProgramValue::Pointer(PointerValue::new(
-                            Pointer::symbolic(Variable(999623)),
+                        AlgebraicValue::Program(ProgramValue::Pointer(Pointer::new(
+                            Address::symbolic(Variable(999623)),
                             ProgramType::Int32Pointer,
                         ))),
                         AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(
@@ -468,8 +469,8 @@ mod tests {
             KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Bool)]);
         assert_ne!(root, KernelTermImport::default().algebraic(&other));
 
-        let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(999600)),
+        let pointer = Pointer::new(
+            Address::symbolic(Variable(999600)),
             ProgramType::Int32Pointer,
         );
         let values = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {

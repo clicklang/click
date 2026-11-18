@@ -30,7 +30,7 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
     );
     let state = normal_state(&execute(&ExecutionState::new(), &declaration));
     let pointer = state.locals.slot("x").unwrap().clone();
-    assert!(state.memory.is_read_only_block(&pointer.block));
+    assert!(state.memory.is_read_only_block(&pointer.base));
     assert!(state.memory.requires_explicit_scalar_ownership(&pointer));
     assert_eq!(state.locals.get_native("x").as_deref(), Some(&int32(7)));
     assert!(matches!(
@@ -187,101 +187,87 @@ fn assert_loan_write_rejected(outcome: &StatementOutcome) {
     assert!(diagnostic.subject().conflicting_resource_fact().is_some());
 }
 
-fn assert_loan_write_obligation_is_unprovable(path: &StatementExecutionPath) {
+fn loan_write_separation(path: &StatementExecutionPath) -> (&Resource, &Resource) {
     assert!(matches!(path.outcome, StatementOutcome::Normal(_)));
-    let separation = path
-        .obligations
-        .iter()
-        .find_map(|obligation| match obligation.proposition() {
-            Proposition::ResourceSeparate { left, right } => Some((left, right)),
-            _ => None,
-        })
-        .expect("the scalar write must retain its loan separation obligation");
-    assert!(!PureFactContext::new().proves_resource_separate(separation.0, separation.1));
+    let [obligation] = path.obligations.as_slice() else {
+        panic!(
+            "expected one scalar write obligation, got {:?}",
+            path.obligations
+        );
+    };
+    let Proposition::ResourceSeparate { left, right } = obligation.proposition() else {
+        panic!(
+            "expected loan separation, got {:?}",
+            obligation.proposition()
+        );
+    };
+    (left, right)
 }
 
 #[test]
 fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store() {
     let _session = crate::kernel::VerificationSession::enter();
-    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".into()]));
-    let declared = execute_execution_statement_paths(
-        &ExecutionState::new(),
-        &ProgramStatement::Declare {
-            name: ("x".to_string()).into(),
-            program_type: ProgramType::Int32,
-            volatile: false,
-            pointee_volatile: false,
-            constant: false,
-            pointee_constant: false,
-            initializer: None,
-            zero_fill: None,
-            declared_class: None,
-        },
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("local declaration should execute");
-    let state = normal_state(&declared);
-    let pointer = state.locals().slot("x").cloned().expect("local pointer");
-    let loan = active_memory_loan(MemoryRange::new(
+    let declaration = program_declare("x", ProgramType::Int32);
+    let execute = |state: &ExecutionState, statement: &ProgramStatement| {
+        execute_execution_statement_paths(
+            state,
+            statement,
+            &PureFactContext::new(),
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap()
+    };
+    let state = normal_state(&execute(&ExecutionState::new(), &declaration));
+    let state = normal_state(&execute(&state, &program_declare("y", ProgramType::Int32)));
+    let pointer = state.locals().slot("x").unwrap().clone();
+    let write = program_assign("x", crate::kernel::program_expression::int32_literal(1));
+    let store = program_store(
+        crate::kernel::program_expression::addr_of("x"),
+        crate::kernel::program_expression::int32_literal(1),
+    );
+    assert!(execute(&state, &write)[0].obligations.is_empty());
+
+    let overlapping = active_memory_loan(MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));
-    let state = state.with_loan_ledger(Some(loan));
-
-    let direct = execute_execution_statement_paths(
-        &state,
-        &ProgramStatement::Assign {
-            source: Default::default(),
-            name: ("x".to_string()).into(),
-            expression: crate::kernel::program_expression::int32_literal(1),
-            prior_result: None,
-        },
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("direct assignment should return a checked refusal");
-    assert_loan_write_rejected(&direct[0].outcome);
-
-    let reused = execute_execution_statement_paths(
-        &state,
-        &ProgramStatement::Declare {
-            name: ("x".to_string()).into(),
-            program_type: ProgramType::Int32,
-            volatile: false,
-            pointee_volatile: false,
-            constant: false,
-            pointee_constant: false,
-            initializer: None,
-            zero_fill: None,
-            declared_class: None,
-        },
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("name reuse should return a checked refusal");
-    assert_loan_write_rejected(&reused[0].outcome);
-
-    let alias_state = state.with_local(
-        "p",
-        ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
+    let loaned = state.clone().with_loan_ledger(Some(overlapping));
+    let direct = execute(&loaned, &write);
+    let indirect = execute(&loaned, &store);
+    let (written, protected) = loan_write_separation(&direct[0]);
+    assert_eq!((written, protected), loan_write_separation(&indirect[0]));
+    assert_eq!(
+        written,
+        &Resource::Memory(MemoryRange::from_pointer_value(
+            &Pointer::new(pointer, ProgramType::Int32Pointer),
+            0u32.into(),
+            1u32.into(),
+            4,
+        )),
     );
-    let indirect = execute_execution_statement_paths(
-        &alias_state,
-        &program_store(
-            crate::kernel::program_expression::variable("p"),
-            crate::kernel::program_expression::int32_literal(2),
-        ),
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("alias store should return its loan obligation");
-    assert_loan_write_obligation_is_unprovable(&indirect[0]);
+    assert!(!PureFactContext::new().proves_resource_separate(written, protected));
+    assert_loan_write_rejected(&execute(&loaned, &declaration)[0].outcome);
+
+    let disjoint = active_memory_loan(MemoryRange::new(
+        state.locals().slot("y").unwrap().clone(),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
+    ));
+    let loaned = state.with_loan_ledger(Some(disjoint));
+    let unowned = loaned.clone().with_resource_context(ResourceContext::new());
+    assert!(matches!(
+        execute(&unowned, &write)[0].outcome,
+        StatementOutcome::RuntimeError(RuntimeError::MissingResource { .. })
+    ));
+    let direct = execute(&loaned, &write);
+    let (written, protected) = loan_write_separation(&direct[0]);
+    assert!(PureFactContext::new().proves_resource_separate(written, protected));
+    assert_eq!(
+        normal_state(&direct).locals().get_native("x").as_deref(),
+        Some(&int32(1))
+    );
 }
 
 #[test]
@@ -303,7 +289,7 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
         &program_declare("p", ProgramType::UInt8Pointer),
     ));
     let value = ProgramValue::typed_pointer(
-        Pointer::symbolic(Variable(93_700)),
+        Address::symbolic(Variable(93_700)),
         ProgramType::UInt8Pointer,
     );
     let copy = program_assign("p", ProgramExpression::Value(value.clone()));
@@ -456,7 +442,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
 #[test]
 fn a_state_scan_reserves_memory_havoc_marker_identities() {
     let state = ExecutionState::new().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("havoc:1000004", 0)
             .with_block("call-havoc:1000009", 0)
             .with_block("local:x", 4),
@@ -488,12 +474,12 @@ fn scalar_local_updates_share_memory_and_resource_state() {
 
 #[test]
 fn loop_back_edge_rejects_heap_and_resource_state_changes() {
-    let allocation = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let allocation = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new()
-        .with_heap_allocation_claim(allocation.clone(), HeapExtent::int32(16))
+    let memory = SymbolicMemory::new()
+        .with_heap_allocation_claim(allocation.clone(), AllocationSize::int32(16))
         .expect("test allocation claim should be fresh");
     let top = ExecutionState::new()
         .with_memory(memory)
@@ -508,9 +494,9 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
         );
     let freed = execute_execution_statement_paths(
         &top,
-        &program_heap_free(ProgramExpression::Value(ProgramValue::pointer(Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        &program_heap_free(ProgramExpression::Value(ProgramValue::pointer(Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         }))),
         &PureFactContext::new(),
         ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
@@ -566,7 +552,7 @@ fn final_iteration_condition_can_use_the_pre_body_bound() {
         );
 
     assert!(
-        !loop_condition_may_continue(
+        !classify_loop_condition(
             &state,
             &crate::kernel::program_expression::less_than(
                 crate::kernel::program_expression::variable("i"),
@@ -575,21 +561,22 @@ fn final_iteration_condition_can_use_the_pre_body_bound() {
             &assumptions,
         )
         .expect("condition classification should stay within its expression budget")
+        .may_continue()
     );
 }
 
 #[test]
 fn join_state_forgets_changed_scalars_and_memory() {
     let stable_x = int32(MachineTerm::Variable(Variable(7)));
-    let pointer = Pointer {
-        block: "heap".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "heap".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state_zero = ExecutionState::new()
         .with_local("x", stable_x.clone())
         .with_local("y", int32(0))
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("heap", 4)
                 .store(pointer.clone(), int32(0)),
         )
@@ -597,7 +584,11 @@ fn join_state_forgets_changed_scalars_and_memory() {
     let state_one = ExecutionState::new()
         .with_local("x", stable_x.clone())
         .with_local("y", int32(1))
-        .with_memory(Memory::new().with_block("heap", 4).store(pointer, int32(1)));
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block("heap", 4)
+                .store(pointer, int32(1)),
+        );
     let stable = BTreeMap::from([("x".into(), stable_x.clone())]);
 
     let abstract_zero =
@@ -623,13 +614,13 @@ fn join_state_forgets_changed_scalars_and_memory() {
 
 #[test]
 fn join_state_abstracts_changed_pointer_locals() {
-    let left = Pointer {
-        block: "left".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let left = Address {
+        base: "left".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let right = Pointer {
-        block: "right".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let right = Address {
+        base: "right".into(),
+        offset: AddressOffset::Constant(0),
     };
     let abstract_left = abstract_execution_state_for_join(
         &ExecutionState::new().with_local("selected", ProgramValue::pointer(left)),
@@ -653,10 +644,10 @@ fn join_state_abstracts_changed_pointer_locals() {
 }
 
 #[test]
-fn join_state_fresh_variables_do_not_collide_with_symbolic_pointer_blocks() {
+fn join_state_fresh_variables_do_not_collide_with_symbolic_address_bases() {
     let state = ExecutionState::new().with_local(
         "selected",
-        ProgramValue::pointer(Pointer::symbolic(Variable(1_000_000))),
+        ProgramValue::pointer(Address::symbolic(Variable(1_000_000))),
     );
     let abstract_state = abstract_execution_state_for_join(&state, &BTreeMap::new(), 0)
         .expect("pointer join abstraction");
@@ -670,7 +661,7 @@ fn join_state_fresh_variables_do_not_collide_with_symbolic_pointer_blocks() {
         panic!("selected should remain a pointer local");
     };
 
-    assert_eq!(selected.block, PointerBlock::Symbolic(Variable(1_000_001)));
+    assert_eq!(selected.base, AddressBase::Symbolic(Variable(1_000_001)));
 }
 
 #[test]
@@ -722,28 +713,28 @@ fn sibling_join_abstraction_is_deterministic_after_a_nested_join() {
 }
 
 #[test]
-fn symbolic_pointer_blocks_do_not_imply_non_aliasing() {
-    let symbolic = Pointer::symbolic(Variable(21_000));
-    let concrete = Pointer {
-        block: "heap".into(),
-        offset: PointerOffsetTerm::Constant(0),
+fn symbolic_address_bases_do_not_imply_non_aliasing() {
+    let symbolic = Address::symbolic(Variable(21_000));
+    let concrete = Address {
+        base: "heap".into(),
+        offset: AddressOffset::Constant(0),
     };
 
     assert_eq!(
-        PureFactContext::new().decide(&ConditionTerm::pointer_equal(symbolic, concrete)),
+        PureFactContext::new().decide(&ConditionTerm::address_equal(symbolic, concrete)),
         None
     );
 }
 
 #[test]
-fn concrete_pointer_block_names_cannot_create_symbolic_identity() {
-    let misleading_name = Pointer {
-        block: "symbolic-pointer:21000".into(),
-        offset: PointerOffsetTerm::Constant(0),
+fn concrete_address_base_names_cannot_create_symbolic_identity() {
+    let misleading_name = Address {
+        base: "symbolic-pointer:21000".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let heap = Pointer {
-        block: "heap".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let heap = Address {
+        base: "heap".into(),
+        offset: AddressOffset::Constant(0),
     };
 
     assert!(!misleading_name.has_symbolic_block());
@@ -831,7 +822,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition.clone(), true)),
+            Box::new(Proposition::condition_is(condition.clone(), true)),
             Box::new(Proposition::ProgramFunctionVerifies {
                 state: Box::new(state.clone()),
                 function: Box::new(function.clone()),
@@ -855,7 +846,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
     assert_eq!(
         execution.paths()[1].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition, false)),
+            Box::new(Proposition::condition_is(condition, false)),
             Box::new(Proposition::ProgramFunctionVerifies {
                 state: Box::new(state.clone()),
                 function: Box::new(function),
@@ -872,7 +863,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
 #[test]
 fn execution_derivation_matches_only_equivalent_call_havoc() {
     let assumptions = PureFactContext::new();
-    let base = Memory::new().with_block("arc", 16);
+    let base = SymbolicMemory::new().with_block("arc", 16);
     let first_range = memory_range(arc_pointer(0), 0, 1);
     let other_range = memory_range(arc_pointer(4), 0, 1);
     let left = FunctionOutcome::Return {
@@ -933,9 +924,9 @@ fn execution_derivation_matches_only_equivalent_call_havoc() {
 
 #[test]
 fn function_call_threads_memory_but_discards_callee_locals() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = ExecutionState::new()
@@ -960,7 +951,7 @@ fn function_call_threads_memory_but_discards_callee_locals() {
     )];
     let final_state = ExecutionState::new()
         .with_local("caller", int32(42))
-        .with_memory(Memory::new().store(pointer.clone(), int32(9)))
+        .with_memory(SymbolicMemory::new().store(pointer.clone(), int32(9)))
         .with_resource_context(resources);
     let theorem = prove_symbolic_program_function_execution(
         state.clone(),
@@ -1357,7 +1348,7 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     let theorem = prove_symbolic_program_execution(
         ExecutionState::new(),
         ProgramStatement::Throw(crate::kernel::program_expression::pointer_value(
-            Pointer::null(),
+            Address::null(),
         )),
         PureFactContext::new(),
     )
@@ -1824,9 +1815,9 @@ fn unknown_call_assign_is_runtime_error() {
 /// `result == 0` for a function that can return a nonzero `a`.
 #[test]
 fn unreadable_guard_operand_leaves_the_condition_undecided() {
-    let pointer = Pointer {
-        block: "external".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "external".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("a", int32(MachineTerm::Variable(Variable(1))))
@@ -1848,9 +1839,9 @@ fn unreadable_guard_operand_leaves_the_condition_undecided() {
     );
     let mut budget = ExecutionBudget::for_program_expression(&condition);
     for desired_truthiness in [false, true] {
-        let assumptions = crate::kernel::loops::assume_condition_truthiness(
+        let assumptions = crate::kernel::loops::assume_loop_entry_truthiness(
             &state,
-            &condition,
+            Some(&condition),
             &[],
             &PureFactContext::new(),
             &[],
@@ -2082,14 +2073,14 @@ fn whole_function_default_budget_scales_with_selected_source() {
 
 #[test]
 fn while_invariant_is_proof_obligation() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let invariant = Proposition::MemoryLoadable {
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         base: pointer,
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let state = ExecutionState::new().with_local("x", int32(0));
@@ -2294,9 +2285,9 @@ fn prerequisite_loop_rule_fixture() -> (ProgramStatement, VerifiedLoopRule) {
 /// (laws 4 and 5; docs/internals/stable-views.md).
 #[test]
 fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let viewed = view_memory_fact(pointer, 0, 1);
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
@@ -2430,10 +2421,9 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
         goals.declarations()[0][0].proposition(),
         goals.declarations()[1][0].proposition()
     );
-    assert!(matches!(
-        goals.declarations()[0][0].proposition(),
-        Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
-    ));
+    assert!(
+        matches!(&goals.declarations()[0][0].proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+    );
     assert!(
         loop_invariant_obligations_at_entry(&state, &checks, &assumptions)
             .unwrap()
@@ -2482,7 +2472,7 @@ fn loop_entry_goals_preserve_guarded_judgments() {
 
 /// `a != 0` as the kernel spells a short-circuit guard operand's fact.
 fn guard_operand_fact(variable: u64, nonzero: bool) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2725,8 +2715,8 @@ fn a_rebound_binder_field_never_reuses_a_havocked_local_variable() {
             &mut budget,
         )
         .expect("the execution's counter is nowhere near its ceiling");
-        let [AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(field)))] =
-            fields.as_ref()
+        let Some(ResourceFieldValue::Program(ProgramValue::Int32(MachineTerm::Variable(field)))) =
+            fields.get(0)
         else {
             panic!("an int32 model field is one symbolic int32: {fields:?}");
         };
@@ -2932,7 +2922,7 @@ fn the_spec_fold_binder_range_is_disjoint_from_every_other_producer() {
         ("execution identities", 1_000_000..2_000_000),
         ("surface quantifiers", 2_000_000..4_000_000),
         ("surface algebraic binders", 4_000_000..4_000_000_000),
-        ("symbolic pointer blocks", 4_000_000_000..8_000_000_000),
+        ("symbolic address bases", 4_000_000_000..8_000_000_000),
         ("load variables", (1 << 40)..(1 << 41)),
         (
             "match binders",
@@ -2972,7 +2962,7 @@ fn the_spec_fold_binder_range_is_disjoint_from_every_other_producer() {
 ///
 /// The execution counter runs `1_000_000 .. 2_000_000`; quantifier variables
 /// run `2_000_000 .. 4_000_000`; algebraic binders run
-/// `4_000_000 .. 4_000_000_000`; symbolic pointer blocks run
+/// `4_000_000 .. 4_000_000_000`; symbolic address bases run
 /// `4_000_000_000 .. 8_000_000_000`. Load, witness, and fold binders have
 /// separate higher ranges.
 /// The match-binder range has to miss all of them, because a binder that
@@ -2994,7 +2984,7 @@ fn the_match_binder_range_is_disjoint_from_every_other_producer() {
             crate::kernel::spec::SPEC_FOLD_BINDER_VARIABLE_BASE
                 ..crate::kernel::spec::SPEC_FOLD_BINDER_VARIABLE_CEILING,
         ),
-        ("symbolic pointer blocks", 4_000_000_000..8_000_000_000),
+        ("symbolic address bases", 4_000_000_000..8_000_000_000),
         ("load variables", (1 << 40)..(1 << 41)),
         ("the C identities below every reserved base", 0..1_000_000),
     ];
@@ -3053,7 +3043,7 @@ fn the_universal_witness_range_is_disjoint_from_every_other_producer() {
             crate::kernel::spec::SPEC_FOLD_BINDER_VARIABLE_BASE
                 ..crate::kernel::spec::SPEC_FOLD_BINDER_VARIABLE_CEILING,
         ),
-        ("symbolic pointer blocks", 4_000_000_000..8_000_000_000),
+        ("symbolic address bases", 4_000_000_000..8_000_000_000),
         ("load variables", (1 << 40)..(1 << 41)),
         (
             "match binders",
@@ -3387,8 +3377,8 @@ fn loop_join_reports_the_local_and_both_object_classes() {
     use crate::kernel::effective_type::{CAccessClass, CStructClass};
     let pointer = |class| {
         ProgramValue::Pointer(
-            PointerValue::new(
-                Pointer::symbolic(Variable(987_001)),
+            Pointer::new(
+                Address::symbolic(Variable(987_001)),
                 ProgramType::Int32Pointer,
             )
             .with_object_class(class),
@@ -3416,20 +3406,20 @@ fn loop_join_reports_the_local_and_both_object_classes() {
 fn loop_join_accepts_null_without_restoring_an_object_class() {
     use crate::kernel::effective_type::{CAccessClass, CStructClass};
     let node = CAccessClass::Struct(CStructClass::opaque("node"));
-    let head_pointer = PointerValue::new(
-        Pointer::symbolic(Variable(987_010)),
+    let head_pointer = Pointer::new(
+        Address::symbolic(Variable(987_010)),
         ProgramType::Int32Pointer,
     )
     .with_object_class(Some(node));
     let head = ExecutionState::new().with_local("parent", ProgramValue::Pointer(head_pointer));
-    let unknown = PointerValue::new(
-        Pointer::symbolic(Variable(987_011)),
+    let unknown = Pointer::new(
+        Address::symbolic(Variable(987_011)),
         ProgramType::Int32Pointer,
     );
-    let null = PointerValue::new(Pointer::null(), ProgramType::Int32Pointer);
+    let null = Pointer::new(Address::null(), ProgramType::Int32Pointer);
     let empty = PureFactContext::new();
     let known_null = empty.clone().assume_condition(
-        ConditionTerm::pointer_equal(unknown.pointer().clone(), Pointer::null()),
+        ConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         true,
     );
     for (pointer, facts) in [(null, &empty), (unknown.clone(), &known_null)] {
@@ -3442,8 +3432,43 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     let back = ExecutionState::new().with_local("parent", ProgramValue::Pointer(unknown.clone()));
     assert!(loop_state_components_match_at_back_edge(&head, &back, &empty, &[]).is_err());
     let nonnull = empty.assume_condition(
-        ConditionTerm::pointer_equal(unknown.pointer().clone(), Pointer::null()),
+        ConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         false,
     );
     assert!(loop_state_components_match_at_back_edge(&head, &back, &nonnull, &[]).is_err());
+}
+
+#[test]
+fn numeric_descent_is_owed_only_on_a_continuing_loop_edge() {
+    use crate::kernel::program_expression::{less_than, subtract, uint32_literal, variable};
+    for (next, expect_descent) in [(4, false), (3, true)] {
+        let statement = program_while(
+            less_than(variable("x"), uint32_literal(4)),
+            vec![],
+            program_assign("x", uint32_literal(next)),
+        )
+        .with_loop_ranking_measures(vec![RankingComponent::ProgramExpression(subtract(
+            uint32_literal(3),
+            variable("x"),
+        ))]);
+        let execution = prove_symbolic_execution_statement_verification_paths_with_environment(
+            ExecutionState::new().with_local("x", uint32(3)),
+            statement,
+            PureFactContext::new(),
+            ExecutionEnvironment::new(),
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
+        );
+        assert!(execution.limit.is_none());
+        assert!(!execution.paths.is_empty());
+        let owes_descent = execution
+            .paths
+            .iter()
+            .flat_map(|path| &path.obligations)
+            .any(|obligation| {
+                obligation
+                    .context()
+                    .is_some_and(|context| context.contains("decreases at the back edge"))
+            });
+        assert_eq!(owes_descent, expect_descent, "next x = {next}");
+    }
 }

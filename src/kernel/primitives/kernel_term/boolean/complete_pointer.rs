@@ -4,18 +4,18 @@ use super::*;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 struct PointerIdentity {
-    address: SharedPointerAddress,
-    provenance: SharedPointerAddress,
+    address: SharedAddress,
+    provenance: SharedAddress,
     program_type: ProgramType,
     volatile: bool,
-    extent_known: bool,
-    opaque_extent: Option<SharedPointerAddress>,
-    extent: Option<(SharedPointerAddress, KernelTerm)>,
+    bounds_known: bool,
+    bounds_owner: Option<SharedAddress>,
+    bounds: Option<(SharedAddress, KernelTerm)>,
 }
 
 #[derive(Clone, Debug)]
 pub struct KernelPointerEquality {
-    arguments: [SharedPointerValue; 2],
+    arguments: [SharedPointer; 2],
     observation: Option<Arc<[PointerIdentity; 2]>>,
 }
 impl PartialEq for KernelPointerEquality {
@@ -39,31 +39,31 @@ impl Hash for KernelPointerEquality {
     }
 }
 impl KernelPointerEquality {
-    pub(crate) fn arguments(&self) -> &[SharedPointerValue; 2] {
+    pub(crate) fn arguments(&self) -> &[SharedPointer; 2] {
         &self.arguments
     }
     pub(crate) fn observe(
         &self,
-        mut address: impl FnMut(&SharedPointerAddress) -> SharedPointerAddress,
+        mut address: impl FnMut(&SharedAddress) -> SharedAddress,
         mut numeric: impl FnMut(&KernelTerm) -> KernelTerm,
     ) -> Self {
         let observation = self.arguments.each_ref().map(|value| {
             let p = value.node();
             let q = p.qualifiers.as_ref();
-            let known = q.is_some_and(|q| q.extent_known);
+            let known = q.is_some_and(|q| q.bounds_known);
             PointerIdentity {
                 address: address(&p.address),
                 provenance: address(&p.provenance),
                 program_type: p.program_type,
                 volatile: q.is_some_and(|q| q.volatile),
-                extent_known: known,
-                opaque_extent: if known {
+                bounds_known: known,
+                bounds_owner: if known {
                     None
                 } else {
-                    p.opaque_extent.as_ref().map(&mut address)
+                    p.bounds_owner.as_ref().map(&mut address)
                 },
-                extent: q
-                    .and_then(|q| q.extent.as_ref())
+                bounds: q
+                    .and_then(|q| q.bounds.as_ref())
                     .map(|e| (address(&e.start), numeric(&e.width))),
             }
         });
@@ -74,38 +74,38 @@ impl KernelPointerEquality {
     }
 }
 
-impl SharedPointerValue {
+impl SharedPointer {
     pub(crate) fn condition_syntax_equal(&self, other: &Self) -> bool {
         if self == other {
             return true;
         }
         let (a, b) = (self.node(), other.node());
         let (aq, bq) = (a.qualifiers.as_ref(), b.qualifiers.as_ref());
-        let known = aq.is_some_and(|q| q.extent_known);
+        let known = aq.is_some_and(|q| q.bounds_known);
         a.program_type == b.program_type
             && aq.is_some_and(|q| q.volatile) == bq.is_some_and(|q| q.volatile)
-            && known == bq.is_some_and(|q| q.extent_known)
+            && known == bq.is_some_and(|q| q.bounds_known)
             && a.address.syntax_equal(&b.address)
             && a.provenance.syntax_equal(&b.provenance)
             && (known
-                || match (&a.opaque_extent, &b.opaque_extent) {
+                || match (&a.bounds_owner, &b.bounds_owner) {
                     (None, None) => true,
                     (Some(a), Some(b)) => a.syntax_equal(b),
                     _ => false,
                 })
-            && self.condition_extent_equal(other)
+            && self.condition_bounds_equal(other)
     }
-    pub(crate) fn condition_extent_equal(&self, other: &Self) -> bool {
+    pub(crate) fn condition_bounds_equal(&self, other: &Self) -> bool {
         match (
             self.node()
                 .qualifiers
                 .as_ref()
-                .and_then(|q| q.extent.as_ref()),
+                .and_then(|q| q.bounds.as_ref()),
             other
                 .node()
                 .qualifiers
                 .as_ref()
-                .and_then(|q| q.extent.as_ref()),
+                .and_then(|q| q.bounds.as_ref()),
         ) {
             (None, None) => true,
             (Some(a), Some(b)) => {
@@ -119,20 +119,20 @@ impl SharedPointerValue {
             _ => false,
         }
     }
-    /// Native map_pointers policy: addresses change, extent width does not.
+    /// Native map_pointers policy: addresses change, bounds width does not.
     pub(crate) fn map_condition_addresses<E>(
         &self,
-        mut map: impl FnMut(&SharedPointerAddress) -> Result<SharedPointerAddress, E>,
+        mut map: impl FnMut(&SharedAddress) -> Result<SharedAddress, E>,
     ) -> Result<Self, E> {
         let mut p = self.node().clone();
         p.address = map(&p.address)?;
         p.provenance = map(&p.provenance)?;
-        p.opaque_extent = p.opaque_extent.as_ref().map(&mut map).transpose()?;
+        p.bounds_owner = p.bounds_owner.as_ref().map(&mut map).transpose()?;
         if let Some(q) = &mut p.qualifiers
-            && let Some(e) = &q.extent
+            && let Some(e) = &q.bounds
         {
             let start = map(&e.start)?;
-            Arc::make_mut(q).extent.as_mut().unwrap().start = start;
+            Arc::make_mut(q).bounds.as_mut().unwrap().start = start;
         }
         let result = Self::new(p);
         Ok(if self.same_source_payload(&result) {
@@ -143,10 +143,10 @@ impl SharedPointerValue {
     }
 }
 impl KernelTerm {
-    pub(crate) fn pointer_value_equal_raw(arguments: [SharedPointerValue; 2]) -> Self {
+    pub(crate) fn pointer_equal_raw(arguments: [SharedPointer; 2]) -> Self {
         Self::intern(
             KernelType::Bool,
-            KernelTermNode::PointerValueEqual(KernelPointerEquality {
+            KernelTermNode::PointerEqual(KernelPointerEquality {
                 arguments,
                 observation: None,
             }),
@@ -155,16 +155,16 @@ impl KernelTerm {
 }
 
 impl KernelTerm {
-    pub(crate) fn pointer_value_equal(arguments: [SharedPointerValue; 2]) -> Self {
+    pub(crate) fn pointer_equal(arguments: [SharedPointer; 2]) -> Self {
         let [left, right] = arguments.each_ref();
         let (a, b) = (left.node(), right.node());
         let (aq, bq) = (a.qualifiers.as_ref(), b.qualifiers.as_ref());
-        let known = aq.is_some_and(|q| q.extent_known);
+        let known = aq.is_some_and(|q| q.bounds_known);
         let same_domain = a.provenance.syntax_equal(&b.provenance)
-            && left.condition_extent_equal(right)
-            && known == bq.is_some_and(|q| q.extent_known)
+            && left.condition_bounds_equal(right)
+            && known == bq.is_some_and(|q| q.bounds_known)
             && (known
-                || match (&a.opaque_extent, &b.opaque_extent) {
+                || match (&a.bounds_owner, &b.bounds_owner) {
                     (None, None) => true,
                     (Some(a), Some(b)) => a.syntax_equal(b),
                     _ => false,
@@ -173,12 +173,12 @@ impl KernelTerm {
             || (matches!(a.program_type, ProgramType::FunctionPointer(_))
                 && matches!(b.program_type, ProgramType::FunctionPointer(_)))
         {
-            fn bits(address: &SharedPointerAddress) -> Option<&MachineTerm> {
+            fn bits(address: &SharedAddress) -> Option<&MachineTerm> {
                 if matches!(
                     address.node().offset.node(),
-                    KernelPointerOffset::Constant(0)
-                ) && let PointerBlock::PureFunctionApplication(call) =
-                    address.node().block.native_atom()
+                    KernelAddressOffset::Constant(0)
+                ) && let AddressBase::PureFunctionApplication(call) =
+                    address.node().base.native_atom()
                 {
                     call.integer_address_bits()
                 } else {
@@ -186,12 +186,12 @@ impl KernelTerm {
                 }
             }
             if bits(&a.address).is_some() || bits(&b.address).is_some() {
-                let numeric = |address: &SharedPointerAddress| {
+                let numeric = |address: &SharedAddress| {
                     if let Some(bits) = bits(address) {
                         return KernelTermImport::default()
                             .machine(MachineIntegerType::UInt64, bits);
                     }
-                    if address.syntax_equal(&SharedPointerAddress::import(&Pointer::null())) {
+                    if address.syntax_equal(&SharedAddress::import(&Address::null())) {
                         return KernelTermImport::default()
                             .machine(MachineIntegerType::UInt64, &MachineTerm::uint64_constant(0));
                     }
@@ -207,9 +207,9 @@ impl KernelTerm {
                     [numeric(&a.address), numeric(&b.address)],
                 );
             }
-            return Self::pointer_equal([a.address.clone(), b.address.clone()]);
+            return Self::address_equal([a.address.clone(), b.address.clone()]);
         }
-        Self::pointer_value_equal_raw(arguments.map(|value| {
+        Self::pointer_equal_raw(arguments.map(|value| {
             let p = value.node();
             value.with_binding_type_and_qualifiers(
                 p.program_type,
@@ -223,50 +223,50 @@ impl KernelTerm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn values() -> Vec<PointerValue> {
+    fn values() -> Vec<Pointer> {
         let mut values = Vec::new();
         for pointer in [
-            Pointer::symbolic(Variable(999101)),
-            Pointer::null(),
-            Pointer::integer_address(MachineTerm::Variable(Variable(999102))),
-            Pointer {
-                block: PointerBlock::ExternalObject(Variable(999101)),
-                offset: PointerOffsetTerm::Constant(0),
+            Address::symbolic(Variable(999101)),
+            Address::null(),
+            Address::from_integer_address(MachineTerm::Variable(Variable(999102))),
+            Address {
+                base: AddressBase::ExternalObject(Variable(999101)),
+                offset: AddressOffset::Constant(0),
             },
         ] {
-            let raw = PointerValue::new(pointer, ProgramType::Int32Pointer);
+            let raw = Pointer::new(pointer, ProgramType::Int32Pointer);
             values.push(raw.clone());
             values.push(raw.clone().with_pointee_constant(true));
             values.push(raw.clone().with_pointee_volatile(true));
-            values.push(raw.clone().with_root_extent());
-            values.push(raw.clone().with_extent(Some(SubobjectExtent {
-                start: Pointer::symbolic(Variable(999101)),
+            values.push(raw.clone().with_root_bounds());
+            values.push(raw.clone().with_bounds(Some(SubobjectBounds {
+                start: Address::symbolic(Variable(999101)),
                 width: MachineTerm::Variable(Variable(999102)),
             })));
             values.push(
                 raw.clone()
-                    .with_provenance(Arc::new(Pointer::symbolic(Variable(999103)))),
+                    .with_provenance(Arc::new(Address::symbolic(Variable(999103)))),
             );
-            values.push(raw.clone().with_address(Pointer {
-                block: raw.block.clone(),
-                offset: PointerOffsetTerm::Add(
-                    Box::new(PointerOffsetTerm::Constant(0)),
-                    Box::new(PointerOffsetTerm::scaled_int32_node(
+            values.push(raw.clone().with_address(Address {
+                base: raw.base.clone(),
+                offset: AddressOffset::Add(
+                    Box::new(AddressOffset::Constant(0)),
+                    Box::new(AddressOffset::scaled_int32_node(
                         MachineTerm::Variable(Variable(999102)),
                         4,
                     )),
                 ),
             }));
         }
-        values.push(PointerValue::new(
-            Pointer {
-                block: PointerBlock::FunctionSymbolic(Variable(999101)),
-                offset: PointerOffsetTerm::Constant(0),
+        values.push(Pointer::new(
+            Address {
+                base: AddressBase::FunctionSymbolic(Variable(999101)),
+                offset: AddressOffset::Constant(0),
             },
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ));
-        values.push(PointerValue::new(
-            Pointer::symbolic(Variable(999101)),
+        values.push(Pointer::new(
+            Address::symbolic(Variable(999101)),
             ProgramType::VoidPointer,
         ));
         values
@@ -277,18 +277,17 @@ mod tests {
         let values = values();
         for a in &values {
             for b in &values {
-                let shared = [SharedPointerValue::import(a), SharedPointerValue::import(b)];
+                let shared = [SharedPointer::import(a), SharedPointer::import(b)];
                 assert_eq!(shared[0].condition_syntax_equal(&shared[1]), a == b);
-                let expected = ConditionTerm::pointer_value_equal(a.clone(), b.clone());
-                let root = KernelTerm::pointer_value_equal(shared);
+                let expected = ConditionTerm::pointer_equal(a.clone(), b.clone());
+                let root = KernelTerm::pointer_equal(shared);
                 assert_eq!(
                     format!("{:?}", KernelTermExport::condition(&root).unwrap()),
                     format!("{expected:?}")
                 );
-                let native =
-                    ConditionTerm::PointerValueEqual(Box::new(a.clone()), Box::new(b.clone()));
+                let native = ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone()));
                 let root = KernelTermImport::default().condition(&native);
-                assert!(matches!(root.node(), KernelTermNode::PointerValueEqual(_)));
+                assert!(matches!(root.node(), KernelTermNode::PointerEqual(_)));
                 assert_eq!(
                     format!("{:?}", KernelTermExport::condition(&root).unwrap()),
                     format!("{native:?}")
@@ -301,20 +300,20 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         for value in values() {
             for to in [
-                Pointer::null(),
-                Pointer::symbolic(Variable(999110)),
-                Pointer {
-                    block: PointerBlock::Symbolic(Variable(999110)),
-                    offset: PointerOffsetTerm::Add(
-                        Box::new(PointerOffsetTerm::Constant(1)),
-                        Box::new(PointerOffsetTerm::Constant(2)),
+                Address::null(),
+                Address::symbolic(Variable(999110)),
+                Address {
+                    base: AddressBase::Symbolic(Variable(999110)),
+                    offset: AddressOffset::Add(
+                        Box::new(AddressOffset::Constant(1)),
+                        Box::new(AddressOffset::Constant(2)),
                     ),
                 },
             ] {
-                let source = ConditionTerm::PointerValueEqual(
+                let source = ConditionTerm::PointerEqual(
                     Box::new(value.clone()),
-                    Box::new(PointerValue::new(
-                        Pointer::symbolic(Variable(999111)),
+                    Box::new(Pointer::new(
+                        Address::symbolic(Variable(999111)),
                         ProgramType::Int32Pointer,
                     )),
                 );
@@ -341,7 +340,7 @@ mod tests {
                     );
                     let expected =
                         crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
-                            &Proposition::ConditionIs(source.clone(), true),
+                            &Proposition::condition_is(source.clone(), true),
                             Variable(999101),
                             &to,
                         );
@@ -367,17 +366,14 @@ mod tests {
     #[test]
     fn complete_pointer_conditions_observe_semantic_identity_without_erasing_producers() {
         let _session = crate::kernel::VerificationSession::enter();
-        let value = PointerValue::new(
-            Pointer::symbolic(Variable(999120)),
+        let value = Pointer::new(
+            Address::symbolic(Variable(999120)),
             ProgramType::Int32Pointer,
         );
         let roots = [value.clone(), value.with_pointee_constant(true)].map(|value| {
-            KernelTermImport::default().condition(&ConditionTerm::PointerValueEqual(
+            KernelTermImport::default().condition(&ConditionTerm::PointerEqual(
                 Box::new(value),
-                Box::new(PointerValue::new(
-                    Pointer::null(),
-                    ProgramType::Int32Pointer,
-                )),
+                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
             ))
         });
         assert_ne!(roots[0], roots[1]);
@@ -412,14 +408,10 @@ mod tests {
         let observed: Vec<_> = values
             .iter()
             .map(|value| {
-                let guard =
-                    KernelTermImport::default().condition(&ConditionTerm::PointerValueEqual(
-                        Box::new(value.clone()),
-                        Box::new(PointerValue::new(
-                            Pointer::null(),
-                            ProgramType::Int32Pointer,
-                        )),
-                    ));
+                let guard = KernelTermImport::default().condition(&ConditionTerm::PointerEqual(
+                    Box::new(value.clone()),
+                    Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
+                ));
                 SharedMachineIntegerTerm::observe_shared(
                     MachineIntegerType::Int32,
                     KernelTerm::machine_if_shared(
@@ -439,31 +431,30 @@ mod tests {
     #[test]
     fn complete_pointer_conditions_keep_exact_only_load_authority() {
         let _session = crate::kernel::VerificationSession::enter();
-        let before = crate::kernel::Memory::new()
+        let before = crate::kernel::SymbolicMemory::new()
             .with_block("complete-read", 4)
             .with_block("complete-other", 4);
         let after = before.clone().store(
-            crate::kernel::Memory::global_pointer("complete-other"),
+            crate::kernel::SymbolicMemory::global_pointer("complete-other"),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let roots = [before, after].map(|memory| {
-            let pointer = Pointer {
-                block: PointerBlock::Symbolic(Variable(999130)),
-                offset: PointerOffsetTerm::scaled_int32_node(
+            let pointer = Address {
+                base: AddressBase::Symbolic(Variable(999130)),
+                offset: AddressOffset::scaled_int32_node(
                     MachineTerm::MemoryLoad(
                         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-                        Box::new(crate::kernel::Memory::global_pointer("complete-read")),
+                        Box::new(crate::kernel::SymbolicMemory::global_pointer(
+                            "complete-read",
+                        )),
                         LoadKind::Int32,
                     ),
                     4,
                 ),
             };
-            KernelTermImport::default().condition(&ConditionTerm::PointerValueEqual(
-                Box::new(PointerValue::new(pointer, ProgramType::Int32Pointer)),
-                Box::new(PointerValue::new(
-                    Pointer::null(),
-                    ProgramType::Int32Pointer,
-                )),
+            KernelTermImport::default().condition(&ConditionTerm::PointerEqual(
+                Box::new(Pointer::new(pointer, ProgramType::Int32Pointer)),
+                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
             ))
         });
         for allowed in [false, true] {

@@ -3,7 +3,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::cell::Cell;
 
 fn fact(variable: u64, value: i64) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,

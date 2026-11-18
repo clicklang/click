@@ -66,7 +66,7 @@ pub(in crate::surface) fn count_loop_regions(
                 body,
                 ..
             } => {
-                let (_, _, test) = loop_test.execution_parts();
+                let test = loop_test.source_region();
                 count += 1;
                 pending.push(body);
                 if let Some(test) = test {
@@ -101,6 +101,10 @@ struct SourceExecutionLayoutData {
     automatic_break_heads: BTreeMap<usize, usize>,
     loop_bodies: BTreeMap<usize, usize>,
     loop_updates: BTreeMap<usize, usize>,
+    /// Pure decisions receive semantic regions after all written operations,
+    /// preserving every existing statement number and their own footprints.
+    loop_test_phases: BTreeMap<usize, (crate::kernel::LoopTestPosition, usize, usize)>,
+    hidden_loop_tests: BTreeMap<usize, usize>,
     natural_loop_targets: BTreeMap<usize, crate::kernel::ControlTargetId>,
     natural_exit_targets: BTreeMap<usize, crate::kernel::ControlTargetId>,
     natural_exit_statement_indices: BTreeMap<usize, usize>,
@@ -134,6 +138,7 @@ struct SourceExecutionLayoutData {
     /// result is the state's call result of that number while its statement
     /// runs.
     call_numbers: BTreeMap<usize, u32>,
+    snapshot_step_results: bool,
     aggregate_results:
         BTreeMap<usize, std::sync::Arc<BTreeMap<String, crate::kernel::AggregateField>>>,
     full_expression_ends: BTreeSet<usize>,
@@ -149,6 +154,10 @@ struct SourceExecutionLayoutData {
     /// `<region>.result`, and the call region of each frontend result
     /// temporary, which no other name spells.
     call_results: BTreeMap<usize, crate::kernel::BindingName>,
+    /// The producing call step of a frontend temporary assigned its result.
+    call_captures: BTreeMap<crate::kernel::BindingName, u32>,
+    /// Source call ordinals in prelowered bodies, in executable region order.
+    named_calls: Option<NamedCalls>,
     allocation_regions: BTreeSet<usize>,
     /// The source path of the statement each region belongs to: the inverse
     /// of `source_statements`, for spelling a region by its statement.
@@ -165,6 +174,25 @@ struct SourceExecutionLayoutData {
     /// The function's loop regions, counted once for every loop's clause
     /// validation rather than once per loop.
     loop_region_count: std::sync::OnceLock<usize>,
+}
+
+#[derive(Debug, Default)]
+struct NamedCalls {
+    in_function: BTreeMap<String, Vec<usize>>,
+    in_statement: BTreeMap<Vec<u32>, BTreeMap<String, Vec<usize>>>,
+}
+
+impl NamedCalls {
+    fn regions(&self, path: Option<&[u32]>, callee: &str) -> &[usize] {
+        crate::instrumentation::record_deterministic_work(1);
+        let calls = match path {
+            Some(path) => self.in_statement.get(path),
+            None => Some(&self.in_function),
+        };
+        calls
+            .and_then(|calls| calls.get(callee))
+            .map_or(&[], Vec::as_slice)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -260,6 +288,7 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
 fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
     match statement {
         ProgramStatement::Assign { expression, .. }
+        | ProgramStatement::StepValue { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression)
         | ProgramStatement::Assert {
@@ -277,7 +306,9 @@ fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
         | ProgramStatement::HeapFree {
             pointer: expression,
         } => expression_reads(expression),
-        ProgramStatement::Loop { test, .. } => expression_reads(test.execution_parts().0),
+        ProgramStatement::Loop { test, .. } => {
+            test.source_condition().is_some_and(expression_reads)
+        }
         ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallConstruct { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => arguments.iter().any(expression_reads),
@@ -297,6 +328,9 @@ fn syntax_statement_reads(statement: &syntax::CStatement) -> bool {
     let read =
         |expression: &syntax::CExpression| expression_reads(&expression.to_kernel_expression());
     match statement {
+        S::Declare { zero_fill, .. } => zero_fill
+            .iter()
+            .any(|fill| fill.written_elements.iter().any(|(_, value)| read(value))),
         S::Assign { expression, .. }
         | S::Return(expression, _)
         | S::Assert {
@@ -372,7 +406,110 @@ fn aggregate_result_fields(layout: &crate::kernel::AggregateLayout) -> Aggregate
     )
 }
 
+/// Allocate semantic decisions only after written source numbering and lexical
+/// exits are complete. Each read is keyed by the selected loop/header.
+fn finish_loop_phase_regions(data: &mut SourceExecutionLayoutData) {
+    if data.loop_test_phases.is_empty() {
+        return;
+    }
+    // Index the original written-source successors once. Each redirected
+    // edge is removed, so nested post-tests never revisit inner edges.
+    let mut successors: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+    let mut next = 0;
+    for (index, region) in &data.statements {
+        crate::instrumentation::record_deterministic_work(1);
+        next = next.max(index + 1).max(region.continuation_node + 1);
+        successors
+            .entry(region.continuation_node)
+            .or_default()
+            .insert(*index);
+    }
+    let mut post_tests = Vec::new();
+    for (loop_index, (position, region, written_end)) in &mut data.loop_test_phases {
+        let body = data.loop_bodies[loop_index];
+        let header = body - 1;
+        let after = *written_end;
+        assert_ne!(
+            after,
+            usize::MAX,
+            "loop written extent must be completed before phase routing"
+        );
+        *region = next;
+        if *position == crate::kernel::LoopTestPosition::AfterBody {
+            post_tests.push((body, after, *region));
+        }
+        next += 1;
+        data.statements.insert(
+            *region,
+            SourceStatementRegion {
+                kind: SourceStatementKind::Plain,
+                continuation_node: if *position == crate::kernel::LoopTestPosition::BeforeBody {
+                    body
+                } else {
+                    header
+                },
+            },
+        );
+        data.hidden_loop_tests.insert(*region, *loop_index);
+        data.loop_tests.insert(*region);
+        data.full_expression_ends.insert(*region);
+        if let Some(exits) = data.automatic_exits.get(&header) {
+            data.automatic_abrupt_exits.insert(*region, exits.clone());
+        }
+        if let Some(site) = data.sites.get(&header) {
+            data.sites.insert(*region, site.clone());
+        }
+        if let Some(path) = data.loop_paths.get(loop_index) {
+            data.region_paths.insert(*region, path.clone());
+            data.source_statements
+                .entry(path.clone())
+                .or_default()
+                .push(*region);
+        }
+        if data.reads.binary_search(&header).is_ok() {
+            data.reads.push(*region);
+        }
+    }
+    for (body, after, test) in post_tests.into_iter().rev() {
+        let Some(edges) = successors.get_mut(&after) else {
+            continue;
+        };
+        let selected = edges.range(body..after).copied().collect::<Vec<_>>();
+        for source in selected {
+            crate::instrumentation::record_deterministic_work(1);
+            edges.remove(&source);
+            data.statements
+                .get_mut(&source)
+                .expect("indexed source edge")
+                .continuation_node = test;
+        }
+    }
+}
+
 impl SourceExecutionLayout {
+    pub(in crate::surface) fn is_hidden_loop_test(&self, region: usize) -> bool {
+        self.data.hidden_loop_tests.contains_key(&region)
+    }
+
+    pub(in crate::surface) fn loop_test_phase_entry(&self, index: usize) -> Option<usize> {
+        self.data
+            .loop_test_phases
+            .get(&index)
+            .map(|(_, region, _)| *region)
+    }
+
+    pub(in crate::surface) fn loop_index_at_header(&self, region: usize) -> Option<usize> {
+        match self.data.statements.get(&region)?.kind {
+            SourceStatementKind::Loop { loop_index } => Some(loop_index),
+            _ => None,
+        }
+    }
+
+    pub(in crate::surface) fn loop_continuation_entry(&self, index: usize) -> Option<usize> {
+        self.loop_update_entry(index)
+            .or_else(|| self.loop_test_phase_entry(index))
+    }
+
     pub(in crate::surface) fn loop_update_entry(&self, index: usize) -> Option<usize> {
         self.data.loop_updates.get(&index).copied()
     }
@@ -463,6 +600,19 @@ impl SourceExecutionLayout {
             }
         }
 
+        // A frontend can lower a conditional value to two arms that publish
+        // the same result. That result belongs to the join, not either arm.
+        fn terminal_value_steps(statement: &ProgramStatement) -> Option<&[u32]> {
+            let tail = match statement {
+                ProgramStatement::Seq(statements) => statements.get(statements.len() - 1)?.as_ref(),
+                statement => statement,
+            };
+            match tail {
+                ProgramStatement::StepValue { steps, .. } => Some(steps),
+                _ => None,
+            }
+        }
+
         fn visit(
             statement: &ProgramStatement,
             next_statement_index: &mut usize,
@@ -492,6 +642,16 @@ impl SourceExecutionLayout {
                 } => {
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
+                    if let (Some(yes), Some(no)) = (
+                        terminal_value_steps(then_branch),
+                        terminal_value_steps(else_branch),
+                    ) && yes == no
+                    {
+                        for step in yes {
+                            layout.step_regions.insert(*step, statement_index);
+                            layout.call_numbers.entry(statement_index).or_insert(*step);
+                        }
+                    }
                     let then_statement_index = *next_statement_index;
                     let then_last =
                         visit(then_branch, next_statement_index, layout, aggregate_objects)?;
@@ -529,11 +689,16 @@ impl SourceExecutionLayout {
                     body,
                     ..
                 } => {
-                    let (_, _, test) = loop_test.execution_parts();
+                    let test = loop_test.source_region();
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
                     let loop_index = layout.loop_bodies.len();
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
+                    if loop_test.source_condition().is_some() {
+                        layout
+                            .loop_test_phases
+                            .insert(loop_index, (loop_test.position, usize::MAX, usize::MAX));
+                    }
                     if let Some(test) = test
                         .as_ref()
                         .filter(|test| test.position == crate::kernel::LoopTestPosition::BeforeBody)
@@ -566,6 +731,9 @@ impl SourceExecutionLayout {
                             layout,
                             aggregate_objects,
                         )?;
+                    }
+                    if let Some((_, _, end)) = layout.loop_test_phases.get_mut(&loop_index) {
+                        *end = *next_statement_index;
                     }
                     layout.statements.insert(
                         statement_index,
@@ -641,6 +809,15 @@ impl SourceExecutionLayout {
                     {
                         aggregate_objects
                             .insert(name.binding().clone(), aggregate_result_fields(declared));
+                        // Construction can require proofs about the destination before
+                        // it has initialized fields or published the constructed value.
+                        let binding = name.binding();
+                        if binding
+                            .local_id()
+                            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                        {
+                            layout.call_results.insert(statement_index, binding.clone());
+                        }
                     }
                     if let ProgramStatement::CallConstruct { target, .. } = statement {
                         let fields = aggregate_objects.get(target).ok_or_else(|| {
@@ -665,6 +842,29 @@ impl SourceExecutionLayout {
                         layout.call_numbers.insert(statement_index, *call);
                         layout.step_regions.insert(*call, statement_index);
                     }
+                    if let ProgramStatement::StepValue {
+                        steps, expression, ..
+                    } = statement
+                    {
+                        if let ProgramExpression::Variable(name) = expression
+                            && name
+                                .local_id()
+                                .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                            && let Some(fields) = aggregate_objects.get(name)
+                        {
+                            layout
+                                .aggregate_results
+                                .insert(statement_index, fields.clone());
+                        }
+                        for step in steps {
+                            if let std::collections::btree_map::Entry::Vacant(entry) =
+                                layout.step_regions.entry(*step)
+                            {
+                                entry.insert(statement_index);
+                                layout.call_numbers.entry(statement_index).or_insert(*step);
+                            }
+                        }
+                    }
                     if let ProgramStatement::Call { .. }
                     | ProgramStatement::CallResult { .. }
                     | ProgramStatement::CallConstruct { .. } = statement
@@ -687,6 +887,22 @@ impl SourceExecutionLayout {
                             statement_index,
                             crate::surface::call_source_spelling(function_name).to_string(),
                         );
+                    }
+                    if let ProgramStatement::Assign {
+                        name,
+                        expression:
+                            ProgramExpression::StepResult {
+                                step,
+                                origin: crate::kernel::StepOrigin::Call(_),
+                                ..
+                            },
+                        ..
+                    } = statement
+                        && name
+                            .local_id()
+                            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                    {
+                        layout.call_captures.insert(name.clone(), *step);
                     }
                     if let ProgramStatement::CallConstruct { target, .. }
                     | ProgramStatement::HeapAllocate { target, .. } = statement
@@ -738,6 +954,7 @@ impl SourceExecutionLayout {
             &mut layout,
             &mut aggregate_objects,
         )?;
+        layout.snapshot_step_results = !layout.call_numbers.is_empty();
         // The statements as written its front end says each region comes
         // from, which name them as C's do.
         if let Some(sites) = imported.source_sites() {
@@ -777,6 +994,27 @@ impl SourceExecutionLayout {
                 .collect::<Vec<_>>();
             layout.loop_paths.extend(loops);
         }
+        if layout.snapshot_step_results {
+            let mut named = NamedCalls::default();
+            for (region, callee) in &layout.call_targets {
+                crate::instrumentation::record_deterministic_work(1);
+                named
+                    .in_function
+                    .entry(callee.clone())
+                    .or_default()
+                    .push(*region);
+                if let Some(path) = layout.region_paths.get(region) {
+                    named
+                        .in_statement
+                        .entry(path.clone())
+                        .or_default()
+                        .entry(callee.clone())
+                        .or_default()
+                        .push(*region);
+                }
+            }
+            layout.named_calls = Some(named);
+        }
         // A construction return already contains the completed result in the
         // caller's destination. Retire private value parameters at its checked
         // return boundary, so preservation names the same transition as the
@@ -798,6 +1036,7 @@ impl SourceExecutionLayout {
             Vec::new()
         };
         collect_kernel_automatic_exits(function.body(), return_parameters, &mut layout);
+        finish_loop_phase_regions(&mut layout);
         Ok(Self {
             data: std::sync::Arc::new(layout),
         })
@@ -1086,6 +1325,20 @@ impl SourceExecutionLayout {
                     *next_loop_index += 1;
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
                     let post_test = matches!(statement, syntax::CStatement::DoWhile { .. });
+                    if test.is_none() {
+                        layout.loop_test_phases.insert(
+                            loop_index,
+                            (
+                                if post_test {
+                                    crate::kernel::LoopTestPosition::AfterBody
+                                } else {
+                                    crate::kernel::LoopTestPosition::BeforeBody
+                                },
+                                usize::MAX,
+                                usize::MAX,
+                            ),
+                        );
+                    }
                     if !post_test && let Some(test) = test {
                         visit(
                             test,
@@ -1113,6 +1366,9 @@ impl SourceExecutionLayout {
                             layout,
                             own.as_ref(),
                         );
+                    }
+                    if let Some((_, _, end)) = layout.loop_test_phases.get_mut(&loop_index) {
+                        *end = *next_statement_index;
                     }
                     layout.statements.insert(
                         statement_index,
@@ -1147,6 +1403,16 @@ impl SourceExecutionLayout {
                     *next_statement_index += 1;
                     *next_loop_index += 1;
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
+                    if test.is_none() {
+                        layout.loop_test_phases.insert(
+                            loop_index,
+                            (
+                                crate::kernel::LoopTestPosition::BeforeBody,
+                                usize::MAX,
+                                usize::MAX,
+                            ),
+                        );
+                    }
                     if let Some(test) = test {
                         visit(
                             test,
@@ -1173,6 +1439,9 @@ impl SourceExecutionLayout {
                         layout,
                         own.as_ref(),
                     );
+                    if let Some((_, _, end)) = layout.loop_test_phases.get_mut(&loop_index) {
+                        *end = *next_statement_index;
+                    }
                     layout.statements.insert(
                         statement_index,
                         SourceStatementRegion {
@@ -1332,6 +1601,7 @@ impl SourceExecutionLayout {
             visit(statement, &mut 0, &mut 0, &mut data, None);
         }
         collect_automatic_exits(statement, &mut data);
+        finish_loop_phase_regions(&mut data);
         Self {
             data: std::sync::Arc::new(data),
         }
@@ -1415,6 +1685,36 @@ impl SourceExecutionLayout {
         self.data.call_results.get(&region)
     }
 
+    pub(in crate::surface) fn has_call_captures(&self) -> bool {
+        !self.data.call_captures.is_empty()
+    }
+
+    pub(in crate::surface) fn snapshots_step_results(&self) -> bool {
+        self.data.snapshot_step_results
+    }
+
+    /// The source selector of the call that produced a frontend capture.
+    pub(in crate::surface) fn call_capture_source(
+        &self,
+        binding: &crate::kernel::BindingName,
+    ) -> Option<(usize, crate::surface::CodeRegionRef)> {
+        use crate::surface::{CodeRegionRef, SourcePathStep};
+        crate::instrumentation::record_deterministic_work(1);
+        let step = self.data.call_captures.get(binding)?;
+        let region = self.step_region(*step)?;
+        let callee = self.data.call_targets.get(&region)?;
+        let path = self.data.region_paths.get(&region).map(Vec::as_slice);
+        let calls = self.data.named_calls.as_ref()?.regions(path, callee);
+        let ordinal = calls.binary_search(&region).ok()?;
+        let mut steps = path
+            .unwrap_or_default()
+            .iter()
+            .map(|index| SourcePathStep::Statement(*index as usize))
+            .collect::<Vec<_>>();
+        steps.push(SourcePathStep::Call(callee.clone(), ordinal));
+        Some((region, CodeRegionRef::Path(steps)))
+    }
+
     /// The number of the call inside an expression that `region` is.
     pub(in crate::surface) fn is_aggregate_result(&self, region: usize) -> bool {
         self.data.aggregate_results.contains_key(&region)
@@ -1431,6 +1731,24 @@ impl SourceExecutionLayout {
 
     pub(in crate::surface) fn call_number(&self, region: usize) -> Option<u32> {
         self.data.call_numbers.get(&region).copied()
+    }
+
+    /// A retained result’s source region. Compiler bodies without statement
+    /// provenance expose their numbered regions as `region(N)`.
+    /// Choose by retained provenance, rather than trying alternate spellings.
+    pub(in crate::surface) fn result_code_region(
+        &self,
+        region: usize,
+    ) -> Option<crate::surface::CodeRegionRef> {
+        if self.data.region_paths.contains_key(&region) || self.data.calls.contains(&region) {
+            self.source_path_spelling(region, crate::surface::ProgramPointKind::Exit)
+                .map(crate::surface::CodeRegionRef::Path)
+        } else {
+            self.data
+                .statements
+                .contains_key(&region)
+                .then_some(crate::surface::CodeRegionRef::Region(region))
+        }
     }
 
     /// The region of the step numbered `step`.
@@ -1471,6 +1789,15 @@ impl SourceExecutionLayout {
         // calls, in the order they run.
         match steps {
             [SourcePathStep::Call(function, index)] => {
+                if let Some(named) = &data.named_calls {
+                    let calls = named.regions(None, function);
+                    return calls.get(*index).copied().ok_or_else(|| {
+                        format!(
+                            "this function calls `{function}` {} time(s), so it has no `call({function}, {index})`",
+                            calls.len()
+                        )
+                    });
+                }
                 let calls = data
                     .calls
                     .iter()
@@ -1569,6 +1896,16 @@ impl SourceExecutionLayout {
                     });
                 }
                 SourcePathStep::Call(function, index) if last => {
+                    if let Some(named) = &data.named_calls {
+                        let calls = named.regions(Some(&path), function);
+                        return calls.get(*index).copied().ok_or_else(|| {
+                            format!(
+                                "`{}` calls `{function}` {} time(s), so it has no `call({function}, {index})`",
+                                describe(&path),
+                                calls.len()
+                            )
+                        });
+                    }
                     let calls = own(&path)
                         .iter()
                         .filter(|region| data.call_targets.get(region) == Some(function))
@@ -1614,12 +1951,7 @@ impl SourceExecutionLayout {
                         .iter()
                         .find(|region| data.loop_tests.contains(region))
                         .copied()
-                        .ok_or_else(|| {
-                            format!(
-                                "`{}` tests its condition at its head, before any region of its own, so it has no `test()`",
-                                describe(&path)
-                            )
-                        });
+                        .ok_or_else(|| format!("`{}` has no loop test region", describe(&path)));
                 }
                 SourcePathStep::Assignment(local, index) if last => {
                     let assigns = |region: &usize| {
@@ -1703,9 +2035,12 @@ impl SourceExecutionLayout {
             let steps = vec![match data.call_targets.get(&region) {
                 Some(function) => SourcePathStep::Call(
                     function.clone(),
-                    earlier
-                        .filter(|earlier| data.call_targets.get(earlier) == Some(function))
-                        .count(),
+                    match &data.named_calls {
+                        Some(named) => named.regions(None, function).binary_search(&region).ok()?,
+                        None => earlier
+                            .filter(|earlier| data.call_targets.get(earlier) == Some(function))
+                            .count(),
+                    },
                 ),
                 None => SourcePathStep::AnyCall(earlier.count()),
             }];
@@ -1752,10 +2087,10 @@ impl SourceExecutionLayout {
     fn source_statement_exit(&self, path: &[u32]) -> usize {
         let data = &self.data;
         if let Some(regions) = data.source_statements.get(path) {
-            if let Some(last) = regions
-                .last()
-                .filter(|last| data.full_expression_ends.contains(last))
-            {
+            if let Some(last) = regions.last().filter(|last| {
+                data.full_expression_ends.contains(last)
+                    && !data.hidden_loop_tests.contains_key(last)
+            }) {
                 return *last;
             }
             let compound = regions.iter().find(|region| {
@@ -2161,7 +2496,7 @@ fn collect_kernel_automatic_exits(
                 body,
                 ..
             } => {
-                let (_, _, test) = loop_test.execution_parts();
+                let test = loop_test.source_region();
                 if let Some(test) = test
                     .as_ref()
                     .filter(|test| test.position == crate::kernel::LoopTestPosition::BeforeBody)
@@ -2635,6 +2970,8 @@ mod source_execution_layout_tests {
                 automatic_break_heads: BTreeMap::new(),
                 loop_bodies: BTreeMap::new(),
                 loop_updates: BTreeMap::new(),
+                loop_test_phases: BTreeMap::new(),
+                hidden_loop_tests: BTreeMap::new(),
                 natural_loop_targets: BTreeMap::new(),
                 natural_exit_targets: BTreeMap::new(),
                 natural_exit_statement_indices: BTreeMap::new(),
@@ -2646,12 +2983,15 @@ mod source_execution_layout_tests {
                 calls: BTreeSet::new(),
                 loop_tests: BTreeSet::new(),
                 call_numbers: BTreeMap::new(),
+                snapshot_step_results: false,
                 aggregate_results: BTreeMap::new(),
                 full_expression_ends: BTreeSet::new(),
                 step_regions: BTreeMap::new(),
                 prior_steps: BTreeMap::new(),
                 operator_regions: BTreeMap::new(),
                 call_results: BTreeMap::new(),
+                call_captures: BTreeMap::new(),
+                named_calls: None,
                 allocation_regions: BTreeSet::new(),
                 region_paths: BTreeMap::new(),
                 loop_paths: BTreeMap::new(),
@@ -2809,4 +3149,90 @@ mod source_execution_layout_tests {
 mod shared_loop_scope_scaling_tests {
     use super::*;
     include!("../../scaling_tests/surface/lowering/source_layout/shared_loop_scopes.rs");
+}
+
+#[cfg(test)]
+mod loop_phase_source_tests {
+    use super::*;
+
+    #[test]
+    fn pure_test_regions_follow_written_numbers_and_own_their_footprints() {
+        let function =
+            syntax::parse_function("int32 f(int32 n) { while (n > 0) { n = n - 1; } return n; }")
+                .unwrap();
+        let typed = function
+            .clone()
+            .with_prelowered_kernel_function(function.to_kernel_function());
+        for function in [&function, &typed] {
+            let layout = SourceExecutionLayout::for_function(function).unwrap();
+            assert_eq!(layout.loop_body_entry(0), Some(1));
+            assert!(matches!(
+                layout.statement(0).unwrap().kind,
+                SourceStatementKind::Loop { loop_index: 0 }
+            ));
+            assert!(matches!(
+                layout.statement(2).unwrap().kind,
+                SourceStatementKind::Plain
+            ));
+            let test = layout.loop_test_phase_entry(0).unwrap();
+            assert!(
+                test > 3,
+                "the test must not overwrite source statements or their end boundary"
+            );
+            assert!(layout.is_hidden_loop_test(test));
+            if function.prelowered_kernel_function().is_none() {
+                use crate::surface::{ProgramPointKind, SourcePathStep};
+                assert_eq!(
+                    layout.source_path_region(&[SourcePathStep::Loop(0)], ProgramPointKind::Exit),
+                    Ok(0),
+                );
+                assert_eq!(
+                    layout.source_path_region(
+                        &[SourcePathStep::Loop(0), SourcePathStep::Test],
+                        ProgramPointKind::Exit,
+                    ),
+                    Ok(test),
+                );
+            }
+            assert_eq!(layout.statement(test).unwrap().continuation_node, 1);
+            assert_ne!(
+                test, 0,
+                "test effects must not be labelled as whole-loop effects"
+            );
+        }
+    }
+    #[test]
+    fn nested_post_test_successors_reach_the_innermost_pending_phase() {
+        let function = syntax::parse_function(
+            "int32 f(int32 n) { do { do { n = 0; } while(n > 0); } while(n > 0); return n; }",
+        )
+        .unwrap();
+        let typed = function
+            .clone()
+            .with_prelowered_kernel_function(function.to_kernel_function());
+        for function in [&function, &typed] {
+            let layout = SourceExecutionLayout::for_function(function).unwrap();
+            let outer = layout.loop_test_phase_entry(0).unwrap();
+            let inner = layout.loop_test_phase_entry(1).unwrap();
+            assert_eq!(layout.statement(2).unwrap().continuation_node, inner);
+            assert_eq!(layout.statement(1).unwrap().continuation_node, outer);
+            assert_eq!(layout.statement(0).unwrap().continuation_node, 3);
+            assert_eq!(layout.statement(inner).unwrap().continuation_node, 1);
+            assert_eq!(layout.statement(outer).unwrap().continuation_node, 0);
+        }
+    }
+    #[test]
+    fn a_post_test_routes_its_body_without_redirecting_a_sibling_branch() {
+        let function = syntax::parse_function("int32 f(int32 n) { if(n > 0) { do { n = 0; } while(n > 0); } else { n = 1; } return n; }").unwrap();
+        let typed = function
+            .clone()
+            .with_prelowered_kernel_function(function.to_kernel_function());
+        for function in [&function, &typed] {
+            let layout = SourceExecutionLayout::for_function(function).unwrap();
+            let test = layout.loop_test_phase_entry(0).unwrap();
+            assert_eq!(layout.statement(2).unwrap().continuation_node, test);
+            assert_eq!(layout.statement(1).unwrap().continuation_node, 4);
+            assert_eq!(layout.statement(3).unwrap().continuation_node, 4);
+        }
+    }
 }

@@ -6,7 +6,11 @@ use super::*;
 
 /// A C read of `pointer` at `memory`, as one path: static storage holds no
 /// cell at function entry, so the read is its load there.
-fn program_read(memory: &Memory, pointer: Pointer, value_type: ProgramType) -> ExpressionOutcome {
+fn program_read(
+    memory: &SymbolicMemory,
+    pointer: Address,
+    value_type: ProgramType,
+) -> ExpressionOutcome {
     let mut paths = crate::kernel::eval::evaluate_memory_load_paths(
         memory,
         pointer,
@@ -95,10 +99,10 @@ fn a_symbolic_global_array_names_only_the_elements_a_function_reads() {
                 entry
             });
             let entry_named = registered() - before_entry;
-            let base = Memory::global_pointer("buf");
-            let element = |index: i64| Pointer {
-                block: base.block.clone(),
-                offset: PointerOffsetTerm::Constant(index * width),
+            let base = SymbolicMemory::global_pointer("buf");
+            let element = |index: i64| Address {
+                base: base.base.clone(),
+                offset: AddressOffset::Constant(index * width),
             };
             let before_statement = registered();
             let (read, statement_work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -159,8 +163,8 @@ fn an_initialized_array_at_startup_costs_the_same_whatever_its_length() {
             initialize_program_program_storage([function.clone()])
                 .expect("no run limit is installed")
         });
-        let buf = Memory::global_pointer("buf");
-        let counts = Memory::static_pointer("main", "counts");
+        let buf = SymbolicMemory::global_pointer("buf");
+        let counts = SymbolicMemory::static_pointer("main", "counts");
         let element = |index: u32| buf.offset_by_bytes(index * 4);
         let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
             let memory = startup.memory();
@@ -218,7 +222,7 @@ fn a_constant_array_at_function_entry_costs_the_same_whatever_its_length() {
         let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
             initialize_program_function_globals(&ExecutionState::new(), &function)
         });
-        let buf = Memory::global_pointer("buf");
+        let buf = SymbolicMemory::global_pointer("buf");
         assert_eq!(
             entry.memory().load(&buf.offset_by_bytes(8)),
             ExpressionOutcome::Value(int32(7)),
@@ -252,8 +256,8 @@ fn an_aggregate_array_at_startup_costs_the_same_whatever_its_length() {
             initialize_program_program_storage([function.clone()])
                 .expect("no run limit is installed")
         });
-        let pool = Memory::global_pointer("pool");
-        let slots = Memory::static_pointer("main", "slots");
+        let pool = SymbolicMemory::global_pointer("pool");
+        let slots = SymbolicMemory::static_pointer("main", "slots");
         let field = |element: u32, offset: u32| pool.offset_by_bytes(element * 24 + offset);
         let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
             let memory = startup.memory();
@@ -277,7 +281,7 @@ fn an_aggregate_array_at_startup_costs_the_same_whatever_its_length() {
                 value(int32(7)),
                 value(int32(0)),
                 value(ProgramValue::typed_pointer(
-                    Pointer::null(),
+                    Address::null(),
                     ProgramType::Int32Pointer
                 )),
                 value(int32(3)),
@@ -321,7 +325,7 @@ fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_leng
         let (entry, entry_work) = crate::instrumentation::measure_deterministic_work(|| {
             initialize_program_function_globals(&ExecutionState::new(), &function)
         });
-        let pool = Memory::global_pointer("pool");
+        let pool = SymbolicMemory::global_pointer("pool");
         let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
             [
                 program_read(

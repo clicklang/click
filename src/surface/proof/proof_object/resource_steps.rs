@@ -476,7 +476,7 @@ impl<'a> Proof<'a> {
             let array_refs = array_refs_for_parameters(
                 context.parsed_function.parameters(),
                 &values,
-                before.memory(),
+                &before.program_point(),
             );
             let (values, array_refs) = contract_environment_at_state(&values, &array_refs, before);
             let mut proposed = Vec::new();
@@ -1186,8 +1186,8 @@ impl<'a> Proof<'a> {
                     self.step_error(format!("unfold field binding `{name}` is already in scope"))
                 );
             }
-            match &instance.fields()[index] {
-                AlgebraicValue::Program(value) => {
+            match instance.fields().get(index).expect("checked field index") {
+                crate::kernel::ResourceFieldValue::Program(value) => {
                     locals.set_values(locals.values.with_inserted(
                         name.clone(),
                         ContractExpression::ProgramExpression(ProgramExpression::Value(
@@ -1196,7 +1196,8 @@ impl<'a> Proof<'a> {
                     ));
                 }
                 // Declaration expansion admits only C-typed field binders.
-                AlgebraicValue::Integer(_) | AlgebraicValue::Algebraic(_) => {
+                crate::kernel::ResourceFieldValue::Integer(_)
+                | crate::kernel::ResourceFieldValue::Algebraic(_) => {
                     return Err(self.step_error(format!(
                         "field `{slot}` of `{}` is not C-typed; an unfold pattern binds only C scalar and pointer fields",
                         instance.name()
@@ -1278,7 +1279,7 @@ impl<'a> Proof<'a> {
                 let array_refs = array_refs_for_parameters(
                     context.parameter_binding.parameters,
                     &values,
-                    context.fixed_state.state.memory(),
+                    &context.fixed_state.state.program_point(),
                 );
                 let (values, array_refs) =
                     contract_environment_at_state(&values, &array_refs, context.fixed_state.state);
@@ -1303,7 +1304,7 @@ impl<'a> Proof<'a> {
                 let array_refs = array_refs_for_parameters(
                     view.parameter_binding.parameters,
                     &values,
-                    view.fixed_state.state.memory(),
+                    &view.fixed_state.state.program_point(),
                 );
                 let (values, array_refs) =
                     contract_environment_at_state(&values, &array_refs, view.fixed_state.state);
@@ -1328,7 +1329,7 @@ impl<'a> Proof<'a> {
                 let array_refs = array_refs_for_parameters(
                     context.parsed_function.parameters(),
                     &values,
-                    execution.core.state.memory(),
+                    &execution.core.state.program_point(),
                 );
                 let (values, array_refs) =
                     contract_environment_at_state(&values, &array_refs, &execution.core.state);
@@ -1359,7 +1360,7 @@ impl<'a> Proof<'a> {
     fn apply_function_unfold_in_state(
         &self,
         application: &ClickFunctionApplication,
-        values: BTreeMap<String, ProgramValue>,
+        values: ProgramValueBindings,
         array_refs: ClickArrayRefs,
         algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
         integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
@@ -1458,9 +1459,7 @@ impl<'a> Proof<'a> {
 
         // A decided range exposes its empty or append equation over the
         // named function, with ordinary obligations for its guards.
-        let fold_equation = if matches!(&equality,
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, folded), true)
-                if matches!(folded.as_ref(), IntegerTerm::RangeFold { .. }))
+        let fold_equation = if matches!(&equality, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, folded), _)) if (matches!(folded.as_ref(), IntegerTerm::RangeFold { .. }))))
             && !self.goal().is_some_and(|goal| {
                 crate::kernel::proof::propositions_are_alpha_equal(goal, &equality)
             }) {
@@ -1488,10 +1487,8 @@ impl<'a> Proof<'a> {
             facts = facts.with_kernel_checked_fact(derived.clone());
             let branch = match self.focused_obligation() {
                 Some(Obligation::Proposition(goal)) => {
-                    let Proposition::ConditionIs(
-                        ConditionTerm::IntegerEqual(unfolded, replacement),
-                        true,
-                    ) = &derived
+                    let Some((ConditionTerm::IntegerEqual(unfolded, replacement), true)) =
+                        (&derived).condition_native()
                     else {
                         return Err(self.step_error(
                             "the restated fold law did not produce an Integer equation",
@@ -1767,7 +1764,7 @@ impl<'a> Proof<'a> {
         equality: &Proposition,
     ) -> Result<Option<(Proposition, Option<Proposition>)>, ClickError> {
         let name = &application.name;
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(whole, folded), true) = equality
+        let Some((ConditionTerm::IntegerEqual(whole, folded), true)) = equality.condition_native()
         else {
             return Err(self.step_error(format!(
                 "`unfold({name}(...))` applies to an `Integer`-valued pure function whose body is a range fold"
@@ -1809,14 +1806,14 @@ impl<'a> Proof<'a> {
             else {
                 return Err(self.step_error("the empty fold law must have a range guard"));
             };
-            match self.facts().assumptions().decide(condition) {
+            match self.facts().assumptions().decide(condition.native_compat()) {
                 Some(value) => value == *expected,
                 None => {
                     // A written predecessor guard also selects the append
                     // case. Inspect only that guard, without instantiating
                     // a body whose range case is still unknown.
                     let guard = crate::kernel::integer_range_fold_predecessor_guard(index)
-                        .map(|condition| Proposition::ConditionIs(condition, true));
+                        .map(|condition| Proposition::condition_is(condition, true));
                     if !guard.as_ref().is_some_and(|guard| {
                         self.facts().listed_premise_available(guard, &[], false)
                     }) {
@@ -1899,8 +1896,8 @@ impl<'a> Proof<'a> {
             if premise == equality {
                 continue;
             }
-            if let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-                premise
+            if let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+                (premise).condition_native()
                 && left.as_ref() == &prior
                 && matches!(right.as_ref(), IntegerTerm::RangeFold { .. })
             {
@@ -2133,7 +2130,7 @@ impl<'a> Proof<'a> {
             // premise-free checked Integer certificate proves the same truth;
             // this changes presentation, never the kernel obligation.
             if lowered
-                == Some(Proposition::ConditionIs(
+                == Some(Proposition::condition_is(
                     ConditionTerm::Constant(true),
                     true,
                 ))
@@ -2183,7 +2180,7 @@ impl<'a> Proof<'a> {
         unfold_surface_predicates(predicates, elaborated.as_ref().unwrap_or(surface), names)
     }
 
-    /// `take`, `give`, `gather`, or `scatter`: one checked kernel step on
+    /// Apply one checked kernel step on
     /// iterated guarded ownership. The kernel performs the step from the
     /// running state; this reads only its operands.
     pub(super) fn apply_execution_iterated_step(
@@ -2205,89 +2202,33 @@ impl<'a> Proof<'a> {
             )));
         }
         let state = &*execution.core.state;
-        let parameters = context.parsed_function.parameters();
-        let element =
-            |element: &IteratedElement| -> Result<crate::kernel::MemoryRange, ClickError> {
-                let captured;
-                let segment = match element {
-                    IteratedElement::Current(segment) => segment,
-                    IteratedElement::SavedBase { base, start, end } => {
-                        let evaluate = |expression: &ContractExpression| {
-                            let expression =
-                                self.substitute_fixed_state_locals_in_expression(expression)?;
-                            let names = contract_expression_referenced_names(&expression);
-                            let (values, array_refs) = contract_environment_for_names(
-                                context.parameter_binding(),
-                                &names,
-                                state,
-                            )?;
-                            evaluate_fixed_state_expression_through_kernel(
-                                &expression,
-                                self.facts().assumptions(),
-                                ContractEnvironment::new(&values, &array_refs)
-                                    .with_parameters(context.parameter_binding()),
-                                FixedStateFrame::new(
-                                    context.old_reference_state(&execution.core.frontier, state),
-                                    state,
-                                    None,
-                                    &execution.presentation.recorded_states,
-                                ),
-                                context.spec_definitions,
-                                &BTreeSet::new(),
-                            )
-                            .map(ProgramExpression::Value)
-                            .map_err(|message| {
-                                self.step_error(format!("`{name}` operand: {message}"))
-                            })
-                        };
-                        let base = evaluate(base)?;
-                        let start = evaluate(start)?;
-                        let end = evaluate(end)?;
-                        captured = ContractSegment {
-                            state: ContractSegmentState::Current,
-                            surface: ContractSegmentSurface::Range {
-                                base: ContractExpression::ProgramExpression(base.clone()),
-                                start: ContractExpression::ProgramExpression(start.clone()),
-                                end: ContractExpression::ProgramExpression(end.clone()),
-                            },
-                            base,
-                            start,
-                            end,
-                            uninitialized: false,
-                        };
-                        &captured
-                    }
-                };
-                let resource = ResourceClause::OwnMemory(segment.clone());
-                let lowered = match element {
-                    IteratedElement::Current(_) => {
-                        lower_resource_clause_at_current_locals_with_assumptions(
-                            &resource,
-                            context.parameter_binding(),
-                            state,
-                            None,
-                            self.facts().assumptions(),
-                        )
-                    }
-                    // All three operands are captured values: there are no
-                    // C locals or parameters left to populate or resolve.
-                    IteratedElement::SavedBase { .. } => lower_resource_clause_at_state(
-                        &resource,
-                        ParameterBinding::new(&[], &[]),
-                        state,
-                    ),
-                }?;
-                lowered
-                    .memory_own_range()
-                    .cloned()
-                    .ok_or_else(|| self.step_error(format!("`{name}` expects a memory range")))
-            };
+        let evaluate = |expression: &ContractExpression| {
+            let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
+            let names = contract_expression_referenced_names(&expression);
+            let (values, array_refs) =
+                contract_environment_for_names(context.parameter_binding(), &names, state)?;
+            evaluate_fixed_state_expression_through_kernel(
+                &expression,
+                self.facts().assumptions(),
+                ContractEnvironment::new(&values, &array_refs)
+                    .with_parameters(context.parameter_binding()),
+                FixedStateFrame::new(
+                    context.old_reference_state(&execution.core.frontier, state),
+                    state,
+                    None,
+                    &execution.presentation.recorded_states,
+                ),
+                context.spec_definitions,
+                &BTreeSet::new(),
+            )
+            .map_err(|message| self.step_error(format!("`{name}` operand: {message}")))
+        };
         let template = |resource: &ResourceClause| {
             iterated_template_for_resource(
                 context.resource_environment,
                 resource,
                 name,
-                ParameterBinding::new(parameters, context.arguments),
+                context.parameter_binding(),
                 state,
                 context.claim_label,
                 context.tactic_index,
@@ -2295,12 +2236,36 @@ impl<'a> Proof<'a> {
             )
         };
         let step = match tactic {
-            IteratedTactic::Take(segment) => crate::kernel::IteratedStep::Take {
-                element: element(segment)?,
-            },
-            IteratedTactic::Give(segment) => crate::kernel::IteratedStep::Give {
-                element: element(segment)?,
-            },
+            IteratedTactic::UnfoldSlot(slot) | IteratedTactic::FoldSlot(slot) => {
+                let selected = match &slot.point {
+                    Some(point) => selected_program_state(
+                        point,
+                        context.old_reference_state(&execution.core.frontier, state),
+                        &execution.presentation.recorded_states,
+                    )
+                    .map_err(|message| self.step_error(message))?,
+                    None => state,
+                };
+                let template = iterated_template_for_resource(
+                    context.resource_environment,
+                    &slot.resource,
+                    name,
+                    context.parameter_binding(),
+                    selected,
+                    context.claim_label,
+                    context.tactic_index,
+                    self.facts().assumptions(),
+                )?;
+                let ProgramValue::Int32(index) = evaluate(&slot.index)? else {
+                    return Err(self.step_error(format!("`{name}` slot index must be int32")));
+                };
+                match tactic {
+                    IteratedTactic::UnfoldSlot(_) => {
+                        crate::kernel::IteratedStep::UnfoldSlot { template, index }
+                    }
+                    _ => crate::kernel::IteratedStep::FoldSlot { template, index },
+                }
+            }
             IteratedTactic::Gather(resource) => crate::kernel::IteratedStep::Gather {
                 template: template(resource)?,
             },
@@ -2503,20 +2468,20 @@ impl<'a> Proof<'a> {
             context.claim_label,
             context.tactic_index,
         )?;
-        execution
+        let state = execution
             .core
             .record_resource_observation(
                 context.function,
                 context.arguments,
                 &before_facts,
                 &checked.observed_resource,
-                &checked.state,
+                checked.successor.input(),
                 &checked.facts,
             )
             .map_err(|message| {
                 self.step_error(format!("kernel rejected checked `observe`: {message}"))
             })?;
-        execution.core.state = checked.state.into();
+        execution.core.state = state.into();
         let branch = self
             .focused_branch()
             .expect("resource observation requires an open goal")
@@ -3194,7 +3159,7 @@ fn contract_expression_reads_binding(expression: &ContractExpression, binding: &
 fn fold_end_parameter_name(end: &ContractExpression) -> Option<&String> {
     match end {
         ContractExpression::Binding(binding)
-        | ContractExpression::CBinding(binding)
+        | ContractExpression::ProgramBinding(binding)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(binding),
         )) => Some(binding),

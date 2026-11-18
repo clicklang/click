@@ -11,33 +11,30 @@ fn retained(ty: MachineIntegerType, term: &MachineTerm) -> SharedMachineIntegerT
     )
     .unwrap()
 }
-fn offset(value: SharedMachineIntegerTerm, width: i64, unsigned: bool) -> PointerOffsetTerm {
+fn offset(value: SharedMachineIntegerTerm, width: i64, unsigned: bool) -> AddressOffset {
     if matches!(
         value.ty(),
         MachineIntegerType::Int32 | MachineIntegerType::UInt32
     ) {
-        PointerOffsetTerm::Int32Scaled {
+        AddressOffset::Int32Scaled {
             value,
             byte_width: width,
         }
     } else {
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width: width,
             unsigned,
         }
     }
 }
-fn fact(offset: PointerOffsetTerm) -> Proposition {
-    Proposition::ConditionIs(
-        ConditionTerm::PointerOffsetEqual(
-            Box::new(offset),
-            Box::new(PointerOffsetTerm::Constant(0)),
-        ),
+fn fact(offset: AddressOffset) -> Proposition {
+    Proposition::condition_is(
+        ConditionTerm::AddressOffsetEqual(Box::new(offset), Box::new(AddressOffset::Constant(0))),
         true,
     )
 }
-fn quantified(variable: Variable, offset: PointerOffsetTerm) -> Proposition {
+fn quantified(variable: Variable, offset: AddressOffset) -> Proposition {
     Proposition::ForAll {
         var: variable,
         name: crate::kernel::BinderName::written("index"),
@@ -116,13 +113,13 @@ fn pointer_index_keys_match_native_arithmetic_and_opaque_binders() {
                 let actual_alpha =
                     alpha_machine_key::<true>(value.operand_view(), &mut bindings(), &mut 0);
                 assert_eq!(expected_alpha, actual_alpha, "{term:?}");
-                let key = memory_erased_pointer_offset_key(&offset(
+                let key = memory_erased_address_offset_key(&offset(
                     value.clone(),
                     4,
                     ty == MachineIntegerType::UInt64,
                 ));
-                let (MemoryErasedPointerOffsetNode::Int32Scaled { value: actual, .. }
-                | MemoryErasedPointerOffsetNode::Int64Scaled { value: actual, .. }) = key.node()
+                let (MemoryErasedAddressOffsetNode::Int32Scaled { value: actual, .. }
+                | MemoryErasedAddressOffsetNode::Int64Scaled { value: actual, .. }) = key.node()
                 else {
                     panic!("scaled key")
                 };
@@ -187,8 +184,8 @@ fn pointer_index_keys_preserve_quantifiers_free_variables_and_stride() {
 #[test]
 fn pointer_index_keys_erase_states_only_for_candidate_selection() {
     let _session = VerificationSession::enter();
-    let pointer = crate::kernel::Memory::global_pointer("key-read");
-    let before = crate::kernel::Memory::new().with_block("key-read", 16);
+    let pointer = crate::kernel::SymbolicMemory::global_pointer("key-read");
+    let before = crate::kernel::SymbolicMemory::new().with_block("key-read", 16);
     let after = before.clone().store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant(7)),

@@ -77,7 +77,7 @@ pub(super) fn describe_model_field_place(base: &str, field: &str) -> Option<Stri
 /// Names a read address through a bound model accessor only when the
 /// receiver's own layout identifies the exact scalar field at that address.
 pub(super) fn describe_model_field_at(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<(String, ProgramType)> {
     MODEL_ACCESSORS.with(|bound| {
@@ -126,8 +126,8 @@ pub(super) fn describe_model_field_at(
                 else {
                     continue;
                 };
-                let expected = base.pointer().offset_by_bytes(field.offset_bytes());
-                if expected.block != pointer.block
+                let expected = base.address().offset_by_bytes(field.offset_bytes());
+                if expected.base != pointer.base
                     || !crate::kernel::offsets_have_same_canonical_form(
                         &expected.offset,
                         &pointer.offset,

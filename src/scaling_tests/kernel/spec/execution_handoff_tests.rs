@@ -194,15 +194,15 @@ fn pointer_field_qualifier_changes_keep_growing_indices_shared() {
                 right: Box::new(MachineTerm::constant(1)),
             };
         }
-        let pointer = PointerValue::new(
-            Pointer {
-                block: PointerBlock::Symbolic(Variable(999981)),
-                offset: PointerOffsetTerm::scaled_int32_node(index, 4),
+        let pointer = Pointer::new(
+            Address {
+                base: AddressBase::Symbolic(Variable(999981)),
+                offset: AddressOffset::scaled_int32_node(index, 4),
             },
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true);
-        let root = KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer));
+        let root = KernelTerm::shared_pointer_value(SharedPointer::import(&pointer));
         let original = root.pointer_payload().unwrap().node().address.clone();
         let exports = KernelTermExport::machine_export_count();
         let (field, work) = crate::instrumentation::measure_deterministic_work(|| {

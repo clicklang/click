@@ -40,13 +40,16 @@ int32 conditional_deallocation_join(int32* p, int32 error) {
     step();
     branch ensuring {
         owns maybe_allocated(p, error);
-    } then {
-        step();
-        step();
-        fold(maybe_allocated(p, error));
-    } else {
-        step();
-        fold(maybe_allocated(p, error));
+    } {
+        true => {
+            step();
+            step();
+            fold(maybe_allocated(p, error));
+        }
+        false => {
+            step();
+            fold(maybe_allocated(p, error));
+        }
     }
     step();
     solve();

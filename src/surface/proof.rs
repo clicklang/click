@@ -7,7 +7,7 @@ use crate::kernel::MachineIntegerType;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
-use crate::kernel::{ExecutionFactSource, ExecutionFacts};
+use crate::kernel::{ExecutionFactSource, ExecutionFacts, StoredExecutionValue};
 use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::proof::driver::DriveProof as _;
 use std::sync::Arc;
@@ -81,6 +81,8 @@ pub(super) use claim_proofs::{
     prove_claims_by_implicit_tail,
 };
 pub(in crate::surface) use cursor_execution::surface_program_point_selector;
+#[cfg(test)]
+pub(in crate::surface) use cursor_execution::take_step_diagnostic_resource_reads;
 use cursor_execution::*;
 
 #[cfg(test)]
@@ -130,9 +132,7 @@ use surface_construction::*;
 pub(super) use surface_synthesis::synthesize_surface_proposition_at_entry_and_post;
 #[cfg(test)]
 use surface_synthesis::{SURFACE_SYNTHESIS_DEPTH_LIMIT, bitvector_term_is_load_free};
-pub(super) use surface_synthesis::{
-    callback_source_name, synthesize_surface_equality_across_points, synthesize_surface_proposition,
-};
+pub(super) use surface_synthesis::{callback_source_name, synthesize_surface_proposition};
 use surface_synthesis::{
     surface_synthesis_exhaustion_description, surface_synthesis_failure,
     synthesize_surface_machine_expression,
@@ -213,12 +213,12 @@ mod certificate_tests {
 
     #[test]
     fn local_index_surface_candidates_reject_nested_loads() {
-        let pointer = Pointer {
-            block: "data".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "data".into(),
+            offset: AddressOffset::Constant(0),
         };
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );
@@ -248,7 +248,7 @@ mod certificate_tests {
                 Box::new(MachineTerm::constant(1))
             );
         }
-        let proposition = Proposition::ConditionIs(
+        let proposition = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -274,7 +274,7 @@ mod certificate_tests {
     #[test]
     fn state_annotation_rejects_deep_logic_without_using_the_native_stack() {
         let mut surface = ClickProposition::Comparison {
-            left: ContractExpression::CBinding("value".to_string()),
+            left: ContractExpression::ProgramBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::Int32(MachineTerm::constant(0)),
@@ -298,17 +298,17 @@ mod certificate_tests {
 
     #[test]
     fn state_index_finds_a_late_exact_selector_inside_a_quantifier() {
-        let early_memory = Memory::new().with_block("early", 4);
-        let target_memory = Memory::new().with_block("target", 4);
-        let pointer = Pointer {
-            block: "target".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let early_memory = SymbolicMemory::new().with_block("early", 4);
+        let target_memory = SymbolicMemory::new().with_block("target", 4);
+        let pointer = Address {
+            base: "target".into(),
+            offset: AddressOffset::Constant(0),
         };
         let kernel = Proposition::ForAll {
             name: Default::default(),
             var: Variable(7),
             sort: Sort::Bitvector32,
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -352,12 +352,12 @@ mod certificate_tests {
 
     #[test]
     fn missing_state_form_reports_a_concise_indexed_failure() {
-        let target_memory = Memory::new().with_block("target", 4);
-        let pointer = Pointer {
-            block: "target".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let target_memory = SymbolicMemory::new().with_block("target", 4);
+        let pointer = Address {
+            base: "target".into(),
+            offset: AddressOffset::Constant(0),
         };
-        let kernel = Proposition::ConditionIs(
+        let kernel = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -370,7 +370,8 @@ mod certificate_tests {
             },
             true,
         );
-        let state = ExecutionState::new().with_memory(Memory::new().with_block("current", 4));
+        let state =
+            ExecutionState::new().with_memory(SymbolicMemory::new().with_block("current", 4));
 
         let facts = PureFactStore::from_ordered(&[]);
         let error = checked_surface_comparison_fact_in_state_with_indexed_facts(
@@ -399,13 +400,13 @@ mod certificate_tests {
                 .contains("0 exact and 0 compatible recorded states"),
             "{error}"
         );
-        assert!(!error.message().contains("Memory"), "{error}");
+        assert!(!error.message().contains("SymbolicMemory"), "{error}");
     }
 
     #[test]
     fn state_variant_search_reaches_a_candidate_after_eight() {
         let base = ClickProposition::Comparison {
-            left: ContractExpression::CBinding("value".to_string()),
+            left: ContractExpression::ProgramBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::Int32(MachineTerm::constant(0)),
@@ -930,9 +931,6 @@ enum InternalProofNode {
         index: usize,
         source_index: usize,
         resource: ResourceClause,
-        /// `open(r) { ... } by { ... }`: the proof of the body fact the
-        /// closing fold leaves open.
-        close_proof: Option<Vec<ProofTactic>>,
         body: Box<InternalProofNode>,
         continuation: Box<InternalProofNode>,
     },
@@ -968,6 +966,7 @@ enum InternalProofNode {
     CallOutcomes {
         index: usize,
         source_index: usize,
+        payload_bindings: [Option<String>; 2],
         returned_branch: Box<InternalProofNode>,
         threw_branch: Box<InternalProofNode>,
         continuation: Box<InternalProofNode>,
@@ -1229,7 +1228,6 @@ impl Clone for InternalProofNode {
                     index,
                     source_index,
                     resource,
-                    close_proof,
                     body,
                     continuation,
                 } => (
@@ -1237,7 +1235,6 @@ impl Clone for InternalProofNode {
                         index: *index,
                         source_index: *source_index,
                         resource: resource.clone(),
-                        close_proof: close_proof.clone(),
                         body: body.clone(),
                         continuation: Box::new(InternalProofNode::Done),
                     },
@@ -1302,6 +1299,7 @@ impl Clone for InternalProofNode {
                 InternalProofNode::CallOutcomes {
                     index,
                     source_index,
+                    payload_bindings,
                     returned_branch,
                     threw_branch,
                     continuation,
@@ -1309,6 +1307,7 @@ impl Clone for InternalProofNode {
                     InternalProofNode::CallOutcomes {
                         index: *index,
                         source_index: *source_index,
+                        payload_bindings: payload_bindings.clone(),
                         returned_branch: returned_branch.clone(),
                         threw_branch: threw_branch.clone(),
                         continuation: Box::new(InternalProofNode::Done),
@@ -1475,6 +1474,7 @@ fn build_internal_proof_at(
                 InternalProofNode::CallOutcomes {
                     index,
                     source_index,
+                    payload_bindings: outcomes.payload_bindings.clone(),
                     returned_branch: Box::new(build_internal_proof_at(
                         &outcomes.returned_tactics,
                         index + 1,
@@ -1492,7 +1492,6 @@ fn build_internal_proof_at(
                 index,
                 source_index,
                 resource: proof_open.resource.clone(),
-                close_proof: proof_open.close_proof.clone(),
                 body: Box::new(build_internal_proof_at(
                     &proof_open.tactics,
                     index + 1,
@@ -1915,7 +1914,7 @@ pub(super) fn initial_claim_context(
 /// `bool` parameter's range entry fact (rule C1).
 fn bool_range_surface(name: &str) -> ClickProposition {
     let cast = ContractExpression::CUnary {
-        operand: Box::new(ContractExpression::CBinding(name.to_string())),
+        operand: Box::new(ContractExpression::ProgramBinding(name.to_string())),
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Variable(name.into())),
             target_type: crate::kernel::ProgramType::Int32,
@@ -1989,7 +1988,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         .with_index(&parameter_index);
     crate::surface::proof_diagnostics::render::enter_ambient_naming(
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        state.memory(),
+        &state,
     );
     crate::surface::diagnostics::enter_ambient_object_fields(parsed_function);
     let mut observed_population_families = BTreeSet::new();
@@ -2470,10 +2469,11 @@ pub(super) fn initial_claim_context_with_caller_owner(
     {
         if !requirement_pure_facts.contains(&fact) {
             requirement_pure_facts.push(fact);
-            entry_fact_origins.push(EntryFactOrigin::Derived);
         }
     }
-    debug_assert_eq!(requirement_pure_facts.len(), entry_fact_origins.len());
+    // Publishing an arm fact can also materialize consequences of entry
+    // requirements. Both the published facts and their consequences are derived.
+    entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
     // Export the selected function-entry input in the final execution lineage.
     // Clause evaluation used a separate context with projection-derived read
     // facts excluded; its prepared index cannot stand in for this one. Entry
@@ -2722,7 +2722,7 @@ fn evaluate_entry_resource_context(
     include_owned_composite_cores: Option<resources::OwnedCores>,
     claim_label: &str,
     entry_resources: &ResourceContext,
-    entry_memory: &Memory,
+    entry_memory: &SymbolicMemory,
 ) -> Result<(ExecutionState, Vec<Proposition>, Vec<Proposition>), ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
     let (resource_specs, _) = crate::surface::verification::function_resource_summary(
@@ -2771,7 +2771,7 @@ fn evaluate_entry_resource_context(
             let Proposition::MemoryLoadable { base, bytes, .. } = fact else {
                 return None;
             };
-            let range = match bytes {
+            let range = match bytes.native_compat() {
                 binary_term!(Int32, Multiply, left, right)
                     if **right == MachineTerm::constant(ProgramType::Int32.byte_width()) =>
                 {
@@ -2804,7 +2804,7 @@ fn evaluate_entry_resource_context(
                 _ => MemoryRange::new_with_element_width(
                     base.clone(),
                     MachineTerm::constant(0),
-                    bytes.clone(),
+                    bytes.native_compat().clone(),
                     1,
                 ),
             };
@@ -2858,7 +2858,7 @@ fn evaluate_entry_resource_context(
             &evaluation_state,
             &resource_specs,
             &definitions,
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
             Ok(Ok(evaluated)) => evaluated,
@@ -2890,6 +2890,19 @@ fn evaluate_entry_resource_context(
                 )));
             }
         };
+    let evaluated = crate::kernel::admit_declared_entry_resources(
+        evaluated,
+        &entry_clauses,
+        &evaluation_state,
+        &definitions,
+        &assumptions,
+    )
+    .map_err(|error| {
+        ClickError::new(format!(
+            "`{claim_label}` setup failed: {}",
+            crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
+        ))
+    })?;
     let state = state.with_resource_context(evaluated);
     // The entry partition (`kernel::contract_entry_partition_facts`): this
     // contract's transferred memory clauses are separate from its borrowed
@@ -3187,11 +3200,3 @@ pub(in crate::surface) use proof_object::take_outcome_fact_reads;
 pub(in crate::surface) use proof_object::take_terminal_join_materialized_facts;
 #[cfg(test)]
 pub(in crate::surface) use proof_object::take_terminal_publication_visits;
-
-/// What closing an `open` scope adds to its source form: the `by` proving
-/// the one body fact its closing fold leaves open, or `have`s proving
-/// several at the end of its block.
-pub(in crate::surface::proof) enum ScopeCloseProof {
-    By(Box<crate::surface::ProofCertificate>),
-    BlockTail(Box<crate::surface::ProofCertificate>),
-}

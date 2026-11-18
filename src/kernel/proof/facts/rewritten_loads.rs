@@ -182,10 +182,10 @@ mod tests {
     #[test]
     fn retained_load_differences_preserve_native_operator_and_binder_rules() {
         let _session = VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
-        let pointer = Pointer {
-            block: PointerBlock::Symbolic(Variable(1005600)),
-            offset: PointerOffsetTerm::Constant(0),
+        let memory = intern_memory(SymbolicMemory::new());
+        let pointer = Address {
+            base: AddressBase::Symbolic(Variable(1005600)),
+            offset: AddressOffset::Constant(0),
         };
         let named = MachineTerm::Variable(crate::kernel::eval::load_variable_for_cell(
             &memory,
@@ -199,7 +199,7 @@ mod tests {
         );
         for load in [named, structural] {
             let one = MachineTerm::constant(1);
-            let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
+            let facts = PureFactStore::from_ordered(&[Proposition::condition_is(
                 ConditionTerm::equal(load.clone(), one.clone()),
                 true,
             )]);
@@ -216,7 +216,7 @@ mod tests {
                 value: Box::new(value),
             };
             let native = |value| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -227,7 +227,7 @@ mod tests {
                 )
             };
             let shared = |value| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::IntegerEqual(
                         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                             MachineIntegerType::Int32,
@@ -304,12 +304,12 @@ mod tests {
         let _session = VerificationSession::enter();
         let binder = Variable(1005699);
         let read = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
-            Box::new(Pointer::symbolic(binder)),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
+            Box::new(Address::symbolic(binder)),
             LoadKind::Int32,
         );
         let equal = |value| {
-            Proposition::ConditionIs(ConditionTerm::equal(value, MachineTerm::constant(1)), true)
+            Proposition::condition_is(ConditionTerm::equal(value, MachineTerm::constant(1)), true)
         };
         let facts = PureFactStore::from_ordered(&[equal(read.clone())]);
         let bind = |body| Proposition::ForAll {
@@ -329,7 +329,7 @@ mod tests {
     }
 
     fn observed(value: SharedMachineIntegerTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerEqual(
                 IntegerTerm::Machine(value).into(),
                 IntegerTerm::constant_i64(0).into(),
@@ -370,9 +370,9 @@ mod tests {
     fn arithmetic_read_evidence_keeps_its_exact_source_authority() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let pointer = Pointer::symbolic(Variable(1007340));
+        let pointer = Address::symbolic(Variable(1007340));
         let load = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             pointer.into(),
             LoadKind::Int32,
         );
@@ -382,7 +382,7 @@ mod tests {
         );
         let read = SharedMachineIntegerTerm::intern(ty, load.clone());
         let arithmetic = SharedMachineIntegerTerm::intern(ty, sum.clone());
-        let source = Proposition::ConditionIs(ConditionTerm::equal(load, sum), true);
+        let source = Proposition::condition_is(ConditionTerm::equal(load, sum), true);
         let facts = PureFactStore::from_ordered(&[source]);
         let (a, b) = (observed(read), observed(arithmetic));
         let before = KernelTermExport::machine_export_count();
@@ -399,12 +399,12 @@ mod tests {
     fn shared_read_evidence_preserves_stored_and_origin_chain_sources() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let pointer = Memory::global_pointer("shared-read-source");
+        let pointer = SymbolicMemory::global_pointer("shared-read-source");
         let sum = MachineTerm::add(
             MachineTerm::Variable(Variable(1007350)),
             MachineTerm::Variable(Variable(1007350)),
         );
-        let initial = Memory::new().with_block("shared-read-source", 4);
+        let initial = SymbolicMemory::new().with_block("shared-read-source", 4);
         let stored = initial
             .clone()
             .store(pointer.clone(), ProgramValue::Int32(sum.clone()));
@@ -428,7 +428,7 @@ mod tests {
         }
         let early = load(initial.clone());
         let later = load(initial.clone().with_block("unrelated", 4));
-        let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
+        let facts = PureFactStore::from_ordered(&[Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,

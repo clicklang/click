@@ -2166,7 +2166,7 @@ fn returning_then_arms(statement: &ProgramStatement) -> BTreeSet<usize> {
                 body,
                 ..
             } => {
-                let (_, _, test) = loop_test.execution_parts();
+                let test = loop_test.source_region();
                 for region in crate::kernel::program_loop_regions(body, update.as_deref(), test) {
                     visit(region, index, returns, catches_exceptions);
                 }
@@ -2483,8 +2483,12 @@ impl<'a> ProofTokens<'a> {
         self.blocks.cases_arms(range)
     }
 
-    fn outcomes_arms(&self, range: &Range<usize>) -> Result<[(usize, usize); 2], ClickError> {
-        self.blocks.outcomes_arms(self.tokens, range)
+    fn labeled_arms(
+        &self,
+        range: &Range<usize>,
+        labels: [&str; 2],
+    ) -> Result<[(usize, usize); 2], ClickError> {
+        self.blocks.labeled_arms(self.tokens, range, labels)
     }
 
     fn body_block(&self, range: &Range<usize>, kind: &str) -> Result<(usize, usize), ClickError> {
@@ -4862,7 +4866,7 @@ fn proof_tactic_entries(
                 if let FlatTactic::Written(ProofTactic::Both(both)) = item.tactic
                     && !smart
                 {
-                    let arms = tokens.two_arms(&item.tokens, "both")?;
+                    let arms = tokens.labeled_arms(&item.tokens, ["left", "right"])?;
                     for (arm, ((open, close), tactics)) in arms
                         .into_iter()
                         .zip([&both.left_tactics, &both.right_tactics])
@@ -5136,7 +5140,7 @@ fn smart_container_alias_entries(
             }
         }
         ProofTactic::Both(both) => {
-            if let Ok([left, right]) = tokens.two_arms(&tactic_tokens, "both") {
+            if let Ok([left, right]) = tokens.labeled_arms(&tactic_tokens, ["left", "right"]) {
                 blocks.push((left, &both.left_tactics));
                 blocks.push((right, &both.right_tactics));
             }
@@ -5625,7 +5629,7 @@ fn structured_tactic_arm_blocks(
 ) -> Result<Option<Vec<(usize, usize)>>, ClickError> {
     Ok(match tokens[range.start].text.as_str() {
         "if" => Some(tokens.two_arms(&range, "if")?.to_vec()),
-        "both" => Some(tokens.two_arms(&range, "both")?.to_vec()),
+        "both" => Some(tokens.labeled_arms(&range, ["left", "right"])?.to_vec()),
         "cases" => Some(tokens.cases_arms(&range)?),
         _ => None,
     })
@@ -5740,7 +5744,7 @@ fn collect_tactic_block_spans<'t>(
             }
             ProofTactic::Branch(proof_branch) => {
                 let [(then_open, then_close), (else_open, else_close)] =
-                    tokens.two_arms(&token_range, "branch")?;
+                    tokens.labeled_arms(&token_range, ["true", "false"])?;
                 collect_tactic_block_spans(
                     tokens,
                     then_open,
@@ -5769,7 +5773,7 @@ fn collect_tactic_block_spans<'t>(
             }
             ProofTactic::CallOutcomes(outcomes) => {
                 let [(returned_open, returned_close), (threw_open, threw_close)] =
-                    tokens.outcomes_arms(&token_range)?;
+                    tokens.labeled_arms(&token_range, ["returned", "threw"])?;
                 collect_tactic_block_spans(
                     tokens,
                     returned_open,

@@ -185,26 +185,22 @@ fn logical_argument_refusals_do_not_convert_growing_boolean_or_algebraic_trees()
 #[test]
 fn pointer_certification_visits_shared_address_dags_without_exporting_them() {
     use crate::kernel::{
-        KernelPointerOffset, Pointer, PointerValue, SharedPointerAddress, SharedPointerOffset,
-        SharedPointerValue,
+        Address, KernelAddressOffset, Pointer, SharedAddress, SharedAddressOffset, SharedPointer,
     };
     let mut samples = Vec::new();
     for depth in [8, 32, 128] {
         let _session = VerificationSession::enter();
-        let mut offset = KernelPointerOffset::Variable(Variable(995957))
+        let mut offset = KernelAddressOffset::Variable(Variable(995957))
             .into_shared()
             .unwrap();
         for _ in 0..depth {
-            offset = SharedPointerOffset::add(offset.clone(), offset);
+            offset = SharedAddressOffset::add(offset.clone(), offset);
         }
-        let base = SharedPointerValue::import(&PointerValue::new(
-            Pointer::null(),
-            ProgramType::Int32Pointer,
-        ));
+        let base = SharedPointer::import(&Pointer::new(Address::null(), ProgramType::Int32Pointer));
         let mut value = base.node().clone();
-        value.address = SharedPointerAddress::new(value.address.node().block.clone(), offset);
+        value.address = SharedAddress::new(value.address.node().base.clone(), offset);
         value.provenance = value.address.clone();
-        let root = KernelTerm::shared_pointer_value(SharedPointerValue::new(value));
+        let root = KernelTerm::shared_pointer_value(SharedPointer::new(value));
         let exports = KernelTermExport::machine_export_count();
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
             Comparison::default()

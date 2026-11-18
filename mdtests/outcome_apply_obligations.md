@@ -14,13 +14,16 @@ theorem nonnegative(value: int32) {
 int32 choose_positive(int32 x) {
     ensures result >= 0 by {
         branch {
-            step_until(function.exit);
-            apply(nonnegative(result));
-            known();
-        } else {
-            step_until(function.exit);
-            apply(nonnegative(result));
-            known();
+            true => {
+                step_until(function.exit);
+                apply(nonnegative(result));
+                known();
+            }
+            false => {
+                step_until(function.exit);
+                apply(nonnegative(result));
+                known();
+            }
         }
     }
 }

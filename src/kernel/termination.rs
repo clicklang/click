@@ -711,7 +711,7 @@ fn assume_structural_path(
         let decided = match proposition {
             Proposition::MemoryLoadable { .. } => true,
             Proposition::ConditionIs(condition, value) => {
-                assumptions.decide(condition) == Some(*value)
+                assumptions.decide(condition.native_compat()) == Some(*value)
             }
             proposition => assumptions.proves_exact(proposition),
         };
@@ -768,15 +768,15 @@ fn call_passes_witness_child(
         .prefer_symbolic_external_loads()
         // This scope compares symbolic child identities. The ordinary
         // contract execution separately checks the call and its accesses.
-        .assume_entry_clause_extents();
+        .assume_entry_clause_spans();
     let mut parameter_state = ExecutionState::new();
     for (index, parameter) in function.parameters().iter().enumerate() {
         let variable = Variable(PARAMETER_VARIABLE_BASE + index as u64);
         let value = if parameter.program_type().is_pointer() {
             ProgramValue::typed_pointer(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(variable), 1),
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::scale_int32(MachineTerm::Variable(variable), 1),
                 },
                 parameter.program_type(),
             )
@@ -815,7 +815,7 @@ fn call_passes_witness_child(
             );
         }
         for (index, witness) in definition.witnesses().iter().enumerate() {
-            let pointer = Pointer::symbolic(Variable(WITNESS_VARIABLE_BASE + index as u64));
+            let pointer = Address::symbolic(Variable(WITNESS_VARIABLE_BASE + index as u64));
             body_state.locals.set_typed(
                 witness.name().to_string(),
                 ProgramValue::typed_pointer(pointer, witness.program_type()),
@@ -862,10 +862,10 @@ fn call_passes_witness_child(
             else {
                 continue 'children;
             };
-            let expected = expected.pointer();
-            let actual = actual.pointer();
+            let expected = expected.address();
+            let actual = actual.address();
             if expected != actual
-                && assumptions.decide(&ConditionTerm::pointer_equal(
+                && assumptions.decide(&ConditionTerm::address_equal(
                     actual.clone(),
                     expected.clone(),
                 )) != Some(true)
@@ -1385,16 +1385,21 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. } => {}
 
         ProgramStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            for expression in initializer
+                .iter()
+                .chain(zero_fill.iter().flat_map(ZeroFill::expressions))
+            {
+                escapes(expression);
+            }
         }
-        | ProgramStatement::Assign { expression, .. }
+        ProgramStatement::Assign { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression) => escapes(expression),
         ProgramStatement::CallConstruct { arguments, .. }
@@ -1455,8 +1460,11 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            escapes(condition);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                escapes(condition);
+            }
             collect_address_taken_locals(body, names);
             if let Some(test) = test {
                 collect_address_taken_locals(&test.statement, names);
@@ -1786,7 +1794,7 @@ fn statement_calls_visiting(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_calls_visiting(body, calls, visit);
             if let Some(test) = test {
                 statement_calls_visiting(&test.statement, calls, visit);
@@ -1880,7 +1888,7 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_declared_variables(body, names);
             if let Some(test) = test {
                 statement_declared_variables(&test.statement, names);
@@ -2108,14 +2116,18 @@ fn walk_termination_paths<W: TerminationWalk>(
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
             // A `break` in the body lands where the loop's own exit lands,
             // carrying what the incoming paths already carry, so it is
             // covered by the incoming paths this returns.
             if let Some(test) = test {
                 descend(&test.statement, paths.clone())?;
             }
-            let entered = walk.refine(condition, true, paths.clone());
+            let entered = condition.map_or_else(
+                || paths.clone(),
+                |condition| walk.refine(condition, true, paths.clone()),
+            );
             let body_paths = descend(body, entered.clone())?;
             if let Some(update) = update {
                 descend(update, body_paths.continuing)?;
@@ -2493,7 +2505,7 @@ pub(super) fn ranking_measure_term(
 /// a `Nat` is the same case: the checked conversion law
 /// `nat::to_integer_nonnegative` states exactly this member.
 pub(super) fn ranking_nonnegative_proposition(value: &RankingMeasureValue) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         match value {
             RankingMeasureValue::Machine(term) => {
                 ConditionTerm::signed_less_equal(MachineTerm::constant(0), term.clone())
@@ -2528,7 +2540,7 @@ pub(super) fn ranking_decrease_proposition(
     pre: &RankingMeasureValue,
     component: &RankingComponent,
 ) -> Result<Proposition, String> {
-    Ok(Proposition::ConditionIs(
+    Ok(Proposition::condition_is(
         match (post, pre) {
             (RankingMeasureValue::Machine(post), RankingMeasureValue::Machine(pre)) => {
                 ConditionTerm::signed_less_than(post.clone(), pre.clone())
@@ -2564,7 +2576,7 @@ pub(super) fn ranking_tie_proposition(
     pre: &RankingMeasureValue,
     component: &RankingComponent,
 ) -> Result<Proposition, String> {
-    Ok(Proposition::ConditionIs(
+    Ok(Proposition::condition_is(
         match (post, pre) {
             (RankingMeasureValue::Machine(post), RankingMeasureValue::Machine(pre))
             | (RankingMeasureValue::Unsigned32(post), RankingMeasureValue::Unsigned32(pre)) => {
@@ -2628,7 +2640,7 @@ fn pure_integer_ranking_measure_term(
     };
     reader.reads.obligations.extend(path.obligations.clone());
     reader.reads.facts.extend_shared(&path.facts);
-    Ok(path.value.clone())
+    Ok(path.value.clone().into_native_compat())
 }
 
 /// The kernel term for one pure `decreases` component at one C state.
@@ -3567,7 +3579,7 @@ fn collect_loops_in_order<'a>(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             loops.push(statement);
             for region in program_loop_regions(body, update.as_deref(), test) {
                 collect_loops_in_order(region, loops);
@@ -3842,7 +3854,7 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             loops.push(statement);
             for region in program_loop_regions(body, update.as_deref(), test) {
                 collect_loops(region, loops);
@@ -4119,7 +4131,7 @@ fn visit_loop_obligations(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             let index = *next_index;
             *next_index += 1;
             for region in program_loop_regions(body, update.as_deref(), test) {
@@ -4328,8 +4340,8 @@ fn value_function_address(value: &ProgramValue) -> Option<&str> {
     let ProgramValue::Pointer(pointer) = value else {
         return None;
     };
-    match &pointer.pointer().block {
-        PointerBlock::Function(name) => Some(name),
+    match &pointer.address().base {
+        AddressBase::Function(name) => Some(name),
         _ => None,
     }
 }
@@ -4426,15 +4438,20 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. } => {}
         ProgramStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            for expression in initializer
+                .iter()
+                .chain(zero_fill.iter().flat_map(ZeroFill::expressions))
+            {
+                visit(expression);
+            }
         }
-        | ProgramStatement::Assign { expression, .. }
+        ProgramStatement::Assign { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression) => visit(expression),
         ProgramStatement::CallConstruct { arguments, .. }
@@ -4498,8 +4515,11 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            visit(condition);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                visit(condition);
+            }
             statement_function_addresses(body, taken);
             if let Some(test) = test {
                 statement_function_addresses(&test.statement, taken);
@@ -4760,7 +4780,7 @@ fn self_call_loop_indices(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             let index = *next_index;
             *next_index += 1;
             enclosing.push(index);
@@ -5255,7 +5275,7 @@ mod ranking_member_tests {
         {
             assert_eq!(
                 obligation.proposition(),
-                &Proposition::ConditionIs(
+                &Proposition::condition_is(
                     ConditionTerm::signed_less_equal(MachineTerm::constant(0), post),
                     true,
                 )
@@ -5269,16 +5289,16 @@ mod ranking_member_tests {
             );
         }
 
-        let pivot_first = Proposition::ConditionIs(
+        let pivot_first = Proposition::condition_is(
             ConditionTerm::signed_less_than(post_outer.clone(), outer.clone()),
             true,
         );
         let pivot_second = Proposition::And(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::equal(post_outer, outer),
                 true,
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::signed_less_than(post_inner, inner),
                 true,
             )),
@@ -5312,25 +5332,26 @@ mod ranking_member_tests {
         assert_eq!(obligations.len(), 2);
         assert_eq!(
             obligations[1].proposition(),
-            &Proposition::ConditionIs(ConditionTerm::signed_less_than(post, value), true)
+            &Proposition::condition_is(ConditionTerm::signed_less_than(post, value), true)
         );
     }
 
-    fn int32_cell(name: &str) -> Pointer {
-        Pointer {
-            block: PointerBlock::Concrete(name.to_string()),
-            offset: PointerOffsetTerm::Constant(0),
+    fn int32_cell(name: &str) -> Address {
+        Address {
+            base: AddressBase::Concrete(name.to_string()),
+            offset: AddressOffset::Constant(0),
         }
     }
 
     /// A pure component that reads memory: the load is against the state the
     /// component is read at, not a state the surface named.
-    fn current_load(cell: &Pointer) -> SpecExpression {
+    fn current_load(cell: &Address) -> SpecExpression {
         SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
-            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-                PointerValue::new(cell.clone(), ProgramType::Int32Pointer),
-            ))),
+            point: SpecPoint::Current,
+            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+                cell.clone(),
+                ProgramType::Int32Pointer,
+            )))),
             value_type: ProgramType::Int32,
         }
     }
@@ -5345,9 +5366,11 @@ mod ranking_member_tests {
         let value = MachineTerm::Variable(Variable(11));
         let post = MachineTerm::subtract(value.clone(), MachineTerm::constant(1));
         let mut entry = ExecutionState::new();
-        entry.memory = Memory::new().store(cell.clone(), ProgramValue::Int32(value.clone()));
+        entry.memory =
+            SymbolicMemory::new().store(cell.clone(), ProgramValue::Int32(value.clone()));
         let mut back_edge = ExecutionState::new();
-        back_edge.memory = Memory::new().store(cell.clone(), ProgramValue::Int32(post.clone()));
+        back_edge.memory =
+            SymbolicMemory::new().store(cell.clone(), ProgramValue::Int32(post.clone()));
         let measures = vec![RankingComponent::Pure {
             source: "count(counter)".to_string(),
             expression: current_load(&cell),
@@ -5371,7 +5394,7 @@ mod ranking_member_tests {
         };
         assert_eq!(
             resolved(obligations[0].proposition()),
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::signed_less_equal(MachineTerm::constant(0), post.clone()),
                 true,
             ),
@@ -5379,7 +5402,7 @@ mod ranking_member_tests {
         );
         assert_eq!(
             resolved(obligations[1].proposition()),
-            Proposition::ConditionIs(ConditionTerm::signed_less_than(post, value), true),
+            Proposition::condition_is(ConditionTerm::signed_less_than(post, value), true),
             "the decrease member compares the back edge against the iteration entry"
         );
         // A pure component has no source spelling of its own once lowered, so
@@ -5436,7 +5459,7 @@ mod ranking_member_tests {
         assert_eq!(obligations.len(), 2);
         assert_eq!(
             obligations[0].proposition(),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::IntegerLessEqual(
                     observed_word(MachineTerm::constant(0)),
                     observed_word(post.clone())
@@ -5447,7 +5470,7 @@ mod ranking_member_tests {
         );
         assert_eq!(
             obligations[1].proposition(),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::IntegerLessThan(
                     observed_word(post.clone()),
                     observed_word(value.clone())
@@ -5500,14 +5523,14 @@ mod ranking_member_tests {
         assert_eq!(obligations.len(), 3);
         assert_eq!(
             obligations[0].proposition(),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::signed_less_equal(MachineTerm::constant(0), post_outer.clone()),
                 true,
             )
         );
         assert_eq!(
             obligations[1].proposition(),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::IntegerLessEqual(
                     observed_word(MachineTerm::constant(0)),
                     observed_word(post_inner.clone())
@@ -5515,16 +5538,16 @@ mod ranking_member_tests {
                 true,
             )
         );
-        let pivot_first = Proposition::ConditionIs(
+        let pivot_first = Proposition::condition_is(
             ConditionTerm::signed_less_than(post_outer.clone(), outer.clone()),
             true,
         );
         let pivot_second = Proposition::And(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::equal(post_outer, outer),
                 true,
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::IntegerLessThan(observed_word(post_inner), observed_word(inner)),
                 true,
             )),
@@ -5627,8 +5650,8 @@ mod ranking_member_tests {
         assert_eq!(
             members,
             vec![
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
-                Proposition::ConditionIs(
+                Proposition::condition_is(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(
                     ConditionTerm::unsigned_less_than(
                         canonical_ranking_term(&MachineTerm::subtract(
                             MachineTerm::constant(3),
@@ -5664,11 +5687,11 @@ mod ranking_member_tests {
         };
         assert_eq!(
             decrease(0, 1),
-            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+            Proposition::condition_is(ConditionTerm::Constant(true), true)
         );
         assert_eq!(
             decrease(4, 5),
-            Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+            Proposition::condition_is(ConditionTerm::Constant(false), true)
         );
     }
 
@@ -5688,14 +5711,14 @@ mod ranking_member_tests {
         assert_eq!(
             down,
             vec![
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(ConditionTerm::Constant(true), true),
             ]
         );
         let wrapped = ranking_members(&state(u64::MAX), &state(0), x()).expect("uint64 measure");
         assert_eq!(
             wrapped[1],
-            Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+            Proposition::condition_is(ConditionTerm::Constant(false), true)
         );
     }
 
@@ -5714,7 +5737,7 @@ mod ranking_member_tests {
         .expect("a uint8 measure reads at both ends");
         assert_eq!(
             members[0],
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::signed_less_equal(
                     MachineTerm::constant(0),
                     MachineTerm::machine_integer_cast(
@@ -5749,11 +5772,11 @@ mod ranking_member_tests {
         .expect("a pure uint32 value reads at both ends");
         assert_eq!(
             obligations[0].proposition(),
-            &Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+            &Proposition::condition_is(ConditionTerm::Constant(true), true)
         );
         assert_eq!(
             obligations[1].proposition(),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::unsigned_less_than(value.clone(), value),
                 true
             )
@@ -5773,7 +5796,7 @@ mod ranking_member_tests {
             )
         };
         let x = || ProgramExpression::Variable(("x".to_string()).into());
-        let holds = |value| Proposition::ConditionIs(ConditionTerm::Constant(value), true);
+        let holds = |value| Proposition::condition_is(ConditionTerm::Constant(value), true);
         let down = ranking_members(&state(4), &state(5), x()).expect("int64 measure");
         assert_eq!(down, vec![holds(true), holds(true)]);
         let negative = ranking_members(&state(-1), &state(5), x()).expect("int64 measure");
@@ -5792,14 +5815,14 @@ mod ranking_member_tests {
     /// used to accept here by selecting the arm.
     #[test]
     fn structural_path_refuses_an_obligation_no_exact_route_settles() {
-        let left = Proposition::ConditionIs(
+        let left = Proposition::condition_is(
             ConditionTerm::signed_less_equal(
                 MachineTerm::constant(0),
                 MachineTerm::Variable(Variable(1)),
             ),
             true,
         );
-        let right = Proposition::ConditionIs(
+        let right = Proposition::condition_is(
             ConditionTerm::signed_less_equal(
                 MachineTerm::constant(0),
                 MachineTerm::Variable(Variable(2)),
@@ -5842,7 +5865,7 @@ mod local_descent_tests {
     fn summarized_loop(condition: u32) -> ProgramStatement {
         crate::kernel::program_while(
             crate::kernel::program_expression::int32_literal(condition),
-            vec![Proposition::ConditionIs(
+            vec![Proposition::condition_is(
                 ConditionTerm::Constant(true),
                 true,
             )],
@@ -6901,7 +6924,7 @@ mod local_descent_tests {
                     crate::kernel::LoopTestPosition::BeforeBody,
                 ),
                 update: None,
-                invariant: vec![Proposition::ConditionIs(
+                invariant: vec![Proposition::condition_is(
                     ConditionTerm::Constant(true),
                     true,
                 )],

@@ -1,18 +1,18 @@
 //! Compact scalar arrays keep checked authority independent of logical length.
 use super::*;
 
-fn pointer(block: &str, offset: i64) -> Pointer {
-    Pointer {
-        block: block.into(),
-        offset: PointerOffsetTerm::Constant(offset),
+fn pointer(block: &str, offset: i64) -> Address {
+    Address {
+        base: block.into(),
+        offset: AddressOffset::Constant(offset),
     }
 }
-fn fresh(count: u32) -> Memory {
-    Memory::new()
+fn fresh(count: u32) -> SymbolicMemory {
+    SymbolicMemory::new()
         .with_block("local:array-source", count * 4)
         .with_block("local:array-target", count * 4)
 }
-fn seeded(count: u32) -> Memory {
+fn seeded(count: u32) -> SymbolicMemory {
     fresh(count)
         .initialize_scalar_array(
             &pointer("local:array-source", 0),
@@ -257,11 +257,11 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
     let target = pointer("local:array-target", 0);
     for readonly_block in [false, true] {
         let memory =
-            Memory::new().with_block_or_read_only(target.block.clone(), 16, readonly_block);
+            SymbolicMemory::new().with_block_or_read_only(target.base.clone(), 16, readonly_block);
         let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(own_memory_context(target.clone(), 0, 4));
-        let pointer = PointerValue::new(target.clone(), ProgramType::UInt32Pointer)
+        let pointer = Pointer::new(target.clone(), ProgramType::UInt32Pointer)
             .with_pointee_constant(!readonly_block);
         let theorem = prove_execution_statement_execution(
             state,
@@ -332,43 +332,137 @@ fn compact_scalar_array_initialization_cannot_bypass_an_active_view_loan() {
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(participant))
         .with_loan_view_bindings(bindings);
-    for fresh in [true, false] {
-        let statement = if fresh {
-            program_initialize_scalar_array(
-                crate::kernel::program_expression::pointer_value(target.clone()),
-                crate::kernel::program_expression::uint32_literal(7),
-                ProgramType::UInt32,
+    let statement = program_initialize_scalar_array(
+        crate::kernel::program_expression::pointer_value(target),
+        crate::kernel::program_expression::uint32_literal(7),
+        ProgramType::UInt32,
+        4,
+        false,
+    );
+    let theorem = prove_execution_statement_execution(state, statement).unwrap();
+    assert!(matches!(
+        theorem.proposition(),
+        Proposition::ProgramStatementVerifies {
+            outcome: StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_)),
+            ..
+        }
+    ));
+}
+
+fn scalar_array_region_state() -> ExecutionState {
+    ExecutionState::new()
+        .with_memory(seeded(4))
+        .with_resource_context(ResourceContext::new().unchecked_with_facts([
+            own_memory_fact(pointer("local:array-source", 0), 0, 4),
+            own_memory_fact(pointer("local:array-target", 0), 0, 4),
+        ]))
+}
+
+fn execute_test_scalar_array_write(
+    state: &ExecutionState,
+    count: u32,
+    copy: bool,
+    assumptions: &PureFactContext,
+) -> StatementExecutionPath {
+    let value = if copy {
+        crate::kernel::program_expression::pointer_value(pointer("local:array-source", 0))
+    } else {
+        crate::kernel::program_expression::uint32_literal(7)
+    };
+    let [path]: [StatementExecutionPath; 1] = execute_execution_statement_paths(
+        state,
+        &program_write_scalar_array_region(
+            ProgramExpression::Value(ProgramValue::typed_pointer(
+                pointer("local:array-target", 0),
+                ProgramType::UInt32Pointer,
+            )),
+            value,
+            ProgramType::UInt32,
+            count,
+            copy,
+        ),
+        assumptions,
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap()
+    .try_into()
+    .expect("one compact write path");
+    path
+}
+
+#[test]
+fn scalar_array_region_writes_require_separation_for_the_entire_destination() {
+    use crate::kernel::loans::LoanLedger;
+
+    let state = scalar_array_region_state();
+    let assumptions = PureFactContext::new();
+    for (block, separate) in [("local:array-target", false), ("local:array-source", true)] {
+        // The loan covers only the last element of the block.
+        let range = MemoryRange::new(pointer(block, 12), 0u32.into(), 1u32.into());
+        let backing = ResourceFact::own_memory(range.clone());
+        let occurrence = ResourceContext::new()
+            .unchecked_with_fact(backing.clone())
+            .unique_owned_occurrence_for_fact(&backing)
+            .unwrap()
+            .0;
+        let ledger = LoanLedger::new();
+        let lender = ledger.fresh_participant().unwrap();
+        let reader = ledger.fresh_participant().unwrap();
+        let opening = ledger.lend(lender, reader, occurrence, backing).unwrap();
+        let state = state
+            .clone()
+            .with_loan_ledger(Some(ledger.apply(&opening.transition).unwrap()));
+
+        let borrowed = Resource::Memory(range);
+        for copy in [true, false] {
+            let write = execute_test_scalar_array_write(&state, 4, copy, &assumptions);
+            let [obligation] = write.obligations.as_slice() else {
+                panic!("expected one separation obligation for the entire write");
+            };
+            let Proposition::ResourceSeparate { left, right } = obligation.proposition() else {
+                panic!("expected a loan separation obligation");
+            };
+            let expected = MemoryRange::from_pointer_value(
+                &Pointer::new(pointer("local:array-target", 0), ProgramType::UInt32Pointer),
+                0u32.into(),
+                4u32.into(),
                 4,
-                false,
-            )
-        } else {
-            program_write_scalar_array_region(
-                crate::kernel::program_expression::pointer_value(target.clone()),
-                crate::kernel::program_expression::uint32_literal(7),
-                ProgramType::UInt32,
-                4,
-                false,
-            )
-        };
-        let theorem = prove_execution_statement_execution(state.clone(), statement).unwrap();
-        assert!(matches!(
-            theorem.proposition(),
-            Proposition::ProgramStatementVerifies {
-                outcome: StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_)),
-                ..
-            }
-        ));
+            );
+            assert_eq!(left.as_ref(), &Resource::Memory(expected));
+            assert_eq!(right.as_ref(), &borrowed);
+            assert_eq!(assumptions.proves_resource_separate(left, right), separate);
+            let StatementOutcome::Normal(after) = write.outcome else {
+                panic!("expected a write path conditional on separation");
+            };
+            let expected_value = if copy {
+                state.memory().load(&pointer("local:array-source", 12))
+            } else {
+                ExpressionOutcome::Value(crate::kernel::uint32(7u32))
+            };
+            assert_eq!(
+                after.memory().load(&pointer("local:array-target", 12)),
+                expected_value,
+            );
+
+            let empty = execute_test_scalar_array_write(&state, 0, copy, &assumptions);
+            assert!(empty.obligations.is_empty());
+            let StatementOutcome::Normal(after_empty) = empty.outcome else {
+                panic!("an empty region has no destination write");
+            };
+            assert_eq!(after_empty.memory(), state.memory());
+        }
     }
 }
 
 #[test]
-fn compact_array_regions_check_source_type_extent_alignment_and_initialization() {
+fn compact_array_regions_check_source_type_size_alignment_and_initialization() {
     let context = PureFactContext::new();
     let source = pointer("local:source", 4);
     let target = pointer("local:target", 4);
-    let memory = Memory::new()
-        .with_block(source.block.clone(), 24)
-        .with_block(target.block.clone(), 24)
+    let memory = SymbolicMemory::new()
+        .with_block(source.base.clone(), 24)
+        .with_block(target.base.clone(), 24)
         .write_scalar_array_region(
             &source,
             ProgramType::UInt32,
@@ -422,9 +516,9 @@ fn compact_array_regions_check_source_type_extent_alignment_and_initialization()
         copied.load(&target),
         ExpressionOutcome::Value(ProgramValue::UInt32(9u32.into()))
     );
-    let fresh = Memory::new()
-        .with_block(source.block.clone(), 24)
-        .with_block(target.block.clone(), 24);
+    let fresh = SymbolicMemory::new()
+        .with_block(source.base.clone(), 24)
+        .with_block(target.base.clone(), 24);
     assert!(
         fresh
             .write_scalar_array_region(
@@ -471,7 +565,11 @@ fn compact_array_region_execution_requires_full_authority_and_mutable_storage() 
             view_memory_fact(target.clone(), 0, 4)
         };
         let state = ExecutionState::new()
-            .with_memory(Memory::new().with_block_or_read_only(target.block.clone(), 24, readonly))
+            .with_memory(SymbolicMemory::new().with_block_or_read_only(
+                target.base.clone(),
+                24,
+                readonly,
+            ))
             .with_resource_context(ResourceContext::new().unchecked_with_facts(vec![resource]));
         let statement = program_write_scalar_array_region(
             crate::kernel::program_expression::pointer_value(target),

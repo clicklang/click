@@ -11,7 +11,7 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
     let a = MachineTerm::Variable(Variable(200));
     let b = MachineTerm::Variable(Variable(201));
     let one = MachineTerm::constant(1);
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::signed_add_overflows(
             MachineTerm::add(a.clone(), one.clone()),
             MachineTerm::subtract(b.clone(), one),
@@ -63,19 +63,19 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
 
 #[test]
 fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
-    use crate::kernel::{Memory, Pointer, PointerBlock, PointerOffsetTerm};
-    let target = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    use crate::kernel::{Address, AddressBase, AddressOffset, SymbolicMemory};
+    let target = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for count in [8, 32, 128, 512] {
-        let mut before = Memory::new();
+        let mut before = SymbolicMemory::new();
         for index in 0..count {
             before = before.store(
-                Pointer {
-                    block: PointerBlock::Heap(index),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Heap(index),
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(MachineTerm::constant(7)),
             );
@@ -104,16 +104,16 @@ fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
 #[test]
 fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_facts() {
     let (core, mut value) = constructor_partition_fixture_with_type(2, ProgramType::Int32Pointer);
-    let payload = Pointer::symbolic(Variable(7_000_000));
-    let program = Pointer::symbolic(Variable(1_000_001));
+    let payload = Address::symbolic(Variable(7_000_000));
+    let program = Address::symbolic(Variable(1_000_001));
     value.node = crate::kernel::AlgebraicTermNode::Constructor {
         variant: "C0".into(),
         fields: vec![crate::kernel::AlgebraicValue::Program(
             ProgramValue::typed_pointer(payload.clone(), ProgramType::Int32Pointer),
         )],
     };
-    let alias = Proposition::ConditionIs(
-        crate::kernel::ConditionTerm::pointer_equal(payload.clone(), program.clone()),
+    let alias = Proposition::condition_is(
+        crate::kernel::ConditionTerm::address_equal(payload.clone(), program.clone()),
         true,
     );
     let env = crate::kernel::ExecutionEnvironment::new();
@@ -131,9 +131,9 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
                 core.algebraic_case_partition(&facts, &value, &env, &[], None, 4_000_000, 65_536)
                     .unwrap()
             });
-        let witness = Pointer::symbolic(fields[0][0].0);
-        let transported = Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::pointer_equal(program.clone(), witness),
+        let witness = Address::symbolic(fields[0][0].0);
+        let transported = Proposition::condition_is(
+            crate::kernel::ConditionTerm::address_equal(program.clone(), witness),
             true,
         );
         assert!(partition.facts_for_case(0).unwrap().available(&transported));
@@ -264,11 +264,11 @@ fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
 
 #[test]
 fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
-    let before = (0..2048).fold(Memory::new(), |memory, index| {
+    let before = (0..2048).fold(SymbolicMemory::new(), |memory, index| {
         memory.store(
-            Pointer {
-                block: "ambient".into(),
-                offset: crate::kernel::PointerOffsetTerm::Constant(i64::from(index) * 4),
+            Address {
+                base: "ambient".into(),
+                offset: crate::kernel::AddressOffset::Constant(i64::from(index) * 4),
             },
             int32(index),
         )
@@ -277,9 +277,9 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
         let cached = (0..size).fold(before.clone(), |memory, index| {
             let source = crate::kernel::intern_memory_ref(&memory);
             memory.with_seeded_cells(
-                Pointer {
-                    block: format!("cache-{index}").into(),
-                    offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                Address {
+                    base: format!("cache-{index}").into(),
+                    offset: crate::kernel::AddressOffset::Constant(0),
                 },
                 4,
                 crate::kernel::ProgramType::Int32,
@@ -290,11 +290,11 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
         });
         let view = |memory, index| Proposition::MemoryLoadable {
             memory,
-            base: Pointer {
-                block: "body".into(),
-                offset: crate::kernel::PointerOffsetTerm::Constant(i64::from(index) * 4),
+            base: Address {
+                base: "body".into(),
+                offset: crate::kernel::AddressOffset::Constant(i64::from(index) * 4),
             },
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         let allowed = (0..size).map(|index| view(before.clone(), index)).collect();
@@ -320,8 +320,8 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
 #[test]
 fn return_materialized_reads_scale_with_the_selected_cells() {
     let samples = [16, 32, 64, 128].map(|size| {
-        let mut memory = Memory::new();
-        let pointers: Vec<_> = (0..size).map(|i| Pointer::symbolic(Variable(i))).collect();
+        let mut memory = SymbolicMemory::new();
+        let pointers: Vec<_> = (0..size).map(|i| Address::symbolic(Variable(i))).collect();
         for pointer in &pointers {
             memory = memory.store(pointer.clone(), int32(7));
         }
@@ -334,7 +334,7 @@ fn return_materialized_reads_scale_with_the_selected_cells() {
             let fact = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer,
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             };
             let roots = base.with_fact(fact.clone());
@@ -362,7 +362,7 @@ fn return_proposition_context_validation_scales_with_introductions() {
         let mut base = PureFactStore::default();
         let premises: Vec<_> = (0..size)
             .map(|i| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     crate::kernel::ConditionTerm::equal(
                         MachineTerm::Variable(Variable(i)),
                         MachineTerm::constant(i as u32),
@@ -426,7 +426,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
                 uninitialized: false,
                 value_runs: Default::default(),
                 base: ProgramExpression::Value(ProgramValue::pointer(
-                    crate::kernel::Pointer::symbolic(Variable(100)),
+                    crate::kernel::Address::symbolic(Variable(100)),
                 )),
                 start: ProgramExpression::Value(int32(0)),
                 end: ProgramExpression::Value(int32(1)),
@@ -561,7 +561,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
         collected
             .collect_return_resource_rewrites(&core, size / 2)
             .unwrap();
-        let extra = Proposition::ConditionIs(
+        let extra = Proposition::condition_is(
             crate::kernel::ConditionTerm::equal(
                 MachineTerm::Variable(Variable(1000)),
                 MachineTerm::constant(9),
@@ -686,7 +686,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
     );
     let forged = opened
         .clone()
-        .with_memory(Memory::new().with_block("invented", 4));
+        .with_memory(SymbolicMemory::new().with_block("invented", 4));
     assert!(
         CheckedResourceRewrite::check(
             &function, &before, &facts, &selected, &forged, &facts, &calls
@@ -702,7 +702,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
         .is_err(),
         "a rewrite cannot retain scratch field bindings as a handle"
     );
-    let forged_facts = facts.with_fact(Proposition::ConditionIs(
+    let forged_facts = facts.with_fact(Proposition::condition_is(
         crate::kernel::ConditionTerm::Constant(false),
         true,
     ));
@@ -792,7 +792,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
 fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
     let mut samples = Vec::new();
     for size in [64_u32, 128, 256, 512] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut then_state = ExecutionState::new().with_local("changed", int32(1));
         let mut stable_locals = BTreeMap::new();
         for index in 0..size {
@@ -801,9 +801,9 @@ fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
             then_state = then_state.with_local(name.clone(), value.clone());
             stable_locals.insert(name, value);
             memory = memory.store(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Constant(i64::from(index * 4)),
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(i64::from(index * 4)),
                 },
                 int32(index),
             );
@@ -844,15 +844,15 @@ fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
 fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
     use crate::kernel::ConditionTerm;
     let x = MachineTerm::Variable(Variable(910_000));
-    let strong = Proposition::ConditionIs(
+    let strong = Proposition::condition_is(
         ConditionTerm::signed_greater_than(x.clone(), MachineTerm::constant(0)),
         true,
     );
-    let weak = Proposition::ConditionIs(
+    let weak = Proposition::condition_is(
         ConditionTerm::signed_greater_equal(x.clone(), MachineTerm::constant(0)),
         true,
     );
-    let reflexive = Proposition::ConditionIs(
+    let reflexive = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -865,7 +865,7 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
     for size in [16, 32, 64, 128] {
         let mut facts = PureFactStore::default().with_fact(strong.clone());
         for index in 0..size {
-            facts = facts.with_fact(Proposition::ConditionIs(
+            facts = facts.with_fact(Proposition::condition_is(
                 ConditionTerm::signed_less_than(
                     MachineTerm::Variable(Variable(920_000 + index)),
                     MachineTerm::constant(100),
@@ -901,16 +901,17 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
-    use crate::kernel::{ConditionTerm, PointerValue, SpecMemory};
+    use crate::kernel::{ConditionTerm, Pointer, SpecPoint};
     let _session = crate::kernel::VerificationSession::enter();
-    let owner = Pointer::symbolic(Variable(951_000));
-    let alias = Pointer::symbolic(Variable(951_001));
+    let owner = Address::symbolic(Variable(951_000));
+    let alias = Address::symbolic(Variable(951_001));
     let value = MachineTerm::uint64_constant(0x1234_5678_9abc_def0);
     let load = SpecExpression::MemoryLoad {
-        memory: SpecMemory::Current,
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            PointerValue::new(alias.clone(), ProgramType::UInt64Pointer),
-        ))),
+        point: SpecPoint::Current,
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            alias.clone(),
+            ProgramType::UInt64Pointer,
+        )))),
         value_type: ProgramType::UInt64,
     };
     let spec = SpecProposition::Comparison {
@@ -920,11 +921,11 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
     };
     let mut previous = None;
     for count in [16_u32, 64, 256, 1024] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut parent = PureFactStore::default();
         for index in 0..count {
             memory = memory.store(owner.offset_by_bytes((index + 1) * 8), int32(index));
-            parent = parent.with_fact(Proposition::ConditionIs(
+            parent = parent.with_fact(Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::Variable(Variable(952_000 + u64::from(index))),
                     MachineTerm::constant(index),
@@ -934,8 +935,8 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
         }
         memory = memory.store(owner.clone(), ProgramValue::UInt64(value.clone()));
         let state = ExecutionState::new().with_memory(memory.clone());
-        let arm = parent.with_fact(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(alias.clone(), owner.clone()),
+        let arm = parent.with_fact(Proposition::condition_is(
+            ConditionTerm::address_equal(alias.clone(), owner.clone()),
             true,
         ));
         let check = |state: &ExecutionState, facts: &PureFactStore, spec: &SpecProposition| {
@@ -985,15 +986,15 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
 
 #[test]
 fn interface_read_premises_are_indexed_and_check_the_exact_range() {
-    use crate::kernel::{Memory, Pointer};
-    let memory = Memory::new();
-    let readable = |memory: Memory, block: String, width| Proposition::MemoryLoadable {
+    use crate::kernel::{Address, SymbolicMemory};
+    let memory = SymbolicMemory::new();
+    let readable = |memory: SymbolicMemory, block: String, width| Proposition::MemoryLoadable {
         memory,
-        base: Pointer {
-            block: block.into(),
-            offset: PointerOffsetTerm::Constant(0),
+        base: Address {
+            base: block.into(),
+            offset: AddressOffset::Constant(0),
         },
-        bytes: MachineTerm::constant(width),
+        bytes: (MachineTerm::constant(width)).into(),
         wide: false,
     };
     let goal = readable(memory.clone(), "selected".into(), 4);
@@ -1017,7 +1018,11 @@ fn interface_read_premises_are_indexed_and_check_the_exact_range() {
                 selected
             ));
             assert!(!interface_read_is_subrange(
-                &readable(Memory::new().with_block("other", 4), "selected".into(), 4),
+                &readable(
+                    SymbolicMemory::new().with_block("other", 4),
+                    "selected".into(),
+                    4
+                ),
                 selected
             ));
         });
@@ -1156,11 +1161,11 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
     let mut samples = Vec::new();
     for count in [4u32, 8, 16, 32] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.store(base.offset_by_bytes(index * 4), int32(index));
         }
@@ -1257,4 +1262,213 @@ fn taking_a_constructor_arm_reuses_its_constructed_fact_context() {
         samples.iter().all(|work| *work <= samples[0] + 16),
         "entering an already constructed arm rebuilt its payload facts: {samples:?}"
     );
+}
+
+#[test]
+fn constructed_composite_observation_preserves_the_owner_beside_growing_frames() {
+    let definition = CompositeResourceDefinition::new(
+        "bundle",
+        Vec::new(),
+        None,
+        false,
+        vec![ResourceSpec::token(
+            ResourceAccessMode::Own,
+            "child".to_string(),
+            Vec::new(),
+            Vec::new(),
+        )],
+        Vec::new(),
+    );
+    let function = program_function(
+        ProgramType::Void,
+        "observe_bundle",
+        vec![],
+        ProgramStatement::Skip,
+    )
+    .with_composite_resource_definitions(vec![definition]);
+    let selected = ResourceFact::own_composite("bundle".to_string(), Vec::new());
+    let child = ResourceFact::view_token("child".to_string(), Vec::new());
+    for related in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut frame = ResourceContext::new().unchecked_with_fact(selected.clone());
+            for index in 0..count {
+                let base = crate::kernel::Address::symbolic(Variable(
+                    9_832_000 + if related { 0 } else { u64::from(index) },
+                ));
+                frame = frame.unchecked_with_fact(ResourceFact::own_memory(
+                    MemoryRange::new_with_element_width(
+                        base,
+                        (index * 4).into(),
+                        (index * 4 + 1).into(),
+                        1,
+                    ),
+                ));
+            }
+            let support = frame.unique_owned_occurrence_for_fact(&selected).unwrap().0;
+            let before = ExecutionState::new().with_resource_context(frame);
+            let facts = PureFactStore::default();
+            let (observed, work) = crate::instrumentation::measure_deterministic_work(|| {
+                CheckedResourceObservation::certify(
+                    &function,
+                    &before,
+                    &facts,
+                    &selected,
+                    ResourceObservationInput::NamedCells(before.memory()),
+                    &facts,
+                    &PersistentOrderedSet::default(),
+                    &CheckedCallEvents::default(),
+                )
+                .unwrap()
+            });
+            assert!(
+                observed
+                    .after_state
+                    .resources()
+                    .has_supported_projection(&child, support, &selected,)
+            );
+            assert_eq!(
+                observed
+                    .after_state
+                    .resources()
+                    .owned_fact_for_occurrence(support),
+                Some(&selected)
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "{related}: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn borrowed_observation_work_tracks_the_selected_body_instead_of_the_frame_or_loan() {
+    let mut samples = Vec::new();
+    for count in [4, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let definition = CompositeResourceDefinition::new(
+            "loan_box",
+            Vec::new(),
+            None,
+            false,
+            vec![ResourceSpec::token(
+                ResourceAccessMode::Own,
+                "child".into(),
+                Vec::new(),
+                Vec::new(),
+            )],
+            Vec::new(),
+        );
+        let function = program_function(
+            ProgramType::Void,
+            "observe_loan",
+            Vec::new(),
+            ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
+        )
+        .with_composite_resource_definitions(vec![definition]);
+        let head = ResourceFact::View(
+            ResourceFact::own_composite("loan_box".into(), Vec::new())
+                .resource()
+                .clone(),
+        );
+        let child = ResourceFact::view_token("child".into(), Vec::new());
+        let resources = ResourceContext::new().unchecked_with_fact(head.clone());
+        let support = resources.first_exact_occurrence(&head).unwrap();
+        let ledger = crate::kernel::LoanLedger::new();
+        let holder = ledger.fresh_participant().unwrap();
+        let backing = crate::kernel::loans::BorrowedContractInputBacking::from_checked_expansion(
+            support,
+            head.clone(),
+            Vec::new(),
+        )
+        .unwrap();
+        let opening = ledger
+            .borrowed_contract_input(holder, support, head.clone(), Some(backing))
+            .unwrap();
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let binding = crate::kernel::LoanViewBinding {
+            loan: opening.loan,
+            scope: opening.scope,
+            share: opening.root_share,
+            support,
+            viewed: head.clone(),
+            hold: None,
+        };
+        // Simulate previous projections from this loan and unrelated owners
+        // in the same execution state.
+        let old_views = (0..count)
+            .map(|index| ResourceFact::view_token(format!("old_{index}"), Vec::new()))
+            .collect();
+        let ledger = ledger
+            .project_observed_body(
+                holder,
+                &binding,
+                crate::kernel::loans::CompositeProjectionEvidence::from_checked_expansion(
+                    head.clone(),
+                    old_views,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let resources = resources.unchecked_with_facts(
+            (0..count).map(|index| ResourceFact::own_token(format!("owner_{index}"), Vec::new())),
+        );
+        let state = ExecutionState::new()
+            .with_loan_ledger(Some(ledger))
+            .with_loan_participant(Some(holder))
+            .with_resource_context_and_loan_dependencies(resources, [(support, binding.clone())]);
+        let facts = PureFactStore::default();
+        let observe = |state: &ExecutionState| {
+            CheckedResourceObservation::certify(
+                &function,
+                state,
+                &facts,
+                &head,
+                ResourceObservationInput::NamedCells(state.memory()),
+                &facts,
+                &PersistentOrderedSet::default(),
+                &CheckedCallEvents::default(),
+            )
+            .map(|observation| observation.after_state)
+        };
+        let (after, work) = crate::instrumentation::measure_deterministic_work(|| observe(&state));
+        let after = after.unwrap();
+        let child_occurrence = after.resources().first_exact_occurrence(&child).unwrap();
+        let child_binding = after.resources().loan_dependency(child_occurrence).unwrap();
+        assert_eq!(
+            child_binding,
+            &crate::kernel::LoanViewBinding {
+                viewed: child.clone(),
+                ..binding
+            }
+        );
+        assert!(
+            after
+                .loan_ledger()
+                .unwrap()
+                .validate_view_binding(child_binding.clone(), holder)
+                .is_ok()
+        );
+        assert_eq!(state.resources().first_exact_occurrence(&child), None);
+        assert_eq!(
+            observe(&after)
+                .unwrap()
+                .resources()
+                .occurrences_for_fact(&child),
+            [child_occurrence],
+        );
+        let unbound = state
+            .clone()
+            .with_resource_context(state.resources().clone().unchecked_with_fact(child.clone()));
+        assert!(observe(&unbound).is_err());
+        let wrong_holder = state.clone().with_loan_participant(Some(
+            state.loan_ledger().unwrap().fresh_participant().unwrap(),
+        ));
+        assert!(observe(&wrong_holder).is_err());
+        samples.push(work);
+    }
+    assert!(samples[2] <= samples[0] + 64, "{samples:?}");
 }

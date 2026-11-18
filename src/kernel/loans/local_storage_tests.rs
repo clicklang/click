@@ -1,12 +1,12 @@
 use super::*;
-use crate::kernel::{Memory, Pointer, PointerOffsetTerm};
+use crate::kernel::{Address, AddressOffset, SymbolicMemory};
 
 fn view(index: usize, end: u32) -> CheckedResourceFact {
     CheckedResourceFact {
         fact: ResourceFact::view_memory(MemoryRange::new(
-            Pointer {
-                block: format!("local:loan-{index}").into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: format!("local:loan-{index}").into(),
+                offset: AddressOffset::Constant(0),
             },
             0.into(),
             end.into(),
@@ -34,8 +34,8 @@ fn plan() -> StableViewTransferPlan {
 
 #[test]
 fn local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow() {
-    let memory = Memory::new().with_block(
-        view(0, 2).fact.memory_range().unwrap().base().block.clone(),
+    let memory = SymbolicMemory::new().with_block(
+        view(0, 2).fact.memory_range().unwrap().base().base.clone(),
         8,
     );
     let assumptions = PureFactContext::new();
@@ -60,12 +60,86 @@ fn local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow() {
             .lend_local_views(&memory, &[view(0, 3)], &assumptions)
             .is_err()
     );
-    let ended = memory.without_local_block(&view(0, 2).fact.memory_range().unwrap().base().block);
+    let ended = memory.without_local_block(&view(0, 2).fact.memory_range().unwrap().base().base);
     assert!(
         outside
             .lend_local_views(&ended, &[view(0, 1)], &assumptions)
             .is_err()
     );
+}
+
+fn lend_memory(
+    ledger: &LoanLedger,
+    lender: LoanParticipantId,
+    borrower: LoanParticipantId,
+    range: MemoryRange,
+) -> LoanOpening {
+    let owner = ResourceFact::own_memory(range);
+    let support = ResourceContext::new()
+        .unchecked_with_fact(owner.clone())
+        .unique_owned_occurrence_for_fact(&owner)
+        .unwrap()
+        .0;
+    ledger.lend(lender, borrower, support, owner).unwrap()
+}
+
+#[test]
+fn automatic_storage_retirement_uses_the_retained_backing_identity() {
+    let slot = SymbolicMemory::local_lifetime_pointer(1, "buffer");
+    let other = SymbolicMemory::local_lifetime_pointer(2, "buffer");
+    let bound = MachineTerm::Variable(Variable(91));
+    let symbolic = MemoryRange::new(Address::symbolic(Variable(90)), 0u32.into(), bound.clone())
+        .with_provenance(Arc::new(slot.clone()));
+    let ledger = LoanLedger::new();
+    let lender = ledger.fresh_participant().unwrap();
+    let borrower = ledger.fresh_participant().unwrap();
+    let empty = lend_memory(
+        &ledger,
+        lender,
+        borrower,
+        symbolic.with_bounds(symbolic.base().clone(), bound.clone(), bound),
+    );
+    let ledger = ledger.apply(&empty.transition).unwrap();
+    assert!(
+        ledger
+            .automatic_storage_retirement_refusal(&slot.base, &16u32.into())
+            .is_none()
+    );
+
+    let opening = lend_memory(&ledger, lender, borrower, symbolic.clone());
+    let ledger = ledger.apply(&opening.transition).unwrap();
+    let refusal = ledger
+        .automatic_storage_retirement_refusal(&slot.base, &16u32.into())
+        .expect("the symbolic spelling retains the automatic object's identity");
+    assert_eq!(refusal.category(), LoanRefusalCategory::ActiveDependency);
+    assert_eq!(
+        refusal.subject().conflicting_resource_fact(),
+        Some(&ResourceFact::view_memory(symbolic)),
+    );
+    assert!(
+        ledger
+            .automatic_storage_retirement_refusal(&other.base, &16u32.into())
+            .is_none()
+    );
+    let returned = ledger
+        .transfer(opening.root_share, borrower, lender)
+        .unwrap();
+    let closing = ledger.apply(&returned).unwrap();
+    let ended = closing
+        .apply(&closing.end(opening.scope, lender).unwrap())
+        .unwrap();
+    assert!(
+        ended
+            .automatic_storage_retirement_refusal(&slot.base, &16u32.into())
+            .is_none()
+    );
+    assert!(
+        ledger
+            .automatic_storage_retirement_refusal(&slot.base, &16u32.into())
+            .is_some()
+    );
+    assert!(ledger.invariant_holds());
+    assert!(ended.invariant_holds());
 }
 
 #[cfg(test)]

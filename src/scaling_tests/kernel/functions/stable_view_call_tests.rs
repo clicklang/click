@@ -2,6 +2,41 @@
 use super::*;
 
 #[test]
+fn verified_call_loan_requirement_building_does_not_visit_live_loans() {
+    let effects = [MemoryRange::new(pointer(), 0u32.into(), 1u32.into())];
+    let samples = [4, 16, 64].map(|count| {
+        let mut ledger = LoanLedger::new();
+        let lender = ledger.fresh_participant().unwrap();
+        let reader = ledger.fresh_participant().unwrap();
+        for i in 0..count {
+            ledger = lend_summary_test_range(
+                &ledger,
+                lender,
+                reader,
+                MemoryRange::new(
+                    Address::symbolic(Variable(93_000 + i)),
+                    0u32.into(),
+                    1u32.into(),
+                ),
+            );
+        }
+        let memory = SymbolicMemory::new();
+        let (requirements, work) = crate::instrumentation::measure_deterministic_work(|| {
+            verified_call_loan_requirements(
+                Some(&ledger),
+                &effects,
+                || CallRequirementSite::for_requirement("write", "write", 0, &[], &memory),
+                0,
+                "verified call allocation retirement separation",
+            )
+        });
+        assert_eq!(requirements.len(), 1);
+        work
+    });
+    assert_eq!(samples, [samples[0]; 3]);
+}
+
+#[test]
 fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
     let mut curves = Vec::new();
     for case in ["implicit", "gap", "owner", "joined"] {
@@ -47,7 +82,7 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
             let state = ExecutionState::new()
                 .with_population_creation_tracking()
                 .with_memory(with_initialized_cells(
-                    Memory::new().with_block(pointer.block.clone(), 16384),
+                    SymbolicMemory::new().with_block(pointer.base.clone(), 16384),
                     &pointer,
                     1024,
                 ))
@@ -147,7 +182,7 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
         let state = ExecutionState::new()
             .with_population_creation_tracking()
             .with_memory(with_initialized_cells(
-                Memory::new().with_block(pointer.block.clone(), 16384),
+                SymbolicMemory::new().with_block(pointer.base.clone(), 16384),
                 &pointer,
                 1024,
             ))
@@ -250,9 +285,9 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
 /// unrelated owners. Each query forks the same prepared residual frame.
 #[test]
 fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
-    let symbolic = |id| Pointer {
-        block: PointerBlock::Symbolic(Variable(id)),
-        offset: PointerOffsetTerm::Constant(0),
+    let symbolic = |id| Address {
+        base: AddressBase::Symbolic(Variable(id)),
+        offset: AddressOffset::Constant(0),
     };
     let own = |base| ResourceFact::own_memory(MemoryRange::new(base, 0u32.into(), 4u32.into()));
     for axis in ["aliases", "frame"] {
@@ -264,7 +299,7 @@ fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
                 PureFactContext::new(),
                 |facts, index| {
                     facts.assume_condition(
-                        ConditionTerm::pointer_equal(selected.clone(), symbolic(882_000 + index)),
+                        ConditionTerm::address_equal(selected.clone(), symbolic(882_000 + index)),
                         true,
                     )
                 },
@@ -323,20 +358,20 @@ fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
 }
 
 fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
-    let symbolic = |id| Pointer::symbolic(Variable(id));
+    let symbolic = |id| Address::symbolic(Variable(id));
     let mut samples = Vec::new();
     for count in [4_u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let selected = symbolic(8_910_000);
         let neighbor = symbolic(8_920_000);
         let mut facts = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(selected.clone(), neighbor.clone()),
+            ConditionTerm::address_equal(selected.clone(), neighbor.clone()),
             true,
         );
         for index in 1..count {
             if axis != "owners" {
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         if axis == "aliases" {
                             selected.clone()
                         } else {
@@ -362,7 +397,7 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
         resources.synchronize_memory_equalities(&facts);
         let state = ExecutionState::new()
             .with_population_creation_tracking()
-            .with_memory(Memory::new().with_block(selected.block.clone(), 8))
+            .with_memory(SymbolicMemory::new().with_block(selected.base.clone(), 8))
             .with_resource_context(resources);
         let output = ResourceSpec::owned_memory(MemorySegment::new(
             crate::kernel::program_expression::variable("p"),
@@ -378,7 +413,12 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
             program_skip(),
         )
         .with_resource_summary(vec![], vec![output]);
-        let environment = environment(&function);
+        let environment =
+            ExecutionEnvironment::new().with_external_function_rule(ExternalFunctionRule {
+                function: function.clone(),
+                scoped_unselected: false,
+                representation_copy: None,
+            });
         let arguments = [crate::kernel::program_expression::pointer_value(
             selected.clone(),
         )];

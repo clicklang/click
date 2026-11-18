@@ -59,7 +59,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
     if projection.field_index != matched.field_index
         || !matches!(
             instance.fields().get(projection.field_index),
-            Some(AlgebraicValue::Algebraic(field_model)) if field_model == model
+            Some(crate::kernel::ResourceFieldValue::Algebraic(field_model)) if field_model == model
         )
     {
         return (Vec::new(), Vec::new());
@@ -153,7 +153,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
         let Some(range) = fact.memory_range() else {
             continue;
         };
-        supporting_facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
+        supporting_facts.extend(crate::kernel::admitted_memory_range_span_facts(range));
         supporting_facts.push(range.loadable_fact(&state.memory));
     }
     supporting_facts.push(Proposition::ResourceComposition(body_resources));
@@ -211,7 +211,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
 /// evidence contributes nothing.
 /// A returned named head carries its verified body's pure invariants. Only
 /// the explicit outputs are visited, after ensures have selected their model.
-/// Memory state readability and containment follow the exact owned head; no child
+/// SymbolicMemory state readability and containment follow the exact owned head; no child
 /// ownership or permanent view is published.
 pub(super) fn checked_returned_instance_body_facts(
     outputs: &ResourceContext,
@@ -251,7 +251,8 @@ pub(super) fn checked_returned_instance_body_facts(
         let Some(matched) = definition.matched.as_ref() else {
             continue;
         };
-        let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(matched.field_index)
+        let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+            instance.fields().get(matched.field_index)
         else {
             continue;
         };
@@ -279,10 +280,7 @@ pub(super) fn checked_returned_instance_body_facts(
         );
         facts.extend(read_projection);
         facts.extend(clauses.into_iter().filter_map(|clause| {
-            (!matches!(
-                clause.proposition,
-                Proposition::ConditionIs(ConditionTerm::Constant(false), true)
-            ))
+            (!matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(false), _)))))
             .then_some(clause.proposition)
         }));
     }
@@ -319,7 +317,8 @@ pub(super) fn selected_resource_instance_case_facts(
                 .iter()
                 .find(|definition| definition.name() == instance.name())?;
             let matched = definition.matched.as_ref()?;
-            let AlgebraicValue::Algebraic(model) = instance.fields().get(matched.field_index)?
+            let crate::kernel::ResourceFieldValue::Algebraic(model) =
+                instance.fields().get(matched.field_index)?
             else {
                 return None;
             };
@@ -346,10 +345,7 @@ pub(super) fn selected_resource_instance_case_facts(
                 // can simplify it to `false`; publishing that as a premise
                 // would make every subsequent obligation vacuous.
                 .filter_map(|clause| {
-                    (!matches!(
-                        clause.proposition,
-                        Proposition::ConditionIs(ConditionTerm::Constant(false), true)
-                    ))
+                    (!matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(false), _)))))
                     .then_some(clause.proposition)
                 }),
             )
@@ -368,7 +364,7 @@ pub(super) fn selected_instance_resource_load_values(
     state: &ExecutionState,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> BTreeMap<(Pointer, ProgramType), ProgramValue> {
+) -> BTreeMap<(Address, ProgramType), ProgramValue> {
     let Some(bindings) = state.resource_bindings.as_ref() else {
         return BTreeMap::new();
     };
@@ -450,7 +446,7 @@ pub(super) fn selected_instance_resource_load_values(
                 .into_iter()
                 .find_map(|(load, value)| {
                     let SpecExpression::MemoryLoad {
-                        memory: SpecMemory::Current,
+                        point: SpecPoint::Current,
                         pointer,
                         value_type,
                     } = load
@@ -493,11 +489,11 @@ pub(super) fn selected_instance_resource_load_values(
                     };
                     resource_context_has_read(
                         &owned_memory,
-                        address.pointer(),
+                        address.address(),
                         value_type.byte_width(),
                         assumptions,
                     )
-                    .then(|| ((address.pointer().clone(), *value_type), value))
+                    .then(|| ((address.address().clone(), *value_type), value))
                 });
             let Some((key, value)) = candidate else {
                 continue;
@@ -735,7 +731,9 @@ pub(in crate::kernel) fn selected_instance_match_arm<'a>(
             }
         }
     }
-    let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        instance.fields().get(body.field_index)
+    else {
         return Err("resource match field is not algebraic");
     };
     // Fold and unfold bind the arm's fields, so they need the constructor
@@ -940,7 +938,7 @@ pub(in crate::kernel) fn instance_body_evaluation(
         .iter()
         .zip(instance.fields.iter())
     {
-        if let AlgebraicValue::Program(value) = value {
+        if let crate::kernel::ResourceFieldValue::Program(value) = value {
             evaluation
                 .locals
                 .bind_logical_typed(name.clone(), value.clone(), value.program_type());

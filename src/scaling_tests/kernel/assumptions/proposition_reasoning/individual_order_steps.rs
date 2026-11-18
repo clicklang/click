@@ -16,7 +16,7 @@ fn individual_order_steps_keep_growing_shared_endpoints() {
                     MachineBinaryOp::Multiply,
                     [root.clone(), root.clone()],
                 );
-                let source = Proposition::ConditionIs(
+                let source = Proposition::condition_is(
                     ConditionTerm::integer_less_than(
                         observed(root.clone()),
                         IntegerTerm::constant_i64(100),

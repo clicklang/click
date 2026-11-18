@@ -440,7 +440,7 @@ fn unbound_modeled_pthread_call(
 /// otherwise joining immediately after a parent write could preserve it.
 fn freshen_shared_mutex_payload(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
@@ -586,7 +586,7 @@ fn execute_modeled_pthread_mutex_paths(
                 .then(|| {
                     super::mutexes::initialization_storage_refusal(
                         state,
-                        mutex.pointer(),
+                        mutex.address(),
                         binding.mutex_storage_bytes,
                         binding.mutex_storage_alignment,
                         &current,
@@ -598,7 +598,7 @@ fn execute_modeled_pthread_mutex_paths(
                         return None;
                     }
                     let storage = MemoryRange::new_with_element_width(
-                        mutex.pointer().clone(),
+                        mutex.address().clone(),
                         0u32.into(),
                         binding.mutex_storage_bytes.into(),
                         1,
@@ -623,7 +623,7 @@ fn execute_modeled_pthread_mutex_paths(
                 let context = if let Some(identity) = state_identity {
                     super::mutexes::MutexContext::new(state.clone())
                         .publish_declared(
-                            mutex.pointer(),
+                            mutex.address(),
                             *identity,
                             &environment.modeled_mutex_definitions,
                             &current,
@@ -632,13 +632,13 @@ fn execute_modeled_pthread_mutex_paths(
                         .map_err(|message| RuntimeError::FunctionContract(message.to_string()))
                 } else {
                     super::mutexes::MutexContext::new(state.clone())
-                        .initialize_empty(mutex.pointer().clone(), binding.mutex_storage_bytes)
+                        .initialize_empty(mutex.address().clone(), binding.mutex_storage_bytes)
                         .map_err(|message| RuntimeError::FunctionContract(message.to_string()))
                 };
                 let context = context.and_then(|context| {
                     context
                         .consume_initialized_storage(
-                            mutex.pointer(),
+                            mutex.address(),
                             binding.mutex_storage_bytes,
                             &current,
                         )
@@ -654,7 +654,7 @@ fn execute_modeled_pthread_mutex_paths(
                         .binder_by_role(MutexResourceRole::Lifetime)
                         .expect("initialization declares its lifetime output");
                     let output = transport.bindings[&Variable(lifetime.identity)];
-                    let live = super::mutexes::live_resource(&next, mutex.pointer(), false)
+                    let live = super::mutexes::live_resource(&next, mutex.address(), false)
                         .expect("successful initialization establishes lifetime authority");
                     next.bind_named_mutex_authority(output, &live)
                         .map(|next| (next, evidence))
@@ -670,7 +670,7 @@ fn execute_modeled_pthread_mutex_paths(
                 && (function_name == binding.mutex_lock_name
                     || state
                         .resources
-                        .mutex_use_candidate_at(mutex.pointer())
+                        .mutex_use_candidate_at(mutex.address())
                         .is_some()
                     || state.opaque_mutex_acquisitions.is_some())
             {
@@ -689,7 +689,7 @@ fn execute_modeled_pthread_mutex_paths(
                         transport.bindings[&Variable(binder.identity)]
                     })
                 };
-                let usage = state.resources.mutex_use_candidate_at(mutex.pointer());
+                let usage = state.resources.mutex_use_candidate_at(mutex.address());
                 let access_matches =
                     selected_role(MutexResourceRole::Access).is_none_or(|identity| {
                         state.resolve_named_mutex_authority(identity) == usage && usage.is_some()
@@ -697,16 +697,16 @@ fn execute_modeled_pthread_mutex_paths(
                 let guard_matches = acquiring
                     || selected_role(MutexResourceRole::Guard).is_none_or(|identity| {
                         matches!((state.resolve_named_mutex_authority(identity),
-                        super::mutexes::guard_resource(state, mutex.pointer(), false)),
+                        super::mutexes::guard_resource(state, mutex.address(), false)),
                         (Some(actual), Some(expected)) if actual == &expected)
                     });
                 if !access_matches {
                     Err(RuntimeError::MissingMutexUse {
-                        mutex: mutex.pointer().clone(),
+                        mutex: mutex.address().clone(),
                     })
                 } else if !guard_matches {
                     Err(RuntimeError::MissingMutexGuard {
-                        mutex: mutex.pointer().clone(),
+                        mutex: mutex.address().clone(),
                     })
                 } else {
                     let definition = usage
@@ -721,7 +721,7 @@ fn execute_modeled_pthread_mutex_paths(
                         });
                     super::mutexes::opaque_runtime_transition_with_payload(
                         state,
-                        mutex.pointer(),
+                        mutex.address(),
                         acquiring,
                         &current,
                         definition,
@@ -729,7 +729,7 @@ fn execute_modeled_pthread_mutex_paths(
                         selected_role(MutexResourceRole::State),
                         budget,
                     )
-                    .map_err(|error| error.into_runtime_error(mutex.pointer()))
+                    .map_err(|error| error.into_runtime_error(mutex.address()))
                     .and_then(|(next, evidence)| {
                         if !acquiring {
                             return Ok((next, evidence));
@@ -737,7 +737,7 @@ fn execute_modeled_pthread_mutex_paths(
                         let Some(output) = selected_role(MutexResourceRole::Guard) else {
                             return Ok((next, evidence));
                         };
-                        let guard = super::mutexes::guard_resource(&next, mutex.pointer(), false)
+                        let guard = super::mutexes::guard_resource(&next, mutex.address(), false)
                             .expect("checked acquisition establishes its guard");
                         next.bind_named_mutex_authority(output, &guard)
                             .map(|next| (next, evidence))
@@ -761,7 +761,7 @@ fn execute_modeled_pthread_mutex_paths(
                     (|| {
                         let (fresh, ranges) = freshen_shared_mutex_payload(
                             state,
-                            mutex.pointer(),
+                            mutex.address(),
                             &current,
                             environment,
                             budget,
@@ -769,8 +769,8 @@ fn execute_modeled_pthread_mutex_paths(
                         let before = state.memory.clone();
                         let after = fresh.memory.clone();
                         let acquired = super::mutexes::MutexContext::new(fresh)
-                            .acquire_current(mutex.pointer(), &current)
-                            .map_err(|error| error.into_runtime_error(mutex.pointer()))?;
+                            .acquire_current(mutex.address(), &current)
+                            .map_err(|error| error.into_runtime_error(mutex.address()))?;
                         if !ranges.is_empty() {
                             path.facts.push(
                                 ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
@@ -785,8 +785,8 @@ fn execute_modeled_pthread_mutex_paths(
                     })()
                 } else if function_name == binding.mutex_unlock_name {
                     context
-                        .release_current(mutex.pointer(), &current)
-                        .map_err(|error| error.into_runtime_error(mutex.pointer()))
+                        .release_current(mutex.address(), &current)
+                        .map_err(|error| error.into_runtime_error(mutex.address()))
                 } else {
                     let selected_live = selected.map(|transport| {
                         let lifetime = MutexOperation::Destroy
@@ -799,18 +799,18 @@ fn execute_modeled_pthread_mutex_paths(
                         !matches!(
                             (
                                 state.resolve_named_mutex_authority(identity),
-                                super::mutexes::live_resource(state, mutex.pointer(), false)
+                                super::mutexes::live_resource(state, mutex.address(), false)
                             ),
                             (Some(actual), Some(expected)) if actual == &expected
                         )
                     }) {
                         Err(RuntimeError::MissingMutexLive {
-                            mutex: mutex.pointer().clone(),
+                            mutex: mutex.address().clone(),
                         })
                     } else {
                         context
-                            .destroy(mutex.pointer(), &current)
-                            .map_err(|error| error.into_runtime_error(mutex.pointer()))
+                            .destroy(mutex.address(), &current)
+                            .map_err(|error| error.into_runtime_error(mutex.address()))
                     }
                 };
                 result.map(super::mutexes::MutexContext::into_runtime_transition)
@@ -821,7 +821,7 @@ fn execute_modeled_pthread_mutex_paths(
                 }
                 let (fresh, ranges) = freshen_shared_mutex_payload(
                     &next,
-                    mutex.pointer(),
+                    mutex.address(),
                     &current,
                     environment,
                     budget,
@@ -844,7 +844,7 @@ fn execute_modeled_pthread_mutex_paths(
                     // Every runtime transition may change the opaque representation.
                     // Only this checked path bypasses its ordinary-write reservation.
                     {
-                        let storage = current.equality_graph.storage_address(mutex.pointer());
+                        let storage = current.equality_graph.storage_address(mutex.address());
                         let footprint = MemoryRange::new_with_element_width(
                             storage,
                             0u32.into(),
@@ -927,7 +927,7 @@ fn modeled_pthread_handle_store(
 
 fn modeled_pthread_indeterminate_handle(
     mut state: ExecutionState,
-    slot: &Pointer,
+    slot: &Address,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<ExecutionState> {
@@ -1038,7 +1038,7 @@ fn execute_modeled_pthread_create_paths(
                 "modeled-pthread create requires a writable pthread_t slot, null attributes, and a pointer argument",
             )
         } else if let ProgramValue::Pointer(callback) = &path.values[2] {
-            if let PointerBlock::Function(worker_name) = &callback.block {
+            if let AddressBase::Function(worker_name) = &callback.base {
                 let Some(worker) = environment.get_verified_function_rule(worker_name) else {
                     paths.push(StatementExecutionPath::new(
                         refusal(
@@ -1125,7 +1125,7 @@ fn execute_modeled_pthread_create_paths(
                                 let ProgramValue::Pointer(slot_pointer) = slot else {
                                     unreachable!()
                                 };
-                                let output_slot = slot_pointer.pointer();
+                                let output_slot = slot_pointer.address();
                                 let mut failure = modeled_pthread_indeterminate_handle(
                                     failure.parent().clone(),
                                     output_slot,
@@ -1340,10 +1340,10 @@ fn execute_program_indirect_call_paths(
         } = target_path;
         let target_names = match outcome {
             ExpressionOutcome::Value(ProgramValue::Pointer(pointer))
-                if pointer.offset == PointerOffsetTerm::Constant(0) =>
+                if pointer.offset == AddressOffset::Constant(0) =>
             {
-                match &pointer.block {
-                    PointerBlock::Function(name)
+                match &pointer.base {
+                    AddressBase::Function(name)
                         if execution_context
                             .environment
                             .selected_call_contract
@@ -1351,15 +1351,16 @@ fn execute_program_indirect_call_paths(
                     {
                         vec![Ok(name.clone())]
                     }
-                    PointerBlock::FunctionSymbolic(_)
-                    | PointerBlock::Function(_)
-                    | PointerBlock::LoadedPointer(_)
+                    AddressBase::FunctionSymbolic(_)
+                    | AddressBase::Function(_)
+                    | AddressBase::LoadedPointer(_)
                         if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) =>
                     {
                         let target_assumptions =
                             assumptions_with_path_context(assumptions, &facts, &obligations);
-                        let owned = super::functions::contracts_from_facts(
-                            target_assumptions.function_contract_facts_for(pointer.pointer()),
+                        let owned = super::functions::contracts_for_pointer(
+                            pointer.address(),
+                            &target_assumptions,
                             execution_context.environment,
                             &function_type,
                         );
@@ -1673,7 +1674,7 @@ pub(crate) fn loop_binder_state_components_match_at_back_edge(
 
 fn check_loop_guard_custody(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     held: &ConditionTerm,
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
@@ -1689,31 +1690,62 @@ fn check_loop_guard_custody(
     Ok(())
 }
 
-/// Whether a post-body loop condition still has a feasible true path.
-///
-/// This is deliberately conservative for non-value condition outcomes: an
-/// unresolved condition is treated as potentially continuing, so callers do
-/// not export a state-changing body path as a final exit accidentally.
-pub(crate) fn loop_condition_may_continue(
+/// Feasible decisions at a loop head, independent of its ownership join.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LoopConditionFeasibility {
+    Unreachable,
+    TrueOnly,
+    FalseOnly,
+    Both,
+}
+
+impl LoopConditionFeasibility {
+    fn from_possible_outcomes(may_continue: bool, may_exit: bool) -> Self {
+        match (may_continue, may_exit) {
+            (false, false) => Self::Unreachable,
+            (true, false) => Self::TrueOnly,
+            (false, true) => Self::FalseOnly,
+            (true, true) => Self::Both,
+        }
+    }
+
+    pub(crate) fn may_continue(self) -> bool {
+        matches!(self, Self::TrueOnly | Self::Both)
+    }
+
+    /// The declared measures that this boundary must read and prove.
+    pub(crate) fn required_ranking_measures(
+        self,
+        declared: &[RankingComponent],
+    ) -> &[RankingComponent] {
+        if self.may_continue() { declared } else { &[] }
+    }
+
+    pub(crate) fn may_exit(self) -> bool {
+        matches!(self, Self::FalseOnly | Self::Both)
+    }
+}
+
+/// Classify the selected condition once; an unresolved evaluation remains
+/// conservative and cannot itself certify an exit.
+pub(crate) fn classify_loop_condition(
     state: &ExecutionState,
     condition: &ProgramExpression,
     assumptions: &PureFactContext,
-) -> Result<bool, String> {
-    loop_condition_feasibility(state, condition, assumptions)
-        .map(|(may_continue, _)| may_continue)
-        .map_err(|limit| {
-            format!(
-                "could not classify the loop condition: it stopped at {}",
-                limit.describe()
-            )
-        })
+) -> Result<LoopConditionFeasibility, String> {
+    loop_condition_feasibility(state, condition, assumptions).map_err(|limit| {
+        format!(
+            "could not classify the loop condition: it stopped at {}",
+            limit.describe()
+        )
+    })
 }
 
 fn loop_condition_feasibility(
     state: &ExecutionState,
     condition: &ProgramExpression,
     assumptions: &PureFactContext,
-) -> ExecutionResult<(bool, bool)> {
+) -> ExecutionResult<LoopConditionFeasibility> {
     let mut budget = ExecutionBudget::beside_live_state().with_program_expression_cost(condition);
     let expression_paths =
         evaluate_program_condition_paths(state, condition, assumptions, &mut budget)?;
@@ -1741,7 +1773,10 @@ fn loop_condition_feasibility(
             }
         }
     }
-    Ok((may_continue, may_exit))
+    Ok(LoopConditionFeasibility::from_possible_outcomes(
+        may_continue,
+        may_exit,
+    ))
 }
 
 fn condition_path_is_ruled_out(
@@ -1752,7 +1787,7 @@ fn condition_path_is_ruled_out(
         let Proposition::ConditionIs(condition, value) = fact.proposition() else {
             return false;
         };
-        condition_value_is_proven(assumptions, condition, !value)
+        condition_value_is_proven(assumptions, condition.native_compat(), !value)
     })
 }
 
@@ -1833,7 +1868,7 @@ fn loop_state_components_match_at_back_edge_inner(
     next_state: &ExecutionState,
     composite_resource_definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-    checked_mutexes: &[Pointer],
+    checked_mutexes: &[Address],
 ) -> Result<(), String> {
     let mut changed = Vec::new();
     if !top_state
@@ -1874,14 +1909,14 @@ fn loop_state_components_match_at_back_edge_inner(
     // The head keeps a pointer local's subobject only if every back edge
     // returns the local to that same subobject.
     if top_state.locals().object_values().any(|(name, value)| {
-        program_value_subobject_extent(value).is_some()
+        program_value_subobject_bounds(value).is_some()
             && next_state
                 .locals()
                 .get(name)
-                .map(program_value_subobject_extent)
-                != Some(program_value_subobject_extent(value))
+                .map(program_value_subobject_bounds)
+                != Some(program_value_subobject_bounds(value))
     }) {
-        changed.push("pointer subobject extents");
+        changed.push("pointer subobject bounds");
     }
     // Likewise the class of the object a pointer local designates
     // (`design/effective-types.md`). A proved-null back edge designates no
@@ -1898,7 +1933,7 @@ fn loop_state_components_match_at_back_edge_inner(
                 || next
                     .and_then(|value| value.pointer())
                     .is_some_and(|pointer| {
-                        assumptions.pointers_known_equal(pointer.pointer(), &Pointer::null())
+                        assumptions.pointers_known_equal(pointer.address(), &Address::null())
                     })
             {
                 return None;
@@ -1972,7 +2007,7 @@ fn loop_state_components_match_at_back_edge_inner(
 /// The parts of one program loop the loop rule reads, borrowed from it.
 #[derive(Clone, Copy)]
 pub(super) struct LoopExecutionView<'a> {
-    pub(super) condition: &'a ProgramExpression,
+    pub(super) entry_guard: Option<&'a ProgramExpression>,
     pub(super) invariant: &'a [Proposition],
     pub(super) invariant_checks: &'a [LoopInvariantCheck],
     pub(super) effect_checks: &'a [LoopEffectCheck],
@@ -1981,8 +2016,7 @@ pub(super) struct LoopExecutionView<'a> {
     pub(super) structural_measure: Option<&'a str>,
     pub(super) body: &'a ProgramStatement,
     pub(super) update: Option<&'a ProgramStatement>,
-    pub(super) test: Option<&'a LoopTestRegion>,
-    pub(super) direct_post_test: bool,
+    pub(super) test: &'a LoopTestRegion,
     pub(super) backedge_target: Option<ControlTargetId>,
     pub(super) natural_exit_target: Option<ControlTargetId>,
 }
@@ -2006,11 +2040,12 @@ impl<'a> LoopExecutionView<'a> {
         else {
             return None;
         };
-        let (condition, direct_post_test, test) = loop_test.execution_parts();
+        let condition = loop_test.entry_condition();
+        let test = loop_test;
         Some(Self {
             test,
             update: update.as_deref(),
-            condition,
+            entry_guard: condition,
             invariant,
             invariant_checks,
             effect_checks,
@@ -2018,7 +2053,6 @@ impl<'a> LoopExecutionView<'a> {
             ranking_measures,
             structural_measure: structural_measure.as_deref(),
             body,
-            direct_post_test,
             backedge_target: *backedge_target,
             natural_exit_target: *natural_exit_target,
         })
@@ -2105,14 +2139,14 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
             .iter()
             .filter(|fact| match fact {
                 Proposition::ConditionIs(condition, value) => {
-                    !earlier.contains(&(condition, !*value))
+                    !earlier.contains(&(condition.native_compat(), !*value))
                 }
                 _ => true,
             })
             .collect::<Vec<_>>();
         for fact in own.iter() {
             if let Proposition::ConditionIs(condition, value) = fact {
-                earlier.insert((condition, *value));
+                earlier.insert((condition.native_compat(), *value));
             }
         }
         let mut own = if narrowed.is_empty() {
@@ -2205,11 +2239,7 @@ fn join_loop_exit_paths(
                         // Dropping this conjunct weakens the path disjunction
                         // and keeps its pure successor facts spellable.
                         && !matches!(proposition, Proposition::ResourceComposition(_))
-                        && !matches!(
-                            proposition,
-                            Proposition::ConditionIs(ConditionTerm::Constant(actual), expected)
-                                if actual == expected
-                        )
+                        && !matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(actual), _)) if (actual == expected)))
                 })
                 .cloned()
                 .collect::<Vec<_>>()
@@ -2766,7 +2796,7 @@ fn retain_proven_loop_exit_cells(
                 if no_binders && equality == Some(false) {
                     return Err(format!(
                         "the cell in `{}` that the exits write differently is owned by no loop binder",
-                        pointer.block
+                        pointer.base
                     ));
                 }
             }
@@ -2796,10 +2826,10 @@ fn indexed_loop_exit_load_equality(
     else {
         return None;
     };
-    if let Some(answer) = context.exact_condition_value(&condition) {
+    if let Some(answer) = context.exact_condition_value((&condition).native_compat()) {
         return Some(answer == expected);
     }
-    match &condition {
+    match (&condition).native_compat() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -2838,14 +2868,14 @@ fn indexed_loop_exit_load_equality(
             };
             Some(constant(left)? == constant(right)?)
         }
-        ConditionTerm::PointerEqual(left, right) if expected => {
+        ConditionTerm::AddressEqual(left, right) if expected => {
             context.pointers_known_equal(left, right).then_some(true)
         }
         _ => None,
     }
 }
 
-fn is_loop_exit_state_marker(block: &PointerBlock) -> bool {
+fn is_loop_exit_state_marker(block: &AddressBase) -> bool {
     block.is_havoc_block() || block.is_call_havoc_block() || block.starts_with("call-write-set:")
 }
 
@@ -3025,7 +3055,7 @@ fn equation_states_nothing(equation: &Proposition) -> bool {
     match equation {
         Proposition::Equal(left, right) => left == right,
         Proposition::ConditionIs(condition, value) => {
-            PureFactContext::decide_intrinsically(condition) == Some(*value)
+            PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value)
         }
         _ => false,
     }
@@ -3096,10 +3126,9 @@ fn abstract_loop_exit_binders(
             variables,
             budget,
         )?;
-        let fields = joined_resource_values(
+        let fields = joined_resource_fields(
             &base.fields,
             instances.iter().map(|instance| &instance.fields),
-            &[],
             restatements,
             variables,
             budget,
@@ -3198,7 +3227,7 @@ fn loop_exit_local_arguments(
             }
             // A numeric address is a pure projection of the declared local.
             // It must follow the local's joined value just as a direct index
-            // does; it never transfers the pointer's provenance or extent.
+            // does; it never transfers the pointer's provenance or bounds.
             let (name, address_only) = match expression {
                 ProgramExpression::Variable(name) => (name, false),
                 ProgramExpression::Cast {
@@ -3218,8 +3247,8 @@ fn loop_exit_local_arguments(
                     let ProgramValue::Pointer(pointer) = value else {
                         return None;
                     };
-                    Some(ProgramValue::UInt64(MachineTerm::pointer_address(
-                        pointer.pointer().clone(),
+                    Some(ProgramValue::UInt64(MachineTerm::integer_address(
+                        pointer.address().clone(),
                     )))
                 } else {
                     Some(value.clone())
@@ -3230,9 +3259,9 @@ fn loop_exit_local_arguments(
                 crate::instrumentation::record_deterministic_work(1);
                 let held = project(&exit.locals().get(name)?.native())?;
                 let argument = instance.arguments().get(position)?;
-                if !crate::kernel::resource_arguments_proven_equal(
-                    argument,
-                    &AlgebraicValue::Program(held.clone()),
+                if !crate::kernel::resource_field_values_proven_equal(
+                    (argument).into(),
+                    (&AlgebraicValue::Program(held.clone())).into(),
                     context,
                 ) {
                     return None;
@@ -3249,7 +3278,7 @@ mod exit_local_argument_tests;
 /// A value-only binding introduced by lowering is not an automatic object.
 /// If an exit never produced it, no common value can be read after the loop.
 /// Discard only loop-written names absent at entry, and only when every held
-/// binding has no declared storage. Memory and resource authority remain intact.
+/// binding has no declared storage. SymbolicMemory and resource authority remain intact.
 fn discard_loop_exit_partial_value_bindings(
     top: &ExecutionState,
     body: &ProgramStatement,
@@ -3304,7 +3333,7 @@ fn joined_resource_values<'a>(
             let Some(value) = exit.get(position) else {
                 return Err("the exits hold resource instances of different widths".to_string());
             };
-            held.push(value.clone());
+            held.push(value.into_native());
         }
         let local = local_arguments.get(position).and_then(Option::as_ref);
         if held.iter().all(|other| other == value) && local.is_none_or(|local| local == value) {
@@ -3312,7 +3341,7 @@ fn joined_resource_values<'a>(
         }
         let fresh = match local {
             Some(local) => local.clone(),
-            None => fresh_resource_value_like(value, variables, budget)?,
+            None => fresh_resource_value_like(&*value, variables, budget)?,
         };
         for (restatement, held) in restatements.iter_mut().zip(held) {
             restatement.pin_resource_value(&fresh, &held);
@@ -3322,19 +3351,51 @@ fn joined_resource_values<'a>(
     Ok(joined.into())
 }
 
+/// Join the selected model fields while keeping every unchanged producer.
+fn joined_resource_fields<'a>(
+    base: &ResourceFieldValues,
+    exits: impl Iterator<Item = &'a ResourceFieldValues> + Clone,
+    restatements: &mut [LoopExitRestatement],
+    variables: &mut KernelVariableGenerator,
+    budget: &mut ExecutionBudget,
+) -> Result<ResourceFieldValues, String> {
+    let mut joined = Vec::with_capacity(base.len());
+    for position in 0..base.len() {
+        let value = base.get(position).expect("field index");
+        let held = exits
+            .clone()
+            .map(|exit| {
+                exit.get(position).ok_or_else(|| {
+                    "the exits hold resource instances of different widths".to_string()
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if held.iter().all(|other| *other == value) {
+            joined.push(base.stored_field(position).expect("field index"));
+            continue;
+        }
+        let fresh = fresh_resource_value_like(value, variables, budget)?;
+        for (restatement, held) in restatements.iter_mut().zip(held) {
+            restatement.pin_resource_value(&fresh, &held.into_native());
+        }
+        joined.push(StoredResourceField::from_minted(fresh));
+    }
+    Ok(ResourceFieldValues::from_stored(joined))
+}
+
 /// A fresh symbolic value of the same sort as `value`.
-fn fresh_resource_value_like(
-    value: &AlgebraicValue,
+fn fresh_resource_value_like<'a>(
+    value: impl Into<ResourceFieldValue<'a>>,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
 ) -> Result<AlgebraicValue, String> {
     let variable = variables.next_in(budget).map_err(exhausted_identities)?;
-    Ok(match value {
-        AlgebraicValue::Integer(_) => AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-        AlgebraicValue::Program(value) => {
+    Ok(match value.into() {
+        ResourceFieldValue::Integer(_) => AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
+        ResourceFieldValue::Program(value) => {
             AlgebraicValue::Program(symbolic_call_result(value.program_type(), variable))
         }
-        AlgebraicValue::Algebraic(term) => AlgebraicValue::Algebraic(AlgebraicTerm {
+        ResourceFieldValue::Algebraic(term) => AlgebraicValue::Algebraic(AlgebraicTerm {
             algebraic_type: term.algebraic_type.clone(),
             node: AlgebraicTermNode::Variable(variable),
         }),
@@ -3365,7 +3426,7 @@ fn resource_value_term(value: &AlgebraicValue) -> Term {
 struct LoopExitAbstraction<'a> {
     locals: &'a [(BindingName, ProgramType)],
     uninitialized: &'a [BindingName],
-    cells: &'a BTreeSet<Pointer>,
+    cells: &'a BTreeSet<Address>,
     bookkeeping: bool,
 }
 
@@ -3435,7 +3496,7 @@ fn abstract_loop_exit_initialization(
 ///   havoc and checked write-set markers describe different states, not
 ///   physical blocks. Retain their common history and mint one new epoch,
 ///   avoiding a union that each residual check would have to scan.
-/// - **Memory state identity: fresh.** A forget mark says a memory is not known
+/// - **SymbolicMemory state identity: fresh.** A forget mark says a memory is not known
 ///   to be the memory it forgot from. When the exits' marks differ, the
 ///   successor's memory keeps only what every exit agrees on (the cells the
 ///   join has already made common) and is marked as forgetting from a
@@ -3513,12 +3574,12 @@ fn join_loop_exit_storage_bookkeeping(
                 "havoc"
             };
             std::sync::Arc::make_mut(&mut memory.blocks).insert(
-                PointerBlock::Concrete(format!("{prefix}:{}", marker.0)),
+                AddressBase::Concrete(format!("{prefix}:{}", marker.0)),
                 MemoryBlock::new(0),
             );
         }
         let minted = crate::kernel::intern_memory(
-            Memory::new().with_block(format!("loop-exit-join:{}", marker.0).as_str(), 0),
+            SymbolicMemory::new().with_block(format!("loop-exit-join:{}", marker.0).as_str(), 0),
         );
         memory.mark_forgotten_from(&minted);
         memory.record_diagnostic_transform(
@@ -3570,11 +3631,15 @@ fn abstract_loop_exit_locals(
         // Exits that agree on the subobject a pointer designates keep it.
         let fresh = match held
             .iter()
-            .map(program_value_subobject_extent)
+            .map(program_value_subobject_bounds)
             .collect::<Vec<_>>()
         {
-            extents if extents[1..].iter().all(|extent| *extent == extents[0]) => {
-                with_retained_extent(fresh, held.first())
+            all_bounds
+                if all_bounds[1..]
+                    .iter()
+                    .all(|bounds| *bounds == all_bounds[0]) =>
+            {
+                with_retained_bounds(fresh, held.first())
             }
             _ => fresh,
         };
@@ -3629,7 +3694,7 @@ fn abstract_loop_exit_locals(
 fn abstract_loop_exit_memory(
     successor: &mut ExecutionState,
     exits: &[ExecutionState],
-    resynced: &BTreeSet<Pointer>,
+    resynced: &BTreeSet<Address>,
     no_binders: bool,
     declared_memory: &[MemoryRange],
     assumptions: &PureFactContext,
@@ -3637,7 +3702,7 @@ fn abstract_loop_exit_memory(
     restatements: &mut [LoopExitRestatement],
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
-) -> Result<BTreeSet<Pointer>, String> {
+) -> Result<BTreeSet<Address>, String> {
     let mut memory = successor.memory().clone();
     if exits.iter().any(|state| {
         !state
@@ -3678,7 +3743,7 @@ fn abstract_loop_exit_memory(
         {
             return Err(format!(
                 "the cell in `{}` that the exits write differently is owned by no loop binder",
-                pointer.block
+                pointer.base
             ));
         }
         let Some(fresh) = fresh_loop_local_value(held[0].program_type(), variables, budget)
@@ -3686,7 +3751,7 @@ fn abstract_loop_exit_memory(
         else {
             return Err(format!(
                 "the cell in `{}` has no abstract value of its type",
-                pointer.block
+                pointer.base
             ));
         };
         for (index, (restatement, held)) in restatements.iter_mut().zip(held).enumerate() {
@@ -3721,7 +3786,7 @@ fn abstract_loop_exit_memory(
             {
                 return Err(format!(
                     "the cell in `{}` that the exits abstract is under an active stable-view loan",
-                    pointer.block
+                    pointer.base
                 ));
             }
         }
@@ -3832,13 +3897,13 @@ fn fresh_loop_local_value(
         ProgramType::UInt16 => uint16(MachineTerm::Variable(variable)),
         ProgramType::UInt32 => uint32(MachineTerm::Variable(variable)),
         ProgramType::Int64 => ProgramValue::Int64(MachineTerm::Variable(variable))
-            .complete_word(Pointer::symbolic(variable)),
+            .complete_word(Address::symbolic(variable)),
         ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::Variable(variable))
-            .complete_word(Pointer::symbolic(variable)),
+            .complete_word(Address::symbolic(variable)),
         ProgramType::Float32 => ProgramValue::Float32(MachineTerm::Variable(variable)),
         ProgramType::Float64 => ProgramValue::Float64(MachineTerm::Variable(variable)),
         ProgramType::FunctionPointer(_) => {
-            ProgramValue::typed_pointer(Pointer::symbolic_function(variable), program_type)
+            ProgramValue::typed_pointer(Address::symbolic_function(variable), program_type)
         }
         // A local holding a spec value, a Rust enum, a `Vec` or a library
         // iterator, takes a fresh value of its own type.
@@ -3849,7 +3914,7 @@ fn fresh_loop_local_value(
         // A pointer local reassigned in the body (`p = p + 1`) must not keep
         // its entry value across the abstract iteration, exactly as the join
         // abstraction treats it; an invariant must relate it.
-        _ => ProgramValue::typed_pointer(Pointer::symbolic(variable), program_type),
+        _ => ProgramValue::typed_pointer(Address::symbolic(variable), program_type),
     }))
 }
 
@@ -4018,7 +4083,7 @@ fn loop_exit_resources_agree(
 /// path that built them happened to lay them out, because a layout is not
 /// something a path reaches:
 ///
-/// - memory, by [`Memory::same_contents_as`]: the same cells with the same
+/// - memory, by [`SymbolicMemory::same_contents_as`]: the same cells with the same
 ///   values, whether the cell cache holds one as a concrete cell or as a
 ///   slot of a seeded run;
 /// - resource ownership, by the normalized context, the form
@@ -4209,7 +4274,7 @@ fn execute_program_loop_exit_paths(
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let LoopExecutionView {
-        condition,
+        entry_guard: condition,
         invariant,
         invariant_checks,
         effect_checks,
@@ -4217,12 +4282,11 @@ fn execute_program_loop_exit_paths(
         body,
         update,
         test,
-        direct_post_test,
         backedge_target,
         natural_exit_target,
         ..
     } = program_loop;
-    let pass_body = program_loop_pass(body, update, test);
+    let pass_body = program_loop_pass(body, update, Some(test));
     let body = &pass_body;
     let mut base_obligations = Vec::new();
     for proposition in invariant {
@@ -4320,13 +4384,13 @@ fn execute_program_loop_exit_paths(
         .map(ExecutionPureFact::new)
         .collect::<Vec<_>>();
 
-    let (initial_may_continue, initial_may_exit) = if direct_post_test {
-        (!final_exit_candidates.is_empty(), false)
-    } else if final_exit_candidates.is_empty() {
-        (true, true)
-    } else {
-        loop_condition_feasibility(state, condition, assumptions)?
+    let initial_test = match condition {
+        None => LoopConditionFeasibility::TrueOnly,
+        Some(_) if final_exit_candidates.is_empty() => LoopConditionFeasibility::Both,
+        Some(condition) => loop_condition_feasibility(state, condition, assumptions)?,
     };
+    let initial_may_continue = initial_test.may_continue();
+    let initial_may_exit = initial_test.may_exit();
     let mut paths = Vec::new();
     paths.append(&mut final_exit_paths);
     // Every `return` a checked preservation proof reached is one more way
@@ -4375,7 +4439,7 @@ fn execute_program_loop_exit_paths(
             }
             let candidate_assumptions = candidate.pure_facts().context_with(assumptions);
             let mut exits = Vec::new();
-            for assumption in assume_condition_truthiness(
+            for assumption in assume_loop_entry_truthiness(
                 candidate.state(),
                 condition,
                 &composite_resource_definitions,
@@ -4443,18 +4507,17 @@ fn execute_program_loop_exit_paths(
     )?;
     let mut has_live_iteration = false;
     for (invariant_facts, invariant_obligations, _) in &invariant_contexts {
-        if direct_post_test
-            || !assume_condition_truthiness(
-                &guard_state,
-                condition,
-                &composite_resource_definitions,
-                assumptions,
-                invariant_facts,
-                invariant_obligations,
-                true,
-                budget,
-            )?
-            .is_empty()
+        if !assume_loop_entry_truthiness(
+            &guard_state,
+            condition,
+            &composite_resource_definitions,
+            assumptions,
+            invariant_facts,
+            invariant_obligations,
+            true,
+            budget,
+        )?
+        .is_empty()
         {
             has_live_iteration = true;
             break;
@@ -4481,7 +4544,7 @@ fn execute_program_loop_exit_paths(
         .collect::<Vec<_>>();
     if initial_may_exit {
         for (invariant_facts, invariant_obligations, invariant_propositions) in invariant_contexts {
-            let condition_contexts = assume_condition_truthiness(
+            let condition_contexts = assume_loop_entry_truthiness(
                 &guard_state,
                 condition,
                 &composite_resource_definitions,
@@ -4637,19 +4700,19 @@ pub(super) fn invariant_context(check: &LoopInvariantCheck, phase: InvariantPhas
     }
 }
 
-/// Why a stated range was pruned as a byte extent, in the terms the reader
+/// Why a stated range was pruned as a byte span, in the terms the reader
 /// wrote it in: an element count and a width.
-fn dropped_range_extent_reason(extent: &crate::kernel::DroppedRangeExtent) -> String {
-    if extent.element_count < 0 {
-        let count = -extent.element_count;
+fn dropped_range_span_reason(span: &crate::kernel::DroppedRangeSpan) -> String {
+    if span.element_count < 0 {
+        let count = -span.element_count;
         let elements = if count == 1 { "element" } else { "elements" };
         format!(
-            "a memory range it states runs backwards, so it is not a byte extent: its end is {count} {elements} before its start"
+            "a memory range it states runs backwards, so it is not a byte span: its end is {count} {elements} before its start"
         )
     } else {
         format!(
-            "a memory range it states is too wide to be a 32-bit byte extent: {} elements of {} bytes is past the {}-byte limit",
-            extent.element_count, extent.element_width, extent.byte_limit
+            "a memory range it states is too wide to be a 32-bit byte span: {} elements of {} bytes is past the {}-byte limit",
+            span.element_count, span.element_width, span.byte_limit
         )
     }
 }
@@ -4779,7 +4842,7 @@ fn collect_invariant_check_obligations_with_mode(
                 "loop invariant bundle",
                 "invariant obligations: lower declaration",
             );
-            let dropped_extent_before = budget.dropped_range_extent().is_some();
+            let dropped_span_before = budget.dropped_range_span().is_some();
             let paths = lower_spec_proposition_at_state_with_loop_entry(
                 state,
                 check.proposition(),
@@ -4791,17 +4854,17 @@ fn collect_invariant_check_obligations_with_mode(
             // A declaration with no reading at this state owes the
             // impossible goal, never nothing. Lowering prunes a path whose
             // obligation it already decides false — a stated range whose
-            // extent is reversed or too wide, for one — so an empty result
+            // span is reversed or too wide, for one — so an empty result
             // means the invariant does not hold here. Owing nothing would
             // let the head assume a hypothesis nobody proved: the head
-            // assumes a stated range's extent half as content.
+            // assumes a stated range's span half as content.
             if paths.is_empty() {
-                let reason =
-                    if !dropped_extent_before && let Some(extent) = budget.dropped_range_extent() {
-                        dropped_range_extent_reason(extent)
-                    } else {
-                        "a condition it owes is already decided false at this state".to_string()
-                    };
+                let reason = if !dropped_span_before && let Some(span) = budget.dropped_range_span()
+                {
+                    dropped_range_span_reason(span)
+                } else {
+                    "a condition it owes is already decided false at this state".to_string()
+                };
                 let context = invariant_context(check, phase).unwrap_or("loop invariant");
                 let goal = ProofObligation::verification_condition(false_equals_true_proposition())
                     .with_context(format!(
@@ -5113,7 +5176,7 @@ pub(super) fn collect_loop_preservation_summary(
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<LoopPreservationSummary> {
     let LoopExecutionView {
-        condition,
+        entry_guard: condition,
         invariant_checks,
         effect_checks,
         resource_specs,
@@ -5122,22 +5185,16 @@ pub(super) fn collect_loop_preservation_summary(
         body,
         update,
         test,
-        direct_post_test,
         backedge_target,
         natural_exit_target,
         ..
     } = program_loop;
-    let body_region = program_loop_body_region(body, test);
-    let body = &body_region;
-    let continuation = program_loop_continuation(update, test);
-    let update = continuation.as_deref();
     let mut obligations = Vec::new();
     let mut final_exit_paths = Vec::new();
     let mut early_exits = Vec::new();
     // The body executes from the loop's own resource context; everything the
     // enclosing frame withheld is returned on the way out.
     let top_state = &head.body;
-    let body_declared = scope_declared_names(body);
     let binders = loop_binders(resource_specs);
     let whole_loop_effect_facts = whole_loop_effect_summaries
         .iter()
@@ -5154,24 +5211,16 @@ pub(super) fn collect_loop_preservation_summary(
         &[],
         budget,
     )? {
-        let condition_contexts = if direct_post_test {
-            vec![ConditionAssumption {
-                branch: ConditionBranch::Decided(true),
-                facts: invariant_facts.clone(),
-                obligations: invariant_obligations.clone(),
-            }]
-        } else {
-            assume_condition_truthiness(
-                top_state,
-                condition,
-                composite_resource_definitions,
-                assumptions,
-                &invariant_facts,
-                &invariant_obligations,
-                true,
-                budget,
-            )?
-        };
+        let condition_contexts = assume_loop_entry_truthiness(
+            top_state,
+            condition,
+            composite_resource_definitions,
+            assumptions,
+            &invariant_facts,
+            &invariant_obligations,
+            true,
+            budget,
+        )?;
         for assumption in condition_contexts {
             // The body cannot run from a guard that produced no value: this
             // iteration is not entered, it is unproven. Refuse it here rather
@@ -5188,27 +5237,16 @@ pub(super) fn collect_loop_preservation_summary(
                 obligations: condition_obligations,
                 ..
             } = assumption;
-            // The body is a scope: the objects the summarized iteration
-            // declares stop existing at the back edge and at every exit.
-            let body_paths = paths_after_scope_exit(
-                super::eval::execute_statement_paths_with_prefix(
-                    top_state,
-                    body,
-                    assumptions,
-                    execution_context,
-                    &condition_facts,
-                    &condition_obligations,
-                    &empty_checked_loan_evidence_sequence(),
-                    budget,
-                    &mut super::eval::StatementJudgment::Verifies(variables),
-                )?,
-                &body_declared,
-            );
-            for body_path in super::eval::paths_after_loop_update(
-                body_paths,
+            for body_path in super::eval::execute_loop_iteration_paths(
+                top_state,
+                test.preservation_phase(),
+                body,
                 update,
+                test,
                 assumptions,
                 execution_context,
+                &condition_facts,
+                &condition_obligations,
                 budget,
                 &mut super::eval::StatementJudgment::Verifies(variables),
             )? {
@@ -5251,7 +5289,7 @@ pub(super) fn collect_loop_preservation_summary(
                     // Both back-edge directions come from one evaluation
                     // of the guard, so a path the guard did not decide is
                     // reported once instead of twice.
-                    let condition_contexts = assume_condition_branches(
+                    let condition_contexts = assume_loop_entry_branches(
                         &next_state,
                         condition,
                         composite_resource_definitions,
@@ -5278,7 +5316,14 @@ pub(super) fn collect_loop_preservation_summary(
                             facts: condition_facts,
                             obligations: condition_obligations,
                         } = assumption;
-                        let may_continue = matches!(branch, ConditionBranch::Decided(true));
+                        let guard = match branch {
+                            ConditionBranch::Decided(true) => LoopConditionFeasibility::TrueOnly,
+                            ConditionBranch::Decided(false) => LoopConditionFeasibility::FalseOnly,
+                            ConditionBranch::Undecided(_) => {
+                                unreachable!("undecided guard was handled")
+                            }
+                        };
+                        let may_continue = guard.may_continue();
                         let path_assumptions = assumptions_with_path_context(
                             assumptions,
                             &condition_facts,
@@ -5293,9 +5338,7 @@ pub(super) fn collect_loop_preservation_summary(
                             assumptions,
                             budget,
                         )?;
-                        let mut path_obligations = if direct_post_test && !may_continue {
-                            Vec::new()
-                        } else {
+                        let mut path_obligations = {
                             collect_invariant_check_obligations(
                                 &next_state,
                                 loop_entry_state,
@@ -5306,18 +5349,15 @@ pub(super) fn collect_loop_preservation_summary(
                                 budget,
                             )?
                         };
-                        // A ranked loop's back edge carries the same
-                        // ranking members the surface bundle spells.
-                        // Only a continuing edge is a back edge.
+                        path_obligations.extend(loop_ranking_obligations_or_refusal(
+                            &next_state,
+                            top_state,
+                            &head.iterations,
+                            guard.required_ranking_measures(ranking_measures),
+                            &path_assumptions,
+                            budget,
+                        ));
                         if may_continue {
-                            path_obligations.extend(loop_ranking_obligations_or_refusal(
-                                &next_state,
-                                top_state,
-                                &head.iterations,
-                                ranking_measures,
-                                &path_assumptions,
-                                budget,
-                            ));
                             // A structural measure is not a ranking
                             // member: the kernel decides the descent
                             // here and reports a refusal obligation
@@ -5564,10 +5604,10 @@ pub(super) fn collect_loop_preservation_summary(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct EvaluatedMemorySegment {
-    pub(super) base: Pointer,
-    pub(super) provenance: std::sync::Arc<Pointer>,
-    pub(super) opaque_extent: Option<std::sync::Arc<Pointer>>,
-    pub(super) extent_known: bool,
+    pub(super) base: Address,
+    pub(super) provenance: std::sync::Arc<Address>,
+    pub(super) bounds_owner: Option<std::sync::Arc<Address>>,
+    pub(super) bounds_known: bool,
     pub(super) start: MachineTerm,
     pub(super) end: MachineTerm,
     pub(super) element_width: u32,
@@ -5594,7 +5634,7 @@ impl EvaluatedMemorySegment {
         range.formation_coverage = self.formation_coverage;
         range
             .with_provenance(provenance)
-            .with_opaque_extent(self.opaque_extent, self.extent_known)
+            .with_bounds_owner(self.bounds_owner, self.bounds_known)
             .with_typed_carrier()
     }
 }
@@ -6042,7 +6082,7 @@ pub(super) fn prepare_loop_top_state(
     // iterated fact counts every element it could ever hold), so a cell the
     // function owns can sit inside it without being writable; the partition
     // at entry is what keeps it apart.
-    let kept_by_function = |pointer: &Pointer, bytes: u32| {
+    let kept_by_function = |pointer: &Address, bytes: u32| {
         withheld.as_ref().is_some_and(|withheld| {
             assumptions.access_held_by_owned_member(withheld, pointer, bytes)
         })
@@ -6054,7 +6094,7 @@ pub(super) fn prepare_loop_top_state(
     let mut runs_by_slot = Vec::new();
     for run in entry_state.memory().cells.runs() {
         crate::instrumentation::record_deterministic_work(1);
-        if run.base().block.is_local_block() || run.live_count() == 0 {
+        if run.base().base.is_local_block() || run.live_count() == 0 {
             continue;
         }
         if summaries.is_empty() && withheld.is_none() {
@@ -6133,7 +6173,7 @@ pub(super) fn prepare_loop_top_state(
     {
         let pointer = &pointer;
         let value = &value;
-        if pointer.block.is_local_block() {
+        if pointer.base.is_local_block() {
             continue;
         }
         let is_stable = summaries.iter().any(|summary| {
@@ -6151,7 +6191,7 @@ pub(super) fn prepare_loop_top_state(
         }
     }
     for ((pointer, program_type), value) in entry_state.memory().union_cells.iter() {
-        if pointer.block.is_local_block() {
+        if pointer.base.is_local_block() {
             continue;
         }
         let is_stable = summaries.iter().any(|summary| {
@@ -6745,10 +6785,8 @@ fn with_loop_frame_resources(
         };
         match body_resources
             .clone()
-            .try_compose_with_facts_delaying_normalization_with_occurrences(
-                std::iter::once(supplied),
-                assumptions,
-            ) {
+            .install_established_partition(std::iter::once(supplied), assumptions)
+        {
             Ok((composed, inserted)) => {
                 body_resources = binding_source
                     .loan_view_bindings()
@@ -6762,7 +6800,7 @@ fn with_loop_frame_resources(
             Err(_) => continue,
         }
     }
-    body_resources.normalized(assumptions)
+    body_resources.normalized_without_discovery(assumptions)
 }
 
 fn loop_body_resource_context(
@@ -7019,7 +7057,11 @@ fn rebind_one_loop_binder_instance(
                 .iter()
                 .zip(arguments.iter())
                 .all(|(held, declared)| {
-                    crate::kernel::resource_arguments_proven_equal(held, declared, assumptions)
+                    crate::kernel::resource_field_values_proven_equal(
+                        (held).into(),
+                        (declared).into(),
+                        assumptions,
+                    )
                 })
     };
     let selected = if let Some(instance) = state
@@ -7169,7 +7211,9 @@ pub(crate) fn structural_instance_descent_failure(
             head.name
         ));
     };
-    let Some(AlgebraicValue::Algebraic(model)) = head.fields.get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        head.fields.get(body.field_index)
+    else {
         return Some(format!(
             "{measure} names an instance whose matched field is not algebraic"
         ));
@@ -7268,7 +7312,7 @@ fn structural_measure_reaches_instance(
         let Some(held) = next.fields.get(child_body.field_index) else {
             continue;
         };
-        if crate::kernel::resource_arguments_proven_equal(held, submodel, assumptions) {
+        if crate::kernel::resource_field_values_proven_equal(held, submodel.into(), assumptions) {
             return true;
         }
         let AlgebraicValue::Algebraic(submodel) = submodel else {
@@ -7433,7 +7477,7 @@ fn loop_binder_declared_arguments(
     )
 }
 
-/// The read-only form of a resource the loop did not declare. Memory and
+/// The read-only form of a resource the loop did not declare. SymbolicMemory and
 /// composite resources have one; an exclusive token or instance does not, so
 /// the body simply does not hold it.
 fn viewed_form_of_resource_fact(fact: &ResourceFact) -> Option<ResourceFact> {
@@ -7561,8 +7605,8 @@ pub(super) fn collect_loop_effect_check_obligations(
                         .iter()
                         .map(|range| EvaluatedMemorySegment {
                             provenance: range.provenance.clone(),
-                            opaque_extent: range.opaque_extent.clone(),
-                            extent_known: range.carrier_extent_known,
+                            bounds_owner: range.bounds_owner.clone(),
+                            bounds_known: range.carrier_bounds_known,
                             base: range.base.clone(),
                             start: range.bound_terms().0.clone(),
                             end: range.bound_terms().1.clone(),
@@ -7730,7 +7774,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Err(message) => return Ok(Err(message)),
     };
     let base_value = base;
-    let base = base_value.pointer().clone();
+    let base = base_value.address().clone();
     let start_value = evaluate(&segment.start, "segment start")?;
     let end_value = evaluate(&segment.end, "segment end")?;
     // A range with a 64-bit bound retains that bound's width.
@@ -7740,8 +7784,8 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     {
         let evaluated = EvaluatedMemorySegment {
             provenance: std::sync::Arc::new(base_value.provenance().clone()),
-            opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
-            extent_known: base_value.extent_is_known(),
+            bounds_owner: base_value.bounds_owner().cloned().map(std::sync::Arc::new),
+            bounds_known: base_value.bounds_are_known(),
             base,
             start,
             end,
@@ -7750,7 +7794,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
             formation_coverage: Default::default(),
         };
         let context = assumptions_with_path_context(assumptions, &facts, &[]);
-        if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, &context) {
+        if let Some(refusal) = segment_bounds_refusal(&base_value, &evaluated, &context) {
             return Ok(Err(refusal.into()));
         }
         return Ok(Ok((evaluated, facts.into())));
@@ -7784,8 +7828,8 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     let element_width = segment.element_width;
     let evaluated = EvaluatedMemorySegment {
         provenance: std::sync::Arc::new(base_value.provenance().clone()),
-        opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
-        extent_known: base_value.extent_is_known(),
+        bounds_owner: base_value.bounds_owner().cloned().map(std::sync::Arc::new),
+        bounds_known: base_value.bounds_are_known(),
         base,
         start,
         end,
@@ -7794,7 +7838,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         formation_coverage: Default::default(),
     };
     let context = assumptions_with_path_context(assumptions, &facts, &[]);
-    if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, &context) {
+    if let Some(refusal) = segment_bounds_refusal(&base_value, &evaluated, &context) {
         return Ok(Err(refusal.into()));
     }
     Ok(Ok((evaluated, facts.into())))
@@ -7895,6 +7939,25 @@ pub(super) fn evaluate_resource_argument_value(
     .map(|(value, _)| value))
 }
 
+pub(super) fn evaluate_resource_argument_value_retained(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    assumptions: &PureFactContext,
+    label: &str,
+    budget: &mut ExecutionBudget,
+    diagnostic: &mut Option<RuntimeError>,
+) -> ExecutionResult<Result<ExecutionValue, ValueRefusal>> {
+    Ok(evaluate_loop_effect_segment_value_retained_capturing(
+        state,
+        expression,
+        assumptions,
+        label,
+        budget,
+        Some(diagnostic),
+    )?
+    .map(|(value, _)| value))
+}
+
 fn evaluate_loop_effect_segment_value_capturing(
     state: &ExecutionState,
     expression: &ProgramExpression,
@@ -7903,13 +7966,55 @@ fn evaluate_loop_effect_segment_value_capturing(
     budget: &mut ExecutionBudget,
     diagnostic: Option<&mut Option<RuntimeError>>,
 ) -> ExecutionResult<Result<(ProgramValue, ExecutionFacts), ValueRefusal>> {
+    Ok(evaluate_loop_effect_segment_value_retained_capturing(
+        state,
+        expression,
+        assumptions,
+        label,
+        budget,
+        diagnostic,
+    )?
+    .map(|(value, facts)| (value.into_native(), facts)))
+}
+
+pub(super) fn evaluate_loop_effect_segment_value_retained(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    assumptions: &PureFactContext,
+    label: &str,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<ExecutionValue, ValueRefusal>> {
+    Ok(evaluate_loop_effect_segment_value_retained_capturing(
+        state,
+        expression,
+        assumptions,
+        label,
+        budget,
+        None,
+    )?
+    .map(|(value, _)| value))
+}
+
+fn evaluate_loop_effect_segment_value_retained_capturing(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    assumptions: &PureFactContext,
+    label: &str,
+    budget: &mut ExecutionBudget,
+    diagnostic: Option<&mut Option<RuntimeError>>,
+) -> ExecutionResult<Result<(ExecutionValue, ExecutionFacts), ValueRefusal>> {
     // A contract's operand, such as a resource argument, is a specification:
     // its reads are not C accesses, and facts must not replace pointer metadata.
     // Use the same fact-stable evaluation as written proof propositions so a
     // resource footprint and its explicit memory(...) spelling have one identity.
     let paths = {
         let _specification = crate::kernel::eval::SpecificationReadScope::enter();
-        evaluate_program_expression_paths(state, expression, assumptions, budget)?
+        crate::kernel::eval::evaluate_expression_value_paths(
+            state,
+            expression,
+            assumptions,
+            budget,
+        )?
     };
     // An endpoint the facts do not keep defined splits into its defined value
     // and the undefined behavior beside it: name that behavior, which a
@@ -8012,7 +8117,7 @@ fn evaluate_loop_effect_segment_value_capturing(
 
 pub(super) fn loop_effect_segment_contains_pointer(
     segment: &EvaluatedMemorySegment,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -8075,8 +8180,8 @@ pub(super) fn loop_effect_segment_contains_range(
     )
 }
 
-pub(super) fn is_loop_effect_relevant_pointer(pointer: &Pointer) -> bool {
-    !pointer.block.is_local_block() && !pointer.block.is_havoc_block()
+pub(super) fn is_loop_effect_relevant_pointer(pointer: &Address) -> bool {
+    !pointer.base.is_local_block() && !pointer.base.is_havoc_block()
 }
 
 /// A footprint range for a loop-effect refusal, without the kernel's
@@ -8195,7 +8300,7 @@ fn assume_invariant_checks_explained(
     // that is never negative.
     let _iterations = crate::kernel::spec::LoopIterationsScope::enter(iterations.clone());
     let mut head_facts = prefix_facts.persistent_facts();
-    head_facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
+    head_facts.push(ExecutionPureFact::new(Proposition::condition_is(
         ConditionTerm::IntegerLessEqual(
             IntegerTerm::constant(0.into()).into(),
             iterations.clone().into(),
@@ -8213,7 +8318,7 @@ fn assume_invariant_checks_explained(
     for (declaration, check) in invariant_checks.iter().enumerate() {
         let mut next_contexts = Vec::new();
         let mut lowered_any = false;
-        let dropped_extent_before = budget.dropped_range_extent().is_some();
+        let dropped_span_before = budget.dropped_range_span().is_some();
         for (facts, obligations, invariant_propositions) in contexts {
             let effective_assumptions =
                 assumptions_with_path_context(assumptions, &facts, &obligations);
@@ -8226,7 +8331,7 @@ fn assume_invariant_checks_explained(
             )? {
                 lowered_any = true;
                 // Every side condition the lowering emits — a stated range's
-                // extent half, an int32 conversion's bounds, a count that
+                // span half, an int32 conversion's bounds, a count that
                 // must not overflow, a checked read's definedness — is
                 // invariant content: `collect_invariant_check_obligations`
                 // owes every obligation this lowering emits at entry and at
@@ -8291,10 +8396,10 @@ fn assume_invariant_checks_explained(
                 "assuming it contradicts the invariants before it and the facts the loop \
                  keeps"
                     .to_string()
-            } else if !dropped_extent_before && let Some(extent) = budget.dropped_range_extent() {
+            } else if !dropped_span_before && let Some(span) = budget.dropped_range_span() {
                 format!(
                     "it has no reading at the loop head: {}",
-                    dropped_range_extent_reason(extent)
+                    dropped_range_span_reason(span)
                 )
             } else {
                 "it has no reading at the loop head".to_string()
@@ -8557,12 +8662,38 @@ fn assume_condition_branches_at_state(
     Ok(contexts)
 }
 
-/// The guard paths that select `desired_truthiness`, together with every path
-/// the guard did not decide. An undecided path belongs to both requests: it
-/// rules out neither the iteration nor the exit.
-pub(super) fn assume_condition_truthiness(
+/// A checked entry guard can preselect a preservation context. Otherwise
+/// execution starts in the test/body phase itself, without a synthetic guard.
+pub(super) fn assume_loop_entry_branches(
     state: &ExecutionState,
-    condition: &ProgramExpression,
+    condition: Option<&ProgramExpression>,
+    definitions: &[CompositeResourceDefinition],
+    assumptions: &PureFactContext,
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
+    prefix_obligations: &[ProofObligation],
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<ConditionAssumption>> {
+    match condition {
+        Some(condition) => assume_condition_branches(
+            state,
+            condition,
+            definitions,
+            assumptions,
+            prefix_facts,
+            prefix_obligations,
+            budget,
+        ),
+        None => Ok(vec![ConditionAssumption {
+            branch: ConditionBranch::Decided(true),
+            facts: prefix_facts.persistent_facts(),
+            obligations: prefix_obligations.to_vec(),
+        }]),
+    }
+}
+
+pub(super) fn assume_loop_entry_truthiness(
+    state: &ExecutionState,
+    condition: Option<&ProgramExpression>,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
@@ -8570,18 +8701,8 @@ pub(super) fn assume_condition_truthiness(
     desired_truthiness: bool,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ConditionAssumption>> {
-    Ok(assume_condition_branches(
-        state,
-        condition,
-        definitions,
-        assumptions,
-        prefix_facts,
-        prefix_obligations,
-        budget,
-    )?
-    .into_iter()
-    .filter(|assumption| !matches!(assumption.branch, ConditionBranch::Decided(is_true) if is_true != desired_truthiness))
-    .collect())
+    Ok(assume_loop_entry_branches(state, condition, definitions, assumptions, prefix_facts, prefix_obligations, budget)?
+        .into_iter().filter(|entry| !matches!(entry.branch, ConditionBranch::Decided(value) if value != desired_truthiness)).collect())
 }
 
 /// Names an undecided loop guard for a refusal context, without dumping the
@@ -8628,12 +8749,12 @@ pub(super) fn havoc_loop_modified_locals(
         // overwritten by the loop body through a pointer. Address-escaped
         // locals were havoced above, so their preserved cells now hold fresh
         // symbolic values rather than stale ones.
-        let preserved_blocks: BTreeSet<PointerBlock> = state
+        let preserved_blocks: BTreeSet<AddressBase> = state
             .locals
             .bindings
             .keys()
             .filter(|name| state.locals.get(*name).is_some())
-            .filter_map(|name| state.locals.slot(name).map(|slot| slot.block.clone()))
+            .filter_map(|name| state.locals.slot(name).map(|slot| slot.base.clone()))
             .collect();
         // Cells under an active stable-view loan are stable across the loop
         // by the loan itself; erasing them would only lose loan-supported
@@ -8768,7 +8889,7 @@ pub(super) fn statement_may_write_memory(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_may_write_memory(state, body)
                 || test
                     .as_ref()
@@ -8869,7 +8990,7 @@ pub(super) fn collect_loop_modified_locals(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             collect_loop_modified_locals(body, names);
             if let Some(test) = test {
                 collect_loop_modified_locals(&test.statement, names);
@@ -8965,7 +9086,7 @@ pub(super) fn address_escaped_scalar_locals(
     for name in state.locals.bindings.keys() {
         if let Some(value) = state.locals.get(name)
             && let Some(pointer) = value.pointer()
-            && let Some(name) = state.locals.name_for_slot(pointer.pointer())
+            && let Some(name) = state.locals.name_for_slot(pointer.address())
         {
             escaped.insert(name.clone());
         }
@@ -9044,16 +9165,21 @@ fn for_each_statement_expression<'a>(
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::HeapAllocate { .. } => {}
         ProgramStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            for expression in initializer
+                .iter()
+                .chain(zero_fill.iter().flat_map(ZeroFill::expressions))
+            {
+                visit(expression);
+            }
         }
-        | ProgramStatement::Assign { expression, .. }
+        ProgramStatement::Assign { expression, .. }
         | ProgramStatement::HeapFree {
             pointer: expression,
         }
@@ -9127,8 +9253,11 @@ fn for_each_statement_expression<'a>(
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            visit(condition);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                visit(condition);
+            }
             for_each_statement_expression(body, visit);
             if let Some(test) = test {
                 for_each_statement_expression(&test.statement, visit);
@@ -9157,15 +9286,20 @@ pub(crate) fn collect_address_taken_locals(
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. } => {}
         ProgramStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            for expression in initializer
+                .iter()
+                .chain(zero_fill.iter().flat_map(ZeroFill::expressions))
+            {
+                collect_address_taken_in_expression(expression, names);
+            }
         }
-        | ProgramStatement::Assign { expression, .. } => {
+        ProgramStatement::Assign { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
         }
         ProgramStatement::CallConstruct { arguments, .. } => {
@@ -9242,8 +9376,11 @@ pub(crate) fn collect_address_taken_locals(
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            collect_address_taken_in_expression(condition, names);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                collect_address_taken_in_expression(condition, names);
+            }
             collect_address_taken_locals(body, names);
             if let Some(test) = test {
                 collect_address_taken_locals(&test.statement, names);
@@ -9381,8 +9518,8 @@ mod wide_range_reader_tests;
 #[cfg(test)]
 mod resource_argument_diagnostic_tests;
 
-fn program_value_subobject_extent(value: &StoredExecutionValue) -> Option<&SubobjectExtent> {
-    value.pointer()?.extent()
+fn program_value_subobject_bounds(value: &StoredExecutionValue) -> Option<&SubobjectBounds> {
+    value.pointer()?.bounds()
 }
 
 fn program_value_object_class(
@@ -9399,7 +9536,7 @@ fn with_retained_object_class(
 }
 
 /// Legacy fresh-pointer construction is the output boundary for this loop abstraction.
-fn with_retained_extent(
+fn with_retained_bounds(
     fresh: ProgramValue,
     previous: Option<&StoredExecutionValue>,
 ) -> ProgramValue {
@@ -9409,13 +9546,13 @@ fn with_retained_extent(
     let previous = previous.native();
     match (fresh, previous.as_ref()) {
         (ProgramValue::Pointer(pointer), ProgramValue::Pointer(previous))
-            if previous.extent().is_some() =>
+            if previous.bounds().is_some() =>
         {
             ProgramValue::Pointer(
                 pointer
-                    .with_extent(previous.extent().cloned())
+                    .with_bounds(previous.bounds().cloned())
                     .with_provenance(std::sync::Arc::new(previous.provenance().clone()))
-                    .with_opaque_extent(previous.opaque_extent().cloned().map(std::sync::Arc::new)),
+                    .with_bounds_owner(previous.bounds_owner().cloned().map(std::sync::Arc::new)),
             )
         }
         (fresh, _) => fresh,
@@ -9423,18 +9560,18 @@ fn with_retained_extent(
 }
 
 /// A memory clause names its range through a pointer, and so claims that the
-/// pointer designates that range (`design/pointer-subobject-extents.md`, D1).
+/// pointer designates that range (`design/pointer-subobject-bounds.md`, D1).
 /// Through a pointer narrowed to a member, the range must lie inside the
 /// member: passing `&pair.first` where a callee views `p[0..2]` would
 /// otherwise let the callee read `pair.second` through it. An empty range
-/// claims nothing. A pointer without an extent is bounded by its complete
+/// claims nothing. A pointer without bounds is bounded by its complete
 /// object, as before.
-fn segment_extent_refusal(
-    base: &PointerValue,
+fn segment_bounds_refusal(
+    base: &Pointer,
     segment: &EvaluatedMemorySegment,
     assumptions: &PureFactContext,
 ) -> Option<String> {
-    range_extent_refusal(
+    range_bounds_refusal(
         base,
         &segment.start,
         &segment.end,
@@ -9444,10 +9581,10 @@ fn segment_extent_refusal(
     )
 }
 
-/// [`segment_extent_refusal`] for a lowered range: a proof step's clause
+/// [`segment_bounds_refusal`] for a lowered range: a proof step's clause
 /// names its range through the same pointer value.
-pub(crate) fn memory_range_extent_refusal(
-    base: &PointerValue,
+pub(crate) fn memory_range_bounds_refusal(
+    base: &Pointer,
     range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<String> {
@@ -9455,7 +9592,7 @@ pub(crate) fn memory_range_extent_refusal(
         Some(bounds) => bounds,
         None => (range.start(), range.end()),
     };
-    range_extent_refusal(
+    range_bounds_refusal(
         base,
         start,
         end,
@@ -9465,17 +9602,21 @@ pub(crate) fn memory_range_extent_refusal(
     )
 }
 
-fn range_extent_refusal(
-    base: &PointerValue,
+fn range_bounds_refusal(
+    base: &Pointer,
     start: &MachineTerm,
     end: &MachineTerm,
     element_width: u32,
     kind: RangeIndexKind,
     assumptions: &PureFactContext,
 ) -> Option<String> {
-    let extent = base.extent()?;
+    let crate::kernel::assumptions::PointerDomain::Selected(bounds) =
+        assumptions.pointer_domain(base)
+    else {
+        return None;
+    };
     let refusal = || {
-        Some(match extent.constant_width() {
+        Some(match bounds.constant_width() {
             Some(width) => format!(
                 "the clause's range of {element_width}-byte elements reaches outside the {width}-byte subobject its pointer designates"
             ),
@@ -9484,32 +9625,29 @@ fn range_extent_refusal(
             ),
         })
     };
-    // A pointer can carry an extent it adopted through a proven pointer
-    // equality, whose start is spelled through the other pointer: another
-    // block, or another parameter of the same one. Respell the pointer at
-    // that start before measuring its offset, as an access through it is
-    // decided; the spellings' own difference names two unrelated variables.
+    // The domain witness can use another equal pointer's coordinates.
+    // Resolve only the checked address; the clause's base value stays intact.
     let respelled = assumptions
-        .pointer_at_known_base(base.pointer(), &extent.start)
+        .pointer_at_known_base(base.address(), &bounds.start)
         .filter(|respelled| {
-            respelled != base.pointer()
-                && assumptions.pointers_known_equal(base.pointer(), respelled)
+            respelled != base.address()
+                && assumptions.pointers_known_equal(base.address(), respelled)
         });
     let Some(offset) = respelled
         .as_ref()
         .and_then(|respelled| {
-            crate::kernel::reasoning::shared_pointer_byte_offset_from_base(respelled, &extent.start)
+            crate::kernel::reasoning::shared_pointer_byte_offset_from_base(respelled, &bounds.start)
         })
         .or_else(|| {
             crate::kernel::reasoning::shared_pointer_byte_offset_from_base(
-                base.pointer(),
-                &extent.start,
+                base.address(),
+                &bounds.start,
             )
         })
     else {
         return refusal();
     };
-    let Some(width) = extent.constant_width().map(i64::from) else {
+    let Some(width) = bounds.constant_width().map(i64::from) else {
         return refusal();
     };
     let element_width = i64::from(element_width);
@@ -9582,3 +9720,45 @@ mod frame_resource_tests {
 
 #[cfg(test)]
 mod shared_update_tests;
+
+#[cfg(test)]
+mod pointer_domain_clause_tests {
+    use super::*;
+
+    #[test]
+    fn clause_ranges_check_admitted_member_bounds_without_rewriting_the_base() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::new(
+            Address::symbolic(Variable(1013200)),
+            ProgramType::Int32Pointer,
+        );
+        let selected = base.clone().with_bounds(Some(SubobjectBounds {
+            start: base.address().clone(),
+            width: 4u32.into(),
+        }));
+        let context = PureFactContext::new()
+            .assume_condition(ConditionTerm::pointer_equal(base.clone(), selected), true);
+        for (end, refused) in [(0, false), (1, false), (2, true)] {
+            for wide in [false, true] {
+                let (start, end, kind) = if wide {
+                    (
+                        MachineTerm::uint64_constant(0),
+                        MachineTerm::uint64_constant(end),
+                        RangeIndexKind::UInt64,
+                    )
+                } else {
+                    (
+                        0u32.into(),
+                        MachineTerm::constant(end as u32),
+                        RangeIndexKind::Int32,
+                    )
+                };
+                assert_eq!(
+                    range_bounds_refusal(&base, &start, &end, 4, kind, &context).is_some(),
+                    refused
+                );
+            }
+        }
+        assert_eq!(base.bounds(), None);
+    }
+}

@@ -1,3 +1,4 @@
+use crate::kernel::assumptions::PointerDomain;
 // These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
 use crate::kernel::MachineCastSpelling;
@@ -5,40 +6,46 @@ use crate::kernel::binary_node;
 use crate::kernel::{constant_u32, int32_constant};
 
 #[test]
-fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
+fn pointer_values_do_not_adopt_fact_supplied_bounds() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Pointer::symbolic(Variable(989_900));
-    let value = PointerValue::new(pointer.clone(), ProgramType::Int32Pointer);
-    let bounded = value.clone().with_extent(Some(SubobjectExtent {
+    let pointer = Address::symbolic(Variable(989_900));
+    let value = Pointer::new(pointer.clone(), ProgramType::Int32Pointer);
+    let bounded = value.clone().with_bounds(Some(SubobjectBounds {
         start: pointer,
         width: 4u32.into(),
     }));
     let empty = PureFactContext::new();
     let facts = empty.assume_condition(
-        ConditionTerm::PointerValueEqual(Box::new(value.clone()), Box::new(bounded)),
+        ConditionTerm::PointerEqual(Box::new(value.clone()), Box::new(bounded)),
         true,
     );
-    assert_ne!(facts.pointer_value_at_entry(&value), value);
+    assert!(matches!(
+        facts.pointer_domain(&value),
+        PointerDomain::Selected(_)
+    ));
     let state = ExecutionState::new().with_local("p", ProgramValue::Pointer(value.clone()));
-    let _specification = crate::kernel::eval::SpecificationReadScope::enter();
-    for expression in [
-        ProgramExpression::Value(ProgramValue::Pointer(value.clone())),
-        ProgramExpression::Variable(("p".to_owned()).into()),
-    ] {
-        for context in [&PureFactContext::new(), &facts] {
-            let paths = evaluate_program_expression_paths(
-                &state,
-                &expression,
-                context,
-                &mut ExecutionBudget::default(),
-            )
-            .unwrap();
-            assert_eq!(paths.len(), 1);
-            assert_eq!(
-                paths[0].outcome,
-                ExpressionOutcome::Value(ProgramValue::Pointer(value.clone())),
-                "{expression:?}",
-            );
+
+    for specification in [false, true] {
+        let _scope = specification.then(crate::kernel::eval::SpecificationReadScope::enter);
+        for expression in [
+            ProgramExpression::Value(ProgramValue::Pointer(value.clone())),
+            ProgramExpression::Variable(("p".to_owned()).into()),
+        ] {
+            for context in [&PureFactContext::new(), &facts] {
+                let paths = evaluate_program_expression_paths(
+                    &state,
+                    &expression,
+                    context,
+                    &mut ExecutionBudget::default(),
+                )
+                .unwrap();
+                assert_eq!(paths.len(), 1);
+                assert_eq!(
+                    paths[0].outcome,
+                    ExpressionOutcome::Value(ProgramValue::Pointer(value.clone())),
+                    "{expression:?}",
+                );
+            }
         }
     }
 }
@@ -58,11 +65,11 @@ fn a_specification_condition_folds_only_when_it_is_constant() {
 
     for (condition, expected) in [(constant_true, true), (constant_false, false)] {
         assert_eq!(
-            constant_spec_condition_value(&Proposition::ConditionIs(condition.clone(), true)),
+            constant_spec_condition_value(&Proposition::condition_is(condition.clone(), true)),
             Some(expected)
         );
         assert_eq!(
-            constant_spec_condition_value(&Proposition::ConditionIs(condition, false)),
+            constant_spec_condition_value(&Proposition::condition_is(condition, false)),
             Some(!expected)
         );
     }
@@ -73,7 +80,7 @@ fn a_specification_condition_folds_only_when_it_is_constant() {
     assert_eq!(knows_the_condition.decide(&ambient), Some(true));
     for value in [true, false] {
         assert_eq!(
-            constant_spec_condition_value(&Proposition::ConditionIs(ambient.clone(), value)),
+            constant_spec_condition_value(&Proposition::condition_is(ambient.clone(), value)),
             None
         );
     }
@@ -134,7 +141,7 @@ fn checked_wide_to_int_narrowing_requires_each_representability_bound() {
             for (obligation, bound) in obligations.iter().zip(&bounds[provided..]) {
                 assert_eq!(
                     obligation.proposition(),
-                    &Proposition::ConditionIs(bound.clone(), true)
+                    &Proposition::condition_is(bound.clone(), true)
                 );
             }
         }
@@ -179,7 +186,7 @@ fn wide_to_int_narrowing_checks_signed_and_unsigned_boundaries() {
                 panic!("narrowing owes an explicit range comparison");
             };
             assert_eq!(
-                PureFactContext::decide_intrinsically(condition),
+                PureFactContext::decide_intrinsically(condition.native_compat()),
                 Some(false)
             );
             assert!(obligation.context().unwrap().starts_with("int32 narrowing"));
@@ -207,7 +214,7 @@ fn wide_to_int_narrowing_checks_signed_and_unsigned_boundaries() {
                 panic!("narrowing owes an explicit range comparison");
             };
             assert_eq!(
-                PureFactContext::decide_intrinsically(condition),
+                PureFactContext::decide_intrinsically(condition.native_compat()),
                 Some(false)
             );
             assert_eq!(obligation.context(), Some("int32 narrowing upper bound"));
@@ -231,7 +238,7 @@ fn wide_equality_bounds_keep_width_sign_and_exact_premises() {
         );
     assert_eq!(facts.decide(&signed_bound), Some(true));
     assert_eq!(facts.decide(&unsigned_bound), Some(false));
-    let narrowed = Proposition::ConditionIs(
+    let narrowed = Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::uint32_from_64(x.clone()),
             MachineTerm::constant(u32::MAX),
@@ -254,7 +261,7 @@ fn wide_equality_bounds_keep_width_sign_and_exact_premises() {
     let narrow_facts = PureFactContext::new()
         .assume_condition(ConditionTerm::equal(x, MachineTerm::constant(0)), true);
     assert_eq!(narrow_facts.decide(&unsigned_bound), None);
-    let proposition = Proposition::ConditionIs(signed_bound, true);
+    let proposition = Proposition::condition_is(signed_bound, true);
     let derivation =
         crate::kernel::search::ProofSearch::derive_atomic_proposition(&(facts), &proposition)
             .unwrap();
@@ -405,7 +412,7 @@ fn floating_point_constant_conversions_round_in_integer_space() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -445,7 +452,7 @@ fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -672,7 +679,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
         let theorem = prove_program_expression_evaluation(state.clone(), expression)
             .expect("constant floating arithmetic should evaluate");
         match theorem.proposition() {
-            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.clone(),
+            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.native_compat(),
             proposition => panic!("unexpected floating arithmetic theorem {proposition:?}"),
         }
     };
@@ -764,7 +771,7 @@ fn floating_point_arithmetic_preserves_ieee_exceptions_and_ties() {
         let theorem = prove_program_expression_evaluation(state.clone(), expression)
             .expect("constant floating arithmetic should evaluate");
         match theorem.proposition() {
-            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.clone(),
+            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.native_compat(),
             proposition => panic!("unexpected floating arithmetic theorem {proposition:?}"),
         }
     };
@@ -901,10 +908,13 @@ fn symbolic_floating_arithmetic_remains_typed_and_opaque() {
     let theorem =
         prove_program_expression_evaluation(state, expression).expect("symbolic float add");
     let Proposition::ProgramExpressionEvaluates {
-        outcome: ExpressionOutcome::Value(ProgramValue::Float32(term)),
+        outcome: ExpressionOutcome::Value(stored_outcome_value),
         ..
     } = theorem.proposition()
     else {
+        panic!("symbolic float addition should produce a float value");
+    };
+    let ProgramValue::Float32(term) = stored_outcome_value.native_compat() else {
         panic!("symbolic float addition should produce a float value");
     };
     assert!(matches!(term, MachineTerm::Float32Binary { .. }));
@@ -917,7 +927,7 @@ fn mixed_floating_arithmetic_promotes_to_the_wider_or_present_float_type() {
         let theorem = prove_program_expression_evaluation(state.clone(), expression)
             .expect("mixed floating arithmetic should evaluate");
         match theorem.proposition() {
-            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.clone(),
+            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.native_compat(),
             proposition => panic!("unexpected mixed floating theorem {proposition:?}"),
         }
     };
@@ -968,10 +978,13 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
     )
     .expect("symbolic integer-to-float conversion should evaluate");
     let Proposition::ProgramExpressionEvaluates {
-        outcome: ExpressionOutcome::Value(ProgramValue::Float64(term)),
+        outcome: ExpressionOutcome::Value(stored_outcome_value),
         ..
     } = theorem.proposition()
     else {
+        panic!("symbolic integer-to-float conversion should produce a double");
+    };
+    let ProgramValue::Float64(term) = stored_outcome_value.native_compat() else {
         panic!("symbolic integer-to-float conversion should produce a double");
     };
     assert!(matches!(term, MachineTerm::PureFunctionApplication { .. }));
@@ -985,10 +998,13 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
     )
     .expect("symbolic float widening conversion should evaluate");
     let Proposition::ProgramExpressionEvaluates {
-        outcome: ExpressionOutcome::Value(ProgramValue::Float64(term)),
+        outcome: ExpressionOutcome::Value(stored_outcome_value),
         ..
     } = theorem.proposition()
     else {
+        panic!("symbolic float widening conversion should produce a double");
+    };
+    let ProgramValue::Float64(term) = stored_outcome_value.native_compat() else {
         panic!("symbolic float widening conversion should produce a double");
     };
     assert!(matches!(term, MachineTerm::PureFunctionApplication { .. }));
@@ -1394,7 +1410,7 @@ fn int32_comparisons_return_c_int32_zero_or_one() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1402,21 +1418,21 @@ fn int32_comparisons_return_c_int32_zero_or_one() {
 
 #[test]
 fn pointer_equality_returns_c_int32_zero_or_one() {
-    let p = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let p = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let same = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let same = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let next = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let next = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(4),
     };
-    let other = Pointer {
-        block: "other".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let other = Address {
+        base: "other".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(p))
@@ -1455,7 +1471,7 @@ fn pointer_equality_returns_c_int32_zero_or_one() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1463,9 +1479,9 @@ fn pointer_equality_returns_c_int32_zero_or_one() {
 
 #[test]
 fn pointer_values_preserve_their_exact_c_types_without_changing_address_identity() {
-    let address = Pointer {
-        block: "same-address".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let address = Address {
+        base: "same-address".into(),
+        offset: AddressOffset::Constant(0),
     };
     let int32_pointer = ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer);
     let uint8_pointer = ProgramValue::typed_pointer(address.clone(), ProgramType::UInt8Pointer);
@@ -1478,7 +1494,7 @@ fn pointer_values_preserve_their_exact_c_types_without_changing_address_identity
     let ProgramValue::Pointer(uint8_pointer) = uint8_pointer else {
         unreachable!();
     };
-    assert_eq!(int32_pointer.pointer(), uint8_pointer.pointer());
+    assert_eq!(int32_pointer.address(), uint8_pointer.address());
 }
 
 #[test]
@@ -1507,7 +1523,7 @@ fn explicit_wide_integer_pointer_cast_accepts_only_proven_null_without_origin() 
             if known_value == Some(0) {
                 assert_eq!(
                     cast.unwrap(),
-                    ProgramValue::typed_pointer(Pointer::null(), ProgramType::UInt8Pointer),
+                    ProgramValue::typed_pointer(Address::null(), ProgramType::UInt8Pointer),
                 );
             } else {
                 assert!(matches!(cast, Err(RuntimeError::PointerConversion(_))));
@@ -1521,9 +1537,9 @@ fn explicit_wide_integer_pointer_cast_accepts_only_proven_null_without_origin() 
 
 #[test]
 fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
-    let address = Pointer {
-        block: "typed-pointer".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let address = Address {
+        base: "typed-pointer".into(),
+        offset: AddressOffset::Constant(0),
     };
     let mut state = ExecutionState::new();
     state.locals.set_typed_with_all_qualifiers(
@@ -1558,11 +1574,11 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
     else {
         panic!("explicit pointer cast did not produce a value");
     };
-    assert_eq!(value.program_type(), ProgramType::UInt8Pointer);
-    let ProgramValue::Pointer(value) = value else {
+    assert_eq!(value.value().program_type(), ProgramType::UInt8Pointer);
+    let ProgramValue::Pointer(value) = value.native_compat() else {
         unreachable!();
     };
-    assert_eq!(value.pointer(), &address);
+    assert_eq!(value.address(), &address);
     assert!(
         value.pointee_constant(),
         "a byte view must retain source const qualification"
@@ -1586,7 +1602,7 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
     let ProgramValue::Pointer(spec_pointer) = spec_value else {
         panic!("byte-view spec cast must yield a pointer");
     };
-    assert_eq!(spec_pointer.pointer(), &address);
+    assert_eq!(spec_pointer.address(), &address);
     assert!(spec_pointer.pointee_constant());
 
     let equality = crate::kernel::program_expression::equal(
@@ -1607,11 +1623,11 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
 
 #[test]
 fn spec_pointer_equality_lowers_to_a_pure_fact() {
-    let left = Pointer::symbolic(Variable(22_100));
-    let right = Pointer::symbolic(Variable(22_101));
-    let equality = ConditionTerm::PointerValueEqual(
-        Box::new(PointerValue::new(left.clone(), ProgramType::Int32Pointer)),
-        Box::new(PointerValue::new(right.clone(), ProgramType::Int32Pointer)),
+    let left = Address::symbolic(Variable(22_100));
+    let right = Address::symbolic(Variable(22_101));
+    let equality = ConditionTerm::PointerEqual(
+        Box::new(Pointer::new(left.clone(), ProgramType::Int32Pointer)),
+        Box::new(Pointer::new(right.clone(), ProgramType::Int32Pointer)),
     );
 
     assert_eq!(
@@ -1620,7 +1636,7 @@ fn spec_pointer_equality_lowers_to_a_pure_fact() {
             ComparisonOperator::Equal,
             &ProgramValue::pointer(right.clone()),
         ),
-        Some(Proposition::ConditionIs(equality.clone(), true)),
+        Some(Proposition::condition_is(equality.clone(), true)),
     );
     assert_eq!(
         program_value_comparison_proposition(
@@ -1628,7 +1644,7 @@ fn spec_pointer_equality_lowers_to_a_pure_fact() {
             ComparisonOperator::NotEqual,
             &ProgramValue::pointer(right),
         ),
-        Some(Proposition::ConditionIs(equality, false)),
+        Some(Proposition::condition_is(equality, false)),
     );
     assert_eq!(
         program_value_comparison_proposition(
@@ -1667,8 +1683,8 @@ fn finite_float_context_proves_reflexive_comparisons() {
 #[test]
 fn finite_structural_float_read_proves_reflexive_comparison() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_memory(Memory::new());
-    let pointer = Pointer::symbolic(Variable(22_103));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+    let pointer = Address::symbolic(Variable(22_103));
     let value = crate::kernel::eval::scalar_read_for_exact_cell(
         &memory,
         &pointer,
@@ -1690,13 +1706,13 @@ fn finite_structural_float_read_proves_reflexive_comparison() {
 
 #[test]
 fn spec_pointer_order_lowers_same_block_offsets() {
-    let left = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let left = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let right = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let right = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(4),
     };
     assert_eq!(
         program_value_comparison_proposition(
@@ -1704,7 +1720,7 @@ fn spec_pointer_order_lowers_same_block_offsets() {
             ComparisonOperator::LessThan,
             &ProgramValue::pointer(right),
         ),
-        Some(Proposition::ConditionIs(
+        Some(Proposition::condition_is(
             ConditionTerm::Constant(true),
             true,
         )),
@@ -1714,7 +1730,7 @@ fn spec_pointer_order_lowers_same_block_offsets() {
 #[test]
 fn symbolic_pointer_truthiness_keeps_null_and_nonnull_paths() {
     let paths = program_truthiness_paths(
-        ProgramValue::pointer(Pointer::symbolic(Variable(22_000))),
+        ProgramValue::pointer(Address::symbolic(Variable(22_000))),
         Vec::new().into(),
         Vec::new(),
         &PureFactContext::new(),
@@ -1727,13 +1743,13 @@ fn symbolic_pointer_truthiness_keeps_null_and_nonnull_paths() {
 
 #[test]
 fn pointer_equality_accepts_int32_zero_as_null_pointer_constant() {
-    let null = Pointer {
-        block: "null".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let null = Address {
+        base: "null".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let nonnull = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let nonnull = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("nullp", ProgramValue::pointer(null))
@@ -1770,7 +1786,7 @@ fn pointer_equality_accepts_int32_zero_as_null_pointer_constant() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1793,21 +1809,21 @@ fn pointer_equality_accepts_int32_zero_as_null_pointer_constant() {
 
 #[test]
 fn not_equal_and_not_return_c_int32_zero_or_one() {
-    let null = Pointer {
-        block: "null".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let null = Address {
+        base: "null".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let p = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let p = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let same = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let same = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let next = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let next = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(4),
     };
     let state = ExecutionState::new()
         .with_local("nullp", ProgramValue::pointer(null))
@@ -1877,7 +1893,7 @@ fn not_equal_and_not_return_c_int32_zero_or_one() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1885,18 +1901,18 @@ fn not_equal_and_not_return_c_int32_zero_or_one() {
 
 #[test]
 fn logical_and_or_short_circuit_right_operand() {
-    let invalid_pointer = Pointer {
-        block: "missing".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let invalid_pointer = Address {
+        base: "missing".into(),
+        offset: AddressOffset::Constant(0),
     };
     let invalid_load = crate::kernel::program_expression::typed_load(
         crate::kernel::program_expression::pointer_value(invalid_pointer),
         ProgramType::Int32,
     );
     let state = ExecutionState::new().with_resource_context(view_memory_context(
-        Pointer {
-            block: "missing".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "missing".into(),
+            offset: AddressOffset::Constant(0),
         },
         0,
         1,
@@ -1926,7 +1942,7 @@ fn logical_and_or_short_circuit_right_operand() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1955,9 +1971,9 @@ fn logical_and_or_short_circuit_right_operand() {
 
 #[test]
 fn void_pointer_dereferences_report_indeterminate_pointee_type() {
-    let pointer = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
     let pointer_value = || {
         crate::kernel::program_expression::typed_pointer_value(
@@ -1990,9 +2006,9 @@ fn void_pointer_dereferences_report_indeterminate_pointee_type() {
 
 #[test]
 fn captured_typed_pointer_load_requires_read_authority() {
-    let pointer = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new();
     let expression = crate::kernel::program_expression::load(
@@ -2014,11 +2030,11 @@ fn captured_typed_pointer_load_requires_read_authority() {
 
 #[test]
 fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
-    let pointer = Pointer {
-        block: "bytes".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "bytes".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let state = ExecutionState::new().with_memory(Memory::new().with_block("bytes", 8));
+    let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block("bytes", 8));
     let value = || {
         crate::kernel::program_expression::typed_pointer_value(
             pointer.clone(),
@@ -2042,10 +2058,13 @@ fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(ProgramValue::typed_pointer(
-                    pointer.offset_by_bytes(1),
-                    ProgramType::VoidPointer,
-                )),
+                outcome: ExpressionOutcome::Value(
+                    (ProgramValue::typed_pointer(
+                        pointer.offset_by_bytes(1),
+                        ProgramType::VoidPointer,
+                    ))
+                    .into()
+                ),
             }
         );
     }
@@ -2053,7 +2072,7 @@ fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
 
 #[test]
 fn function_pointer_operations_report_indeterminate_pointee_type() {
-    let pointer = Pointer::function("callback");
+    let pointer = Address::function("callback");
     let function_type = ProgramType::FunctionPointer(ProgramType::function_pointer_signature(
         ProgramType::Int32,
         &[ProgramType::Int32],
@@ -2093,13 +2112,13 @@ fn function_pointer_operations_report_indeterminate_pointee_type() {
 #[test]
 fn symbolic_pointer_equality_reports_branch_facts() {
     let offset = Variable(80);
-    let left = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let left = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let right = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Variable(offset),
+    let right = Address {
+        base: "array".into(),
+        offset: AddressOffset::Variable(offset),
     };
     // A C comparison states that the addresses are equal, not the pointers.
     let condition =
@@ -2234,9 +2253,9 @@ fn assignment_and_sequence_update_native_state() {
 
 #[test]
 fn store_then_load_threads_native_memory() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = ExecutionState::new().with_resource_context(resources.clone());
@@ -2252,7 +2271,7 @@ fn store_then_load_threads_native_memory() {
         )),
     );
     let final_state = ExecutionState::new()
-        .with_memory(Memory::new().store(pointer.clone(), int32(9)))
+        .with_memory(SymbolicMemory::new().store(pointer.clone(), int32(9)))
         .with_resource_context(resources);
     let theorem =
         prove_symbolic_program_execution(state.clone(), statement.clone(), PureFactContext::new())
@@ -2273,9 +2292,9 @@ fn store_then_load_threads_native_memory() {
 
 #[test]
 fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(4),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
@@ -2300,7 +2319,7 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
                 // The symbolic read is canonical at creation: its load
                 // variable, which names this load.
                 value: int32(crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 )))
@@ -2313,11 +2332,11 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
 
 #[test]
 fn block_backed_store_then_load_needs_no_memory_obligation() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("block", 16);
+    let memory = SymbolicMemory::new().with_block("block", 16);
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = ExecutionState::new()
         .with_memory(memory.clone())
@@ -2355,11 +2374,11 @@ fn block_backed_store_then_load_needs_no_memory_obligation() {
 
 #[test]
 fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(4),
     };
-    let memory = Memory::new().with_block("block", 16);
+    let memory = SymbolicMemory::new().with_block("block", 16);
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_memory(memory.clone())
@@ -2391,15 +2410,15 @@ fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
 
 #[test]
 fn pointer_addition_scales_int32_offsets_for_loads() {
-    let base = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let second = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let second = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(4),
     };
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block("block", 16)
         .store(second.clone(), int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
@@ -2428,13 +2447,13 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
                     ExecutionState::new()
                         .with_local(
                             "p",
-                            ProgramValue::pointer(Pointer {
-                                block: "block".into(),
-                                offset: PointerOffsetTerm::Constant(0),
+                            ProgramValue::pointer(Address {
+                                base: "block".into(),
+                                offset: AddressOffset::Constant(0),
                             }),
                         )
                         .with_memory(
-                            Memory::new()
+                            SymbolicMemory::new()
                                 .with_block("block", 16)
                                 .store(second, int32(23),),
                         )
@@ -2447,13 +2466,13 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
 
 #[test]
 fn pointer_addition_rejects_an_int32_index_beyond_the_object() {
-    let base = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base))
-        .with_memory(Memory::new().with_block("array", 8));
+        .with_memory(SymbolicMemory::new().with_block("array", 8));
     let expression = crate::kernel::program_expression::add(
         crate::kernel::program_expression::variable("p"),
         crate::kernel::program_expression::int32_literal(3),
@@ -2475,17 +2494,17 @@ fn pointer_addition_rejects_an_int32_index_beyond_the_object() {
 #[test]
 fn uint64_pointer_index_bounds_use_the_full_value() {
     let index = MachineTerm::Variable(Variable(93_815));
-    let offset = PointerOffsetTerm::scaled_int64_node(index.clone(), 1, true);
+    let offset = AddressOffset::scaled_int64_node(index.clone(), 1, true);
     assert_eq!(byte_offset_from_pointer_offset(&offset), None);
 
-    let base = Pointer {
-        block: "bytes".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "bytes".into(),
+        offset: AddressOffset::Constant(0),
     };
     let mut state = ExecutionState::new()
         .with_local("array", ProgramValue::pointer(base.clone()))
         .with_local("index", ProgramValue::UInt64(index.clone()))
-        .with_memory(Memory::new().with_block("bytes", 8));
+        .with_memory(SymbolicMemory::new().with_block("bytes", 8));
     state.locals.set_typed(
         "array",
         ProgramValue::pointer(base),
@@ -2521,9 +2540,9 @@ fn uint64_pointer_index_bounds_use_the_full_value() {
 
 #[test]
 fn pointer_index_sum_overflow_is_pointer_undefined_behavior() {
-    let base = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new().with_local("p", ProgramValue::pointer(base));
     let expression = crate::kernel::program_expression::add(
@@ -2549,9 +2568,9 @@ fn pointer_index_sum_overflow_is_pointer_undefined_behavior() {
 
 #[test]
 fn pointer_index_sum_overflow_is_undefined_for_a_uint8_pointer() {
-    let base = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let mut state = ExecutionState::new().with_local("p", ProgramValue::pointer(base.clone()));
     state
@@ -2580,20 +2599,20 @@ fn pointer_index_sum_overflow_is_undefined_for_a_uint8_pointer() {
 
 #[test]
 fn pointer_addition_allows_the_one_past_int32_element() {
-    let base = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
-        .with_memory(Memory::new().with_block("array", 8));
+        .with_memory(SymbolicMemory::new().with_block("array", 8));
     let expression = crate::kernel::program_expression::add(
         crate::kernel::program_expression::variable("p"),
         crate::kernel::program_expression::int32_literal(2),
     );
-    let result = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(8),
+    let result = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(8),
     };
 
     let theorem = prove_program_expression_evaluation(state.clone(), expression.clone())
@@ -2604,20 +2623,20 @@ fn pointer_addition_allows_the_one_past_int32_element() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value(ProgramValue::pointer(result)),
+            outcome: ExpressionOutcome::Value((ProgramValue::pointer(result)).into()),
         }
     );
 }
 
 #[test]
 fn pointer_addition_rejects_a_uint8_index_beyond_the_object() {
-    let base = Pointer {
-        block: "bytes".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "bytes".into(),
+        offset: AddressOffset::Constant(0),
     };
     let mut state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
-        .with_memory(Memory::new().with_block("bytes", 4));
+        .with_memory(SymbolicMemory::new().with_block("bytes", 4));
     state
         .locals
         .set_typed("p", ProgramValue::pointer(base), ProgramType::UInt8Pointer);
@@ -2641,13 +2660,13 @@ fn pointer_addition_rejects_a_uint8_index_beyond_the_object() {
 
 #[test]
 fn byte_offset_rejects_a_pointer_beyond_the_object() {
-    let base = Pointer {
-        block: "object".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "object".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base))
-        .with_memory(Memory::new().with_block("object", 4));
+        .with_memory(SymbolicMemory::new().with_block("object", 4));
     let expression = crate::kernel::program_expression::pointer_offset_bytes(
         crate::kernel::program_expression::variable("p"),
         5,
@@ -2668,13 +2687,13 @@ fn byte_offset_rejects_a_pointer_beyond_the_object() {
 
 #[test]
 fn pointer_relational_comparison_orders_same_block_elements() {
-    let first = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let first = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let second = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(8),
+    let second = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(8),
     };
     let state = ExecutionState::new()
         .with_local("first", ProgramValue::pointer(first))
@@ -2718,7 +2737,7 @@ fn pointer_relational_comparison_orders_same_block_elements() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(int32(expected)),
+                outcome: ExpressionOutcome::Value((int32(expected)).into()),
             }
         );
     }
@@ -2726,13 +2745,13 @@ fn pointer_relational_comparison_orders_same_block_elements() {
 
 #[test]
 fn pointer_subtraction_returns_same_block_element_distance() {
-    let start = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let start = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let end = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(8),
+    let end = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(8),
     };
     let state = ExecutionState::new()
         .with_local("start", ProgramValue::pointer(start))
@@ -2750,20 +2769,20 @@ fn pointer_subtraction_returns_same_block_element_distance() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value(int32(2)),
+            outcome: ExpressionOutcome::Value((int32(2)).into()),
         }
     );
 }
 
 #[test]
 fn uint8_pointer_subtraction_returns_byte_distance() {
-    let start = Pointer {
-        block: "bytes".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let start = Address {
+        base: "bytes".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let end = Pointer {
-        block: "bytes".into(),
-        offset: PointerOffsetTerm::Constant(3),
+    let end = Address {
+        base: "bytes".into(),
+        offset: AddressOffset::Constant(3),
     };
     let mut state = ExecutionState::new()
         .with_local("start", ProgramValue::pointer(start.clone()))
@@ -2789,27 +2808,27 @@ fn uint8_pointer_subtraction_returns_byte_distance() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value(int32(3)),
+            outcome: ExpressionOutcome::Value((int32(3)).into()),
         }
     );
 }
 
 #[test]
 fn pointer_subtraction_by_one_steps_back_one_element() {
-    let pointer = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(8),
+    let pointer = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(8),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer))
-        .with_memory(Memory::new().with_block("array", 12));
+        .with_memory(SymbolicMemory::new().with_block("array", 12));
     let expression = crate::kernel::program_expression::subtract(
         crate::kernel::program_expression::variable("p"),
         crate::kernel::program_expression::int32_literal(1),
     );
-    let result = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let result = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(4),
     };
 
     let theorem = prove_program_expression_evaluation(state.clone(), expression.clone())
@@ -2820,20 +2839,20 @@ fn pointer_subtraction_by_one_steps_back_one_element() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value(ProgramValue::pointer(result)),
+            outcome: ExpressionOutcome::Value((ProgramValue::pointer(result)).into()),
         }
     );
 }
 
 #[test]
 fn pointer_comparison_rejects_different_blocks_as_undefined_behavior() {
-    let left = Pointer {
-        block: "left".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let left = Address {
+        base: "left".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let right = Pointer {
-        block: "right".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let right = Address {
+        base: "right".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("left", ProgramValue::pointer(left))
@@ -2858,13 +2877,13 @@ fn pointer_comparison_rejects_different_blocks_as_undefined_behavior() {
 
 #[test]
 fn pointer_subtraction_rejects_different_blocks_as_undefined_behavior() {
-    let left = Pointer {
-        block: "left".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let left = Address {
+        base: "left".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let right = Pointer {
-        block: "right".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let right = Address {
+        base: "right".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("left", ProgramValue::pointer(left))
@@ -2889,9 +2908,9 @@ fn pointer_subtraction_rejects_different_blocks_as_undefined_behavior() {
 
 #[test]
 fn pointer_order_and_subtraction_require_external_parameters_to_share_an_object() {
-    let external = |variable| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+    let external = |variable| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let left = external(31_000);
     let right = external(31_001);
@@ -2969,7 +2988,7 @@ fn pointer_order_and_subtraction_require_external_parameters_to_share_an_object(
 
 #[test]
 fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
-    let null = Pointer::null();
+    let null = Address::null();
     assert!(disprove_builtin_prop(&pointer_same_object_proposition(
         &null, &null
     )));
@@ -3040,9 +3059,9 @@ fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
 
 #[test]
 fn an_external_pointer_does_not_share_an_object_with_itself_until_nonnull() {
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(31_050)), 4),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(31_050)), 4),
     };
     let state = ExecutionState::new().with_local("pointer", ProgramValue::pointer(pointer));
 
@@ -3090,15 +3109,15 @@ fn an_external_pointer_does_not_share_an_object_with_itself_until_nonnull() {
 
 #[test]
 fn nonempty_loadability_establishes_external_pointer_object_provenance() {
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(31_060)), 4),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(31_060)), 4),
     };
     let state = ExecutionState::new().with_local("pointer", ProgramValue::pointer(pointer.clone()));
     let loadable = |bytes| Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: pointer.clone(),
-        bytes: MachineTerm::constant(bytes),
+        bytes: (MachineTerm::constant(bytes)).into(),
         wide: false,
     };
 
@@ -3140,13 +3159,13 @@ fn nonempty_loadability_establishes_external_pointer_object_provenance() {
 
 #[test]
 fn pointer_arithmetic_preserves_external_object_identity() {
-    let left = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(31_100)), 4),
+    let left = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(31_100)), 4),
     };
-    let right = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(31_101)), 4),
+    let right = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(31_101)), 4),
     };
     let derived_left = left.offset_by_int32_elements(MachineTerm::Variable(Variable(31_102)));
     let derived_right = right.offset_by_int32_elements(MachineTerm::constant(1));
@@ -3167,15 +3186,15 @@ fn pointer_arithmetic_preserves_external_object_identity() {
 
 #[test]
 fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
-    let base = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let derived = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let derived = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(4),
     };
-    let memory = Memory::new().with_block("block", 4);
+    let memory = SymbolicMemory::new().with_block("block", 4);
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
         .with_memory(memory.clone())
@@ -3214,11 +3233,11 @@ fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
 
 #[test]
 fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
-    let base = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("block", 12);
+    let memory = SymbolicMemory::new().with_block("block", 12);
     let resources = own_memory_context(base.clone(), 0, 3);
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
@@ -3254,32 +3273,32 @@ fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
     );
     let final_memory = memory
         .store(
-            Pointer {
-                block: "block".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "block".into(),
+                offset: AddressOffset::Constant(0),
             },
             int32(0),
         )
         .store(
-            Pointer {
-                block: "block".into(),
-                offset: PointerOffsetTerm::Constant(4),
+            Address {
+                base: "block".into(),
+                offset: AddressOffset::Constant(4),
             },
             int32(1),
         )
         .store(
-            Pointer {
-                block: "block".into(),
-                offset: PointerOffsetTerm::Constant(8),
+            Address {
+                base: "block".into(),
+                offset: AddressOffset::Constant(8),
             },
             int32(2),
         );
     let final_state = ExecutionState::new()
         .with_local(
             "p",
-            ProgramValue::pointer(Pointer {
-                block: "block".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            ProgramValue::pointer(Address {
+                base: "block".into(),
+                offset: AddressOffset::Constant(0),
             }),
         )
         .with_local("i", int32(3))
@@ -3315,10 +3334,10 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
     let n = Variable(68);
     let i_bits = MachineTerm::Variable(i);
     let n_bits = MachineTerm::Variable(n);
-    let memory = Memory::new();
-    let base = Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let memory = SymbolicMemory::new();
+    let base = Address {
+        base: "array".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
@@ -3336,12 +3355,13 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
         .assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: binary_node!(
+            bytes: (binary_node!(
                 Int32,
                 Multiply,
                 Box::new(n_bits.clone()),
                 Box::new(MachineTerm::constant(4)),
-            ),
+            ))
+            .into(),
             wide: false,
         })
         .assume_condition(
@@ -3444,7 +3464,7 @@ fn interval_arithmetic_uses_lower_bound_for_incremented_values() {
     );
     assert!(!crate::kernel::search::ProofSearch::proves(
         &(lower_only),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::signed_greater_equal(incremented.clone(), MachineTerm::constant(1),),
             true,
         )
@@ -3458,14 +3478,14 @@ fn interval_arithmetic_uses_lower_bound_for_incremented_values() {
     );
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::signed_greater_equal(incremented.clone(), MachineTerm::constant(1),),
             true,
         )
     ));
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::signed_greater_than(incremented, MachineTerm::constant(0)),
             true,
         )
@@ -3491,7 +3511,7 @@ fn nonnegative_successor_requires_no_overflow_evidence() {
     assert!(
         crate::kernel::search::ProofSearch::derive_solve_proposition(
             &(assumptions),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::signed_greater_equal(successor, MachineTerm::constant(0),),
                 true,
             )
@@ -3505,9 +3525,9 @@ fn additive_upper_bound_covers_incremented_pointer_access() {
     let j = Variable(74);
     let j_bits = MachineTerm::Variable(j);
     let incremented = MachineTerm::add(j_bits.clone(), MachineTerm::constant(1));
-    let base = Pointer {
-        block: "p".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "p".into(),
+        offset: AddressOffset::Constant(0),
     };
     let pointer = base.offset_by_int32_elements(incremented.clone());
     let assumptions = PureFactContext::new()
@@ -3544,9 +3564,9 @@ fn relative_dependent_range_is_covered_by_owned_range() {
     let index = MachineTerm::Variable(Variable(77));
     let length = MachineTerm::Variable(Variable(78));
     let capacity = MachineTerm::Variable(Variable(79));
-    let base = Pointer {
-        block: "owner".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "owner".into(),
+        offset: AddressOffset::Constant(0),
     };
     let backing_start = MachineTerm::subtract(backing.clone(), owner.clone());
     let indexed_start = MachineTerm::subtract(MachineTerm::add(backing, index.clone()), owner);
@@ -3888,7 +3908,7 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
                 panic!("narrowing owes an explicit range comparison");
             };
             assert_eq!(
-                PureFactContext::decide_intrinsically(condition),
+                PureFactContext::decide_intrinsically(condition.native_compat()),
                 Some(false)
             );
             assert!(obligation.context().unwrap().starts_with("int8 narrowing"));
@@ -3929,7 +3949,7 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
         assert_eq!(
             crate::kernel::eval::checked_narrowing_identity(&int32(value.clone()), &checked),
             vec![
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::integer_equal(
                         IntegerTerm::from_machine(
                             crate::kernel::MachineIntegerType::Int8,
@@ -3944,7 +3964,7 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
                     ),
                     true,
                 ),
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::equal(
                         MachineTerm::machine_integer_cast(
                             crate::kernel::MachineIntegerType::Int8,
@@ -4008,11 +4028,11 @@ fn signed_byte_arithmetic_promotes_with_range_facts() {
 
 #[test]
 fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
-    let pointer = Pointer {
-        block: "bounded".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "bounded".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("bounded", 8);
+    let memory = SymbolicMemory::new().with_block("bounded", 8);
     let load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
         Box::new(pointer.clone()),
@@ -4046,9 +4066,9 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
     );
     let other_load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-        Box::new(Pointer {
-            block: pointer.block,
-            offset: PointerOffsetTerm::Constant(4),
+        Box::new(Address {
+            base: pointer.base,
+            offset: AddressOffset::Constant(4),
         }),
         crate::kernel::LoadKind::Int32,
     );
@@ -4109,21 +4129,21 @@ fn exact_signed_constant_bounds_check_signed_endpoints() {
 
 #[test]
 fn exact_signed_mirror_normalization_checks_state_address_and_selected_premise() {
-    let pointer = Pointer {
-        block: "mirror".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "mirror".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("mirror", 8);
+    let memory = SymbolicMemory::new().with_block("mirror", 8);
     let load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
-    let premise = Proposition::ConditionIs(
+    let premise = Proposition::condition_is(
         ConditionTerm::signed_less_than(MachineTerm::constant(1), load.clone()),
         true,
     );
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::signed_greater_than(load, MachineTerm::constant(1)),
         true,
     );
@@ -4144,9 +4164,9 @@ fn exact_signed_mirror_normalization_checks_state_address_and_selected_premise()
         (changed, pointer.clone()),
         (
             memory,
-            Pointer {
-                block: pointer.block,
-                offset: PointerOffsetTerm::Constant(4),
+            Address {
+                base: pointer.base,
+                offset: AddressOffset::Constant(4),
             },
         ),
     ] {
@@ -4155,7 +4175,7 @@ fn exact_signed_mirror_normalization_checks_state_address_and_selected_premise()
             Box::new(address),
             crate::kernel::LoadKind::Int32,
         );
-        let bad = Proposition::ConditionIs(
+        let bad = Proposition::condition_is(
             ConditionTerm::signed_greater_than(unrelated, MachineTerm::constant(1)),
             true,
         );
@@ -4198,10 +4218,13 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
         let theorem =
             prove_program_expression_evaluation(ExecutionState::new(), expression).unwrap();
         let Proposition::ProgramExpressionEvaluates {
-            outcome: ExpressionOutcome::Value(ProgramValue::Int64(value)),
+            outcome: ExpressionOutcome::Value(stored_outcome_value),
             ..
         } = theorem.proposition()
         else {
+            panic!("expected signed bits");
+        };
+        let ProgramValue::Int64(value) = stored_outcome_value.native_compat() else {
             panic!("expected signed bits");
         };
         assert_eq!(value.int64_as_const(), Some(bits as i64));
@@ -4215,10 +4238,13 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
             let theorem =
                 prove_program_expression_evaluation(ExecutionState::new(), ordinary).unwrap();
             let Proposition::ProgramExpressionEvaluates {
-                outcome: ExpressionOutcome::Value(ProgramValue::Int64(value)),
+                outcome: ExpressionOutcome::Value(stored_outcome_value),
                 ..
             } = theorem.proposition()
             else {
+                panic!("representable ordinary cast must preserve its value");
+            };
+            let ProgramValue::Int64(value) = stored_outcome_value.native_compat() else {
                 panic!("representable ordinary cast must preserve its value");
             };
             assert_eq!(value.int64_as_const(), Some(bits as i64));
@@ -4277,6 +4303,8 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
         let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
             panic!("expected evaluation");
         };
+        let native_outcome = outcome.native_compat();
+        let outcome = &native_outcome;
         outcome.clone()
     };
     for target in [
@@ -4322,7 +4350,7 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
         ),
         crate::kernel::program_expression::integer_cast_modulo(
             ProgramExpression::Value(ProgramValue::typed_pointer(
-                Pointer::null(),
+                Address::null(),
                 ProgramType::Int32Pointer,
             )),
             ProgramType::UInt64,
@@ -4450,44 +4478,47 @@ fn unsigned_narrowing_distributes_constant_subtraction_modulo_the_low_word() {
     }
 }
 
-/// A pointer at `pair + offset` whose subobject extent is `[pair + start,
+/// A pointer at `pair + offset` whose subobject bounds are `[pair + start,
 /// pair + start + width)`, as `&pair.first` would carry.
-fn subobject_pointer(offset: i64, start: i64, width: u32) -> PointerValue {
-    PointerValue::new(
-        Pointer {
-            block: "pair".into(),
-            offset: PointerOffsetTerm::Constant(offset),
+fn subobject_pointer(offset: i64, start: i64, width: u32) -> Pointer {
+    Pointer::new(
+        Address {
+            base: "pair".into(),
+            offset: AddressOffset::Constant(offset),
         },
         ProgramType::Int32Pointer,
     )
-    .with_extent(Some(SubobjectExtent {
-        start: Pointer {
-            block: "pair".into(),
-            offset: PointerOffsetTerm::Constant(start),
+    .with_bounds(Some(SubobjectBounds {
+        start: Address {
+            base: "pair".into(),
+            offset: AddressOffset::Constant(start),
         },
         width: MachineTerm::constant(width),
     }))
 }
 
-fn evaluated_pointer(state: &ExecutionState, expression: ProgramExpression) -> PointerValue {
+fn evaluated_pointer(state: &ExecutionState, expression: ProgramExpression) -> Pointer {
     let theorem = prove_program_expression_evaluation(state.clone(), expression)
         .expect("the pointer expression should evaluate");
     let Proposition::ProgramExpressionEvaluates {
-        outcome: ExpressionOutcome::Value(ProgramValue::Pointer(value)),
+        outcome: ExpressionOutcome::Value(stored_outcome_value),
         ..
     } = theorem.proposition()
     else {
+        panic!("the pointer expression did not produce a pointer");
+    };
+    let ProgramValue::Pointer(value) = stored_outcome_value.native_compat() else {
         panic!("the pointer expression did not produce a pointer");
     };
     value.clone()
 }
 
 #[test]
-fn pointer_arithmetic_and_casts_keep_the_subobject_extent() {
+fn pointer_arithmetic_and_casts_keep_the_subobject_bounds() {
     let first = subobject_pointer(0, 0, 4);
     let state = ExecutionState::new().with_local("p", ProgramValue::Pointer(first.clone()));
 
-    // One past `first` is still `first`'s pointer: the extent does not move
+    // One past `first` is still `first`'s pointer: the bounds do not move
     // with the address, so the address it now shares with `second` does not
     // make it designate `second`.
     let next = evaluated_pointer(
@@ -4497,8 +4528,8 @@ fn pointer_arithmetic_and_casts_keep_the_subobject_extent() {
             crate::kernel::program_expression::int32_literal(1),
         ),
     );
-    assert_eq!(next.pointer().offset, PointerOffsetTerm::Constant(4));
-    assert_eq!(next.extent(), first.extent());
+    assert_eq!(next.address().offset, AddressOffset::Constant(4));
+    assert_eq!(next.bounds(), first.bounds());
     let back = evaluated_pointer(
         &state,
         crate::kernel::program_expression::subtract(
@@ -4509,7 +4540,7 @@ fn pointer_arithmetic_and_casts_keep_the_subobject_extent() {
             crate::kernel::program_expression::int32_literal(1),
         ),
     );
-    assert_eq!(back.extent(), first.extent());
+    assert_eq!(back.bounds(), first.bounds());
 
     let cast = evaluated_pointer(
         &state,
@@ -4519,38 +4550,36 @@ fn pointer_arithmetic_and_casts_keep_the_subobject_extent() {
         ),
     );
     assert_eq!(cast.program_type(), ProgramType::Int64Pointer);
-    assert_eq!(cast.extent(), first.extent());
+    assert_eq!(cast.bounds(), first.bounds());
 }
 
 #[test]
-fn equal_addresses_with_different_extents_are_different_values() {
+fn equal_addresses_with_different_bounds_are_different_values() {
     let one_past_first = subobject_pointer(4, 0, 4);
     let second = subobject_pointer(4, 4, 4);
-    assert_eq!(one_past_first.pointer(), second.pointer());
+    assert_eq!(one_past_first.address(), second.address());
     assert_ne!(one_past_first, second);
     assert_ne!(
-        PointerValue::new(second.pointer().clone(), ProgramType::Int32Pointer),
+        Pointer::new(second.address().clone(), ProgramType::Int32Pointer),
         second
     );
 }
 
 #[test]
-fn substitution_maps_the_extent_start_with_the_address() {
+fn substitution_maps_the_bounds_start_with_the_address() {
     let base = Variable(98_101);
-    let address = |delta: i64| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::add(
-            PointerOffsetTerm::Variable(base),
-            PointerOffsetTerm::Constant(delta),
+    let address = |delta: i64| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::add(
+            AddressOffset::Variable(base),
+            AddressOffset::Constant(delta),
         ),
     };
     let value = ProgramValue::Pointer(
-        PointerValue::new(address(4), ProgramType::Int32Pointer).with_extent(Some(
-            SubobjectExtent {
-                start: address(0),
-                width: MachineTerm::constant(4),
-            },
-        )),
+        Pointer::new(address(4), ProgramType::Int32Pointer).with_bounds(Some(SubobjectBounds {
+            start: address(0),
+            width: MachineTerm::constant(4),
+        })),
     );
     let replacement = MachineTerm::Variable(Variable(98_102));
     let ProgramValue::Pointer(substituted) =
@@ -4560,10 +4589,10 @@ fn substitution_maps_the_extent_start_with_the_address() {
     };
     let expected =
         |delta: i64| substitute_bitvector_variable_in_pointer(&address(delta), base, &replacement);
-    assert_eq!(substituted.pointer(), &expected(4));
+    assert_eq!(substituted.address(), &expected(4));
     assert_eq!(
-        substituted.extent(),
-        Some(&SubobjectExtent {
+        substituted.bounds(),
+        Some(&SubobjectBounds {
             start: expected(0),
             width: MachineTerm::constant(4),
         })
@@ -4576,10 +4605,10 @@ mod scaling_tests {
 }
 
 #[test]
-fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
-    let address = Pointer::symbolic(Variable(22_102));
-    let pointer = PointerValue::new(address.clone(), ProgramType::Int8Pointer).with_extent(Some(
-        SubobjectExtent {
+fn implicit_byte_pointer_coercion_retains_the_selected_bounds() {
+    let address = Address::symbolic(Variable(22_102));
+    let pointer = Pointer::new(address.clone(), ProgramType::Int8Pointer).with_bounds(Some(
+        SubobjectBounds {
             start: address,
             width: 4u32.into(),
         },
@@ -4601,8 +4630,8 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
     };
     assert_eq!(coerced.program_type(), ProgramType::UInt8Pointer);
     assert_eq!(coerced.provenance(), pointer.provenance());
-    assert_eq!(coerced.opaque_extent(), pointer.opaque_extent());
-    assert_eq!(coerced.extent(), pointer.extent());
+    assert_eq!(coerced.bounds_owner(), pointer.bounds_owner());
+    assert_eq!(coerced.bounds(), pointer.bounds());
     for source in [ProgramType::Int8Pointer, ProgramType::UInt8Pointer] {
         for target in [ProgramType::Int8Pointer, ProgramType::UInt8Pointer] {
             let (value, _) = program_evaluate_speprogram_expression_at_state(
@@ -4622,8 +4651,8 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
             };
             assert_eq!(explicit.program_type(), target);
             assert_eq!(explicit.provenance(), pointer.provenance());
-            assert_eq!(explicit.opaque_extent(), pointer.opaque_extent());
-            assert_eq!(explicit.extent(), pointer.extent());
+            assert_eq!(explicit.bounds_owner(), pointer.bounds_owner());
+            assert_eq!(explicit.bounds(), pointer.bounds());
         }
     }
     for (source, target) in [
@@ -4647,24 +4676,24 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
         let ProgramValue::Pointer(explicit) = value else {
             panic!("a pointer cast must yield a pointer")
         };
-        assert!(explicit.extent_is_known());
-        assert!(explicit.extent().is_none());
+        assert!(explicit.bounds_are_known());
+        assert!(explicit.bounds().is_none());
     }
 }
 
 #[test]
 fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     let _session = crate::kernel::VerificationSession::enter();
-    let a = Pointer::symbolic(Variable(22_111));
-    let b = Pointer::symbolic(Variable(22_112));
+    let a = Address::symbolic(Variable(22_111));
+    let b = Address::symbolic(Variable(22_112));
     let stored = subobject_pointer(0, 0, 4);
-    let before_b = Memory::new().store(a.clone(), ProgramValue::Pointer(stored.clone()));
+    let before_b = SymbolicMemory::new().store(a.clone(), ProgramValue::Pointer(stored.clone()));
     let memory = before_b
         .clone()
         .store(b.clone(), ProgramValue::Pointer(stored.clone()));
-    let read = |memory: &Memory, address: &Pointer| {
-        PointerValue::from_read(
-            stored.pointer().clone(),
+    let read = |memory: &SymbolicMemory, address: &Address| {
+        Pointer::from_read(
+            stored.address().clone(),
             ProgramType::Int32Pointer,
             &crate::kernel::intern_memory_ref(memory),
             address,
@@ -4699,16 +4728,16 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     let second = read(&memory, &b);
     assert!(context.pointer_provenance_match(&first, &stored));
     assert!(context.pointer_provenance_match(&first, &second));
-    assert!(!context.pointer_provenance_match(&first.clone().with_root_extent(), &stored));
+    assert!(!context.pointer_provenance_match(&first.clone().with_root_bounds(), &stored));
     assert!(!context.pointer_provenance_match(
-        &first.clone().with_extent(Some(SubobjectExtent {
-            start: stored.pointer().clone(),
+        &first.clone().with_bounds(Some(SubobjectBounds {
+            start: stored.address().clone(),
             width: 2u32.into(),
         })),
         &stored,
     ));
-    let c = Pointer::symbolic(Variable(22_113));
-    let before = Memory::new();
+    let c = Address::symbolic(Variable(22_113));
+    let before = SymbolicMemory::new();
     let original = read(&before, &c);
     let changed = before.clone().store(b.clone(), int32(1));
     let later = read(&changed, &c);
@@ -4740,12 +4769,12 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     .expect("the selected write preserves the copied pointer's source");
     let framed = framed.assume_proposition(equality);
     assert!(framed.pointer_provenance_match(&read(&copied, &a), &original));
-    assert!(!context.pointer_provenance_match(&first, &stored.clone().with_root_extent()));
+    assert!(!context.pointer_provenance_match(&first, &stored.clone().with_root_bounds()));
     let partial = memory.store(a.clone().offset_by_bytes(4), int32(0));
     assert!(!context.pointer_provenance_match(&read(&partial, &a), &stored));
-    let numeric = Memory::new().store(
+    let numeric = SymbolicMemory::new().store(
         a.clone(),
-        ProgramValue::UInt64(MachineTerm::pointer_address(stored.pointer().clone())),
+        ProgramValue::UInt64(MachineTerm::integer_address(stored.address().clone())),
     );
     assert!(!context.pointer_provenance_match(&read(&numeric, &a), &stored));
 }
@@ -4767,7 +4796,7 @@ fn array_index_conversion_is_independent_of_bounds() {
         true,
     );
     let base = ProgramValue::typed_pointer(
-        Pointer::symbolic(Variable(989_972)),
+        Address::symbolic(Variable(989_972)),
         ProgramType::Int32Pointer,
     );
     for index in [
@@ -4830,7 +4859,7 @@ fn widened_index_bounds_use_the_full_unsigned_value() {
 
 #[test]
 fn index_observation_follows_machine_arithmetic() {
-    let base = Pointer::symbolic(Variable(989_974));
+    let base = Address::symbolic(Variable(989_974));
     let leaf = |value| SpecExpression::ProgramExpression(ProgramExpression::Value(value));
     for (index, bytes) in [
         (
@@ -4871,7 +4900,7 @@ fn index_observation_follows_machine_arithmetic() {
         let ProgramValue::Pointer(value) = &paths[0].value.clone().into_native() else {
             panic!("pointer result")
         };
-        assert_eq!(value.pointer().offset, PointerOffsetTerm::Constant(bytes));
+        assert_eq!(value.address().offset, AddressOffset::Constant(bytes));
     }
 }
 
@@ -4924,14 +4953,14 @@ fn tag_clearing_lowering_keeps_the_written_word_under_bounds() {
 #[test]
 fn specification_volatile_reads_do_not_create_execution_events() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Pointer {
-        block: "cell".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "cell".into(),
+        offset: AddressOffset::Constant(0),
     };
     let initial = ExecutionState::new()
         .with_resource_context(own_memory_context(pointer.clone(), 0, 1))
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("cell", 4)
                 .store(pointer.clone(), int32(7)),
         );
@@ -5023,7 +5052,7 @@ fn unsigned_division_reports_its_domain_even_when_already_known() {
             );
             assert_eq!(
                 paths[0].obligations[0].proposition(),
-                &Proposition::ConditionIs(zero.clone(), false)
+                &Proposition::condition_is(zero.clone(), false)
             );
         }
     }

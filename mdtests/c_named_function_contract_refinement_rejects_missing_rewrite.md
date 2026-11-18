@@ -41,14 +41,20 @@ theorem decrement_is_decrease() {
         unfold(Decrease(&decrement));
         intro();
         both {
-            known();
-        } and {
-            intro();
-            have *cell == (old(*cell) - 1);
-            both {
+            left => {
                 known();
-            } and {
-                solve();
+            }
+            right => {
+                intro();
+                have *cell == (old(*cell) - 1);
+                both {
+                    left => {
+                        known();
+                    }
+                    right => {
+                        solve();
+                    }
+                }
             }
         }
     }

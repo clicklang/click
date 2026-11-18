@@ -15,8 +15,8 @@ use super::{
     ClickError, ClickProposition, ClickType, ContractExpression, ProgramPointSelector,
     SurfaceBinder, clone_click_proposition_iteratively, proof,
 };
+use crate::kernel::{Address, ConditionTerm, MachineTerm, Proposition, Sort, Variable};
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{ConditionTerm, MachineTerm, Pointer, Proposition, Sort, Variable};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,7 +32,10 @@ pub struct SurfacePropositionMap {
 pub(in crate::surface) struct SurfacePropositionStorage {
     /// Source names for qualified storage reads, independent of the heap
     /// state. These are synthesis hints, never evidence of a fact.
-    pub(in crate::surface) qualified_load_sources: PersistentMap<Pointer, ContractExpression>,
+    pub(in crate::surface) qualified_load_sources: PersistentMap<Address, ContractExpression>,
+    /// Source forms for certified stores, indexed by the versioned read that
+    /// identifies the written cell. Keep the producer's exact fact for lookup.
+    store_sources: PersistentMap<StoreReadKey, (Arc<Proposition>, Arc<ClickProposition>)>,
     /// Every interned kernel node: an atom by value, a connective by its
     /// payload and children's identities.
     kernel_atoms: PersistentMap<Arc<Proposition>, (NodeId, Arc<Proposition>)>,
@@ -65,6 +68,42 @@ pub(in crate::surface) struct SurfacePropositionStorage {
     /// recording them again would change nothing.
     complete: PersistentSet<(NodeId, NodeId)>,
     next_id: NodeId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct StoreReadKey {
+    memory: (u32, u32),
+    offset: crate::kernel::AddressOffset,
+}
+
+impl StoreReadKey {
+    fn of(equation: &Proposition) -> Option<(Self, &Address)> {
+        use crate::kernel::{AddressBase, LoadKind};
+        let Some((
+            ConditionTerm::Compare {
+                relation: CompareRelation::Equal,
+                left,
+                ..
+            },
+            true,
+        )) = equation.condition_native()
+        else {
+            return None;
+        };
+        let MachineTerm::MemoryLoad(point, address, LoadKind::UInt32) = left.as_ref() else {
+            return None;
+        };
+        if address.base != AddressBase::ExternalArgument || !address.offset.is_shallow() {
+            return None;
+        }
+        Some((
+            Self {
+                memory: point.shared_memory().arena_id(),
+                offset: address.offset.clone(),
+            },
+            address,
+        ))
+    }
 }
 
 type NodeId = u32;
@@ -756,6 +795,7 @@ impl SurfacePropositionMap {
         let (left, right) = (&self.storage, &other.storage);
         left.qualified_load_sources
             .shares_root_with(&right.qualified_load_sources)
+            && left.store_sources.shares_root_with(&right.store_sources)
             && left.kernel_atoms.shares_root_with(&right.kernel_atoms)
             && left
                 .kernel_connectives
@@ -778,6 +818,42 @@ impl SurfacePropositionMap {
             && left.by_conjunct.shares_root_with(&right.by_conjunct)
             && left.complete.shares_root_with(&right.complete)
             && left.next_id == right.next_id
+    }
+
+    /// Retains an exact producer equation without interning its expression
+    /// tree. The read selects one candidate; a later lookup checks the full
+    /// fact before returning the recorded spelling.
+    pub(in crate::surface) fn record_store_source(
+        &mut self,
+        equation: &Arc<Proposition>,
+        surface: &ClickProposition,
+        source_address: &Address,
+    ) -> bool {
+        let Some((key, address)) = StoreReadKey::of(equation) else {
+            return false;
+        };
+        // A store may have chosen another owner's address through an alias.
+        // The written pointer must name the exact read in the equation.
+        if source_address != address {
+            return false;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        Arc::make_mut(&mut self.storage)
+            .store_sources
+            .insert(key, (Arc::clone(equation), Arc::new(surface.clone())));
+        true
+    }
+
+    fn store_source(&self, equation: &Proposition) -> Option<&ClickProposition> {
+        if self.storage.store_sources.is_empty() {
+            return None;
+        }
+        let (exact, surface) = self
+            .storage
+            .store_sources
+            .get(&StoreReadKey::of(equation)?.0)?;
+        (std::ptr::eq(exact.as_ref(), equation) || exact.as_ref() == equation)
+            .then_some(surface.as_ref())
     }
 
     /// Records that `surface` lowered to `kernel`, and so every nested pair
@@ -882,7 +958,7 @@ impl SurfacePropositionMap {
                 let qualified = [left, right].map(|side| qualified_object_access(side));
                 if qualified.iter().any(Option::is_some) {
                     let resolved = crate::kernel::resolve_load_variables_from_registry(kernel);
-                    if let Proposition::ConditionIs(
+                    if let Some((
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
@@ -896,7 +972,7 @@ impl SurfacePropositionMap {
                             right: b,
                         },
                         _,
-                    ) = &resolved
+                    )) = (&resolved).condition_native()
                     {
                         for (expression, term) in qualified.into_iter().zip([a, b]) {
                             if let Some(expression) = expression
@@ -1071,9 +1147,11 @@ impl SurfacePropositionMap {
         &self,
         kernel: &Proposition,
     ) -> Option<&ClickProposition> {
-        self.kernel_forms(kernel)
-            .and_then(|forms| forms.nodes().next_back())
-            .map(|(_, surface)| surface.get())
+        self.store_source(kernel).or_else(|| {
+            self.kernel_forms(kernel)
+                .and_then(|forms| forms.nodes().next_back())
+                .map(|(_, surface)| surface.get())
+        })
     }
 
     /// A written requirement may also include formation premises. Select its
@@ -1099,10 +1177,14 @@ impl SurfacePropositionMap {
         })
     }
 
-    pub fn surfaces(&self, kernel: &Proposition) -> impl Iterator<Item = &ClickProposition> {
+    pub fn surfaces(
+        &self,
+        kernel: &Proposition,
+    ) -> impl DoubleEndedIterator<Item = &ClickProposition> {
         self.kernel_forms(kernel)
             .into_iter()
             .flat_map(|forms| forms.nodes().map(|(_, surface)| surface.get()))
+            .chain(self.store_source(kernel))
     }
 
     /// The recorded kernel conjunctions that hold `conjunct` as one of their
@@ -1206,6 +1288,11 @@ impl SurfacePropositionMap {
     where
         F: FnMut(&ClickProposition) -> Result<Proposition, ClickError>,
     {
+        if let Some(surface) = self.store_source(kernel)
+            && lower_in_current_state(surface).is_ok_and(|lowered| &lowered == kernel)
+        {
+            return Ok(surface.clone());
+        }
         let forms = self.kernel_forms(kernel).ok_or_else(|| {
             ClickError::new(format!(
                 "kernel proposition has no recorded Click surface form: {kernel:?}"
@@ -1282,4 +1369,47 @@ fn qualified_object_access(side: &ContractExpression) -> Option<&ContractExpress
         };
     }
     matches!(base, ContractExpression::QualifiedC { .. }).then_some(expression)
+}
+
+#[cfg(test)]
+mod store_source_tests {
+    use super::*;
+
+    #[test]
+    fn store_source_lookup_requires_the_exact_equation() {
+        use crate::kernel::{AddressBase, AddressOffset, LoadKind, ProgramPoint, SymbolicMemory};
+
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+        let address = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Variable(Variable(1)),
+        };
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(address.clone()),
+            LoadKind::UInt32,
+        );
+        let equation = |word| {
+            Arc::new(Proposition::condition_is(
+                ConditionTerm::uint32_equal(read.clone(), MachineTerm::constant(word)),
+                true,
+            ))
+        };
+        let stored = equation(1);
+        let source = ClickProposition::Comparison {
+            left: ContractExpression::Binding("written".into()),
+            operator: crate::surface::ComparisonOperator::Equal,
+            right: ContractExpression::Binding("value".into()),
+        };
+        let mut map = SurfacePropositionMap::default();
+        let other = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Variable(Variable(2)),
+        };
+        assert!(!map.record_store_source(&stored, &source, &other));
+        assert!(map.record_store_source(&stored, &source, &address));
+        assert_eq!(map.recorded_surface(&equation(1)), Some(&source));
+        assert_eq!(map.recorded_surface(&equation(2)), None);
+        assert_eq!(map.surfaces(&stored).collect::<Vec<_>>(), vec![&source]);
+    }
 }

@@ -20,11 +20,11 @@ pub(super) enum ArgumentTag {
     Array((u32, u32), ProgramType),
     Algebraic,
     ProvenanceRead((u32, u32)),
-    PointerExtentRead((u32, u32)),
-    PointerRootExtent,
-    PointerSubobjectExtent,
+    PointerBoundsRead((u32, u32)),
+    PointerRootBounds,
+    PointerSubobjectBounds,
     PointerCallProvenance,
-    PointerCallExtent,
+    PointerCallBounds,
     Integer,
 }
 
@@ -54,8 +54,8 @@ pub(in crate::kernel::equality_graph) enum ConditionKind {
     UInt64Le,
     UInt64Gt,
     UInt64Ge,
+    AddressEq,
     PointerEq,
-    PointerValueEq,
     OffsetEq,
     AlgebraicEq,
     IntegerEq,
@@ -822,10 +822,13 @@ impl TermClasses {
                             pending.extend(arguments.iter().rev().map(Work::Argument));
                             continue;
                         }
-                        N::MemoryLoad { memory, pointer } => {
+                        N::MemoryLoad {
+                            point: memory,
+                            pointer,
+                        } => {
                             let head = self.intern_node(Node::AlgebraicMemoryRead(
                                 ty.clone(),
-                                memory.read_identity(),
+                                memory.shared_memory().read_identity(),
                             ));
                             let address = self.numeric_address(pointer);
                             let node = Node::Apply(head, address);
@@ -835,7 +838,8 @@ impl TermClasses {
                             // the memory history or choosing a term from facts.
                             if let Some(source) =
                                 crate::kernel::prelude::canonical_load_projection_source(
-                                    memory, pointer,
+                                    memory.shared_memory(),
+                                    pointer,
                                 )
                             {
                                 let source_head = self.intern_node(Node::AlgebraicMemoryRead(
@@ -847,7 +851,7 @@ impl TermClasses {
                                 self.close(vec![(read, source_read)]);
                             }
                             if let Some(origin) = crate::kernel::prelude::value_load_origin(
-                                memory,
+                                memory.shared_memory(),
                                 pointer,
                                 crate::kernel::ABSTRACT_VALUE_WIDTH,
                             ) {
@@ -1213,9 +1217,8 @@ impl TermClasses {
                         Node::MachineNarrow(MachineAtom::new(canonical, atom))
                     } else if wide {
                         if let Some((memory, pointer)) = uint64_read(term) {
-                            let address = self
-                                .address(pointer.block.clone(), pointer.offset.clone())
-                                .0;
+                            let address =
+                                self.address(pointer.base.clone(), pointer.offset.clone()).0;
                             let numeric = self.read_address(address);
                             // Values enter through explicit equations, never cell-cache lookups.
                             Node::UInt64Read(memory.read_identity(), numeric)
@@ -1291,20 +1294,20 @@ impl TermClasses {
                         continue;
                     }
                     if let ProgramValue::Pointer(pointer) = value {
-                        let address = self.numeric_address(pointer.pointer());
-                        // Address, allocation origin and selected extent are
+                        let address = self.numeric_address(pointer.address());
+                        // Address, allocation origin and selected bounds are
                         // distinct congruence operands. Only a complete value
                         // equality merges the latter two domains.
                         let root = self.provenance_node(pointer.provenance());
-                        let extent = self.extent_node(pointer);
+                        let bounds = self.bounds_node(pointer);
                         let metadata = pointer
                             .clone()
-                            .with_address(crate::kernel::Pointer::null())
-                            .with_provenance(std::sync::Arc::new(crate::kernel::Pointer::null()))
-                            .with_root_extent();
+                            .with_address(crate::kernel::Address::null())
+                            .with_provenance(std::sync::Arc::new(crate::kernel::Address::null()))
+                            .with_root_bounds();
                         let head = self.opaque_argument(&A::Value(ProgramValue::Pointer(metadata)));
                         let node = self.intern_node(Node::Apply(head, root));
-                        let node = self.intern_node(Node::Apply(node, extent));
+                        let node = self.intern_node(Node::Apply(node, bounds));
                         let node = self.intern_node(Node::Apply(node, address));
                         self.retain_pointer_value(node, pointer.clone());
                         values.push(node);
@@ -1643,16 +1646,16 @@ impl TermClasses {
             .map(|constructor| constructor.as_ref().clone())
     }
 
-    pub(in crate::kernel::equality_graph) fn add_pointer_value_equality(
+    pub(in crate::kernel::equality_graph) fn add_pointer_equality(
         &mut self,
-        a: &crate::kernel::PointerValue,
-        b: &crate::kernel::PointerValue,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
     ) -> bool {
         let roots = (
             self.provenance_node(a.provenance()),
             self.provenance_node(b.provenance()),
         );
-        let extents = (self.extent_node(a), self.extent_node(b));
+        let bounds = (self.bounds_node(a), self.bounds_node(b));
         let a = self.intern_expression(
             None,
             None,
@@ -1668,13 +1671,13 @@ impl TermClasses {
             None,
         );
         self.register_pending_loads();
-        self.close(vec![roots, extents, (a, b)])
+        self.close(vec![roots, bounds, (a, b)])
     }
 
     pub(in crate::kernel::equality_graph) fn merge_pointer_read_domains(
         &mut self,
-        a: &crate::kernel::Pointer,
-        b: &crate::kernel::Pointer,
+        a: &crate::kernel::Address,
+        b: &crate::kernel::Address,
     ) -> bool {
         if self.read_domains.equal(a, b) {
             return false;
@@ -1689,7 +1692,7 @@ impl TermClasses {
         let mut pending = Vec::new();
         for nodes in [
             &mut self.read_provenance_nodes,
-            &mut self.extent_origin_nodes,
+            &mut self.bounds_origin_nodes,
         ] {
             let a = nodes.get(&left).copied();
             let b = nodes.get(&right).copied();
@@ -1708,8 +1711,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn merge_provenance(
         &mut self,
-        a: &crate::kernel::Pointer,
-        b: &crate::kernel::Pointer,
+        a: &crate::kernel::Address,
+        b: &crate::kernel::Address,
     ) -> bool {
         let a = self.provenance_node(a);
         let b = self.provenance_node(b);
@@ -1718,8 +1721,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn provenance_equal(
         &mut self,
-        a: &crate::kernel::Pointer,
-        b: &crate::kernel::Pointer,
+        a: &crate::kernel::Address,
+        b: &crate::kernel::Address,
     ) -> bool {
         let a = self.provenance_node(a);
         let b = self.provenance_node(b);
@@ -1729,8 +1732,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn pointer_values_equal(
         &mut self,
-        a: &crate::kernel::PointerValue,
-        b: &crate::kernel::PointerValue,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
     ) -> bool {
         let a = self.intern_expression(
             None,
@@ -1750,7 +1753,7 @@ impl TermClasses {
         self.root(a) == self.root(b)
     }
 
-    pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::PointerValue) {
+    pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::Pointer) {
         let root = self.root(node);
         let value = self
             .pointer_values
@@ -1763,8 +1766,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn pointer_value_representative(
         &mut self,
-        value: &crate::kernel::PointerValue,
-    ) -> crate::kernel::PointerValue {
+        value: &crate::kernel::Pointer,
+    ) -> crate::kernel::Pointer {
         let node = self.intern_expression(
             None,
             None,
@@ -1773,65 +1776,49 @@ impl TermClasses {
             None,
         );
         self.register_pending_loads();
-        let representative = self
-            .pointer_values
+        // Return an actual retained value from the class. Bounds learned
+        // through a separate bounds class are checker knowledge, exposed by
+        // opaque_pointer_domain, never metadata synthesized onto this value.
+        self.pointer_values
             .get(&self.root(node))
             .unwrap_or(value)
-            .clone();
-        if representative.extent_is_known() {
-            return representative;
-        }
-        let extent = self.extent_node(value);
-        let Some(witness) = self.extent_values.get(&self.root(extent)) else {
-            return representative;
-        };
-        if !witness.extent_is_known() {
-            return representative;
-        }
-        let adopted = representative
-            .with_extent(witness.extent().cloned())
-            .with_opaque_extent(witness.opaque_extent().cloned().map(std::sync::Arc::new));
-        if witness.extent().is_none() {
-            adopted.with_root_extent()
-        } else {
-            adopted
-        }
+            .clone()
     }
 
-    fn extent_node(&mut self, value: &crate::kernel::PointerValue) -> u64 {
-        let node = if let Some(extent) = value.extent() {
-            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerSubobjectExtent));
-            let width = self.intern_int32(&extent.width);
+    fn bounds_node(&mut self, value: &crate::kernel::Pointer) -> u64 {
+        let node = if let Some(bounds) = value.bounds() {
+            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerSubobjectBounds));
+            let width = self.intern_int32(&bounds.width);
             let head = self.intern_node(Node::Apply(head, width));
             let start = self
-                .address(extent.start.block.clone(), extent.start.offset.clone())
+                .address(bounds.start.base.clone(), bounds.start.offset.clone())
                 .0;
             self.intern_node(Node::Apply(head, start))
-        } else if value.extent_is_known() {
-            self.intern_node(Node::ArgumentTag(ArgumentTag::PointerRootExtent))
+        } else if value.bounds_are_known() {
+            self.intern_node(Node::ArgumentTag(ArgumentTag::PointerRootBounds))
         } else {
-            self.opaque_extent_node(value.opaque_extent().unwrap_or(value.provenance()))
+            self.bounds_owner_node(value.bounds_owner().unwrap_or(value.provenance()))
         };
         let root = self.root(node);
         let witness = self
-            .extent_values
+            .bounds_values
             .get(&root)
             .map_or(value.clone(), |previous| {
                 crate::kernel::pointer_provenance::prefer_pointer(previous, value)
             });
-        self.extent_values.insert(root, witness);
+        self.bounds_values.insert(root, witness);
         node
     }
 
-    fn opaque_extent_node(&mut self, origin: &crate::kernel::Pointer) -> u64 {
-        let node = self.opaque_extent_node_without_calls(origin);
-        self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallExtent);
+    fn bounds_owner_node(&mut self, origin: &crate::kernel::Address) -> u64 {
+        let node = self.bounds_owner_node_without_calls(origin);
+        self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallBounds);
         node
     }
 
-    fn opaque_extent_node_without_calls(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+    fn bounds_owner_node_without_calls(&mut self, origin: &crate::kernel::Address) -> u64 {
         let origin = self.read_domains.representative(origin);
-        if let Some(node) = self.extent_origin_nodes.get(&origin) {
+        if let Some(node) = self.bounds_origin_nodes.get(&origin) {
             return *node;
         }
         if let Some(read) = origin.as_loaded_value() {
@@ -1841,22 +1828,22 @@ impl TermClasses {
             )
             .unwrap_or(read.defining_memory);
             let cell = self
-                .address(read.defining_address.block, read.defining_address.offset)
+                .address(read.defining_address.base, read.defining_address.offset)
                 .0;
-            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerExtentRead(
+            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerBoundsRead(
                 source.read_identity(),
             )));
             let node = self.intern_node(Node::Apply(head, cell));
-            self.extent_origin_nodes.insert(origin, node);
+            self.bounds_origin_nodes.insert(origin, node);
             return node;
         }
         let node = self.intern_node(Node::OpaqueArgument(SharedPureApplication::intern(
-            "<pointer-extent-origin>".into(),
+            "<pointer-bounds-origin>".into(),
             vec![A::Value(ProgramValue::Pointer(
-                crate::kernel::PointerValue::new(origin.clone(), ProgramType::VoidPointer),
+                crate::kernel::Pointer::new(origin.clone(), ProgramType::VoidPointer),
             ))],
         )));
-        self.extent_origin_nodes.insert(origin, node);
+        self.bounds_origin_nodes.insert(origin, node);
         node
     }
 
@@ -1864,44 +1851,45 @@ impl TermClasses {
     /// and witness maintenance belongs to producers, never this query.
     pub(in crate::kernel::equality_graph) fn opaque_pointer_domain(
         &self,
-        origin: &crate::kernel::Pointer,
+        origin: &crate::kernel::Address,
     ) -> crate::kernel::assumptions::PointerDomain {
         use crate::kernel::assumptions::PointerDomain;
         crate::instrumentation::record_deterministic_work(1);
         let origin = self.read_domains.representative(origin);
-        let Some(node) = self.extent_origin_nodes.get(&origin) else {
+        let Some(node) = self.bounds_origin_nodes.get(&origin) else {
             return PointerDomain::Unknown;
         };
-        let Some(witness) = self.extent_values.get(&self.root(*node)) else {
+        let Some(witness) = self.bounds_values.get(&self.root(*node)) else {
             return PointerDomain::Unknown;
         };
         PointerDomain::intrinsic(witness)
     }
 
-    /// Only a complete pointer-value equality can connect an opaque extent
-    /// to the root-extent tag. Numeric address equality cannot do so.
-    pub(in crate::kernel::equality_graph) fn opaque_extent_is_root(
+    /// Only a complete pointer-value equality can connect an opaque bounds
+    /// to the root-bounds tag. Numeric address equality cannot do so.
+    #[cfg(test)]
+    pub(in crate::kernel::equality_graph) fn bounds_owner_is_root(
         &mut self,
-        origin: &crate::kernel::Pointer,
+        origin: &crate::kernel::Address,
     ) -> bool {
-        let extent = self.opaque_extent_node(origin);
-        let root = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerRootExtent));
+        let bounds = self.bounds_owner_node(origin);
+        let root = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerRootBounds));
         self.register_pending_loads();
-        self.root(extent) == self.root(root)
+        self.root(bounds) == self.root(root)
     }
 
-    pub(in crate::kernel::equality_graph) fn opaque_extents_equal(
+    pub(in crate::kernel::equality_graph) fn bounds_owners_equal(
         &mut self,
-        a: &crate::kernel::Pointer,
-        b: &crate::kernel::Pointer,
+        a: &crate::kernel::Address,
+        b: &crate::kernel::Address,
     ) -> bool {
-        let a = self.opaque_extent_node(a);
-        let b = self.opaque_extent_node(b);
+        let a = self.bounds_owner_node(a);
+        let b = self.bounds_owner_node(b);
         self.register_pending_loads();
         self.root(a) == self.root(b)
     }
 
-    fn provenance_node(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+    fn provenance_node(&mut self, origin: &crate::kernel::Address) -> u64 {
         let node = self.provenance_node_without_calls(origin);
         self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallProvenance);
         node
@@ -1912,11 +1900,11 @@ impl TermClasses {
     /// selected identity definition so nested calls stay iterative.
     fn retain_pointer_call_component(
         &mut self,
-        origin: &crate::kernel::Pointer,
+        origin: &crate::kernel::Address,
         component: u64,
         tag: ArgumentTag,
     ) {
-        let PointerBlock::PureFunctionApplication(application) = &origin.block else {
+        let AddressBase::PureFunctionApplication(application) = &origin.base else {
             return;
         };
         // This internal constructor names numeric coordinates only. Equal
@@ -1924,7 +1912,7 @@ impl TermClasses {
         if application.integer_address_bits().is_some() {
             return;
         }
-        if origin.offset != PointerOffsetTerm::Constant(0) {
+        if origin.offset != AddressOffset::Constant(0) {
             return;
         }
         let key = Node::PointerFunctionIdentity(application.clone());
@@ -1939,7 +1927,7 @@ impl TermClasses {
         self.close_with_affine_definition(vec![(component, projected)], true);
     }
 
-    fn provenance_node_without_calls(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+    fn provenance_node_without_calls(&mut self, origin: &crate::kernel::Address) -> u64 {
         // Congruence here uses the cell a complete pointer was read from.
         // Equality of the loaded pointer's numeric address never merges this
         // node with a different value origin.
@@ -1947,12 +1935,12 @@ impl TermClasses {
         if let Some(node) = self.read_provenance_nodes.get(&origin) {
             return *node;
         }
-        if let crate::kernel::PointerBlock::LoadedPointer(identity) = &origin.block
+        if let crate::kernel::AddressBase::LoadedPointer(identity) = &origin.base
             && let Some((memory, cell)) = crate::kernel::eval::registered_pointer_load(*identity)
         {
             let source = crate::kernel::prelude::canonical_load_projection_source(&memory, &cell)
                 .unwrap_or(memory);
-            let cell = self.address(cell.block, cell.offset).0;
+            let cell = self.address(cell.base, cell.offset).0;
             let head = self.intern_node(Node::ArgumentTag(ArgumentTag::ProvenanceRead(
                 source.read_identity(),
             )));
@@ -1961,7 +1949,7 @@ impl TermClasses {
             return node;
         }
         self.opaque_argument(&A::Value(ProgramValue::Pointer(
-            crate::kernel::PointerValue::new(origin.clone(), ProgramType::VoidPointer),
+            crate::kernel::Pointer::new(origin.clone(), ProgramType::VoidPointer),
         )))
     }
 
@@ -2087,8 +2075,8 @@ impl TermClasses {
                 left: a,
                 right: b,
             } => (Int32AddOverflow, self.intern_int32(a), self.intern_int32(b)),
-            C::PointerValueEqual(a, b) => (
-                PointerValueEq,
+            C::PointerEqual(a, b) => (
+                PointerEq,
                 self.intern_expression(
                     None,
                     None,
@@ -2104,20 +2092,20 @@ impl TermClasses {
                     None,
                 ),
             ),
-            C::PointerEqual(a, b) => (
-                PointerEq,
-                self.address(a.block.clone(), a.offset.clone()).0,
-                self.address(b.block.clone(), b.offset.clone()).0,
+            C::AddressEqual(a, b) => (
+                AddressEq,
+                self.address(a.base.clone(), a.offset.clone()).0,
+                self.address(b.base.clone(), b.offset.clone()).0,
             ),
-            C::PointerOffsetEqual(a, b) => (OffsetEq, self.intern(a), self.intern(b)),
+            C::AddressOffsetEqual(a, b) => (OffsetEq, self.intern(a), self.intern(b)),
             C::BoolApplication(_) | C::BoolIf { .. } | C::BoolEqual(..) | C::BoolLoad(..) => {
                 return self.bool_node(condition);
             }
             _ => return None,
         };
         let node = self.intern_node(Node::Condition(kind, left, right));
-        if let C::PointerEqual(a, b) = condition
-            && a.block == b.block
+        if let C::AddressEqual(a, b) = condition
+            && a.base == b.base
         {
             // These are two views of the same predicate, not a new premise.
             // Retaining both avoids reconstructing a cancelled base from an
@@ -2150,9 +2138,9 @@ impl TermClasses {
                 op: OverflowOperation::Add,
                 ..
             } => ConditionKind::Int32AddOverflow,
+            C::AddressEqual(..) => ConditionKind::AddressEq,
             C::PointerEqual(..) => ConditionKind::PointerEq,
-            C::PointerValueEqual(..) => ConditionKind::PointerValueEq,
-            C::PointerOffsetEqual(..) => ConditionKind::OffsetEq,
+            C::AddressOffsetEqual(..) => ConditionKind::OffsetEq,
             C::BoolEqual(..) => ConditionKind::BoolEq,
             C::BoolApplication(_) | C::BoolIf { .. } | C::BoolLoad(..) => ConditionKind::BoolValue,
             _ => return None,
@@ -2204,10 +2192,8 @@ impl TermClasses {
                 self.intern_node(Node::Condition(ConditionKind::BoolEq, left, right))
             }
             C::BoolLoad(memory, pointer) => {
-                let head = self.intern_node(Node::BoolRead(memory.read_identity()));
-                let address = self
-                    .address(pointer.block.clone(), pointer.offset.clone())
-                    .0;
+                let head = self.intern_node(Node::BoolRead(memory.shared_memory().read_identity()));
+                let address = self.address(pointer.base.clone(), pointer.offset.clone()).0;
                 self.intern_node(Node::Apply(head, address))
             }
             condition => self.condition_node(condition)?,
@@ -2321,8 +2307,8 @@ impl TermClasses {
                 || (kind == ConditionKind::OffsetEq
                     && self
                         .condition_kinds
-                        .contains(&(ConditionKind::PointerEq, value)))
-                || (kind == ConditionKind::PointerEq
+                        .contains(&(ConditionKind::AddressEq, value)))
+                || (kind == ConditionKind::AddressEq
                     && self
                         .condition_kinds
                         .contains(&(ConditionKind::OffsetEq, value)))
@@ -2648,7 +2634,7 @@ impl TermClasses {
         {
             return true;
         }
-        let C::PointerOffsetEqual(a, b) = condition else {
+        let C::AddressOffsetEqual(a, b) = condition else {
             return false;
         };
         let left = self.intern(a);
@@ -2672,7 +2658,7 @@ impl TermClasses {
             if let Some(b) = large.get(block) {
                 for (a, b) in [(*a, *b), (*b, *a)] {
                     let address_condition =
-                        self.intern_node(Node::Condition(ConditionKind::PointerEq, a, b));
+                        self.intern_node(Node::Condition(ConditionKind::AddressEq, a, b));
                     if self
                         .condition_truth
                         .get(&self.root(address_condition))

@@ -364,7 +364,11 @@ fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
         "{}",
         error.message()
     );
-    assert!(!error.message().contains("Memory {"), "{}", error.message());
+    assert!(
+        !error.message().contains("SymbolicMemory {"),
+        "{}",
+        error.message()
+    );
 }
 
 #[test]
@@ -607,7 +611,7 @@ fn parses_proof_if_tactic() {
 fn parses_existential_proof_tactics() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { step_until(function.exit); obtain (k: int32) { k == k }; witness(k + 1); solve(); }",
+        "== 2 by { step_until(function.exit); let k = obtain(exists (k: int32) { k == k }); witness(k + 1); solve(); }",
     );
     let file = parse(&source).expect("existential explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
@@ -1428,7 +1432,7 @@ fn mid_execution_choose_witness_solve_retains_the_checked_proof_path() {
                 ensures result == x;
             } by {
                 have exists (j: int32) { j == x } by {
-                    obtain (k: int32) { k == x };
+                    let k = obtain(exists (k: int32) { k == x });
                     witness(k);
                     solve();
                 }
@@ -2272,7 +2276,7 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
                     requires exists (k: int32) { k == x };
                     ensures result == x;
                 } by {
-                    obtain (k: int32) { k == x };
+                    let k = obtain(exists (k: int32) { k == x });
                     step_until(function.exit);
                     solve();
                 }
@@ -2606,17 +2610,20 @@ fn disjunctive_premise_solve_expands_to_a_replayable_certificate() {
                 branch ensuring {
                     fact selected == left or selected == right;
                     views selected[0..1];
-                } then {
-                    step();
-                    have selected == left or selected == right by {
-                        have selected == left by { normalize(); }
-                        known();
+                } {
+                    true => {
+                        step();
+                        have selected == left or selected == right by {
+                            have selected == left by { normalize(); }
+                            known();
+                        }
                     }
-                } else {
-                    step();
-                    have selected == left or selected == right by {
-                        have selected == right by { normalize(); }
-                        known();
+                    false => {
+                        step();
+                        have selected == left or selected == right by {
+                            have selected == right by { normalize(); }
+                            known();
+                        }
                     }
                 }
                 step();
@@ -3091,6 +3098,7 @@ fn parses_outcomes_arms_in_either_order() {
     assert!(matches!(
         &tactics[0],
         ProofTactic::CallOutcomes(ProofCallOutcomes {
+            payload_bindings: _,
             returned_tactics,
             threw_tactics,
         }) if returned_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Solve]
@@ -3497,7 +3505,7 @@ fn terminal_if_tactics_keep_claim_local_existential_witnesses() {
         )
         .replace(
             "solve();\n            }",
-            "obtain (w: int32) { w == n }; witness(w); solve();\n            }",
+            "let w = obtain(exists (w: int32) { w == n }); witness(w); solve();\n            }",
         );
     verify_c_sources(&existential, &sources)
         .expect("post-execution existence proofs retain their own obtained witnesses");

@@ -157,7 +157,7 @@ pub(super) fn execute_publication_paths(
             ))));
             continue;
         }
-        let flag = flag.pointer().clone();
+        let flag = flag.address().clone();
         let outcome = if function_name == ATOMIC_INIT_NAME {
             initialize(
                 state,
@@ -221,7 +221,7 @@ pub(super) fn execute_publication_paths(
 /// Consumes the flag's explicit storage ownership and mints both rights.
 fn initialize(
     state: &ExecutionState,
-    flag: &Pointer,
+    flag: &Address,
     value: &ProgramValue,
     payload: &crate::kernel::ResourceDescription,
     assumptions: &PureFactContext,
@@ -284,7 +284,12 @@ fn initialize(
 fn payload_fact(right: &PublicationRight) -> ResourceFact {
     ResourceFact::own(Resource::Composite {
         name: right.payload().family().to_string(),
-        arguments: right.payload().arguments().iter().cloned().collect(),
+        arguments: right
+            .payload()
+            .arguments()
+            .iter()
+            .map(ResourceFieldValue::into_native)
+            .collect(),
     })
 }
 
@@ -292,7 +297,7 @@ fn payload_fact(right: &PublicationRight) -> ResourceFact {
 /// payload's memory as an unlock forgets protected memory.
 fn release_store(
     state: &ExecutionState,
-    flag: &Pointer,
+    flag: &Address,
     desired: &ProgramValue,
     order: &ProgramValue,
     assumptions: &PureFactContext,
@@ -385,7 +390,7 @@ fn release_store(
 /// some value and receives nothing.
 fn acquire_load(
     state: &ExecutionState,
-    flag: &Pointer,
+    flag: &Address,
     order: &ProgramValue,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -394,10 +399,8 @@ fn acquire_load(
     {
         return Ok(Err(outcome));
     }
-    let value = super::functions::symbolic_call_result(
-        ProgramType::Int32,
-        budget.allocate_kernel_variable()?,
-    );
+    let variable = budget.allocate_kernel_variable()?;
+    let value = super::functions::symbolic_call_result(ProgramType::Int32, variable);
     let Some(right_fact) = state
         .resources
         .publication_right_at(PublicationSide::Subscriber, flag)
@@ -421,7 +424,9 @@ fn acquire_load(
         return Ok(Err(refusal("the subscriber right could not be consumed")));
     };
     let mut observed = right.clone();
-    observed.observed = Some(value.clone());
+    observed.observed = Some(StoredProgramValue::from(ExecutionValue::Shared(
+        KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable),
+    )));
     let Ok(resources) = resources.try_compose_with_facts_delaying_normalization(
         [ResourceFact::own(Resource::Publication(observed))],
         assumptions,
@@ -452,7 +457,7 @@ pub(crate) fn resolve_observed_publications(
         let Resource::Publication(right) = fact.resource() else {
             continue;
         };
-        let Some(ProgramValue::Int32(term)) = &right.observed else {
+        let Some(ProgramValue::Int32(term)) = right.observed() else {
             continue;
         };
         let zero = ConditionTerm::Compare {
@@ -492,10 +497,10 @@ mod tests {
     use super::*;
     use crate::kernel::{ResourceDescription, ResourceFieldSchema};
 
-    fn flag(index: usize) -> Pointer {
-        Pointer {
-            block: format!("publication-flag-{index}").into(),
-            offset: PointerOffsetTerm::Constant(0),
+    fn flag(index: usize) -> Address {
+        Address {
+            base: format!("publication-flag-{index}").into(),
+            offset: AddressOffset::Constant(0),
         }
     }
 
@@ -518,18 +523,18 @@ mod tests {
     /// Subscriber rights for flags `0..subscribers`, beside `unrelated`
     /// other flags' publisher rights and as many owned cells.
     fn state(subscribers: usize, unrelated: usize) -> ExecutionState {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut resources = ResourceContext::new();
         for index in 0..subscribers {
             resources = resources.unchecked_with_fact(right(PublicationSide::Subscriber, index));
         }
         for index in subscribers..subscribers + unrelated {
-            let cell = Pointer {
-                block: format!("unrelated-cell-{index}").into(),
-                offset: PointerOffsetTerm::Constant(0),
+            let cell = Address {
+                base: format!("unrelated-cell-{index}").into(),
+                offset: AddressOffset::Constant(0),
             };
             memory = memory
-                .with_block(cell.block.clone(), 4)
+                .with_block(cell.base.clone(), 4)
                 .store(cell.clone(), int32(0));
             resources = resources
                 .unchecked_with_fact(right(PublicationSide::Publisher, index))
@@ -542,6 +547,33 @@ mod tests {
         ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(resources)
+    }
+
+    #[test]
+    fn acquire_observation_retains_the_minted_result_root() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (next, value) = acquire_load(
+            &state(1, 0),
+            &flag(0),
+            &int32(2),
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap()
+        .unwrap();
+        let right = next
+            .resources
+            .publication_right_at(PublicationSide::Subscriber, &flag(0))
+            .unwrap();
+        let Resource::Publication(right) = right.resource() else {
+            panic!("publication");
+        };
+        let stored = right.observed.as_ref().unwrap();
+        assert!(
+            stored.root().is_some(),
+            "the minted observation stays common"
+        );
+        assert_eq!(stored.native_compat(), &value);
     }
 
     /// Acquire-loads every subscriber flag, then settles them all as
@@ -569,7 +601,7 @@ mod tests {
                 let ProgramValue::Int32(term) = value else {
                     unreachable!()
                 };
-                facts.assume_proposition(Proposition::ConditionIs(
+                facts.assume_proposition(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,

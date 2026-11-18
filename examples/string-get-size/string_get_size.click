@@ -607,20 +607,23 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
 // Binary units express the remainder in thousandths.
             branch ensuring {
                 fact remainder <= 999u32;
-            } then {
-                have to_integer(remainder) * 1000 <= 4294967295;
-                apply(integer::uint32_multiply_guard_by_integer_bound(remainder, 1000u32));
-                apply(integer::uint32_multiply_to_integer(remainder, 1000u32));
-                have remainder * 1000u32 <= 1023000u32;
-                have remainder * 1000u32 >> 10 <= 999u32 by { solve(); }
-                step();
-                step();
-                have to_integer(remainder) <= 999 by { known(); }
-                apply(integer::uint32_to_integer_less_equal_implies_less_equal(remainder, 999u32)) using {
-                    to_integer(remainder) <= 999;
-                };
-            } else {
-                have remainder <= 999u32;
+            } {
+                true => {
+                    have to_integer(remainder) * 1000 <= 4294967295;
+                    apply(integer::uint32_multiply_guard_by_integer_bound(remainder, 1000u32));
+                    apply(integer::uint32_multiply_to_integer(remainder, 1000u32));
+                    have remainder * 1000u32 <= 1023000u32;
+                    have remainder * 1000u32 >> 10 <= 999u32 by { solve(); }
+                    step();
+                    step();
+                    have to_integer(remainder) <= 999 by { known(); }
+                    apply(integer::uint32_to_integer_less_equal_implies_less_equal(remainder, 999u32)) using {
+                        to_integer(remainder) <= 999;
+                    };
+                }
+                false => {
+                    have remainder <= 999u32;
+                }
             }
 // Rounding: `rounding[j]` is read through a join on `j`.
             if j == 0 ensuring {
@@ -651,15 +654,18 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 fact remainder <= 999u32;
                 fact 1u64 <= size;
                 fact size <= 1024u64;
-            } then {
-                step();
-                step();
-                have remainder <= 999u32;
-                have 1u64 <= size;
-                have size <= 1024u64;
-            } else {
-                have remainder <= 999u32;
-                have size <= 1024u64;
+            } {
+                true => {
+                    step();
+                    step();
+                    have remainder <= 999u32;
+                    have 1u64 <= size;
+                    have size <= 1024u64;
+                }
+                false => {
+                    have remainder <= 999u32;
+                    have size <= 1024u64;
+                }
             }
             have 0 <= j and j <= 2;
 // The fraction string: `tmp` is a C string of length `tmp_len(j)` after
@@ -689,193 +695,196 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 fact forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 };
                 fact forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) };
                 fact tmp[tmp_len(j)] == 0u8;
-            } then {
-                have 3u64 <= format::padded_length(remainder as uint64, 3u64) by {
-                    unfold(format::padded_length(remainder as uint64, 3u64));
-                    if format::decimal_length(remainder as uint64) < 3u64 {
-                        normalize() using { format::decimal_length(remainder as uint64) < 3u64; };
+            } {
+                true => {
+                    have 3u64 <= format::padded_length(remainder as uint64, 3u64) by {
+                        unfold(format::padded_length(remainder as uint64, 3u64));
+                        if format::decimal_length(remainder as uint64) < 3u64 {
+                            normalize() using { format::decimal_length(remainder as uint64) < 3u64; };
+                        } else {
+                            have 3u64 <= format::decimal_length(remainder as uint64);
+                            normalize() using { 3u64 <= format::decimal_length(remainder as uint64); };
+                        }
+                    }
+                    step();
+                    have tmp[0u64] == 46u8;
+                    have tmp[0u64] != 0u8;
+                    have defined(tmp[0u64]) by { solve(); }
+                    have 0u64 < format::padded_length(remainder as uint64, 3u64);
+                    have 1u64 + 0u64 + 1u64 < 12u64 by { normalize(); }
+                    have tmp[1] == format::padded_digit(remainder as uint64, 3u64, 48u8, 0u64) by {
+                        instantiate(forall (k: uint64) { k < format::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies tmp[1u64 + k] == format::padded_digit(remainder as uint64, 3u64, 48u8, k) }, 0u64);
+                        known();
+                    }
+                    apply(format::padded_digit_lower_bound(remainder as uint64, 3u64, 0u64));
+                    have 48u8 <= tmp[1u64];
+                    have tmp[1u64] != 0u8;
+                    have defined(tmp[1]) by {
+                        instantiate(forall (k: uint64) { k < format::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies defined(tmp[1u64 + k]) }, 0u64);
+                        known();
+                    }
+                    have 1u64 < format::padded_length(remainder as uint64, 3u64);
+                    have 1u64 + 1u64 + 1u64 < 12u64 by { normalize(); }
+                    have tmp[2] == format::padded_digit(remainder as uint64, 3u64, 48u8, 1u64) by {
+                        instantiate(forall (k: uint64) { k < format::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies tmp[1u64 + k] == format::padded_digit(remainder as uint64, 3u64, 48u8, k) }, 1u64);
+                        known();
+                    }
+                    apply(format::padded_digit_lower_bound(remainder as uint64, 3u64, 1u64));
+                    have 48u8 <= tmp[2u64];
+                    have tmp[2u64] != 0u8;
+                    have defined(tmp[2]) by {
+                        instantiate(forall (k: uint64) { k < format::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies defined(tmp[1u64 + k]) }, 1u64);
+                        known();
+                    }
+                    if j == 1 ensuring {
+                        fact to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
+                        fact forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 };
+                        fact forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) };
+                        fact tmp[tmp_len(j)] == 0u8;
+                    } then {
+                        mark fmt;
+                        step();
+                        // The terminator changes one cell; preserve the earlier bytes explicitly.
+                        have ((j + 1) as int32) != 0 by { rewrite(j, 1); normalize(); }
+                        have separate(memory(tmp[j + 1]), memory(tmp[0u64])) by {
+                            apply(separation::separate_elements(tmp, j + 1, 0)) using { ((j + 1) as int32) != 0; };
+                        }
+                        have separate(statement(22).statement(1).footprint, memory(tmp[0u64])) by {
+                            normalize() using { j == 1; separate(memory(tmp[j + 1]), memory(tmp[0u64])); };
+                        }
+                        have tmp[0u64] == at(fmt, tmp[0u64]) by {
+                            preserve(memory(tmp[0u64]), statement(22).statement(1));
+                        }
+                        have tmp[0u64] != 0u8 by { known(); }
+                        have defined(tmp[0u64]) by {
+                            preserve(memory(tmp[0u64]), statement(22).statement(1));
+                        }
+                        have ((j + 1) as int32) != 1 by { rewrite(j, 1); normalize(); }
+                        have separate(memory(tmp[j + 1]), memory(tmp[1u64])) by {
+                            apply(separation::separate_elements(tmp, j + 1, 1)) using { ((j + 1) as int32) != 1; };
+                        }
+                        have separate(statement(22).statement(1).footprint, memory(tmp[1u64])) by {
+                            normalize() using { j == 1; separate(memory(tmp[j + 1]), memory(tmp[1u64])); };
+                        }
+                        have tmp[1u64] == at(fmt, tmp[1u64]) by {
+                            preserve(memory(tmp[1u64]), statement(22).statement(1));
+                        }
+                        have tmp[1u64] != 0u8 by { known(); }
+                        have defined(tmp[1u64]) by {
+                            preserve(memory(tmp[1u64]), statement(22).statement(1));
+                        }
+                        have defined(tmp[2u64]) by { normalize() using { j == 1; }; }
+                        have tmp[2u64] == 0u8 by { normalize() using { j == 1; }; }
+                        have tmp_len(j) == 2u64 by { unfold(tmp_len(j)); solve(); }
+                        have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 2u64); known(); }
+                        have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
+                        have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
+                        have forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) } by { enumerate(); }
+                        have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
+                            intro();
+                            intro();
+                            have k < 2u64 by { solve() using { k < tmp_len(j); tmp_len(j) == 2u64; }; }
+                            instantiate(forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 }, k);
+                            known();
+                        }
+                        have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
+                            intro();
+                            intro();
+                            have k < 3u64 by { solve() using { k < tmp_len(j) + 1u64; tmp_len(j) == 2u64; }; }
+                            instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) }, k);
+                            known();
+                        }
                     } else {
-                        have 3u64 <= format::decimal_length(remainder as uint64);
-                        normalize() using { 3u64 <= format::decimal_length(remainder as uint64); };
+                        have 0 <= j and j <= 2;
+                        have 1 <= j by { solve() using { 0 <= j; j != 0; }; }
+                        have 2 <= j by { solve() using { 1 <= j; j != 1; }; }
+                        have j == 2 by { solve() using { 2 <= j; j <= 2; }; }
+                        mark fmt;
+                        step();
+                        have ((j + 1) as int32) != 0 by { rewrite(j, 2); normalize(); }
+                        have separate(memory(tmp[j + 1]), memory(tmp[0u64])) by {
+                            apply(separation::separate_elements(tmp, j + 1, 0)) using { ((j + 1) as int32) != 0; };
+                        }
+                        have separate(statement(22).statement(1).footprint, memory(tmp[0u64])) by {
+                            normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[0u64])); };
+                        }
+                        have tmp[0u64] == at(fmt, tmp[0u64]) by {
+                            preserve(memory(tmp[0u64]), statement(22).statement(1));
+                        }
+                        have tmp[0u64] != 0u8 by { known(); }
+                        have defined(tmp[0u64]) by {
+                            preserve(memory(tmp[0u64]), statement(22).statement(1));
+                        }
+                        have ((j + 1) as int32) != 1 by { rewrite(j, 2); normalize(); }
+                        have separate(memory(tmp[j + 1]), memory(tmp[1u64])) by {
+                            apply(separation::separate_elements(tmp, j + 1, 1)) using { ((j + 1) as int32) != 1; };
+                        }
+                        have separate(statement(22).statement(1).footprint, memory(tmp[1u64])) by {
+                            normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[1u64])); };
+                        }
+                        have tmp[1u64] == at(fmt, tmp[1u64]) by {
+                            preserve(memory(tmp[1u64]), statement(22).statement(1));
+                        }
+                        have tmp[1u64] != 0u8 by { known(); }
+                        have defined(tmp[1u64]) by {
+                            preserve(memory(tmp[1u64]), statement(22).statement(1));
+                        }
+                        have ((j + 1) as int32) != 2 by { rewrite(j, 2); normalize(); }
+                        have separate(memory(tmp[j + 1]), memory(tmp[2u64])) by {
+                            apply(separation::separate_elements(tmp, j + 1, 2)) using { ((j + 1) as int32) != 2; };
+                        }
+                        have separate(statement(22).statement(1).footprint, memory(tmp[2u64])) by {
+                            normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[2u64])); };
+                        }
+                        have tmp[2u64] == at(fmt, tmp[2u64]) by {
+                            preserve(memory(tmp[2u64]), statement(22).statement(1));
+                        }
+                        have tmp[2u64] != 0u8 by { known(); }
+                        have defined(tmp[2u64]) by {
+                            preserve(memory(tmp[2u64]), statement(22).statement(1));
+                        }
+                        have defined(tmp[3u64]) by { normalize() using { j == 2; }; }
+                        have tmp[3u64] == 0u8 by { normalize() using { j == 2; }; }
+                        have tmp_len(j) == 3u64 by { unfold(tmp_len(j)); solve(); }
+                        have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 3u64); known(); }
+                        have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
+                        have forall (k: uint64) { 0u64 <= k and k < 3u64 implies tmp[k] != 0u8 } by { enumerate(); }
+                        have forall (k: uint64) { 0u64 <= k and k < 4u64 implies defined(tmp[k]) } by { enumerate(); }
+                        have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
+                            intro();
+                            intro();
+                            have k < 3u64 by { solve() using { k < tmp_len(j); tmp_len(j) == 3u64; }; }
+                            instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies tmp[k] != 0u8 }, k);
+                            known();
+                        }
+                        have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
+                            intro();
+                            intro();
+                            have k < 4u64 by { solve() using { k < tmp_len(j) + 1u64; tmp_len(j) == 3u64; }; }
+                            instantiate(forall (k: uint64) { 0u64 <= k and k < 4u64 implies defined(tmp[k]) }, k);
+                            known();
+                        }
                     }
                 }
-                step();
-                have tmp[0u64] == 46u8;
-                have tmp[0u64] != 0u8;
-                have defined(tmp[0u64]) by { solve(); }
-                have 0u64 < format::padded_length(remainder as uint64, 3u64);
-                have 1u64 + 0u64 + 1u64 < 12u64 by { normalize(); }
-                have tmp[1] == format::padded_digit(remainder as uint64, 3u64, 48u8, 0u64) by {
-                    instantiate(forall (k: uint64) { k < format::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies tmp[1u64 + k] == format::padded_digit(remainder as uint64, 3u64, 48u8, k) }, 0u64);
-                    known();
-                }
-                apply(format::padded_digit_lower_bound(remainder as uint64, 3u64, 0u64));
-                have 48u8 <= tmp[1u64];
-                have tmp[1u64] != 0u8;
-                have defined(tmp[1]) by {
-                    instantiate(forall (k: uint64) { k < format::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies defined(tmp[1u64 + k]) }, 0u64);
-                    known();
-                }
-                have 1u64 < format::padded_length(remainder as uint64, 3u64);
-                have 1u64 + 1u64 + 1u64 < 12u64 by { normalize(); }
-                have tmp[2] == format::padded_digit(remainder as uint64, 3u64, 48u8, 1u64) by {
-                    instantiate(forall (k: uint64) { k < format::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies tmp[1u64 + k] == format::padded_digit(remainder as uint64, 3u64, 48u8, k) }, 1u64);
-                    known();
-                }
-                apply(format::padded_digit_lower_bound(remainder as uint64, 3u64, 1u64));
-                have 48u8 <= tmp[2u64];
-                have tmp[2u64] != 0u8;
-                have defined(tmp[2]) by {
-                    instantiate(forall (k: uint64) { k < format::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies defined(tmp[1u64 + k]) }, 1u64);
-                    known();
-                }
-                if j == 1 ensuring {
-                    fact to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
-                    fact forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 };
-                    fact forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) };
-                    fact tmp[tmp_len(j)] == 0u8;
-                } then {
-                    mark fmt;
-                    step();
-                    // The terminator changes one cell; preserve the earlier bytes explicitly.
-                    have ((j + 1) as int32) != 0 by { rewrite(j, 1); normalize(); }
-                    have separate(memory(tmp[j + 1]), memory(tmp[0u64])) by {
-                        apply(separation::separate_elements(tmp, j + 1, 0)) using { ((j + 1) as int32) != 0; };
-                    }
-                    have separate(statement(22).statement(1).footprint, memory(tmp[0u64])) by {
-                        normalize() using { j == 1; separate(memory(tmp[j + 1]), memory(tmp[0u64])); };
-                    }
-                    have tmp[0u64] == at(fmt, tmp[0u64]) by {
-                        preserve(memory(tmp[0u64]), statement(22).statement(1));
-                    }
-                    have tmp[0u64] != 0u8 by { known(); }
-                    have defined(tmp[0u64]) by {
-                        preserve(memory(tmp[0u64]), statement(22).statement(1));
-                    }
-                    have ((j + 1) as int32) != 1 by { rewrite(j, 1); normalize(); }
-                    have separate(memory(tmp[j + 1]), memory(tmp[1u64])) by {
-                        apply(separation::separate_elements(tmp, j + 1, 1)) using { ((j + 1) as int32) != 1; };
-                    }
-                    have separate(statement(22).statement(1).footprint, memory(tmp[1u64])) by {
-                        normalize() using { j == 1; separate(memory(tmp[j + 1]), memory(tmp[1u64])); };
-                    }
-                    have tmp[1u64] == at(fmt, tmp[1u64]) by {
-                        preserve(memory(tmp[1u64]), statement(22).statement(1));
-                    }
-                    have tmp[1u64] != 0u8 by { known(); }
-                    have defined(tmp[1u64]) by {
-                        preserve(memory(tmp[1u64]), statement(22).statement(1));
-                    }
-                    have defined(tmp[2u64]) by { normalize() using { j == 1; }; }
-                    have tmp[2u64] == 0u8 by { normalize() using { j == 1; }; }
-                    have tmp_len(j) == 2u64 by { unfold(tmp_len(j)); solve(); }
-                    have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 2u64); known(); }
+                false => {
+                    have j == 0;
+                    have tmp_len(j) == 0u64 by { unfold(tmp_len(j)); solve(); }
+                    have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 0u64); known(); }
                     have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
-                    have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
-                    have forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) } by { enumerate(); }
                     have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
                         intro();
                         intro();
-                        have k < 2u64 by { solve() using { k < tmp_len(j); tmp_len(j) == 2u64; }; }
-                        instantiate(forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 }, k);
-                        known();
+                        have false by { solve() using { k < tmp_len(j); tmp_len(j) == 0u64; }; }
+                        contradiction(false);
                     }
                     have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
                         intro();
                         intro();
-                        have k < 3u64 by { solve() using { k < tmp_len(j) + 1u64; tmp_len(j) == 2u64; }; }
-                        instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) }, k);
-                        known();
+                        have k < 1u64 by { solve() using { k < tmp_len(j) + 1u64; tmp_len(j) == 0u64; }; }
+                        have k == 0u64 by { solve() using { k < 1u64; }; }
+                        rewrite(k, 0u64);
+                        solve();
                     }
-                } else {
-                    have 0 <= j and j <= 2;
-                    have 1 <= j by { solve() using { 0 <= j; j != 0; }; }
-                    have 2 <= j by { solve() using { 1 <= j; j != 1; }; }
-                    have j == 2 by { solve() using { 2 <= j; j <= 2; }; }
-                    mark fmt;
-                    step();
-                    have ((j + 1) as int32) != 0 by { rewrite(j, 2); normalize(); }
-                    have separate(memory(tmp[j + 1]), memory(tmp[0u64])) by {
-                        apply(separation::separate_elements(tmp, j + 1, 0)) using { ((j + 1) as int32) != 0; };
-                    }
-                    have separate(statement(22).statement(1).footprint, memory(tmp[0u64])) by {
-                        normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[0u64])); };
-                    }
-                    have tmp[0u64] == at(fmt, tmp[0u64]) by {
-                        preserve(memory(tmp[0u64]), statement(22).statement(1));
-                    }
-                    have tmp[0u64] != 0u8 by { known(); }
-                    have defined(tmp[0u64]) by {
-                        preserve(memory(tmp[0u64]), statement(22).statement(1));
-                    }
-                    have ((j + 1) as int32) != 1 by { rewrite(j, 2); normalize(); }
-                    have separate(memory(tmp[j + 1]), memory(tmp[1u64])) by {
-                        apply(separation::separate_elements(tmp, j + 1, 1)) using { ((j + 1) as int32) != 1; };
-                    }
-                    have separate(statement(22).statement(1).footprint, memory(tmp[1u64])) by {
-                        normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[1u64])); };
-                    }
-                    have tmp[1u64] == at(fmt, tmp[1u64]) by {
-                        preserve(memory(tmp[1u64]), statement(22).statement(1));
-                    }
-                    have tmp[1u64] != 0u8 by { known(); }
-                    have defined(tmp[1u64]) by {
-                        preserve(memory(tmp[1u64]), statement(22).statement(1));
-                    }
-                    have ((j + 1) as int32) != 2 by { rewrite(j, 2); normalize(); }
-                    have separate(memory(tmp[j + 1]), memory(tmp[2u64])) by {
-                        apply(separation::separate_elements(tmp, j + 1, 2)) using { ((j + 1) as int32) != 2; };
-                    }
-                    have separate(statement(22).statement(1).footprint, memory(tmp[2u64])) by {
-                        normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[2u64])); };
-                    }
-                    have tmp[2u64] == at(fmt, tmp[2u64]) by {
-                        preserve(memory(tmp[2u64]), statement(22).statement(1));
-                    }
-                    have tmp[2u64] != 0u8 by { known(); }
-                    have defined(tmp[2u64]) by {
-                        preserve(memory(tmp[2u64]), statement(22).statement(1));
-                    }
-                    have defined(tmp[3u64]) by { normalize() using { j == 2; }; }
-                    have tmp[3u64] == 0u8 by { normalize() using { j == 2; }; }
-                    have tmp_len(j) == 3u64 by { unfold(tmp_len(j)); solve(); }
-                    have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 3u64); known(); }
-                    have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
-                    have forall (k: uint64) { 0u64 <= k and k < 3u64 implies tmp[k] != 0u8 } by { enumerate(); }
-                    have forall (k: uint64) { 0u64 <= k and k < 4u64 implies defined(tmp[k]) } by { enumerate(); }
-                    have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
-                        intro();
-                        intro();
-                        have k < 3u64 by { solve() using { k < tmp_len(j); tmp_len(j) == 3u64; }; }
-                        instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies tmp[k] != 0u8 }, k);
-                        known();
-                    }
-                    have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
-                        intro();
-                        intro();
-                        have k < 4u64 by { solve() using { k < tmp_len(j) + 1u64; tmp_len(j) == 3u64; }; }
-                        instantiate(forall (k: uint64) { 0u64 <= k and k < 4u64 implies defined(tmp[k]) }, k);
-                        known();
-                    }
-                }
-            } else {
-                have j == 0;
-                have tmp_len(j) == 0u64 by { unfold(tmp_len(j)); solve(); }
-                have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 0u64); known(); }
-                have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
-                have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
-                    intro();
-                    intro();
-                    have false by { solve() using { k < tmp_len(j); tmp_len(j) == 0u64; }; }
-                    contradiction(false);
-                }
-                have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
-                    intro();
-                    intro();
-                    have k < 1u64 by { solve() using { k < tmp_len(j) + 1u64; tmp_len(j) == 0u64; }; }
-                    have k == 0u64 by { solve() using { k < 1u64; }; }
-                    rewrite(k, 0u64);
-                    solve();
                 }
             }
 // The unit and the final call: one case per unit string, each split by the

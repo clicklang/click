@@ -5,8 +5,8 @@ use std::sync::{Mutex, OnceLock};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum Node {
-    Load(Box<MemoryErasedPointerKey>, LoadKind),
-    Address(Box<MemoryErasedPointerKey>),
+    Load(Box<MemoryErasedAddressKey>, LoadKind),
+    Address(Box<MemoryErasedAddressKey>),
     Binary(
         BitvectorBinaryOp,
         MemoryErasedBitvectorKey,
@@ -127,11 +127,11 @@ pub(super) fn written(term: &MachineTerm) -> MemoryErasedBitvectorKey {
         return operand(crate::kernel::MachineOperandView::Shared(&root));
     }
     let node = match term {
-        MachineTerm::PointerAddress(pointer, _) => {
-            Node::Address(Box::new(memory_erased_pointer_key(pointer)))
+        MachineTerm::IntegerAddress(pointer, _) => {
+            Node::Address(Box::new(memory_erased_address_key(pointer)))
         }
         MachineTerm::MemoryLoad(_, pointer, kind) => {
-            Node::Load(Box::new(memory_erased_pointer_key(pointer)), *kind)
+            Node::Load(Box::new(memory_erased_address_key(pointer)), *kind)
         }
         MachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable) => {
             match (
@@ -139,7 +139,7 @@ pub(super) fn written(term: &MachineTerm) -> MemoryErasedBitvectorKey {
                 crate::kernel::registered_load_kind_for_variable(variable),
             ) {
                 (Some((_, pointer)), Some(kind)) => {
-                    Node::Load(Box::new(memory_erased_pointer_key(&pointer)), kind)
+                    Node::Load(Box::new(memory_erased_address_key(&pointer)), kind)
                 }
                 _ => Node::Exact(term.clone()),
             }
@@ -241,7 +241,7 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> MemoryEras
         };
         let key = if let Some((_, address, kind)) = view.read() {
             intern(Node::Load(
-                Box::new(memory_erased_pointer_key(address)),
+                Box::new(memory_erased_address_key(address)),
                 kind,
             ))
         } else if matches!(
@@ -403,11 +403,11 @@ mod tests {
         use crate::kernel::machine_integer::comparison::condition_for_operand_views;
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block("retained_state-comparison", 4),
+            crate::kernel::SymbolicMemory::new().with_block("retained_state-comparison", 4),
         );
-        let pointer = Pointer {
-            block: "retained_state-comparison".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "retained_state-comparison".into(),
+            offset: AddressOffset::Constant(0),
         };
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -432,12 +432,12 @@ mod tests {
             CompareRelation::LessThan,
             CompareRelation::LessEqual,
         ] {
-            let native = Proposition::ConditionIs(
+            let native = Proposition::condition_is(
                 ConditionTerm::machine_compare(format, relation, native.clone(), limit.clone()),
                 true,
             );
             let exports = KernelTermExport::machine_export_count();
-            let shared = Proposition::ConditionIs(
+            let shared = Proposition::condition_is(
                 condition_for_operand_views(
                     format,
                     relation,
@@ -457,11 +457,11 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let empty = crate::kernel::eval::capture_load_variable_registry();
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block("retained_state-key", 4),
+            crate::kernel::SymbolicMemory::new().with_block("retained_state-key", 4),
         );
-        let pointer = Pointer {
-            block: "retained_state-key".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "retained_state-key".into(),
+            offset: AddressOffset::Constant(0),
         };
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,

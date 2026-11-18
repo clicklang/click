@@ -50,13 +50,19 @@ checked. Each one costs completeness, expansion, or a readable report.
   for a Surface form and fall back to a placeholder, to another renderer, to
   `None`, or to dropping the fact.
 - **Name a value where it is introduced.** A step that introduces a fresh
-  value or memory state (a call result, a havoc, an allocation, a state
-  between recorded points) gives it a name from its origin at that
-  point. Do not recover a name later from whatever locals happen to hold the
+  value or memory state (a call result, a havoc, an allocation) gives it a
+  name from its origin at that point. A fact names only memories a recorded
+  point holds; a memory between recorded points has no name and is a defect
+  to fix where it is made, not one to name. Do not recover a name later from whatever locals happen to hold the
   value. A non-void call's result is `<region>.result`, including calls whose
   source discards the return value. The checked call transition retains the
   exact returned value, and its exit records it by region in
-  `RecordedStates::call_results`. Lowering reads that value directly;
+  `RecordedStates::call_results`. Stored call results and named theorem bindings
+  retain their `ExecutionValue` producer in immutable `RetainedProgramValue`
+  carriers: existing shared roots survive region, state and argument handoffs;
+  explicit native inputs retain their syntax contract. Selected compatibility
+  readers borrow native output through the existing root-owned cache. No
+  ambient binding map is exported. Lowering reads the selected value directly;
   integer and Boolean synthesis uses a reverse term index, and algebraic
   synthesis (a Rust enum a call returned) an index from the value to the
   first call that returned it (`algebraic_call_results`). Replacing or removing
@@ -100,7 +106,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   `iterations` (kernel placeholder `LOOP_ITERATIONS_VARIABLE`, bound per phase
   by `LoopIterationsScope`), and each path past the loop carries it on its
   correspondence metadata to the exit, which records it by loop in
-  `RecordedStates::loop_iterations` with a reverse index from the variable:
+  `RecordedStates::loop_iterations` as an Integer root, with a reverse index from the variable:
   it is raised `loop(i).iterations` in one lookup.
   Recorded points index each integer value, and each pointer's block, by the
   point and the local it was first given to (`RecordedStates::value_points`
@@ -110,9 +116,12 @@ checked. Each one costs completeness, expansion, or a readable report.
   each integer a memory cell came to hold by the point that recorded it there
   (`cell_points`, filled from the cells each memory changed). The structural
   raiser writes `at(point, ...)` from these indexes for a value no nearer
-  state names. A load or field read made in a memory no point
-  records, inside a call or after the last point, is read at the nearest
-  recorded memory that reads the same bytes.
+  state names. A read names the canonical projection of the memory it
+  reads (`reasoning::memory_resolution`); the kernel records the memory each
+  projection was built from when it builds it (`load_projection_source`), so
+  the read is raised at the point recording that source, in one lookup.
+  The raiser never tries recorded states, nearby memories or candidate
+  forms in turn.
   A local that keeps one value in memory, a borrowed Rust enum or
   type-parameter local (`AggregateLayout::holding_value`), is named by its
   own name: `o` lowers to the read of its object at the point it was last
@@ -417,6 +426,17 @@ Lowering never folds a comparison of two literals.
 - A comparison of the same variable at 32/64 bits retains its comparison
   node: recognition compares the two variable IDs, without consulting facts
   or walking expression trees.
+- A contract `p == p` (or `p != p`) of one non-null pointer value retains a
+  `AddressEqual` node rather than folding to `true` (`false`), and
+  `address(p) == address(p)` retains its `int64` address-word comparison.
+  Lowering and the producers whose results must match a lowered goal
+  (`preserve`) build the pointer equality with
+  `ConditionTerm::logical_pointer_equal`. A pointer equality raises as
+  contract `p == q`, which lowers back to it; the weaker
+  `address(p) == address(q)` is the address-word equality a C comparison
+  states (`design/pointer-subobject-bounds.md`, Phase B). A `AddressEqual`
+  between two pointer values of different provenance has no Surface form yet:
+  `p == q` lowers to `PointerEqual` for them, and the round trip refuses.
 - A comparison of two `bool` literals, `true == false`, retains a
   `BoolEqual` of the two constants.
 - A written `true` or `false` is a literal proposition, not `literal ==
@@ -445,18 +465,31 @@ Machine conditionals with closed 32/64-bit order guards, closed 64-bit equality
 guards, or same-variable 32/64-bit comparison guards retain their `if` node and
 guard during logical lowering. Their arm domains remain guarded, including
 unselected reads and invalid shifts. Checking selects the arm when needed.
-The comparison boundary recognizes conditionals guarded by a Boolean variable
-or a 32/64-bit comparison over literal/variable operands or one bitwise
-operation over those leaves, with literal/variable
-arms or one bitwise operation (`&`, `|`, `^`) over literal/variable arm operands,
-as fixed-size native atoms. Standalone comparisons use the same bounded
-bitwise operands. Even intrinsically decided bitwise guards retain their
-conditional; checking selects the arm. Bitwise recognition reads only the operation and
-its immediate leaves. Negated Boolean variables use the same guard
-with swapped arms. It retains the comparison family without exporting arithmetic
-DAGs or selecting an arm from ambient facts. Other result families retain their existing
-selected-arm behavior; literal Boolean and closed 32-bit equality guards keep
-their normal forms.
+The comparison boundary recognizes fixed-size native conditionals. The guard can
+be a Boolean variable or a 32/64-bit comparison, and the comparison operands and
+arms can be literal or variable leaves, one bitwise operation (`&`, `|`, `^`, `~`)
+over such leaves, a right shift or unsigned left shift by an in-range literal
+count, an unsigned sum, difference, or product over two variables or a variable
+and a literal,
+an unsigned quotient or remainder of a variable by a nonzero literal,
+or a 32-to-64-bit widening or 64-to-32-bit low-word cast of a leaf. A signed
+comparison spells the low-word cast with its signed destination. Wide equality retains an unsigned
+widening in its original type, even though the equality is filed as `Int64`.
+The comparison or conditional result type can identify a `uint32` operation
+whose node carries the shared 32-bit word encoding.
+Standalone comparisons also recognize the bounded bitwise and shift operands.
+Even intrinsically decided guards in these forms retain their conditional;
+checking selects the arm. The
+reader inspects only the operator and its immediate leaves. Negated Boolean
+variables use the same guard with swapped arms. This preserves the comparison
+family without exporting arithmetic DAGs or using ambient facts to select an arm.
+Other result families retain their existing selected-arm behavior; literal Boolean
+and closed 32-bit equality guards keep their normal forms.
+
+Checked rewriting reconstructs native 32-bit comparisons with word-form literal
+operands, matching logical lowering even when selecting a conditional's unsigned
+literal arm. This touches only operand roots, preserves nested arithmetic and the
+comparison node, and leaves truth evaluation to checking.
 
 Generated comparison operands that are negative `int64` literals keep an explicit
 `as int64` cast, including under `old` and `at`. Their printed unary minus would
@@ -529,7 +562,7 @@ graph then joins that offset to element `i` at stride four; memory resolution
 asks the same overflow question itself within the statement that forms it
 (`a_word_read_through_a_byte_offset_is_the_element_read.md`).
 Literal-mask bounds are recorded when the graph introduces the index node;
-address equalities over a common exact wide stride retain full-width index
+integer address equalities over a common exact wide stride retain full-width index
 equalities. A table-read branch extends its context with its one new address
 disequality before considering the next cell.
 

@@ -49,3 +49,78 @@ fn retained_closing_work_tracks_outcomes_and_clauses_without_walking_ambient_fac
         }
     }
 }
+
+#[test]
+fn prepared_exit_projection_uses_exact_checkpoints_without_revisiting_owners() {
+    let mut samples = Vec::new();
+    for size in [4_u32, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (function, prepared, _, _) = fixture(0, 0);
+        let function =
+            function.with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
+                "boxed",
+                vec![],
+                None,
+                false,
+                vec![ResourceSpec::token(
+                    ResourceAccessMode::Own,
+                    "child".to_string(),
+                    vec![],
+                    vec![],
+                )],
+                vec![],
+            )]);
+        let entry = &prepared.closing_entry;
+        let head = ResourceFact::own_composite("boxed".into(), vec![]);
+        let mut resources = ResourceContext::new().unchecked_with_fact(head.clone());
+        let mut assumptions = PureFactContext::new();
+        for n in 0..size {
+            resources = resources
+                .unchecked_with_fact(ResourceFact::own_token(format!("frame_{n}"), vec![]));
+            assumptions = assumptions.assume_proposition(Proposition::Predicate {
+                name: format!("premise_{n}"),
+                arguments: vec![],
+            });
+        }
+        let raw = ExecutionState::new().with_resource_context(resources);
+        let cold = entry
+            .prepare_exit_projection(&function, &raw, &mut raw.clone(), &assumptions)
+            .unwrap();
+        assert!(!cold.contains_exact_representation(&head));
+        let (warm, work) = crate::instrumentation::measure_deterministic_work(|| {
+            entry
+                .prepare_exit_projection(&function, &raw, &mut raw.clone(), &assumptions)
+                .unwrap()
+        });
+        assert!(warm.shares_storage_with(&cold));
+        samples.push(work);
+
+        let more = assumptions
+            .clone()
+            .assume_proposition(Proposition::Predicate {
+                name: "new_fact".into(),
+                arguments: vec![],
+            });
+        let new_facts = entry
+            .prepare_exit_projection(&function, &raw, &mut raw.clone(), &more)
+            .unwrap();
+        assert!(!new_facts.shares_storage_with(&cold));
+
+        let changed = raw.clone().with_resource_context(
+            raw.resources()
+                .clone()
+                .unchecked_with_fact(ResourceFact::own_token("new_owner".into(), vec![])),
+        );
+        let new_owner = entry
+            .prepare_exit_projection(&function, &changed, &mut changed.clone(), &more)
+            .unwrap();
+        assert!(!new_owner.shares_storage_with(&new_facts));
+        assert!(
+            new_owner.contains_exact_representation(&ResourceFact::own_token(
+                "new_owner".into(),
+                vec![]
+            ))
+        );
+    }
+    assert_eq!(samples, vec![1, 1, 1]);
+}

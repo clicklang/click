@@ -3,9 +3,9 @@ fn retained_delta_and_affine_queries_scale_with_the_selected_dag() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let base = Pointer {
-            block: "shared_delta_scaling".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: "shared_delta_scaling".into(),
+            offset: AddressOffset::Constant(0),
         };
         let mut root = KernelTerm::variable(
             KernelType::Program(MachineIntegerType::Int32.program_type()),
@@ -48,9 +48,9 @@ fn wide_coordinate_reconstruction_retains_cold_index_dags() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let base = Pointer {
-            block: "wide_shared_indices".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: "wide_shared_indices".into(),
+            offset: AddressOffset::Constant(0),
         };
         let mut root = KernelTerm::variable(
             KernelType::Program(MachineIntegerType::UInt64.program_type()),
@@ -64,9 +64,9 @@ fn wide_coordinate_reconstruction_retains_cold_index_dags() {
             );
         }
         let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::UInt64);
-        let pointer = Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::Int64Scaled {
+        let pointer = Address {
+            base: base.base.clone(),
+            offset: AddressOffset::Int64Scaled {
                 value: index.clone(),
                 byte_width: 8,
                 unsigned: true,

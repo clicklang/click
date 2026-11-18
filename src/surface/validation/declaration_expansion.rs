@@ -93,7 +93,7 @@ impl DeclaredResourceScope {
                         crate::kernel::BindingName::Named(name),
                     ))
                     | ContractExpression::Binding(name)
-                    | ContractExpression::CBinding(name) => Some(name.as_str()),
+                    | ContractExpression::ProgramBinding(name) => Some(name.as_str()),
                     _ => None,
                 };
                 match (named, parameter_types.get(index)) {
@@ -1771,7 +1771,7 @@ fn theorem_argument_is_value(argument: &ContractExpression) -> bool {
     match argument {
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::Binding(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::ProgramExpression(
             ProgramExpression::Value(_) | ProgramExpression::Variable(_),
@@ -1996,6 +1996,10 @@ fn expand_declared_resource_tactic_with_resources(
     tactic: ProofTactic,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ProofTactic, ClickError> {
+    let expand_slot = |mut slot: Box<IteratedSlot>| -> Result<Box<IteratedSlot>, ClickError> {
+        slot.resource = expand_resource_application(slot.resource, resource_definitions, true)?;
+        Ok(slot)
+    };
     match tactic {
         ProofTactic::UnfoldResource(resource) => Ok(ProofTactic::UnfoldResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
@@ -2023,8 +2027,13 @@ fn expand_declared_resource_tactic_with_resources(
                 expand_declared_resource_clause(resource, resource_definitions)?,
             )))
         }
-        tactic @ (ProofTactic::Iterated(IteratedTactic::Take(_) | IteratedTactic::Give(_))
-        | ProofTactic::ObserveSavedMemory { .. }) => Ok(tactic),
+        ProofTactic::Iterated(IteratedTactic::UnfoldSlot(slot)) => Ok(ProofTactic::Iterated(
+            IteratedTactic::UnfoldSlot(expand_slot(slot)?),
+        )),
+        ProofTactic::Iterated(IteratedTactic::FoldSlot(slot)) => Ok(ProofTactic::Iterated(
+            IteratedTactic::FoldSlot(expand_slot(slot)?),
+        )),
+        tactic @ ProofTactic::ObserveSavedMemory { .. } => Ok(tactic),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }
 }
@@ -2067,14 +2076,7 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                 .into_iter()
                 .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
                 .collect::<Result<Vec<_>, _>>()?,
-            close_proof: open
-                .close_proof
-                .map(|body| {
-                    body.into_iter()
-                        .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?,
+            deferred_tail: open.deferred_tail,
         })),
         ProofTactic::If(proof_if) => {
             let condition =
@@ -2220,7 +2222,7 @@ fn classify_function_decrease(
             )?))
         }
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) if declared_binders.contains(name) => Ok(FunctionDecrease::Binder(name.clone())),
@@ -2469,6 +2471,22 @@ fn expand_declared_resource_clause(
                 )?),
             })
         }
+        ResourceClause::Declared { .. } => {
+            expand_resource_application(resource, resource_definitions, false)
+        }
+        resource => Ok(resource),
+    }
+}
+
+/// Resolve and type the application. A slot operand uses the declaration's
+/// clause, so it can name a family's arguments even when a whole instance
+/// of that family would require a bound model.
+fn expand_resource_application(
+    resource: ResourceClause,
+    resource_definitions: &DeclaredResourceScope,
+    allow_fields: bool,
+) -> Result<ResourceClause, ClickError> {
+    match resource {
         ResourceClause::Declared {
             type_schema,
             resource_type_arguments,
@@ -2484,10 +2502,11 @@ fn expand_declared_resource_clause(
                 resource_type_arguments,
                 resource_definitions,
             )?;
-            let info = declared_resource_info(
+            let info = declared_resource_info_with_fields(
                 &name,
                 arguments.len() + resource_arguments.len(),
                 resource_definitions,
+                allow_fields,
             )?;
             validate_resource_reference_arguments(
                 &name,

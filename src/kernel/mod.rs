@@ -32,6 +32,7 @@ pub(crate) use eval::typed_reads::{
     FieldScope as TransportFieldScope, ReadScope as TransportReadScope,
     record_field as record_transport_field,
 };
+pub(crate) use execution_value::RetainedProgramValue;
 pub use execution_value::{ExecutionValue, StoredExecutionValue, StoredMemoryValue};
 pub(crate) mod fact_collections;
 pub(crate) mod fact_stability;
@@ -57,7 +58,7 @@ pub(crate) use functions::rewrite_resource_instance;
 pub(crate) use functions::rewrite_resource_instance_selecting_children;
 pub(crate) use functions::selected_instance_child_names;
 pub(crate) use functions::{
-    InstantiatedCompositeResourceFacts, instantiate_composite_resource_facts,
+    InstantiatedCompositeResourceFacts, instantiate_composite_resource_facts_at,
     instantiate_private_member_body_facts,
 };
 pub use resource_description::{ResourceDescription, ResourceReference};
@@ -69,6 +70,16 @@ pub(crate) use iterated::{IteratedStep, apply_iterated_step, plan_iterated_guard
 mod loans;
 #[cfg(test)]
 pub(crate) use loans::LoanLedger;
+
+/// The memory a canonical load projection was built from, for a read of
+/// `pointer`: the source `reasoning::memory_resolution` recorded when it
+/// built the projection. One lookup; the canonical form is not rebuilt.
+pub(crate) fn load_projection_source(
+    projected: &SharedMemory,
+    pointer: &Address,
+) -> Option<SharedMemory> {
+    reasoning::memory_resolution::canonical_load_projection_source(projected, pointer)
+}
 #[cfg(test)]
 pub(crate) use loans::LoanRefusal;
 pub(crate) use loans::owned_reservation_miss_for;
@@ -180,7 +191,9 @@ pub(crate) use eval::record_load_variable_defining_fact;
 pub(crate) use eval::registered_load_bytes_for_variable;
 pub(crate) use eval::registered_load_for_variable;
 pub(crate) use eval::registered_load_origin_for_variable;
+#[cfg(test)]
 pub(crate) use eval::resolve_pending_heap_allocations;
+pub(crate) use eval::resolve_pending_heap_allocations_with;
 pub(crate) use eval::scalar_read_observation;
 pub(crate) use eval::terms_have_same_canonical_form;
 pub(crate) use eval::{
@@ -223,9 +236,10 @@ pub(crate) use functions::{
 pub use loops::LoopBinder;
 #[cfg(test)]
 pub(crate) use loops::loop_state_components_match_at_back_edge;
-pub(crate) use loops::memory_range_extent_refusal;
+pub(crate) use loops::memory_range_bounds_refusal;
 pub(crate) use loops::{
-    loop_binder_state_components_match_at_back_edge, loop_binders, loop_condition_may_continue,
+    LoopConditionFeasibility, classify_loop_condition,
+    loop_binder_state_components_match_at_back_edge, loop_binders,
     loop_state_with_loop_binders_rebound, loop_structural_descent_failure,
 };
 // Used through other modules' glob imports of `crate::kernel`, which the unused
@@ -234,6 +248,7 @@ pub(crate) use loops::{
 pub(crate) use memory_history::*;
 pub(crate) use model_fields::algebraic_value_variable;
 pub(crate) use primitives::ABSTRACT_VALUE_WIDTH;
+pub(crate) use primitives::coalesce_written_resource_descriptions;
 pub(crate) use primitives::resource_context_has_symbolic_range_read;
 pub use primitives::*;
 pub(crate) use reasoning::memory_effect_write_pointers;
@@ -331,7 +346,7 @@ thread_local! {
 }
 
 /// The generation of this thread's current kernel tables: it advances each
-/// time an outermost `VerificationSession` starts fresh. Memory states and other
+/// time an outermost `VerificationSession` starts fresh. SymbolicMemory states and other
 /// arena ids minted under one generation are meaningless under another, so a
 /// caller that keeps kernel-derived state after its session ends compares
 /// this value before reusing that state.
@@ -531,3 +546,5 @@ pub use execution_facts::{ExecutionFactSource, ExecutionFacts, ExecutionFactsIte
 pub(crate) mod search;
 
 pub(crate) use spec::prepare_spec_integer_argument;
+
+pub(crate) use memory_history::resource_field_values_proven_equal;

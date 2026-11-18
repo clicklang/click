@@ -15,7 +15,7 @@ fn variable(format: MachineIntegerType, id: u64) -> SpecValue {
 }
 fn join(condition: &ConditionTerm, left: &SpecValue, right: &SpecValue) -> SpecValue {
     SpecValue::conditional(
-        &Proposition::ConditionIs(condition.clone(), true),
+        &Proposition::condition_is(condition.clone(), true),
         left,
         right,
         true,
@@ -49,7 +49,7 @@ fn conditional_arms_keep_shared_identity_and_native_observations() {
         let right = variable(format, 998101);
         let guard = ConditionTerm::Variable(Variable(998102));
         let native = conditional_spec_value(
-            &Proposition::ConditionIs(guard.clone(), true),
+            &Proposition::condition_is(guard.clone(), true),
             left.clone().into_native(),
             right.clone().into_native(),
         )
@@ -77,9 +77,9 @@ fn opaque_guard_observations_keep_identity_without_exporting_arms() {
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::UInt64;
     let guard = |id| {
-        ConditionTerm::pointer_equal(
-            Pointer::symbolic(Variable(id)),
-            Pointer::symbolic(Variable(998110)),
+        ConditionTerm::address_equal(
+            Address::symbolic(Variable(id)),
+            Address::symbolic(Variable(998110)),
         )
     };
     let left = variable(format, 998111);
@@ -100,7 +100,7 @@ fn conditional_join_preserves_mixed_word_rules_and_bool_refusals() {
     let result = join(&guard, &left, &right);
     assert_eq!(result.program_type(), ProgramType::UInt32);
     let expected = conditional_spec_value(
-        &Proposition::ConditionIs(guard.clone(), true),
+        &Proposition::condition_is(guard.clone(), true),
         left.clone().into_native(),
         right.clone().into_native(),
     )
@@ -112,7 +112,7 @@ fn conditional_join_preserves_mixed_word_rules_and_bool_refusals() {
     )));
     assert!(matches!(
         SpecValue::conditional(
-            &Proposition::ConditionIs(guard, true),
+            &Proposition::condition_is(guard, true),
             &boolean,
             &left,
             true
@@ -207,9 +207,9 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
     use crate::kernel::proof::term_rewrite::TermRewrite;
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let guard = ConditionTerm::pointer_equal(
-        Pointer::symbolic(Variable(998205)),
-        Pointer::symbolic(Variable(998206)),
+    let guard = ConditionTerm::address_equal(
+        Address::symbolic(Variable(998205)),
+        Address::symbolic(Variable(998206)),
     );
     let source = join(&guard, &word(format, 1), &word(format, 0))
         .observe()
@@ -222,11 +222,11 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
         current = TermRewrite::for_integer_exact(&from, &to).integer(&current);
         assert_eq!(current, source);
     }
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::integer_less_equal(IntegerTerm::constant(1.into()), source),
         true,
     );
-    let unrelated = Proposition::ConditionIs(
+    let unrelated = Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(998207)),
             MachineTerm::constant(99),
@@ -244,8 +244,8 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
 #[test]
 fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
     let _session = VerificationSession::enter();
-    let pointer = PointerValue::new(
-        Pointer::symbolic(Variable(1026100)),
+    let pointer = Pointer::new(
+        Address::symbolic(Variable(1026100)),
         ProgramType::Int32Pointer,
     )
     .with_pointee_constant(true)
@@ -255,7 +255,7 @@ fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
     let other_payload = SpecValue::Native(ProgramValue::Pointer(
         pointer.clone().with_pointee_constant(false),
     ));
-    let condition = Proposition::ConditionIs(ConditionTerm::Variable(Variable(1026101)), true);
+    let condition = Proposition::condition_is(ConditionTerm::Variable(Variable(1026101)), true);
     for left in [native.clone(), shared.clone()] {
         for right in [
             other_payload.clone(),
@@ -273,8 +273,8 @@ fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
             assert!(result.pointer().unwrap().pointee_volatile());
         }
     }
-    let distinct = SpecValue::Native(ProgramValue::Pointer(PointerValue::new(
-        Pointer::symbolic(Variable(1026102)),
+    let distinct = SpecValue::Native(ProgramValue::Pointer(Pointer::new(
+        Address::symbolic(Variable(1026102)),
         ProgramType::Int32Pointer,
     )));
     for retain in [false, true] {

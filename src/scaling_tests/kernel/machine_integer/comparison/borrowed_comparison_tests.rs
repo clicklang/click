@@ -218,7 +218,7 @@ fn bitwise_conditional_arms_read_only_fixed_roots() {
 }
 
 #[test]
-fn bitwise_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
+fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
     use crate::kernel::{
         KernelTerm, KernelTermExport, KernelType, MachineBinaryOp as O, MachineOperandView as V,
     };
@@ -247,23 +247,157 @@ fn bitwise_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                 arithmetic =
                     KernelTerm::machine_binary_shared(format, O::Add, [arithmetic, literal(1)]);
             }
-            let cases = [O::BitwiseAnd, O::BitwiseOr, O::BitwiseXor].map(|op| {
+            let binary_cases = [O::BitwiseAnd, O::BitwiseOr, O::BitwiseXor].map(|op| {
                 (
                     KernelTerm::machine_binary_shared(format, op, [variable.clone(), literal(7)]),
                     KernelTerm::machine_binary_shared(format, op, [arithmetic.clone(), literal(7)]),
                     KernelTerm::machine_binary_shared(format, op, [literal(7), arithmetic.clone()]),
                 )
             });
+            let complement = |child| {
+                KernelTerm::machine_unary_shared(
+                    format,
+                    crate::kernel::MachineUnaryOp::BitwiseNot,
+                    child,
+                )
+            };
+            let unary_case = (
+                complement(variable.clone()),
+                complement(arithmetic.clone()),
+                complement(complement(variable.clone())),
+            );
+            let shifts = [O::ShiftRight, O::ShiftLeft];
+            let shift_cases = shifts
+                .into_iter()
+                .filter(|op| *op == O::ShiftRight || !format.format().is_signed())
+                .flat_map(|op| {
+                    let shift =
+                        |left, count| KernelTerm::machine_binary_shared(format, op, [left, count]);
+                    let width = u64::from(format.format().bits());
+                    [
+                        (
+                            shift(variable.clone(), literal(1)),
+                            shift(arithmetic.clone(), literal(1)),
+                            shift(variable.clone(), other.clone()),
+                        ),
+                        (
+                            shift(variable.clone(), literal(width - 1)),
+                            shift(variable.clone(), literal(width)),
+                            shift(variable.clone(), literal(width + 1)),
+                        ),
+                    ]
+                })
+                .collect::<Vec<_>>();
+            if format.format().is_signed() {
+                let signed_left_shift = KernelTerm::machine_binary_shared(
+                    format,
+                    O::ShiftLeft,
+                    [variable.clone(), literal(1)],
+                );
+                assert!(
+                    bounded_comparison_operand(format, V::Shared(&signed_left_shift), true)
+                        .is_none()
+                );
+            }
+            let wrapping_cases = [O::Add, O::Subtract, O::Multiply].map(|op| {
+                let word_encoding = if format == MachineIntegerType::UInt32 {
+                    MachineIntegerType::Int32
+                } else {
+                    format
+                };
+                let operation = |encoding, left, right| {
+                    KernelTerm::machine_binary_shared(encoding, op, [left, right])
+                };
+                let variable_pair = operation(format, variable.clone(), other.clone());
+                assert!(
+                    bounded_comparison_operand(format, V::Shared(&variable_pair), false).is_none()
+                );
+                [
+                    (
+                        operation(word_encoding, variable.clone(), literal(7)),
+                        operation(word_encoding, arithmetic.clone(), literal(7)),
+                        operation(word_encoding, literal(7), arithmetic.clone()),
+                    ),
+                    (
+                        variable_pair,
+                        operation(format, arithmetic.clone(), other.clone()),
+                        operation(format, variable.clone(), arithmetic.clone()),
+                    ),
+                ]
+            });
+            let wrapping_cases = wrapping_cases.as_flattened();
+            let wrapping_hits = if format.format().is_signed() {
+                for (signed, ..) in wrapping_cases {
+                    assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
+                }
+                &wrapping_cases[..0]
+            } else {
+                wrapping_cases
+            };
+            let division_cases = [O::Divide, O::Remainder].map(|op| {
+                let operation =
+                    |left, right| KernelTerm::machine_binary_shared(format, op, [left, right]);
+                let zero = operation(variable.clone(), literal(0));
+                assert!(bounded_comparison_operand(format, V::Shared(&zero), true).is_none());
+                let hit = operation(variable.clone(), literal(3));
+                assert!(bounded_comparison_operand(format, V::Shared(&hit), false).is_none());
+                (
+                    hit,
+                    operation(arithmetic.clone(), literal(3)),
+                    operation(variable.clone(), other.clone()),
+                )
+            });
+            let division_hits = if format.format().is_signed() {
+                for (signed, ..) in &division_cases {
+                    assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
+                }
+                &division_cases[..0]
+            } else {
+                &division_cases[..]
+            };
+            let mut cast_cases = Vec::new();
+            for spelling in [
+                crate::kernel::MachineCastSpelling::Int64From32,
+                crate::kernel::MachineCastSpelling::Int64FromUInt32,
+                crate::kernel::MachineCastSpelling::UInt64FromInt32,
+                crate::kernel::MachineCastSpelling::UInt64From32,
+                crate::kernel::MachineCastSpelling::UInt32From64,
+            ] {
+                let (source, destination) = spelling.legacy_formats().unwrap();
+                if destination != format {
+                    continue;
+                }
+                let child = variable.with_machine_observation_type(source);
+                let cast = |operand| {
+                    KernelTerm::machine_cast_shared(spelling, source, destination, operand)
+                };
+                cast_cases.push((
+                    cast(child.clone()),
+                    cast(arithmetic.with_machine_observation_type(source)),
+                    cast(KernelTerm::machine_unary_shared(
+                        source,
+                        crate::kernel::MachineUnaryOp::BitwiseNot,
+                        child,
+                    )),
+                ));
+            }
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                for (hit, left_miss, right_miss) in &cases {
+                for (hit, left_miss, right_miss) in binary_cases
+                    .iter()
+                    .chain(std::iter::once(&unary_case))
+                    .chain(&shift_cases)
+                    .chain(wrapping_hits)
+                    .chain(division_hits)
+                    .chain(&cast_cases)
+                {
                     for operands in [
                         [V::Shared(hit), V::Shared(&other)],
                         [V::Shared(&other), V::Shared(hit)],
                     ] {
                         let condition =
-                            logical_condition_for_operand_views(format, R::Equal, operands);
-                        assert!(is_simple_bitwise_comparison(&condition));
+                            logical_conditional_guard_for_operand_views(format, R::Equal, operands);
+                        assert!(is_bounded_machine_comparison(&condition));
                         let guard =
                             crate::kernel::KernelTermImport::default().condition(&condition);
                         let conditional = KernelTerm::machine_if_shared(
@@ -273,12 +407,12 @@ fn bitwise_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                         assert!(conditional_atom(&conditional).is_some());
                     }
                     for miss in [left_miss, right_miss] {
-                        let condition = logical_condition_for_operand_views(
+                        let condition = logical_conditional_guard_for_operand_views(
                             format,
                             R::Equal,
                             [V::Shared(miss), V::Shared(&other)],
                         );
-                        assert!(!is_simple_bitwise_comparison(&condition));
+                        assert!(!is_bounded_machine_comparison(&condition));
                     }
                 }
             });

@@ -9,7 +9,7 @@ fn offset_nodes_retain_shared_index_dags_with_constant_work() {
             .collect::<Vec<_>>();
         let _unrelated_offsets = (0..unrelated)
             .map(|i| {
-                KernelPointerOffset::Variable(Variable(997000 + i))
+                KernelAddressOffset::Variable(Variable(997000 + i))
                     .into_shared()
                     .unwrap()
             })
@@ -27,15 +27,15 @@ fn offset_nodes_retain_shared_index_dags_with_constant_work() {
             let operand =
                 SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int64, index.clone())
                     .unwrap();
-            let source = PointerOffsetTerm::Int64Scaled {
+            let source = AddressOffset::Int64Scaled {
                 value: operand.clone(),
                 byte_width: 8,
                 unsigned: true,
             };
             let exports = KernelTermExport::machine_export_count();
             let ((root, native), work) = crate::instrumentation::measure_deterministic_work(|| {
-                let root = KernelPointerOffset::import(&source);
-                let native = KernelPointerOffset::export(&root).unwrap();
+                let root = KernelAddressOffset::import(&source);
+                let native = KernelAddressOffset::export(&root).unwrap();
                 (root, native)
             });
             assert_eq!(root.node().index(), Some(&index));
@@ -52,18 +52,17 @@ fn offset_nodes_retain_shared_index_dags_with_constant_work() {
 #[test]
 fn offset_chain_import_and_explicit_output_have_linear_work() {
     for size in [16, 64, 256] {
-        let mut source = PointerOffsetTerm::Variable(Variable(996001));
+        let mut source = AddressOffset::Variable(Variable(996001));
         for _ in 0..size {
-            source =
-                PointerOffsetTerm::Add(Box::new(source), Box::new(PointerOffsetTerm::Constant(0)));
+            source = AddressOffset::Add(Box::new(source), Box::new(AddressOffset::Constant(0)));
         }
         let ((root, output), work) = crate::instrumentation::measure_deterministic_work(|| {
-            let root = KernelPointerOffset::import(&source);
-            let output = KernelPointerOffset::export(&root).unwrap();
+            let root = KernelAddressOffset::import(&source);
+            let output = KernelAddressOffset::export(&root).unwrap();
             (root, output)
         });
         assert_eq!(source, output);
-        assert!(matches!(root.node(), KernelPointerOffset::Add(_)));
+        assert!(matches!(root.node(), KernelAddressOffset::Add(_)));
         assert!(work <= 22 * size + 12, "size={size}, work={work}");
     }
 }
@@ -71,10 +70,10 @@ fn offset_chain_import_and_explicit_output_have_linear_work() {
 #[test]
 fn shared_offset_dag_construction_does_not_rewalk_prefixes() {
     for size in [16, 64, 256] {
-        let mut root = KernelPointerOffset::Constant(0).into_shared().unwrap();
+        let mut root = KernelAddressOffset::Constant(0).into_shared().unwrap();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
-                root = KernelPointerOffset::Add([root.clone(), root.clone()])
+                root = KernelAddressOffset::Add([root.clone(), root.clone()])
                     .into_shared()
                     .unwrap();
             }
@@ -91,18 +90,18 @@ fn shared_offset_dag_construction_does_not_rewalk_prefixes() {
 fn offset_condition_rewrites_preserve_shared_offset_dags() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut offset = KernelPointerOffset::Int32Scaled {
+        let mut offset = KernelAddressOffset::Int32Scaled {
             value: KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998200)),
             byte_width: 4,
         }
         .into_shared()
         .unwrap();
         for _ in 0..size {
-            offset = KernelPointerOffset::Add([offset.clone(), offset])
+            offset = KernelAddressOffset::Add([offset.clone(), offset])
                 .into_shared()
                 .unwrap();
         }
-        let source = KernelTerm::pointer_offset_equal_raw([offset.clone(), offset]);
+        let source = KernelTerm::address_offset_equal_raw([offset.clone(), offset]);
         let exports = KernelTermExport::machine_export_count();
         let ((rewritten, transported), work) =
             crate::instrumentation::measure_deterministic_work(|| {
@@ -115,7 +114,7 @@ fn offset_condition_rewrites_preserve_shared_offset_dags() {
                     .unwrap();
                 let transported = crate::kernel::memory_history::transport_framed_common_condition(
                     &source,
-                    &crate::kernel::Memory::new(),
+                    &crate::kernel::SymbolicMemory::new(),
                     None,
                 )
                 .unwrap();
@@ -132,23 +131,23 @@ fn offset_condition_rewrites_preserve_shared_offset_dags() {
 fn growing_offset_guards_reuse_observation_normalization() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut offset = KernelPointerOffset::Int32Scaled {
+        let mut offset = KernelAddressOffset::Int32Scaled {
             value: KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998300)),
             byte_width: 4,
         }
         .into_shared()
         .unwrap();
-        let zero = KernelPointerOffset::Constant(0).into_shared().unwrap();
+        let zero = KernelAddressOffset::Constant(0).into_shared().unwrap();
         let word = KernelTermImport::default()
             .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
         let exports = KernelTermExport::machine_export_count();
         let mut retained = Vec::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
-                offset = KernelPointerOffset::Add([offset.clone(), offset.clone()])
+                offset = KernelAddressOffset::Add([offset.clone(), offset.clone()])
                     .into_shared()
                     .unwrap();
-                let guard = KernelTerm::pointer_offset_equal_raw([offset.clone(), zero.clone()]);
+                let guard = KernelTerm::address_offset_equal_raw([offset.clone(), zero.clone()]);
                 let value = KernelTerm::machine_if_shared(
                     MachineIntegerType::Int32,
                     [guard, word.clone(), word.clone()],

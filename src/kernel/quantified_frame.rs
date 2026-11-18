@@ -313,9 +313,11 @@ impl Framer<'_> {
                 Proposition::ConditionIs(left, left_value),
                 Proposition::ConditionIs(right, right_value),
             ) if left_value == right_value => {
-                let carried = conditions_equal_with_load_atoms(left, right, &|left, right| {
-                    loads_unchanged(left, right, &contexts.reads)
-                }) || (self.leaf)(from, to, &contexts.leaf);
+                let carried = conditions_equal_with_load_atoms(
+                    left.native_compat(),
+                    right.native_compat(),
+                    &|left, right| loads_unchanged(left, right, &contexts.reads),
+                ) || (self.leaf)(from, to, &contexts.leaf);
                 if carried {
                     self.framed_leaves.set(self.framed_leaves.get() + 1);
                     Ok(())
@@ -379,17 +381,17 @@ mod wide_condition_tests {
     #[test]
     fn wide_equality_frame_checks_read_kind_history_and_other_operand() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: "wide-equality-frame".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "wide-equality-frame".into(),
+            offset: AddressOffset::Constant(0),
         };
         let assumptions = PureFactContext::new();
-        let before = Memory::new().with_block("wide-equality-frame", 16);
+        let before = SymbolicMemory::new().with_block("wide-equality-frame", 16);
         let after = before.clone().store(
             pointer.offset_by_bytes(8),
             ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
         );
-        let load = |memory: &Memory, kind| {
+        let load = |memory: &SymbolicMemory, kind| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(pointer.clone()),
@@ -455,7 +457,7 @@ mod conjunct_elimination_tests {
     fn a_conjunct_is_eliminated_only_when_the_other_is_carried() {
         let _session = crate::kernel::VerificationSession::enter();
         let leaf =
-            |name: u64| Proposition::ConditionIs(ConditionTerm::Variable(Variable(name)), true);
+            |name: u64| Proposition::condition_is(ConditionTerm::Variable(Variable(name)), true);
         // The stand-in single-fact route carries leaf 1 to leaf 2 and nothing else.
         let carries = |from: &Proposition, to: &Proposition, _: &PureFactContext| {
             *from == leaf(1) && *to == leaf(2)

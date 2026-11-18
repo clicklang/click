@@ -96,8 +96,8 @@ fn common_fold_scope_summaries_share_growing_variable_sets_between_initial_and_b
 }
 
 use crate::kernel::{
-    KernelPointerOffset, LoadKind, MachineBinaryOp, MachineIntegerType, PointerBlock, ProgramType,
-    SharedPointerAddress, SharedPointerBlock, VerificationSession,
+    AddressBase, KernelAddressOffset, LoadKind, MachineBinaryOp, MachineIntegerType, ProgramType,
+    SharedAddress, SharedAddressBase, VerificationSession,
 };
 
 #[test]
@@ -112,24 +112,24 @@ fn shared_read_capture_visits_address_dags_and_nested_read_prefixes_once() {
                 )
             })
             .collect::<Vec<_>>();
-        let memory = crate::kernel::intern_memory(crate::kernel::Memory::new());
+        let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
         let blocks = [1016100, 1016101]
-            .map(|id| SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(id))));
+            .map(|id| SharedAddressBase::import(&AddressBase::Symbolic(Variable(id))));
         for size in [16, 64, 256] {
             let variable = Variable(1016102);
             let mut root = KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable);
             for _ in 0..size {
-                let offset = KernelPointerOffset::Int32Scaled {
+                let offset = KernelAddressOffset::Int32Scaled {
                     value: root,
                     byte_width: 4,
                 }
                 .into_shared()
                 .unwrap();
                 let children = blocks.each_ref().map(|block| {
-                    let address = SharedPointerAddress::new(block.clone(), offset.clone());
+                    let address = SharedAddress::new(block.clone(), offset.clone());
                     KernelTerm::shared_scalar_read_descriptor(
                         MachineIntegerType::Int32,
-                        &memory,
+                        &crate::kernel::ProgramPoint::at(&memory),
                         &address,
                         LoadKind::Int32,
                     )
@@ -216,5 +216,77 @@ fn float_arithmetic_reader_summaries_visit_shared_operands_once() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn cached_integer_condition_variable_readers_reuse_the_produced_operands() {
+    use crate::kernel::{
+        BooleanOperandView, IntegerComparisonOperator, IntegerTerm, KernelTermImport,
+        MachineIntegerType, MachineTerm, StoredConditionTerm,
+    };
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let machine = IntegerTerm::from_machine(
+            MachineIntegerType::UInt64,
+            MachineTerm::Variable(Variable(979101)),
+        )
+        .unwrap();
+        let mut operand = KernelTerm::integer_operation(
+            KernelIntegerOperator::Add,
+            vec![
+                KernelTerm::variable(KernelType::Integer, Variable(979100)),
+                KernelTermImport::default().integer(&machine.into()),
+            ],
+        )
+        .unwrap();
+        for _ in 0..size {
+            operand = KernelTerm::integer_operation(
+                KernelIntegerOperator::Add,
+                vec![operand.clone(), operand],
+            )
+            .unwrap();
+        }
+        let root = KernelTerm::integer_comparison(
+            IntegerComparisonOperator::Equal,
+            [operand, KernelTerm::integer_literal(0.into())],
+        )
+        .unwrap();
+        let stored = StoredConditionTerm::from_root(root.clone()).unwrap();
+        let native = stored.native_compat().clone();
+        let exports = KernelTermExport::machine_export_count();
+        let repeats = 16;
+        for mode in [
+            FoldVariableRead::IntegerFree,
+            FoldVariableRead::ExpressionFree,
+            FoldVariableRead::MachineCapture,
+            FoldVariableRead::IntegerBinders,
+            FoldVariableRead::MachineBinders,
+        ] {
+            let mut expected = BTreeSet::new();
+            let (_, native_work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..repeats {
+                    expected.clear();
+                    collect_boolean_variables(
+                        BooleanOperandView::Native(&native),
+                        mode,
+                        &mut expected,
+                    );
+                }
+            });
+            let mut actual = BTreeSet::new();
+            let (_, shared_work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..repeats {
+                    actual.clear();
+                    collect_boolean_variables(BooleanOperandView::Shared(&root), mode, &mut actual);
+                }
+            });
+            assert_eq!(actual, expected, "mode={mode:?}, size={size}");
+            assert!(
+                shared_work <= native_work + 4 * repeats,
+                "mode={mode:?}, size={size}, native={native_work}, shared={shared_work}"
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

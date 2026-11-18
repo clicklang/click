@@ -2,6 +2,8 @@
 
 Declaring consumption does not perform it. Updating concrete capacity without
 consuming the matching members cannot restore the private accounting invariant.
+The proof rewrites the final capacity equation to its entry counts and the
+checked subtraction, then checks it using only the bounds on the amount.
 
 ```c filename=consume_population.c
 struct owner {
@@ -51,6 +53,24 @@ void consume_population(struct owner* owner, int32 amount) {
     open(accounting(owner)) {
         unfold(valid_capacity(owner));
         step();
+        have to_integer(owner->used) == to_integer(old(owner->used)) by { known(); }
+        have to_integer(old(owner->capacity)) ==
+            to_integer(old(owner->used)) + to_integer(old(count(slot(owner)))) by {
+            known();
+        }
+        have owner->capacity == old(owner->capacity) - amount;
+        have to_integer(owner->capacity) ==
+            to_integer(owner->used) + to_integer(count(slot(owner))) by {
+            rewrite(to_integer(owner->capacity),
+                to_integer(old(owner->capacity)) - to_integer(amount));
+            rewrite(to_integer(old(owner->capacity)),
+                to_integer(old(owner->used)) + to_integer(old(count(slot(owner)))));
+            rewrite(to_integer(owner->used), to_integer(old(owner->used)));
+            solve() using {
+                0 <= amount;
+                amount <= old(count(slot(owner)));
+            };
+        }
     }
     step_until(function.exit);
     unfold(valid_capacity(owner));
@@ -59,5 +79,5 @@ void consume_population(struct owner* owner, int32 amount) {
 ```
 
 ```expect
-fail: Requires to_integer(owner->capacity) == (to_integer(owner->used) + to_integer(count(slot(owner))))
+fail: `consume_population.contract` proof step have body tactic 4: arithmetic read the current goal as an Integer linear claim; no combination of the listed premises proves it
 ```

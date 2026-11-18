@@ -8,8 +8,8 @@ use super::*;
 fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Pointer::symbolic(Variable(9_897_001));
-        let data = Pointer::symbolic(Variable(9_897_002));
+        let field = Address::symbolic(Variable(9_897_001));
+        let data = Address::symbolic(Variable(9_897_002));
         let count = MachineTerm::Variable(Variable(9_897_003));
         let backing = MemoryRange::new_with_element_width(data, 0u32.into(), count.clone(), 4);
         let descriptor =
@@ -20,7 +20,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         for index in 0..size {
             partition = partition.unchecked_with_fact(ResourceFact::own_memory(
                 MemoryRange::new_with_element_width(
-                    Pointer::symbolic(Variable(9_898_000 + index)),
+                    Address::symbolic(Variable(9_898_000 + index)),
                     0u32.into(),
                     4u32.into(),
                     4,
@@ -86,7 +86,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
             typed_range_disjoint_from_pointer_evidence(&wider_range, &field, 8, &context).is_none()
         );
         let overlapping = context.clone().assume_condition(
-            ConditionTerm::pointer_equal(backing.base().clone(), field.clone()),
+            ConditionTerm::address_equal(backing.base().clone(), field.clone()),
             true,
         );
         assert!(!proof.checks(&backing, &field, 8, &overlapping));
@@ -95,14 +95,14 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         );
         // Exercise the complete explicit equality certificate, including
         // the actual LoopHavoc edge and all eight descriptor-read bytes.
-        let before = Memory::new();
+        let before = SymbolicMemory::new();
         let after = before.clone().with_loop_memory_havoc_preserving_loans(
             Variable(9_897_004),
             &std::collections::BTreeSet::new(),
             Some(std::slice::from_ref(&backing)),
             None,
         );
-        let load = |memory: &Memory| {
+        let load = |memory: &SymbolicMemory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(field.clone()),

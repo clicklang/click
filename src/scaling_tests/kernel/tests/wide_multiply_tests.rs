@@ -27,10 +27,7 @@ fn wide_multiply_known_bounds_work_does_not_scan_unrelated_ambient_facts() {
             )
         });
         assert_eq!(paths.len(), 1);
-        assert!(paths[0].facts.iter().any(|fact| matches!(
-            fact.proposition(),
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, _), true)
-        )));
+        assert!(paths[0].facts.iter().any(|fact| matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))));
         assert!(work < 4096, "{size}: {work}");
         samples.push(work);
     }

@@ -284,8 +284,8 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             ));
         }
         // Citing a stated range cites both of its halves; see
-        // `cite_range_extent_guards`.
-        crate::surface::proof::theorem_application::cite_range_extent_guards(
+        // `cite_range_span_guards`.
+        crate::surface::proof::theorem_application::cite_range_span_guards(
             &premise,
             &mut explicit_premises,
             |guard| available.exact_available_across_effects(guard, &[]),
@@ -971,9 +971,11 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
     fn erase_term(term: &MachineTerm) -> MachineTerm {
         match term {
             MachineTerm::MemoryLoad(_, pointer, kind) => MachineTerm::MemoryLoad(
-                crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::default()))),
-                Box::new(Pointer {
-                    block: pointer.block.clone(),
+                crate::kernel::ProgramPoint::at(
+                    &(crate::kernel::intern_memory(SymbolicMemory::default())),
+                ),
+                Box::new(Address {
+                    base: pointer.base.clone(),
                     offset: erase_offset(&pointer.offset),
                 }),
                 *kind,
@@ -1005,16 +1007,13 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
             other => other.clone(),
         }
     }
-    fn erase_offset(offset: &PointerOffsetTerm) -> PointerOffsetTerm {
+    fn erase_offset(offset: &AddressOffset) -> AddressOffset {
         match offset {
-            PointerOffsetTerm::Add(left, right) => {
-                PointerOffsetTerm::Add(Box::new(erase_offset(left)), Box::new(erase_offset(right)))
+            AddressOffset::Add(left, right) => {
+                AddressOffset::Add(Box::new(erase_offset(left)), Box::new(erase_offset(right)))
             }
-            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                PointerOffsetTerm::scaled_int32_node(
-                    erase_term(value.structural_value()),
-                    *byte_width,
-                )
+            AddressOffset::Int32Scaled { value, byte_width } => {
+                AddressOffset::scaled_int32_node(erase_term(value.structural_value()), *byte_width)
             }
             other => other.clone(),
         }
@@ -1022,7 +1021,7 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
-    let erased = match condition {
+    let erased = match condition.native_compat() {
         // A 32-bit comparison, signed or `uint32` (equality is filed at
         // `int32`).
         ConditionTerm::Compare {
@@ -1038,7 +1037,7 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
         },
         _ => return None,
     };
-    Some(Proposition::ConditionIs(erased, *value))
+    Some(Proposition::condition_is(erased, *value))
 }
 
 /// Compares branch facts after erasing the memory state captured at the
@@ -1073,7 +1072,10 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
                 left: other_left,
                 right: other_right,
             },
-        ) = (left_condition, right_condition)
+        ) = (
+            left_condition.native_compat(),
+            right_condition.native_compat(),
+        )
         else {
             return false;
         };
@@ -1104,7 +1106,10 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
         if left_value != right_value {
             return false;
         }
-        match (left_condition, right_condition) {
+        match (
+            left_condition.native_compat(),
+            right_condition.native_compat(),
+        ) {
             (
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
@@ -1120,12 +1125,12 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
                 },
             ) => left == other_right && right == other_left,
             (
-                ConditionTerm::PointerOffsetEqual(left, right),
-                ConditionTerm::PointerOffsetEqual(other_left, other_right),
+                ConditionTerm::AddressOffsetEqual(left, right),
+                ConditionTerm::AddressOffsetEqual(other_left, other_right),
             ) => left == other_right && right == other_left,
             (
-                ConditionTerm::PointerEqual(left, right),
-                ConditionTerm::PointerEqual(other_left, other_right),
+                ConditionTerm::AddressEqual(left, right),
+                ConditionTerm::AddressEqual(other_left, other_right),
             ) => left == other_right && right == other_left,
             _ => false,
         }
@@ -1154,7 +1159,7 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
 pub(in crate::surface::proof) fn certified_fact_transport_reaches_through(
     source: &Proposition,
     target: &Proposition,
-    after: &Memory,
+    after: &SymbolicMemory,
     assumptions: &PureFactContext,
     transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
@@ -1179,7 +1184,7 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches_through(
 fn certified_fact_transport_reaches_through_unmemoized(
     source: &Proposition,
     target: &Proposition,
-    after: &Memory,
+    after: &SymbolicMemory,
     assumptions: &PureFactContext,
     transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
@@ -1212,7 +1217,7 @@ fn certified_fact_transport_reaches_through_unmemoized(
 pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     source: &Proposition,
     target: &Proposition,
-    after: Option<&Memory>,
+    after: Option<&SymbolicMemory>,
     assumptions: &PureFactContext,
 ) -> bool {
     // A checked read at a computed address includes its address-definedness
@@ -1354,13 +1359,11 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     // A reflexive source adds no information. Match the target directly in
     // this context rather than comparing both copies of the source's load
     // with both target operands, then transporting the same tautology.
-    if matches!(
-        (source, target),
-        (
-            Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }, true),
-            Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. }, true)
-        ) if left == right
-    ) {
+    if matches!(&(source, target), (
+            condition_source_0 @ Proposition::ConditionIs(_, true),
+            condition_source_1 @ Proposition::ConditionIs(_, true)
+        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }, _)) if matches!(condition_source_1.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. }, _)) if (left == right))))
+    {
         return crate::kernel::api::program_condition_fact_target_reaches_in_context(
             source,
             target,
@@ -1415,18 +1418,18 @@ mod path_condition_tests {
 
     #[test]
     fn compound_read_transport_requires_every_address_guard_and_range() {
-        let memory = Memory::new();
-        let base = Pointer {
-            block: "bytes".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let memory = SymbolicMemory::new();
+        let base = Address {
+            base: "bytes".into(),
+            offset: AddressOffset::Constant(0),
         };
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         };
-        let guard = Proposition::ConditionIs(
+        let guard = Proposition::condition_is(
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
@@ -1447,7 +1450,7 @@ mod path_condition_tests {
         let wider = Proposition::MemoryLoadable {
             memory,
             base,
-            bytes: MachineTerm::constant(2),
+            bytes: (MachineTerm::constant(2)).into(),
             wide: false,
         };
         let invalid = Proposition::And(Box::new(guard), Box::new(wider));
@@ -1458,14 +1461,14 @@ mod path_condition_tests {
 
     #[test]
     fn pointer_offset_path_equality_accepts_reversed_operands() {
-        let left = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
-        let right = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
-        let forward = Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
+        let left = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
+        let right = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
+        let forward = Proposition::condition_is(
+            ConditionTerm::AddressOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
             true,
         );
-        let reversed = Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(Box::new(right), Box::new(left)),
+        let reversed = Proposition::condition_is(
+            ConditionTerm::AddressOffsetEqual(Box::new(right), Box::new(left)),
             true,
         );
 

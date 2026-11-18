@@ -12,6 +12,10 @@ fn project(source: &str) -> ClickProject {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_transfer_wrapper_batch_00"
+)]
 fn authority_transfer_wrapper_preserves_each_existing_child() {
     let source = r#"
         authorized abstract resource member(object: int32);
@@ -39,6 +43,10 @@ fn authority_transfer_wrapper_preserves_each_existing_child() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_transfer_wrapper_batch_00"
+)]
 fn authority_transfer_wrapper_cannot_create_a_missing_child() {
     let source = r#"
         authorized abstract resource member(object: int32);
@@ -63,6 +71,10 @@ fn authority_transfer_wrapper_cannot_create_a_missing_child() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_transfer_wrapper_batch_00"
+)]
 fn authority_transfer_wrapper_cannot_bypass_member_birth_checks() {
     let source = r#"
         authorized resource member(p: int32*) { owns p[0..1]; }
@@ -86,6 +98,10 @@ fn authority_transfer_wrapper_cannot_bypass_member_birth_checks() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_transfer_wrapper_batch_00"
+)]
 fn authority_transfer_wrapper_preserves_a_tracked_member() {
     let source = r#"
         authorized resource member(p: int32*) { owns p[0..1]; }
@@ -96,7 +112,7 @@ fn authority_transfer_wrapper_preserves_a_tracked_member() {
         } by {
             step();
             step();
-            branch { step_until(function.exit); solve(); } else {}
+            branch { true => { step_until(function.exit); solve(); } false => {} }
             fold(authority(member(p)));
             fold(member(p));
             fold(held(p));
@@ -114,6 +130,10 @@ fn authority_transfer_wrapper_preserves_a_tracked_member() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_transfer_wrapper_batch_01"
+)]
 fn authority_member_wrapper_requires_population_cleanup_before_free() {
     let source = r#"
         authorized resource member(p: int32*) { owns p[0..1]; }
@@ -124,7 +144,7 @@ fn authority_member_wrapper_requires_population_cleanup_before_free() {
         } by {
             step();
             step();
-            branch { step_until(function.exit); solve(); } else {}
+            branch { true => { step_until(function.exit); solve(); } false => {} }
             fold(authority(member(p)));
             fold(member(p));
             fold(authority(held(p)));
@@ -147,6 +167,10 @@ fn authority_member_wrapper_requires_population_cleanup_before_free() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_transfer_wrapper_batch_01"
+)]
 fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome() {
     let source = r#"
         authorized resource member(p: int32*) { owns p[0..1]; }
@@ -157,7 +181,7 @@ fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome()
         } by {
             step();
             step();
-            branch { step_until(function.exit); solve(); } else {}
+            branch { true => { step_until(function.exit); solve(); } false => {} }
             fold(authority(member(p)));
             fold(member(p));
             fold(authority(held(p)));
@@ -178,6 +202,10 @@ fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome()
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_transfer_wrapper_batch_01"
+)]
 fn authority_transfer_wrapper_preserves_adjacent_mixed_width_memory_frame() {
     verify_c_project(
         &project(MEMORY_FRAME_SOURCE),
@@ -257,6 +285,10 @@ fn authority_transfer_wrapper_memory_frame_cannot_supply_missing_or_duplicate_ch
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_transfer_wrapper_batch_01"
+)]
 fn separately_proved_resource_clauses_cannot_duplicate_a_borrowed_unit() {
     let source = r#"
         abstract resource Permit(object: int32);
@@ -279,4 +311,22 @@ fn separately_proved_resource_clauses_cannot_duplicate_a_borrowed_unit() {
             || error.message().contains("held instance"),
         "{error}"
     );
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "authority_transfer_wrapper_tests.rs",
+    marker: "authority_transfer_wrapper_batch_",
+    authority_transfer_wrapper_batch_00: [
+        authority_transfer_wrapper_preserves_each_existing_child,
+        authority_transfer_wrapper_cannot_create_a_missing_child,
+        authority_transfer_wrapper_cannot_bypass_member_birth_checks,
+        authority_transfer_wrapper_preserves_a_tracked_member,
+    ],
+    authority_transfer_wrapper_batch_01: [
+        authority_member_wrapper_requires_population_cleanup_before_free,
+        authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome,
+        authority_transfer_wrapper_preserves_adjacent_mixed_width_memory_frame,
+        separately_proved_resource_clauses_cannot_duplicate_a_borrowed_unit,
+    ],
 }

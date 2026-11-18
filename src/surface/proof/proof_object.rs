@@ -88,6 +88,37 @@ pub(super) struct Proof<'a> {
     site: ProofStepSite,
 }
 
+/// The rebound state and guard decisions produced by the loop-state join.
+/// Closure may add facts; it does not repeat this source-state construction.
+pub(super) struct LoopBoundary {
+    state: ExecutionState,
+    guard: crate::kernel::LoopConditionFeasibility,
+    head_compatible: bool,
+}
+
+impl LoopBoundary {
+    pub(super) fn state(&self) -> &ExecutionState {
+        &self.state
+    }
+
+    pub(super) fn may_exit(&self) -> bool {
+        self.guard.may_exit()
+    }
+
+    pub(super) fn required_ranking_measures<'m>(
+        &self,
+        declared: &'m [crate::kernel::RankingComponent],
+    ) -> &'m [crate::kernel::RankingComponent] {
+        self.guard.required_ranking_measures(declared)
+    }
+
+    /// Compatible exits are covered by the invariant-head abstraction.
+    /// A distinct partition is retained only for an established false guard.
+    pub(super) fn explicit_exit_state(&self) -> Option<&ExecutionState> {
+        (self.may_exit() && !self.head_compatible).then_some(self.state())
+    }
+}
+
 /// Feasible arms of one checked C `if` frontier.
 ///
 /// Entering the container performs the audited condition transition and C
@@ -108,6 +139,7 @@ pub(super) struct ExecutionSplitData<'a> {
     arm_branches: [Option<BranchId>; 2],
     condition_theorems: [Option<Theorem>; 2],
     checked_split: CheckedExecutionSplit,
+    call_outcomes: Option<CallOutcomeSplitPresentation>,
     base_facts: [Option<PureFactStore>; 2],
     base_executions: [Option<Arc<ExecutionProofState>>; 2],
     path_facts: [Option<Vec<Proposition>>; 2],
@@ -128,6 +160,27 @@ pub(super) struct ExecutionSplitData<'a> {
 pub(super) enum CheckedExecutionSplit {
     Branch(CheckedBranchSplit),
     CallOutcomes(CheckedCallOutcomeSplit),
+}
+
+struct CallOutcomeSplitPresentation {
+    payload_bindings: [Option<String>; 2],
+    payloads: [Option<StoredExecutionValue>; 2],
+}
+
+/// The selected checked call edge and its payload, if the transition exposes one.
+#[derive(Clone)]
+pub(super) struct CallOutcomeEdge {
+    pub(super) returned: bool,
+    pub(super) payload: Option<StoredExecutionValue>,
+}
+
+impl CallOutcomeEdge {
+    fn from_payloads(returned: bool, payloads: &[Option<StoredExecutionValue>; 2]) -> Self {
+        Self {
+            returned,
+            payload: payloads[usize::from(!returned)].clone(),
+        }
+    }
 }
 
 /// What a proof-level case split splits on, as written. A proof `if P`
@@ -426,9 +479,6 @@ enum ProofScopeStructure {
         resource: ResourceClause,
         source_index: usize,
         preserve_exposed_body: bool,
-        /// The source's `open(r) { ... } by { ... }` proof of the body fact
-        /// the closing fold leaves open.
-        written_close_proof: Option<Vec<ProofTactic>>,
     },
 }
 
@@ -584,6 +634,9 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// split. This is path-routing presentation, not proof evidence: each
     /// selected outcome retains its own kernel-checked theorem and goal.
     pub(in crate::surface::proof) call_outcome_edges: Option<Vec<bool>>,
+    /// Payloads of a call that a single statement step finished together with
+    /// its terminal continuation, in returned/threw order.
+    pub(in crate::surface::proof) terminal_call_payloads: [Option<StoredExecutionValue>; 2],
     /// The path's surface record: certificate-visible certificate facts, the
     /// premise anchor, and proof-level case choices.
     pub(in crate::surface::proof) surface_record: SurfaceRecord,
@@ -672,11 +725,11 @@ pub(in crate::surface::proof) struct StoreSeparationMiss {
     /// The statement that ran, as a proof names it (`statement(5)`).
     pub(in crate::surface::proof) statement: String,
     /// The cached cell the store dropped.
-    pub(in crate::surface::proof) cell: crate::kernel::Pointer,
+    pub(in crate::surface::proof) cell: crate::kernel::Address,
     /// The dropped cell as the statement's C locals spell it, `q[0]`.
     pub(in crate::surface::proof) cell_text: Option<String>,
     /// The cell the store wrote.
-    pub(in crate::surface::proof) store: crate::kernel::Pointer,
+    pub(in crate::surface::proof) store: crate::kernel::Address,
     /// The spelled disequality the search tried at the statement's pre-state.
     pub(in crate::surface::proof) fact: ClickProposition,
 }
@@ -861,6 +914,7 @@ impl ExecutionProofState {
                 post_execution_tactics: PersistentSequence::default(),
                 partitioned_post_execution_tactics: PersistentSequence::default(),
                 call_outcome_edges: None,
+                terminal_call_payloads: [None, None],
                 surface_record: SurfaceRecord::default(),
                 invariant_closer_step: Default::default(),
                 region_solve: None,
@@ -1145,7 +1199,7 @@ impl ProofExecutionView<'_> {
                 };
                 Some((|| {
                     let condition = synthesize_surface_proposition(
-                        &Proposition::ConditionIs(condition.clone(), true),
+                        &Proposition::condition_is(condition.clone(), true),
                         self.context.parameter_binding(),
                         &case.state,
                     )
@@ -1270,7 +1324,7 @@ impl ProofExecutionView<'_> {
                     )
                 }
                 ProofTactic::CallOutcomes(outcomes) => {
-                    let returned = *call_routes.next()?;
+                    let returned = call_routes.next()?.returned;
                     (
                         returned,
                         if returned {
@@ -1357,10 +1411,10 @@ struct OutcomeEvidence {
     checked_leaf_facts: Option<Arc<CheckedLeafFacts>>,
     loop_return: Option<Arc<LoopReturnProof>>,
     /// The checked call edges selected on this terminal path, outermost
-    /// `outcomes` first; `true` is `returned`. A surrounding branch can add
+    /// `outcomes` first, with their checked call payloads. A surrounding branch can add
     /// paths that never visited a call, so this belongs to each outcome
     /// rather than to the joined frontier as one flat vector.
-    call_routes: Vec<bool>,
+    call_routes: Vec<CallOutcomeEdge>,
     branch_decisions: ExecutionBranchDecisions,
     match_arms: OutcomeMatchArms,
     /// Ordinary exhaustiveness proofs completed before either case arm.
@@ -1498,6 +1552,13 @@ impl Proof<'_> {
         )
     }
 
+    pub(in crate::surface::proof) fn induction_binder_name_scope(
+        &self,
+    ) -> Option<super::surface_synthesis::ProofBindingNamesScope> {
+        self.uses_structural_induction()
+            .then(|| self.requirement_binder_name_scope())
+    }
+
     /// The kernel variables the proof's binders name, as synthesis reads
     /// them: scalar and algebraic binder values, and a pointer binder whose
     /// value is a symbolic block's base. The first map holds the goal's `intro`
@@ -1520,10 +1581,10 @@ impl Proof<'_> {
                     Some(*variable)
                 }
                 ProgramValue::Pointer(pointer) => {
-                    match (&pointer.pointer().block, &pointer.pointer().offset) {
+                    match (&pointer.address().base, &pointer.address().offset) {
                         (
-                            crate::kernel::PointerBlock::Symbolic(variable),
-                            PointerOffsetTerm::Constant(0),
+                            crate::kernel::AddressBase::Symbolic(variable),
+                            AddressOffset::Constant(0),
                         ) => Some(*variable),
                         _ => None,
                     }
@@ -1598,13 +1659,12 @@ fn diagnostic_value_variable(value: &ProgramValue) -> Option<Variable> {
             },
             _ => None,
         },
-        ProgramValue::Pointer(pointer) => match &pointer.pointer().offset {
-            PointerOffsetTerm::Variable(variable) => Some(*variable),
+        ProgramValue::Pointer(pointer) => match &pointer.address().offset {
+            AddressOffset::Variable(variable) => Some(*variable),
             // C pointers to sized elements keep their direct symbolic offset
             // in element units. An added displacement is composite and does
             // not identify the pointer local itself.
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
                 value.operand_view().variable().copied()
             }
             _ => None,
@@ -1632,11 +1692,11 @@ pub(in crate::surface::proof) fn register_recorded_state_names(
     retained_states: &crate::surface::RecordedStates,
 ) {
     labels.recorded_states(retained_states);
-    register_state_names(labels, &citable_states(retained_states));
+    register_state_names(labels, &citable_states(retained_states), retained_states);
     // Each exited loop's pass count, `loop(i).iterations`.
     for (name, iterations) in retained_states.loop_iteration_bindings() {
         if let crate::kernel::IntegerTerm::Variable(variable) = iterations {
-            labels.integer_source_name(*variable, name);
+            labels.integer_source_name(variable, name);
         }
     }
     // Each recorded call's result, `statement(0).call(f, 0).result`.
@@ -1659,7 +1719,7 @@ fn register_call_result_name(
             labels.fallback_read_name(read, spelling);
         }
         ProgramValue::Pointer(pointer) => {
-            labels.fallback_pointer_name(pointer.pointer(), spelling.clone());
+            labels.fallback_pointer_name(pointer.address(), spelling.clone());
             labels.fallback_value_name(spelling, value.clone());
         }
         _ => {}
@@ -1672,7 +1732,7 @@ fn register_call_result_name(
 /// persistent storage.
 fn citable_states(
     retained_states: &crate::surface::RecordedStates,
-) -> Vec<(String, ExecutionState)> {
+) -> Vec<(crate::surface::ProgramPointSelector, ExecutionState)> {
     use crate::surface::{CodeRegionRef, ProgramPointRef, ProgramPointSelector};
     let recent = retained_states.recent(NAMED_STATE_LIMIT);
     // The proof's own marks stay citable however many statements ran since:
@@ -1696,37 +1756,51 @@ fn citable_states(
                 CodeRegionRef::Region(_) | CodeRegionRef::Loop(_) | CodeRegionRef::Label(_)
             ),
         })
-        .map(|(selector, state)| {
-            (
-                crate::surface::diagnostics::describe_program_point_selector(selector),
-                state.clone(),
-            )
-        })
+        .map(|(selector, state)| (selector.clone(), state.clone()))
         .collect()
 }
 
 fn register_state_names(
     labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
-    citable: &[(String, ExecutionState)],
+    citable: &[(ProgramPointSelector, ExecutionState)],
+    retained_states: &crate::surface::RecordedStates,
 ) {
     // A read of a state's memory is spelled against the locals it held,
     // as `at(point, p[1])`.
     for (point, state) in citable {
-        labels.source_state(state, point.clone());
+        labels.source_state(
+            state,
+            crate::surface::diagnostics::describe_program_point_selector(point),
+        );
     }
-    for (point, state) in citable {
+    for (selector, state) in citable {
+        let point = crate::surface::diagnostics::describe_program_point_selector(selector);
         for (name, stored) in state.locals().object_values() {
+            if let Some(result) =
+                retained_states.call_capture_expression(name, stored, Some(selector))
+            {
+                register_call_result_name(
+                    labels,
+                    crate::surface::diagnostics::describe_contract_expression(&result),
+                    stored.native().as_ref(),
+                );
+                continue;
+            }
             let value = stored.native();
             let value = value.as_ref();
             // A pointer's offset variable is not the pointer; a scalar
             // local's value, or a pointer local's whole address, is exactly
             // the local.
             // A temporary the translation introduced has no source spelling.
-            if name.named().is_some_and(|name| {
-                name.starts_with("__click")
-                    || name.starts_with("__rust_")
-                    || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-            }) {
+            if name
+                .local_id()
+                .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                || name.named().is_some_and(|name| {
+                    name.starts_with("__click")
+                        || name.starts_with("__rust_")
+                        || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                })
+            {
                 continue;
             }
             let name = name
@@ -1759,7 +1833,7 @@ fn register_state_names(
                 // An address no structural spelling names, a heap
                 // allocation, is the pointer local that held it.
                 ProgramValue::Pointer(pointer) => {
-                    labels.fallback_pointer_name(pointer.pointer(), format!("at({point}, {name})"));
+                    labels.fallback_pointer_name(pointer.address(), format!("at({point}, {name})"));
                 }
                 _ => {}
             }
@@ -1784,7 +1858,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         // user-chosen name wins over the synthesized C assignment target.
         for (name, value) in proof_local_program_values(&self.0) {
             if let ProgramValue::Pointer(pointer) = value {
-                labels.immutable_pointer_name(pointer.pointer(), &name.to_string());
+                labels.immutable_pointer_name(pointer.address(), &name.to_string());
             }
             if let Some(variable) = diagnostic_value_variable(value) {
                 labels.immutable_source_name(variable, name.to_string());
@@ -1835,12 +1909,19 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                     if !name.named().is_some_and(|name| name.starts_with("__rust_"))
                         && let Some(variable) = diagnostic_value_variable(&value.native())
                     {
-                        labels.source_name(
-                            variable,
-                            name.named()
-                                .and_then(crate::surface::diagnostics::rust_variable_spelling)
-                                .unwrap_or_else(|| name.to_string()),
-                        );
+                        let spelling = execution
+                            .presentation
+                            .recorded_states
+                            .call_capture_expression(name, value, None)
+                            .map(|result| {
+                                crate::surface::diagnostics::describe_contract_expression(&result)
+                            })
+                            .or_else(|| {
+                                name.named()
+                                    .and_then(crate::surface::diagnostics::rust_variable_spelling)
+                            })
+                            .unwrap_or_else(|| name.to_string());
+                        labels.source_name(variable, spelling);
                     }
                 }
             }
@@ -1903,6 +1984,23 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             Obligation::Proposition(goal) => Some(goal.proposition()),
             _ => None,
         }
+    }
+
+    fn written_pointer_goal(&self) -> Option<&ClickProposition> {
+        let branch = self
+            .0
+            .state()
+            .open_branches()
+            .get(self.0.focused_branch())?;
+        let Obligation::Proposition(goal) = &branch.obligation else {
+            return None;
+        };
+        if goal.generated_surface
+            || !matches!(&goal.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(left, right), _)) if left != right && left.address() == right.address()))
+        {
+            return None;
+        }
+        goal.surface.as_deref()
     }
 
     fn premises(&self, limit: usize) -> Vec<&Proposition> {
@@ -2506,8 +2604,8 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
         Arc<PersistentMap<Proposition, ClickProposition>>,
     branch_decisions: ExecutionBranchDecisions,
     /// The checked call edges this outcome took, outermost `outcomes`
-    /// first. `true` is `returned`; `false` is `threw`.
-    pub(in crate::surface::proof) call_routes: Vec<bool>,
+    /// first, with their checked call payloads.
+    pub(in crate::surface::proof) call_routes: Vec<CallOutcomeEdge>,
     /// The arm each `match` deferred after execution took on this path, by
     /// the match's source occurrence, with that arm's field bindings.
     pub(in crate::surface::proof) match_arms: OutcomeMatchArms,
@@ -3097,7 +3195,7 @@ impl<'a> Proof<'a> {
         &self,
         goal: &Proposition,
     ) -> Option<ClickProposition> {
-        let _binder_names = self.requirement_binder_name_scope();
+        let _binder_names = self.induction_binder_name_scope();
         use super::surface_synthesis as synthesis;
         let _qualified = (self)
             .premise_surface_facts()
@@ -3372,6 +3470,13 @@ impl<'a> Proof<'a> {
     ) -> Result<Self, ClickError> {
         let kernel = self.lower_surface_goal(goal, "source contract clause")?;
         self.focus_fixed_state_goal_for_cell(kernel, Some(goal.clone()), None, Some(key))
+    }
+
+    pub(in crate::surface::proof) fn ends_in_empty_normalize_using(&self) -> bool {
+        matches!(
+            self.node.step.as_deref(),
+            Some(ProofStep::NormalizeUsing(premises)) if premises.is_empty()
+        )
     }
 
     pub(super) fn is_complete(&self) -> bool {

@@ -16,6 +16,10 @@ fn project(click_source: &str) -> ClickProject {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_00"
+)]
 fn authority_control_extra_payload_does_not_replace_counter_ownership() {
     let c_source = "struct object { int32 refs; int32 payload; }; void keep(struct object* obj) {}";
     let click_source = r#"
@@ -41,6 +45,10 @@ fn authority_control_extra_payload_does_not_replace_counter_ownership() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_00"
+)]
 fn authority_member_local_body_uses_scalar_allocation_ownership() {
     let c_source = r#"
         int32 value(void) {
@@ -73,6 +81,10 @@ fn authority_member_local_body_uses_scalar_allocation_ownership() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_00"
+)]
 fn authority_member_private_heap_body_round_trip() {
     let c_source = r#"
         int32 value(void) {
@@ -94,9 +106,12 @@ fn authority_member_private_heap_body_round_trip() {
             step();
             step();
             branch {
-                step_until(function.exit);
-                solve();
-            } else {}
+                true => {
+                    step_until(function.exit);
+                    solve();
+                }
+                false => {}
+            }
             fold(authority(reference(p)));
             fold(reference(p));
             open(reference(p)) {
@@ -113,6 +128,10 @@ fn authority_member_private_heap_body_round_trip() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_00"
+)]
 fn authority_helper_returns_member_with_private_memory_body() {
     let c_source = r#"
         int32 helper(int32* p) { *p = 7; return 7; }
@@ -145,7 +164,7 @@ fn authority_helper_returns_member_with_private_memory_body() {
         } by {
             step();
             step();
-            branch { step_until(function.exit); solve(); } else {}
+            branch { true => { step_until(function.exit); solve(); } false => {} }
             fold(authority(reference(p)));
             fold(reference(p));
             step();
@@ -161,6 +180,10 @@ fn authority_helper_returns_member_with_private_memory_body() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_01"
+)]
 fn authority_helpers_create_and_consume_member_with_private_memory_body() {
     let c_source = r#"
         int32 acquire(int32* p) { p[0] = 7; p[1] = 9; return 7; }
@@ -214,7 +237,7 @@ fn authority_helpers_create_and_consume_member_with_private_memory_body() {
         } by {
             step();
             step();
-            branch { step_until(function.exit); solve(); } else {}
+            branch { true => { step_until(function.exit); solve(); } false => {} }
             fold(authority(reference(p)));
             step();
             step();
@@ -232,6 +255,10 @@ fn authority_helpers_create_and_consume_member_with_private_memory_body() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_01"
+)]
 fn authority_creating_helper_cannot_outlive_caller_scalar_storage() {
     let c_source = r#"
         int32 acquire(int32* p) { *p = 7; return 7; }
@@ -274,6 +301,10 @@ fn authority_creating_helper_cannot_outlive_caller_scalar_storage() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_01"
+)]
 fn authority_consuming_helper_cannot_return_the_wrong_private_body() {
     let c_source = r#"int32 release(int32* p) { return 7; }"#;
     let click_source = r#"
@@ -309,6 +340,10 @@ fn authority_consuming_helper_cannot_return_the_wrong_private_body() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_01"
+)]
 fn authority_member_private_heap_body_cannot_back_two_births() {
     let c_source = r#"
         int32 value(void) {
@@ -329,7 +364,7 @@ fn authority_member_private_heap_body_cannot_back_two_births() {
         } by {
             step();
             step();
-            branch { step_until(function.exit); solve(); } else {}
+            branch { true => { step_until(function.exit); solve(); } false => {} }
             fold(authority(reference(p)));
             fold(reference(p));
             fold(reference(p));
@@ -344,6 +379,10 @@ fn authority_member_private_heap_body_cannot_back_two_births() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_02"
+)]
 fn authority_malloc_statement_evidence_starts_at_running_state() {
     let c_source =
         "int32 value(void) { int32* p; p = malloc(4); if (p == 0) return 0; free(p); return 0; }";
@@ -361,6 +400,10 @@ fn authority_malloc_statement_evidence_starts_at_running_state() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_02"
+)]
 fn authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes() {
     let c_source = r#"
         int32 value(void) {
@@ -384,7 +427,7 @@ fn authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes(
         verifying "private_body.c";
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { step_until(function.exit); solve(); } else {}
+            branch { true => { step_until(function.exit); solve(); } false => {} }
             step();
             fold(authority(reference(p)));
             fold(control(p));
@@ -406,6 +449,10 @@ fn authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes(
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_02"
+)]
 fn authority_control_wrapper_rejects_a_false_close_invariant() {
     let c_source = r#"
         int32 value(void) {
@@ -429,7 +476,7 @@ fn authority_control_wrapper_rejects_a_false_close_invariant() {
         verifying "private_body.c";
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { step_until(function.exit); solve(); } else {}
+            branch { true => { step_until(function.exit); solve(); } false => {} }
             step();
             fold(authority(reference(p)));
             fold(control(p));
@@ -452,6 +499,10 @@ fn authority_control_wrapper_rejects_a_false_close_invariant() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_03"
+)]
 fn authority_control_wrapper_requires_its_contained_authority() {
     let c_source = r#"
         int32 value(void) {
@@ -473,7 +524,7 @@ fn authority_control_wrapper_requires_its_contained_authority() {
         verifying "private_body.c";
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { step_until(function.exit); solve(); } else {}
+            branch { true => { step_until(function.exit); solve(); } false => {} }
             step();
             fold(control(p));
         }
@@ -484,6 +535,10 @@ fn authority_control_wrapper_requires_its_contained_authority() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_03"
+)]
 fn authority_control_wrapper_requires_its_counter_memory() {
     let c_source = r#"
         int32 value(void) {
@@ -506,7 +561,7 @@ fn authority_control_wrapper_requires_its_counter_memory() {
         verifying "private_body.c";
         int32 value() { ensures result == -1 or result == 1; } by {
             step(); step();
-            branch { step_until(function.exit); solve(); } else {}
+            branch { true => { step_until(function.exit); solve(); } false => {} }
             step();
             fold(authority(reference(p)));
             step();
@@ -572,7 +627,7 @@ fn authority_control_survives_balanced_helper_calls() {
         }
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { step_until(function.exit); solve(); } else {}
+            branch { true => { step_until(function.exit); solve(); } false => {} }
             step();
             fold(authority(reference(p)));
             fold(control(p));
@@ -600,6 +655,10 @@ fn authority_control_survives_balanced_helper_calls() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by authority_private_body_batch_03"
+)]
 fn authority_final_release_helper_retires_population_and_allocation() {
     let c_source = r#"
         struct object { int32 refs; };
@@ -639,7 +698,7 @@ fn authority_final_release_helper_retires_population_and_allocation() {
 
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { step_until(function.exit); solve(); } else {}
+            branch { true => { step_until(function.exit); solve(); } false => {} }
             step();
             fold(authority(reference(obj)));
             fold(reference(obj));
@@ -670,4 +729,32 @@ fn authority_final_release_helper_retires_population_and_allocation() {
             .contains("Requires count(reference(...)) == 0"),
         "{error:?}"
     );
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "authority_private_body_tests.rs",
+    marker: "authority_private_body_batch_",
+    authority_private_body_batch_00: [
+        authority_control_extra_payload_does_not_replace_counter_ownership,
+        authority_member_local_body_uses_scalar_allocation_ownership,
+        authority_member_private_heap_body_round_trip,
+        authority_helper_returns_member_with_private_memory_body,
+    ],
+    authority_private_body_batch_01: [
+        authority_helpers_create_and_consume_member_with_private_memory_body,
+        authority_creating_helper_cannot_outlive_caller_scalar_storage,
+        authority_consuming_helper_cannot_return_the_wrong_private_body,
+        authority_member_private_heap_body_cannot_back_two_births,
+    ],
+    authority_private_body_batch_02: [
+        authority_malloc_statement_evidence_starts_at_running_state,
+        authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes,
+        authority_control_wrapper_rejects_a_false_close_invariant,
+    ],
+    authority_private_body_batch_03: [
+        authority_control_wrapper_requires_its_contained_authority,
+        authority_control_wrapper_requires_its_counter_memory,
+        authority_final_release_helper_retires_population_and_allocation,
+    ],
 }

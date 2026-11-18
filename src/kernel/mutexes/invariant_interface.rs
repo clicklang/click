@@ -9,7 +9,7 @@ use crate::kernel::{ResourceDescription, ResourceInstance};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct MutexInvariantInterface {
     description: ResourceDescription,
-    mutex: Pointer,
+    mutex: Address,
 }
 
 impl MutexInvariantInterface {
@@ -17,7 +17,7 @@ impl MutexInvariantInterface {
     /// instance; the initialization itself is the source of the association.
     pub(super) fn check_definition(
         instance: &ResourceInstance,
-        mutex: &Pointer,
+        mutex: &Address,
         definition: &crate::kernel::CompositeResourceDefinition,
     ) -> Result<Self, &'static str> {
         if definition.name() != instance.name()
@@ -46,7 +46,7 @@ impl MutexInvariantInterface {
         &self.description
     }
 
-    pub(super) fn mutex(&self) -> &Pointer {
+    pub(super) fn mutex(&self) -> &Address {
         &self.mutex
     }
 }
@@ -64,7 +64,7 @@ mod tests {
         ResourceInstance::new(
             Variable(identity),
             "counter_state".into(),
-            vec![ProgramValue::pointer(Pointer::symbolic(Variable(70))).into()].into(),
+            vec![ProgramValue::pointer(Address::symbolic(Variable(70))).into()].into(),
             ResourceFieldSchema::new(vec![(
                 "value".into(),
                 ResourceFieldType::Program(ProgramType::Int32),
@@ -75,8 +75,8 @@ mod tests {
         .unwrap()
     }
 
-    fn address() -> Pointer {
-        Pointer::symbolic(Variable(70)).offset_by_bytes(8)
+    fn address() -> Address {
+        Address::symbolic(Variable(70)).offset_by_bytes(8)
     }
 
     fn definitions() -> BTreeMap<String, crate::kernel::CompositeResourceDefinition> {
@@ -106,7 +106,7 @@ mod tests {
                     .unchecked_with_fact(ResourceFact::own(Resource::Instance(resource.clone()))),
             ),
         );
-        let mutex = Pointer::symbolic(Variable(99));
+        let mutex = Address::symbolic(Variable(99));
         let published = context
             .publish_declared(&mutex, resource.identity(), &definitions, &assumptions, 40)
             .unwrap();
@@ -342,7 +342,7 @@ mod tests {
         let assumptions = PureFactContext::new();
         let (published, original) = published();
         let mut replacement = instance(2, 99);
-        let other = Pointer::symbolic(Variable(71));
+        let other = Address::symbolic(Variable(71));
         replacement.arguments = vec![ProgramValue::pointer(other.clone()).into()].into();
         let replacement = ResourceFact::own(Resource::Instance(replacement));
         let (mut held, guard) = published.acquire(&address(), &assumptions).unwrap();
@@ -368,12 +368,12 @@ mod tests {
             Some(MutexTransitionError::MissingInvariant(original))
         );
         let equality = assumptions.assume_condition(
-            crate::kernel::ConditionTerm::PointerValueEqual(
-                Box::new(crate::kernel::PointerValue::new(
-                    Pointer::symbolic(Variable(70)),
+            crate::kernel::ConditionTerm::PointerEqual(
+                Box::new(crate::kernel::Pointer::new(
+                    Address::symbolic(Variable(70)),
                     ProgramType::Int32Pointer,
                 )),
-                Box::new(crate::kernel::PointerValue::new(
+                Box::new(crate::kernel::Pointer::new(
                     other,
                     ProgramType::Int32Pointer,
                 )),
@@ -405,7 +405,7 @@ mod tests {
         wrong_family.name = "other_state".into();
         let mut wrong_arguments = instance(2, 99);
         wrong_arguments.arguments =
-            vec![ProgramValue::pointer(Pointer::symbolic(Variable(71))).into()].into();
+            vec![ProgramValue::pointer(Address::symbolic(Variable(71))).into()].into();
         let mut wrong_schema = instance(2, 99);
         wrong_schema.schema = ResourceFieldSchema::new(vec![(
             "other".into(),

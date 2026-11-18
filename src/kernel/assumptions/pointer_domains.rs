@@ -6,14 +6,14 @@ use super::*;
 pub(in crate::kernel) enum PointerDomain {
     Unknown,
     Root,
-    Selected(SubobjectExtent),
+    Selected(SubobjectBounds),
 }
 
 impl PointerDomain {
-    pub(in crate::kernel) fn intrinsic(value: &PointerValue) -> Self {
-        match value.extent() {
-            Some(extent) => Self::Selected(extent.clone()),
-            None if value.extent_is_known() => Self::Root,
+    pub(in crate::kernel) fn intrinsic(value: &Pointer) -> Self {
+        match value.bounds() {
+            Some(bounds) => Self::Selected(bounds.clone()),
+            None if value.bounds_are_known() => Self::Root,
             None => Self::Unknown,
         }
     }
@@ -21,19 +21,38 @@ impl PointerDomain {
 
 /// Access descriptors already retain an opaque origin; other consumers have
 /// the full value. Neither entry point reconstructs a synthetic pointer.
+#[derive(Clone, Copy)]
 pub(in crate::kernel) enum PointerDomainSource<'a> {
-    Value(&'a PointerValue),
-    OpaqueExtent(&'a Pointer),
+    Retained {
+        bounds: Option<&'a SubobjectBounds>,
+        known: bool,
+        opaque: Option<&'a Address>,
+    },
+    BoundsOwner(&'a Address),
 }
 
-impl<'a> From<&'a PointerValue> for PointerDomainSource<'a> {
-    fn from(value: &'a PointerValue) -> Self {
-        Self::Value(value)
+impl<'a> From<&'a Pointer> for PointerDomainSource<'a> {
+    fn from(value: &'a Pointer) -> Self {
+        Self::Retained {
+            bounds: value.bounds(),
+            known: value.bounds_are_known(),
+            opaque: value.bounds_owner(),
+        }
+    }
+}
+
+impl<'a> From<&'a LValue> for PointerDomainSource<'a> {
+    fn from(value: &'a LValue) -> Self {
+        Self::Retained {
+            bounds: value.bounds(),
+            known: value.bounds_known,
+            opaque: value.bounds_owner.as_deref(),
+        }
     }
 }
 
 impl PureFactContext {
-    /// Intrinsic bounds, or the cached witness for this opaque extent class.
+    /// Intrinsic bounds, or the cached witness for this bounds-owner class.
     /// Complete-pointer equality can establish that witness; equal numeric
     /// addresses cannot. No aliases, resources or memory history are searched,
     /// no terms are registered, and the input value remains unchanged.
@@ -42,64 +61,115 @@ impl PureFactContext {
         source: impl Into<PointerDomainSource<'a>>,
     ) -> PointerDomain {
         let origin = match source.into() {
-            PointerDomainSource::Value(value) => match PointerDomain::intrinsic(value) {
-                PointerDomain::Unknown => match value.opaque_extent() {
-                    Some(origin) => origin,
-                    None => return PointerDomain::Unknown,
-                },
-                known => return known,
-            },
-            PointerDomainSource::OpaqueExtent(origin) => origin,
+            PointerDomainSource::Retained {
+                bounds: Some(bounds),
+                ..
+            } => return PointerDomain::Selected(bounds.clone()),
+            PointerDomainSource::Retained { known: true, .. } => return PointerDomain::Root,
+            PointerDomainSource::Retained {
+                opaque: Some(origin),
+                ..
+            } => origin,
+            PointerDomainSource::Retained { opaque: None, .. } => return PointerDomain::Unknown,
+            PointerDomainSource::BoundsOwner(origin) => origin,
         };
         self.equality_graph.opaque_pointer_domain(origin)
     }
 
-    /// The selected-domain extension of access matching. A matching object
-    /// identity is still required, and the entire offered range must fit the
-    /// known selected domain. A larger enclosing owner is not evidence for a
-    /// larger domain; per-access bounds checking remains a separate consumer.
-    pub(super) fn selected_domain_access_matches(
+    /// Match the held resource's carrier, or check a particular access against
+    /// an admitted domain for the required pointer. Supplier coverage and
+    /// ownership are checked separately.
+    fn access_provenance_matches_span(
         &self,
-        required: (&Pointer, Option<&Pointer>),
+        required: (&Address, Option<&Address>),
+        available: &MemoryRange,
+        fits: impl FnOnce(&SubobjectBounds) -> bool,
+    ) -> bool {
+        if pointer_checks::access_match(
+            required,
+            (
+                &available.provenance,
+                available.bounds_owner.as_deref(),
+                available.carrier_bounds_known,
+            ),
+            self,
+        ) {
+            return true;
+        }
+        let Some(owner) = required.1 else {
+            return false;
+        };
+        match self.pointer_domain(PointerDomainSource::BoundsOwner(owner)) {
+            PointerDomain::Unknown => false,
+            PointerDomain::Root => self.provenance_equal(required.0, &available.provenance),
+            PointerDomain::Selected(bounds) => {
+                self.provenance_equal(required.0, &available.provenance) && fits(&bounds)
+            }
+        }
+    }
+
+    /// A narrow pointer may use a broader holding of the same object. Check
+    /// the bytes being accessed, not the width or carrier of the holding.
+    pub(in crate::kernel) fn access_provenance_matches_bytes(
+        &self,
+        required: (&Address, Option<&Address>),
+        pointer: &Address,
+        bytes: u32,
         available: &MemoryRange,
     ) -> bool {
-        let Some(origin) = required.1 else {
-            return false;
-        };
-        if !available.carrier_extent_known {
-            return false;
-        }
-        let PointerDomain::Selected(extent) =
-            self.pointer_domain(PointerDomainSource::OpaqueExtent(origin))
-        else {
-            return false;
-        };
-        if !self.provenance_equal(required.0, &available.provenance) {
-            return false;
-        }
-        let (start, end, wide) = match available.wide_bounds() {
-            Some((start, end)) => (start, end, true),
-            None => (available.start(), available.end(), false),
-        };
-        // Exact typed offsets retain full-width coordinates. Check both ends
-        // as positions (one-past allowed), without narrowing a uint64 range
-        // or searching for another footprint with a convenient extent.
-        [start, end].into_iter().all(|bound| {
-            let endpoint = available.base().offset_by_typed_elements(
-                bound.clone(),
-                available.element_width(),
-                wide,
-                wide,
-            );
+        self.access_provenance_matches_span(required, available, |bounds| {
             self.pointer_access_in_range(
-                &endpoint,
-                0,
-                &extent.start,
+                pointer,
+                bytes,
+                &bounds.start,
                 &0u32.into(),
-                &extent.width,
+                &bounds.width,
                 1,
             )
         })
+    }
+
+    /// Match a clause's complete requested range to a supplier.
+    pub(in crate::kernel) fn access_provenance_matches_range(
+        &self,
+        required: (&Address, Option<&Address>),
+        range: &MemoryRange,
+        available: &MemoryRange,
+    ) -> bool {
+        self.access_provenance_matches_span(required, available, |bounds| {
+            let (start, end, wide) = match range.wide_bounds() {
+                Some((start, end)) => (start, end, true),
+                None => (range.start(), range.end(), false),
+            };
+            // Exact typed offsets retain full-width coordinates. Check both ends
+            // as positions (one-past allowed), without narrowing a uint64 range
+            // or searching for another footprint with a convenient bounds.
+            [start, end].into_iter().all(|bound| {
+                let endpoint = range.base().offset_by_typed_elements(
+                    bound.clone(),
+                    range.element_width(),
+                    wide,
+                    wide,
+                );
+                self.pointer_access_in_range(
+                    &endpoint,
+                    0,
+                    &bounds.start,
+                    &0u32.into(),
+                    &bounds.width,
+                    1,
+                )
+            })
+        })
+    }
+
+    #[cfg(test)]
+    pub(in crate::kernel) fn access_provenance_match(
+        &self,
+        required: (&Address, Option<&Address>),
+        range: &MemoryRange,
+    ) -> bool {
+        self.access_provenance_matches_range(required, range, range)
     }
 }
 
@@ -107,21 +177,18 @@ impl PureFactContext {
 mod tests {
     use super::*;
 
-    fn pointer(id: u64) -> PointerValue {
-        PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer)
+    fn pointer(id: u64) -> Pointer {
+        Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
-    fn equal(facts: PureFactContext, a: &PointerValue, b: &PointerValue) -> PureFactContext {
-        facts.assume_condition(
-            ConditionTerm::pointer_value_equal(a.clone(), b.clone()),
-            true,
-        )
+    fn equal(facts: PureFactContext, a: &Pointer, b: &Pointer) -> PureFactContext {
+        facts.assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
     }
-    fn member(parent: &PointerValue) -> PointerValue {
+    fn member(parent: &Pointer) -> Pointer {
         parent
             .clone()
-            .with_address(parent.pointer().offset_by_bytes(4))
-            .with_extent(Some(SubobjectExtent {
-                start: parent.pointer().offset_by_bytes(4),
+            .with_address(parent.address().offset_by_bytes(4))
+            .with_bounds(Some(SubobjectBounds {
+                start: parent.address().offset_by_bytes(4),
                 width: 4u32.into(),
             }))
     }
@@ -137,20 +204,28 @@ mod tests {
         assert_eq!(empty.pointer_domain(&parent), PointerDomain::Unknown);
         assert_eq!(
             empty.pointer_domain(&selected),
-            PointerDomain::Selected(selected.extent().unwrap().clone())
+            PointerDomain::Selected(selected.bounds().unwrap().clone())
         );
         assert_eq!(
-            empty.pointer_domain(&parent.clone().with_root_extent()),
+            empty.pointer_domain(&parent.clone().with_root_bounds()),
             PointerDomain::Root
         );
         assert_eq!(empty.pointer_domain(&returned), PointerDomain::Unknown);
+        assert_eq!(
+            empty.pointer_domain(PointerDomainSource::Retained {
+                bounds: None,
+                known: true,
+                opaque: returned.bounds_owner(),
+            }),
+            PointerDomain::Root
+        );
         for facts in [
             equal(empty.clone(), &returned, &selected),
             equal(empty.clone(), &selected, &returned),
         ] {
             assert_eq!(
                 facts.pointer_domain(&returned),
-                PointerDomain::Selected(selected.extent().unwrap().clone())
+                PointerDomain::Selected(selected.bounds().unwrap().clone())
             );
             assert_eq!(
                 facts.pointer_domain(&parent),
@@ -173,17 +248,17 @@ mod tests {
         let selected = member(&parent);
         let returned = pointer(997_012);
         let numeric = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(returned.pointer().clone(), selected.pointer().clone()),
+            ConditionTerm::address_equal(returned.address().clone(), selected.address().clone()),
             true,
         );
         assert_eq!(numeric.pointer_domain(&returned), PointerDomain::Unknown);
         let widened = equal(
             numeric.clone(),
-            &returned.clone().with_root_extent(),
-            &parent.clone().with_root_extent(),
+            &returned.clone().with_root_bounds(),
+            &parent.clone().with_root_bounds(),
         );
         assert_eq!(widened.pointer_domain(&returned), PointerDomain::Unknown);
-        let root = equal(numeric, &returned, &parent.clone().with_root_extent());
+        let root = equal(numeric, &returned, &parent.clone().with_root_bounds());
         assert_eq!(root.pointer_domain(&returned), PointerDomain::Root);
     }
 
@@ -191,12 +266,12 @@ mod tests {
     fn pointer_domain_reads_only_admitted_metadata_for_a_stored_pointer() {
         let _session = crate::kernel::VerificationSession::enter();
         let selected = member(&pointer(997_041));
-        let cell = Pointer::symbolic(Variable(997_042));
+        let cell = Address::symbolic(Variable(997_042));
         let memory = crate::kernel::intern_memory(
-            Memory::new().store(cell.clone(), ProgramValue::Pointer(selected.clone())),
+            SymbolicMemory::new().store(cell.clone(), ProgramValue::Pointer(selected.clone())),
         );
-        let read = PointerValue::from_read(
-            Pointer::loaded_value(&memory, &cell),
+        let read = Pointer::from_read(
+            Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
             &cell,
@@ -211,7 +286,7 @@ mod tests {
         let facts = equal(empty.clone(), &read, &selected);
         assert_eq!(
             facts.pointer_domain(&read),
-            PointerDomain::Selected(selected.extent().unwrap().clone())
+            PointerDomain::Selected(selected.bounds().unwrap().clone())
         );
         assert_eq!(read, original);
         assert_eq!(empty.pointer_domain(&read), PointerDomain::Unknown);
@@ -231,7 +306,7 @@ mod tests {
         let resources =
             ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(held.clone()));
         assert!(resources.permits_designated_memory_read(
-            returned.pointer(),
+            returned.address(),
             Some(returned.access_provenance()),
             4,
             &facts
@@ -239,7 +314,7 @@ mod tests {
         assert!(
             resources
                 .designated_memory_write_range(
-                    returned.pointer(),
+                    returned.address(),
                     Some(returned.access_provenance()),
                     4,
                     &facts
@@ -247,22 +322,43 @@ mod tests {
                 .is_some()
         );
         assert!(!ResourceContext::new().permits_designated_memory_read(
-            returned.pointer(),
+            returned.address(),
             Some(returned.access_provenance()),
             4,
             &facts
         ));
         assert!(!resources.permits_designated_memory_read(
-            &returned.pointer().offset_by_bytes(4),
+            &returned.address().offset_by_bytes(4),
             Some(returned.access_provenance()),
             4,
             &facts
         ));
-        let sibling = held.with_bounds(parent.pointer().clone(), 0u32.into(), 1u32.into());
+        let sibling = held.with_bounds(parent.address().clone(), 0u32.into(), 1u32.into());
         assert!(!facts.access_provenance_match(returned.access_provenance(), &sibling));
         let oversized = held.with_bounds(held.base().clone(), 0u32.into(), 2u32.into());
         assert!(!facts.access_provenance_match(returned.access_provenance(), &oversized));
         assert!(!empty.access_provenance_match(returned.access_provenance(), &held));
+
+        // Coalescing adjacent holdings can leave one supplier whose carrier
+        // names the parent, with no selected bounds of its own.
+        let parent_range = MemoryRange::from_pointer_value(&parent, 0u32.into(), 2u32.into(), 4);
+        let resources = ResourceContext::new()
+            .unchecked_with_fact(ResourceFact::own_memory(parent_range.clone()));
+        let required = returned.access_provenance();
+        assert!(resources.permits_designated_memory_read(
+            returned.address(),
+            Some(required),
+            4,
+            &facts
+        ));
+        assert!(!resources.permits_designated_memory_read(
+            parent.address(),
+            Some(required),
+            4,
+            &facts,
+        ));
+        assert!(facts.access_provenance_matches_range(required, &held, &parent_range));
+        assert!(!facts.access_provenance_matches_range(required, &parent_range, &parent_range));
     }
 
     #[test]

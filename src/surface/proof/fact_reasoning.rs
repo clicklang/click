@@ -71,7 +71,7 @@ pub(super) fn describe_derivation_failure(
         // search's miss is then not the news, and neither smaller steps nor
         // listed premises would supply the condition.
         let consulted = available.pure_context();
-        if consulted.decide(condition) == Some(!*value) {
+        if consulted.decide(condition.native_compat()) == Some(!*value) {
             return crate::surface::diagnostics::describe_refuted_condition(
                 proposition,
                 available,
@@ -180,7 +180,7 @@ fn describe_access_bound_prerequisite(
     };
     let (parameters, arguments) = crate::surface::diagnostics::local_naming_tables(state);
     let object = crate::surface::diagnostics::describe_memory_block(
-        &pointer.block,
+        &pointer.base,
         ParameterBinding::new(&parameters, &arguments),
     )?;
     let bound = crate::kernel::memory_access_element_bound(memory, pointer, byte_width)?;

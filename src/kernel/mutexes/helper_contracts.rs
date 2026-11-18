@@ -413,7 +413,11 @@ pub(in crate::kernel) fn check_call_access(
                     .iter()
                     .zip(actual.arguments())
                     .all(|(left, right)| {
-                        crate::kernel::resource_arguments_proven_equal(left, right, assumptions)
+                        crate::kernel::resource_field_values_proven_equal(
+                            (left).into(),
+                            (right).into(),
+                            assumptions,
+                        )
                     }) => {}
         (None, Some(_)) => {
             return Err("unary mutex transfer helpers require a payload-free protocol".into());
@@ -672,8 +676,8 @@ mod tests {
         program_function, program_skip,
     };
 
-    fn mutex() -> Pointer {
-        Pointer::symbolic(Variable(851))
+    fn mutex() -> Address {
+        Address::symbolic(Variable(851))
     }
 
     fn spec(guard: bool, role: ResourceTransferRole) -> ResourceSpec {

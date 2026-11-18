@@ -2,6 +2,36 @@
 use super::*;
 
 impl KernelTerm {
+    /// A native constructor already produced this exact output. Reuse it in
+    /// the existing compatibility slot; reading it must not export its operands
+    /// again or change its canonical native spelling.
+    pub(crate) fn retain_native_condition_output(&self, value: ConditionTerm) {
+        if matches!(self.node(), KernelTermNode::BoolLiteral(_)) {
+            return;
+        }
+        self.0.argument_leaf.get_or_init(|| {
+            Box::new(PureFunctionArgument::Value(ProgramValue::Bool(
+                MachineTerm::BoolCast {
+                    to: MachineIntegerType::UInt8,
+                    value: Box::new(value),
+                },
+            )))
+        });
+    }
+
+    /// Borrow an output already supplied by a native producer or requested by
+    /// a compatibility consumer. This must not initialize the slot: its
+    /// initializer itself reads BooleanOperandView::native().
+    pub(crate) fn cached_condition_output(&self) -> Option<&ConditionTerm> {
+        let PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::BoolCast {
+            value, ..
+        })) = self.0.argument_leaf.get()?.as_ref()
+        else {
+            return None;
+        };
+        Some(value)
+    }
+
     pub(crate) fn boolean_native(&self) -> Option<&ProgramValue> {
         let PureFunctionArgument::Value(value) = self.boolean_argument_native()? else {
             unreachable!("Boolean storage descriptor")
@@ -31,14 +61,21 @@ impl KernelTerm {
             self.0
                 .argument_leaf
                 .get_or_init(|| {
-                    Box::new(PureFunctionArgument::Value(ProgramValue::Bool(
-                        MachineTerm::bool_cast(
-                            MachineIntegerType::UInt8,
-                            BooleanOperandView::Shared(self)
-                                .identity_leaf()
-                                .into_owned(),
-                        ),
-                    )))
+                    let condition = BooleanOperandView::Shared(self)
+                        .identity_leaf()
+                        .into_owned();
+                    // Integer comparison export constructs a nonconstant
+                    // condition directly. Its storage wrapper needs no second
+                    // constant-folding constructor.
+                    let value = if matches!(self.node(), KernelTermNode::IntegerCompare { .. }) {
+                        MachineTerm::BoolCast {
+                            to: MachineIntegerType::UInt8,
+                            value: Box::new(condition),
+                        }
+                    } else {
+                        MachineTerm::bool_cast(MachineIntegerType::UInt8, condition)
+                    };
+                    Box::new(PureFunctionArgument::Value(ProgramValue::Bool(value)))
                 })
                 .as_ref(),
         )

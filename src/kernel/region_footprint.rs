@@ -12,13 +12,16 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 pub struct RegionFootprint {
     id: u64,
     pub(crate) source: String,
-    pub(crate) before: Memory,
-    pub(crate) after: Memory,
+    pub(crate) before: SymbolicMemory,
+    pub(crate) after: SymbolicMemory,
+    pub(crate) before_point: ProgramPoint,
+    pub(crate) after_point: ProgramPoint,
     pub(crate) before_resources: ResourceContext,
     pub(crate) after_resources: ResourceContext,
     pub(crate) members: imbl::Vector<Resource>,
     pub(crate) complete: bool,
     pub(crate) resource_bound: Option<Resource>,
+    pub(crate) uninitialized_local_declaration: bool,
     is_sequence: bool,
 }
 impl std::fmt::Debug for RegionFootprint {
@@ -54,6 +57,44 @@ impl RegionFootprint {
         before: &ExecutionState,
         after: &ExecutionState,
         effects: &(impl ExecutionFactSource + ?Sized),
+    ) -> Arc<Self> {
+        Self::from_transition(source, before, after, effects, false)
+    }
+
+    pub(crate) fn statement_transition(
+        source: String,
+        statement: &ProgramStatement,
+        before: &ExecutionState,
+        after: &ExecutionState,
+        effects: &(impl ExecutionFactSource + ?Sized),
+    ) -> Arc<Self> {
+        // Only a fresh uninitialized declaration creates storage without also
+        // being able to retire an existing object. Re-entering a declaration
+        // can retire the binding's previous local block.
+        let uninitialized_local_declaration = matches!(
+            statement,
+            ProgramStatement::Declare {
+                name,
+                initializer: None,
+                zero_fill: None,
+                ..
+            } if before.locals().slot(name).is_none_or(|slot| !slot.base.is_local_block())
+        );
+        Self::from_transition(
+            source,
+            before,
+            after,
+            effects,
+            uninitialized_local_declaration,
+        )
+    }
+
+    fn from_transition(
+        source: String,
+        before: &ExecutionState,
+        after: &ExecutionState,
+        effects: &(impl ExecutionFactSource + ?Sized),
+        uninitialized_local_declaration: bool,
     ) -> Arc<Self> {
         let mut members = imbl::Vector::new();
         let mut resource_bound = None;
@@ -124,10 +165,12 @@ impl RegionFootprint {
                         continue;
                     }
                     extra_effect = true;
-                    members.push_back(Resource::Memory(contents.extent().byte_range(Pointer {
-                        block: block.clone(),
-                        offset: PointerOffsetTerm::Constant(0),
-                    })));
+                    members.push_back(Resource::Memory(contents.allocation_size().byte_range(
+                        Address {
+                            base: block.clone(),
+                            offset: AddressOffset::Constant(0),
+                        },
+                    )));
                 }
             }
         }
@@ -166,10 +209,13 @@ impl RegionFootprint {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             before: before.memory().clone(),
             after: after.memory().clone(),
+            before_point: before.program_point(),
+            after_point: after.program_point(),
             before_resources: before.resources().clone(),
             after_resources: after.resources().clone(),
             members,
             complete,
+            uninitialized_local_declaration,
             is_sequence: false,
         })
     }
@@ -185,11 +231,14 @@ impl RegionFootprint {
             source: statement.source.clone(),
             before: statement.before.clone(),
             after: cleanup.after.clone(),
+            before_point: statement.before_point.clone(),
+            after_point: cleanup.after_point.clone(),
             before_resources: statement.before_resources.clone(),
             after_resources: cleanup.after_resources.clone(),
             members,
             complete: statement.complete && cleanup.complete,
             resource_bound: None,
+            uninitialized_local_declaration: false,
             is_sequence: false,
         })
     }
@@ -207,10 +256,13 @@ impl RegionFootprint {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             before: before.memory().clone(),
             after: after.memory().clone(),
+            before_point: before.program_point(),
+            after_point: after.program_point(),
             before_resources: before.resources().clone(),
             after_resources: after.resources().clone(),
             members,
             complete,
+            uninitialized_local_declaration: false,
             is_sequence: true,
         })
     }
@@ -248,7 +300,7 @@ pub(crate) fn separate_using(left: &Resource, right: &Resource, facts: &PureFact
                 pending.extend(fp.members.iter().map(|member| (member, other)));
             }
             // Primitive tokens contain no bytes. Releasing an allocation
-            // still records its memory extent separately above.
+            // still records its memory range separately above.
             (Resource::Token { .. }, Resource::Memory(_))
             | (Resource::Memory(_), Resource::Token { .. }) => {}
             (Resource::Memory(left), Resource::Memory(right))
@@ -266,7 +318,7 @@ pub(crate) fn separate_using(left: &Resource, right: &Resource, facts: &PureFact
                     right: Box::new(left),
                 };
                 // Parent/child restriction is explicit. Exact physical spans
-                // use the maintained address-class/extent index, never an
+                // use the maintained address-class/span index, never an
                 // alias or separation-fact search per member.
                 if !facts.contains_known(&forward) && !facts.contains_known(&reverse) {
                     return false;

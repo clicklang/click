@@ -144,7 +144,7 @@ fn implicit_tail_budget_errors_check_boundaries_without_exploring_paths() {
 }
 
 fn indexed_fact(index: u32) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -263,7 +263,7 @@ fn named_int32_function(
 }
 
 /// [`named_int32`]'s names as a pure theorem's values.
-fn named_int32_values(terms: &[MachineTerm]) -> BTreeMap<String, ProgramValue> {
+fn named_int32_values(terms: &[MachineTerm]) -> ProgramValueBindings {
     terms
         .iter()
         .enumerate()
@@ -281,9 +281,9 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
     let state = ExecutionState::new()
         .with_local("len", ProgramValue::UInt64(len.clone()))
         .with_local("chunk_size", ProgramValue::UInt64(size.clone()))
-        .with_local("__rust_checked_94", ProgramValue::UInt64(size.clone()));
+        .with_local("__rust_mir_94", ProgramValue::UInt64(size.clone()));
     let remainder = MachineTerm::uint64_remainder(len, size.clone());
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
@@ -292,7 +292,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
         },
         true,
     );
-    let facts = [Proposition::ConditionIs(
+    let facts = [Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
@@ -348,7 +348,7 @@ fn missing_known_side_uses_recorded_names_in_fixed_state_errors() {
     let after = MachineTerm::Variable(Variable(71));
     let entry = ExecutionState::new().with_local("remaining", ProgramValue::UInt64(before.clone()));
     let state = ExecutionState::new().with_local("remaining", ProgramValue::UInt64(after.clone()));
-    let side = Proposition::ConditionIs(
+    let side = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
@@ -427,9 +427,9 @@ fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
                     before: memory.clone(),
                     after: memory.clone(),
                     writes: vec![(
-                        crate::kernel::Pointer {
-                            block: crate::kernel::PointerBlock::ExternalArgument,
-                            offset: crate::kernel::PointerOffsetTerm::Constant(index as i64 * 4),
+                        crate::kernel::Address {
+                            base: crate::kernel::AddressBase::ExternalArgument,
+                            offset: crate::kernel::AddressOffset::Constant(index as i64 * 4),
                         },
                         4,
                     )],
@@ -471,7 +471,7 @@ fn fact_node_allocations() -> usize {
 fn opposite_atomic_fact(fact: &Proposition) -> Proposition {
     match fact {
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(condition.clone(), !value)
+            Proposition::condition_is(condition.clone(), !value)
         }
         Proposition::Not(body) => *body.clone(),
         other => Proposition::Not(Box::new(other.clone())),
@@ -483,8 +483,8 @@ fn pure_identity_fixture() -> PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
-        values: BTreeMap::new(),
+        memory: SymbolicMemory::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
         surface_requirements: SurfacePropositionMap::default(),
@@ -492,9 +492,9 @@ fn pure_identity_fixture() -> PureTheoremContext {
 }
 
 fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
-    let pointer = Pointer {
-        block: "sum".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "sum".into(),
+        offset: AddressOffset::Constant(0),
     };
     let loadable = Proposition::ForAll {
         name: Default::default(),
@@ -502,7 +502,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
         sort: Sort::ProgramInt32,
         body: Box::new(Proposition::Implies(
             Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
@@ -511,7 +511,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                     },
                     true,
                 )),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
@@ -522,9 +522,9 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                 )),
             )),
             Box::new(Proposition::MemoryLoadable {
-                memory: Memory::new().with_block("sum", 16),
+                memory: SymbolicMemory::new().with_block("sum", 16),
                 base: pointer,
-                bytes: MachineTerm::Variable(Variable(30)),
+                bytes: (MachineTerm::Variable(Variable(30))).into(),
                 wide: false,
             }),
         )),
@@ -542,7 +542,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
             SharedIntegerTerm::from(IntegerTerm::Variable(Variable(42))),
         ),
     );
-    let fold_equality = Proposition::ConditionIs(
+    let fold_equality = Proposition::condition_is(
         ConditionTerm::IntegerEqual(
             SharedIntegerTerm::from(fold),
             SharedIntegerTerm::from(IntegerTerm::Variable(Variable(43))),
@@ -559,7 +559,7 @@ fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
     let two = MachineTerm::constant(2);
     let comparison = |left: MachineTerm, right: MachineTerm| {
         (
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -643,11 +643,11 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
             let predicates = PredicateEnvironment::new(&[]);
             let functions = ClickFunctionEnvironment::new(&[]);
             let theorems = TheoremEnvironment::new(&[]);
-            let pointer = Pointer {
-                block: "atomic-extract-cell".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            let pointer = Address {
+                base: "atomic-extract-cell".into(),
+                offset: AddressOffset::Constant(0),
             };
-            let old_memory = Memory::new().with_block("atomic-extract-cell", 4).store(
+            let old_memory = SymbolicMemory::new().with_block("atomic-extract-cell", 4).store(
                 pointer.clone(),
                 ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_100))),
             );
@@ -1038,11 +1038,11 @@ fn both_and_preserves_exact_binders_and_saved_states() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
-    let pointer = Pointer {
-        block: "cell".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "cell".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("cell", 4).store(
+    let memory = SymbolicMemory::new().with_block("cell", 4).store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
     );
@@ -1050,7 +1050,7 @@ fn both_and_preserves_exact_binders_and_saved_states() {
         name: Default::default(),
         var: Variable(binder),
         sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -1157,7 +1157,7 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let guard = Proposition::ConditionIs(ConditionTerm::Constant(false), false);
+    let guard = Proposition::condition_is(ConditionTerm::Constant(false), false);
     let body_surface = ClickProposition::Comparison {
         left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
         operator: ComparisonOperator::LessEqual,
@@ -1242,8 +1242,8 @@ fn both_rejects_an_unsupported_written_child_correspondence_boundedly() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
-    let guard = Proposition::ConditionIs(ConditionTerm::Constant(false), false);
-    let body = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    let guard = Proposition::condition_is(ConditionTerm::Constant(false), false);
+    let body = Proposition::condition_is(ConditionTerm::Constant(true), true);
     let unsupported = ClickProposition::Comparison {
         left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
         operator: ComparisonOperator::Equal,
@@ -1279,11 +1279,11 @@ fn both_rejects_unlowerable_child_without_exact_parent_metadata() {
     let theorems = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
     let kernel = Proposition::And(
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             ConditionTerm::Constant(true),
             true,
         )),
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             ConditionTerm::Constant(false),
             false,
         )),
@@ -1485,8 +1485,8 @@ fn proof_failure_preserves_ancestor_and_selected_lineage() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
-        values: BTreeMap::new(),
+        memory: SymbolicMemory::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: vec![goal.clone()],
         surface_requirements: SurfacePropositionMap::default(),
@@ -1531,8 +1531,8 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
-        values: BTreeMap::new(),
+        memory: SymbolicMemory::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
         surface_requirements: SurfacePropositionMap::default(),
@@ -1597,8 +1597,8 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
-        values: BTreeMap::new(),
+        memory: SymbolicMemory::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
         surface_requirements: SurfacePropositionMap::default(),
@@ -1672,8 +1672,8 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
-        values: BTreeMap::new(),
+        memory: SymbolicMemory::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
         surface_requirements: SurfacePropositionMap::default(),
@@ -1770,8 +1770,8 @@ fn pure_have_presentation_root(surface: ClickProposition) -> Proof<'static> {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
-        values: BTreeMap::new(),
+        memory: SymbolicMemory::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
         surface_requirements: SurfacePropositionMap::default(),
@@ -1917,7 +1917,7 @@ fn have_scope_negation_metadata_stops_at_the_contradiction_goal() {
     let introduced = adapted.driver().apply_step(ProofStep::Intro).unwrap();
     assert_eq!(
         introduced.body().goal(),
-        Some(&Proposition::ConditionIs(
+        Some(&Proposition::condition_is(
             ConditionTerm::Constant(false),
             true,
         ))
@@ -1958,7 +1958,7 @@ fn have_scope_rejects_mismatched_reported_goal_transactionally() {
     let root = pure_have_presentation_root(surface.clone());
     let scope = root.driver().open_have(surface).expect("have should open");
     let before = scope.body().clone();
-    let wrong = Proposition::ConditionIs(
+    let wrong = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2040,7 +2040,7 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
         name: "different_display_name".to_string(),
         var: Variable(8_765_432),
         sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2130,11 +2130,11 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let kernel = lower_pure_theorem_proposition(
         "smart have scaling",
         &proposition,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -2155,7 +2155,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             memory: memory.clone(),
-            values: BTreeMap::new(),
+            values: ProgramValueBindings::new(),
             array_refs: BTreeMap::new(),
             requires: requires.clone(),
             surface_requirements: SurfacePropositionMap::default(),
@@ -2390,8 +2390,8 @@ fn persistent_fact_lookup_scales_logarithmically() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: Memory::new(),
-            values: BTreeMap::new(),
+            memory: SymbolicMemory::new(),
+            values: ProgramValueBindings::new(),
             array_refs: BTreeMap::new(),
             requires,
             surface_requirements: SurfacePropositionMap::default(),
@@ -2529,7 +2529,7 @@ fn statement_fact_prefix_preserves_successor_order_without_copying_ambient_histo
 fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
     let left = MachineTerm::Variable(Variable(80_000));
     let right = MachineTerm::Variable(Variable(80_001));
-    let available = Proposition::ConditionIs(
+    let available = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -2540,7 +2540,7 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
     );
     let facts = PureFactStore::from_ordered(&[available]);
     for required in [
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
@@ -2549,7 +2549,7 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
             },
             false,
         ),
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -2558,7 +2558,7 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
             },
             false,
         ),
-        Proposition::Not(Box::new(Proposition::ConditionIs(
+        Proposition::Not(Box::new(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
@@ -2603,7 +2603,7 @@ fn outcome_fact_deltas_share_ambient_universal_facts() {
         name: Default::default(),
         var: Variable(index),
         sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2688,8 +2688,8 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
-        values: BTreeMap::new(),
+        memory: SymbolicMemory::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
         surface_requirements: SurfacePropositionMap::default(),
@@ -3212,8 +3212,8 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: Memory::new(),
-            values: BTreeMap::new(),
+            memory: SymbolicMemory::new(),
+            values: ProgramValueBindings::new(),
             array_refs: BTreeMap::new(),
             requires,
             surface_requirements: SurfacePropositionMap::default(),
@@ -3316,7 +3316,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let variable = Variable(9_000_000);
-    let expected = Proposition::ConditionIs(
+    let expected = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -3534,7 +3534,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         name: "source_value".to_string(),
         var: source_variable,
         sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3549,7 +3549,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         name: "witness".to_string(),
         var: goal_variable,
         sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3758,7 +3758,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
             ("w".to_string()).into(),
         )),
     };
-    let values = BTreeMap::from([
+    let values = ProgramValueBindings::from([
         (
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(9_100_000))),
@@ -3774,7 +3774,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values,
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -3918,7 +3918,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
             zero,
         )),
     );
-    let values = BTreeMap::from([
+    let values = ProgramValueBindings::from([
         (
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(9_101_000))),
@@ -3936,7 +3936,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values,
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -4041,8 +4041,8 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
-        values: BTreeMap::from([(
+        memory: SymbolicMemory::new(),
+        values: ProgramValueBindings::from([(
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_000))),
         )]),
@@ -4617,7 +4617,7 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
         MachineTerm::constant(7),
     ))];
     let state = ExecutionState::new();
-    let true_fact = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    let true_fact = Proposition::condition_is(ConditionTerm::Constant(true), true);
     let requirement = Proposition::Or(Box::new(true_fact.clone()), Box::new(true_fact.clone()));
     let root = Proof::for_execution_frontier(
         "smart retry",
@@ -5092,7 +5092,7 @@ fn supported_source_refusal_on_branch_does_not_enter_planning() {
         None,
     ));
     let refusal = ClickError::new("injected supported branch refusal").with_unresolved_requirement(
-        &ProofObligation::verification_condition(Proposition::ConditionIs(
+        &ProofObligation::verification_condition(Proposition::condition_is(
             ConditionTerm::Constant(true),
             true,
         ))
@@ -5145,14 +5145,14 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
     let arguments = [ProgramExpression::Value(ProgramValue::Int32(
         MachineTerm::constant(7),
     ))];
-    let state = ExecutionState::new().with_memory(Memory::new().with_block(
+    let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block(
         block,
         4 * u32::try_from(cells).expect("test array size should fit in a block"),
     ));
     let base = ProgramValue::typed_pointer(
-        Pointer {
-            block: PointerBlock::Concrete(block.into()),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::Concrete(block.into()),
+            offset: AddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -6302,7 +6302,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard order theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let terms = [
         MachineTerm::Variable(Variable(8_150_000)),
         MachineTerm::Variable(Variable(8_150_001)),
@@ -6445,7 +6445,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let value = MachineTerm::Variable(Variable(8_174_000));
     let named = [value.clone()];
     let named_values = named_int32_values(&named);
@@ -6535,11 +6535,11 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let selected_term = MachineTerm::Variable(Variable(8_174_050));
     let named = [selected_term.clone()];
     let named_values = named_int32_values(&named);
-    let equality_fact = Proposition::ConditionIs(
+    let equality_fact = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -6548,7 +6548,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
         },
         true,
     );
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -6581,7 +6581,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
     for size in [16_u32, 64, 256, 1024, 4096] {
         let mut facts = (0..size)
             .map(|index| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -6648,14 +6648,14 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let left = MachineTerm::Variable(Variable(8_174_060));
     let right = MachineTerm::Variable(Variable(8_174_061));
     let named = [left.clone(), right.clone()];
     let named_values = named_int32_values(&named);
     let zero = MachineTerm::constant(0);
     let equality = |term: &MachineTerm| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -6670,7 +6670,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
         operator: ComparisonOperator::Equal,
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -6698,7 +6698,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     for size in [16_u32, 64, 256, 1024, 4096] {
         let mut facts = (0..size)
             .map(|index| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -6774,7 +6774,7 @@ fn fixed_state_predecessor_solve_builds_checked_scope_with_logarithmic_local_upd
 /// failed silently, and solve fell through to a costlier search. One small
 /// context keeps its certificate in the gate.
 #[test]
-fn fixed_state_predecessor_solve_closes_with_one_arithmetic_certificate() {
+fn fixed_state_predecessor_solve_closes_with_one_arithmetic_step() {
     check_fixed_state_predecessor_solve(&[16]);
 }
 
@@ -7024,7 +7024,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
         .expect("the fixed equality should lower")
     };
     let premises = surfaces.iter().map(lower).collect::<Vec<_>>();
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -7168,7 +7168,7 @@ fn fixed_state_order_solve_builds_its_theorem_path_with_logarithmic_local_update
             "size {size} fixed-state order solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        // The selected three-premise chain is one arithmetic certificate.
+        // The selected three-premise chain is one arithmetic step.
         assert!(
             ordinary_arithmetic_work_size(closed.certificate().steps()).is_some(),
             "{:?}",
@@ -7186,7 +7186,7 @@ fn fixed_state_single_premise_arithmetic_solves_retain_indexed_theorem_steps() {
 }
 
 /// The goals [`fixed_state_single_premise_arithmetic_solves_retain_indexed_theorem_steps`]
-/// lost when their bridge lemmas became arithmetic certificates: a
+/// lost when their bridge lemmas became arithmetic steps: a
 /// definedness goal is the `int32_defined` rule, and a negated premise names
 /// its operands. One small context keeps them in the gate.
 #[test]
@@ -7205,6 +7205,7 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
     #[derive(Clone, Copy)]
     enum ArithmeticProofShape {
         Direct,
+        IncrementDefinedness,
         ComposedNegatedSuccessor,
         ChainedIncrementUpper,
     }
@@ -7368,14 +7369,14 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
             "increment definedness",
             &definedness_premise,
             &kernel_definedness_premise,
-            ArithmeticProofShape::Direct,
+            ArithmeticProofShape::IncrementDefinedness,
         ),
         (
             lower(&surface_one_plus_defined_goal),
             "one-plus definedness",
             &definedness_premise,
             &kernel_definedness_premise,
-            ArithmeticProofShape::Direct,
+            ArithmeticProofShape::IncrementDefinedness,
         ),
         (
             lower(&surface_one_plus_strict_goal),
@@ -7481,7 +7482,9 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
             let allocations = fact_node_allocations() - before;
             let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
             let allocation_per_step = match shape {
-                ArithmeticProofShape::Direct => 64 * logarithmic_height + 256,
+                ArithmeticProofShape::Direct | ArithmeticProofShape::IncrementDefinedness => {
+                    64 * logarithmic_height + 256
+                }
                 ArithmeticProofShape::ComposedNegatedSuccessor
                 | ArithmeticProofShape::ChainedIncrementUpper => 96 * logarithmic_height + 384,
             };
@@ -7536,10 +7539,17 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
                 panic!("restricted solve should retain the checked typed {label} rule")
             });
             let restricted_allocations = fact_node_allocations() - before_restricted;
+            let proof_work = ordinary_arithmetic_work_size(pure_closed.certificate().steps())
+                .expect("ordinary restricted arithmetic output");
             let allocation_bound = allocation_per_step
-                * ordinary_arithmetic_work_size(pure_closed.certificate().steps())
-                    .expect("ordinary restricted arithmetic output")
-                    .max(1);
+                * match shape {
+                    // The named increment theorem publishes the whole signed domain at
+                    // once. Use a fixed allowance for that application and the commuted
+                    // case's additional equality proof. The former composed increment
+                    // proof received 81 units under the per-step allowance.
+                    ArithmeticProofShape::IncrementDefinedness => 24,
+                    _ => proof_work.max(1),
+                };
             assert!(
                 restricted_allocations <= allocation_bound,
                 "size {size} restricted {label} solve allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
@@ -8000,7 +8010,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
 
 #[test]
 #[ignore = "nightly: 2.9s in the parallel gate"]
-fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
+fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_step() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -8298,7 +8308,7 @@ fn ge_and_not_gt_equality_solve_retains_one_indexed_theorem_application() {
 
 #[test]
 #[ignore = "nightly: 1.6s in the parallel gate"]
-fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_certificate() {
+fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_step() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -9140,7 +9150,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_200_000)));
     let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_200_001)));
     let premise = ClickProposition::Comparison {
@@ -9156,7 +9166,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let kernel_premise = lower_pure_theorem_proposition(
         "persistent pure theorem search",
         &premise,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9164,7 +9174,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let kernel_conclusion = lower_pure_theorem_proposition(
         "persistent pure theorem search",
         &conclusion,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9190,7 +9200,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             memory: memory.clone(),
-            values: BTreeMap::new(),
+            values: ProgramValueBindings::new(),
             array_refs: BTreeMap::new(),
             requires: requires.clone(),
             surface_requirements: SurfacePropositionMap::default(),
@@ -9283,7 +9293,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_210_000)));
     let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_210_001)));
     let premise = ClickProposition::Comparison {
@@ -9303,7 +9313,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let kernel_premise = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
         &premise,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9311,7 +9321,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let kernel_selected = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
         &selected,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9319,7 +9329,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let kernel_disjunction = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
         &disjunction,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9327,7 +9337,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let kernel_wrong_conjunction = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
         &wrong_conjunction,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9335,7 +9345,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let kernel_implication = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
         &implication,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9365,7 +9375,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let kernel_conclusion = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
         &conclusion,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9375,7 +9385,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
         memory,
-        values: BTreeMap::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: vec![kernel_selected],
         surface_requirements: SurfacePropositionMap::default(),
@@ -10114,9 +10124,9 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
     let state =
         empty_state.with_resource_context(ResourceContext::new().unchecked_with_fact(lowered));
     let reflexive = ClickProposition::Comparison {
-        left: ContractExpression::CBinding("x".to_string()),
+        left: ContractExpression::ProgramBinding("x".to_string()),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CBinding("x".to_string()),
+        right: ContractExpression::ProgramBinding("x".to_string()),
     };
     let _exposed_reflexive = ClickProposition::Comparison {
         left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
@@ -10156,7 +10166,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let scope = root
-            .begin_open(resource.clone(), 0, None)
+            .begin_open(resource.clone(), 0)
             .expect("the held marker should open");
         let rejected = scope
             .driver()
@@ -10190,7 +10200,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             closed.certificate().steps(),
             &[ProofStep::Open {
                 resource: resource.clone(),
-                close_proof: None,
+                deferred_tail: false,
                 proof: Box::new(
                     ProofCertificate::from_steps(vec![
                         ProofStep::Have {
@@ -10208,7 +10218,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
         let sibling_scope = root
-            .begin_open(resource.clone(), 0, None)
+            .begin_open(resource.clone(), 0)
             .expect("the retained root should open a sibling scope");
         let sibling_nested = sibling_scope
             .driver()
@@ -10218,7 +10228,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             .apply_step(ProofStep::Known)
             .expect("the sibling nested proof should close");
         let unrelated_scope = root
-            .begin_open(resource.clone(), 0, None)
+            .begin_open(resource.clone(), 0)
             .expect("the retained root should open an unrelated scope");
         assert!(unrelated_scope.join_nested(sibling_nested).is_err());
         assert!(unrelated_scope.body().certificate().steps().is_empty());
@@ -10233,11 +10243,11 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             panic!("the marker resource should be declared");
         };
         *name = "missing_marker".to_string();
-        assert!(root.begin_open(missing, 0, None).is_err());
+        assert!(root.begin_open(missing, 0).is_err());
         assert!(root.certificate().steps().is_empty());
 
         let terminal = root
-            .begin_open(resource.clone(), 0, None)
+            .begin_open(resource.clone(), 0)
             .expect("the retained root should open an alternate scope")
             .driver()
             .apply_step(ProofStep::Step)
@@ -10259,7 +10269,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             terminal.certificate().steps(),
             &[ProofStep::Open {
                 resource: resource.clone(),
-                close_proof: None,
+                deferred_tail: false,
                 proof: Box::new(
                     ProofCertificate::from_steps(vec![ProofStep::Step, ProofStep::Step]).unwrap(),
                 ),
@@ -11605,9 +11615,9 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     )
     .expect("test C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
@@ -11703,7 +11713,7 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     // A condition fact selects one arm, exercising the single-transition
     // cursor path that records metadata immediately before advancing the
     // selected successor.
-    let selecting_fact = Proposition::ConditionIs(
+    let selecting_fact = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -11768,9 +11778,9 @@ fn generated_load_source_event_fixture(
     occurrence: u32,
     pointer_offset: u32,
 ) -> crate::kernel::GeneratedLoadSourceEvent {
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(pointer_offset.into()),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(pointer_offset.into()),
     };
     crate::kernel::GeneratedLoadSourceEvent::new(
         crate::kernel::LoadSourceId {
@@ -11783,10 +11793,10 @@ fn generated_load_source_event_fixture(
         },
         crate::kernel::GeneratedLoadBinding::Exact {
             variable: Variable(variable.into()),
-            retained_state: crate::kernel::MemoryStateIdentity::of(&Memory::new()),
+            retained_state: crate::kernel::MemoryStateIdentity::of(&SymbolicMemory::new()),
             pointer: pointer.clone(),
             load: MachineTerm::MemoryLoad(
-                crate::kernel::ProgramPoint::of_memory(&Memory::new()),
+                crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -13043,11 +13053,14 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         r#"int32 caller(bool construct, bool should_throw) {
             ensures result == result by {
                 branch {
-                    outcomes {
-                        returned => { step(); }
-                        threw => { step(); step_until(function.exit); }
+                    true => {
+                        outcomes {
+                            returned => { }
+                            threw => { step_until(function.exit); }
+                        }
                     }
-                } else { }
+                    false => { }
+                }
                 step();
             }
         }"#,
@@ -13158,7 +13171,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     let (outcomes, call_record) = outer
         .focus_split_arm(&outer_record, true)
         .unwrap()
-        .split_focused_call_outcomes()
+        .split_focused_call_outcomes([None, None])
         .expect("call split should be checked")
         .expect("modular helper has normal and throwing outcomes");
     let returned = outcomes.focus_split_arm(&call_record, true).unwrap();
@@ -13216,8 +13229,9 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
             outcomes
                 .focus_branch(id)
                 .unwrap()
-                .checked_call_returned(0)
+                .checked_call_outcome(0)
                 .ok()
+                .map(|edge| edge.returned)
         })
         .collect::<Vec<_>>();
     call_edges.sort_unstable();
@@ -14287,16 +14301,16 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
     }
     let (interface_type, read_local) =
         load_type(function.body()).expect("callback field is a typed load");
-    let argument = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(210_520)), 4),
+    let argument = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(210_520)), 4),
     };
-    let table = Pointer {
-        block: "global:callback-table".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let table = Address {
+        base: "global:callback-table".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let target = Pointer::function("callback");
-    let memory = Memory::new().store(
+    let target = Address::function("callback");
+    let memory = SymbolicMemory::new().store(
         table.clone(),
         ProgramValue::typed_pointer(target.clone(), interface_type),
     );
@@ -14331,8 +14345,8 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
             SurfacePropositionMap::default(),
             PersistentSequence::default(),
         ),
-        vec![Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(argument, table),
+        vec![Proposition::condition_is(
+            ConditionTerm::address_equal(argument, table),
             true,
         )],
         ExecutionProofConstants {
@@ -14378,8 +14392,8 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
         proof
             .facts()
             .assumptions()
-            .contains_known(&Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(read.pointer().clone(), target),
+            .contains_known(&Proposition::condition_is(
+                ConditionTerm::address_equal(read.address().clone(), target),
                 true
             )),
         "typed read did not reach proof facts: {:?}",
@@ -14401,7 +14415,7 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
     let names = SurfacePropositionMap::default();
     let left = MachineTerm::Variable(Variable(9_104_000));
     let right = MachineTerm::Variable(Variable(9_104_001));
-    let equality = Proposition::ConditionIs(
+    let equality = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -14410,7 +14424,7 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
         },
         true,
     );
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -14557,7 +14571,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         SpecDefinitions::new(&predicates, &functions),
     )
     .unwrap();
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -14676,7 +14690,7 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
         ProgramExpression::Value(ProgramValue::Int32(left.clone())),
         ProgramExpression::Value(ProgramValue::Int32(right.clone())),
     ];
-    let facts = vec![Proposition::ConditionIs(
+    let facts = vec![Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -14685,7 +14699,7 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
         },
         true,
     )];
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -14906,9 +14920,9 @@ fn proposed_goal_spelling_retains_unproved_domains_for_the_driver() {
 fn partition_known_uses_the_fixed_state_not_its_entry_partition() {
     let cell = |name: &str| {
         Resource::Memory(MemoryRange::new(
-            Pointer {
-                block: name.into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: name.into(),
+                offset: AddressOffset::Constant(0),
             },
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -14969,7 +14983,7 @@ fn proof_binding_name_index_tracks_aliases_scopes_and_forks() {
     let value = |variable| {
         ContractExpression::ProgramExpression(ProgramExpression::Value(
             ProgramValue::typed_pointer(
-                Pointer::symbolic(Variable(variable)),
+                Address::symbolic(Variable(variable)),
                 ProgramType::Int32Pointer,
             ),
         ))
@@ -15091,15 +15105,15 @@ fn proof_binding_names_keep_typed_scopes_when_a_generic_alias_leaves() {
 fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shadow() {
     let variable = Variable(981_020);
     let pointer =
-        crate::kernel::PointerValue::new(Pointer::symbolic(variable), ProgramType::Int32Pointer);
+        crate::kernel::Pointer::new(Address::symbolic(variable), ProgramType::Int32Pointer);
     let expression = ContractExpression::ProgramExpression(ProgramExpression::Value(
         ProgramValue::Pointer(pointer.clone()),
     ));
     let mut locals = ProofLocals::default();
     locals.set_values(locals.values.with_inserted("identity", expression));
     let state = ExecutionState::new();
-    let goal = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null()),
+    let goal = Proposition::condition_is(
+        ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
         false,
     );
     let synthesize = || {
@@ -15121,7 +15135,7 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
             "identity",
             ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::typed_pointer(
-                    Pointer::symbolic(Variable(981_021)),
+                    Address::symbolic(Variable(981_021)),
                     ProgramType::Int32Pointer,
                 ),
             )),
@@ -15148,5 +15162,88 @@ fn known_have_step(proposition: ClickProposition) -> ProofStep {
     ProofStep::Have {
         proposition,
         proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
+    }
+}
+
+#[test]
+#[ignore = "nightly: 0.77s in the parallel scaling selection; guard classification has fast scaling coverage"]
+fn loop_exit_eligibility_comes_from_the_guard_not_an_ownership_failure() {
+    let file = crate::surface::parse("void boundary() { ensures true; }").unwrap();
+    let parsed = syntax::parse_function("void boundary() {}").unwrap();
+    let function = parsed.to_kernel_function();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let resources = ResourceEnvironment::new(&[]);
+    let environment = ExecutionEnvironment::new();
+    let state = ExecutionState::new().with_local(
+        "gate",
+        ProgramValue::Int32(MachineTerm::Variable(Variable(9_771_000))),
+    );
+    let root = Proof::for_execution_frontier(
+        "loop edge",
+        0,
+        ExecutionProofState::at_entry(
+            state.clone(),
+            ExecutionFrontier {
+                region: ExecutionRegionKind::LoopBody,
+                position: FrontierPosition::RegionBoundary,
+                ..ExecutionFrontier::default()
+            },
+            RecordedStates::new(),
+            SurfacePropositionMap::default(),
+            PersistentSequence::default(),
+        ),
+        vec![],
+        ExecutionProofConstants::default(),
+        &file.function_blocks()[0],
+        &function,
+        &parsed,
+        &[],
+        &environment,
+        &resources,
+        SpecDefinitions::new(&predicates, &functions),
+        &theorems,
+    );
+    let true_guard = ProgramExpression::Value(crate::kernel::int32(1));
+    let false_guard = ProgramExpression::Value(crate::kernel::int32(0));
+    let unknown_guard = ProgramExpression::Variable("gate".into());
+    let owned = state.clone().with_resource_context(
+        crate::kernel::ResourceContext::new().unchecked_with_fact(
+            crate::kernel::ResourceFact::own_token("keep".into(), Vec::new()),
+        ),
+    );
+    for (guard, consumed, may_continue, may_exit) in [
+        (&false_guard, false, false, true),
+        (&false_guard, true, false, true),
+        (&true_guard, true, true, false),
+        (&unknown_guard, true, true, true),
+    ] {
+        let head = if consumed { &owned } else { &state };
+        let result = root.check_loop_boundary(
+            head,
+            head,
+            &crate::kernel::IntegerTerm::constant_i64(0),
+            Some(guard),
+            &[],
+            &[],
+            None,
+            &[],
+        );
+        if consumed && may_continue {
+            assert!(
+                result
+                    .err()
+                    .unwrap()
+                    .message()
+                    .contains("resource ownership"),
+                "a continuing edge cannot become an exit when ownership is missing"
+            );
+        } else {
+            let edge = result.unwrap();
+            assert_eq!(edge.may_exit(), may_exit);
+            assert_eq!(edge.state(), &state);
+            assert_eq!(edge.explicit_exit_state().is_some(), consumed && may_exit);
+        }
     }
 }

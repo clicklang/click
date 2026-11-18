@@ -1,14 +1,14 @@
-# A growing viewable prefix takes its extent bound from the `views` clause
+# A growing viewable prefix takes its span bound from the `views` clause
 
 [`loop_invariant_states_a_growing_viewable_prefix.md`](loop_invariant_states_a_growing_viewable_prefix.md)
 without `requires n <= 1073741823`. The contract's `views a[0..n]` states a
-range, and a stated range carries its extent half as a fact beside it
+range, and a stated range carries its span half as a fact beside it
 (`docs/concepts/viewability.md`): here `0 <= n` and `n <= 1073741823`. The loop
 head already read that bound. The back edge did not: its closer cites only the
 premises the loop head and the contract name, the written `requires` among
-them, and the `views` clause's extent half was not one of them, so the extent
+them, and the `views` clause's span half was not one of them, so the span
 bound of `viewable(a[0..i])` for the new `i` was refused. The closer now names
-the extent half of every range the contract states, in the spelling a proof
+the span half of every range the contract states, in the spelling a proof
 can write, and keeps it only where it is exactly available.
 
 ```c filename=loop_invariant_growing_viewable_prefix_bounded_by_its_views_clause.c

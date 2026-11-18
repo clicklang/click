@@ -2,30 +2,32 @@ use super::*;
 
 #[test]
 fn late_conflict_uses_only_affected_predicate_parents() {
-    let p = Pointer::symbolic(Variable(972_001));
-    let q = Pointer::symbolic(Variable(972_002));
+    let p = Address::symbolic(Variable(972_001));
+    let q = Address::symbolic(Variable(972_002));
     let mut samples = Vec::new();
     for count in [4, 16, 64, 256] {
         let mut context = PureFactContext::new()
-            .assume_proposition(Proposition::ConditionIs(
+            .assume_proposition(Proposition::condition_is(
                 ConditionTerm::pointer_aligned(p.clone(), 8),
                 true,
             ))
-            .assume_proposition(Proposition::ConditionIs(
+            .assume_proposition(Proposition::condition_is(
                 ConditionTerm::pointer_aligned(q.clone(), 8),
                 false,
             ));
         for index in 0..count {
-            context = context.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::pointer_aligned(Pointer::symbolic(Variable(980_000 + index)), 8),
+            context = context.assume_proposition(Proposition::condition_is(
+                ConditionTerm::pointer_aligned(Address::symbolic(Variable(980_000 + index)), 8),
                 true,
             ));
         }
         let (conflicting, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.clone().assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(p.clone(), q.clone()),
-                true,
-            ))
+            context
+                .clone()
+                .assume_proposition(Proposition::condition_is(
+                    ConditionTerm::address_equal(p.clone(), q.clone()),
+                    true,
+                ))
         });
         assert!(conflicting.is_inconsistent());
         assert!(!context.is_inconsistent());

@@ -37,10 +37,13 @@ int32* pick_then_allocate(int32* left, int32* right, int32 flag) {
     step();
     branch ensuring {
         fact flag == flag;
-    } then {
-        step();
-    } else {
-        step();
+    } {
+        true => {
+            step();
+        }
+        false => {
+            step();
+        }
     }
     step();
     have fresh == picked;

@@ -12,7 +12,7 @@ and both ranking inequalities with `solve() using`. The member compares exact
 observations, `to_integer(2 + run) == to_integer(i)`, which name `2 + run` only
 where it is defined, so the `else` arm first derives `defined(2 + run)` from the
 Integer bounds of the incremented `run`. The closing proof is
-`both { intro(); known(); } and { known(); }`, and the back edge's closer
+`both { left => { intro(); known(); } right => { known(); } }`, and the back edge's closer
 must find it by splitting the bundle and closing each conjunct with the
 direct logical steps, before the premise-selecting and rewriting strategies
 run over the whole bundle. Before that, this arm fell through to the indexed
@@ -58,7 +58,7 @@ int32 count_run(int32 n) {
         preserve by {
             mark iteration;
             if i < 2 {
-                branch { step(); } else { contradiction(not (i < 2)); }
+                branch { true => { step(); } false => { contradiction(not (i < 2)); } }
                 step();
                 have 0 <= i and i <= n;
                 have 0 <= run and run <= i;
@@ -102,7 +102,7 @@ int32 count_run(int32 n) {
                         i < n;
                     };
                 }
-                branch { contradiction(i < 2); } else { step(); }
+                branch { true => { contradiction(i < 2); } false => { step(); } }
                 step();
                 have 0 <= i and i <= n;
                 have 0 <= run and run <= i;

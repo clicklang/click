@@ -23,7 +23,7 @@ enum Atom {
     Argument(PureFunctionArgument),
     Condition(ConditionStorageKey),
     Memory(SharedMemory),
-    Address(Pointer),
+    Address(Address),
 }
 impl AlgebraicStorageKey {
     fn new(node: Node) -> Self {
@@ -147,10 +147,10 @@ impl AlgebraicStorageKey {
                 for_root(&arguments[2]),
             ]),
             KernelTermNode::AlgebraicRead(read) => {
-                let (memory, address) = read.parts();
+                let (point, address) = read.parts();
                 parts.extend([
                     Self::tag(5),
-                    Self::atom(Atom::Memory(memory.clone())),
+                    Self::atom(Atom::Memory(point.shared_memory().clone())),
                     Self::atom(Atom::Address(
                         address.export().expect("selected algebraic read address"),
                     )),

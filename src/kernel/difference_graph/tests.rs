@@ -940,11 +940,11 @@ fn an_int64_division_guard_needs_a_nonzero_divisor() {
 /// names.
 #[test]
 fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
-    let pointer = crate::kernel::Pointer {
-        block: "difference-graph-cell".into(),
-        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+    let pointer = crate::kernel::Address {
+        base: "difference-graph-cell".into(),
+        offset: crate::kernel::AddressOffset::Constant(0),
     };
-    let memory = crate::kernel::Memory::new().with_block("difference-graph-cell", 4);
+    let memory = crate::kernel::SymbolicMemory::new().with_block("difference-graph-cell", 4);
     let load = MachineTerm::MemoryLoad(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(pointer),
@@ -969,10 +969,10 @@ fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
 /// reaches is never equal.
 #[test]
 fn pointer_offsets_of_int32_elements_compare_as_indices() {
-    use crate::kernel::PointerOffsetTerm as O;
+    use crate::kernel::AddressOffset as O;
     let (i, j) = (variable(0), variable(1));
     let scaled = |value: &MachineTerm| O::scaled_int32_node(value.clone(), 4);
-    let offsets_equal = |a: O, b: O| ConditionTerm::PointerOffsetEqual(Box::new(a), Box::new(b));
+    let offsets_equal = |a: O, b: O| ConditionTerm::AddressOffsetEqual(Box::new(a), Box::new(b));
     let ordered = graph(&[(lt(&i, &j), true)]);
     assert_eq!(
         ordered.decide(&offsets_equal(scaled(&i), scaled(&j))),
@@ -1530,16 +1530,16 @@ fn an_unsigned_quotient_of_words_is_bounded() {
 /// `i < j` they do not.
 #[test]
 fn field_offsets_from_equal_bases_are_equal() {
-    use crate::kernel::PointerOffsetTerm as O;
+    use crate::kernel::AddressOffset as O;
     let field = |index| {
         O::Add(
             Box::new(O::scale_int32(variable(index), 4)),
             Box::new(O::Constant(8)),
         )
     };
-    let same_field = ConditionTerm::PointerOffsetEqual(Box::new(field(0)), Box::new(field(1)));
+    let same_field = ConditionTerm::AddressOffsetEqual(Box::new(field(0)), Box::new(field(1)));
     let equal = graph(&[(
-        ConditionTerm::PointerOffsetEqual(
+        ConditionTerm::AddressOffsetEqual(
             Box::new(O::scale_int32(variable(0), 4)),
             Box::new(O::scale_int32(variable(1), 4)),
         ),
@@ -1557,7 +1557,7 @@ fn field_offsets_from_equal_bases_are_equal() {
     )]);
     assert_eq!(ordered.decide(&same_field), Some(false));
     // Different fields of equal bases are not compared this way.
-    let other_field = ConditionTerm::PointerOffsetEqual(
+    let other_field = ConditionTerm::AddressOffsetEqual(
         Box::new(field(0)),
         Box::new(O::Add(
             Box::new(O::scale_int32(variable(1), 4)),
@@ -1568,27 +1568,27 @@ fn field_offsets_from_equal_bases_are_equal() {
 }
 
 /// The same field of two pointers stated equal as pointers (`this ==
-/// &other`, a `PointerEqual` fact in the pointer classes, not an integer
+/// &other`, an `AddressEqual` fact in the pointer classes, not an integer
 /// equality) is one cell: `&this->size` and `&other.size` (`4 * i + 8` and
 /// `4 * j + 8` in one block) are equal. Unrelated or unequal pointers
 /// leave it open or decide it unequal.
 #[test]
 fn field_offsets_from_pointers_stated_equal_are_equal() {
-    use crate::kernel::{Pointer, PointerOffsetTerm as O};
+    use crate::kernel::{Address, AddressOffset as O};
     let base = |index| O::scale_int32(variable(index), 4);
-    let argument = |index| Pointer {
-        block: crate::kernel::PointerBlock::ExternalArgument,
+    let argument = |index| Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
         offset: base(index),
     };
     let field = |index, bytes| O::Add(Box::new(base(index)), Box::new(O::Constant(bytes)));
     let pointers = |a, b, value| {
         (
-            ConditionTerm::PointerEqual(Box::new(argument(a)), Box::new(argument(b))),
+            ConditionTerm::AddressEqual(Box::new(argument(a)), Box::new(argument(b))),
             value,
         )
     };
     let same_field =
-        ConditionTerm::PointerOffsetEqual(Box::new(field(0, 8)), Box::new(field(1, 8)));
+        ConditionTerm::AddressOffsetEqual(Box::new(field(0, 8)), Box::new(field(1, 8)));
     assert_eq!(
         graph(&[pointers(0, 1, true)]).decide(&same_field),
         Some(true)
@@ -1600,7 +1600,7 @@ fn field_offsets_from_pointers_stated_equal_are_equal() {
     assert_eq!(graph(&[pointers(0, 2, true)]).decide(&same_field), None);
     // Different fields of equal pointers are not compared this way.
     let other_field =
-        ConditionTerm::PointerOffsetEqual(Box::new(field(0, 8)), Box::new(field(1, 12)));
+        ConditionTerm::AddressOffsetEqual(Box::new(field(0, 8)), Box::new(field(1, 12)));
     assert_eq!(graph(&[pointers(0, 1, true)]).decide(&other_field), None);
 }
 
@@ -1610,20 +1610,20 @@ fn field_offsets_from_pointers_stated_equal_are_equal() {
 /// asks for `p == q` is answered too.
 #[test]
 fn pointer_equalities_and_disequalities_compose() {
-    use crate::kernel::{Pointer, PointerOffsetTerm as O};
-    let argument = |index| Pointer {
-        block: crate::kernel::PointerBlock::ExternalArgument,
+    use crate::kernel::{Address, AddressOffset as O};
+    let argument = |index| Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
         offset: O::scaled_int32_node(variable(index), 4),
     };
-    let null = Pointer {
-        block: crate::kernel::PointerBlock::Concrete("null".into()),
+    let null = Address {
+        base: crate::kernel::AddressBase::Concrete("null".into()),
         offset: O::Constant(0),
     };
-    let equal = |a: &Pointer, b: &Pointer| {
-        ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone()))
+    let equal = |a: &Address, b: &Address| {
+        ConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone()))
     };
-    let offsets = |a: &Pointer, b: &Pointer| {
-        ConditionTerm::PointerOffsetEqual(Box::new(a.offset.clone()), Box::new(b.offset.clone()))
+    let offsets = |a: &Address, b: &Address| {
+        ConditionTerm::AddressOffsetEqual(Box::new(a.offset.clone()), Box::new(b.offset.clone()))
     };
     let (p, q, r) = (argument(0), argument(1), argument(2));
     let split = graph(&[(equal(&p, &null), true), (equal(&q, &null), false)]);
@@ -1816,17 +1816,17 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
 /// 8-aligned while one byte off does not.
 #[test]
 fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
-    use crate::kernel::{Pointer, PointerOffsetTerm as O};
+    use crate::kernel::{Address, AddressOffset as O};
     use MachineTerm as T;
     let u = T::uint64_constant;
     let boxed = |term: &MachineTerm| Box::new(term.clone());
-    let pointer = |offset| Pointer {
-        block: crate::kernel::PointerBlock::ExternalArgument,
+    let pointer = |offset| Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
         offset,
     };
     let scaled = |index, byte_width| O::scaled_int32_node(variable(index), byte_width);
-    let address = |pointer: Pointer| {
-        T::PointerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
+    let address = |pointer: Address| {
+        T::IntegerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
     };
     let and = |a: &MachineTerm, mask| T::Binary {
         format: MachineIntegerType::UInt64,
@@ -1988,11 +1988,11 @@ fn word_equality_uses_unsigned_strict_bounds_without_losing_signed_evidence() {
 
 #[test]
 fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
-    use crate::kernel::PointerOffsetTerm as O;
+    use crate::kernel::AddressOffset as O;
     let i = variable(989_980);
     for unsigned in [false, true] {
         let scaled = |value: MachineTerm| O::scaled_int64_node(value, 8, unsigned);
-        let equal = ConditionTerm::pointer_offset_equal(scaled(i.clone()), O::Constant(8));
+        let equal = ConditionTerm::address_offset_equal(scaled(i.clone()), O::Constant(8));
         for polarity in [false, true] {
             let facts = graph(&[(equal.clone(), polarity)]);
             assert_eq!(
@@ -2007,7 +2007,7 @@ fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
         let facts = graph(&[(ConditionTerm::int64_equal(i.clone(), high), true)]);
         assert_eq!(facts.decide(&equal), Some(false));
         assert_eq!(
-            graph(&[(equal, true)]).decide(&ConditionTerm::pointer_offset_equal(
+            graph(&[(equal, true)]).decide(&ConditionTerm::address_offset_equal(
                 scaled(i.clone()),
                 O::Constant(16)
             )),
@@ -2018,7 +2018,7 @@ fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
 
 #[test]
 fn excluding_one_masked_wide_table_slot_selects_the_other() {
-    use crate::kernel::PointerOffsetTerm as O;
+    use crate::kernel::AddressOffset as O;
     let index = MachineTerm::uint64_from_32(MachineTerm::Binary {
         format: MachineIntegerType::UInt32,
         op: MachineBinaryOp::BitwiseAnd,
@@ -2028,11 +2028,11 @@ fn excluding_one_masked_wide_table_slot_selects_the_other() {
     let offset = O::scaled_int64_node(index, 8, true);
     for first in [0, 8] {
         let facts = graph(&[(
-            ConditionTerm::pointer_offset_equal(offset.clone(), O::Constant(first)),
+            ConditionTerm::address_offset_equal(offset.clone(), O::Constant(first)),
             false,
         )]);
         assert_eq!(
-            facts.decide(&ConditionTerm::pointer_offset_equal(
+            facts.decide(&ConditionTerm::address_offset_equal(
                 offset.clone(),
                 O::Constant(8 - first)
             )),
@@ -2428,13 +2428,13 @@ fn offset_sources_retain_shared_indices_and_full_width() {
     for wide in [false, true] {
         let offset = |term| {
             if wide {
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value: S::index(MachineIntegerType::Int64, MachineTerm::int64_from_32(term)),
                     byte_width: 4,
                     unsigned: false,
                 }
             } else {
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: S::index(MachineIntegerType::Int32, term),
                     byte_width: 4,
                 }
@@ -2443,7 +2443,7 @@ fn offset_sources_retain_shared_indices_and_full_width() {
         let a = offset(x.clone());
         let b = offset(y.clone());
         let exports = KernelTermExport::machine_export_count();
-        let equality = offset_equality(&ConditionTerm::pointer_offset_equal(a.clone(), b))
+        let equality = offset_equality(&ConditionTerm::address_offset_equal(a.clone(), b))
             .expect("same stride");
         let view =
             crate::kernel::machine_integer::comparison::structural_comparison_view(&equality)
@@ -2457,9 +2457,9 @@ fn offset_sources_retain_shared_indices_and_full_width() {
             }
         );
         assert!(
-            offset_equality(&ConditionTerm::pointer_offset_equal(
+            offset_equality(&ConditionTerm::address_offset_equal(
                 a,
-                PointerOffsetTerm::Constant(3)
+                AddressOffset::Constant(3)
             ))
             .is_none()
         );

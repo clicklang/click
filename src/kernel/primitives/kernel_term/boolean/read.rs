@@ -5,10 +5,10 @@ use super::*;
 pub type KernelBooleanRead = KernelMemoryRead;
 
 impl KernelTerm {
-    pub(crate) fn boolean_read(memory: SharedMemory, address: SharedPointerAddress) -> Self {
+    pub(crate) fn boolean_read(point: ProgramPoint, address: SharedAddress) -> Self {
         Self::intern(
             KernelType::Bool,
-            KernelTermNode::BoolRead(KernelMemoryRead::new(memory, address)),
+            KernelTermNode::BoolRead(KernelMemoryRead::new(point, address)),
         )
     }
     /// Explicit native read-leaf boundary, shared by diagnostics and stored-cell
@@ -17,12 +17,12 @@ impl KernelTerm {
         let KernelTermNode::BoolRead(read) = self.node() else {
             return None;
         };
-        let (memory, address) = read.parts();
+        let (point, address) = read.parts();
         let MachineTerm::BoolCast { value, .. } =
             self.0.machine_leaf.get_or_init(|| MachineTerm::BoolCast {
                 to: MachineIntegerType::UInt8,
                 value: Box::new(ConditionTerm::BoolLoad(
-                    memory.clone(),
+                    point.clone(),
                     Box::new(address.export().expect("retained Boolean read address")),
                 )),
             })
@@ -39,21 +39,21 @@ mod tests {
     #[test]
     fn boolean_reads_keep_state_identity_and_exact_source() {
         let _session = crate::kernel::VerificationSession::enter();
-        let before = Memory::new()
+        let before = SymbolicMemory::new()
             .with_block("bool-read", 1)
             .with_block("bool-other", 4);
         let after = before.clone().store(
-            Memory::global_pointer("bool-other"),
+            SymbolicMemory::global_pointer("bool-other"),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let sources = [before, after].map(|memory| {
             ConditionTerm::BoolLoad(
-                intern_memory(memory),
-                Box::new(Pointer {
-                    block: PointerBlock::Symbolic(Variable(999301)),
-                    offset: PointerOffsetTerm::Add(
-                        Box::new(PointerOffsetTerm::Constant(0)),
-                        Box::new(PointerOffsetTerm::scaled_int64_node(
+                crate::kernel::ProgramPoint::at(&intern_memory(memory)),
+                Box::new(Address {
+                    base: AddressBase::Symbolic(Variable(999301)),
+                    offset: AddressOffset::Add(
+                        Box::new(AddressOffset::Constant(0)),
+                        Box::new(AddressOffset::scaled_int64_node(
                             MachineTerm::Variable(Variable(999302)),
                             8,
                             true,
@@ -83,7 +83,7 @@ mod tests {
             assert!(
                 crate::kernel::memory_history::transport_framed_common_condition(
                     root,
-                    &Memory::new(),
+                    &SymbolicMemory::new(),
                     None
                 )
                 .is_none()
@@ -104,15 +104,15 @@ mod tests {
     #[test]
     fn boolean_reads_preserve_native_substitution_states_and_addresses() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory(Memory::new().with_block("bool-memory", 4).store(
-            Memory::global_pointer("bool-memory"),
+        let memory = intern_memory(SymbolicMemory::new().with_block("bool-memory", 4).store(
+            SymbolicMemory::global_pointer("bool-memory"),
             ProgramValue::Int32(MachineTerm::Variable(Variable(999310))),
         ));
         let source = ConditionTerm::BoolLoad(
-            memory,
-            Box::new(Pointer {
-                block: PointerBlock::Symbolic(Variable(999311)),
-                offset: PointerOffsetTerm::scaled_int32_node(
+            crate::kernel::ProgramPoint::at(&memory),
+            Box::new(Address {
+                base: AddressBase::Symbolic(Variable(999311)),
+                offset: AddressOffset::scaled_int32_node(
                     MachineTerm::Variable(Variable(999310)),
                     4,
                 ),
@@ -140,9 +140,9 @@ mod tests {
                 format!("{:?}", KernelTermExport::condition(&actual).unwrap()),
                 format!("{expected:?}")
             );
-            let target = Pointer::null();
+            let target = Address::null();
             let expected = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
-                &Proposition::ConditionIs(source.clone(), true),
+                &Proposition::condition_is(source.clone(), true),
                 Variable(999311),
                 &target,
             );
@@ -165,16 +165,16 @@ mod tests {
     fn boolean_reads_separate_producer_arena_from_native_observation_identity() {
         let first = {
             let _session = crate::kernel::VerificationSession::enter();
-            intern_memory(Memory::new())
+            intern_memory(SymbolicMemory::new())
         };
         let _session = crate::kernel::VerificationSession::enter();
-        let second = intern_memory(Memory::new());
+        let second = intern_memory(SymbolicMemory::new());
         assert_ne!(first.arena_id(), second.arena_id());
         assert_eq!(first, second);
         let roots = [first, second].map(|memory| {
             KernelTerm::boolean_read(
-                memory,
-                SharedPointerAddress::import(&Pointer::symbolic(Variable(999320))),
+                crate::kernel::ProgramPoint::at(&memory),
+                SharedAddress::import(&Address::symbolic(Variable(999320))),
             )
         });
         assert_ne!(roots[0], roots[1]);

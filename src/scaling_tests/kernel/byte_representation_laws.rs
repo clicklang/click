@@ -4,9 +4,9 @@ use super::*;
 fn representation_axiom_has_fixed_work_at_distant_word_addresses() {
     let work = [0, 16, 1024, 1_000_000].map(|offset| {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(8_390_002)).offset_by_bytes(offset);
+        let pointer = Address::symbolic(Variable(8_390_002)).offset_by_bytes(offset);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            prove_uint32_from_le_bytes(PointerValue::new(pointer, ProgramType::UInt32Pointer))
+            prove_uint32_from_le_bytes(Pointer::new(pointer, ProgramType::UInt32Pointer))
         });
         result.expect("representation axiom");
         work
@@ -19,8 +19,8 @@ fn representation_axiom_has_fixed_work_at_distant_word_addresses() {
 fn target_fact_lowering_ignores_unrelated_state_and_store_history() {
     let costs = [4, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(8_390_003));
-        let mut memory = Memory::new();
+        let base = Address::symbolic(Variable(8_390_003));
+        let mut memory = SymbolicMemory::new();
         for index in 0..size {
             memory = memory.store(
                 base.offset_by_bytes(index * 4),

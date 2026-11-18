@@ -16,7 +16,7 @@ fn count(model: &AlgebraicTerm) -> I {
     I::add(I::constant_i64(1), cached(model))
 }
 fn eq(a: I, b: I) -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::integer_equal(a, b), true)
+    Proposition::condition_is(ConditionTerm::integer_equal(a, b), true)
 }
 fn alias(a: &AlgebraicTerm, b: &AlgebraicTerm) -> Proposition {
     Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()))
@@ -122,9 +122,9 @@ fn integer_observations_keep_machine_types_and_read_states() {
     let unsigned = I::from_machine(M::UInt32, bits).unwrap();
     let graph = EqualityGraph::default();
     assert!(!graph.are_integer_equal(&signed, &unsigned));
-    let p = Pointer::symbolic(Variable(920_132));
+    let p = Address::symbolic(Variable(920_132));
     let before = intern_memory(
-        Memory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
+        SymbolicMemory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
     );
     let after = intern_memory(
         before
@@ -166,7 +166,7 @@ fn literal_integer_identities_join_classes_without_rewriting_terms() {
         I::Multiply(x.clone().into(), one.clone()),
         I::Multiply(one, x.clone().into()),
     ] {
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::IntegerEqual(operation.clone().into(), y.clone().into()),
             true,
         );
@@ -178,7 +178,7 @@ fn literal_integer_identities_join_classes_without_rewriting_terms() {
         I::Multiply(x.clone().into(), zero.clone()),
         I::Multiply(zero.clone(), x.into()),
     ] {
-        assert!(context.contains_known(&Proposition::ConditionIs(
+        assert!(context.contains_known(&Proposition::condition_is(
             ConditionTerm::IntegerEqual(operation.into(), zero.clone()),
             true
         )));
@@ -274,7 +274,7 @@ fn integer_residue_consequence_needs_its_source() {
         ),
         I::constant_i64(0),
     );
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::equal(MachineTerm::subtract(x, y), MachineTerm::constant(0)),
         true,
     );
@@ -303,7 +303,7 @@ fn constant_residue_projection_preserves_the_operation_alias_route() {
         }
     }
     let context = context.assume_condition(condition, true);
-    assert!(context.contains_known(&Proposition::ConditionIs(native, truth)));
+    assert!(context.contains_known(&Proposition::condition_is(native, truth)));
 }
 
 #[test]
@@ -406,7 +406,7 @@ fn narrow_call_bounds_preserve_retained_argument_observation_identity() {
     let premise = bound(observed);
     let query = bound(retained);
     let selected =
-        PureFactContext::new().assume_proposition(Proposition::ConditionIs(premise.clone(), true));
+        PureFactContext::new().assume_proposition(Proposition::condition_is(premise.clone(), true));
     let widened = crate::kernel::machine_integer::comparison::narrow_fact_widening(&query)
         .expect("narrow comparison");
     assert_eq!(
@@ -431,11 +431,11 @@ fn negated_integer_literals_keep_their_terms_and_share_known_facts() {
         let raw = I::Negate(I::constant_i64(number).into());
         let literal = I::constant_i64(-number);
         assert_ne!(raw, literal);
-        let premise = Proposition::ConditionIs(
+        let premise = Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(raw.clone().into(), x.clone().into()),
             true,
         );
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(literal.clone().into(), x.clone().into()),
             true,
         );

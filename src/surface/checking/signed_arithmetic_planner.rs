@@ -35,11 +35,12 @@ fn native_certificate_proposition(proposition: &Proposition) -> Option<Propositi
     let Proposition::ConditionIs(condition, truth) = &canonical else {
         return Some(canonical);
     };
-    if matches!(condition, ConditionTerm::Compare { .. }) {
+    if matches!(condition.native_compat(), ConditionTerm::Compare { .. }) {
         return Some(canonical);
     }
     let Some(view) = crate::kernel::machine_integer::comparison::structural_native_comparison_view(
-        condition, *truth,
+        condition.native_compat(),
+        *truth,
     ) else {
         return Some(canonical);
     };
@@ -71,10 +72,11 @@ fn native_certificate_proposition(proposition: &Proposition) -> Option<Propositi
     }
     let (condition, truth) =
         crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
-            condition, *truth,
+            condition.native_compat(),
+            *truth,
         )?;
     Some(crate::kernel::canonical_condition_fact(
-        &Proposition::ConditionIs(condition, truth),
+        &Proposition::condition_is(condition, truth),
     ))
 }
 
@@ -368,7 +370,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
         },
         _ => return None,
     };
-    let (relation, left, right, strict) = match (condition, value) {
+    let (relation, left, right, strict) = match (condition.native_compat(), value) {
         (
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -1030,7 +1032,7 @@ fn definedness_parts_from_proposition(
     let Proposition::ConditionIs(condition, false) = proposition else {
         return None;
     };
-    Some(match condition {
+    Some(match condition.native_compat() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
@@ -1867,7 +1869,7 @@ impl<'a> Planner<'a> {
             charge_work(1)?;
             let ordinary =
                 crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
-                    .map(|condition| Proposition::ConditionIs(condition, false));
+                    .map(|condition| Proposition::condition_is(condition, false));
             let Some((operator, left, right)) =
                 definedness_parts_from_proposition(ordinary.as_ref().unwrap_or(proposition))
             else {
@@ -2576,7 +2578,9 @@ impl<'a> Planner<'a> {
                 // A known residue transports through a checked bounded sum.
                 if let binary_term!(Int32, Add, base, addend) = dividend.as_ref()
                     && Self::is_safe_interval_atom(base)
-                    && let Some(addend) = addend.as_const().and_then(|v| v.to_i32())
+                    // `as_const` exposes the int32 word bits. Interpret its
+                    // sign here; a checked unsigned conversion rejects -1.
+                    && let Some(addend) = addend.as_const().map(|bits| bits as i32)
                     && let Some(divisor) = divisor.as_const().and_then(|v| v.to_i32())
                     && let Some(operand) = self.build_interval(base)
                 {
@@ -2716,12 +2720,12 @@ impl<'a> Planner<'a> {
 fn exact_definedness(proposition: &Proposition, term: &MachineTerm) -> bool {
     let ordinary =
         crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
-            .map(|condition| Proposition::ConditionIs(condition, false));
+            .map(|condition| Proposition::condition_is(condition, false));
     let Proposition::ConditionIs(condition, false) = ordinary.as_ref().unwrap_or(proposition)
     else {
         return false;
     };
-    match (condition, term) {
+    match (condition.native_compat(), term) {
         (
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
@@ -2811,7 +2815,7 @@ fn plan_interval_goal(
 
 /// The operands of a held `uint32` order goal, as `(lower, upper, strict)`.
 fn unsigned_order_terms(goal: &Proposition) -> Option<(&MachineTerm, &MachineTerm, bool)> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation:
@@ -2823,7 +2827,7 @@ fn unsigned_order_terms(goal: &Proposition) -> Option<(&MachineTerm, &MachineTer
             right,
         },
         value,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -2934,7 +2938,7 @@ fn comparison_terms(proposition: &Proposition) -> Option<(&MachineTerm, &Machine
         Proposition::ConditionIs(condition, value) => (condition, *value),
         _ => return None,
     };
-    match (condition, value) {
+    match (condition.native_compat(), value) {
         (
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3160,8 +3164,8 @@ mod tests {
     #[test]
     fn structural_read_decrement_uses_its_selected_bound() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(crate::kernel::Memory::new());
-        let pointer = crate::kernel::Pointer::symbolic(Variable(71_201));
+        let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
+        let pointer = crate::kernel::Address::symbolic(Variable(71_201));
         let read = MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
@@ -3189,7 +3193,7 @@ mod tests {
     }
 
     fn proposition(condition: ConditionTerm, value: bool) -> Proposition {
-        Proposition::ConditionIs(condition, value)
+        Proposition::condition_is(condition, value)
     }
 
     fn le(left: MachineTerm, right: MachineTerm) -> Proposition {

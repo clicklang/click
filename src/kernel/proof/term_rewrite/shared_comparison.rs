@@ -276,7 +276,7 @@ impl TermRewrite<'_> {
                 KernelTermNode::MachineLiteral(_) => term.clone(),
                 KernelTermNode::Legacy(_)
                 | KernelTermNode::Call { .. }
-                | KernelTermNode::PointerAddress { .. } => {
+                | KernelTermNode::IntegerAddress { .. } => {
                     let original = term
                         .machine_conversion_leaf()
                         .expect("retained native operand");
@@ -862,12 +862,12 @@ fn comparison_binary_uncached(
 fn comparison_read_fixture(value: MachineTerm) -> (Variable, Variable) {
     let ty = MachineIntegerType::Int32;
     let index = MachineTerm::Variable(Variable(992201));
-    let pointer = |value| Pointer {
-        block: PointerBlock::Concrete("opaque-comparison".into()),
-        offset: PointerOffsetTerm::scaled_int32_node(value, 4),
+    let pointer = |value| Address {
+        base: AddressBase::Concrete("opaque-comparison".into()),
+        offset: AddressOffset::scaled_int32_node(value, 4),
     };
     let memory = crate::kernel::intern_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("opaque-comparison", 64)
             .store(pointer(index.clone()), ProgramValue::Int32(value)),
     );
@@ -1466,7 +1466,7 @@ mod tests {
                 [root.clone(), root.clone()],
             );
         }
-        let proposition = Proposition::ConditionIs(
+        let proposition = Proposition::condition_is(
             ConditionTerm::integer_less_than(
                 IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap()),
                 IntegerTerm::constant_i64(0),
@@ -1498,7 +1498,7 @@ mod tests {
         ] {
             assert_eq!(
                 {
-                    let written = Proposition::ConditionIs(
+                    let written = Proposition::condition_is(
                         ConditionTerm::equal(left.clone(), right.clone()),
                         true,
                     );
@@ -1507,7 +1507,7 @@ mod tests {
                     let Proposition::ConditionIs(condition, true) = normalized else {
                         unreachable!()
                     };
-                    facts.decide(&condition)
+                    facts.decide((&condition).native_compat())
                 },
                 expected,
                 "{left:?} == {right:?}"
@@ -1521,7 +1521,7 @@ mod tests {
         let (read, _) = comparison_read_fixture(7u32.into());
         let bound = MachineTerm::Variable(Variable(992203));
         let claim = |value| {
-            Proposition::ConditionIs(ConditionTerm::signed_less_than(value, bound.clone()), true)
+            Proposition::condition_is(ConditionTerm::signed_less_than(value, bound.clone()), true)
         };
         assert!(
             crate::kernel::proof::fact_reasoning::condition_polarity_equivalent(

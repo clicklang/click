@@ -1,21 +1,21 @@
 use super::*;
 
 #[test]
-fn stored_pointer_block_queries_scale_with_new_read_definitions() {
+fn stored_address_base_queries_scale_with_new_read_definitions() {
     fn work(steps: u64, unrelated: u64) -> usize {
         let _session = VerificationSession::enter();
-        let target = Pointer {
-            block: PointerBlock::Heap(989_010),
-            offset: PointerOffsetTerm::Constant(0),
+        let target = Address {
+            base: AddressBase::Heap(989_010),
+            offset: AddressOffset::Constant(0),
         };
-        let other = PointerBlock::Heap(989_011);
-        let slot = Pointer::symbolic(Variable(989_012));
-        let mut memory = Memory::new()
-            .with_block(target.block.clone(), 8)
+        let other = AddressBase::Heap(989_011);
+        let slot = Address::symbolic(Variable(989_012));
+        let mut memory = SymbolicMemory::new()
+            .with_block(target.base.clone(), 8)
             .with_block(other.clone(), 8);
         for index in 0..unrelated {
             memory = memory.store(
-                Pointer::symbolic(Variable(990_000 + index)),
+                Address::symbolic(Variable(990_000 + index)),
                 ProgramValue::Int32(0u32.into()),
             );
         }
@@ -26,12 +26,12 @@ fn stored_pointer_block_queries_scale_with_new_read_definitions() {
                 slot.clone(),
                 ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
             );
-            pointer = Pointer::loaded_value(&intern_memory_ref(&memory), &slot);
+            pointer = Address::loaded_value(&intern_memory_ref(&memory), &slot);
             reads.push(pointer.clone());
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for read in &reads {
-                assert!(read.block.proven_distinct(&other));
+                assert!(read.base.proven_distinct(&other));
             }
         });
         work
@@ -52,11 +52,11 @@ fn stored_pointer_block_queries_scale_with_new_read_definitions() {
 fn structural_read_comparison_forms_scale_with_selected_observations() {
     fn work(selected: u64, unrelated: u64) -> usize {
         let _session = VerificationSession::enter();
-        let address = |index| Pointer {
-            block: PointerBlock::Heap(index),
-            offset: PointerOffsetTerm::Constant(0),
+        let address = |index| Address {
+            base: AddressBase::Heap(index),
+            offset: AddressOffset::Constant(0),
         };
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..selected + unrelated {
             memory = memory.store(address(index), ProgramValue::Int32(37u32.into()));
         }
@@ -69,7 +69,7 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
                     LoadKind::Int32,
                 );
                 let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, read).unwrap();
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::integer_equal(observed, IntegerTerm::constant_i64(37)),
                     true,
                 )
@@ -102,9 +102,9 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
 fn algebraic_read_comparison_forms_scale_with_selected_observations() {
     fn work(selected: u64, unrelated: u64) -> usize {
         let _session = VerificationSession::enter();
-        let address = |index| Pointer {
-            block: PointerBlock::Heap(index),
-            offset: PointerOffsetTerm::Constant(0),
+        let address = |index| Address {
+            base: AddressBase::Heap(index),
+            offset: AddressOffset::Constant(0),
         };
         let algebraic_type = AlgebraicType {
             rigid: true,
@@ -117,7 +117,7 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
             algebraic_type: algebraic_type.clone(),
             node: AlgebraicTermNode::Variable(Variable(991_000 + index)),
         };
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..selected + unrelated {
             memory = memory.store(
                 address(index),
@@ -130,11 +130,11 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
                 let read = AlgebraicTerm {
                     algebraic_type: algebraic_type.clone(),
                     node: AlgebraicTermNode::MemoryLoad {
-                        memory: memory.clone(),
+                        point: crate::kernel::ProgramPoint::at(&memory.clone()),
                         pointer: Box::new(address(index)),
                     },
                 };
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::AlgebraicEqual(Box::new(read), Box::new(stored(index))),
                     true,
                 )
@@ -144,7 +144,7 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
             for (index, goal) in (0..).zip(&goals) {
                 assert_eq!(
                     comparison_form(goal),
-                    Some(Proposition::ConditionIs(
+                    Some(Proposition::condition_is(
                         ConditionTerm::AlgebraicEqual(
                             Box::new(stored(index)),
                             Box::new(stored(index))

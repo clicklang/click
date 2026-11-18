@@ -1,8 +1,6 @@
-//! An integer range is held as its two bounds, `{name}_start` and
-//! `{name}_end`; `next` yields `Some(start)` and advances `start` while
-//! `start < end`. An inclusive range also holds `{name}_done`, set once it
-//! yields `end`: it yields while `!done && start <= end`, and `next` at
-//! `start == end` sets `done` instead of advancing past `end`.
+//! An integer range is held as its two bounds. A half-open range yields
+//! while its start is below its end. An inclusive range also yields at
+//! equality, then takes the empty representation `1..=0`.
 use super::*;
 
 /// The constant `1` of integer type `element`, as the importer spells it.
@@ -46,14 +44,10 @@ impl Context<'_> {
             if !self.locals.insert(local.clone()) {
                 return Err("range bound identity collision".into());
             }
-            result = program_seq(result, program_declare(local, interface_type));
-        }
-        if inclusive {
-            let done = format!("{name}_done");
-            if !self.locals.insert(done.clone()) {
-                return Err("range bound identity collision".into());
-            }
-            result = program_seq(result, program_declare(done, ProgramType::Int32));
+            result = program_seq(
+                result,
+                program_declare(self.binding(&local), interface_type),
+            );
         }
         Ok(result)
     }
@@ -79,21 +73,10 @@ impl Context<'_> {
         end: &E,
     ) -> Result<ProgramStatement, String> {
         self.range_element(target)?;
-        let bounds = program_seq(
+        Ok(program_seq(
             self.assign(&format!("{target}_start"), start)?,
             self.assign(&format!("{target}_end"), end)?,
-        );
-        Ok(if self.inclusive(target)? {
-            program_seq(
-                bounds,
-                program_assign(
-                    format!("{target}_done"),
-                    crate::kernel::program_expression::int32_literal(0),
-                ),
-            )
-        } else {
-            bounds
-        })
+        ))
     }
 
     pub(super) fn range_move(
@@ -107,41 +90,28 @@ impl Context<'_> {
         {
             return Err("invalid Rust range move".into());
         }
-        let bounds = program_seq(
+        Ok(program_seq(
             program_assign(
-                format!("{target}_start"),
-                crate::kernel::program_expression::variable(format!("{source}_start")),
-            ),
-            program_assign(
-                format!("{target}_end"),
-                crate::kernel::program_expression::variable(format!("{source}_end")),
-            ),
-        );
-        Ok(if self.inclusive(target)? {
-            program_seq(
-                bounds,
-                program_assign(
-                    format!("{target}_done"),
-                    crate::kernel::program_expression::variable(format!("{source}_done")),
+                self.binding(&format!("{target}_start")),
+                crate::kernel::program_expression::variable(
+                    self.binding(&format!("{source}_start")),
                 ),
-            )
-        } else {
-            bounds
-        })
+            ),
+            program_assign(
+                self.binding(&format!("{target}_end")),
+                crate::kernel::program_expression::variable(self.binding(&format!("{source}_end"))),
+            ),
+        ))
     }
 
     pub(super) fn range_has_next(&self, iterator: &str) -> Result<ProgramExpression, String> {
         self.range_element(iterator)?;
-        let start = crate::kernel::program_expression::variable(format!("{iterator}_start"));
-        let end = crate::kernel::program_expression::variable(format!("{iterator}_end"));
+        let start =
+            crate::kernel::program_expression::variable(self.binding(&format!("{iterator}_start")));
+        let end =
+            crate::kernel::program_expression::variable(self.binding(&format!("{iterator}_end")));
         Ok(if self.inclusive(iterator)? {
-            crate::kernel::program_expression::and(
-                crate::kernel::program_expression::equal(
-                    crate::kernel::program_expression::variable(format!("{iterator}_done")),
-                    crate::kernel::program_expression::int32_literal(0),
-                ),
-                crate::kernel::program_expression::less_equal(start, end),
-            )
+            crate::kernel::program_expression::less_equal(start, end)
         } else {
             crate::kernel::program_expression::less_than(start, end)
         })
@@ -175,19 +145,20 @@ impl Context<'_> {
                 right: Box::new(one(&element)?),
             },
         )?;
-        // An inclusive range at `start == end` yields `end` and is done; its
-        // `start` is not advanced past `end`.
+        // Rust leaves the bounds unspecified after exhaustion. Both 0 and
+        // 1 fit every supported element type, so use the same empty bounds
+        // at every endpoint, including the integer type's minimum and maximum.
         let advance = if self.inclusive(iterator)? {
+            use crate::kernel::program_expression as e;
+            let end = format!("{iterator}_end");
+            let exhausted = program_seq(
+                program_assign(self.binding(&start), e::int32_literal(1)),
+                program_assign(self.binding(&end), e::int32_literal(0)),
+            );
             program_if(
-                crate::kernel::program_expression::less_than(
-                    crate::kernel::program_expression::variable(&start),
-                    crate::kernel::program_expression::variable(format!("{iterator}_end")),
-                ),
+                e::less_than(e::variable(&start), e::variable(&end)),
                 advance,
-                program_assign(
-                    format!("{iterator}_done"),
-                    crate::kernel::program_expression::int32_literal(1),
-                ),
+                exhausted,
             )
         } else {
             advance

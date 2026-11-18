@@ -215,7 +215,9 @@ impl BodyAdapter<'_, '_> {
                 }
                 Ok(Some(S::SharedArrayNext {
                     iterator: self.iterator_root(operand_place(argument)?)?,
-                    option: destination,
+                    option: Some(destination),
+                    payload: None,
+                    taken: None,
                 }))
             }
             "into_iter" => {
@@ -282,7 +284,7 @@ impl BodyAdapter<'_, '_> {
                             .is_none_or(|e| self.adapter.ty(e).ok() != Some(element.clone()))
                         || !matches!(argument.ty().kind(), a::TyKind::Ref(_, p, a::RefKind::Shared) if matches!(p.kind(), a::TyKind::Array(e, n, _) if self.adapter.ty(e).ok() == Some(element.clone()) && n.as_usize_literal() == ptr.generics.const_generics[0].as_usize_literal() && n.as_usize_literal().is_some()))
                     {
-                        return Err(unsupported("shared array into_iter signature/extent"));
+                        return Err(unsupported("shared array into_iter signature/length"));
                     }
                     Ok(Some(S::SharedArrayInitialize {
                         target: destination,

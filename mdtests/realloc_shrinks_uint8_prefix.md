@@ -1,6 +1,6 @@
 # realloc preserves the fitting prefix when shrinking uint8 storage
 
-Shrinking a byte buffer discards only cells outside the new extent. The
+Shrinking a byte buffer discards only cells outside the new size. The
 initialized bytes that fit remain readable after the successful resize.
 
 ```c filename=realloc_shrinks_uint8_prefix.c

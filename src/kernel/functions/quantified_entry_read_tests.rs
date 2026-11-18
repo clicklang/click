@@ -9,16 +9,20 @@ fn fixture(
     Vec<ResourceSpec>,
     Vec<CompositeResourceDefinition>,
 ) {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("quantity-pool".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("quantity-pool".into()),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("pool", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 8).store(
-            pointer.offset_by_int32_elements(MachineTerm::constant(1)),
-            int32(4),
-        ));
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block(pointer.base.clone(), 8)
+                .store(
+                    pointer.offset_by_int32_elements(MachineTerm::constant(1)),
+                    int32(4),
+                ),
+        );
     let slot = ResourceSpec::composite(
         ResourceAccessMode::Own,
         "slot".into(),
@@ -105,7 +109,7 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
         .expect("a folded control supplies the field read");
     assert_eq!(guards.len(), quantities);
     assert!(guards.iter().all(|guard| guard
-        == &Proposition::ConditionIs(
+        == &Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
@@ -125,7 +129,7 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
 fn composite_read_projection_requires_positive_ownership() {
     let (state, _, definitions) = fixture(0, 1);
     let pointer = match state.locals.get_native("pool").as_deref().unwrap() {
-        ProgramValue::Pointer(value) => value.pointer().clone(),
+        ProgramValue::Pointer(value) => value.address().clone(),
         _ => unreachable!(),
     };
     let target = ResourceFact::view_memory(MemoryRange::new(
@@ -139,7 +143,7 @@ fn composite_read_projection_requires_positive_ownership() {
                 name: "zz_control".into(),
                 arguments: vec![ProgramValue::pointer(pointer.clone()).into()].into(),
             },
-            Box::new(MachineTerm::constant(quantity)),
+            Box::new(MachineTerm::constant(quantity).into()),
         );
         let supply = resource_clause_section_supply(
             &state,

@@ -1,43 +1,43 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType, VerificationSession};
 
-/// [`allocation_continuity`] of two 32-bit extents.
+/// [`allocation_continuity`] of two 32-bit sizes.
 fn int32_continuity(
-    input_base: &Pointer,
+    input_base: &Address,
     input_bytes: &MachineTerm,
-    output_base: &Pointer,
+    output_base: &Address,
     output_bytes: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> AllocationContinuity {
     allocation_continuity(
         input_base,
-        &HeapExtent::int32(input_bytes.clone()),
+        &AllocationSize::int32(input_bytes.clone()),
         output_base,
-        &HeapExtent::int32(output_bytes.clone()),
+        &AllocationSize::int32(output_bytes.clone()),
         assumptions,
     )
 }
 
-/// Two extents of different formats are never one allocation's (D5): a pair
+/// Two sizes of different formats are never one allocation's (D5): a pair
 /// at one base, or at bases not proven distinct (two external pointers), is
-/// refused rather than compared, and distinct blocks stay distinct. Two 64-bit extents compare
+/// refused rather than compared, and distinct blocks stay distinct. Two 64-bit sizes compare
 /// at 64 bits.
 #[test]
-fn continuity_refuses_extents_of_different_formats() {
-    let base = Pointer {
-        block: PointerBlock::Heap(930_200),
-        offset: PointerOffsetTerm::Constant(0),
+fn continuity_refuses_allocation_sizes_of_different_formats() {
+    let base = Address {
+        base: AddressBase::Heap(930_200),
+        offset: AddressOffset::Constant(0),
     };
-    let other = Pointer {
-        block: PointerBlock::Heap(930_201),
-        offset: PointerOffsetTerm::Constant(0),
+    let other = Address {
+        base: AddressBase::Heap(930_201),
+        offset: AddressOffset::Constant(0),
     };
     let count = MachineTerm::Variable(Variable(930_202));
-    let wide = HeapExtent::new(
+    let wide = AllocationSize::new(
         MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(4)),
-        HeapExtentKind::UInt64,
+        AllocationSizeKind::UInt64,
     );
-    let narrow = HeapExtent::int32(MachineTerm::constant(16));
+    let narrow = AllocationSize::int32(MachineTerm::constant(16));
     let assumptions = PureFactContext::new();
     for (input, output) in [(&wide, &narrow), (&narrow, &wide)] {
         assert_eq!(
@@ -63,12 +63,12 @@ fn continuity_refuses_extents_of_different_formats() {
         allocation_continuity(&base, &wide, &base, &wide, &assumptions),
         AllocationContinuity::Same,
     );
-    let other_wide = HeapExtent::new(
+    let other_wide = AllocationSize::new(
         MachineTerm::uint64_multiply(
             MachineTerm::Variable(Variable(930_204)),
             MachineTerm::uint64_constant(4),
         ),
-        HeapExtentKind::UInt64,
+        AllocationSizeKind::UInt64,
     );
     assert!(matches!(
         allocation_continuity(&base, &wide, &base, &other_wide, &assumptions),
@@ -82,27 +82,27 @@ fn continuity_refuses_extents_of_different_formats() {
 
 #[test]
 fn contract_retirement_invalidates_creation_history_even_with_replacement() {
-    let base = Pointer {
-        block: PointerBlock::Heap(930_100),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Heap(930_100),
+        offset: AddressOffset::Constant(0),
     };
     let bytes = MachineTerm::constant(16);
     let input = ResourceContext::new()
         .unchecked_with_fact(ResourceFact::own_allocation(base.clone(), bytes.clone()));
-    let memory = Memory::new()
-        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(bytes.clone()))
+    let memory = SymbolicMemory::new()
+        .with_heap_allocation_claim(base.clone(), AllocationSize::int32(bytes.clone()))
         .expect("live input allocation");
     let mut state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(memory.clone());
-    state.record_population_storage_creation(base.block.clone());
+    state.record_population_storage_creation(base.base.clone());
     assert!(
         state
             .population_effects
             .creation
             .as_ref()
             .unwrap()
-            .created_here(&base.block)
+            .created_here(&base.base)
     );
     let replacement_bytes = MachineTerm::Variable(Variable(930_101));
     assert!(matches!(
@@ -124,7 +124,7 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
     ] {
         let VerifiedAllocationDelta {
             memory: after_memory,
-            retired_creations: retired,
+            retired_allocations: retired,
             ..
         } = apply_verified_heap_allocation_delta(
             memory.clone(),
@@ -139,10 +139,16 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
             &state,
         )
         .expect("checked allocation retirement");
-        assert_eq!(retired, vec![base.block.clone()]);
+        assert_eq!(retired.len(), 1);
+        assert_eq!(
+            retired[0],
+            AllocationSize::int32(bytes.clone()).byte_range(base.clone())
+        );
         let mut returned = state.clone().with_memory(after_memory);
-        for block in retired {
-            returned.retire_population_storage(&block).unwrap();
+        for range in retired {
+            returned
+                .retire_population_storage(&range.base().base)
+                .unwrap();
         }
         assert!(
             !returned
@@ -150,15 +156,15 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
                 .creation
                 .as_ref()
                 .unwrap()
-                .created_here(&base.block)
+                .created_here(&base.base)
         );
     }
 }
 
-fn external_pointer(variable: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(variable)), 4),
+fn external_pointer(variable: u64) -> Address {
+    Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(variable)), 4),
     }
 }
 
@@ -187,9 +193,9 @@ fn contract_allocation_retirement_respects_initialized_mutex_storage() {
         let interface = FunctionContractInterface::new(ProgramType::Void, vec![]);
         for mutex in [
             base.offset_by_bytes(8),
-            Pointer::symbolic(Variable(930_006)),
+            Address::symbolic(Variable(930_006)),
         ] {
-            let symbolic = matches!(mutex.block, PointerBlock::Symbolic(_));
+            let symbolic = matches!(mutex.base, AddressBase::Symbolic(_));
             let state = super::super::mutexes::MutexContext::new(ExecutionState::new())
                 .initialize_empty(mutex, 40)
                 .unwrap()
@@ -251,14 +257,14 @@ fn continuity_requires_both_the_allocation_base_and_size() {
     );
     assert_eq!(
         int32_continuity(
-            &Pointer {
-                block: PointerBlock::Heap(930_002),
-                offset: PointerOffsetTerm::Constant(0),
+            &Address {
+                base: AddressBase::Heap(930_002),
+                offset: AddressOffset::Constant(0),
             },
             &MachineTerm::constant(4),
-            &Pointer {
-                block: PointerBlock::Heap(930_003),
-                offset: PointerOffsetTerm::Constant(0),
+            &Address {
+                base: AddressBase::Heap(930_003),
+                offset: AddressOffset::Constant(0),
             },
             &MachineTerm::constant(4),
             &assumptions,
@@ -275,17 +281,17 @@ fn continuity_requires_both_the_allocation_base_and_size() {
             &MachineTerm::constant(4),
             &assumptions,
         ),
-        AllocationContinuity::Undecided(ConditionTerm::pointer_equal(input, other)),
+        AllocationContinuity::Undecided(ConditionTerm::address_equal(input, other)),
     );
 }
 
 #[test]
 fn allocation_size_continuity_uses_graph_with_state_scope() {
     let _session = crate::kernel::VerificationSession::enter();
-    let before = crate::kernel::intern_memory(Memory::new().with_block("alloc-size", 8));
-    let pointer = |index| Pointer {
-        block: "alloc-size".into(),
-        offset: PointerOffsetTerm::scale_int32(index, 4),
+    let before = crate::kernel::intern_memory(SymbolicMemory::new().with_block("alloc-size", 8));
+    let pointer = |index| Address {
+        base: "alloc-size".into(),
+        offset: AddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
@@ -344,20 +350,20 @@ fn allocation_size_continuity_uses_graph_with_state_scope() {
 }
 
 /// One allocation is lent to a helper beside storage the caller keeps.
-fn allocation_companion_call(unrelated: u64) -> (Pointer, ExecutionState, ExecutionState) {
-    let base = Pointer {
-        block: PointerBlock::Heap(984_000),
-        offset: PointerOffsetTerm::Constant(0),
+fn allocation_companion_call(unrelated: u64) -> (Address, ExecutionState, ExecutionState) {
+    let base = Address {
+        base: AddressBase::Heap(984_000),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new()
-        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+    let memory = SymbolicMemory::new()
+        .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
         .unwrap();
     let mut caller = ExecutionState::new()
         .with_memory(memory)
         .with_population_creation_tracking();
-    caller.record_population_storage_creation(base.block.clone());
+    caller.record_population_storage_creation(base.base.clone());
     for id in 0..unrelated {
-        caller.record_population_storage_creation(PointerBlock::Heap(985_000 + id));
+        caller.record_population_storage_creation(AddressBase::Heap(985_000 + id));
     }
     let mut callee = caller.clone();
     Arc::make_mut(&mut callee.population_effects).creation = Some(
@@ -386,12 +392,12 @@ fn allocation_companion_call(unrelated: u64) -> (Pointer, ExecutionState, Execut
 fn allocation_companion_returns_through_a_proven_alias_only() {
     let _session = VerificationSession::enter();
     let (base, caller, callee) = allocation_companion_call(0);
-    let alias = Pointer::symbolic(Variable(984_001));
+    let alias = Address::symbolic(Variable(984_001));
     let output = ResourceFact::own_allocation(alias.clone(), 4);
     let missing = PureFactContext::new();
     let proven = missing
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(alias, base.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(alias, base.clone()), true);
     let caller_events = caller.population_effects.creation.as_ref().unwrap();
     for (facts, accepted) in [(&missing, false), (&proven, true)] {
         let returned = transfer_population_call_facts(
@@ -412,8 +418,8 @@ fn allocation_companion_returns_through_a_proven_alias_only() {
             .finish_call(caller_events);
         if accepted {
             let resumed = finished.unwrap();
-            assert!(resumed.created_here(&base.block));
-            assert!(resumed.retired(&base.block).is_ok());
+            assert!(resumed.created_here(&base.base));
+            assert!(resumed.retired(&base.base).is_ok());
         } else {
             assert!(matches!(finished,
                 Err(crate::kernel::population_authority::storage_creation::CreationRefusal::OutstandingOwnership)));
@@ -425,11 +431,11 @@ fn allocation_companion_returns_through_a_proven_alias_only() {
 fn a_return_alias_does_not_recreate_a_retired_cleanup_anchor() {
     let _session = VerificationSession::enter();
     let (base, caller, mut callee) = allocation_companion_call(0);
-    callee.retire_population_storage(&base.block).unwrap();
-    let alias = Pointer::symbolic(Variable(984_002));
+    callee.retire_population_storage(&base.base).unwrap();
+    let alias = Address::symbolic(Variable(984_002));
     let output = ResourceFact::own_allocation(alias.clone(), 4);
     let facts = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(alias, base.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(alias, base.clone()), true);
     let returned = transfer_population_call_facts(
         callee.clone(),
         &callee,
@@ -447,8 +453,8 @@ fn a_return_alias_does_not_recreate_a_retired_cleanup_anchor() {
         .unwrap()
         .finish_call(caller.population_effects.creation.as_ref().unwrap())
         .unwrap();
-    assert!(!finished.tracks_storage_anchor(&base.block));
-    assert!(!finished.created_here(&base.block));
+    assert!(!finished.tracks_storage_anchor(&base.base));
+    assert!(!finished.created_here(&base.base));
 }
 
 #[cfg(test)]
@@ -456,14 +462,14 @@ mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/allocation_continuity_tests.rs");
 }
 
-/// A contract's `uint64` `allocation` byte count is a 64-bit extent only
-/// under `malloc`'s decision (`design/heap-extents.md`, stage 3): a product
+/// A contract's `uint64` `allocation` byte count is a 64-bit size only
+/// under `malloc`'s decision (`design/heap-allocation-sizes.md`, stage 3): a product
 /// `n * 4u64` needs `1 <= n <= PTRDIFF_MAX / 4` decided, a product of two
-/// symbolic factors is never one, and a constant that fits a 32-bit extent is
-/// that extent. A clause already established elsewhere (a contract's own
+/// symbolic factors is never one, and a constant that fits a 32-bit size is
+/// that size. A clause already established elsewhere (a contract's own
 /// entry clause, a held body) is assumed.
 #[test]
-fn a_contract_uint64_allocation_extent_needs_the_no_wrap_decision() {
+fn a_contract_uint64_allocation_size_needs_the_no_wrap_decision() {
     let count = MachineTerm::Variable(Variable(930_300));
     let other = MachineTerm::Variable(Variable(930_301));
     let product = MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(4));
@@ -480,35 +486,32 @@ fn a_contract_uint64_allocation_extent_needs_the_no_wrap_decision() {
     });
 
     assert_eq!(
-        uint64_allocation_extent_argument(&MachineTerm::uint64_constant(16), &unbounded),
+        uint64_allocation_size_argument(&MachineTerm::uint64_constant(16), &unbounded),
         Ok(ProgramValue::Int32(MachineTerm::constant(16))),
     );
     assert!(matches!(
-        uint64_allocation_extent_argument(&product, &unbounded),
+        uint64_allocation_size_argument(&product, &unbounded),
         Err(RuntimeError::FunctionContract(_)),
     ));
     assert_eq!(
-        uint64_allocation_extent_argument(&product, &bounded),
+        uint64_allocation_size_argument(&product, &bounded),
         Ok(ProgramValue::UInt64(product.clone())),
     );
     assert_eq!(
-        uint64_allocation_extent_argument(
-            &product,
-            &unbounded.clone().assume_entry_clause_extents()
-        ),
+        uint64_allocation_size_argument(&product, &unbounded.clone().assume_entry_clause_spans()),
         Ok(ProgramValue::UInt64(product.clone())),
     );
     let symbolic_product = MachineTerm::uint64_multiply(count.clone(), other);
     assert!(matches!(
-        uint64_allocation_extent_argument(&symbolic_product, &bounded),
+        uint64_allocation_size_argument(&symbolic_product, &bounded),
         Err(RuntimeError::FunctionContract(_)),
     ));
     assert!(matches!(
-        uint64_allocation_extent_argument(&MachineTerm::uint64_constant(0), &unbounded),
+        uint64_allocation_size_argument(&MachineTerm::uint64_constant(0), &unbounded),
         Err(RuntimeError::FunctionContract(_)),
     ));
     assert!(matches!(
-        uint64_allocation_extent_argument(&MachineTerm::uint64_constant(u64::MAX), &unbounded),
+        uint64_allocation_size_argument(&MachineTerm::uint64_constant(u64::MAX), &unbounded),
         Err(RuntimeError::FunctionContract(_)),
     ));
 }

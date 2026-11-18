@@ -1,3 +1,4 @@
+pub(crate) use super::functions::admit_declared_entry_resources;
 use super::functions::{
     apply_verified_contract_resource_transition,
     construct_program_function_resource as construct_c_function_resource_checked,
@@ -57,23 +58,23 @@ pub(crate) struct MemoryAccessElementBound {
 }
 
 pub(crate) fn memory_access_element_bound(
-    memory: &Memory,
-    pointer: &Pointer,
+    memory: &SymbolicMemory,
+    pointer: &Address,
     byte_width: u32,
 ) -> Option<MemoryAccessElementBound> {
-    let size = memory.block_size(&pointer.block)?;
+    let size = memory.block_size(&pointer.base)?;
     let mut pending = vec![&pointer.offset];
     let mut widest: Option<(&MachineTerm, u32)> = None;
     while let Some(term) = pending.pop() {
         match term {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
             // A widened index is spelled as the C index it widens: a
             // `uint32` index zero-extends to the 64-bit offset.
-            PointerOffsetTerm::Int32Scaled { value, byte_width }
-            | PointerOffsetTerm::Int64Scaled {
+            AddressOffset::Int32Scaled { value, byte_width }
+            | AddressOffset::Int64Scaled {
                 value, byte_width, ..
             } => {
                 let value = match value.structural_value() {
@@ -85,8 +86,8 @@ pub(crate) fn memory_access_element_bound(
                     widest = Some((value, stride));
                 }
             }
-            PointerOffsetTerm::Constant(_) => {}
-            PointerOffsetTerm::Variable(_) => return None,
+            AddressOffset::Constant(_) => {}
+            AddressOffset::Variable(_) => return None,
         }
     }
     let (index, stride) = widest?;
@@ -174,7 +175,7 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
         };
         let (zero, one) = (constant(0)?, constant(1)?);
         let compare = |relation, constant: &MachineTerm| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::machine_compare(*to, relation, cast.clone(), constant.clone()),
                 true,
             )
@@ -206,7 +207,7 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
         (MachineTerm::constant(0), MachineTerm::constant(1))
     };
     let equals = |constant: &MachineTerm| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             if wide {
                 if to.format().is_signed() {
                     ConditionTerm::int64_equal(cast.clone(), constant.clone())
@@ -224,11 +225,11 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
         return Some(vec![disjunction]);
     }
     Some(vec![
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::signed_greater_equal(cast.clone(), zero),
             true,
         ),
-        Proposition::ConditionIs(ConditionTerm::signed_less_equal(cast.clone(), one), true),
+        Proposition::condition_is(ConditionTerm::signed_less_equal(cast.clone(), one), true),
         disjunction,
     ])
 }
@@ -312,13 +313,13 @@ pub fn float64(bits: impl Into<MachineTerm>) -> ProgramValue {
 /// matching allocation keys through the path's pointer equalities or exact
 /// materialization of loads embedded in the key and pointer forms.
 pub(crate) fn memory_holds_live_heap_allocation_at(
-    memory: &super::Memory,
-    pointer: &Pointer,
+    memory: &super::SymbolicMemory,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     memory.is_live_heap_address(pointer, assumptions)
         || memory.heap_live_allocation_bases().any(|base| {
-            base.block == pointer.block
+            base.base == pointer.base
                 && super::assumptions::pointer_offsets_equal_after_exact_materialization(
                     &base.offset,
                     &pointer.offset,
@@ -343,7 +344,10 @@ pub fn program_condition_facts_match_for_transport(
         return false;
     };
     source_value == target_value
-        && assumptions.condition_matches(source_condition, target_condition)
+        && assumptions.condition_matches(
+            source_condition.native_compat(),
+            target_condition.native_compat(),
+        )
 }
 
 /// The `transport` rule for one bare condition: `context` states it, it
@@ -354,10 +358,10 @@ fn condition_target_reaches(context: &PureFactContext, target: &Proposition) -> 
         return false;
     };
     context.proves_exact(target)
-        || contract_certification::condition_holds_by_memory_resolution(context, condition, *value)
+        || contract_certification::condition_holds_by_memory_resolution(context, condition.native_compat(), *value)
         || contract_certification::condition_holds_by_instantiated_fact(
             context,
-            condition,
+            condition.native_compat(),
             *value,
             &|premise| transport_premise_holds(context, premise),
         )
@@ -806,8 +810,8 @@ mod loop_exit_sharing_tests {
             MachineTerm::Variable(Variable(9_901_100)),
             MachineTerm::constant(0),
         );
-        let before = Proposition::ConditionIs(condition.clone(), true);
-        let after = Proposition::ConditionIs(condition, false);
+        let before = Proposition::condition_is(condition.clone(), true);
+        let after = Proposition::condition_is(condition, false);
         let ambient = PureFactStore::from_ordered(std::slice::from_ref(&before));
         let path = PureFactStore::from_ordered(std::slice::from_ref(&after));
         let exit = LoopFinalExitCandidate::from_store(ExecutionState::new(), &path);
@@ -1018,9 +1022,9 @@ pub fn loop_preservation_contexts(
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
 ) -> Result<Vec<LoopPreservationContext>, LoopHeadRefusal> {
-    loop_preservation_contexts_with_mode(
+    loop_phase_preservation_contexts(
         loop_entry_state,
-        condition,
+        Some(condition),
         invariant_checks,
         effect_checks,
         resource_specs,
@@ -1028,7 +1032,6 @@ pub fn loop_preservation_contexts(
         body,
         assumptions,
         next_kernel_variable,
-        false,
     )
 }
 
@@ -1046,24 +1049,25 @@ pub fn program_do_while_preservation_contexts(
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
 ) -> Result<Vec<LoopPreservationContext>, LoopHeadRefusal> {
-    loop_preservation_contexts_with_mode(
+    let test = LoopTestRegion::expression(condition.clone(), LoopTestPosition::AfterBody);
+    let pass = program_loop_pass(body, None, Some(&test));
+    loop_phase_preservation_contexts(
         loop_entry_state,
-        condition,
+        None,
         invariant_checks,
         effect_checks,
         resource_specs,
         definitions,
-        body,
+        &pass,
         assumptions,
         next_kernel_variable,
-        true,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn loop_preservation_contexts_with_mode(
+pub(crate) fn loop_phase_preservation_contexts(
     loop_entry_state: &ExecutionState,
-    condition: &ProgramExpression,
+    condition: Option<&ProgramExpression>,
     invariant_checks: &[LoopInvariantCheck],
     effect_checks: &[LoopEffectCheck],
     resource_specs: &[ResourceSpec],
@@ -1071,7 +1075,6 @@ fn loop_preservation_contexts_with_mode(
     body: &ProgramStatement,
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
-    direct_post_test: bool,
 ) -> Result<Vec<LoopPreservationContext>, LoopHeadRefusal> {
     // The head inherits the execution's counter instead of restarting at the
     // base of the identity range. Restarting it in the middle of an execution
@@ -1081,7 +1084,9 @@ fn loop_preservation_contexts_with_mode(
     let mut budget = ExecutionBudget::continuing_from(next_kernel_variable);
     let mut existing_variables = BTreeSet::new();
     collect_execution_state_bitvector_variables(loop_entry_state, &mut existing_variables);
-    collect_program_expression_bitvector_variables(condition, &mut existing_variables);
+    if let Some(condition) = condition {
+        collect_program_expression_bitvector_variables(condition, &mut existing_variables);
+    }
     for check in invariant_checks {
         collect_spec_proposition_bitvector_variables(check.proposition(), &mut existing_variables);
     }
@@ -1168,30 +1173,17 @@ fn loop_preservation_contexts_with_mode(
             error,
         )
     })? {
-        let condition_contexts = if direct_post_test {
-            vec![ConditionAssumption {
-                branch: ConditionBranch::Decided(true),
-                facts: invariant_facts.clone(),
-                obligations: invariant_obligations.clone(),
-            }]
-        } else {
-            assume_condition_truthiness(
-                &top_state,
-                condition,
-                definitions,
-                assumptions,
-                &invariant_facts,
-                &invariant_obligations,
-                true,
-                &mut budget,
-            )
-            .map_err(|error| {
-                format!(
-                    "could not assume the loop condition: it stopped at {}",
-                    error.describe()
-                )
-            })?
-        };
+        let condition_contexts = crate::kernel::loops::assume_loop_entry_truthiness(
+            &top_state,
+            condition,
+            definitions,
+            assumptions,
+            &invariant_facts,
+            &invariant_obligations,
+            true,
+            &mut budget,
+        )
+        .map_err(|error| format!("could not assume the loop test: {}", error.describe()))?;
         // A disjunctive guard such as `while (a || b)` has one way *in* per
         // disjunct, and the body runs on each of them with only that path's
         // own guard facts. The mirror of the exit join: export the
@@ -1668,11 +1660,11 @@ enum JoinLocals<'a> {
 struct InterfacePreservedBlocks<'a> {
     locals: &'a LocalEnvironment,
     differing: &'a BTreeSet<&'a BindingName>,
-    visited: &'a BTreeSet<PointerBlock>,
+    visited: &'a BTreeSet<AddressBase>,
 }
 
 impl crate::kernel::primitives::BlockMembership for InterfacePreservedBlocks<'_> {
-    fn contains_block(&self, block: &PointerBlock) -> bool {
+    fn contains_block(&self, block: &AddressBase) -> bool {
         self.visited.contains(block)
             || self
                 .locals
@@ -1972,7 +1964,7 @@ fn abstract_execution_state_for_join_across_with_policy(
                         join_variable(&mut variables, &mut budget)?,
                     )),
                     ProgramType::FunctionPointer(_) => ProgramValue::typed_pointer(
-                        Pointer::symbolic_function(join_variable(&mut variables, &mut budget)?),
+                        Address::symbolic_function(join_variable(&mut variables, &mut budget)?),
                         *program_type,
                     ),
                     ProgramType::Int8Array(_) => {
@@ -1992,13 +1984,13 @@ fn abstract_execution_state_for_join_across_with_policy(
                         unreachable!("array objects use LocalBinding::ArrayObject")
                     }
                     _ => ProgramValue::typed_pointer(
-                        Pointer::symbolic(join_variable(&mut variables, &mut budget)?),
+                        Address::symbolic(join_variable(&mut variables, &mut budget)?),
                         *program_type,
                     ),
                 }
                 .into()
             };
-        preserved_blocks.insert(slot.block.clone());
+        preserved_blocks.insert(slot.base.clone());
         abstract_objects.push((name.clone(), abstract_value, *program_type));
     }
 
@@ -2133,8 +2125,8 @@ fn join_variable(
 }
 
 fn validate_branch_memory_delta_against_loans(
-    base: &Memory,
-    sibling: &Memory,
+    base: &SymbolicMemory,
+    sibling: &SymbolicMemory,
     ledger: &crate::kernel::loans::LoanLedger,
 ) -> Result<(), String> {
     if !ledger.has_active_memory_loans() {
@@ -2227,7 +2219,7 @@ pub(crate) fn program_expression_has_bool_type(
 pub fn composite_resource_witness_values(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<Vec<ProgramValue>> {
@@ -2255,7 +2247,7 @@ pub fn composite_resource_witness_values(
         .prefer_symbolic_external_loads();
     super::functions::bind_composite_witnesses_with_held(
         definition,
-        arguments,
+        &(arguments).native_values(),
         &mut state,
         resources,
         &assumptions,
@@ -2812,39 +2804,46 @@ impl LoopTestRegion {
         }
     }
 
-    /// The direct post-test's first body has already run. Subsequent entries
-    /// use its guard directly; a prepared test keeps its own phase placement.
-    pub(crate) fn for_repeated_iteration(&self) -> Self {
-        let position = if self.execution_parts().1 {
-            LoopTestPosition::BeforeBody
-        } else {
-            self.position
-        };
-        Self {
-            statement: self.statement.clone(),
-            position,
+    pub(crate) fn entry_phase(&self) -> crate::kernel::LoopEntryPhase {
+        match self.position {
+            LoopTestPosition::BeforeBody => crate::kernel::LoopEntryPhase::Test,
+            LoopTestPosition::AfterBody => crate::kernel::LoopEntryPhase::Body,
         }
     }
 
-    /// Borrow the executable entry guard without storing another condition or
-    /// placement on the loop. A preparation-free test can be decided directly;
-    /// an explicit test region is entered before its decision is available.
-    pub(crate) fn execution_parts(&self) -> (&ProgramExpression, bool, Option<&Self>) {
-        if let ProgramStatement::LoopTest {
-            condition,
-            aggregate_steps,
-        } = self.statement.as_ref()
-            && aggregate_steps.is_empty()
-        {
-            return (
-                condition,
-                self.position == LoopTestPosition::AfterBody,
-                None,
-            );
+    /// The checked entry guard has already selected a pure pre-test's body.
+    pub(crate) fn preservation_phase(&self) -> crate::kernel::LoopEntryPhase {
+        if self.entry_condition().is_some() {
+            crate::kernel::LoopEntryPhase::Body
+        } else {
+            self.entry_phase()
         }
-        static REGION_ENTRY: std::sync::LazyLock<ProgramExpression> =
-            std::sync::LazyLock::new(|| crate::kernel::program_expression::int32_literal(1));
-        (&REGION_ENTRY, false, Some(self))
+    }
+
+    /// A decision with no source preparation or temporary cleanup. This is
+    /// source-layout metadata, not a different executable loop form.
+    pub(crate) fn source_condition(&self) -> Option<&ProgramExpression> {
+        match self.statement.as_ref() {
+            ProgramStatement::LoopTest {
+                condition,
+                aggregate_steps,
+            } if aggregate_steps.is_empty() => Some(condition),
+            _ => None,
+        }
+    }
+
+    /// Code that owns source statement numbers. A pure decision is named by
+    /// its loop's test position and never renumbers the body.
+    pub(crate) fn source_region(&self) -> Option<&Self> {
+        self.source_condition().is_none().then_some(self)
+    }
+
+    /// A preparation-free pre-test can seed a preservation proof with its
+    /// checked entry guard. Every executable pass still owns its test region.
+    pub(crate) fn entry_condition(&self) -> Option<&ProgramExpression> {
+        (self.position == LoopTestPosition::BeforeBody)
+            .then(|| self.source_condition())
+            .flatten()
     }
 }
 
@@ -2894,6 +2893,21 @@ pub(crate) fn program_loop_continuation(
         (Some(update), None) => Some(std::sync::Arc::new(update.clone())),
         (None, Some(test)) => Some(test.statement.clone()),
         (None, None) => None,
+    }
+}
+
+pub(crate) fn program_loop_preservation_pass(
+    body: &ProgramStatement,
+    update: Option<&ProgramStatement>,
+    test: &LoopTestRegion,
+) -> ProgramStatement {
+    let body = match test.preservation_phase() {
+        crate::kernel::LoopEntryPhase::Test => program_loop_body_region(body, Some(test)),
+        crate::kernel::LoopEntryPhase::Body => body.clone(),
+    };
+    match program_loop_continuation(update, Some(test)) {
+        Some(tail) => ProgramStatement::seq(std::sync::Arc::new(body), tail),
+        None => body,
     }
 }
 
@@ -3299,34 +3313,34 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
 /// 8-byte cell behind "0 paths" for three proof attempts.
 fn no_single_path_message<T>(what: &str, paths: &[T], budget: &ExecutionBudget) -> String {
     if paths.is_empty()
-        && let Some(extent) = budget.dropped_range_extent()
+        && let Some(span) = budget.dropped_range_span()
     {
-        let width = extent.element_width;
-        let limit = extent.byte_limit;
-        return if extent.element_count < 0 {
-            let count = -extent.element_count;
+        let width = span.element_width;
+        let limit = span.byte_limit;
+        return if span.element_count < 0 {
+            let count = -span.element_count;
             let elements = if count == 1 { "element" } else { "elements" };
             format!(
-                "the kernel {what} produced no path: a memory range runs backwards, so it is not a byte extent: its end is {count} {elements} before its start"
+                "the kernel {what} produced no path: a memory range runs backwards, so it is not a byte span: its end is {count} {elements} before its start"
             )
         } else {
             format!(
-                "the kernel {what} produced no path: a memory range is too wide to be a 32-bit byte extent: {} elements of {width} bytes is {} bytes, past the {limit}-byte limit",
-                extent.element_count,
-                extent.element_count.saturating_mul(i64::from(width))
+                "the kernel {what} produced no path: a memory range is too wide to be a 32-bit byte span: {} elements of {width} bytes is {} bytes, past the {limit}-byte limit",
+                span.element_count,
+                span.element_count.saturating_mul(i64::from(width))
             )
         };
     }
     if paths.is_empty()
-        && let Some(reversed) = budget.dropped_refuted_range_extent()
+        && let Some(reversed) = budget.dropped_refuted_range_span()
     {
         return if reversed {
             format!(
-                "the kernel {what} produced no path: a memory range runs backwards, so it is not a byte extent: this context proves its end is before its start"
+                "the kernel {what} produced no path: a memory range runs backwards, so it is not a byte span: this context proves its end is before its start"
             )
         } else {
             format!(
-                "the kernel {what} produced no path: a memory range is too wide to be a 32-bit byte extent: this context bounds its element count past the byte limit"
+                "the kernel {what} produced no path: a memory range is too wide to be a 32-bit byte span: this context bounds its element count past the byte limit"
             )
         };
     }
@@ -3671,7 +3685,7 @@ pub(crate) fn execution_state_with_assumed_mutex_inputs(
 
 pub(crate) fn program_mutex_guard_resource(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     abstract_entry: bool,
 ) -> Option<ResourceFact> {
     crate::kernel::mutexes::guard_resource(state, mutex, abstract_entry)
@@ -3679,7 +3693,7 @@ pub(crate) fn program_mutex_guard_resource(
 
 pub(crate) fn program_mutex_live_resource(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     abstract_entry: bool,
 ) -> Option<ResourceFact> {
     crate::kernel::mutexes::live_resource(state, mutex, abstract_entry)
@@ -3688,7 +3702,7 @@ pub(crate) fn program_mutex_live_resource(
 /// Construct a contract requirement; this does not establish ownership.
 pub(crate) fn program_mutex_use_resource_with_type(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     protected: ResourceDescription,
 ) -> ResourceFact {
     let fact = program_mutex_use_resource(state, mutex);
@@ -3699,7 +3713,7 @@ pub(crate) fn program_mutex_use_resource_with_type(
     ResourceFact::own(Resource::MutexUse(identity))
 }
 
-pub(crate) fn program_mutex_use_resource(state: &ExecutionState, mutex: &Pointer) -> ResourceFact {
+pub(crate) fn program_mutex_use_resource(state: &ExecutionState, mutex: &Address) -> ResourceFact {
     crate::kernel::mutexes::use_resource(state, mutex)
 }
 
@@ -3715,7 +3729,7 @@ pub(crate) fn bind_contract_value_parameters(
             parameter.binding_name().clone(),
             value.clone(),
             parameter.program_type(),
-            Memory::value_parameter_pointer(parameter.binding_name()),
+            SymbolicMemory::value_parameter_pointer(parameter.binding_name()),
             false,
             false,
             false,
@@ -3820,12 +3834,12 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
         return Ok(rooted);
     }
     let mut rooted = if has_views {
-        // The function's own entry clauses (`assume_entry_clause_extents`).
+        // The function's own entry clauses (`assume_entry_clause_spans`).
         install_borrowed_contract_inputs(
             state.clone(),
             function,
             arguments,
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
         )?
     } else {
         state.clone()
@@ -3986,7 +4000,7 @@ fn install_borrowed_contract_inputs(
         &entry,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        &assumptions.clone().assume_entry_clause_extents(),
+        &assumptions.clone().assume_entry_clause_spans(),
         &mut budget,
     )
     .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
@@ -4046,8 +4060,8 @@ fn install_borrowed_contract_inputs(
         if matches!(
             input.fact.resource(),
             Resource::Memory(range)
-                if range.base().block.is_local_block()
-                    || state.memory().is_read_only_block(&range.base().block)
+                if range.base().base.is_local_block()
+                    || state.memory().is_read_only_block(&range.base().base)
         ) {
             continue;
         }
@@ -4080,8 +4094,8 @@ fn install_borrowed_contract_inputs(
         if matches!(
             viewed.resource(),
             Resource::Memory(range)
-                if range.base().block.is_local_block()
-                    || state.memory().is_read_only_block(&range.base().block)
+                if range.base().base.is_local_block()
+                    || state.memory().is_read_only_block(&range.base().base)
         ) {
             continue;
         }
@@ -4525,7 +4539,7 @@ pub fn proposition_and(left: Proposition, right: Proposition) -> Proposition {
 
 pub fn proposition_and_all(mut propositions: Vec<Proposition>) -> Proposition {
     if propositions.is_empty() {
-        return Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        return Proposition::condition_is(ConditionTerm::Constant(true), true);
     }
     while propositions.len() > 1 {
         let mut next = Vec::with_capacity(propositions.len().div_ceil(2));
@@ -4563,7 +4577,11 @@ pub fn forall_instantiation_candidate_values(
     };
     let mut candidates = match target {
         Proposition::ConditionIs(condition, _) => {
-            PureFactContext::guided_forall_condition_candidates(*var, body, condition)
+            PureFactContext::guided_forall_condition_candidates(
+                *var,
+                body,
+                condition.native_compat(),
+            )
         }
         _ => BTreeSet::new(),
     };
@@ -4596,9 +4614,13 @@ pub fn forall_guided_instantiation_candidate_values(
     };
     match target {
         Proposition::ConditionIs(condition, _) => {
-            PureFactContext::guided_forall_condition_candidates(*var, body, condition)
-                .into_iter()
-                .collect()
+            PureFactContext::guided_forall_condition_candidates(
+                *var,
+                body,
+                condition.native_compat(),
+            )
+            .into_iter()
+            .collect()
         }
         _ => Vec::new(),
     }
@@ -4668,12 +4690,23 @@ pub fn prove_program_expression_evaluation(
     expression: ProgramExpression,
 ) -> Option<Theorem> {
     let mut budget = ExecutionBudget::for_new_execution().with_program_expression_cost(&expression);
-    let outcome =
-        evaluate_program_expression(&state, &expression, &PureFactContext::new(), &mut budget)?;
+    let mut paths = super::eval::evaluate_expression_value_paths(
+        &state,
+        &expression,
+        &PureFactContext::new(),
+        &mut budget,
+    )
+    .ok()?
+    .into_iter();
+    let path = paths.next()?;
+    if paths.next().is_some() || !path.obligations.is_empty() {
+        return None;
+    }
+    let outcome = path.outcome;
     Some(Theorem::new(Proposition::ProgramExpressionEvaluates {
         state: Box::new(state),
         expression,
-        outcome,
+        outcome: outcome.map_value(Into::into),
     }))
 }
 
@@ -5061,7 +5094,7 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
     )
 }
 
-fn statement_outcome_memory(outcome: &StatementOutcome) -> Option<&Memory> {
+fn statement_outcome_memory(outcome: &StatementOutcome) -> Option<&SymbolicMemory> {
     match outcome {
         StatementOutcome::Normal(state)
         | StatementOutcome::LoopTestFalse(state)
@@ -5726,7 +5759,8 @@ pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
         | CheckedExecutionEvent::Context(_)
         | CheckedExecutionEvent::CompletedContext(_)
         | CheckedExecutionEvent::StatementEffects(_)
-        | CheckedExecutionEvent::Call(_) => None,
+        | CheckedExecutionEvent::Call(_)
+        | CheckedExecutionEvent::LoopEntry { .. } => None,
         CheckedExecutionEvent::AutomaticLifetimeEnd(end) => Some(end.before_state()),
         CheckedExecutionEvent::ResourceObservation(observation) => Some(observation.before_state()),
         CheckedExecutionEvent::ResourceRewrite(rewrite) => Some(rewrite.before_state()),
@@ -5796,6 +5830,7 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
                     }
                 }
                 CheckedExecutionEvent::Statement(_)
+                | CheckedExecutionEvent::LoopEntry { .. }
                 | CheckedExecutionEvent::Call(_)
                 | CheckedExecutionEvent::Condition(_)
                 | CheckedExecutionEvent::ReturnProposition(_)
@@ -5850,9 +5885,9 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn branch_memory_delta_uses_the_full_changed_cell_width() {
-        let pointer = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
         let escrow = ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
@@ -5868,19 +5903,19 @@ mod proof_case_evidence_tests {
         let owner = ledger.fresh_participant().unwrap();
         let opening = ledger.lend(owner, owner, support, escrow).unwrap();
         let ledger = ledger.apply(&opening.transition).unwrap();
-        let base = Memory::new()
+        let base = SymbolicMemory::new()
             .with_block("arg", 8)
             .store(pointer.clone(), int32(0));
-        let later_byte = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(1),
+        let later_byte = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(1),
         };
         let changed = base.clone().store(later_byte, int32(1));
         assert!(validate_branch_memory_delta_against_loans(&base, &changed, &ledger).is_err());
         let disjoint = base.clone().store(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(4),
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(4),
             },
             int32(1),
         );
@@ -6323,7 +6358,7 @@ fn checked_int32_reassociated_add_domain_as_written(
             .operands
             .each_ref()
             .map(|operand| operand.operand_view())
-    } else if let Proposition::ConditionIs(
+    } else if let Some((
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
@@ -6331,7 +6366,7 @@ fn checked_int32_reassociated_add_domain_as_written(
             right,
         },
         false,
-    ) = goal
+    )) = (goal).condition_native()
     {
         [View::Legacy(left), View::Legacy(right)]
     } else {
@@ -6431,7 +6466,9 @@ pub fn checked_owned_resource_count_lower_bound(
         let arguments = arguments
             .iter()
             .map(|argument| match argument {
-                AlgebraicValue::Program(value) => Some(Some(SpecExpression::Value(value.clone()))),
+                crate::kernel::ResourceFieldValue::Program(value) => {
+                    Some(Some(SpecExpression::Value(value.clone())))
+                }
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()?;
@@ -6464,7 +6501,7 @@ pub fn checked_owned_resource_count_lower_bound(
         };
         value.clone()
     };
-    let conclusion = Proposition::ConditionIs(
+    let conclusion = Proposition::condition_is(
         crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
             MachineIntegerType::Int32,
             CompareRelation::LessEqual,
@@ -6477,7 +6514,7 @@ pub fn checked_owned_resource_count_lower_bound(
     );
     {
         let reversed =
-            Proposition::ConditionIs(ConditionTerm::signed_greater_equal(count, quantity), true);
+            Proposition::condition_is(ConditionTerm::signed_greater_equal(count, quantity), true);
         if !proposition_holds_without_facts(&conclusion)
             && !PureFactContext::settles_exactly(&checked_facts, &conclusion)
             && !checked_facts.proves_exact(&reversed)
@@ -6500,7 +6537,7 @@ pub fn prove_owned_resource_quantity_nonnegative(
         return None;
     }
     let quantity = owned.owned_quantity_term()?.clone();
-    let conclusion = Proposition::ConditionIs(
+    let conclusion = Proposition::condition_is(
         crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
             MachineIntegerType::Int32,
             CompareRelation::LessEqual,
@@ -6549,7 +6586,7 @@ pub fn prove_program_max_lt_returns_right(a: Variable, b: Variable) -> Option<Th
         forall_int32(
             b,
             Proposition::Implies(
-                Box::new(Proposition::ConditionIs(condition, true)),
+                Box::new(Proposition::condition_is(condition, true)),
                 Box::new(Proposition::ProgramStatementVerifies {
                     state: Box::new(state),
                     statement: Box::new(program_max_body()),
@@ -6585,7 +6622,7 @@ pub fn prove_program_max_not_lt_returns_left(a: Variable, b: Variable) -> Option
         forall_int32(
             b,
             Proposition::Implies(
-                Box::new(Proposition::ConditionIs(condition, false)),
+                Box::new(Proposition::condition_is(condition, false)),
                 Box::new(Proposition::ProgramStatementVerifies {
                     state: Box::new(state),
                     statement: Box::new(program_max_body()),
@@ -6599,15 +6636,15 @@ pub fn prove_program_max_not_lt_returns_left(a: Variable, b: Variable) -> Option
 /// Two signed int32 values are equal when the first is no greater than the
 /// second and is not strictly less than it.
 pub fn prove_int32_le_antisymmetric(left: MachineTerm, right: MachineTerm) -> Theorem {
-    let le_premise = Proposition::ConditionIs(
+    let le_premise = Proposition::condition_is(
         ConditionTerm::signed_less_equal(left.clone(), right.clone()),
         true,
     );
-    let reverse_le_premise = Proposition::ConditionIs(
+    let reverse_le_premise = Proposition::condition_is(
         ConditionTerm::signed_less_equal(right.clone(), left.clone()),
         true,
     );
-    let conclusion = Proposition::ConditionIs(
+    let conclusion = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -6672,11 +6709,11 @@ pub fn prove_population_member_count_zero(
             .collect(),
     )?;
     Some(implication(
-        [Proposition::ConditionIs(
+        [Proposition::condition_is(
             ConditionTerm::equal(total, MachineTerm::constant(0)),
             true,
         )],
-        Proposition::ConditionIs(ConditionTerm::equal(member, MachineTerm::constant(0)), true),
+        Proposition::condition_is(ConditionTerm::equal(member, MachineTerm::constant(0)), true),
     ))
 }
 
@@ -6771,8 +6808,8 @@ pub fn prove_integer_range_fold_empty(
     };
     let fold = IntegerTerm::range_fold(index, initial.clone(), accumulator, item, body);
     implication(
-        [Proposition::ConditionIs(guard, true)],
-        Proposition::ConditionIs(
+        [Proposition::condition_is(guard, true)],
+        Proposition::condition_is(
             ConditionTerm::IntegerEqual(fold.into(), initial.into()),
             true,
         ),
@@ -6822,8 +6859,8 @@ pub fn prove_integer_range_fold_append(
             (
                 extended,
                 Proposition::And(
-                    Box::new(Proposition::ConditionIs(guard, true)),
-                    Box::new(Proposition::ConditionIs(safe, true)),
+                    Box::new(Proposition::condition_is(guard, true)),
+                    Box::new(Proposition::condition_is(safe, true)),
                 ),
                 item_value,
             )
@@ -6861,8 +6898,8 @@ pub fn prove_integer_range_fold_append(
             (
                 extended,
                 Proposition::And(
-                    Box::new(Proposition::ConditionIs(guard, true)),
-                    Box::new(Proposition::ConditionIs(safe, true)),
+                    Box::new(Proposition::condition_is(guard, true)),
+                    Box::new(Proposition::condition_is(safe, true)),
                 ),
                 item_value,
             )
@@ -6877,7 +6914,7 @@ pub fn prove_integer_range_fold_append(
             };
             (
                 extended,
-                Proposition::ConditionIs(guard, true),
+                Proposition::condition_is(guard, true),
                 end.as_ref().clone(),
             )
         }
@@ -6898,7 +6935,7 @@ pub fn prove_integer_range_fold_append(
         IntegerTerm::range_fold(extended, original_initial, accumulator, item, body);
     Some(implication(
         [guard],
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerEqual(extended_fold.into(), stepped.into()),
             true,
         ),
@@ -7069,8 +7106,8 @@ pub fn substitute_integer_term_in_proposition(
         memo: &mut std::collections::HashMap<u64, SharedIntegerTerm>,
     ) -> Proposition {
         match proposition {
-            Proposition::ConditionIs(condition, expected) => Proposition::ConditionIs(
-                walk_condition(condition, from, to, changed, memo),
+            Proposition::ConditionIs(condition, expected) => Proposition::condition_is(
+                walk_condition(condition.native_compat(), from, to, changed, memo),
                 *expected,
             ),
             Proposition::And(left, right) => Proposition::And(
@@ -7244,7 +7281,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
         item,
         body.clone(),
     );
-    let whole_is_fold = Proposition::ConditionIs(
+    let whole_is_fold = Proposition::condition_is(
         ConditionTerm::IntegerEqual(whole.clone().into(), fold.clone().into()),
         true,
     );
@@ -7258,7 +7295,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
                 Box::new(whole_is_fold),
                 Box::new(guard.as_ref().clone()),
             )],
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::IntegerEqual(whole.into(), initial.into()),
                 true,
             ),
@@ -7279,8 +7316,8 @@ pub fn prove_integer_range_fold_over_equal_terms(
     let Proposition::Implies(guard, conclusion) = append.proposition() else {
         return Err("the Integer fold append law is not a guarded theorem");
     };
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(extended, _), true) =
-        conclusion.as_ref()
+    let Some((ConditionTerm::IntegerEqual(extended, _), true)) =
+        conclusion.as_ref().condition_native()
     else {
         return Err("the Integer fold append law did not conclude an equation");
     };
@@ -7295,7 +7332,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
     }
     let prior_fold =
         IntegerTerm::range_fold(predecessor_index, initial, accumulator, item, body.clone());
-    let prior_is_fold = Proposition::ConditionIs(
+    let prior_is_fold = Proposition::condition_is(
         ConditionTerm::IntegerEqual(prior.clone().into(), prior_fold.into()),
         true,
     );
@@ -7318,7 +7355,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
             )),
             Box::new(guard.as_ref().clone()),
         )],
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerEqual(whole.into(), stepped.into()),
             true,
         ),
@@ -7552,8 +7589,8 @@ pub fn contract_refinement_context(
     };
     if pointer.program_type() != target.function_pointer_type()
         || pointer.program_type() != source.function_pointer_type()
-        || !matches!(pointer.pointer().block, PointerBlock::FunctionSymbolic(_))
-        || pointer.pointer().offset != PointerOffsetTerm::Constant(0)
+        || !matches!(pointer.address().base, AddressBase::FunctionSymbolic(_))
+        || pointer.address().offset != AddressOffset::Constant(0)
     {
         return None;
     }
@@ -7632,15 +7669,15 @@ pub(crate) fn prove_program_function_contract_refinement(
     }
     let theorem = match &context.source_contract {
         None => {
-            if context.pointer.pointer().block
-                != PointerBlock::Function(context.function_name.clone())
+            if context.pointer.address().base
+                != AddressBase::Function(context.function_name.clone())
             {
                 return None;
             }
             conclusion
         }
         Some(source) => {
-            let PointerBlock::FunctionSymbolic(variable) = &context.pointer.pointer().block else {
+            let AddressBase::FunctionSymbolic(variable) = &context.pointer.address().base else {
                 return None;
             };
             let premise = Proposition::Predicate {
@@ -7755,12 +7792,12 @@ pub(crate) fn prove_executed_contract_refinement(
     else {
         return None;
     };
-    let PointerBlock::FunctionSymbolic(variable) = pointer.pointer().block else {
+    let AddressBase::FunctionSymbolic(variable) = pointer.address().base else {
         return None;
     };
     if name != &target.predicate_name()
         || pointer.program_type() != target.function_pointer_type()
-        || pointer.pointer().offset != PointerOffsetTerm::Constant(0)
+        || pointer.address().offset != AddressOffset::Constant(0)
     {
         return None;
     }
@@ -7927,12 +7964,12 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     else {
         return None;
     };
-    if pointer.pointer().block != PointerBlock::Function(callee_name.to_string()) {
+    if pointer.address().base != AddressBase::Function(callee_name.to_string()) {
         return None;
     }
     if name != &target.predicate_name()
         || pointer.program_type() != target.function_pointer_type()
-        || pointer.pointer().offset != PointerOffsetTerm::Constant(0)
+        || pointer.address().offset != AddressOffset::Constant(0)
     {
         return None;
     }
@@ -7994,7 +8031,7 @@ fn rewrite_int32_term_by_exact_equality(
         bits32_constant!(_)
         | MachineTerm::Variable(_)
         | MachineTerm::MemoryLoad(_, _, _)
-        | MachineTerm::PointerAddress(_, _)
+        | MachineTerm::IntegerAddress(_, _)
         | int64_constant!(_)
         | uint64_constant!(_)
         | native_constant!(_, _)
@@ -8046,7 +8083,7 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
     let mut goal = conclusion.clone();
     for rewrite in rewrites {
         crate::kernel::proof::fact_reasoning::exactly_available_fact(&rewrite, &requirements)?;
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -8054,11 +8091,11 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
                 right: to,
             },
             true,
-        ) = rewrite
+        )) = rewrite.condition_native()
         else {
             return None;
         };
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -8066,16 +8103,16 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
                 right,
             },
             true,
-        ) = goal
+        )) = goal.condition_native()
         else {
             return None;
         };
         let rewritten_left = rewrite_int32_term_by_exact_equality(&left, &from, &to);
         let rewritten_right = rewrite_int32_term_by_exact_equality(&right, &from, &to);
-        if rewritten_left == *left && rewritten_right == *right {
+        if &rewritten_left == left.as_ref() && &rewritten_right == right.as_ref() {
             return None;
         }
-        goal = Proposition::ConditionIs(
+        goal = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -8110,11 +8147,11 @@ fn prove_uint32_integer_division_bridge(
     };
     let dividend = observe(left.clone());
     let divisor = observe(right.clone());
-    let native_nonzero = Proposition::ConditionIs(
+    let native_nonzero = Proposition::condition_is(
         ConditionTerm::equal(right.clone(), MachineTerm::constant(0)),
         false,
     );
-    let integer_nonzero = Proposition::ConditionIs(
+    let integer_nonzero = Proposition::condition_is(
         ConditionTerm::integer_not_equal(divisor.clone(), IntegerTerm::constant_i64(0)),
         true,
     );
@@ -8129,7 +8166,7 @@ fn prove_uint32_integer_division_bridge(
             IntegerTerm::TruncatingQuotient(dividend.into(), divisor.into()),
         )
     };
-    let conclusion = Proposition::ConditionIs(
+    let conclusion = Proposition::condition_is(
         ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
         true,
     );
@@ -8223,10 +8260,10 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
     );
     Some(implication(
         [
-            Proposition::ConditionIs(low_bound, true),
-            Proposition::ConditionIs(high_bound, true),
+            Proposition::condition_is(low_bound, true),
+            Proposition::condition_is(high_bound, true),
         ],
-        Proposition::ConditionIs(ConditionTerm::integer_equal(observe(packed)?, exact), true),
+        Proposition::condition_is(ConditionTerm::integer_equal(observe(packed)?, exact), true),
     ))
 }
 
@@ -8281,16 +8318,16 @@ fn prove_uint32_unpack_uint16_word(
     let exact = if high_word { high.clone() } else { low.clone() };
     implication(
         [
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::unsigned_less_equal(low, MachineTerm::constant(65535)),
                 true,
             ),
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::unsigned_less_equal(high, MachineTerm::constant(65535)),
                 true,
             ),
         ],
-        Proposition::ConditionIs(ConditionTerm::uint32_equal(extracted, exact), true),
+        Proposition::condition_is(ConditionTerm::uint32_equal(extracted, exact), true),
     )
 }
 
@@ -8314,16 +8351,16 @@ fn prove_uint64_unpack_uint16_word(
     let exact = if high_word { high.clone() } else { low.clone() };
     implication(
         [
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::uint64_less_equal(low, MachineTerm::uint64_constant(65535)),
                 true,
             ),
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::uint64_less_equal(high, MachineTerm::uint64_constant(65535)),
                 true,
             ),
         ],
-        Proposition::ConditionIs(ConditionTerm::uint64_equal(extracted, exact), true),
+        Proposition::condition_is(ConditionTerm::uint64_equal(extracted, exact), true),
     )
 }
 
@@ -8360,11 +8397,11 @@ pub fn prove_uint64_integer_bridge(
     };
     let a = observe(left.clone());
     let b = observe(right.clone());
-    let native_nonzero = Proposition::ConditionIs(
+    let native_nonzero = Proposition::condition_is(
         ConditionTerm::uint64_equal(right.clone(), MachineTerm::uint64_constant(0)),
         false,
     );
-    let integer_nonzero = Proposition::ConditionIs(
+    let integer_nonzero = Proposition::condition_is(
         ConditionTerm::integer_not_equal(b.clone(), IntegerTerm::constant_i64(0)),
         true,
     );
@@ -8389,7 +8426,7 @@ pub fn prove_uint64_integer_bridge(
             IntegerTerm::TruncatingRemainder(a.into(), b.into()),
         )
     };
-    let conclusion = Proposition::ConditionIs(
+    let conclusion = Proposition::condition_is(
         ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
         true,
     );
@@ -8406,7 +8443,7 @@ pub fn prove_int32_remainder_to_integer(left: MachineTerm, right: MachineTerm) -
     };
     let native_defined =
         Proposition::signed_division_defined(MachineIntegerType::Int32, &left, &right);
-    let integer_nonzero = Proposition::ConditionIs(
+    let integer_nonzero = Proposition::condition_is(
         ConditionTerm::integer_not_equal(observe(right.clone()), IntegerTerm::constant_i64(0)),
         true,
     );
@@ -8414,7 +8451,7 @@ pub fn prove_int32_remainder_to_integer(left: MachineTerm, right: MachineTerm) -
     let machine = binary_node!(Int32, Remainder, left.into(), right.into());
     implication(
         [native_defined, integer_nonzero],
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
             true,
         ),
@@ -8436,8 +8473,8 @@ fn implication<const N: usize>(premises: [Proposition; N], conclusion: Propositi
 #[cfg(test)]
 fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theorem {
     implication(
-        [Proposition::ConditionIs(premise, true)],
-        Proposition::ConditionIs(conclusion, true),
+        [Proposition::condition_is(premise, true)],
+        Proposition::condition_is(conclusion, true),
     )
 }
 
@@ -8449,10 +8486,10 @@ fn uint32_transitivity(
 ) -> Theorem {
     implication(
         [
-            Proposition::ConditionIs(first, true),
-            Proposition::ConditionIs(second, true),
+            Proposition::condition_is(first, true),
+            Proposition::condition_is(second, true),
         ],
-        Proposition::ConditionIs(conclusion, true),
+        Proposition::condition_is(conclusion, true),
     )
 }
 
@@ -8489,35 +8526,38 @@ pub fn prove_uint32_ge_implies_reversed_le(greater: MachineTerm, lower: MachineT
 }
 
 #[cfg(test)]
-pub fn prove_memory_load(memory: Memory, pointer: Pointer) -> Theorem {
-    let outcome = memory.load(&pointer);
+pub fn prove_memory_load(memory: SymbolicMemory, pointer: Address) -> Theorem {
+    let outcome = match memory.known_retained_value(&pointer) {
+        Some(value) => ExpressionOutcome::Value(value),
+        None => ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
+    };
     Theorem::new(Proposition::MemoryLoads {
         memory,
         pointer,
-        outcome,
+        outcome: outcome.map_value(Into::into),
     })
 }
 
 #[cfg(test)]
 pub fn prove_memory_load_after_store_same(
-    memory: Memory,
-    pointer: Pointer,
+    memory: SymbolicMemory,
+    pointer: Address,
     value: ProgramValue,
 ) -> Theorem {
     let stored = memory.store(pointer.clone(), value.clone());
     Theorem::new(Proposition::MemoryLoads {
         memory: stored,
         pointer,
-        outcome: ExpressionOutcome::Value(value),
+        outcome: ExpressionOutcome::Value((value).into()),
     })
 }
 
 #[cfg(test)]
 pub fn prove_memory_load_after_store_other(
-    memory: Memory,
-    stored_pointer: Pointer,
+    memory: SymbolicMemory,
+    stored_pointer: Address,
     stored_value: ProgramValue,
-    loaded_pointer: Pointer,
+    loaded_pointer: Address,
 ) -> Option<Theorem> {
     if stored_pointer == loaded_pointer {
         return None;
@@ -8532,7 +8572,7 @@ pub fn prove_memory_load_after_store_other(
     Some(Theorem::new(Proposition::MemoryLoads {
         memory: stored,
         pointer: loaded_pointer,
-        outcome,
+        outcome: outcome.map_value(Into::into),
     }))
 }
 

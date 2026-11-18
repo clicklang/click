@@ -9,10 +9,10 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub(super) enum Input {
-    PointerValue(PointerValue, PointerValue),
-    PointerReadValue(Pointer, Pointer),
     Pointer(Pointer, Pointer),
-    Offset(PointerOffsetTerm, PointerOffsetTerm),
+    PointerReadValue(Address, Address),
+    Address(Address, Address),
+    Offset(AddressOffset, AddressOffset),
     Int32(MachineTerm, MachineTerm),
     Int32Operands(
         crate::kernel::SharedMachineIntegerTerm,
@@ -24,7 +24,7 @@ pub(super) enum Input {
         crate::kernel::SharedIntegerTerm,
         crate::kernel::SharedIntegerTerm,
     ),
-    CheckedRead(Pointer, Pointer),
+    CheckedRead(Address, Address),
 }
 
 pub(super) struct History {
@@ -177,10 +177,10 @@ impl EqualityGraph {
                 Input::PointerReadValue(left, right) => {
                     self.add_checked_pointer_read_equality(left, right);
                 }
-                Input::PointerValue(left, right) => {
-                    self.add_pointer_value_equality(left, right);
-                }
                 Input::Pointer(left, right) => {
+                    self.add_pointer_equality(left, right);
+                }
+                Input::Address(left, right) => {
                     self.add_equality(left, right);
                 }
                 Input::Offset(left, right) => {
@@ -233,16 +233,15 @@ fn is_scalar_read(term: &MachineTerm) -> bool {
     }
 }
 
-fn is_read_offset(offset: &PointerOffsetTerm) -> bool {
+fn is_read_offset(offset: &AddressOffset) -> bool {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. }
+            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. }
                 if value.operand_view().read().is_some()
                     || value.operand_view().variable().is_some_and(|v| {
                         crate::kernel::registered_load_term_for_variable(v).is_some()
@@ -281,12 +280,12 @@ impl EqualityGraph {
         let mut context_changed = !same_origin;
         let mut equalities = Vec::new();
         let reads = self.logical_reads.lock().expect("logical pointer reads");
-        let is_read = |pointer: &Pointer| {
+        let is_read = |pointer: &Address| {
             pointer.as_loaded_value().is_some()
                 || reads.definitions.contains_key(pointer)
                 || is_read_offset(&pointer.offset)
-                || matches!(&pointer.block, PointerBlock::FunctionSymbolic(variable)
-                    if pointer.offset == PointerOffsetTerm::Constant(0)
+                || matches!(&pointer.base, AddressBase::FunctionSymbolic(variable)
+                    if pointer.offset == AddressOffset::Constant(0)
                     && crate::kernel::registered_load_term_for_variable(variable).is_some())
         };
         let depth = |node: &Option<Arc<History>>| node.as_ref().map_or(0, |node| node.depth);
@@ -308,14 +307,14 @@ impl EqualityGraph {
             let Some(node) = current else { break };
             let pair = match &node.input {
                 Input::CheckedRead(left, right) => Some((left, right)),
-                Input::Pointer(left, right) if is_read(left) || is_read(right) => {
+                Input::Address(left, right) if is_read(left) || is_read(right) => {
                     Some((left, right))
                 }
                 _ => None,
             };
             if let Some((left, right)) = pair {
-                equalities.push(crate::kernel::Proposition::ConditionIs(
-                    crate::kernel::ConditionTerm::pointer_equal(left.clone(), right.clone()),
+                equalities.push(crate::kernel::Proposition::condition_is(
+                    crate::kernel::ConditionTerm::address_equal(left.clone(), right.clone()),
                     true,
                 ));
             }
@@ -353,7 +352,7 @@ impl EqualityGraph {
                     })
                 }
                 Input::Offset(left, right) if is_read_offset(left) || is_read_offset(right) => {
-                    Some(ConditionTerm::PointerOffsetEqual(
+                    Some(ConditionTerm::AddressOffsetEqual(
                         Box::new(left.clone()),
                         Box::new(right.clone()),
                     ))
@@ -361,7 +360,7 @@ impl EqualityGraph {
                 _ => None,
             };
             if let Some(condition) = scalar_condition {
-                equalities.push(crate::kernel::Proposition::ConditionIs(condition, true));
+                equalities.push(crate::kernel::Proposition::condition_is(condition, true));
             }
             current = node.parent.clone();
         }
@@ -378,11 +377,11 @@ mod read_trace_tests {
     use super::*;
     use crate::kernel::{ConditionTerm, Proposition};
 
-    fn pointer(id: u64) -> Pointer {
-        Pointer::symbolic(Variable(id))
+    fn pointer(id: u64) -> Address {
+        Address::symbolic(Variable(id))
     }
-    fn equality(left: Pointer, right: Pointer) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::pointer_equal(left, right), true)
+    fn equality(left: Address, right: Address) -> Proposition {
+        Proposition::condition_is(ConditionTerm::address_equal(left, right), true)
     }
 
     #[test]
@@ -434,8 +433,8 @@ mod read_trace_tests {
     #[test]
     fn admitted_read_trace_includes_ordinary_read_value_equalities() {
         let mut graph = EqualityGraph::default();
-        let memory = crate::kernel::intern_memory(Memory::new());
-        let read = Pointer::loaded_value(&memory, &pointer(303_000));
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+        let read = Address::loaded_value(&memory, &pointer(303_000));
         let checkpoint = graph.read_equality_checkpoint();
         graph.add_equality(&read, &pointer(303_001));
         graph.add_equality(&pointer(303_002), &pointer(303_003));
@@ -453,7 +452,7 @@ mod read_trace_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let mut graph = EqualityGraph::default();
         let mut replay = graph.input_root();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let read = V::Legacy(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(pointer(305_000)),
@@ -483,21 +482,21 @@ mod read_trace_tests {
     #[test]
     fn admitted_read_trace_includes_read_values_carried_as_offsets() {
         let mut graph = EqualityGraph::default();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(pointer(304_000)),
             LoadKind::Int32,
         );
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
-        let read = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(variable), 4);
-        let target = PointerOffsetTerm::Constant(8);
+        let read = AddressOffset::scaled_int32_node(MachineTerm::Variable(variable), 4);
+        let target = AddressOffset::Constant(8);
         let checkpoint = graph.read_equality_checkpoint();
         graph.add_offset_equality(&read, &target);
         assert_eq!(
             graph.read_equalities_since(&checkpoint).equalities,
-            vec![Proposition::ConditionIs(
-                ConditionTerm::PointerOffsetEqual(Box::new(read), Box::new(target)),
+            vec![Proposition::condition_is(
+                ConditionTerm::AddressOffsetEqual(Box::new(read), Box::new(target)),
                 true
             )]
         );

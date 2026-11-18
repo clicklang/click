@@ -26,7 +26,7 @@ authorized resource slot(pool: int32*, p: int32*) {
 verifying "wildcard_body_facts.c";
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { } else {}
+    branch { true => { } false => {} }
     step(); step();
     fold(authority(slot(&pool, _)));
     have 0 <= p[0] by solve();

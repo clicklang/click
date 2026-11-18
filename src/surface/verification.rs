@@ -464,9 +464,6 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
             }
             ProofTactic::Open(proof_open) => {
                 collect_applied_theorems(&proof_open.tactics, names);
-                if let Some(close_proof) = &proof_open.close_proof {
-                    collect_applied_theorems(close_proof, names);
-                }
             }
             ProofTactic::If(proof_if) => {
                 collect_applied_theorems(&proof_if.then_tactics, names);
@@ -3850,6 +3847,7 @@ fn c_statement_calls_recording(
                 collect_function_pointer_names(statement, names)
             }
             syntax::CStatement::EndAggregateLifetimes { .. }
+            | syntax::CStatement::FillArrayTail { .. }
             | syntax::CStatement::Skip
             | syntax::CStatement::Break
             | syntax::CStatement::Continue
@@ -4013,7 +4011,9 @@ fn c_statement_calls_recording(
             | syntax::CStatement::Skip
             | syntax::CStatement::Break
             | syntax::CStatement::Continue => {}
-            syntax::CStatement::Goto { .. } => calls.push(BTreeSet::new()),
+            syntax::CStatement::Goto { .. } | syntax::CStatement::FillArrayTail { .. } => {
+                calls.push(BTreeSet::new());
+            }
             syntax::CStatement::Label { statement, .. } => {
                 visit(statement, calls, function_pointer_names, allocator)
             }
@@ -4129,15 +4129,23 @@ fn c_statement_calls_recording(
                 }
                 calls.push(dependencies);
             }
+            syntax::CStatement::DeclareStructValue { .. } => calls.push(BTreeSet::new()),
             syntax::CStatement::Declare {
-                initializer: None, ..
-            }
-            | syntax::CStatement::DeclareStructValue { .. } => calls.push(BTreeSet::new()),
-            syntax::CStatement::Declare {
-                initializer: Some(expression),
+                initializer,
+                zero_fill,
                 ..
+            } => {
+                let mut dependencies = BTreeSet::new();
+                for expression in initializer.iter().chain(
+                    zero_fill
+                        .iter()
+                        .flat_map(|fill| fill.written_elements.iter().map(|(_, value)| value)),
+                ) {
+                    collect_function_addresses(expression, &mut dependencies);
+                }
+                calls.push(dependencies);
             }
-            | syntax::CStatement::Assign { expression, .. }
+            syntax::CStatement::Assign { expression, .. }
             | syntax::CStatement::HeapAllocate {
                 bytes: expression, ..
             }
@@ -4312,7 +4320,7 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
     match expression {
         ContractExpression::IntegerLiteral(literal) => literal.clone(),
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::QualifiedC { name, .. } => name.clone(),
         ContractExpression::ProgramExpression(expression) => {
             crate::kernel::ranking_measure_identity(
@@ -4386,7 +4394,7 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
     };
     match component {
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name),
@@ -7060,7 +7068,7 @@ pub(in crate::surface) fn substitute_contract_segment(
         surface => surface.clone(),
     };
     // Preserve resolved C spellings unless a component actually refers to
-    // the return name. Its surface form then distinguishes `c(result)`.
+    // the return name. Its surface form then distinguishes `program::result`.
     if substitutions.is_contract_result_binding()
         && let ContractSegmentSurface::Range { base, start, end }
         | ContractSegmentSurface::StructRange {
@@ -7203,6 +7211,15 @@ pub(in crate::surface) fn check_signature(
     if signature.returns_reference() != parsed_function.returns_reference() {
         return Err(ClickError::new(format!(
             "signature mismatch for `{}` in `{source_path}`: reference and pointer results are distinct",
+            signature.name()
+        )).with_kind(ClickErrorKind::Type));
+    }
+
+    if signature.returns_reference()
+        && signature.return_struct_name.as_deref() != parsed_function.return_pointer_struct_name()
+    {
+        return Err(ClickError::new(format!(
+            "signature mismatch for `{}` in `{source_path}`: reference result must retain its nominal record type",
             signature.name()
         )).with_kind(ClickErrorKind::Type));
     }
@@ -7551,7 +7568,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
-        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns (p as (struct cell *))->value; }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); step(); branch { step(); solve(); } else {} step(); step(); solve(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns (p as (struct cell *))->value; }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); step(); branch { true => { step(); solve(); } false => {} } step(); step(); solve(); }\n";
         verify_c_sources(click, &[("fork_join.c", c)])
             .expect("a saved status should choose the checked create outcome");
         let expanded = expand_c_claim_source(
@@ -8171,7 +8188,7 @@ int32 reader(int32 p[]) {
     /// write-authority check that precedes the ledger names the missing
     /// owner exactly. The ledger-level aggregate witness, an owner-authorized
     /// copy over a lent field, is
-    /// `owner_authorized_aggregate_copy_into_a_lent_range_is_refused`.
+    /// `owner_authorized_aggregate_copy_into_a_lent_range_requires_separation`.
     #[test]
     fn root_view_refuses_an_aggregate_copy_into_it() {
         let click = r#"
@@ -8413,7 +8430,7 @@ int32 f(struct s* p, int32 n) {
     /// carries this call's own loans, because lending has removed the owner
     /// from the preserved residual (docs/internals/stable-views.md).
     #[test]
-    fn undecided_continuity_retire_refuses_a_lent_allocation() {
+    fn call_retirement_requires_separation_from_its_own_loan() {
         let click = r#"
 verifying "reader.c";
 
@@ -8440,13 +8457,18 @@ int32 f(int32 n) {
 }
 "#;
         let source = "uint8* external_alloc(int32 bytes);\nvoid realloc_like(uint8* p, int32 n);\nvoid drop_alloc(uint8* p, int32 n);\nint32 f(int32 n) { uint8* data; int32 value; data = external_alloc(4); data[0] = 7; realloc_like(data, n); value = data[0]; drop_alloc(data, n); return value; }";
-        let error = verify_sources(click, source)
-            .expect_err("a call that may deallocate a lent allocation must be refused");
-        assert!(
-            error.message().contains("active loan"),
-            "{}",
-            error.message()
-        );
+        let definite_free = click.replace("    produces allocation(p, n);\n", "");
+        for contract in [click, &definite_free] {
+            let error = verify_sources(contract, source)
+                .expect_err("a call that may deallocate a lent allocation must be refused");
+            assert!(
+                error
+                    .message()
+                    .contains("verified call allocation retirement separation"),
+                "{}",
+                error.message()
+            );
+        }
     }
 
     #[test]

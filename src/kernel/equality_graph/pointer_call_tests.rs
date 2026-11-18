@@ -1,13 +1,13 @@
 use super::*;
 use crate::kernel::VerificationSession;
 
-fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> Pointer {
-    Pointer {
-        block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> Address {
+    Address {
+        base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
             name.into(),
             arguments,
         )),
-        offset: PointerOffsetTerm::Constant(0),
+        offset: AddressOffset::Constant(0),
     }
 }
 fn word(id: u64) -> MachineTerm {
@@ -16,22 +16,22 @@ fn word(id: u64) -> MachineTerm {
 fn argument(id: u64) -> PureFunctionArgument {
     PureFunctionArgument::Value(ProgramValue::Int32(word(id)))
 }
-fn pointer_argument(p: Pointer) -> PureFunctionArgument {
-    PureFunctionArgument::Value(ProgramValue::Pointer(PointerValue::new(
+fn pointer_argument(p: Address) -> PureFunctionArgument {
+    PureFunctionArgument::Value(ProgramValue::Pointer(Pointer::new(
         p,
         ProgramType::Int32Pointer,
     )))
 }
-fn equal_pointer_arguments(graph: &mut EqualityGraph, p: &Pointer, q: &Pointer) {
-    graph.add_pointer_value_equality(
-        &PointerValue::new(p.clone(), ProgramType::Int32Pointer),
-        &PointerValue::new(q.clone(), ProgramType::Int32Pointer),
+fn equal_pointer_arguments(graph: &mut EqualityGraph, p: &Address, q: &Address) {
+    graph.add_pointer_equality(
+        &Pointer::new(p.clone(), ProgramType::Int32Pointer),
+        &Pointer::new(q.clone(), ProgramType::Int32Pointer),
     );
 }
 
-fn equal(a: &Pointer, b: &Pointer) -> Proposition {
-    Proposition::ConditionIs(
-        ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
+fn equal(a: &Address, b: &Address) -> Proposition {
+    Proposition::condition_is(
+        ConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone())),
         true,
     )
 }
@@ -48,9 +48,9 @@ fn pointer_calls_follow_late_model_aliases_and_displaced_addresses() {
     let f = |x| call("handle", vec![PureFunctionArgument::Algebraic(x)]);
     let (left, right) = (f(a.clone()), f(b.clone()));
     let mut graph = EqualityGraph::default();
-    let shifted = |p: &Pointer| Pointer {
-        block: p.block.clone(),
-        offset: PointerOffsetTerm::Constant(8),
+    let shifted = |p: &Address| Address {
+        base: p.base.clone(),
+        offset: AddressOffset::Constant(8),
     };
     assert!(!graph.are_equal(&shifted(&left), &shifted(&right)));
     graph.add_algebraic_equality(&a, &b);
@@ -67,15 +67,15 @@ fn pointer_calls_follow_late_model_aliases_and_displaced_addresses() {
 fn pointer_calls_keep_sorts_order_states_and_noninjectivity() {
     let _session = VerificationSession::enter();
     let mut graph = EqualityGraph::default();
-    let p = Pointer::symbolic(Variable(30));
-    let q = Pointer::symbolic(Variable(31));
-    let memory = Memory::new().with_block(p.block.clone(), 4);
+    let p = Address::symbolic(Variable(30));
+    let q = Address::symbolic(Variable(31));
+    let memory = SymbolicMemory::new().with_block(p.base.clone(), 4);
     let changed = memory
         .clone()
         .store(p.clone(), ProgramValue::Int32(word(32)));
-    let array = |memory: &Memory, pointer, element_type| PureFunctionArgument::ArrayRef {
+    let array = |memory: &SymbolicMemory, pointer, element_type| PureFunctionArgument::ArrayRef {
         memory: memory.clone(),
-        pointer: ProgramValue::Pointer(PointerValue::new(pointer, ProgramType::Int32Pointer)),
+        pointer: ProgramValue::Pointer(Pointer::new(pointer, ProgramType::Int32Pointer)),
         element_type,
     };
     let a = call(
@@ -121,10 +121,10 @@ fn pointer_calls_keep_sorts_order_states_and_noninjectivity() {
 fn nested_pointer_calls_feed_scalar_calls_and_checked_reads() {
     let _session = VerificationSession::enter();
     let (p, q) = (
-        Pointer::symbolic(Variable(40)),
-        Pointer::symbolic(Variable(41)),
+        Address::symbolic(Variable(40)),
+        Address::symbolic(Variable(41)),
     );
-    let build = |mut p: Pointer| {
+    let build = |mut p: Address| {
         for _ in 0..12 {
             p = call("next", vec![pointer_argument(p)]);
         }
@@ -135,7 +135,7 @@ fn nested_pointer_calls_feed_scalar_calls_and_checked_reads() {
         name: "count".into(),
         arguments: vec![pointer_argument(p)],
     };
-    let memory = intern_memory(Memory::new());
+    let memory = intern_memory(SymbolicMemory::new());
     let read = |p| {
         MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
@@ -162,8 +162,8 @@ fn pointer_call_evidence_stays_scoped() {
         call("get", vec![argument(50)]),
         call("get", vec![argument(51)]),
     );
-    let p = Pointer::symbolic(Variable(52));
-    let premise = Proposition::ConditionIs(ConditionTerm::equal(word(50), word(51)), true);
+    let p = Address::symbolic(Variable(52));
+    let premise = Proposition::condition_is(ConditionTerm::equal(word(50), word(51)), true);
     let held = equal(&p, &a);
     let goal = equal(&p, &b);
     let base = PureFactContext::new().assume_proposition(held.clone());
@@ -188,12 +188,12 @@ fn pointer_call_address_equality_does_not_merge_result_domains() {
     let _session = VerificationSession::enter();
     let a = call("left", vec![argument(61)]);
     let b = call("right", vec![argument(61)]);
-    let left = PointerValue::new(a.clone(), ProgramType::Int32Pointer);
-    let right = PointerValue::new(b.clone(), ProgramType::Int32Pointer);
+    let left = Pointer::new(a.clone(), ProgramType::Int32Pointer);
+    let right = Pointer::new(b.clone(), ProgramType::Int32Pointer);
     let context = PureFactContext::new().assume_proposition(equal(&a, &b));
     assert!(!context.pointer_provenance_match(&left, &right));
     let complete = context.clone().assume_condition(
-        ConditionTerm::pointer_value_equal(left.clone(), right.clone()),
+        ConditionTerm::pointer_equal(left.clone(), right.clone()),
         true,
     );
     assert!(complete.pointer_provenance_match(&left, &right));

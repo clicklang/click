@@ -737,7 +737,7 @@ impl<'a> Proof<'a> {
             }
             // Citing a stated range cites both of its halves, exactly as in
             // a fixed-state `apply using`.
-            crate::surface::proof::theorem_application::cite_range_extent_guards(
+            crate::surface::proof::theorem_application::cite_range_span_guards(
                 premise,
                 &mut explicit_premises,
                 |guard| self.facts().exact_available_across_effects(guard, &[]),
@@ -1245,18 +1245,41 @@ impl<'a> Proof<'a> {
         // The opened body is spelled as written, under the names just bound,
         // for premise lookups; see `ProofLocals::surface_facts`.
         let mut written_body = Some(&binding.proposition);
-        for _ in &binding.bindings {
+        let mut substitutions = BTreeMap::new();
+        for (output, click_type) in &binding.bindings {
             written_body = match written_body {
-                Some(ClickProposition::Exists { body, .. }) => Some(body.as_ref()),
+                Some(ClickProposition::Exists { name, body, .. }) => {
+                    if name.written() == Some(output) {
+                        substitutions.remove(name);
+                    } else {
+                        let replacement = match click_type {
+                            ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
+                                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                                    output.clone().into(),
+                                ))
+                            }
+                            _ => ContractExpression::Binding(output.clone()),
+                        };
+                        substitutions.insert(name.clone(), replacement);
+                    }
+                    Some(body.as_ref())
+                }
                 _ => None,
             };
         }
-        // A spelling is an index, not authority: a body whose written shape
-        // does not record is left unspelled rather than failing the step.
         if let (Some(written_body), Some(body)) = (written_body, checked.last()) {
-            let mut spelled = locals.surface_facts.clone();
-            if spelled.record_lowering(written_body, body).is_ok() {
-                locals.surface_facts = spelled;
+            let renamed;
+            let spelling = if substitutions.is_empty() {
+                Some(written_body)
+            } else {
+                renamed = substitute_click_proposition(written_body, &substitutions).ok();
+                renamed.as_ref()
+            };
+            if let Some(spelling) = spelling {
+                let mut spelled = locals.surface_facts.clone();
+                if spelled.record_lowering(spelling, body).is_ok() {
+                    locals.surface_facts = spelled;
+                }
             }
         }
         let mut transition = self.checked_fact_transition(locals, facts, false, added, checked);
@@ -1607,7 +1630,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             view.parameter_binding.parameters,
             &values,
-            view.fixed_state.state.memory(),
+            &view.fixed_state.state.program_point(),
         );
         let (values, array_refs) =
             contract_environment_at_state(&values, &array_refs, view.fixed_state.state);
@@ -1817,7 +1840,7 @@ impl<'a> Proof<'a> {
                 context
                     .theorem_context
                     .values
-                    .get(name)
+                    .get_retained(name)
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();
@@ -1989,13 +2012,13 @@ impl<'a> Proof<'a> {
         let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
         let mut names = BTreeSet::new();
         collect_contract_expression_referenced_names(&expression, &mut names);
-        let values: BTreeMap<_, _> = names
+        let values: ProgramValueBindings = names
             .iter()
             .filter_map(|name| {
                 context
                     .theorem_context
                     .values
-                    .get(name)
+                    .get_retained(name)
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();
@@ -2066,13 +2089,13 @@ impl<'a> Proof<'a> {
         {
             return Ok(value);
         }
-        let values: BTreeMap<_, _> = names
+        let values: ProgramValueBindings = names
             .iter()
             .filter_map(|name| {
                 context
                     .theorem_context
                     .values
-                    .get(name)
+                    .get_retained(name)
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();
@@ -2137,6 +2160,35 @@ impl<'a> Proof<'a> {
                 .capture_instantiate_integer_argument(argument)
                 .map(InstanceArgument::Integer);
         }
+        let value = self.capture_native_argument(argument)?;
+        let uint64 = Sort::ProgramInteger(crate::kernel::MachineIntegerType::UInt64);
+        match (binder, value) {
+            (Sort::ProgramInt32, ProgramValue::Int32(argument)) => {
+                Ok(InstanceArgument::Machine(argument))
+            }
+            (binder, ProgramValue::UInt64(argument)) if *binder == uint64 => {
+                Ok(InstanceArgument::Machine(argument))
+            }
+            (
+                Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _),
+                ProgramValue::Pointer(pointer),
+            ) => Ok(InstanceArgument::Pointer(pointer)),
+            (binder, _) if *binder == uint64 => {
+                Err(self.step_error("`instantiate` argument did not evaluate to uint64"))
+            }
+            (Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _), _) => {
+                Err(self.step_error("`instantiate` argument did not evaluate to a pointer"))
+            }
+            _ => Err(self.step_error("`instantiate` argument did not evaluate to int32")),
+        }
+    }
+
+    /// Capture a native theorem operand with its original scalar or pointer
+    /// type, in exactly the environment used by explicit instantiation.
+    pub(in crate::surface::proof) fn capture_native_argument(
+        &self,
+        argument: &ContractExpression,
+    ) -> Result<ProgramValue, ClickError> {
         let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
         let value = if let ProofContext::Pure(context) = self.context.as_ref() {
             let names = contract_expression_referenced_names(&argument);
@@ -2223,7 +2275,7 @@ impl<'a> Proof<'a> {
             let array_refs = array_refs_for_parameters(
                 view.parameter_binding.parameters,
                 &parameter_values,
-                view.fixed_state.state.memory(),
+                &view.fixed_state.state.program_point(),
             );
             let (values, array_refs) = contract_environment_at_state(
                 &parameter_values,
@@ -2253,32 +2305,13 @@ impl<'a> Proof<'a> {
                 "could not evaluate `instantiate` argument: {message}"
             ))
         })?;
-        let uint64 = Sort::ProgramInteger(crate::kernel::MachineIntegerType::UInt64);
-        match (binder, value) {
-            (Sort::ProgramInt32, ProgramValue::Int32(argument)) => {
-                Ok(InstanceArgument::Machine(argument))
-            }
-            (binder, ProgramValue::UInt64(argument)) if *binder == uint64 => {
-                Ok(InstanceArgument::Machine(argument))
-            }
-            (
-                Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _),
-                ProgramValue::Pointer(pointer),
-            ) => Ok(InstanceArgument::Pointer(pointer)),
-            (binder, _) if *binder == uint64 => {
-                Err(self.step_error("`instantiate` argument did not evaluate to uint64"))
-            }
-            (Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _), _) => {
-                Err(self.step_error("`instantiate` argument did not evaluate to a pointer"))
-            }
-            _ => Err(self.step_error("`instantiate` argument did not evaluate to int32")),
-        }
+        Ok(value)
     }
 
     /// An `Integer` binder's argument, captured as a mathematical value in
     /// the current proof context: the theorem's and the proof's `Integer`
     /// bindings in a pure proof, the fixed-state environment otherwise.
-    fn capture_instantiate_integer_argument(
+    pub(in crate::surface::proof) fn capture_instantiate_integer_argument(
         &self,
         argument: &ContractExpression,
     ) -> Result<crate::kernel::IntegerTerm, ClickError> {
@@ -2303,7 +2336,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             view.parameter_binding.parameters,
             &parameter_values,
-            view.fixed_state.state.memory(),
+            &view.fixed_state.state.program_point(),
         );
         let (values, array_refs) =
             contract_environment_at_state(&parameter_values, &array_refs, view.fixed_state.state);
@@ -2655,11 +2688,11 @@ impl<'a> Proof<'a> {
                         .unwrap_or(lowered)
                     })
                     .and_then(|reading| match reading {
-                        Proposition::ConditionIs(
-                            ConditionTerm::IntegerLessEqual(left, right),
+                        ref condition_source_0 @ Proposition::ConditionIs(
+                            _,
                             true,
-                        ) => Some(Proposition::ConditionIs(
-                            ConditionTerm::integer_equal((*left).clone(), (*right).clone()),
+                        ) if let Some((ConditionTerm::IntegerLessEqual(left, right), _)) = condition_source_0.condition_native() => Some(Proposition::condition_is(
+                            ConditionTerm::integer_equal(left.as_ref().clone(), right.as_ref().clone()),
                             true,
                         )),
                         _ => None,
@@ -2699,11 +2732,18 @@ impl<'a> Proof<'a> {
                 Some(("equality", equality.clone(), None)),
             )
         })?;
+        let induction = self.uses_structural_induction();
         let surface_goal = self.surface_goal().and_then(|surface_goal| {
             let checked_candidate = |candidate: ClickProposition| {
                 self.lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
                     .ok()
-                    .filter(|lowered| rewritten.try_present_as(lowered))
+                    .filter(|lowered| {
+                        if induction {
+                            rewritten.try_present_induction_case_as(lowered)
+                        } else {
+                            rewritten.try_present_as(lowered)
+                        }
+                    })
                     .map(|_| candidate)
             };
             let mut checked_candidate = checked_candidate;
@@ -2718,11 +2758,16 @@ impl<'a> Proof<'a> {
                 })
         });
         let surface_goal = surface_goal.or_else(|| {
+            if !induction {
+                return self.spelled_goal(rewritten.proposition());
+            }
             let candidate = self.structural_proposition_candidate(rewritten.proposition())?;
             let lowered = self
                 .lower_surface_proposition_direct(&candidate, "rewritten goal raising")
                 .ok()?;
-            rewritten.try_present_as(&lowered).then_some(candidate)
+            rewritten
+                .try_present_induction_case_as(&lowered)
+                .then_some(candidate)
         });
         let presentation = self.refinement_presentation(surface_goal, None);
         let (obligation, facts) =
@@ -2839,12 +2884,12 @@ impl<'a> Proof<'a> {
     /// inside the outermost one. The labels were derived from the exact
     /// source shape and checked outcome when the outcome goal was created,
     /// not from a user assertion.
-    pub(in crate::surface::proof) fn checked_call_returned(
+    pub(in crate::surface::proof) fn checked_call_outcome(
         &self,
         depth: usize,
-    ) -> Result<bool, ClickError> {
+    ) -> Result<&CallOutcomeEdge, ClickError> {
         self.focused_outcome_data()
-            .and_then(|data| data.call_routes.get(depth).copied())
+            .and_then(|data| data.call_routes.get(depth))
             .ok_or_else(|| {
                 self.step_error("`outcomes` requires a checked returned/threw call edge")
             })
@@ -3152,7 +3197,7 @@ impl<'a> Proof<'a> {
 
     /// Report the actual native checker result separately from source proof
     /// construction. Search-stage failures are retained by the solve driver;
-    /// absence of a certificate is not evidence of a missing extent premise.
+    /// absence of a certificate is not evidence of a missing span premise.
     pub(in crate::surface::proof) fn unproved_loadable_range_goal_reason(&self) -> Option<String> {
         let goal = self.surface_goal()?;
         loadable_surface_range_endpoints(goal)?;
@@ -3163,10 +3208,11 @@ impl<'a> Proof<'a> {
                 base,
                 bytes,
                 wide: true,
-            } => self
-                .facts()
-                .assumptions()
-                .proves_native_memory_loadable(memory, base, bytes),
+            } => self.facts().assumptions().proves_native_memory_loadable(
+                memory,
+                base,
+                bytes.native_compat(),
+            ),
             _ => {
                 return Some(format!(
                     "no checked source proof was constructed for `{target}`"

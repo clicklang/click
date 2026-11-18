@@ -13,17 +13,18 @@ fn boolean_reads_keep_shared_indices_through_rewrites_and_observations() {
                 [index.clone(), index],
             );
         }
-        let address = SharedPointerAddress::new(
-            SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(999331))),
-            KernelPointerOffset::Int32Scaled {
+        let address = SharedAddress::new(
+            SharedAddressBase::import(&AddressBase::Symbolic(Variable(999331))),
+            KernelAddressOffset::Int32Scaled {
                 value: index,
                 byte_width: 4,
             }
             .into_shared()
             .unwrap(),
         );
-        let memory = intern_memory(Memory::new());
-        let root = KernelTerm::boolean_read(memory.clone(), address.clone());
+        let memory = intern_memory(SymbolicMemory::new());
+        let root =
+            KernelTerm::boolean_read(crate::kernel::ProgramPoint::at(&memory), address.clone());
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(
@@ -38,7 +39,7 @@ fn boolean_reads_keep_shared_indices_through_rewrites_and_observations() {
                 crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                     &root,
                     Variable(999332),
-                    &Pointer::null()
+                    &Address::null()
                 ),
                 Some(root.clone())
             );
@@ -61,7 +62,7 @@ fn boolean_reads_keep_shared_indices_through_rewrites_and_observations() {
 #[test]
 fn boolean_reads_admit_states_without_comparing_unrelated_contents() {
     for size in [16, 64, 256] {
-        let memory = (0..size).fold(Memory::new(), |memory, i| {
+        let memory = (0..size).fold(SymbolicMemory::new(), |memory, i| {
             memory.with_block(format!("bool-unrelated-{i}"), 4)
         });
         let first = {
@@ -70,10 +71,11 @@ fn boolean_reads_admit_states_without_comparing_unrelated_contents() {
         };
         let _session = crate::kernel::VerificationSession::enter();
         let second = intern_memory(memory);
-        let address = SharedPointerAddress::import(&Pointer::symbolic(Variable(999340)));
+        let address = SharedAddress::import(&Address::symbolic(Variable(999340)));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let a = KernelTerm::boolean_read(first, address.clone());
-            let b = KernelTerm::boolean_read(second, address);
+            let a =
+                KernelTerm::boolean_read(crate::kernel::ProgramPoint::at(&first), address.clone());
+            let b = KernelTerm::boolean_read(crate::kernel::ProgramPoint::at(&second), address);
             assert_ne!(a, b);
         });
         assert!(work <= 16, "size={size}, work={work}");

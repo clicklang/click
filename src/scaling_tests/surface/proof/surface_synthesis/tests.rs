@@ -45,7 +45,7 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
         let lowered = relower_written_proposition(&equality, &state).unwrap();
         assert_eq!(
             lowered,
-            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+            Proposition::condition_is(ConditionTerm::Constant(true), true)
         );
     }
 }
@@ -56,14 +56,14 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
         .stack_size(1792 * 1024)
         .spawn(|| {
             for size in [1usize, 8, 32, 128] {
-                let pointer = Pointer {
-                    block: crate::kernel::PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Constant(0),
+                let pointer = Address {
+                    base: crate::kernel::AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(0),
                 };
-                let cyclic = Pointer {
-                    block: pointer.block.clone(),
-                    offset: PointerOffsetTerm::scaled_int32_node(
-                        MachineTerm::pointer_address(pointer.clone()),
+                let cyclic = Address {
+                    base: pointer.base.clone(),
+                    offset: AddressOffset::scaled_int32_node(
+                        MachineTerm::integer_address(pointer.clone()),
                         4,
                     ),
                 };
@@ -104,17 +104,17 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
 }
 
 #[test]
-fn pointer_local_synthesis_skips_unrelated_pointer_blocks() {
+fn pointer_local_synthesis_skips_unrelated_address_bases() {
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 256, 1024] {
         let mut state = ExecutionState::new();
         for i in 0..size {
             state = state.with_local(
                 format!("a_{i:04}"),
-                ProgramValue::pointer(Pointer::symbolic(Variable(982_000 + i as u64))),
+                ProgramValue::pointer(Address::symbolic(Variable(982_000 + i as u64))),
             );
         }
-        let base = Pointer::symbolic(Variable(984_000));
+        let base = Address::symbolic(Variable(984_000));
         state = state.with_local("z_base", ProgramValue::pointer(base.clone()));
         let selected = base.offset_by_bytes(8);
         let (expression, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -243,13 +243,13 @@ fn allocation_result_names_use_one_index_as_recorded_history_grows() {
         let layout =
             crate::surface::lowering::SourceExecutionLayout::for_function(&function).unwrap();
         let mut retained_states = RecordedStates::new().with_source_layout(layout.clone());
-        let mut last = Pointer::null();
+        let mut last = Address::null();
         let mut last_region = 0;
         let mut insertion_work = 0;
         for n in 0..count {
-            last = Pointer {
-                block: PointerBlock::Heap(990_000 + n as u64),
-                offset: PointerOffsetTerm::Constant(0),
+            last = Address {
+                base: AddressBase::Heap(990_000 + n as u64),
+                offset: AddressOffset::Constant(0),
             };
             last_region = layout
                 .source_path_region(&[SourcePathStep::Statement(n + 1)], ProgramPointKind::Exit)
@@ -307,7 +307,7 @@ fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
         }
         names.insert(Variable(9000), "flag".into());
         let flag = ConditionTerm::Variable(Variable(9000));
-        let fact = Proposition::ConditionIs(
+        let fact = Proposition::condition_is(
             ConditionTerm::bool_application(
                 "choose",
                 vec![crate::kernel::PureFunctionArgument::Value(
@@ -340,7 +340,7 @@ fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
                 condition,
             );
         }
-        let fact = Proposition::ConditionIs(condition, true);
+        let fact = Proposition::condition_is(condition, true);
         let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
             synthesize_surface_proposition(
                 &fact,
@@ -382,14 +382,14 @@ fn leading_domain_recognition_retains_shared_arithmetic() {
             } else {
                 IntegerTerm::Add(left, right)
             };
-            let upper = Proposition::ConditionIs(
+            let upper = Proposition::condition_is(
                 ConditionTerm::IntegerLessEqual(
                     exact.clone().into(),
                     IntegerTerm::constant(i32::MAX.into()).into(),
                 ),
                 true,
             );
-            let lower = Proposition::ConditionIs(
+            let lower = Proposition::condition_is(
                 ConditionTerm::IntegerGreaterEqual(
                     exact.into(),
                     IntegerTerm::constant(i32::MIN.into()).into(),
@@ -628,15 +628,15 @@ fn nested_fold_match_call_surface_work_ignores_unrelated_locals() {
 #[test]
 fn array_argument_state_lookup_ignores_unrelated_recorded_history() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = ProgramValue::pointer(Pointer::symbolic(Variable(981_400)));
-    let cell = Pointer {
-        block: PointerBlock::Concrete("selected-array-memory".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = ProgramValue::pointer(Address::symbolic(Variable(981_400)));
+    let cell = Address {
+        base: AddressBase::Concrete("selected-array-memory".into()),
+        offset: AddressOffset::Constant(0),
     };
     let selected = ExecutionState::new()
         .with_local("p", pointer.clone())
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("selected-array-memory", 4)
                 .store(cell.clone(), int32(1)),
         );
@@ -661,14 +661,14 @@ fn array_argument_state_lookup_ignores_unrelated_recorded_history() {
                     kind: ProgramPointKind::Exit,
                 },
                 selected.clone().with_memory(
-                    Memory::new()
+                    SymbolicMemory::new()
                         .with_block("selected-array-memory", 4)
                         .store(cell.clone(), int32(index as u32 + 1)),
                 ),
             );
         }
         let current = selected.clone().with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("selected-array-memory", 4)
                 .store(cell.clone(), int32(u32::MAX)),
         );
@@ -831,11 +831,11 @@ fn shared_overflow_spelling_does_not_export_growing_operands() {
 }
 
 #[test]
-fn pointer_comparison_spelling_does_not_export_extent_payloads() {
-    use crate::kernel::{KernelTermExport, KernelTermImport, PointerValue, SubobjectExtent};
+fn pointer_comparison_spelling_does_not_export_bounds_payloads() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, Pointer, SubobjectBounds};
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(999990));
+        let pointer = Address::symbolic(Variable(999990));
         let mut width = MachineTerm::Variable(Variable(999991));
         for _ in 0..size {
             width = MachineTerm::logical_machine_binary(
@@ -845,12 +845,12 @@ fn pointer_comparison_spelling_does_not_export_extent_payloads() {
                 MachineTerm::constant(1),
             );
         }
-        let value = PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_extent(
-            Some(SubobjectExtent {
+        let value = Pointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+            SubobjectBounds {
                 start: pointer,
                 width,
-            }),
-        );
+            },
+        ));
         let parameters = [crate::languages::interface::ImportedParameter::new(
             InterfaceType::Int32Pointer,
             "p".into(),
@@ -859,7 +859,7 @@ fn pointer_comparison_spelling_does_not_export_extent_payloads() {
         let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
             value.clone(),
         ))];
-        let root = KernelTermImport::default().condition(&ConditionTerm::PointerValueEqual(
+        let root = KernelTermImport::default().condition(&ConditionTerm::PointerEqual(
             Box::new(value.clone()),
             Box::new(value),
         ));
@@ -876,7 +876,7 @@ fn pointer_comparison_spelling_does_not_export_extent_payloads() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert!(
             work <= 128,
-            "{size} unspelled extent operations: {work} work"
+            "{size} unspelled bounds operations: {work} work"
         );
     }
 }
@@ -895,7 +895,7 @@ fn narrow_literal_comparison_spelling_ignores_unrelated_locals() {
             let word = |n: i64| {
                 crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
             };
-            let proposition = Proposition::ConditionIs(
+            let proposition = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format,
                     relation: R::LessEqual,
@@ -927,7 +927,7 @@ fn narrow_comparison_spelling_scales_with_the_selected_proposition() {
         let word = |n: i64| {
             crate::kernel::machine_integer::range::constant_word(T::UInt8, &n.into()).unwrap()
         };
-        let atom = Proposition::ConditionIs(
+        let atom = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: T::UInt8,
                 relation: R::GreaterEqual,

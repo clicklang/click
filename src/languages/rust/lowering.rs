@@ -195,6 +195,151 @@ fn nested_enum_field_type(
     Ok(Some(InterfaceType::Parameter(EnumTypes::get(field)?)))
 }
 
+fn binary_value(
+    operator: &str,
+    left_type: &Type,
+    right_type: &Type,
+    mut l: ProgramExpression,
+    r: ProgramExpression,
+) -> Result<ProgramExpression, String> {
+    // A Rust comparison of two 8- or 16-bit values is native
+    // at their type (`design/machine-integers.md`, Decisions
+    // 2026-11-01): its operands keep their width, and the `bool`
+    // value below reads the comparison at it.
+    let narrow = matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16);
+    let narrow_comparison = narrow && matches!(operator, "eq" | "ne" | "lt" | "le" | "gt" | "ge");
+    // Rust `+ - * & | ^ <<` on 8- or 16-bit values are the
+    // operators of that type (decision G4): native nodes over the
+    // operands as written. A checked operator's overflow panic is
+    // its own assertion (`prepared_expr`). A native shift's count
+    // is a 32-bit word; a count of another width keeps the
+    // promoted shift.
+    let narrow_native = narrow
+        && (matches!(
+            operator,
+            "add" | "sub" | "mul" | "bit_and" | "bit_or" | "bit_xor"
+        ) || (operator == "shl" && right_type.integer_bits() == Some(32)));
+    // Keep the RHS at its source width. The shared shift evaluator
+    // checks signed/nonnegative and full-width upper bounds before
+    // forming its word-sized shift term. Narrowing here would lose
+    // the exact relation to Rust's already checked count.
+    if narrow && !narrow_comparison && !narrow_native {
+        // Rust narrow `/ % >>` are still a 32-bit operation and
+        // a cast back (decision G4).
+        crate::kernel::machine_integer::format_audit::record(
+            crate::kernel::machine_integer::format_audit::WordIdentity::PromotedNarrowArithmetic,
+            std::panic::Location::caller(),
+        );
+    }
+    if narrow_comparison || narrow_native {
+    } else if matches!(left_type, Type::U8 | Type::U16) {
+        // Narrow unsigned remainder fits in signed int, matching
+        // the promotion used by its contract expression. Other
+        // operations keep unsigned words (notably u16 multiply).
+        l = crate::kernel::program_expression::cast(
+            l,
+            if operator == "rem" {
+                ProgramType::Int32
+            } else {
+                ProgramType::UInt32
+            },
+        );
+    } else if left_type.is_signed_integer() && operator == "shl" {
+        // A signed left shift wraps in Rust and may be undefined
+        // in C: shift the bits as an unsigned word of at least
+        // the operand's width, then reinterpret them at the
+        // operand's width below.
+        l = crate::kernel::program_expression::cast(
+            l,
+            if left_type.integer_bits() == Some(64) {
+                ProgramType::UInt64
+            } else {
+                ProgramType::UInt32
+            },
+        );
+    } else if matches!(left_type, Type::I8 | Type::I16) {
+        l = crate::kernel::program_expression::cast(l, ProgramType::Int32);
+    }
+    let result = match operator {
+        "add" => crate::kernel::program_expression::add(l, r),
+        "sub" => crate::kernel::program_expression::subtract(l, r),
+        "mul" => crate::kernel::program_expression::multiply(l, r),
+        "div" => crate::kernel::program_expression::divide(l, r),
+        "rem" => crate::kernel::program_expression::remainder(l, r),
+        "shl" => crate::kernel::program_expression::shift_left(l, r),
+        "shr" => crate::kernel::program_expression::shift_right(l, r),
+        "bit_and" => crate::kernel::program_expression::bitwise_and(l, r),
+        "bit_or" => crate::kernel::program_expression::bitwise_or(l, r),
+        "bit_xor" => crate::kernel::program_expression::bitwise_xor(l, r),
+        "eq" => crate::kernel::program_expression::equal(l, r),
+        "ne" => crate::kernel::program_expression::not_equal(l, r),
+        "lt" => crate::kernel::program_expression::less_than(l, r),
+        "le" => crate::kernel::program_expression::less_equal(l, r),
+        "gt" => crate::kernel::program_expression::greater_than(l, r),
+        "ge" => crate::kernel::program_expression::greater_equal(l, r),
+        "and" => crate::kernel::program_expression::and(l, r),
+        "or" => crate::kernel::program_expression::or(l, r),
+        _ => return Err("unsupported Rust operator in artifact".into()),
+    };
+    if matches!(
+        operator,
+        "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "and" | "or"
+    ) {
+        // A Rust comparison or connective is a `bool` value: the
+        // condition itself, with no path split (Stage 5, D5).
+        Ok(crate::kernel::program_expression::bool_value(result))
+    } else if narrow_native {
+        Ok(crate::kernel::program_expression::narrow_arithmetic(
+            result,
+            scalar_type(left_type)?.to_kernel_type(),
+        ))
+    } else if narrow && matches!(operator, "div" | "rem") {
+        // Checked narrow arithmetic cannot discard bits. Its range
+        // obligation permits an exact coercion; only casts,
+        // bitwise results and shifts need explicit truncation.
+        // Convert from the operation's promoted type: `int32` for
+        // signed arithmetic and narrow unsigned remainder,
+        // `uint32` for the other unsigned operations.
+        let computed = if matches!(left_type, Type::U8 | Type::U16) {
+            result
+        } else {
+            crate::kernel::program_expression::cast(result, ProgramType::Int32)
+        };
+        Ok(crate::kernel::program_expression::cast(
+            computed,
+            scalar_type(left_type)?.to_kernel_type(),
+        ))
+    } else {
+        Ok(rust_scalar_cast(
+            result,
+            scalar_type(left_type)?.to_kernel_type(),
+        ))
+    }
+}
+
+/// Read an operand before its last use.
+fn observe_operand(mut value: ProgramExpression) -> ProgramExpression {
+    if let ProgramExpression::StepResult { ends, .. } = &mut value {
+        *ends = false;
+    }
+    value
+}
+
+fn typed_value_step(
+    steps: Vec<u32>,
+    expression: ProgramExpression,
+    value_type: ProgramType,
+    pointee_constant: bool,
+) -> ProgramStatement {
+    ProgramStatement::StepValue {
+        aggregate_layout: None,
+        steps,
+        expression,
+        value_type: Some(value_type),
+        pointee_constant,
+    }
+}
+
 /// Whether `value` is a local or a literal, possibly converted: a read with
 /// no work of its own that names itself.
 fn direct_operand(value: &ProgramExpression) -> bool {
@@ -223,6 +368,22 @@ fn no_effect(statement: &ProgramStatement) -> bool {
         ProgramStatement::Skip => true,
         ProgramStatement::Seq(statements) => statements.iter().all(|s| no_effect(s)),
         _ => false,
+    }
+}
+
+/// The slice local `slice` reads: the local itself, or a shared borrow of it,
+/// `&bytes`, which has the same pointer and length.
+pub(super) fn shared_slice_local(slice: &E) -> Option<&String> {
+    match slice {
+        E::Local { name } => Some(name),
+        E::Borrow {
+            place,
+            value_type: Type::ByteSlice { mutable: false },
+        } => match place.as_ref() {
+            E::Local { name } => Some(name),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -305,7 +466,7 @@ fn fn_pointer_signature(t: &Type) -> Result<CallbackInterface, String> {
     }
     Ok(CallbackInterface::new(result, None, parameters, false))
 }
-// Embedded arrays retain one ABI field and their concrete extent. Never
+// Embedded arrays retain one ABI field and their concrete length. Never
 // flatten a field into one layout entry per element.
 fn record_field_type(t: &Type) -> Result<InterfaceType, String> {
     let Type::Array { element, length } = t else {
@@ -690,9 +851,9 @@ fn lower_function(
             .with_pointee_constant(constant);
         if let Some((length, element, _)) = arrays.get(&p.name) {
             let bytes = u32::try_from(*length * u64::from(element.byte_width()))
-                .expect("validated fixed array extent");
-            parameter = parameter.with_fixed_reference_extent(bytes);
-            kernel_parameter = kernel_parameter.with_fixed_reference_extent(bytes);
+                .expect("validated fixed array length");
+            parameter = parameter.with_fixed_reference_bounds(bytes);
+            kernel_parameter = kernel_parameter.with_fixed_reference_bounds(bytes);
         }
         parameters.push(parameter);
         kernel_parameters.push(kernel_parameter);
@@ -723,10 +884,9 @@ fn lower_function(
             declaration.with_positional_parameters()
         });
     }
-    // Reserve the compiler's explicit call-result identities once for this
-    // function. Generated call/assignment pairs must not reuse a later MIR
-    // call's identity, even when the generated call comes first.
-    let next_call_result = f
+    // Reserve the compiler's explicit MIR call IDs before allocating any
+    // additional results for calls and operand evaluation.
+    let next_result_step = f
         .mir
         .iter()
         .flat_map(|mir| &mir.blocks)
@@ -738,7 +898,35 @@ fn lower_function(
         .map(|last| last.checked_add(1).ok_or("too many calls in one function"))
         .transpose()?
         .unwrap_or(0);
+    // A source name bound more than once is one declaration per binding,
+    // spelled as the source spells it; MIR's local order is the
+    // declaration order, so a proof's `word` is the innermost live one.
+    let owner = LocalFunctionId::new(Some(export.logical_source.clone()), f.name.clone());
+    let bindings = f
+        .mir
+        .iter()
+        .flat_map(|mir| {
+            mir.locals
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, local)| {
+                    let spelling = mir.spellings.get(&local.name)?;
+                    let ordinal = u32::try_from(ordinal).ok()?;
+                    Some((
+                        local.name.clone(),
+                        BindingName::from(LocalBindingId::new(
+                            owner.clone(),
+                            false,
+                            ordinal,
+                            Some(spelling.clone()),
+                        )),
+                    ))
+                })
+        })
+        .collect();
     let mut cx = Context {
+        bindings,
+        declaration_sites: Vec::new(),
         shared_array_iterators: BTreeMap::new(),
         ranges: BTreeMap::new(),
         enumerated: BTreeSet::new(),
@@ -760,8 +948,7 @@ fn lower_function(
         import_identity: identity.map(std::sync::Arc::from),
         mir_point: None,
         mir_nodes: BTreeMap::new(),
-        next_temporary: 0,
-        next_call_result: std::cell::Cell::new(next_call_result),
+        next_result_step: std::cell::Cell::new(next_result_step),
         loop_iterators: Vec::new(),
         locals,
         return_type,
@@ -812,6 +999,7 @@ fn lower_function(
         lowered = lowered.with_source_sites(crate::languages::interface::SourceSites {
             paths: f.sites.clone(),
             regions,
+            declarations: std::mem::take(&mut cx.declaration_sites),
         });
     }
     if let Some((name, layout)) = return_layout {
@@ -820,6 +1008,12 @@ fn lower_function(
     Ok(lowered)
 }
 struct Context<'a> {
+    /// The binding of each local whose source name is bound more than
+    /// once, by its MIR key; every other local is bound by its name.
+    bindings: BTreeMap<String, BindingName>,
+    /// Where each of those is declared: its binding and source statement
+    /// (`Function::sites`), so `statement(i).local(word)` names it.
+    declaration_sites: Vec<(BindingName, u32)>,
     shared_array_iterators: BTreeMap<String, ProgramType>,
     /// The range locals, with their element type.
     ranges: BTreeMap<String, (Type, bool)>,
@@ -848,8 +1042,7 @@ struct Context<'a> {
     import_identity: Option<std::sync::Arc<str>>,
     mir_point: Option<super::borrow_frontiers::MirPoint>,
     mir_nodes: BTreeMap<usize, usize>,
-    next_temporary: u32,
-    next_call_result: std::cell::Cell<u32>,
+    next_result_step: std::cell::Cell<u32>,
     /// The iterator each loop advances, by loop index in preorder.
     loop_iterators: Vec<Option<crate::languages::interface::RustLoopIterator>>,
     locals: BTreeSet<String>,
@@ -859,15 +1052,30 @@ struct Context<'a> {
     functions: &'a BTreeMap<&'a str, &'a Function>,
 }
 impl Context<'_> {
+    /// The kernel binding of the local `name`.
+    fn binding(&self, name: &str) -> BindingName {
+        self.bindings
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| BindingName::from(name))
+    }
+
+    fn result_step(&self) -> u32 {
+        let id = self.next_result_step.get();
+        self.next_result_step.set(
+            id.checked_add(1)
+                .expect("too many result steps in one function"),
+        );
+        crate::instrumentation::record_deterministic_work(1);
+        id
+    }
+
     fn call_value(
         &self,
         function: impl Into<String>,
         arguments: Vec<ProgramExpression>,
     ) -> (ProgramStatement, ProgramExpression) {
-        let id = self.next_call_result.get();
-        self.next_call_result
-            .set(id.checked_add(1).expect("too many calls in one function"));
-        crate::kernel::program_call_value(id, function, arguments)
+        crate::kernel::program_call_value(self.result_step(), function, arguments)
     }
 
     fn call_then_assign(
@@ -877,7 +1085,10 @@ impl Context<'_> {
         arguments: Vec<ProgramExpression>,
     ) -> ProgramStatement {
         let (call, value) = self.call_value(function, arguments);
-        program_seq(call, program_assign(Into::<String>::into(target), value))
+        program_seq(
+            call,
+            program_assign(self.binding(&Into::<String>::into(target)), value),
+        )
     }
 
     fn reference_source(
@@ -961,7 +1172,7 @@ impl Context<'_> {
                         .insert(place.name.clone(), (length.clone(), !mutable));
                     return Ok(program_seq(
                         program_declare_with_all_qualifiers(
-                            &place.name,
+                            self.binding(&place.name),
                             ProgramType::UInt8Pointer,
                             false,
                             false,
@@ -969,10 +1180,10 @@ impl Context<'_> {
                             !mutable,
                         ),
                         program_seq(
-                            program_declare(&length, ProgramType::UInt64),
+                            program_declare(self.binding(&length), ProgramType::UInt64),
                             program_seq(
                                 program_assign(
-                                    &place.name,
+                                    self.binding(&place.name),
                                     reference_view(
                                         pointer,
                                         ProgramType::UInt8Pointer,
@@ -980,7 +1191,7 @@ impl Context<'_> {
                                         !mutable,
                                     ),
                                 ),
-                                program_assign(length, length_value),
+                                program_assign(self.binding(&length), length_value),
                             ),
                         ),
                     ));
@@ -1000,14 +1211,17 @@ impl Context<'_> {
                         .insert(place.name.clone(), (*length, source_element, !mutable));
                     return Ok(program_seq(
                         program_declare_with_all_qualifiers(
-                            &place.name,
+                            self.binding(&place.name),
                             t,
                             false,
                             false,
                             false,
                             !mutable,
                         ),
-                        program_assign(&place.name, reference_view(pointer, t, false, !mutable)),
+                        program_assign(
+                            self.binding(&place.name),
+                            reference_view(pointer, t, false, !mutable),
+                        ),
                     ));
                 }
                 let t = scalar_type(&place.value_type)?;
@@ -1016,7 +1230,7 @@ impl Context<'_> {
                 }
                 let constant = matches!(place.value_type, Type::Reference { mutable: false, .. });
                 let declaration = program_declare_with_all_qualifiers(
-                    &place.name,
+                    self.binding(&place.name),
                     t.to_kernel_type(),
                     false,
                     false,
@@ -1053,9 +1267,9 @@ impl Context<'_> {
                     // which may call a function that changes the RHS storage.
                     let value_type = indexed_element_type(self.place_type(target)?)
                         .ok_or("unsupported Rust indexed assignment type")?;
-                    let (capture, name) = self.capture_operand(value, &value_type)?;
+                    let (capture, result) = self.capture_operand(value, &value_type)?;
                     checks = program_seq(checks, capture);
-                    value = crate::kernel::program_expression::variable(name);
+                    value = result;
                 }
                 let (target_checks, address) = self.prepared_address(target)?;
                 Ok(program_seq(
@@ -1166,25 +1380,22 @@ impl Context<'_> {
         if left.name == right.name {
             return Err("split_at results require distinct slice slots".into());
         }
-        let E::Local { name } = slice else {
-            return Err("split_at requires a shared byte-slice local".into());
-        };
-        if !self.slices.get(name).is_some_and(|(_, constant)| *constant) {
+        if !self.shared_byte_slice(slice) {
             return Err("split_at requires a shared byte-slice local".into());
         }
         let (pointer, length) = self.slice_parts(slice)?;
         // Evaluate the receiver before the argument and capture both metadata
         // components. The midpoint may call code; it is evaluated only once.
-        let (pointer_capture, pointer_name) = self.capture_operand(
+        let (pointer_capture, saved_pointer) = self.capture_operand(
             pointer,
             &Type::Reference {
                 mutable: false,
                 pointee: Box::new(Type::U8),
             },
         )?;
-        let (length_capture, length_name) = self.capture_operand(length, &Type::Usize)?;
+        let (length_capture, saved_length) = self.capture_operand(length, &Type::Usize)?;
         let (midpoint_prefix, midpoint_value) = self.prepared_expr(midpoint)?;
-        let (midpoint_capture, midpoint_name) =
+        let (midpoint_capture, saved_midpoint) =
             self.capture_operand(midpoint_value, &Type::Usize)?;
         let mut result = program_seq(
             pointer_capture,
@@ -1197,8 +1408,8 @@ impl Context<'_> {
             result,
             program_labeled_assert(
                 crate::kernel::program_expression::less_equal(
-                    crate::kernel::program_expression::variable(&midpoint_name),
-                    crate::kernel::program_expression::variable(&length_name),
+                    observe_operand(saved_midpoint.clone()),
+                    observe_operand(saved_length.clone()),
                 ),
                 "Rust split_at panic check",
             ),
@@ -1206,21 +1417,18 @@ impl Context<'_> {
         for (place, pointer, length) in [
             (
                 left,
-                crate::kernel::program_expression::variable(&pointer_name),
-                crate::kernel::program_expression::variable(&midpoint_name),
+                observe_operand(saved_pointer.clone()),
+                observe_operand(saved_midpoint.clone()),
             ),
             (
                 right,
                 // The right half starts at the midpoint in its own type, as
                 // the contract's `bytes[mid]` does.
                 crate::kernel::program_expression::add(
-                    crate::kernel::program_expression::variable(&pointer_name),
-                    crate::kernel::program_expression::variable(&midpoint_name),
+                    saved_pointer,
+                    observe_operand(saved_midpoint.clone()),
                 ),
-                crate::kernel::program_expression::subtract(
-                    crate::kernel::program_expression::variable(&length_name),
-                    crate::kernel::program_expression::variable(&midpoint_name),
-                ),
+                crate::kernel::program_expression::subtract(saved_length, saved_midpoint),
             ),
         ] {
             if place.value_type != (Type::ByteSlice { mutable: false }) {
@@ -1239,14 +1447,14 @@ impl Context<'_> {
                     result,
                     program_seq(
                         program_declare_with_all_qualifiers(
-                            &place.name,
+                            self.binding(&place.name),
                             ProgramType::UInt8Pointer,
                             false,
                             false,
                             false,
                             true,
                         ),
-                        program_declare(&length_name, ProgramType::UInt64),
+                        program_declare(self.binding(&length_name), ProgramType::UInt64),
                     ),
                 );
                 length_name
@@ -1261,10 +1469,10 @@ impl Context<'_> {
                 result,
                 program_seq(
                     program_assign(
-                        &place.name,
+                        self.binding(&place.name),
                         reference_view(pointer, ProgramType::UInt8Pointer, false, true),
                     ),
-                    program_assign(length_name, length),
+                    program_assign(self.binding(&length_name), length),
                 ),
             );
         }
@@ -1302,7 +1510,7 @@ impl Context<'_> {
             return Err("Rust iterator yielded binding type mismatch".into());
         }
         let declaration = program_declare_with_all_qualifiers(
-            &binding.name,
+            self.binding(&binding.name),
             scalar_type(&binding.value_type)?.to_kernel_type(),
             false,
             false,
@@ -1312,7 +1520,7 @@ impl Context<'_> {
         // Save Some's shared address before advancing. Copy patterns likewise
         // read that address before the source body; None does neither operation.
         let yielded = if by_reference {
-            crate::kernel::program_expression::variable(&item)
+            crate::kernel::program_expression::variable(self.binding(&item))
         } else {
             let occurrence = self.next_load;
             self.next_load = self
@@ -1320,7 +1528,7 @@ impl Context<'_> {
                 .checked_add(1)
                 .ok_or("Rust load identity exhausted")?;
             crate::kernel::program_expression::typed_load_with_source(
-                crate::kernel::program_expression::variable(&item),
+                crate::kernel::program_expression::variable(self.binding(&item)),
                 ProgramType::UInt8,
                 Some(LoadSourceId {
                     owner: LoadSourceOwnerId {
@@ -1335,7 +1543,7 @@ impl Context<'_> {
         // The remaining count is the slice's length, a `usize`.
         let next = program_seq(
             program_declare_with_all_qualifiers(
-                &item,
+                self.binding(&item),
                 ProgramType::UInt8Pointer,
                 false,
                 false,
@@ -1343,24 +1551,32 @@ impl Context<'_> {
                 true,
             ),
             program_seq(
-                program_assign(&item, crate::kernel::program_expression::variable(&cursor)),
+                program_assign(
+                    self.binding(&item),
+                    crate::kernel::program_expression::variable(self.binding(&cursor)),
+                ),
                 program_seq(
                     program_assign(
-                        &cursor,
+                        self.binding(&cursor),
                         crate::kernel::program_expression::add(
-                            crate::kernel::program_expression::variable(&cursor),
+                            crate::kernel::program_expression::variable(self.binding(&cursor)),
                             crate::kernel::program_expression::int32_literal(1),
                         ),
                     ),
                     program_seq(
                         program_assign(
-                            &remaining,
+                            self.binding(&remaining),
                             crate::kernel::program_expression::subtract(
-                                crate::kernel::program_expression::variable(&remaining),
+                                crate::kernel::program_expression::variable(
+                                    self.binding(&remaining),
+                                ),
                                 crate::kernel::program_expression::uint64_literal(1),
                             ),
                         ),
-                        program_seq(declaration, program_assign(&binding.name, yielded)),
+                        program_seq(
+                            declaration,
+                            program_assign(self.binding(&binding.name), yielded),
+                        ),
                     ),
                 ),
             ),
@@ -1368,7 +1584,7 @@ impl Context<'_> {
         let source_body = self.body(body)?;
         Ok(program_seq(
             program_declare_with_all_qualifiers(
-                &cursor,
+                self.binding(&cursor),
                 ProgramType::UInt8Pointer,
                 false,
                 false,
@@ -1376,15 +1592,17 @@ impl Context<'_> {
                 true,
             ),
             program_seq(
-                program_assign(&cursor, pointer),
+                program_assign(self.binding(&cursor), pointer),
                 program_seq(
-                    program_declare(&remaining, ProgramType::UInt64),
+                    program_declare(self.binding(&remaining), ProgramType::UInt64),
                     program_seq(
-                        program_assign(&remaining, length),
+                        program_assign(self.binding(&remaining), length),
                         program_while(
                             crate::kernel::program_expression::not(
                                 crate::kernel::program_expression::equal(
-                                    crate::kernel::program_expression::variable(&remaining),
+                                    crate::kernel::program_expression::variable(
+                                        self.binding(&remaining),
+                                    ),
                                     crate::kernel::program_expression::uint64_literal(0),
                                 ),
                             ),
@@ -1400,19 +1618,12 @@ impl Context<'_> {
         if !self.locals.contains(name) {
             return Err(format!("unknown Rust local `{name}`"));
         }
-        // A memory-backed local's value is computed into a temporary and
-        // stored to its object.
         if let Some(&value_type) = self.memory_values.get(name) {
-            let temporary = self.fresh_temporary()?;
-            let assign = self.assign(&temporary, e)?;
+            let (prefix, value) = self.prepared_expr(e)?;
             let address = self.address(&E::Local { name: name.into() })?;
             return Ok(program_seq(
-                program_seq(program_declare(&temporary, value_type), assign),
-                program_typed_store(
-                    address,
-                    crate::kernel::program_expression::variable(&temporary),
-                    value_type,
-                ),
+                prefix,
+                program_typed_store(address, value, value_type),
             ));
         }
         if let Some((length, expected)) = self.shared_scalar_slices.get(name).cloned() {
@@ -1421,8 +1632,8 @@ impl Context<'_> {
                 return Err("shared scalar slice assignment element mismatch".into());
             }
             return Ok(program_seq(
-                program_assign(name, pointer),
-                program_assign(length, source_length),
+                program_assign(self.binding(&name), pointer),
+                program_assign(self.binding(&length), source_length),
             ));
         }
         if self.local_arrays.contains(name) {
@@ -1436,10 +1647,10 @@ impl Context<'_> {
                 checks,
                 program_seq(
                     program_assign(
-                        name,
+                        self.binding(&name),
                         reference_view(pointer, ProgramType::UInt8Pointer, false, constant),
                     ),
-                    program_assign(length, length_value),
+                    program_assign(self.binding(&length), length_value),
                 ),
             ));
         }
@@ -1457,7 +1668,7 @@ impl Context<'_> {
                 _ => return Err("unsupported fixed array element".into()),
             };
             return Ok(program_assign(
-                name,
+                self.binding(&name),
                 reference_view(pointer, pointer_type, false, constant),
             ));
         }
@@ -1474,7 +1685,7 @@ impl Context<'_> {
             }
             _ => {
                 let (checks, value) = self.prepared_expr(e)?;
-                let mut assignment = program_assign(name, value);
+                let mut assignment = program_assign(self.binding(&name), value);
                 if let (
                     Some(import_identity),
                     Some(point),
@@ -1550,25 +1761,24 @@ impl Context<'_> {
                 if !self.owned_locals.contains(name) {
                     return Err("owned call operand has no local storage".into());
                 }
-                values.push(crate::kernel::program_expression::variable(name));
+                values.push(crate::kernel::program_expression::variable(
+                    self.binding(&name),
+                ));
                 pieces.push((checks, values, None));
                 continue;
             }
             if let Type::ByteSlice { mutable } = value_type {
                 let (pointer, length) = self.slice_parts(argument)?;
-                let (capture_pointer, pointer_name) = self.capture_operand(
+                let (capture_pointer, pointer) = self.capture_operand(
                     pointer,
                     &Type::Reference {
                         mutable,
                         pointee: Box::new(Type::U8),
                     },
                 )?;
-                let (capture_length, length_name) = self.capture_operand(length, &Type::Usize)?;
+                let (capture_length, length) = self.capture_operand(length, &Type::Usize)?;
                 checks = program_seq(checks, program_seq(capture_pointer, capture_length));
-                values.extend([
-                    crate::kernel::program_expression::variable(pointer_name),
-                    crate::kernel::program_expression::variable(length_name),
-                ]);
+                values.extend([pointer, length]);
                 pieces.push((checks, values, None));
                 continue;
             }
@@ -1577,19 +1787,16 @@ impl Context<'_> {
                 if actual != scalar_type(element)?.to_kernel_type() {
                     return Err("Rust scalar slice call element mismatch".into());
                 }
-                let (capture_pointer, pointer_name) = self.capture_operand(
+                let (capture_pointer, pointer) = self.capture_operand(
                     pointer,
                     &Type::Reference {
                         mutable: *mutable,
                         pointee: element.clone(),
                     },
                 )?;
-                let (capture_length, length_name) = self.capture_operand(length, &Type::Usize)?;
+                let (capture_length, length) = self.capture_operand(length, &Type::Usize)?;
                 checks = program_seq(checks, program_seq(capture_pointer, capture_length));
-                values.extend([
-                    crate::kernel::program_expression::variable(pointer_name),
-                    crate::kernel::program_expression::variable(length_name),
-                ]);
+                values.extend([pointer, length]);
                 pieces.push((checks, values, None));
                 continue;
             }
@@ -1611,25 +1818,27 @@ impl Context<'_> {
             values.extend(passed);
             if let Some((value, value_type)) = scalar {
                 let reference = matches!(value_type, Type::Reference { .. });
-                let (capture, value) = if stable && !reference && direct_operand(&value) {
-                    let interface_type = scalar_type(&value_type)?.to_kernel_type();
-                    (
-                        program_skip(),
-                        crate::kernel::program_expression::cast(value, interface_type),
-                    )
-                } else if stable && reference && borrowed_local(&value) {
-                    // A borrow of a local, or a reference a local holds, is
-                    // read once, by the call, so its view is formed there.
-                    let interface_type = scalar_type(&value_type)?.to_kernel_type();
-                    let constant = matches!(value_type, Type::Reference { mutable: false, .. });
-                    (
-                        program_skip(),
-                        reference_view(value, interface_type, false, constant),
-                    )
-                } else {
-                    let (capture, name) = self.capture_operand(value, &value_type)?;
-                    (capture, crate::kernel::program_expression::variable(name))
-                };
+                let (capture, value) =
+                    if !reference && matches!(value, ProgramExpression::StepResult { .. }) {
+                        (program_skip(), value)
+                    } else if stable && !reference && direct_operand(&value) {
+                        let interface_type = scalar_type(&value_type)?.to_kernel_type();
+                        (
+                            program_skip(),
+                            crate::kernel::program_expression::cast(value, interface_type),
+                        )
+                    } else if stable && reference && borrowed_local(&value) {
+                        // A borrow of a local, or a reference a local holds, is
+                        // read once, by the call, so its view is formed there.
+                        let interface_type = scalar_type(&value_type)?.to_kernel_type();
+                        let constant = matches!(value_type, Type::Reference { mutable: false, .. });
+                        (
+                            program_skip(),
+                            reference_view(value, interface_type, false, constant),
+                        )
+                    } else {
+                        self.capture_operand(value, &value_type)?
+                    };
                 checks = program_seq(checks, capture);
                 values.push(value);
             }
@@ -1637,83 +1846,53 @@ impl Context<'_> {
         Ok((checks, values))
     }
 
-    /// A fresh local name for a value the lowering introduces.
-    fn fresh_temporary(&mut self) -> Result<String, String> {
-        loop {
-            let name = format!("__rust_checked_{}", self.next_temporary);
-            self.next_temporary = self
-                .next_temporary
-                .checked_add(1)
-                .ok_or("Rust temporary identity exhausted")?;
-            if self.locals.insert(name.clone()) {
-                return Ok(name);
-            }
-        }
-    }
-    /// The operand `source`, prepared as `value` at `value_type`, read once:
-    /// the statement that captures it, the value its guards read, and the
-    /// operand its operator reads. A local or a literal is its own short
-    /// name, so where nothing between its read and its use can change it
-    /// (`stable`) it is used where it is read. Any other value is captured
-    /// in a fresh local first, so its guards and its use name it rather than
-    /// repeat it.
+    /// Stage an operand if a later expression could change it or reading it
+    /// involves work. A guard observes the result and its final use ends it.
     fn read_operand(
-        &mut self,
-        source: &E,
+        &self,
         value: ProgramExpression,
         value_type: &Type,
         stable: bool,
-    ) -> Result<(ProgramStatement, ProgramExpression, E), String> {
+    ) -> Result<(ProgramStatement, ProgramExpression, ProgramExpression), String> {
+        if !matches!(value_type, Type::Reference { .. })
+            && matches!(value, ProgramExpression::StepResult { .. })
+        {
+            return Ok((program_skip(), observe_operand(value.clone()), value));
+        }
         if stable && !matches!(value_type, Type::Reference { .. }) && direct_operand(&value) {
             let interface_type = scalar_type(value_type)?.to_kernel_type();
-            return Ok((
-                program_skip(),
-                crate::kernel::program_expression::cast(value, interface_type),
-                source.clone(),
-            ));
+            let guard = crate::kernel::program_expression::cast(value.clone(), interface_type);
+            return Ok((program_skip(), guard, value));
         }
-        let (capture, name) = self.capture_operand(value, value_type)?;
-        Ok((
-            capture,
-            crate::kernel::program_expression::variable(&name),
-            E::Local { name },
-        ))
+        let (capture, result) = self.capture_operand(value, value_type)?;
+        Ok((capture, observe_operand(result.clone()), result))
     }
 
     fn capture_operand(
-        &mut self,
+        &self,
         value: ProgramExpression,
         value_type: &Type,
-    ) -> Result<(ProgramStatement, String), String> {
-        let name = self.fresh_temporary()?;
+    ) -> Result<(ProgramStatement, ProgramExpression), String> {
+        let step = self.result_step();
         let interface_type = scalar_type(value_type)?.to_kernel_type();
         let constant = matches!(value_type, Type::Reference { mutable: false, .. });
-        let value = if matches!(value_type, Type::Reference { .. }) {
+        let expression = if matches!(value_type, Type::Reference { .. }) {
             reference_view(value, interface_type, false, constant)
         } else {
             crate::kernel::program_expression::cast(value, interface_type)
         };
         Ok((
-            program_seq(
-                program_declare_with_all_qualifiers(
-                    &name,
-                    interface_type,
-                    false,
-                    false,
-                    false,
-                    constant,
-                ),
-                program_assign(&name, value),
-            ),
-            name,
+            typed_value_step(vec![step], expression, interface_type, constant),
+            ProgramExpression::StepResult {
+                step,
+                origin: crate::kernel::StepOrigin::Value("Rust operand"),
+                ends: true,
+            },
         ))
     }
 
-    // Read each operand once, in source order. A local or a literal is read
-    // where it is used; any other operand is captured in a local first, so
-    // guards name it rather than duplicate an arbitrarily large expression
-    // tree. The generated asserts are checked execution obligations, not
-    // assumptions.
+    // Read operands once, in source order. Generated asserts are checked
+    // execution obligations. The operator uses the same retained operands.
     fn prepared_expr(&mut self, e: &E) -> Result<(ProgramStatement, ProgramExpression), String> {
         match e {
             E::EnumerateOptionIndex { option } => self.enumerate_option_index(option),
@@ -1723,10 +1902,14 @@ impl Context<'_> {
                 }
                 Ok((
                     program_assert(crate::kernel::program_expression::equal(
-                        crate::kernel::program_expression::variable(format!("{option}_some")),
+                        crate::kernel::program_expression::variable(
+                            self.binding(&format!("{option}_some")),
+                        ),
                         crate::kernel::program_expression::int32_literal(1),
                     )),
-                    crate::kernel::program_expression::variable(format!("{option}_pointer")),
+                    crate::kernel::program_expression::variable(
+                        self.binding(&format!("{option}_pointer")),
+                    ),
                 ))
             }
             E::Call {
@@ -1740,17 +1923,20 @@ impl Context<'_> {
                     .return_type
                     .clone();
                 let (prefix, arguments) = self.prepared_arguments(function, arguments)?;
-                let (declare, name) = self.capture_operand(
-                    crate::kernel::program_expression::int32_literal(0),
-                    &return_type,
-                )?;
-                Ok((
-                    program_seq(
-                        prefix,
-                        program_seq(declare, self.call_then_assign(&name, function, arguments)),
-                    ),
-                    crate::kernel::program_expression::variable(name),
-                ))
+                let (mut call, result) = self.call_value(function, arguments);
+                let value_type = scalar_type(&return_type)?.to_kernel_type();
+                let ProgramStatement::CallResult {
+                    result_type,
+                    result_pointee_constant,
+                    ..
+                } = &mut call
+                else {
+                    unreachable!("a value-producing call");
+                };
+                *result_type = Some(value_type);
+                *result_pointee_constant =
+                    matches!(return_type, Type::Reference { mutable: false, .. });
+                Ok((program_seq(prefix, call), result))
             }
             E::Index { .. } => {
                 let (checks, pointer) = self.prepared_address(e)?;
@@ -1796,29 +1982,35 @@ impl Context<'_> {
             } => {
                 let (left_prefix, left_value) = self.prepared_expr(left)?;
                 if operator == "and" || operator == "or" {
-                    let (left_capture, left_name) = self.capture_operand(left_value, left_type)?;
-                    let prefix = program_seq(left_prefix, left_capture);
                     if *left_type != Type::Bool || *right_type != Type::Bool {
                         return Err("Rust logical operators require bool operands".into());
                     }
+                    let step = self.result_step();
                     let (right_prefix, right_value) = self.prepared_expr(right)?;
-                    let condition = if operator == "and" {
-                        crate::kernel::program_expression::variable(&left_name)
-                    } else {
-                        crate::kernel::program_expression::not(
-                            crate::kernel::program_expression::variable(&left_name),
-                        )
-                    };
-                    let update = program_seq(
+                    let right = program_seq(
                         right_prefix,
-                        program_assign(
-                            &left_name,
-                            crate::kernel::program_expression::cast(right_value, ProgramType::Bool),
-                        ),
+                        typed_value_step(vec![step], right_value, ProgramType::Bool, false),
                     );
+                    let skipped_value = ProgramExpression::Value(crate::kernel::bool_value(
+                        u32::from(operator == "or"),
+                    ));
+                    let skipped =
+                        typed_value_step(vec![step], skipped_value, ProgramType::Bool, false);
+                    let (kind, yes, no) = if operator == "and" {
+                        (OperatorKind::And, right, skipped)
+                    } else {
+                        (OperatorKind::Or, skipped, right)
+                    };
                     return Ok((
-                        program_seq(prefix, program_if(condition, update, program_skip())),
-                        crate::kernel::program_expression::variable(left_name),
+                        program_seq(
+                            left_prefix,
+                            program_if(branch_condition(left_value), yes, no),
+                        ),
+                        ProgramExpression::StepResult {
+                            step,
+                            origin: StepOrigin::Operator(kind),
+                            ends: true,
+                        },
                     ));
                 }
                 let (right_prefix, right_value) = self.prepared_expr(right)?;
@@ -1826,13 +2018,12 @@ impl Context<'_> {
                 // so it is used where it is read only when that work has no
                 // effect that could change it.
                 let (left_capture, left_operand, left_read) = self.read_operand(
-                    left,
                     left_value,
                     left_type,
                     no_effect(&left_prefix) && no_effect(&right_prefix),
                 )?;
                 let (right_capture, right_operand, right_read) =
-                    self.read_operand(right, right_value, right_type, no_effect(&right_prefix))?;
+                    self.read_operand(right_value, right_type, no_effect(&right_prefix))?;
                 let mut prefix = program_seq(
                     program_seq(left_prefix, left_capture),
                     program_seq(right_prefix, right_capture),
@@ -2046,14 +2237,10 @@ impl Context<'_> {
                         );
                     }
                 }
-                let expression = E::Binary {
-                    operator: operator.clone(),
-                    left_type: left_type.clone(),
-                    right_type: right_type.clone(),
-                    left: Box::new(left_read),
-                    right: Box::new(right_read),
-                };
-                Ok((prefix, self.expr(&expression)?))
+                Ok((
+                    prefix,
+                    binary_value(operator, left_type, right_type, left_read, right_read)?,
+                ))
             }
             E::Not { value }
             | E::BitwiseNot { value, .. }
@@ -2082,14 +2269,27 @@ impl Context<'_> {
             _ => Ok((program_skip(), self.expr(e)?)),
         }
     }
+    /// Whether `slice` is a shared byte slice whose parts never change while
+    /// it is read: a shared slice local, a shared borrow of one, or a shared
+    /// slice of an array.
+    pub(super) fn shared_byte_slice(&self, slice: &E) -> bool {
+        match slice {
+            E::ArrayToSlice { mutable: false, .. } => true,
+            slice => shared_slice_local(slice)
+                .is_some_and(|name| self.slices.get(name).is_some_and(|(_, constant)| *constant)),
+        }
+    }
+
     fn slice_parts(&mut self, e: &E) -> Result<(ProgramExpression, ProgramExpression), String> {
         if let E::ChunkOptionSlice { option } = e {
             if !self.chunk_options.contains(option) {
                 return Err("unknown chunk Option".into());
             }
             return Ok((
-                crate::kernel::program_expression::variable(format!("{option}_pointer")),
-                crate::kernel::program_expression::variable(format!("{option}_len")),
+                crate::kernel::program_expression::variable(
+                    self.binding(&format!("{option}_pointer")),
+                ),
+                crate::kernel::program_expression::variable(self.binding(&format!("{option}_len"))),
             ));
         }
         if let E::Borrow {
@@ -2110,8 +2310,12 @@ impl Context<'_> {
                 return Err("unknown Rust chunk iterator".into());
             }
             return Ok((
-                crate::kernel::program_expression::variable(format!("{iterator}_rem")),
-                crate::kernel::program_expression::variable(format!("{iterator}_rem_len")),
+                crate::kernel::program_expression::variable(
+                    self.binding(&format!("{iterator}_rem")),
+                ),
+                crate::kernel::program_expression::variable(
+                    self.binding(&format!("{iterator}_rem_len")),
+                ),
             ));
         }
         if let E::ArrayToSlice { array, mutable } = e {
@@ -2133,8 +2337,8 @@ impl Context<'_> {
             .get(name)
             .ok_or("unknown Rust slice reference")?;
         Ok((
-            crate::kernel::program_expression::variable(name),
-            crate::kernel::program_expression::variable(length),
+            crate::kernel::program_expression::variable(self.binding(&name)),
+            crate::kernel::program_expression::variable(self.binding(&length)),
         ))
     }
     fn array_source_is_constant(&self, e: &E) -> Result<bool, String> {
@@ -2183,8 +2387,8 @@ impl Context<'_> {
             E::Local { name } if self.shared_scalar_slices.contains_key(name) => {
                 let (length, element) = self.shared_scalar_slices[name].clone();
                 Ok((
-                    crate::kernel::program_expression::variable(name),
-                    crate::kernel::program_expression::variable(length),
+                    crate::kernel::program_expression::variable(self.binding(&name)),
+                    crate::kernel::program_expression::variable(self.binding(&length)),
                     element,
                 ))
             }
@@ -2236,7 +2440,7 @@ impl Context<'_> {
             _ => return Err("unsupported fixed array element".into()),
         };
         Ok(reference_view(
-            crate::kernel::program_expression::variable(name),
+            crate::kernel::program_expression::variable(self.binding(&name)),
             pointer_type,
             false,
             *constant,
@@ -2246,8 +2450,7 @@ impl Context<'_> {
         if let E::Index { slice, index } = e {
             let (pointer, length, _) = self.indexed_parts(slice)?;
             let (checks, value) = self.prepared_expr(index)?;
-            let (capture, name) = self.capture_operand(value, &Type::Usize)?;
-            let index = crate::kernel::program_expression::variable(name);
+            let (capture, index) = self.capture_operand(value, &Type::Usize)?;
             // The index keeps its own type, as the contract's place does.
             let offset = index.clone();
             return Ok((
@@ -2256,7 +2459,10 @@ impl Context<'_> {
                     program_seq(
                         capture,
                         program_labeled_assert(
-                            crate::kernel::program_expression::less_than(index.clone(), length),
+                            crate::kernel::program_expression::less_than(
+                                observe_operand(index.clone()),
+                                length,
+                            ),
                             if matches!(slice.as_ref(), E::Local { name }
                                 if self.slices.contains_key(name)
                                     || self.shared_scalar_slices.contains_key(name))
@@ -2297,13 +2503,13 @@ impl Context<'_> {
             }
             E::Local { name } if self.owned_locals.contains(name) => {
                 Ok(crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(name),
+                    crate::kernel::program_expression::variable(self.binding(&name)),
                     ProgramType::Int32Pointer,
                 ))
             }
             E::Local { name } if self.addressable_locals.contains(name) => {
                 Ok(ProgramExpression::AddressOf(Box::new(
-                    crate::kernel::program_expression::variable(name),
+                    crate::kernel::program_expression::variable(self.binding(&name)),
                 )))
             }
             E::Local { name } if self.memory_values.contains_key(name) => {
@@ -2313,7 +2519,7 @@ impl Context<'_> {
                     );
                 };
                 Ok(crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(name),
+                    crate::kernel::program_expression::variable(self.binding(&name)),
                     ProgramType::ParameterPointer(value_type),
                 ))
             }
@@ -2354,9 +2560,9 @@ impl Context<'_> {
                 if !self.shared_array_options.contains_key(option) {
                     return Err("unknown shared iterator Option".into());
                 }
-                Ok(crate::kernel::program_expression::variable(format!(
-                    "{option}_some"
-                )))
+                Ok(crate::kernel::program_expression::variable(
+                    self.binding(&format!("{option}_some")),
+                ))
             }
             E::SharedArrayOptionElement { .. } => {
                 Err("shared Option payload requires checked preparation".into())
@@ -2369,9 +2575,9 @@ impl Context<'_> {
                 if !self.chunk_options.contains(option) {
                     return Err("unknown chunk Option".into());
                 }
-                Ok(crate::kernel::program_expression::variable(format!(
-                    "{option}_some"
-                )))
+                Ok(crate::kernel::program_expression::variable(
+                    self.binding(&format!("{option}_some")),
+                ))
             }
             E::VariantIs { value, variant } => Ok(ProgramExpression::EnumIs {
                 value: Box::new(self.expr(value)?),
@@ -2502,7 +2708,9 @@ impl Context<'_> {
                 if !self.locals.contains(name) {
                     return Err(format!("unknown Rust local `{name}`"));
                 }
-                Ok(crate::kernel::program_expression::variable(name))
+                Ok(crate::kernel::program_expression::variable(
+                    self.binding(&name),
+                ))
             }
             E::Not { value } => Ok(crate::kernel::program_expression::bool_value(
                 crate::kernel::program_expression::not(self.expr(value)?),
@@ -2567,122 +2775,9 @@ impl Context<'_> {
                 left,
                 right,
             } => {
-                let mut l = self.expr(left)?;
-                let r = self.expr(right)?;
-                // A Rust comparison of two 8- or 16-bit values is native
-                // at their type (`design/machine-integers.md`, Decisions
-                // 2026-11-01): its operands keep their width, and the `bool`
-                // value below reads the comparison at it.
-                let narrow = matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16);
-                let narrow_comparison =
-                    narrow && matches!(operator.as_str(), "eq" | "ne" | "lt" | "le" | "gt" | "ge");
-                // Rust `+ - * & | ^ <<` on 8- or 16-bit values are the
-                // operators of that type (decision G4): native nodes over the
-                // operands as written. A checked operator's overflow panic is
-                // its own assertion (`prepared_expr`). A native shift's count
-                // is a 32-bit word; a count of another width keeps the
-                // promoted shift.
-                let narrow_native = narrow
-                    && (matches!(
-                        operator.as_str(),
-                        "add" | "sub" | "mul" | "bit_and" | "bit_or" | "bit_xor"
-                    ) || (operator == "shl" && right_type.integer_bits() == Some(32)));
-                // Keep the RHS at its source width. The shared shift evaluator
-                // checks signed/nonnegative and full-width upper bounds before
-                // forming its word-sized shift term. Narrowing here would lose
-                // the exact relation to Rust's already checked count.
-                if narrow && !narrow_comparison && !narrow_native {
-                    // Rust narrow `/ % >>` are still a 32-bit operation and
-                    // a cast back (decision G4).
-                    crate::kernel::machine_integer::format_audit::record(
-                        crate::kernel::machine_integer::format_audit::WordIdentity::PromotedNarrowArithmetic,
-                        std::panic::Location::caller(),
-                    );
-                }
-                if narrow_comparison || narrow_native {
-                } else if matches!(left_type, Type::U8 | Type::U16) {
-                    // Narrow unsigned remainder fits in signed int, matching
-                    // the promotion used by its contract expression. Other
-                    // operations keep unsigned words (notably u16 multiply).
-                    l = crate::kernel::program_expression::cast(
-                        l,
-                        if operator == "rem" {
-                            ProgramType::Int32
-                        } else {
-                            ProgramType::UInt32
-                        },
-                    );
-                } else if left_type.is_signed_integer() && operator == "shl" {
-                    // A signed left shift wraps in Rust and may be undefined
-                    // in C: shift the bits as an unsigned word of at least
-                    // the operand's width, then reinterpret them at the
-                    // operand's width below.
-                    l = crate::kernel::program_expression::cast(
-                        l,
-                        if left_type.integer_bits() == Some(64) {
-                            ProgramType::UInt64
-                        } else {
-                            ProgramType::UInt32
-                        },
-                    );
-                } else if matches!(left_type, Type::I8 | Type::I16) {
-                    l = crate::kernel::program_expression::cast(l, ProgramType::Int32);
-                }
-                let result = match operator.as_str() {
-                    "add" => crate::kernel::program_expression::add(l, r),
-                    "sub" => crate::kernel::program_expression::subtract(l, r),
-                    "mul" => crate::kernel::program_expression::multiply(l, r),
-                    "div" => crate::kernel::program_expression::divide(l, r),
-                    "rem" => crate::kernel::program_expression::remainder(l, r),
-                    "shl" => crate::kernel::program_expression::shift_left(l, r),
-                    "shr" => crate::kernel::program_expression::shift_right(l, r),
-                    "bit_and" => crate::kernel::program_expression::bitwise_and(l, r),
-                    "bit_or" => crate::kernel::program_expression::bitwise_or(l, r),
-                    "bit_xor" => crate::kernel::program_expression::bitwise_xor(l, r),
-                    "eq" => crate::kernel::program_expression::equal(l, r),
-                    "ne" => crate::kernel::program_expression::not_equal(l, r),
-                    "lt" => crate::kernel::program_expression::less_than(l, r),
-                    "le" => crate::kernel::program_expression::less_equal(l, r),
-                    "gt" => crate::kernel::program_expression::greater_than(l, r),
-                    "ge" => crate::kernel::program_expression::greater_equal(l, r),
-                    "and" => crate::kernel::program_expression::and(l, r),
-                    "or" => crate::kernel::program_expression::or(l, r),
-                    _ => return Err("unsupported Rust operator in artifact".into()),
-                };
-                if matches!(
-                    operator.as_str(),
-                    "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "and" | "or"
-                ) {
-                    // A Rust comparison or connective is a `bool` value: the
-                    // condition itself, with no path split (Stage 5, D5).
-                    Ok(crate::kernel::program_expression::bool_value(result))
-                } else if narrow_native {
-                    Ok(crate::kernel::program_expression::narrow_arithmetic(
-                        result,
-                        scalar_type(left_type)?.to_kernel_type(),
-                    ))
-                } else if narrow && matches!(operator.as_str(), "div" | "rem") {
-                    // Checked narrow arithmetic cannot discard bits. Its range
-                    // obligation permits an exact coercion; only casts,
-                    // bitwise results and shifts need explicit truncation.
-                    // Convert from the operation's promoted type: `int32` for
-                    // signed arithmetic and narrow unsigned remainder,
-                    // `uint32` for the other unsigned operations.
-                    let computed = if matches!(left_type, Type::U8 | Type::U16) {
-                        result
-                    } else {
-                        crate::kernel::program_expression::cast(result, ProgramType::Int32)
-                    };
-                    Ok(crate::kernel::program_expression::cast(
-                        computed,
-                        scalar_type(left_type)?.to_kernel_type(),
-                    ))
-                } else {
-                    Ok(rust_scalar_cast(
-                        result,
-                        scalar_type(left_type)?.to_kernel_type(),
-                    ))
-                }
+                let left = self.expr(left)?;
+                let right = self.expr(right)?;
+                binary_value(operator, left_type, right_type, left, right)
             }
             E::Call { .. } => Err("nested Rust calls outside statement lowering".into()),
             E::ClosureInstance { .. } => {

@@ -357,7 +357,7 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
 #[test]
 fn retained_load_terms_grow_without_rewalking_states_or_prior_arithmetic() {
     for unrelated in [0, 128, 512] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..unrelated {
             memory = memory.with_block(format!("unrelated-read-{index}"), 4);
         }
@@ -371,7 +371,7 @@ fn retained_load_terms_grow_without_rewalking_states_or_prior_arithmetic() {
                 for index in 0..size {
                     let read = MachineTerm::MemoryLoad(
                         ProgramPoint::at(&memory),
-                        Box::new(Pointer::symbolic(Variable(993201 + index))),
+                        Box::new(Address::symbolic(Variable(993201 + index))),
                         LoadKind::Int32,
                     );
                     let leaf =
@@ -402,17 +402,17 @@ fn retained_load_terms_grow_without_rewalking_states_or_prior_arithmetic() {
 fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
     let _session = crate::kernel::VerificationSession::enter();
     for size in [16, 64, 256] {
-        let mut offset = PointerOffsetTerm::Variable(Variable(993500));
+        let mut offset = AddressOffset::Variable(Variable(993500));
         for index in 0..size {
-            offset = PointerOffsetTerm::Add(
+            offset = AddressOffset::Add(
                 Box::new(offset),
-                Box::new(PointerOffsetTerm::Variable(Variable(993501 + index))),
+                Box::new(AddressOffset::Variable(Variable(993501 + index))),
             );
         }
         let raw = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
-            Box::new(Pointer {
-                block: PointerBlock::Symbolic(Variable(993499)),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
+            Box::new(Address {
+                base: AddressBase::Symbolic(Variable(993499)),
                 offset,
             }),
             LoadKind::Int32,
@@ -442,8 +442,8 @@ fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let raw = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
-            Box::new(Pointer::symbolic(Variable(994110))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
+            Box::new(Address::symbolic(Variable(994110))),
             LoadKind::Int32,
         );
         let leaf = KernelTermImport::default().machine(MachineIntegerType::Int32, &raw);
@@ -482,10 +482,10 @@ fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
 fn nested_read_address_import_is_linear_beside_unrelated_memory() {
     for unrelated in [0, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..unrelated {
             memory = memory.store(
-                Pointer::symbolic(Variable(997000 + index)),
+                Address::symbolic(Variable(997000 + index)),
                 ProgramValue::Int32(MachineTerm::constant(index as u32)),
             );
         }
@@ -495,9 +495,9 @@ fn nested_read_address_import_is_linear_beside_unrelated_memory() {
             for _ in 0..depth {
                 raw = MachineTerm::MemoryLoad(
                     ProgramPoint::at(&memory),
-                    Box::new(Pointer {
-                        block: PointerBlock::Symbolic(Variable(996999)),
-                        offset: PointerOffsetTerm::scaled_int32_node(raw, 4),
+                    Box::new(Address {
+                        base: AddressBase::Symbolic(Variable(996999)),
+                        offset: AddressOffset::scaled_int32_node(raw, 4),
                     }),
                     LoadKind::Int32,
                 );
@@ -566,16 +566,16 @@ fn shared_read_descriptor_identity_does_not_expand_offset_dags() {
                 )
             })
             .collect::<Vec<_>>();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         for size in [16, 64, 256] {
-            let mut offset = KernelPointerOffset::Constant(0).into_shared().unwrap();
+            let mut offset = KernelAddressOffset::Constant(0).into_shared().unwrap();
             for _ in 0..size {
-                offset = KernelPointerOffset::Add([offset.clone(), offset])
+                offset = KernelAddressOffset::Add([offset.clone(), offset])
                     .into_shared()
                     .unwrap();
             }
-            let address = SharedPointerAddress::new(
-                SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(1017100))),
+            let address = SharedAddress::new(
+                SharedAddressBase::import(&AddressBase::Symbolic(Variable(1017100))),
                 offset,
             );
             let exports = KernelTermExport::machine_export_count();
@@ -583,13 +583,13 @@ fn shared_read_descriptor_identity_does_not_expand_offset_dags() {
                 crate::instrumentation::measure_deterministic_work(|| {
                     let first = KernelTerm::shared_scalar_read_descriptor(
                         MachineIntegerType::Int32,
-                        &memory,
+                        &crate::kernel::ProgramPoint::at(&memory),
                         &address,
                         LoadKind::Int32,
                     );
                     let second = KernelTerm::shared_scalar_read_descriptor(
                         MachineIntegerType::Int32,
-                        &memory,
+                        &crate::kernel::ProgramPoint::at(&memory),
                         &address,
                         LoadKind::Int32,
                     );
@@ -623,18 +623,18 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
                 [index.clone(), index],
             );
         }
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("shared-read-hot".into()),
-            offset: PointerOffsetTerm::Int32Scaled {
+        let pointer = Address {
+            base: AddressBase::Concrete("shared-read-hot".into()),
+            offset: AddressOffset::Int32Scaled {
                 value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, index)
                     .unwrap(),
                 byte_width: 4,
             },
         };
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let retained = KernelTerm::scalar_read_descriptor(
             MachineIntegerType::Int32,
-            &memory,
+            &crate::kernel::ProgramPoint::at(&memory),
             &pointer,
             LoadKind::Int32,
         )
@@ -642,7 +642,7 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
         for unrelated in [0, 128, 512] {
             let _unrelated = (0..unrelated)
                 .map(|n| {
-                    KernelPointerOffset::Variable(Variable(1017901 + n))
+                    KernelAddressOffset::Variable(Variable(1017901 + n))
                         .into_shared()
                         .unwrap()
                 })
@@ -651,7 +651,7 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
             let (again, work) = crate::instrumentation::measure_deterministic_work(|| {
                 KernelTerm::scalar_read_descriptor(
                     MachineIntegerType::Int32,
-                    &memory,
+                    &crate::kernel::ProgramPoint::at(&memory),
                     &pointer,
                     LoadKind::Int32,
                 )
@@ -669,33 +669,40 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
 fn pointer_read_roots_and_handoffs_do_not_expand_defining_address_dags() {
     let _session = crate::kernel::VerificationSession::enter();
     for unrelated in [0, 128, 512] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for n in 0..unrelated {
             memory = memory.with_block(format!("pointer-read-unrelated-{n}"), 8);
         }
         let memory = intern_memory(memory);
-        let value = SharedPointerValue::import(&PointerValue::new(
-            Pointer::symbolic(Variable(1018100)),
+        let value = SharedPointer::import(&Pointer::new(
+            Address::symbolic(Variable(1018100)),
             ProgramType::Int32Pointer,
         ));
         for size in [16, 64, 256] {
-            let mut offset = KernelPointerOffset::Constant(0).into_shared().unwrap();
+            let mut offset = KernelAddressOffset::Constant(0).into_shared().unwrap();
             for _ in 0..size {
-                offset = KernelPointerOffset::Add([offset.clone(), offset])
+                offset = KernelAddressOffset::Add([offset.clone(), offset])
                     .into_shared()
                     .unwrap();
             }
-            let address = SharedPointerAddress::new(
-                SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(1018101))),
+            let address = SharedAddress::new(
+                SharedAddressBase::import(&AddressBase::Symbolic(Variable(1018101))),
                 offset,
             );
             let exports = KernelTermExport::machine_export_count();
             let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let root =
-                    KernelTerm::shared_pointer_read(value.clone(), memory.clone(), address.clone());
+                let root = KernelTerm::shared_pointer_read(
+                    value.clone(),
+                    crate::kernel::ProgramPoint::at(&memory),
+                    address.clone(),
+                );
                 assert_eq!(
                     root,
-                    KernelTerm::shared_pointer_read(value.clone(), memory.clone(), address.clone())
+                    KernelTerm::shared_pointer_read(
+                        value.clone(),
+                        crate::kernel::ProgramPoint::at(&memory),
+                        address.clone()
+                    )
                 );
                 let mut carried = crate::kernel::ExecutionValue::from(root.clone());
                 for _ in 0..32 {
@@ -717,28 +724,27 @@ fn formed_pointer_roots_keep_prepared_displacement_dags() {
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)
             .map(|n| {
-                KernelTerm::shared_pointer_value(SharedPointerValue::import(&PointerValue::new(
-                    Pointer::symbolic(Variable(1022100 + n)),
+                KernelTerm::shared_pointer_value(SharedPointer::import(&Pointer::new(
+                    Address::symbolic(Variable(1022100 + n)),
                     ProgramType::Int32Pointer,
                 )))
             })
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let mut offset = KernelPointerOffset::Constant(0).into_shared().unwrap();
+            let mut offset = KernelAddressOffset::Constant(0).into_shared().unwrap();
             for _ in 0..size {
-                offset = KernelPointerOffset::Add([offset.clone(), offset])
+                offset = KernelAddressOffset::Add([offset.clone(), offset])
                     .into_shared()
                     .unwrap();
             }
-            let source = SharedPointerValue::import(&PointerValue::new(
-                Pointer::symbolic(Variable(1022700)),
+            let source = SharedPointer::import(&Pointer::new(
+                Address::symbolic(Variable(1022700)),
                 ProgramType::Int32Pointer,
             ));
             let mut payload = source.node().clone();
-            payload.address =
-                SharedPointerAddress::new(payload.address.node().block.clone(), offset);
+            payload.address = SharedAddress::new(payload.address.node().base.clone(), offset);
             payload.provenance = payload.address.clone();
-            let payload = SharedPointerValue::new(payload);
+            let payload = SharedPointer::new(payload);
             let exports = KernelTermExport::machine_export_count();
             let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let root = KernelTerm::shared_pointer_value(payload.clone());
@@ -760,8 +766,8 @@ fn formed_pointer_roots_keep_prepared_displacement_dags() {
 #[test]
 fn pointer_arithmetic_roots_retain_operand_and_result_dags() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = SharedPointerValue::import(&PointerValue::new(
-        Pointer::symbolic(Variable(1023100)),
+    let base = SharedPointer::import(&Pointer::new(
+        Address::symbolic(Variable(1023100)),
         ProgramType::Int32Pointer,
     ));
     let base_root = KernelTerm::shared_pointer_value(base.clone());
@@ -785,16 +791,16 @@ fn pointer_arithmetic_roots_retain_operand_and_result_dags() {
                 );
             }
             let mut payload = base.node().clone();
-            payload.address = SharedPointerAddress::new(
-                payload.address.node().block.clone(),
-                KernelPointerOffset::Int32Scaled {
+            payload.address = SharedAddress::new(
+                payload.address.node().base.clone(),
+                KernelAddressOffset::Int32Scaled {
                     value: index.clone(),
                     byte_width: 4,
                 }
                 .into_shared()
                 .unwrap(),
             );
-            let payload = SharedPointerValue::new(payload);
+            let payload = SharedPointer::new(payload);
             let exports = KernelTermExport::machine_export_count();
             let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let operands = [base_root.clone(), index.clone()];
@@ -834,8 +840,8 @@ fn pointer_arithmetic_roots_retain_operand_and_result_dags() {
 #[test]
 fn pointer_numeric_observations_retain_prepared_dags_without_export() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = SharedPointerValue::import(&PointerValue::new(
-        Pointer::symbolic(Variable(1024200)),
+    let pointer = SharedPointer::import(&Pointer::new(
+        Address::symbolic(Variable(1024200)),
         ProgramType::Int32Pointer,
     ));
     for unrelated in [0, 128, 512] {
@@ -857,9 +863,9 @@ fn pointer_numeric_observations_retain_prepared_dags_without_export() {
                     [index.clone(), index],
                 );
             }
-            let address = SharedPointerAddress::new(
-                pointer.node().address.node().block.clone(),
-                KernelPointerOffset::Int32Scaled {
+            let address = SharedAddress::new(
+                pointer.node().address.node().base.clone(),
+                KernelAddressOffset::Int32Scaled {
                     value: index,
                     byte_width: 4,
                 }
@@ -875,7 +881,7 @@ fn pointer_numeric_observations_retain_prepared_dags_without_export() {
                 )
             });
             assert!(
-                matches!(numeric.node(), KernelTermNode::PointerAddress { address: a, .. } if a == &address)
+                matches!(numeric.node(), KernelTermNode::IntegerAddress { address: a, .. } if a == &address)
             );
             assert!(numeric.0.machine_leaf.0.get().is_none());
             assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -887,11 +893,11 @@ fn pointer_numeric_observations_retain_prepared_dags_without_export() {
 #[test]
 fn pointer_call_handoffs_retain_prepared_argument_dags() {
     let _session = crate::kernel::VerificationSession::enter();
-    let value = SharedPointerValue::import(&PointerValue::new(
-        Pointer::symbolic(Variable(1025200)),
+    let value = SharedPointer::import(&Pointer::new(
+        Address::symbolic(Variable(1025200)),
         ProgramType::Int32Pointer,
     ));
-    let memory = intern_memory(Memory::new());
+    let memory = intern_memory(SymbolicMemory::new());
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)
             .map(|n| KernelTerm::variable(KernelType::Integer, Variable(1025201 + n)))
@@ -926,7 +932,11 @@ fn pointer_call_handoffs_retain_prepared_argument_dags() {
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert!(work <= 48, "size={size} unrelated={unrelated} work={work}");
             let (reference, work) = crate::instrumentation::measure_deterministic_work(|| {
-                KernelTerm::shared_array_reference(memory.clone(), root.clone(), ProgramType::Int32)
+                KernelTerm::shared_array_reference(
+                    crate::kernel::ProgramPoint::at(&memory),
+                    root.clone(),
+                    ProgramType::Int32,
+                )
             });
             let KernelTermNode::ArrayReference { pointer, .. } = reference.node() else {
                 panic!("array argument")
@@ -1025,11 +1035,12 @@ fn growing_common_boolean_comparisons_keep_operands_shared() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let read = |block: &str| {
-            let memory =
-                crate::kernel::intern_memory(crate::kernel::Memory::new().with_block(block, 16));
-            let pointer = crate::kernel::Pointer {
-                block: block.into(),
-                offset: crate::kernel::PointerOffsetTerm::Constant(0),
+            let memory = crate::kernel::intern_memory(
+                crate::kernel::SymbolicMemory::new().with_block(block, 16),
+            );
+            let pointer = crate::kernel::Address {
+                base: block.into(),
+                offset: crate::kernel::AddressOffset::Constant(0),
             };
             KernelTermImport::default().machine(
                 format,
@@ -1227,7 +1238,7 @@ fn refused_boolean_transport_does_not_export_shared_guard_prefixes() {
                 assert!(
                     crate::kernel::memory_history::transport_framed_common_condition(
                         &root,
-                        &Memory::new(),
+                        &SymbolicMemory::new(),
                         None
                     )
                     .is_none()
@@ -1262,7 +1273,7 @@ fn boolean_transport_keeps_shared_arithmetic_operands() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let actual = crate::kernel::memory_history::transport_framed_common_condition(
                 &guard,
-                &Memory::new(),
+                &SymbolicMemory::new(),
                 None,
             )
             .unwrap();

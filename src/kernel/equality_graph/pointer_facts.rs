@@ -34,20 +34,26 @@ impl EqualityGraph {
     /// Checked values retained directly by an admitted, unconditional atom.
     /// Opaque call arguments may carry annotations from another interning
     /// context; they are not evidence here. Binders and states stay opaque.
-    fn object_type_keys(proposition: &Proposition) -> BTreeSet<(Pointer, terms::PointerFactKey)> {
+    fn object_type_keys(proposition: &Proposition) -> BTreeSet<(Address, terms::PointerFactKey)> {
         enum Work<'a> {
             Term(&'a Term),
             Model(&'a AlgebraicTerm),
             Value(&'a ProgramValue),
-            Pointer(&'a PointerValue),
+            Pointer(&'a Pointer),
         }
         let mut pending = match proposition {
             Proposition::Equal(a, b) => vec![Work::Term(a), Work::Term(b)],
             Proposition::Predicate { arguments, .. } => arguments.iter().map(Work::Term).collect(),
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::PointerEqual(a, b), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 vec![Work::Pointer(a), Work::Pointer(b)]
             }
-            Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 vec![Work::Model(a), Work::Model(b)]
             }
             _ => return BTreeSet::new(),
@@ -74,7 +80,7 @@ impl EqualityGraph {
                 Work::Pointer(pointer) => {
                     if let Some(evidence) = pointer.object_type_evidence() {
                         keys.insert((
-                            pointer.pointer().clone(),
+                            pointer.address().clone(),
                             terms::PointerFactKey::ObjectType(evidence.class.clone()),
                         ));
                     }
@@ -87,7 +93,7 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn has_object_type(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         class: &crate::kernel::effective_type::CAccessClass,
     ) -> bool {
         self.pointer_fact_candidates(pointer, &terms::PointerFactKey::ObjectType(class.clone()))
@@ -97,7 +103,7 @@ impl EqualityGraph {
 
     fn pointer_predicate_key(
         proposition: &crate::kernel::Proposition,
-    ) -> Option<(Pointer, terms::PointerFactKey)> {
+    ) -> Option<(Address, terms::PointerFactKey)> {
         use crate::kernel::{ProgramValue, Proposition, Term};
         let Proposition::Predicate { name, arguments } = proposition else {
             return None;
@@ -113,11 +119,11 @@ impl EqualityGraph {
                         None
                     }
                 })?;
-        // Every coverage fact of one opaque extent shares a bucket, whatever
-        // its element width, so a lookup by extent finds them all.
+        // Every coverage fact of one opaque bounds owner shares a bucket, whatever
+        // its element width, so a lookup by bounds finds them all.
         if name.starts_with(crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX) {
             return Some((
-                pointer.pointer().clone(),
+                pointer.address().clone(),
                 terms::PointerFactKey::PredicateShape(
                     crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX.to_string(),
                     arguments.len(),
@@ -136,7 +142,7 @@ impl EqualityGraph {
                     pointer.program_type(),
                 )
             });
-        Some((pointer.pointer().clone(), key))
+        Some((pointer.address().clone(), key))
     }
 
     /// Retain an exact source proposition in the selected pointer's checked
@@ -215,7 +221,7 @@ impl EqualityGraph {
 
     fn pointer_fact_candidates(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         key: &terms::PointerFactKey,
     ) -> terms::PointerFactBucket {
         let address = self
@@ -265,7 +271,7 @@ impl EqualityGraph {
                                 left.program_type() == right.program_type()
                                     && left.pointee_volatile() == right.pointee_volatile()
                                     && self.knows_condition(
-                                        &crate::kernel::ConditionTerm::PointerValueEqual(
+                                        &crate::kernel::ConditionTerm::PointerEqual(
                                             Box::new(left.clone()),
                                             Box::new(right.clone()),
                                         ),
@@ -278,13 +284,13 @@ impl EqualityGraph {
             })
     }
 
-    /// The coverage facts of the opaque extent whose start is `start`, and of
-    /// every extent a pointer equality has identified with it.
+    /// The coverage facts of the opaque bounds whose start is `start`, and of
+    /// every bounds owner a pointer equality has identified with it.
     pub(in crate::kernel) fn subobject_coverage_facts(
         &self,
-        start: &Pointer,
+        start: &Address,
     ) -> Vec<crate::kernel::Proposition> {
-        use crate::kernel::{PointerValue, ProgramType, SUBOBJECT_COVERS_PREDICATE_PREFIX};
+        use crate::kernel::{Pointer, ProgramType, SUBOBJECT_COVERS_PREDICATE_PREFIX};
         [3, 4]
             .into_iter()
             .flat_map(|arity| {
@@ -292,7 +298,7 @@ impl EqualityGraph {
                     SUBOBJECT_COVERS_PREDICATE_PREFIX.to_string(),
                     arity,
                     0,
-                    PointerValue::new(start.clone(), ProgramType::VoidPointer).program_type(),
+                    Pointer::new(start.clone(), ProgramType::VoidPointer).program_type(),
                 );
                 self.pointer_fact_candidates(start, &key)
                     .iter()
@@ -312,7 +318,7 @@ impl EqualityGraph {
     /// fix for its value parameters: once for a contract with none.
     pub(in crate::kernel) fn pointer_function_contracts(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
     ) -> impl Iterator<Item = (String, crate::kernel::Proposition)> {
         self.pointer_fact_candidates(pointer, &terms::PointerFactKey::FunctionContracts)
             .iter()

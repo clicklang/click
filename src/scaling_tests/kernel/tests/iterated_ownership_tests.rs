@@ -5,12 +5,13 @@
 use super::*;
 
 #[test]
-fn taking_one_element_is_constant_in_the_range_size() {
+fn opening_one_slot_is_constant_in_the_range_size() {
     let mut samples = Vec::new();
     for size in SIZES {
         let state = cells_state(size, size);
-        let (taken, work) =
-            crate::instrumentation::measure_deterministic_work(|| take(&state, size / 2));
+        let (taken, work) = crate::instrumentation::measure_deterministic_work(|| {
+            open_slot(&state, size, size / 2)
+        });
         taken.expect("the middle cell is free");
         samples.push((size, work));
     }
@@ -26,7 +27,7 @@ fn a_loop_taking_m_elements_is_linear_in_m() {
         let state = cells_state(capacity, claimed);
         let (claimed_state, work) = crate::instrumentation::measure_deterministic_work(|| {
             (0..claimed).try_fold(state.clone(), |state, index| {
-                store_guard(&take(&state, index)?, index, 1)
+                store_guard(&open_slot(&state, capacity, index)?, index, 1)
             })
         });
         let claimed_state = claimed_state.expect("every free cell can be claimed");
@@ -87,7 +88,7 @@ fn unfolding_the_declaring_resource_is_constant_in_the_range_size() {
             .into(),
         });
         let context = ResourceContext::new().unchecked_with_fact(folded.clone());
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let assumptions = PureFactContext::new();
         let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::functions::expand_composite_resource_fact(
@@ -126,13 +127,14 @@ fn unfolding_the_declaring_resource_is_constant_in_the_range_size() {
 }
 
 #[test]
-fn giving_one_element_is_constant_in_the_range_size() {
+fn closing_one_slot_is_constant_in_the_range_size() {
     let mut samples = Vec::new();
     for size in SIZES {
         let state = cells_state(size, size);
-        let taken = take(&state, size / 2).expect("the middle cell is free");
-        let (returned, work) =
-            crate::instrumentation::measure_deterministic_work(|| give(&taken, size / 2));
+        let taken = open_slot(&state, size, size / 2).expect("the middle cell is free");
+        let (returned, work) = crate::instrumentation::measure_deterministic_work(|| {
+            close_slot(&taken, size, size / 2)
+        });
         let returned = returned.expect("the taken cell can be returned");
         assert!(held_fact(&returned).holes().is_empty());
         samples.push((size, work));
@@ -155,16 +157,17 @@ fn cells_state_beside_unrelated_ranges(capacity: u32, unrelated: u32) -> Executi
 }
 
 #[test]
-fn taking_and_giving_one_element_is_constant_in_unrelated_owned_ranges() {
+fn opening_and_closing_one_slot_is_constant_in_unrelated_owned_ranges() {
     let mut taking = Vec::new();
     let mut giving = Vec::new();
     for unrelated in SIZES {
         let state = cells_state_beside_unrelated_ranges(64, unrelated);
-        let (taken, work) = crate::instrumentation::measure_deterministic_work(|| take(&state, 32));
+        let (taken, work) =
+            crate::instrumentation::measure_deterministic_work(|| open_slot(&state, 64, 32));
         let taken = taken.expect("the middle cell is free");
         taking.push((unrelated, work));
         let (returned, work) =
-            crate::instrumentation::measure_deterministic_work(|| give(&taken, 32));
+            crate::instrumentation::measure_deterministic_work(|| close_slot(&taken, 64, 32));
         assert!(
             held_fact(&returned.expect("the taken cell can be returned"))
                 .holes()

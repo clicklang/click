@@ -2,13 +2,13 @@ use click::kernel::*;
 use click::kernel::{CompareRelation, MachineIntegerType};
 
 fn true_source() -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+    Proposition::condition_is(ConditionTerm::Constant(true), true)
 }
 
 #[test]
 fn inconsistent_context_retains_its_false_premise() {
     let source = true_source();
-    let target = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+    let target = Proposition::condition_is(ConditionTerm::Constant(false), true);
     let context = PureFactContext::new().assume_proposition(target.clone());
 
     let theorem = prove_program_condition_fact_target_transport(&source, &target, &context)
@@ -24,7 +24,7 @@ fn inconsistent_context_retains_its_false_premise() {
 #[test]
 fn consistent_context_retains_its_symbolic_premise() {
     let source = true_source();
-    let target = Proposition::ConditionIs(
+    let target = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -51,14 +51,14 @@ fn consistent_context_retains_its_symbolic_premise() {
 
 #[test]
 fn context_free_disjoint_store_transport_stays_closed() {
-    let before = Memory::new();
-    let written = Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let before = SymbolicMemory::new();
+    let written = Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let preserved = Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let preserved = Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::Constant(4),
     };
     let after = before.clone().store(written, int32(7));
     let old_load = MachineTerm::MemoryLoad(
@@ -71,7 +71,7 @@ fn context_free_disjoint_store_transport_stays_closed() {
         Box::new(preserved),
         LoadKind::Int32,
     );
-    let source = Proposition::ConditionIs(
+    let source = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -80,7 +80,7 @@ fn context_free_disjoint_store_transport_stays_closed() {
         },
         true,
     );
-    let target = Proposition::ConditionIs(
+    let target = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -102,7 +102,7 @@ fn context_free_disjoint_store_transport_stays_closed() {
 #[test]
 fn retained_premises_ignore_unrelated_ambient_context_at_scale() {
     let source = true_source();
-    let target = Proposition::ConditionIs(
+    let target = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -122,7 +122,7 @@ fn retained_premises_ignore_unrelated_ambient_context_at_scale() {
     for size in [8, 64, 512, 4096] {
         let mut context = PureFactContext::new().assume_proposition(target.clone());
         for index in 0..size {
-            context = context.assume_proposition(Proposition::ConditionIs(
+            context = context.assume_proposition(Proposition::condition_is(
                 ConditionTerm::Variable(Variable(10_000 + index)),
                 true,
             ));

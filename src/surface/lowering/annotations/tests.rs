@@ -10,8 +10,8 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_program_names
         BTreeMap::new(),
         BTreeMap::new(),
         &state,
-        BTreeMap::new(),
-        BTreeMap::new(),
+        ProgramValueBindings::new(),
+        ProgramValueBindings::new(),
         None,
         &retained_states,
         SpecDefinitions::new(&predicates, &functions),
@@ -39,7 +39,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_program_names
             "result",
         ),
         (
-            ContractExpression::CBinding("result".into()),
+            ContractExpression::ProgramBinding("result".into()),
             crate::kernel::BindingName::from("result"),
             true,
             "result",
@@ -107,8 +107,8 @@ fn struct_pointer_arithmetic_through_uint64_cast_uses_layout_width() {
         BTreeMap::new(),
         BTreeMap::new(),
         &state,
-        BTreeMap::new(),
-        BTreeMap::new(),
+        ProgramValueBindings::new(),
+        ProgramValueBindings::new(),
         None,
         &retained_states,
         SpecDefinitions::new(&predicates, &functions),
@@ -233,8 +233,8 @@ fn nested_state_propositions_lower_with_small_frames_and_linear_visits() {
                     BTreeMap::new(),
                     BTreeMap::new(),
                     &state,
-                    BTreeMap::from([("x".into(), int32(7))]),
-                    BTreeMap::from([("x".into(), int32(9))]),
+                    ProgramValueBindings::from([("x".into(), int32(7))]),
+                    ProgramValueBindings::from([("x".into(), int32(9))]),
                     None,
                     &retained_states,
                     SpecDefinitions::new(&predicates, &functions),
@@ -286,7 +286,7 @@ fn nested_state_propositions_lower_with_small_frames_and_linear_visits() {
 /// `at(...)` state, including a loop's own entry, are refused.
 #[test]
 fn a_fixed_state_anywhere_in_a_measure_is_found() {
-    let current = ContractExpression::CBinding("n".to_string());
+    let current = ContractExpression::ProgramBinding("n".to_string());
     assert!(fixed_measure_state(&current).is_none());
 
     let old = ContractExpression::Subtract(
@@ -403,8 +403,8 @@ fn ordinary_integer_arithmetic_retains_structure_and_deferred_domain_checks() {
         BTreeMap::new(),
         BTreeMap::new(),
         &state,
-        BTreeMap::new(),
-        BTreeMap::new(),
+        ProgramValueBindings::new(),
+        ProgramValueBindings::new(),
         None,
         &retained_states,
         SpecDefinitions::new(&predicates, &functions),
@@ -480,8 +480,8 @@ fn fixed_contract_result_is_separate_from_lexical_result_in_old_states() {
         BTreeMap::new(),
         BTreeMap::new(),
         &state,
-        BTreeMap::from([("result".into(), int32(3))]),
-        BTreeMap::from([("result".into(), int32(7))]),
+        ProgramValueBindings::from([("result".into(), int32(3))]),
+        ProgramValueBindings::from([("result".into(), int32(7))]),
         Some(&result),
         &retained_states,
         SpecDefinitions::new(&predicates, &functions),
@@ -489,7 +489,7 @@ fn fixed_contract_result_is_separate_from_lexical_result_in_old_states() {
         BTreeMap::new(),
     );
     let old_context = context
-        .old_state(&lowerer.entry_values, state.memory())
+        .old_state(&lowerer.entry_values, &state.program_point())
         .unwrap();
     for (context, lexical) in [(&context, 7), (&old_context, 3)] {
         for expression in [
@@ -508,7 +508,7 @@ fn fixed_contract_result_is_separate_from_lexical_result_in_old_states() {
         assert_eq!(
             lowerer
                 .lower_contract_expression_to_spec(
-                    &ContractExpression::CBinding("result".into()),
+                    &ContractExpression::ProgramBinding("result".into()),
                     context
                 )
                 .unwrap(),
@@ -579,7 +579,7 @@ fn common_integer_comparisons_keep_operands_and_native_fact_shape() {
         };
         assert_eq!(
             lower_integer_arithmetic_proposition(&source, &bindings).unwrap(),
-            Proposition::ConditionIs(expected, true)
+            Proposition::condition_is(expected, true)
         );
     }
 }

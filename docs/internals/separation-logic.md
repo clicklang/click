@@ -259,7 +259,7 @@ each completed execution path.
 `step()` is the simple execution tactic. It advances by one supported
 transition with the whole proof context visible to the kernel.
 
-`branch ensuring { Q } then { ... } else { ... }` is the sequencing rule
+`branch ensuring { Q } { true => { ... } false => { ... } }` is the sequencing rule
 for a C conditional whose arms need an explicit common resource interface.
 Every continuing arm must prove `Q`. Click then constructs one symbolic
 frontier satisfying `Q`, while retaining exact common facts and resources.
@@ -357,10 +357,10 @@ resource instances. The held-member lookup shares the address-class resource
 index used for memory accesses, so a transitive pointer equality selects the
 same owner without requiring a redundant direct equality or scanning unrelated
 owners. Selection supplies the live occurrence identity; positive ownership and
-containment of the entire physical byte extent remain required. Two accesses
+containment of the entire physical byte span remain required. Two accesses
 inside one owner do not supply the distinct-member observation, and a view
 supplies no owned member. The logical pointer-cell convention used by permission
-lookup does not shorten the physical extent of a separation query. See
+lookup does not shorten the physical span of a separation query. See
 [`held_separation_uses_transitive_pointer_aliases.md`](https://github.com/clicklang/click/blob/master/mdtests/held_separation_uses_transitive_pointer_aliases.md).
 
 Click also exposes resource inclusion/decomposition as:

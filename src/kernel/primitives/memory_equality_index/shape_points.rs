@@ -7,18 +7,20 @@ pub(super) fn payload_is_empty(storage: &ResourceContextStorage) -> bool {
     storage.index.memory_by_block.is_empty() && storage.index.exact_shapes.is_empty()
 }
 
-fn shape_pointer(fact: &ResourceFact) -> Option<(Shape, &Pointer)> {
+fn shape_pointer(fact: &ResourceFact) -> Option<(Shape, &Address)> {
     let (Resource::Token { name, arguments } | Resource::Composite { name, arguments }) =
         fact.resource()
     else {
         return None;
     };
-    let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) = arguments.first() else {
+    let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
+        arguments.first()
+    else {
         return None;
     };
     Some((
         (fact.family(), name.clone(), arguments.len()),
-        pointer.pointer(),
+        pointer.address(),
     ))
 }
 

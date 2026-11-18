@@ -193,12 +193,12 @@ fn check_narrow_store_equation(format: Ty) {
     use crate::kernel::{KernelTermImport, MachineOperandView as V, VerificationSession};
     let _session = VerificationSession::enter();
     for aliased in [false, true] {
-        let pointer = Pointer {
-            block: "narrow".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "narrow".into(),
+            offset: AddressOffset::Constant(0),
         };
         let query = if aliased {
-            Pointer::symbolic(Variable(993201))
+            Address::symbolic(Variable(993201))
         } else {
             pointer.clone()
         };
@@ -211,7 +211,7 @@ fn check_narrow_store_equation(format: Ty) {
         let stored = constant(format, bits);
         let kind = LoadKind::of_value(&value).unwrap();
         let memory = intern_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("narrow", 8)
                 .store(pointer.clone(), value.clone()),
         );
@@ -221,7 +221,7 @@ fn check_narrow_store_equation(format: Ty) {
             .machine_arithmetic(format, &read)
             .unwrap();
         let empty = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(pointer.clone(), query.clone()),
+            ConditionTerm::address_equal(pointer.clone(), query.clone()),
             true,
         );
         assert!(
@@ -262,7 +262,7 @@ fn check_narrow_store_equation(format: Ty) {
                 &stored
             ));
             let after_alias = before_alias.assume_condition(
-                ConditionTerm::pointer_equal(pointer.clone(), query.clone()),
+                ConditionTerm::address_equal(pointer.clone(), query.clone()),
                 true,
             );
             assert!(narrow_equal(

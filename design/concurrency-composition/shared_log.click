@@ -498,7 +498,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         step();
         let ready = fold(allocated_vector(owner), { cap: owner->cap });
         let { after: after } = step(vector_grow, { before: ready });
-        if c(grown) == 0 {
+        if program::grown == 0 {
             step();
             step();
             have not old(owner->len) < old(owner->cap) by {
@@ -584,12 +584,12 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             step();
             step();
             unfold(after);
-            have c(grown) == 1 by {
+            have program::grown == 1 by {
                 cases {
-                    c(grown) == 0 => {
-                        contradiction(c(grown) == 0);
+                    program::grown == 0 => {
+                        contradiction(program::grown == 0);
                     }
-                    c(grown) == 1 => {
+                    program::grown == 1 => {
                         known();
                     }
                 }
@@ -990,30 +990,39 @@ int32 run_two_producers(struct shared_log* log) {
     let state = fold(log_state(log), { cap: before.cap, slack: 2 }, { items: before });
     let { lifetime: lifetime } = step(pthread_mutex_init, { state: state });
     branch {
-        let { cap: cap1, slack: slack1, items: after } = unfold(state);
-        unfold(credit(log));
-        unfold(credit(log));
-        step();
-        solve();
-    } else {}
+        true => {
+            let { cap: cap1, slack: slack1, items: after } = unfold(state);
+            unfold(credit(log));
+            unfold(credit(log));
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        let { cap: cap2, slack: slack2, items: after } = unfold(state);
-        unfold(credit(log));
-        unfold(credit(log));
-        step();
-        solve();
-    } else {}
+        true => {
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            let { cap: cap2, slack: slack2, items: after } = unfold(state);
+            unfold(credit(log));
+            unfold(credit(log));
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step();
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        let { cap: cap3, slack: slack3, items: after } = unfold(state);
-        unfold(credit(log));
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            let { cap: cap3, slack: slack3, items: after } = unfold(state);
+            unfold(credit(log));
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     step(pthread_mutex_destroy, { lifetime: lifetime });

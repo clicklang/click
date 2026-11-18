@@ -44,18 +44,21 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
     mark before_call;
     let { result: r } = step(child, {});
     branch {
-        have r != 0 implies exists (path: Path) {
-            pick(at(before_call, a[i]), path) == r
-        } by { known(); }
-        have exists (path: Path) {
-            pick(at(before_call, a[i]), path) == r
-        } by { solve(); }
-        obtain (rest: Path) {
-            pick(at(before_call, a[i]), rest) == r
+        true => {
+            have r != 0 implies exists (path: Path) {
+                pick(at(before_call, a[i]), path) == r
+            } by { known(); }
+            have exists (path: Path) {
+                pick(at(before_call, a[i]), path) == r
+            } by { solve(); }
+            let rest = obtain(exists (rest: Path) {
+                pick(at(before_call, a[i]), rest) == r
+            });
+            step_until(function.exit);
+            solve();
         }
-        step_until(function.exit);
-        solve();
-    } else {}
+        false => {}
+    }
     step();
     solve();
 }

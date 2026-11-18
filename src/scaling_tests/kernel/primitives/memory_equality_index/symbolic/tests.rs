@@ -7,12 +7,12 @@ use super::*;
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
-    let base = Pointer::symbolic(Variable(920_000));
-    let alias = Pointer::symbolic(Variable(920_001));
+    let base = Address::symbolic(Variable(920_000));
+    let alias = Address::symbolic(Variable(920_001));
     let n = MachineTerm::Variable(Variable(920_002));
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(
-        ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+        ConditionTerm::address_equal(base.clone(), alias.clone()),
         true,
     );
     let mut samples = Vec::new();
@@ -72,15 +72,15 @@ fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn symbolic_byte_read_consumer_refuses_ambiguous_suppliers_without_search() {
-    let base = Pointer::symbolic(Variable(960_000));
-    let alias = Pointer::symbolic(Variable(960_001));
+    let base = Address::symbolic(Variable(960_000));
+    let alias = Address::symbolic(Variable(960_001));
     let n = MachineTerm::Variable(Variable(960_002));
     let m = MachineTerm::Variable(Variable(960_003));
     let empty = PureFactContext::new();
     let facts = empty
         .clone()
         .assume_condition(
-            ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+            ConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         )
         .assume_condition(

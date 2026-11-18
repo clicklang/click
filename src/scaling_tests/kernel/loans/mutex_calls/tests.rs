@@ -32,7 +32,7 @@ fn suspended_mutex_share_recovery_scales_with_worker_count() {
                     ledger = plan.ledger.clone();
                     resources = plan.caller_resources.clone();
                     source = resources
-                        .mutex_use_at(&Pointer::symbolic(Variable(100)))
+                        .mutex_use_at(&Address::symbolic(Variable(100)))
                         .unwrap()
                         .clone();
                     workers.push(plan);
@@ -166,7 +166,7 @@ fn integrated_use_planner_reserves_and_recovers_without_scanning_the_frame() {
                 binding: None,
                 protected: None,
                 initialization: None,
-                mutex: Pointer::symbolic(Variable(100)),
+                mutex: Address::symbolic(Variable(100)),
             })),
             role: ResourceTransferRole::Borrow,
             state_source: ResourceStateSource::Entry,

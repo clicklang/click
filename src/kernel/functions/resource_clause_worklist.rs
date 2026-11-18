@@ -172,7 +172,7 @@ pub(super) fn resource_clause_coarse_keys(fact: &ResourceFact) -> Vec<ResourceCl
             range.base().clone(),
         ));
         keys.push(ResourceClauseDependencyKey::MemoryBlock(
-            range.base().block.clone(),
+            range.base().base.clone(),
         ));
     }
     keys
@@ -262,7 +262,7 @@ impl ResourceClauseWaiterIndex {
             .and_then(resource_clause_concrete_memory_interval)
             .is_none()
             && let Some(range) = supplied.memory_range()
-            && let Some(waiters) = self.concrete_block_fallback.get(&range.base().block)
+            && let Some(waiters) = self.concrete_block_fallback.get(&range.base().base)
         {
             ResourceClauseIntervalIndex::add_candidates(waiters, &mut candidates);
         }

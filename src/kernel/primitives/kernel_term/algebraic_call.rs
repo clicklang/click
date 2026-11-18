@@ -49,8 +49,8 @@ mod tests {
             MachineTerm::Variable(Variable(999701)),
             MachineTerm::constant(1),
         );
-        let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(999702)),
+        let pointer = Pointer::new(
+            Address::symbolic(Variable(999702)),
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true);
@@ -92,8 +92,8 @@ mod tests {
         )]);
         let ty = native.algebraic_type.clone();
         let scrutinee = KernelTermImport::default().algebraic(&native);
-        let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(999703)),
+        let pointer = Pointer::new(
+            Address::symbolic(Variable(999703)),
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true);
@@ -108,8 +108,8 @@ mod tests {
                 KernelMatchArm {
                     variant: "Arm".into(),
                     bindings: vec![KernelTermImport::default().argument(
-                        &PureFunctionArgument::Value(ProgramValue::Pointer(PointerValue::new(
-                            Pointer::symbolic(Variable(999704)),
+                        &PureFunctionArgument::Value(ProgramValue::Pointer(Pointer::new(
+                            Address::symbolic(Variable(999704)),
                             ProgramType::Int32Pointer,
                         ))),
                     )],

@@ -77,30 +77,28 @@ fn destination<'a>(
         .uninitialized_objects
         .get(&selected.pointer)
         == Some(&layout.size_bytes());
-    let base = Pointer {
-        block: selected.pointer.block.clone(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: selected.pointer.base.clone(),
+        offset: AddressOffset::Constant(0),
     };
     let within_raw_parent = state
         .memory
         .heap
         .uninitialized_objects
         .get(&base)
-        .is_some_and(|extent| end <= *extent);
-    let storage_matches = match state.memory.block_size(&selected.pointer.block) {
+        .is_some_and(|size| end <= *size);
+    let storage_matches = match state.memory.block_size(&selected.pointer.base) {
         Some(size) => {
             let size = size.as_const()?;
             if !constructor && (offset != 0 || size != layout.size_bytes()) {
                 return None;
             }
             end <= size
-                && (selected.pointer.block.is_local_block()
-                    || exact_raw_object
-                    || within_raw_parent)
+                && (selected.pointer.base.is_local_block() || exact_raw_object || within_raw_parent)
         }
         // A constructor entry describes only its object's footprint. Its
         // containing allocation can be larger, so source proof setup supplies
-        // field liveness through the contract instead of fixing a block extent.
+        // field liveness through the contract instead of fixing a block size.
         None => constructor && (exact_raw_object || within_raw_parent),
     };
     if !interface.exceptional_signature().is_empty()
@@ -113,8 +111,8 @@ fn destination<'a>(
             .memory
             .is_deallocated_heap_address(&selected.pointer, &PureFactContext::new())
         || state.memory.is_ended_local_address(&selected.pointer)
-        || state.memory.is_read_only_block(&selected.pointer.block)
-        || registered_block_alignment(&selected.pointer.block).unwrap_or(1)
+        || state.memory.is_read_only_block(&selected.pointer.base)
+        || registered_block_alignment(&selected.pointer.base).unwrap_or(1)
             < u64::from(layout.alignment_bytes())
     {
         return None;
@@ -139,7 +137,7 @@ pub(super) fn bind(
             .pointer()?;
         parameter_destination = caller
             .clone()
-            .with_aggregate_return_destination(value.pointer().clone(), layout.clone());
+            .with_aggregate_return_destination(value.address().clone(), layout.clone());
         &parameter_destination
     } else if interface.aggregate_return_mode() == AggregateReturnMode::Copy {
         return Some(());
@@ -154,7 +152,7 @@ pub(super) fn bind(
     {
         return None;
     }
-    let writable = |pointer: &Pointer, bytes| {
+    let writable = |pointer: &Address, bytes| {
         caller
             .resources
             .memory_write_range(pointer, bytes, &PureFactContext::new())
@@ -203,7 +201,7 @@ pub(super) fn complete(
     let ProgramValue::Pointer(pointer) = &value else {
         return Err(AggregateReturnRefusal::InvalidValue);
     };
-    if pointer.pointer() != &selected.pointer
+    if pointer.address() != &selected.pointer
         || state.locals.aggregate_object_pointer(CONTRACT_RESULT) != Some(&selected.pointer)
     {
         return Err(AggregateReturnRefusal::InvalidValue);

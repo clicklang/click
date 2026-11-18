@@ -60,13 +60,13 @@ fn inline_array_element_addresses_are_logical_without_granting_access() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_00")]
 fn historical_wide_view_bound_reads_the_marked_counter() {
     let c = "unsigned long f(const unsigned char *p, unsigned n) { n = n - 1; return 0; }";
-    for extent in [16, 32] {
+    for span in [16, 32] {
         let proof = format!(
             r#"
             verifying "retained_state.c";
             uint64 f(const uint8* p, uint32 n) {{
                 requires n == 2u32;
-                views p[0u64..{extent}u64];
+                views p[0u64..{span}u64];
                 ensures result == 0u64;
             }} by {{
                 mark before;
@@ -78,7 +78,7 @@ fn historical_wide_view_bound_reads_the_marked_counter() {
         "#
         );
         let result = verify_c_sources(&proof, &[("retained_state.c", c)]);
-        if extent == 16 {
+        if span == 16 {
             assert!(result.is_err(), "the saved counter needs 32 bytes, not 16");
         } else {
             result.unwrap();
@@ -852,7 +852,7 @@ fn explicit_call_partition_if_stays_on_one_proof_after_scoped_open() {
                 unfold(allocated_cell(owner));
                 // Declare both pointers, save the old cell, and allocate its replacement.
                 step(); step(); step(); step();
-                branch { step(); } else { }
+                branch { true => { step(); } false => { } }
                 step_until(function.exit);
                 fold(allocated_cell(owner));
                 solve();
@@ -948,7 +948,7 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
                 unfold(allocated_cell(owner));
                 // Declare both pointers, save the old cell, and allocate its replacement.
                 step(); step(); step(); step();
-                branch { step(); } else { }
+                branch { true => { step(); } false => { } }
                 step_until(function.exit);
                 fold(allocated_cell(owner));
                 solve();
@@ -964,7 +964,7 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
                 step();
                 step();
                 step();
-                if c(replaced) == 0 {
+                if program::replaced == 0 {
                     step();
                     step();
                 } else {
@@ -983,8 +983,8 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
 fn explicit_proof_if_does_not_capture_shared_following_c_if() {
     let (replace_source, caller_source, click_source) = result_case_split_sources();
     let click_source = click_source.replace(
-        "                if c(replaced) == 0 {",
-        "                if at(region(1).exit, owner->data) == old(owner->data) {\n                } else {\n                }\n                if c(replaced) == 0 {",
+        "                if program::replaced == 0 {",
+        "                if at(region(1).exit, owner->data) == old(owner->data) {\n                } else {\n                }\n                if program::replaced == 0 {",
     );
     assert!(
         click_source.contains("if at(region(1).exit, owner->data)"),
@@ -1744,7 +1744,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
                 ensures result == 0 or result == 1;
             } by {
                 open(owned_cell(cell)) {
-                    branch { step(); } else { }
+                    branch { true => { step(); } false => { } }
                     step_until(function.exit);
                 }
                 solve();

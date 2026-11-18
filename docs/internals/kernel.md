@@ -67,6 +67,16 @@ Kernel files:
 - `reasoning.rs`: deterministic proof helpers, finite forall/range reasoning,
   substitutions, execution-derived pure facts, and obligation plumbing.
 - `spec.rs`: `SpecExpression`/`SpecProposition` lowering and evaluation.
+  `spec/integer_result.rs` retains one common Integer root through evaluator
+  paths, arithmetic, conditionals and fold initial/body production. Native
+  comparison, capture and ranking outputs use explicit compatibility reads;
+  deferred evaluator bindings and evaluated fold endpoints also retain common
+  roots. Compound native specification inputs still use the selected typed
+  substitution boundary; native fold descriptors remain checking/input DTOs.
+  Algebraic result/field origins likewise retain common roots; their origin tag
+  preserves checking versus producer equality and handoffs. Integer match-arm
+  bodies stay common through symbolic result construction. Constructor/iota
+  and pointer metadata checks have explicit native readings.
 - `eval.rs`: program expression/statement evaluation and memory operations.
 - `loops.rs`: loop verification, loop effects, loop havoc, and invariant
   helpers.
@@ -594,7 +604,7 @@ In `src/kernel/`:
   some widths stay context-implied while machine operators carry formats is
   explained in `design/machine-integers.md`; the older typed-index rulings
   against format-carrying nodes were superseded.
-- `PointerOffsetTerm`: pointer-offset expressions.
+- `AddressOffset`: pointer-offset expressions.
 - `ConditionTerm`: proof-level truth-valued conditions: machine comparisons
   `Compare { format, relation, left, right }` and overflow tests
   `Overflows { format, op, left, right }` at every machine-integer format,
@@ -604,7 +614,7 @@ In `src/kernel/`:
   `int32`, whose order its canonical words compare exactly, so a fact has
   one representation. Every other order is filed at its own format: a `uint32`
   order is `Compare { format: UInt32, .. }` of the operands' words.
-- `ProgramValue`, `ProgramType`, `Pointer`, `Memory`, `ExecutionState`: C semantic state,
+- `ProgramValue`, `ProgramType`, `Address`, `SymbolicMemory`, `ExecutionState`: C semantic state,
   including the non-object `Void` return value, scalar `int8`, `int16`, `int32`,
   `uint8`, `uint16`, `uint32`, `int64`, and `uint64`, pointers, and typed
   memory loads/stores.
@@ -786,7 +796,7 @@ the widths a rule supports; it asks the module
 | Promoted comparison reading | `comparison::integer_readings_with_promotions`, `integer_comparisons_of_widenings`; `integer_affine_claims` | a signed `int32` comparison whose sides are narrow widenings or constants is the Integer comparison of the sides' values (`0 <= widen(x)` is `0 <= to_integer(x)`); a native 8- or 16-bit comparison has the readings of its promoted spelling |
 | Native narrow comparison (one fact, K8) | `ConditionTerm::comparison_fact`, `as_fact_comparison`, `ComparisonSide`; `comparison::narrow_comparison_as_int32`, `narrow_fact_widening`, `native_narrow_comparison`; `condition_match_key`; the `adjust_*` wrappers of `PureFactContext` and `EqualityGraph::add_condition` | a specification or Rust comparison `a R b` of two values of one 8- or 16-bit format `S` is native at `S`, and is the same fact as the `int32` comparison of the operands' widenings (a constant side in `S`'s range reads as its value): identity, hashing, order and every structural fact key read both as one, in O(1) per side; the 32-bit indexes also file a native fact under its `int32` spelling. Terms are built and printed as written; C comparisons and a written `x as int32 R c` stay promoted |
 | Sign cast σ (K1 deleted) | `MachineTerm::sign_cast32`, `sign_cast32_operand`; the e-graph's `intern_conversion` and `convert_like` (σ an `Int32Unary::Cast` node); the difference graph's `link_parts` and `structural_interval`; `into_index_word32` (G1) | σ(x) between `int32` and `uint32` is a node of its own wherever a term is built: no constructor, observation, e-graph or difference-graph reader peels it. The e-graph relates it to `x` by R0 and R-dist (σ of a sign-free operator is the operator at the other format over σ of its operands; σ of a low word is that low word), the difference graph links either 32-bit reading of σ(x) to the same reading of `x` with offset 0, and an element index alone reads σ's operand in `int32` index coordinates. The constructor folds a constant and keeps σ of σ as written; R0 puts σ(σ(x)) in `x`'s class. Two smart-search readers see through one σ at a side's root: `σ(x) == x` is a vacuous rewrite and no rewrite candidate (`is_sign_cast32_of`, `equality_is_vacuous`, `connected_equalities`), and `σ(y) <=u c` below the sign bit is the signed range of `y` (`unsigned_upper_bound_below_sign_bit`) |
-| R-mem at 32 bits (K5's naming deleted) | `ProgramType::read_cell`, `LoadKind::read_cell`, `LoadKind::reads_value`; the checked stored-value evidence (`CheckedLoadEqualityEvidence::OriginStoredValue`), `is_store_fact` | the `uint32` read of a cell is σ of its `int32` read; a read of a cell stored at the other 32-bit signedness, wherever a load term is answered from a cell or a store, is σ of the stored word, and only a read of the stored kind is the stored term itself. A range's `fits` guard is `σ(end - start) <=u limit` (`memory_range_byte_count_extent`), σ of the `int32` element count as written |
+| R-mem at 32 bits (K5's naming deleted) | `ProgramType::read_cell`, `LoadKind::read_cell`, `LoadKind::reads_value`; the checked stored-value evidence (`CheckedLoadEqualityEvidence::OriginStoredValue`), `is_store_fact` | the `uint32` read of a cell is σ of its `int32` read; a read of a cell stored at the other 32-bit signedness, wherever a load term is answered from a cell or a store, is σ of the stored word, and only a read of the stored kind is the stored term itself. A range's `fits` guard is `σ(end - start) <=u limit` (`memory_range_byte_count_span`), σ of the `int32` element count as written |
 | Observation of σ (K2 deleted) | rule W: `machine_value_reading` | `to_integer` of σ(x) at `int32` or `uint32` keeps σ as written and reads as `x` at that format, through every σ of a written chain: `to_integer((a as uint32) as int32)` reads as `to_integer(a)` (`machine_view::shared_value_reading` takes one cached step per σ node) |
 | 32-to-64-bit extension, one representation | `conversion::extension_encoding`, `conversion::reads_as_operand`; `MachineTerm::machine_integer_cast`, `SharedMachineIntegerTerm::cast_operand`, `KernelTerm::checking_machine_cast`; rule W: `machine_value_reading`, `machine_view::shared_value_reading` | a conversion from `int32` or `uint32` to `int64` or `uint64` is the legacy-kind `Cast` C lowering builds (`Int64From32`, `Int64FromUInt32`, `UInt64From32`, `UInt64FromInt32`) wherever it is built, never the generic kind; `to_integer` of the three value-preserving ones at their destination reads as their operand, one match on the root. A cast-identity certificate checks an extension's bounds at its destination format |
 | 32-bit equality one fact (K6, lookup-level) | `comparison_identity` (`ConditionTerm::comparison_fact`, `as_fact_comparison`, `fact_format`), `MachineTerm::sign_cast32_bits`; `condition_match_key` | a 32-bit equality is a term of the format it is written at, `u == v` at `uint32` over `uint32` operands; identity, hashing, order and every structural fact key read it at `int32`, each side through one σ and a constant of either format as its bits, so `u == v` at `uint32` and `u as int32 == v as int32` are one fact. One match per side, no clone; no term is re-filed |
@@ -1041,7 +1051,7 @@ small ABI boundary: Click's struct-pointer view is `int32*`, while the internal
 address-backed return slot is `uint8*`. The return transition accepts only
 those two modeled data-pointer views, retags the address at that boundary, and
 copies every modeled leaf into a fresh typed
-`PointerBlock::AggregateReturn { frame }` block. Consequently a
+`AddressBase::AggregateReturn { frame }` block. Consequently a
 postcondition such as `result.inner.flag == source.inner.flag` compares the
 fresh result cell with the source state without turning the returned
 aggregate into an alias or weakening ordinary pointer-return type checks.
@@ -1070,10 +1080,10 @@ soundness bug rather than an imprecision.
 
 Before either of them: **`MachineTerm::as_const` answers `u32`, and every
 `int32` quantity the kernel orders is a signed number held in those bits.**
-An element index, a range endpoint, a block extent, an owned quantity — read
+An element index, a range endpoint, a block size, an owned quantity — read
 any of them through `as_const` and compare the result, and `-1` becomes the
 largest number there is. That single confusion is what `e219bbc8` (range
-endpoints), `a98a05e4` (a block extent and a fold quantity) and the commits
+endpoints), `a98a05e4` (a block size and a fold quantity) and the commits
 beside them each found admitting a false theorem.
 
 So a rule that wants a *number* asks `signed_bitvector_constant`, which is the
@@ -1133,8 +1143,8 @@ arithmetic that is modular by definition. A key that *is* ordered — the
 pairwise scan — is an ordering question wearing a key's clothes, and takes the
 signed reading.
 
-A **byte offset** is mathematical. `PointerOffsetTerm` adds exactly, and
-`PointerOffsetTerm::scale_int32` sign-extends its index before multiplying by
+A **byte offset** is mathematical. `AddressOffset` adds exactly, and
+`AddressOffset::scale_int32` sign-extends its index before multiplying by
 the element width, so a pointer's displacement from its block is an `i64` that
 never wraps. An **element index** is modular. `MachineTerm` is a 32-bit
 machine value, so `MachineTerm::add` and `MachineTerm::subtract` wrap:
@@ -1144,7 +1154,7 @@ machine value, so `MachineTerm::add` and `MachineTerm::subtract` wrap:
 The two meet in `element_index_from_offset`, which divides a byte offset by an
 element width and folds the pieces with the *modular* add. What it returns is
 therefore the element delta only **modulo `2^32`**, and the same is true of
-`Pointer::element_index_from_base_with_width` and of every endpoint a rule
+`Address::element_index_from_base_with_width` and of every endpoint a rule
 builds with `MachineTerm::add(base_index, range.start())`. So is
 `affine_bitvector_difference_constant`, which walks two index terms as affine
 forms in `i64`: the constant it returns is the true difference modulo `2^32`,
@@ -1161,7 +1171,7 @@ A residue is **not** enough for **membership**, in either its pointer form
 inside that one"). The wrapped reading of a residue `r` is `r - 2^32`, which is
 *outside*, so a positive conclusion has to rule it out. That is
 `exact_affine_index_difference`, which answers only for a residue it can show
-is the difference, and `Pointer::exact_element_delta_from_base`, which keeps
+is the difference, and `Address::exact_element_delta_from_base`, which keeps
 the exact `i64` constant part of a delta beside its one symbolic index rather
 than folding them with an add that wraps.
 
@@ -1172,19 +1182,19 @@ residue, read as `int32`, which `affine_range_element_count` returns. A range
 is therefore not "the elements from `start` to `end`": `p[i32::MAX..i32::MIN]`
 is a forward range of exactly one element. A rule that compares one range's
 `end` against another's, rather than comparing counts, is reading `end` as
-`start + count` and owes that the forward half of the valid-extent condition,
+`start + count` and owes that the forward half of the valid-span condition,
 `0 <= end - start`.
 
-The valid-byte-extent condition itself is `memory_range_element_count_guards`,
+The valid-byte-span condition itself is `memory_range_element_count_guards`,
 and it is the one definition: `0 <= count` plus, where the element width
 constrains an `int32` count at all, `count <= u32::MAX / width`. A stated
 `owns` or `views` range brings it, through
-`stated_loadable_extent_guards`. A range the kernel synthesizes — a loop
+`stated_loadable_span_guards`. A range the kernel synthesizes — a loop
 `modifies` frame, a havoc-derived range — does not, so a rule that needs it
 must ask rather than assume.
 
 A stated `separate(memory(...), ...)` lowers structurally to `ResourceSeparate`.
-It neither adds extent facts nor generates extent obligations. Ordinary operand
+It neither adds span facts nor generates span obligations. Ordinary operand
 expressions retain their evaluation prerequisites, such as signed overflow.
 Physical access and ownership admission still require their own bounds.
 
@@ -1311,13 +1321,14 @@ x == r2                                  memory and resources: bar's effects, th
 
 A loop is a cycle through named points: its head (`loop(i).entry` before the
 first pass), the statements of its own that run before its test, its test, its
-body, its back edge and its exit (`loop(i).exit`). A pure condition such as
-`k > 0` is tested at the head, so the body starts with it as a fact and the
-exit with its negation. A condition that calls a function makes those calls
-its loop's own regions (`loop(i).call(f, j)`), followed by a test region
-(`loop(i).test()`, the kernel's `ProgramStatement::LoopTest`): a pass steps the calls
-and then the test, whose true side continues the pass and whose false side
-leaves the loop there, marked `LoopControlExit::TestFalse` on the frontier.
+body, its back edge and its exit (`loop(i).exit`). Every condition has a test
+region (`loop(i).test()`, the kernel's `ProgramStatement::LoopTest`). A pure
+pre-test can share its loop-head step; its body starts with the checked guard
+as a fact. A condition that calls a function makes those calls its loop's own
+regions (`loop(i).call(f, j)`), before the same decision. The test's true side
+continues the pass and its false side leaves the loop there, marked
+`LoopControlExit::TestFalse` on the frontier. A test's exit is distinct from
+the whole loop's exit.
 The other loop forms place statements differently around the same points: a
 `do ... while` runs its body before the test, and a `for` its step at the back
 edge. After a loop that left on one path, the points of that path's last pass
@@ -1357,7 +1368,7 @@ statement that holds the expression:
 An aggregate expression result carries an `AggregateResultLayout`, retaining
 its byte layout and declared access class. A call publishes its already
 materialized return object under its step. A selected ternary arm copies its
-aggregate into fresh `PointerBlock::Temporary` storage and publishes that
+aggregate into fresh `AddressBase::Temporary` storage and publishes that
 address under the operator step. No `LocalEnvironment` binding is introduced.
 `ExecutionState::aggregate_step_objects` indexes these objects by step, and an
 explicit full-expression boundary retires their storage and ownership. A loop
@@ -1374,7 +1385,10 @@ reads it, or with the condition that decides a branch.
 #### Where the implementation departs from this
 
 The Rust importer gives every MIR local the user did not name a local
-`__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR is three-address code,
+`__rust_mir_<N>` (`src/languages/rust/charon.rs`). A source name bound more
+than once keeps that key in the MIR only; `MirBody::spellings` gives its
+source name, and the lowering declares it as a `LocalBindingId` with that
+spelling, where its storage starts, as C declares a block's locals. MIR is three-address code,
 so most of these hold one operand of a larger source expression.
 
 `src/languages/rust/charon/temporaries.rs` puts a pure value back into the
@@ -1420,6 +1434,16 @@ statement the yielding outcome's own binding (`MirStatement::RangeNext`
 with `payload: Some(i)` and `option: None`), and the `Option` and its
 temporary are gone.
 
+A slice, enumerated slice or chunk iterator's `next` is split the same way,
+each outcome (`MirStatement::SharedArrayNext`, `EnumerateNext` or `ChunkNext`)
+with `taken` set by the header's test. `temporaries::bind_slice_payloads`
+makes the `Some` arm's leading reads of the `Option` the yielding outcome's
+own bindings: a slice iterator's element (`payload`), an enumeration's index
+and element (`index`, `element`), or a chunk (`payload`). A `Some(_)` arm
+binds nothing. The unreachable tag test, the `Option` and its temporary go,
+and the yielding outcome lowers to the bindings and the advance, the other to
+nothing.
+
 A crate's own `Iterator::next` returns its `Option` through a call step.
 `user_iterators::test_user_next_results` turns the `match` on it into
 `MirTerminator::If` on `Expression::VariantIs`. `temporaries::call_steps`
@@ -1446,6 +1470,21 @@ value, or the next free spelling (`result_`) when a source local has that name;
 `MirBody::return_place` records the name for the lowering. The C++ importer
 names its capture of a return value that destructors follow the same way,
 with a numeric suffix on a collision.
+
+`temporaries::substitute_literals` puts a temporary assigned once with an
+unchanging value back at every read, in any block: a literal, a copy of a
+parameter the body never writes, moves or borrows, or a reference borrowing a
+place rooted at a local, whose address rustc keeps for the borrow's life. A
+reborrow `&mut *t` of such a borrow is the borrow itself, and `*&p` is `p`;
+each value is resolved once, so a chain of reborrows costs its length. A
+shared borrow of a shared slice local, or a shared slice of a local array
+(`&words[..]`), is that slice, as `split_at` and `chunks_exact` read it; the
+length or a conversion of an unchanging value is unchanging; and a shared
+borrow of a reference or slice parameter does not change it.
+
+`temporaries::remove_unused` removes a temporary the body never names apart
+from its storage markers and its writes of pure values, and a `()` temporary
+that is only a call's destination, which the call never writes.
 
 These still stay a temporary:
 
@@ -1560,7 +1599,7 @@ stays within its own range:
 | `1_000_000 .. 2_000_000` | the execution's fresh-identity counter |
 | `2_000_000 .. 4_000_000` | the surface's quantifier variables; lowering refuses at the ceiling |
 | `4_000_000 .. 4_000_000_000`, stepping by `65_536` | the surface's algebraic binders; lowering refuses at the ceiling |
-| `4_000_000_000 .. 8_000_000_000` | symbolic pointer blocks |
+| `4_000_000_000 .. 8_000_000_000` | symbolic address bases |
 | `1 << 40 .. 1 << 41` | load variables (`LOAD_VARIABLE_BASE`) |
 | `1 << 41 .. 1 << 42` | match-arm binders (`MATCH_BINDER_VARIABLE_BASE`) |
 | `1 << 42 .. 1 << 43` | universal-introduction witnesses (`UNIVERSAL_WITNESS_VARIABLE_BASE`) |
@@ -1604,14 +1643,14 @@ Freshening a binder is a renaming, so it must not change what the proposition
 says *or its form*: a proof state matches a goal against a fact
 syntactically, and a goal that quietly moves to another canonical form stops
 matching the surface's re-lowering of the same written range. That is why a
-range's byte extent has exactly one constructor — `memory_range_byte_count`
+range's byte span has exactly one constructor — `memory_range_byte_count`
 folds through `MachineTerm::subtract`, the same one substitution rebuilds
 terms with — rather than a private near-copy that cancels a little less.
 
 ### Automatic object identity
 
 A `local:` block is an automatic object's identity, and around seventy kernel
-sites read two equal blocks as one object: the same extent, the same cells, the
+sites read two equal blocks as one object: the same size, the same cells, the
 same answer from every distinctness rule. Each execution of a declaration must
 therefore get a block no other automatic object in that memory has, live or
 ended.
@@ -1707,21 +1746,24 @@ Specification addresses such as `&p->field` lower to
 saved-state pointer read stays in the selected memory. Typed, outside-in
 `SpecAddressStep` projections retain C byte offsets and subobject selection;
 the evaluated base feeds the ordinary C address operation, preserving its
-member provenance, extent, qualifiers, and checked-address obligations.
+member provenance, bounds, qualifiers, and checked-address obligations.
 Evaluation introduces no execution local or lexical binder. The Surface form
 remains the original address expression, including `old(...)`/`at(...)` state
 selectors; no generated operand name or replacement syntax is required.
 
-C++ evaluation and cleanup temporaries use a separate `LocalBindingId`
-namespace, owned by the source unit and function with a deterministic temporary
-ordinal. They have type/layout metadata and no lexical C spelling. Surface
-references use `f.temporary(N)` (source-qualified when necessary), independently
-of `f.local(N)` and `f.parameter(N)`. Exact storage uses the existing
-`.storage(implicit)`, `.storage(lifetime, N)`, or `.storage(frame, N)` selectors;
-aggregate temporaries materialize distinct objects with ordinary automatic
-lifetimes. The parser indexes their declarations in the prelowered body once.
-Return capture, intermediate call values, and `catch (int)` payloads all use
-these identities, and `TryCatchInt32` carries a `BindingName` through
+C++ scalar captures use typed execution steps. Calls retain their declared
+result type, and staged reads and return expressions publish their evaluated
+value before a later call or cleanup can change its operands. A short-circuit
+expression publishes the selected arm's value at the join. Proofs cite the
+producer's `.result` or bind the checked value with `let { result: name } = step()`.
+
+C++ materialized objects and hidden catch payloads use a separate
+`LocalBindingId` namespace owned by the source unit and function. Their
+ordinals have no lexical C spelling. A materialization step publishes the
+object's address as its `.result` after construction or copy. This names the
+same object through its original automatic lifetime, including for a
+constructor that returns `void`. The parser indexes legacy temporary
+declarations in the prelowered body once. `TryCatchInt32` carries a `BindingName` through
 execution and evidence checking. Unwinding through a destructible local binds
 no payload: see the C++ cleanup model in
 [Architecture](architecture.md#selected-control-flow-and-c-cleanup-model). No generated variable spelling or collision
@@ -1731,19 +1773,19 @@ A contract's return value is `BindingName::ContractResult`, with Surface spellin
 `result`. It is distinct from all `Named`, automatic, and static bindings,
 including source C variables named `result`. Fixed-state elaboration carries its
 value in a dedicated context field rather than a string-keyed lexical map. Its
-value-only bookkeeping slot is `PointerBlock::ContractResult`, raised as
+value-only bookkeeping slot is `AddressBase::ContractResult`, raised as
 `result.storage()` when an exact slot address is needed; this does not declare
 C storage or grant memory ownership. Aggregate results still bind their actual
 returned object address. No string is decoded into a contract-result identity.
 
 The thrown `int32` payload likewise uses `BindingName::ContractException` and
-its own `PointerBlock::ContractException` bookkeeping slot. Exceptional
+its own `AddressBase::ContractException` bookkeeping slot. Exceptional
 postconditions bind `exception` to that typed payload. The exact slot address
 raises to `exception.storage()` and grants no storage or ownership. Neither `exception` nor the former internal
 name `__click_exception` is decoded into a kernel identity, so a source
 variable of either name cannot replace the payload or alias its slot.
 
-Bare `result` lowers to that typed binding, while `c(result)` resolves the
+Bare `result` lowers to that typed binding, while `program::result` resolves the
 source C binding, including inside casts, field projections, and array indices.
 Kernel post-state reconstruction and fixed-state proof lowering preserve a
 same-named parameter's value.
@@ -1833,7 +1875,7 @@ the call returns. Direct recursion, mutual recursion, and source-order-forward
 calls are certified as one closed transaction before any resulting rules are
 made available outside it.
 
-An opaque pointer return is a symbolic pointer block that may alias any
+An opaque pointer return is a symbolic address base that may alias any
 existing block. Only a certified postcondition or resource fact can establish
 that it equals an argument or is distinct from existing storage; an opaque
 return is not treated as an allocation.
@@ -1881,7 +1923,7 @@ possible release without claiming that a C `free` occurred. Exact execution
 records every successful
 free as `HeapAllocationFreed(before, after, base, bytes)`. Effect
 certification checks that executing `free(base)` from `before` with the stated
-extent produces `after`, and chains that transition separately from ordinary
+size produces `after`, and chains that transition separately from ordinary
 `MemoryMutatesOnly` and ranged call-havoc effects. This lets a function free
 owned storage directly even when its surface `owns` clause names only
 unrelated surviving memory.
@@ -1969,7 +2011,7 @@ Smart execution and exact certification share the same bounded order
 derivations. In particular, a strict upper bound justifies the non-wrapping
 step from `x` to `x + 1` even when the two `x` loads use memory states
 connected by deterministic derivation edges. Resource separation also treats
-intrinsically distinct pointer blocks as context-free evidence. Consequently,
+intrinsically distinct address bases as context-free evidence. Consequently,
 an opaque-call premise proved during search always has a checked derivation
 rather than becoming an assumed verification condition.
 
@@ -2018,7 +2060,7 @@ the loop VC needs the invariant.
 `SpecElaborationContext` in `src/surface.rs` is the bridge from Surface
 Click into Kernel Click. It records scalar spec bindings, Click array refs,
 and the memory used for C-fragment reads. The surface's contract environment
-carries array refs as `ClickArrayRef { memory, pointer, element_type }`, and
+carries array refs as `ClickArrayRef { point, pointer, element_type }`, and
 elaboration types indexing by them so `uint8[]` indexing scales by one byte
 and returns `uint8`; spec lowering mirrors this with typed `SpecArrayRef`,
 typed `SpecExpression::MemoryLoad`, and byte-width
@@ -2096,7 +2138,7 @@ carriers. Scalar algebraic fields and read addresses keep selected compatibility
 descriptors; memory keys and exact refresh remain separate consumers.
 Projection memos belong to one verification, with iterative construction,
 comparison and disposal for shared or deep algebraic structure.
-Pointer keys preserve the native address/provenance/type/volatility/extent
+Pointer keys preserve the native address/provenance/type/volatility/bounds
 identity tuple. Offset DAGs use shared child keys and the existing native offset
 index handles, with iterative construction/comparison/disposal and per-session
 memos. Subobject widths retain their selected native structural descriptor;

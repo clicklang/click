@@ -5,9 +5,10 @@ A simple tactic must cost work proportional to its own input and the C
 operation it executes (docs/internals/verification-efficiency.md). Each shape
 below generates one natural C function and an explicit one-`step()`-per-
 statement proof at several sizes N, verifies it with `CLICK_TIMINGS`, and
-prints every step's deterministic work. A shape whose per-step work stays flat
-as N grows is fine; one whose largest step grows is a perverse function: a
-program `step` cannot check at a cost proportional to the line being checked.
+reports the total and maximum deterministic step work. A shape whose per-step
+operation and effect stay fixed should show roughly flat step work as N grows.
+When the maximum grows, inspect which step grew and whether its own input or
+effect grew with the shape.
 
     python3 scripts/step-scaling-hunt.py [SHAPE ...] [--sizes 1,4,16,64,128]
 
@@ -55,7 +56,7 @@ void touch(int32* flags, int32* data, int32 k) {{
     owns flags[0..k];
     owns data[0..k];
 }} by {{
-    execute();
+    step();
     solve();
 }}
 
@@ -100,7 +101,7 @@ void touch(int32* flags, int32* data, int32 k) {{
     owns flags[0..k];
     owns data[0..k];
 }} by {{
-    execute();
+    step();
     solve();
 }}
 
@@ -127,7 +128,7 @@ TOUCH_CLICK = """void touch(int32* flags, int32* data, int32 k) {
     owns flags[0..k];
     owns data[0..k];
 } by {
-    execute();
+    step();
     solve();
 }"""
 
@@ -176,7 +177,16 @@ def order_chain(n):
     return first;
 }}"""
     requires = "\n".join(f"    requires x{i} < x{i+1};" for i in range(n))
-    steps = "\n".join("    step();" for _ in range(1 + 1 + n + 2))
+    # Give each store its order relative to x0 using the preceding bound.
+    # The final read needs these bounds to recover the first store's value.
+    stores_proof = []
+    for i in range(1, n + 1):
+        if i > 1:
+            stores_proof.append(
+                f"    have x0 < x{i} by solve() using {{ x0 < x{i-1}; x{i-1} < x{i}; }};"
+            )
+        stores_proof.append("    step();")
+    steps = "\n".join(stores_proof)
     click = f"""verifying "hunt.c";
 
 int32 caller(int32* data, int32 len, {params}) {{
@@ -186,7 +196,11 @@ int32 caller(int32* data, int32 len, {params}) {{
     requires x{n} < len;
     ensures result == 100;
 }} by {{
+    step();
+    step();
 {steps}
+    step();
+    step();
     solve();
 }}"""
     return mdtest(f"order chain {n}", c, click)
@@ -245,12 +259,15 @@ def branches(n):
         f"""        branch ensuring {{
             fact 0 <= s;
             fact s <= {i + 1};
-        }} then {{
-            step();
-            have 0 <= s by {{ solve(); }}
-            have s <= {i + 1} by {{ solve(); }}
-        }} else {{
-            have s <= {i + 1} by {{ solve(); }}
+        }} {{
+            true => {{
+                step();
+                have 0 <= s by {{ solve(); }}
+                have s <= {i + 1} by {{ solve(); }}
+            }}
+            false => {{
+                have s <= {i + 1} by {{ solve(); }}
+            }}
         }}"""
         for i in range(n)
     )
@@ -357,7 +374,7 @@ int32 caller(int32* data, struct box* b) {{
     callees_click = "\n\n".join(f"""void touch{i}(int32* data) {{
     owns data[0..4];
 }} by {{
-    execute();
+    step();
     solve();
 }}""" for i in range(n))
     steps = "\n".join("    step();" for _ in range(n + 2))
@@ -438,6 +455,7 @@ int32 caller() {{
 }}"""
     make_proof = "\n".join(
         f"""    step();
+    step();
     unfold(boxed(p{i}));
     step();
     fold(boxed(p{i}));"""
@@ -504,6 +522,7 @@ def main():
     if not os.access(CLICK, os.X_OK):
         sys.exit(f"error: no optimized verifier at {CLICK}; run `cargo build --profile profiling --bin click`")
     directory = tempfile.mkdtemp(prefix="click-step-hunt.")
+    failed = False
     for shape in args.shapes:
         largest = []
         largest_control = []
@@ -514,6 +533,7 @@ def main():
                 handle.write(SHAPES[shape](n))
             ok, steps, controls, output = verify(path)
             if not ok or not steps:
+                failed = True
                 print(f"{shape:18} N={n:<4} did not verify: {path}")
                 print(output[-1500:])
                 break
@@ -544,7 +564,8 @@ def main():
                 f"N={sizes[len(largest) - 1]}: {verdict}"
             )
     print(f"generated mdtests: {directory}")
+    return int(failed)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

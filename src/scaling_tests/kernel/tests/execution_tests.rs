@@ -4,6 +4,64 @@
 
 use super::*;
 
+#[test]
+fn direct_local_write_builds_loan_obligation_without_visiting_aliases() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let execute =
+        |state: &ExecutionState, statement: &ProgramStatement, assumptions: &PureFactContext| {
+            execute_execution_statement_paths(
+                state,
+                statement,
+                assumptions,
+                ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap()
+        };
+    let state = normal_state(&execute(
+        &ExecutionState::new(),
+        &program_declare("x", ProgramType::Int32),
+        &PureFactContext::new(),
+    ));
+    let slot = state.locals().slot("x").unwrap().clone();
+    let loan = active_memory_loan(MemoryRange::new(
+        Address::symbolic(Variable(930_000)),
+        0u32.into(),
+        1u32.into(),
+    ));
+    let state = state.with_loan_ledger(Some(loan));
+    let write = program_assign("x", crate::kernel::program_expression::int32_literal(1));
+
+    let mut samples = Vec::new();
+    for count in [4, 16, 64] {
+        let mut assumptions = PureFactContext::new();
+        for i in 0..count {
+            assumptions = assumptions.assume_condition(
+                ConditionTerm::address_equal(
+                    slot.clone(),
+                    Address::symbolic(Variable(931_000 + i)),
+                ),
+                true,
+            );
+        }
+        // The proof boundary publishes admitted equalities for ownership
+        // queries before the step. Measure the write against that snapshot.
+        state
+            .resources()
+            .synchronize_memory_equalities(&assumptions);
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            execute(&state, &write, &assumptions)
+        });
+        assert_eq!(paths.len(), 1);
+        loan_write_separation(&paths[0]);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}
+
 /// Selecting a verified loop rule reads each required assumption through an
 /// indexed lookup, so the work is charged to the rule's own prerequisites and
 /// does not grow with the unrelated ambient facts in scope at the loop.
@@ -235,5 +293,75 @@ fn statement_theorems_do_not_list_the_context_they_executed_under() {
     assert!(
         premise_counts.windows(2).all(|pair| pair[0] == pair[1]),
         "a statement theorem lists its context: {premise_counts:?}"
+    );
+}
+
+#[test]
+fn const_array_construction_scales_with_written_elements_and_keeps_omitted_cells_compact() {
+    let measure = |length, written, unrelated| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut state = ExecutionState::new();
+        for index in 0..unrelated {
+            state = execute_declaration(
+                &state,
+                &crate::kernel::program_declare(format!("unrelated_{index}"), ProgramType::Int32),
+            );
+        }
+        let fill = ZeroFill::new(
+            4,
+            length,
+            vec![ZeroCell::new(0, ProgramType::Int32, false, int32(0))],
+        )
+        .with_written_elements(
+            (0..written)
+                .map(|index| {
+                    (
+                        index,
+                        crate::kernel::program_expression::int32_literal(index + 1),
+                    )
+                })
+                .collect(),
+        );
+        let declaration = program_declare_with_zero_fill(
+            "values",
+            ProgramType::Int32Array(length),
+            false,
+            false,
+            true,
+            false,
+            Some(fill),
+        );
+        let (state, work) = crate::instrumentation::measure_deterministic_work(|| {
+            execute_declaration(&state, &declaration)
+        });
+        let slot = state.locals.slot("values").unwrap();
+        assert!(state.memory().is_read_only_block(&slot.base));
+        assert_eq!(
+            state
+                .memory()
+                .load(&slot.offset_by_bytes(4 * (written - 1))),
+            ExpressionOutcome::Value(int32(written))
+        );
+        assert_eq!(
+            state.memory().load(&slot.offset_by_bytes(4 * (length - 1))),
+            ExpressionOutcome::Value(int32(0))
+        );
+        assert_eq!(
+            state.memory().cells.runs_in_block(&slot.base).count(),
+            written as usize + 1
+        );
+        work
+    };
+    let small = [4, 1024, 1_000_000].map(|length| measure(length, 2, 0));
+    assert!(small.iter().all(|work| *work <= small[0] + 16), "{small:?}");
+    let unrelated = [0, 32, 128].map(|count| measure(1000, 2, count));
+    assert!(
+        unrelated.iter().all(|work| *work <= unrelated[0] + 32),
+        "{unrelated:?}"
+    );
+    let written = [4, 16, 64].map(|count| measure(1000, count, 0));
+    assert!(written[2] <= 4 * written[1] + 32, "{written:?}");
+    eprintln!(
+        "const-array declaration work (bounds, unrelated, written): {small:?}, {unrelated:?}, {written:?}"
     );
 }

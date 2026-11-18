@@ -49,7 +49,7 @@ remains supported.
   [Execution](#execution).
 - `step_until(target)`: run to one statement, loop, or `function.exit`
   without splitting. See [Execution](#execution).
-- `branch { ... } else { ... }`: prove each arm of the C `if` at the
+- `branch { true => { ... } false => { ... } }`: prove each arm of the C `if` at the
   frontier. See [Execution](#execution).
 - `loop { ... }`: prove a C loop from its invariants, which the back edge
   closes member by member with `solve()`. See [Execution](#execution) and
@@ -253,8 +253,10 @@ forces the goal, as `is_rb(Node(.., left, right)) == 1` forces
 such as a `match` arm's `up.model == Context::Left(..)`, is replaced by it:
 the fact is first restated as a `have` by rewriting with that equation. The proof is ordinary checked steps: `if` the goal
 holds, `known`; otherwise a proof `if` on each condition met before the
-goal's, and at each end `have f(args) != k` by `unfold` and
-`normalize() using` the conditions taken, then `contradiction`. At most 16
+goal's. At each end, expansion proves an equation between the application and
+the selected branch's literal using `unfold`, selected arm equations and
+`known()`. It rewrites the claimed value comparison with the equation and
+closes the branch with `contradiction`. At most 16
 connected function facts are read, each up to 16 ends; a `match` that its
 arguments do not decide, or an end that is not a constant, is a miss. See
 [`solve_reads_a_condition_out_of_a_definition.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_reads_a_condition_out_of_a_definition.md)
@@ -343,9 +345,9 @@ the one execution transition that fails.
 | --- | --- | --- | --- | --- |
 | `mark name;` | simple | Specialized | Name the current execution state. | [Reference](#proof-marks) |
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
-| `let { result: name } = step()` | simple | Specialized | Bind the checked value of a scalar assignment. | [Reference](#binding-a-statement-result) |
+| `let { result: name } = step()` | simple | Specialized | Bind a checked assignment, call, or scalar step result. | [Reference](#binding-a-statement-result) |
 | `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
-| `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
+| `branch [ensuring { ... }] { true => { ... } false => { ... } }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
 | `step(callee, { binder: instance })` | simple | Specialized | Map a call's instance binders and value parameters, and name what it produces. | [Reference](#calls-with-binder-maps) |
@@ -543,28 +545,29 @@ separate smart `implicit closer` row at the step.
 
 **Form:** `let { result: name } = step()`
 
-**Specialized.** Write it when a later fact must name an assigned value after
-its local is overwritten or leaves scope. Execute the scalar assignment at the
-current frontier and bind its checked value to an immutable proof name. The name
-continues to denote that value after the source local is overwritten or leaves
-scope.
+**Specialized.** Bind the checked value from the next assignment, call, or
+scalar evaluation step to an immutable proof name. The name still refers to
+that value after the program overwrites the local, leaves its scope, or uses
+the step result.
 
-**Accepts** a frontier whose next lowered statement assigns a scalar or
-pointer C local without a call: `y = e;`, `x += e;`, `x++;`, or the second
-step of `int32 y = e;` (its initializing assignment). `name` must not be a C
-local in scope or a parameter. A proof name may be bound again, and the newest
-binding wins. The step executes exactly as `step()` does, and `name` then
-denotes the assigned value.
+**Accepts** a scalar or pointer local assignment such as `y = e;`,
+`x += e;`, or the initializing assignment of `int32 y = e;`. It also accepts
+a call whose result is used, including `y = g(x);`, `if (g(x))`, or
+`return g(x);` at the call step. Bare `step()` must be able to resolve the
+call in the current proof context. It also accepts a scalar value that the
+front end retains in a separate step, such as a Rust load followed by an
+arithmetic check. A proof name may be rebound, and the newest binding wins.
 
 **Outside it**, with what to write instead:
 
-- An assignment from a call, `y = g(x);`: use
-  `let { result: name } = step(g, { })`. The empty map is enough for a
-  callee without binders.
+- A call that needs a callee, contract, or binder selection: supply it on
+  the right, for example `let { result: name } = step(g, { input: instance })`.
+  Use the named call form to bind any resources the call produces.
+- A call whose result C discards: use `step()`.
 - A store through a pointer, field, or array element (`p[0] = 3;`,
   `p->v = 3;`): use `step()` and name the cell.
-- A `return`, a declaration's first step, or any other non-assignment: use
-  `step()`. `result` names a returned value.
+- A return step itself or a declaration's first step: use `step()`.
+  In an outcome proof, `result` names the function's return value.
 - A name that is a C variable here is refused with `names a C variable here`.
   Choose another name.
 - An output other than `result`, such as `let { value: v } = step()`, is
@@ -575,7 +578,7 @@ denotes the assigned value.
 The ordinary step checks every access and arithmetic prerequisite, and the
 binding adds no assumption. Expansion retains the binding unchanged.
 
-**Checked examples:** [`step_result_binding_names_checked_values_and_survives_overwrite`](https://github.com/clicklang/click/blob/master/src/surface/tests/project_tests.rs), [`a_step_result_name_can_be_bound_again.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_result_name_can_be_bound_again.md), [`step_result_binding_refuses_a_store_through_a_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/step_result_binding_refuses_a_store_through_a_pointer.md)
+**Checked examples:** [`c_static_function.md`](https://github.com/clicklang/click/blob/master/mdtests/c_static_function.md), [`step_binds_call_result_with_default_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/step_binds_call_result_with_default_resource.md), [`step_result_binding_names_checked_values_and_survives_overwrite`](https://github.com/clicklang/click/blob/master/src/surface/tests/project_tests.rs), [`a_step_result_name_can_be_bound_again.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_result_name_can_be_bound_again.md), [`step_result_binding_refuses_a_store_through_a_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/step_result_binding_refuses_a_store_through_a_pointer.md)
 
 ### Execution to function exit
 
@@ -712,12 +715,11 @@ site.
 
 ### Source branches
 
-**Form:** `branch [ensuring { ... } then] { ... } else { ... }`
+**Form:** `branch [ensuring { ... }] { true => { ... } false => { ... } }`
 
-A plain `branch` starts its first arm directly with `{`. With an `ensuring`
-interface, `then` separates that interface from the first arm. The same rule
-applies to a proof `if`; `then` is required with the interface and refused
-without it.
+The `true` and `false` labels select the two outcomes of the C condition.
+Write both arms in either order. An arm body may be empty, and commas
+between arms are optional. An `ensuring` interface goes before the arm block.
 
 **Core.** At a C `if` frontier, prove every feasible arm and join nonreturning
 arms into one continuation. Arms that end in one state join as they are. Arms
@@ -803,9 +805,8 @@ loop, `iterations` is that loop's own count, and the enclosing proof reads it
 as `loop(i).iterations` once the inner loop exits. `iterations` outside a loop,
 and `loop(i).iterations` on a path that has not left loop `i`, are refused. In a
 loop's clauses and phases bare `iterations` is always the pass count; a
-program variable of that name is [`c(iterations)`](../language/index.md#explicit-c-binding-references),
-or `rust(iterations)` in a Rust sidecar
-([`a_c_local_named_iterations_is_written_c_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_c_iterations.md)).
+program variable of that name is [`program::iterations`](../language/index.md#program-binding-references)
+([`a_c_local_named_iterations_is_written_program_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_program_iterations.md)).
 Like any proof `Integer`, it compares with a C value directly, `i == iterations`
 ([`a_loop_states_a_running_total_over_its_pass_count.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_states_a_running_total_over_its_pass_count.md),
 [`a_loop_pass_count_names_the_passes_after_the_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_pass_count_names_the_passes_after_the_loop.md),
@@ -919,8 +920,8 @@ the C value.
 - The `let` pattern names every `produces` binder. A produced instance's
   resource arguments are the call's arguments
   ([`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md)).
-- A callee without binders takes the empty map `{ }`. Use this to name the
-  result of `y = g(x);` or `return g(x);`
+- An explicitly named callee without binders takes the empty map `{ }`.
+  This form also names a call result when the proof names the callee
   ([`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md)).
   `name` must not be a C variable. A proof name may be rebound.
 
@@ -1095,7 +1096,7 @@ step is still checked.
 
 | Form | Class | Audience | Purpose | Details |
 | --- | --- | --- | --- | --- |
-| `both { ... } and { ... }` | control | Expansion output | Prove both sides of a conjunction. | [Reference](#conjunctions) |
+| `both { left => { ... } right => { ... } }` | control | Expansion output | Prove both sides of a conjunction. | [Reference](#conjunctions) |
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
 | `solve()` | smart | Core | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
 | `solve() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
@@ -1125,9 +1126,8 @@ step is still checked.
 | `if P [ensuring { ... } then] { ... } else { ... }` | control | Core | Split a proof on a chosen proposition. | [Reference](#proposition-branches) |
 | `cases { A => { ... } B => { ... } }` | control | Specialized | Prove a written collection of cases. | [Reference](#explicit-cases) |
 | `open(resource) { ... }` | control | Specialized | Unfold a resource for a nested proof. | [Reference](#scoped-resource-opening) |
-| `open(...) { ... } by { ... }` | control | Expansion output | Supply the proof that restores an opened resource. | [Reference](#scoped-resource-opening-with-restoration) |
 | `witness(value, ...);` | simple | Specialized | Supply values for existential binders. | [Reference](#existential-witnesses) |
-| `obtain (name: Type, ...) { P }` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
+| `let name = obtain(exists (k: Type) { P });` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
 
 `sorry()` is a dev-only proof hole, not a tactic for committed proofs: it
 parses only under `click verify --allow-sorry` and closes its goal without
@@ -1141,8 +1141,8 @@ cannot reuse a live proof binding. Narrow machine binders also supply their
 intrinsic bounds at introduction; these type facts need no extra `intro()`.
 A written range quantifier still has its explicit range-membership guard.
 
-`both { ... } and { ... }` proves an `A and B` goal by opening the exact `A`
-and `B` child goals. Both arms inherit the parent assumptions; neither inherits
+`both { left => { ... } right => { ... } }` opens the exact `A` and `B` child
+goals of `A and B`. Both arms inherit the parent assumptions; neither inherits
 facts proved only in the other arm. This differs from `known()`, which
 closes a conjunction from already-established facts. Empty or unfinished arms fail.
 The `both` source location owns expansion and profiling of its nested proof;
@@ -1240,7 +1240,7 @@ For a native uint64 `index <= 2147483647u64`, `pointer + index` and
 `pointer + index as int32` denote the same address. `solve() using { ... }` checks
 that the cited native bound is available and preserves the pointer stride.
 A bound on the low word or a signed comparison cannot establish this unsigned
-projection, and address equality grants no permission to access the backing
+projection, and integer address equality grants no permission to access the backing
 storage. Conditional normalization does not enter binder bodies.
 
 Two displacements of one pointer by full-width unsigned indices regroup:
@@ -1268,12 +1268,13 @@ complete rewritten surface proof through the ordinary entry point.
 
 ### Conjunctions
 
-**Form:** `both { ... } and { ... }`
+**Form:** `both { left => { ... } right => { ... } }`
 
 **Expansion output.** `click expand` writes it; by hand, a conjunction goal is
-normally split by `solve` or the implicit closer; write `both` only when each side needs its
-own explicit proof. Prove the exact left and right children of an `and` goal in
-separate scopes.
+normally split by `solve` or the implicit closer. Write `both` when each side
+needs its own explicit proof. The `left` and `right` labels select the
+respective children of the `and` goal. The arms can appear in either order,
+and each has its own proof scope. Expansion prints `left` before `right`.
 
 **Failure, checking, and tools:**
 
@@ -1284,12 +1285,11 @@ assumptions. The source container owns expansion of its nested proof.
 
 ### Execution outcomes
 
-**Form:** `outcomes { returned => { ... } threw => { ... } }`
+**Form:** `outcomes { returned[(value)] => { ... } threw[(error)] => { ... } }`
 
 **Specialized.** Write it at a C++ call that may throw, when the two outcomes
 need different proofs; the implicit tail splits them for you. At a maybe-throwing
-call, prove its two successors separately; each arm begins with the `step()`
-that runs the call along its edge. Inside a `try`/`catch (int name)` the `threw`
+call, `outcomes` executes the call and starts each arm at its checked successor. Inside a `try`/`catch (int name)` the `threw`
 arm follows the caught exceptional edge into the handler.
 
 Outside any `try` the `threw` arm ends at function exit with that throw, while
@@ -1298,13 +1298,21 @@ call's own nested `outcomes`. The implicit tail splits every maybe-throwing call
 way, inside a C `if` arm as well as at top level, and expansion writes the split
 it took.
 
+Write `returned(value)` to name the checked value of a call whose result the
+program uses. Write `threw(error)` to name the thrown payload. Each name is a
+proof binding scoped to its arm. At function exit, the same syntax selects
+the call edge already recorded on the path and binds the same call payload.
+For example, a call's returned value still names that value after the caller
+transforms it, and a caught exception names the original thrown value even
+if the caller returns normally. An arm without a name can ignore its payload.
+
 **Failure, checking, and tools:**
 
 The checked execution must establish exactly one edge of each kind. Each arm has
 its own outcome goal and must close it; neither arm can use the other's facts or
 state. Expansion preserves both certificates.
 
-**Checked examples:** [`cpp_import.rs`](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs), [`outcomes_routes_a_throw_that_leaves_the_function.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_routes_a_throw_that_leaves_the_function.md)
+**Checked examples:** [`cpp_import.rs`](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs), [`outcomes_routes_a_throw_that_leaves_the_function.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_routes_a_throw_that_leaves_the_function.md), [`outcomes_payload_bindings.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_payload_bindings.md)
 
 ### Simplification
 
@@ -1612,6 +1620,12 @@ and symbolic matches are opaque operands; their identical occurrences may
 cancel, but this check never unfolds a call or resolves a read. It does not
 invoke the general atomic prover.
 
+Direct computation also recognizes the neutral bitwise identities `0 & x == 0`
+and `0 | x == x` at a native word's own format, in either operand order. Intrinsic
+alignment of a null, heap, global or static address reads only that address's
+block registration and constant byte offset. It does not search alignment facts
+or infer alignment for a symbolic offset.
+
 The same fixed local check accepts intrinsic machine type ranges and
 constant-divisor quotient, remainder, and right-shift bounds. A written
 machine `+`, `-`, or `*` observation equals its exact Integer expression when
@@ -1767,6 +1781,10 @@ It decides conditions in the goal from the cited premises and the equality
 graph, then applies `normalize()`'s check (see
 [Context-free normalization](#context-free-normalization)) to the result.
 
+For a signed `int32` order goal, the cited comparisons can form a chain in
+list order from the goal's lower endpoint to its upper endpoint. A strict
+goal needs at least one strict link. Replay checks the listed links directly.
+
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.
 Both must lie within the operation or destination format. A bound on one
@@ -1786,9 +1804,18 @@ nonnegative operands. Pointer translation names its equality first and scalar
 bounds after it; tagged-word rules name their word equality first (when used)
 and then the alignment facts. One finite classification proves the matching
 reflexive IEEE comparison. These are fixed local rules over explicit inputs;
-none selects premises or expands a polynomial. Generated proofs use ordinary
-normalization steps; legacy `rules` certificates remain accepted as authored
-compatibility syntax.
+none selects premises or expands a polynomial.
+
+For a reflexive `float` or `double` comparison, `solve` expands to
+`known()` when the exact `isfinite(x)` fact is available for the common
+operand. Restricted `solve() using` must select that fact. For example,
+`isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`.
+
+For supported native unsigned address words, `solve` emits ordinary `have`
+goals, `apply(click::integer::...) using`, rewrites, and `known()`: alignment
+weakening, scalar element offsets, low-tag projections and high-mask recovery
+name their local laws and retain the unsigned width explicitly. Remaining
+legacy forms still use the compatibility normalization path.
 
 **Accepts** a goal that `normalize()` accepts after this reduction, when every
 cited premise is accepted:
@@ -2092,18 +2119,17 @@ planning again.
 
 **Form:** `preserve(resource, region);`
 
-A simple tactic for a read-equality or read-definedness goal. Select the resource
-being read and the recorded region across which to preserve it. The exact fact
-`separate(region.footprint, resource)` (in either order) must already be
-available; establish it with `have` first. For evidence at a saved snapshot, write
+A simple tactic for read equality, read definedness, or range viewability.
+Select the resource and the recorded region across which to preserve it. Use
+`have` to establish the exact fact `separate(region.footprint, resource)` in
+either order. For evidence at a saved snapshot, write
 `preserve(at(mark, resource), region)`. Here `at(mark, resource)` is an ordinary
 resource descriptor evaluated at the saved snapshot, just as in `separate` or
 `contains`. Parentheses only group: `(at(mark, resource))` has the same meaning.
-The recorded region endpoints remain fixed. The tactic
-constructs equality of the selected read at the region's exit and entry, in
-that order. It applies one primitive directly, with no premise discovery or
-history search. The current goal selects the read type or named-resource
-field; it must match the constructed equality.
+The tactic applies one primitive using the recorded region endpoints and exact
+facts. For equality goals, it constructs equality of the selected read at the
+exit and entry, in that order. The goal selects the read type or named-resource
+field and must match the constructed equality.
 
 For `defined(read)`, the separated resource must be the complete typed cell.
 The tactic looks up the exact `defined(read)` fact at the footprint's entry
@@ -2112,13 +2138,20 @@ separated cell supplies the address. Missing old definedness is a local refusal,
 not a request to search memory history. This rule preserves definedness; it
 does not establish initialization from ownership or value equality alone.
 
-Use an ordinary `have` to establish this equality, then `rewrite` and
-`known` to carry a proposition across the change. The tactic remains
+For a `viewable(range)` goal, `preserve` accepts a complete footprint from a
+single declaration of fresh local storage without an initializer. Prove
+separation from that footprint and supply the exact entry viewability fact
+for the selected range. The conclusion is a pure live-storage fact for the
+same range at the exit, including for symbolic `uint64` byte ranges.
+
+For equality goals, use an ordinary `have` to establish the equality, then
+`rewrite` and `known` to carry a proposition across the change. The tactic remains
 `preserve(...)` in expansion. Unavailable separation, an unsupported observation,
 or mismatched endpoints is a local refusal. This tactic is distinct from a
 loop's `preserve by { ... }` proof block.
 
-**Checked example:** [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md).
+- Read equality. [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md)
+- Range viewability. [`cstr_plain_char_kernel_requirement_reaches_callee.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_plain_char_kernel_requirement_reaches_callee.md)
 
 `region.footprint` is a resource descriptor, not ownership. Execution records
 writes, call effects, resource changes, and allocation lifetime changes while
@@ -2171,7 +2204,7 @@ by identity; it does not unfold the resource or enumerate its other fields.
 Split expressions involving different resource fields into individual links.
 Supported field values include algebraic values, mathematical `Integer`,
 abstract C values, pointers, and the integer types listed above.
-A byte read retains its one-byte storage extent even though C promotes its
+A byte read retains its one-byte storage size even though C promotes its
 equality to `int32`; separating one byte never licenses a four-byte read. The
 result is oriented after-to-before. Logical read producers
 retain their complete typed values under the exact version point, address, and read
@@ -2184,8 +2217,9 @@ checking does not retain these observations. Missing observations fail locally;
 no alias or history fallback runs.
 Pointer preservation also accepts address equality when the pointer domains
 already agree. Equality composition uses ordinary `rewrite` and `known` steps.
-Footprints can record non-memory resources, symbolic release extents, and
-multiple mutable call resources. Wide-index memory ranges are not yet supported.
+Footprints can record non-memory resources, symbolic release spans, and
+multiple mutable call resources. Wide-index memory ranges are supported for
+viewability preservation.
 Joined branch/loop footprints still need
 producer integration; use recorded individual transitions where available.
 An unavailable premise, unsupported rule, or mismatched endpoint fails locally.
@@ -2208,10 +2242,11 @@ Arithmetic automation expands to ordinary proofs. Arithmetic operations correspo
 
 Integer composition plans expand their premise, addition, scaling, and
 equality-direction nodes into ordinary `have`, `apply(...) using`, `rewrite`,
-and explicit `normalize()` steps. Each intermediate fact is established once;
-later nodes reuse it. Context-free identities relate the plan's flat affine
-forms to the written operands, so expansion does not re-enter arithmetic
-search. Integer antisymmetry uses `integer::le_antisymmetric`.
+and `known()` steps. Each intermediate fact is established once and later
+nodes reuse it. Context-free identities relate the plan's flat affine forms
+to the written operands. Expansion uses checked `normalize()` when the
+bounded algebra emitter cannot spell an identity. Integer antisymmetry uses
+`integer::le_antisymmetric`.
 
 Strict Integer premises and goals use the successor-order law. Linear
 refutations that use the negated goal once become direct compositions;
@@ -2220,12 +2255,68 @@ ranges and constant-divisor quotient, shift, and remainder bounds use
 `known()`. Rounding and endpoint exclusions use ordinary Integer laws.
 Machine operation and cast identities use `known()` after their exact Integer
 bounds have been proved. Literal shifts and nonnegative literal masks expand
-to these leaves, explicit product bounds, and rounding laws. A root conditional
-with an available guard expands to a `known()` arm equation and a rewrite. Signed intervals expand to ordinary bounds and observation identities;
-specialized selected rules normalize from explicit inputs, while polynomial
+to these leaves, explicit product bounds, and rounding laws. Numeric conditionals
+at the root or nested inside arithmetic, casts, observations and call arguments
+expand to `known()` arm equations and rewrites when their guards are selected.
+Outer arms are selected before examining their contents; an inactive arm is
+not detached and evaluated. Multiple conditionals are reduced in source order,
+with at most 64 rewrites and 4096 visited source nodes under the solve deadline.
+Binders and historical point expressions keep their scope and are not traversed.
+Arithmetic after selection uses ordinary emitters. Omitted guards remain
+unavailable to restricted solve, even when present in the ambient context.
+See [`nested_conditional_explicit_arm_equations.md`](https://github.com/clicklang/click/blob/master/mdtests/nested_conditional_explicit_arm_equations.md).
+Boolean and constructor-valued conditionals use the same arm equations.
+For example, from `flag == true`, `known()` proves
+`(if flag { Some(x) } else { None }) == Some(x)`. Nested selections expose
+one arm at a time and retain each proof as an explicit rewrite. A Boolean
+comparison with a literal can also use the selected arm's exact truth fact.
+Definition refutations whose unfolding also needs constructor-match reduction
+can retain a checked `normalize() using` step with the selected branch facts.
+See [the explicit arm proofs](https://github.com/clicklang/click/blob/master/mdtests/non_numeric_conditional_arm_equations.md).
+
+Scalar signed interval claims, operation bounds, and narrowed casts expand
+through selected Integer and machine-observation proofs, without `normalize()`.
+Their intermediate facts replay with implicit solving disabled. Widened unsigned
+sums such as `(a as int64) + (b as int64) <= 30i64`, from selected
+`a <= 10u32` and `b <= 20u32`, also expand through exact operation ranges,
+widening identities, and ordinary Integer arithmetic. Each operand is widened
+before addition. The route supports uint8/uint16 source ranges, uint32 values
+above `INT32_MAX`, and nonnegative int64 constants through `UINT32_MAX`.
+Missing selected bounds and bounds one below the attainable sum are refused.
+See [`widened_unsigned_sum_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/widened_unsigned_sum_bounds.md)
+and its adjacent refusal fixture. Exact type bounds on observations at
+program points expand to `known()` when the bound follows from the type.
+Other retained-read and history obligations keep the compatibility normalizer
+with their selected facts and version points. Other specialized selected rules
+normalize from explicit inputs, while polynomial
 search emits separate distribution and rewrite steps. All library proofs use
 ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
 states the named laws' exact guards.
+
+Integer inequality composition writes the equalities that convert bounds
+to and from `left - right <= 0`. `known()` checks the local equalities,
+and the algebra emitter writes named laws and rewrites for coefficient
+rearrangements. A cited fact that is false by computation can close with
+`contradiction(fact)` directly.
+
+Bounded cast identities expand by proving the exact destination range from
+the selected bounds and then closing the observation equality with
+`known()`. Native and Integer spellings of the source bounds can be cited.
+For example, a signed value bounded from 1 through 100 keeps its Integer
+value when cast to `uint32`.
+
+Scalar-pointer offset translation expands through the named
+`integer::<pointee>_pointer_translate_int32` /
+`<pointee>_pointer_translate_uint64` laws, explicit
+Integer displacement equalities, and proved pointer-association helpers.
+Nested element offsets are associated only after proving the native index sum
+is exact: signed definedness or an unsigned nonwrapping upper bound. This
+route supports scalar pointees with int32/uint64 indices and preserves element
+strides and the selected pointer relation. It uses at most 64 offsets per
+source chain, 64 selected ambient premises, and 4096 emitter operations under
+the solve deadline. Mixed symbolic
+index families and unsupported pointer forms retain compatibility behavior.
+See [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
 
 ### Rewriting
 
@@ -2269,10 +2360,10 @@ fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
   range premise and does not turn a machine equality into an Integer one.
   The conversion is bounded to 64 nodes in the cited equality.
 - A pointer equality rewrites the base of an explicit `viewable(...)` claim
-  while preserving the point it is stated at and its byte extent. A cited shifted view
-  whose extent is `(i + 4) - i` also covers the same address with a literal
-  four-byte extent; constant endpoint differences are compared in the
-  extent's own modular arithmetic.
+  while preserving the point it is stated at and its byte span. A cited shifted view
+  whose span is `(i + 4) - i` also covers the same address with a literal
+  four-byte span; constant endpoint differences are compared in the
+  span's own modular arithmetic.
 - A pointer equality also rewrites the addresses of loads read through the
   pointer, including byte reads observed with `to_integer` and a pointer that
   is itself loaded (`o->in->cells[2]` under `o->in == a`); it keeps the read's
@@ -2846,7 +2937,7 @@ top-level `let ih = induct(n)`, when:
   measure needs no domain fact.
 
 It adds one fact, `ih`: for every `m` of the measure's type, `m >= 0` (signed
-only), `m < n`, and every theorem requirement at `m`, together with the extent
+only), `m < n`, and every theorem requirement at `m`, together with the span
 halves of each range that requirement names at `m`, imply the theorem's goal
 at `m`. Every other parameter keeps its current value. The goal is unchanged.
 Earlier helper proofs may precede `induct`; the hypothesis is unavailable
@@ -2957,12 +3048,12 @@ type (any expression, such as `n - 1` or `n - 1u64`), when:
 - Every listed `P` is an available fact, read as `using` lists read premises:
   exactly, under another form of the same order claim (`0 <= m` for
   `m >= 0`, `n > m` for `m < n`), or true without facts. Listing a range a
-  clause stated also cites its two extent halves where they are available.
+  clause stated also cites its two span halves where they are available.
   Extra or repeated premises are allowed.
 - Every guard of the hypothesis at `m`, split into its `and` conjuncts, is
   true by context-free evaluation or is one listed premise under one of those
   forms. The guards are `m >= 0` (signed only), `m < n`, each requirement
-  at `m`, and the extent halves of every range a requirement names at `m`.
+  at `m`, and the span halves of every range a requirement names at `m`.
 
 It adds the theorem's goal at `m` as a fact and closes the current goal when
 that fact is the goal. Nothing else in context is read.
@@ -2991,8 +3082,8 @@ available: n - 2 < n``). Click performs one local instantiation with no premise
 search; expansion is unchanged.
 
 **Checked examples:** [`pure_induction_countdown_explicit.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown_explicit.md),
-[`induction_hypothesis_cites_a_listed_range_with_its_extent.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_extent.md),
-and [`induction_hypothesis_owes_the_range_extent.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_extent.md).
+[`induction_hypothesis_cites_a_listed_range_with_its_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_span.md),
+and [`induction_hypothesis_owes_the_range_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_span.md).
 
 ### Intermediate facts
 
@@ -3190,35 +3281,14 @@ an `ensuring` interface can rejoin before the block closes.
 
 Missing ownership, an undecided guard, or failure to restore the body fails. A
 body fact the closing fold leaves open is proved by the implicit closer, which
-expansion prints as `open(...) { ... } by { ... }`. When it leaves several open,
-the implicit closer proves each, and expansion prints them as `have`s at the end
-of the block. Click checks the exact
-resource transition; expansion recurses, and profiling reports descendants.
+expansion writes as `have` steps at the end of the block. To supply a closing
+proof by hand, put the `have` there yourself, after any execution that
+establishes the fact. This also works when the block reaches function exit.
+A trailing `by` after the block is refused.
 
 **Checked examples:** [`resource_population_open.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_population_open.md), [`open_scope_model_match_terminal.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_terminal.md), [`open_scope_model_match_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejoins.md), [`open_scope_model_match_rejects_bad_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejects_bad_arm.md)
 
-### Scoped resource opening with restoration
-
-**Form:** `open(...) { ... } by { ... }`
-
-**Expansion output.** `click expand` writes it; by hand, write it only to give
-the close a different proof than the implicit closer. Closing an `open` scope
-folds its resource again; the body after `by` proves the one body fact that fold
-leaves open, as `fold(...) by { ... }` does, where the block ends, or after
-execution when the block reaches function exit.
-
-A bare `open` proves that fact by the implicit closer, which expansion prints as
-this `by`. The body is one tactic call, such as `solve();`, or a block.
-
-**Failure, checking, and tools:**
-
-Refused when the close leaves no body fact open (superfluous) or more than one;
-prove the others with `have` in the block, the form expansion writes for a bare
-`open` whose close leaves several. Expansion keeps the `by` and
-prints the body's checked steps; a smart tactic written in the `by` expands with its claim
-(`click expand --claim`), not as a site of its own.
-
-**Checked examples:** [`open_by_proves_the_closing_fold_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/open_by_proves_the_closing_fold_body_fact.md), [`open_by_is_refused_when_the_close_leaves_nothing_open.md`](https://github.com/clicklang/click/blob/master/mdtests/open_by_is_refused_when_the_close_leaves_nothing_open.md)
+**Checked closing examples:** [`open_closing_fact_inside_block.md`](https://github.com/clicklang/click/blob/master/mdtests/open_closing_fact_inside_block.md), [`open_trailing_by_is_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/open_trailing_by_is_rejected.md)
 
 ### Existential witnesses
 
@@ -3265,46 +3335,32 @@ and profiling charges one instantiation per value.
 
 ### Obtaining witnesses
 
-**Form:** `obtain (name: Type, ...) { P }`
+**Forms:** `let name = obtain(exists (k: Type) { P });` and
+`let (a, b) = obtain(exists (x: T, y: U) { P });`.
 
-**Specialized.** Write it to use an existential fact by naming its witness. Open
-an already established `exists (name: Type, ...) { P }`, introducing the bound
-values and instantiated body into the proof context. Each name is in scope for
-every later tactic of the same proof block, whatever its type: a `have` goal, an
-`instantiate` argument or `using` premise, a `contradiction` fact, a theorem
-argument, or a `witness`.
+**Specialized.** Open an established existential and name its witnesses.
+The right side states the exact available proposition, up to its bound names.
+The left side names the outputs in quantifier order. Their types come from
+the existential. Each output and the instantiated body are available in
+subsequent tactics in the same proof block.
 
-**Accepts** an `obtain` whose written `exists (name: Type, ...) { P }` is an
-available fact up to the binders' names, held alone or as a leaf conjunct of a
-fact (`requires n > 0 and exists (k: int32) { k < n };`), when:
-
-- The fact is a requirement, a `have` conclusion, or another opened body, and
-  `P` is written as the fact states it, with each binder type the same.
-- Binder types are C integers, pointers, `Integer`, or algebraic types.
-- Fewer names than the fact's binders open the outer ones, when `P` is written
-  as the remaining existential: `obtain (a: int32) { exists (y: int32) { a < y } }`
-  opens `exists (x: int32, y: int32) { x < y }` one binder at a time.
-- A `(0..n).any(|k| { B })` fact opens with its bounds written in the body:
-  `obtain (m: int32) { 0 <= m and m < n and B' }`, `B'` being `B` at `m`.
-- No name is a parameter, `result`, a local, or an earlier `obtain` name.
-
-Each name is bound to a fresh value, and the body at those values becomes a
-fact.
-
-**Outside it**, with what to write instead:
-
-- An existential held only under a disjunction or implication: `cases` or
-  `have` it first.
-- A body spelled differently from the fact (`n > m` for `m < n`), or a
-  different binder type: write it as the fact states it.
-- More names than the fact's binders: name only those it has.
+- The existential may be a requirement, a `have` conclusion, or a leaf
+  conjunct of an available fact. It must be available before the tactic runs.
+- One output opens the outermost binder. For example,
+  `let a = obtain(exists (x: int32, y: int32) { x < y });` leaves
+  `exists (y: int32) { a < y }` available.
+- For `(0..n).any(|k| { B })`, give the explicit existential, including the
+  range bounds, as the argument.
+- To open a historical existential, write
+  `let a = obtain(at(point, exists (x: int32) { P }));`.
+- Output names must be distinct and fresh in the proof block. The quantifier
+  binds its own variables independently of the output names.
 
 **Failure, checking, and tools:**
 
-An unavailable existential, wrong binder type, or name already in scope fails;
-the first two print the written existential as an unsatisfied requirement.
-Prove the existential with `have` first if needed. Expansion retains this exact
-step.
+An unavailable existential, too many outputs, or an output name already in
+scope fails. State an existential with `have` first if it needs a proof.
+Expansion retains the `let` and its source proposition.
 
 **Checked examples:** [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`obtain_requires_the_written_existential_body.md`](https://github.com/clicklang/click/blob/master/mdtests/obtain_requires_the_written_existential_body.md)
 
@@ -3374,8 +3430,8 @@ mathematical product.
 | `fold(...) by { ... }` | control | Expansion output | Supply a proof for one fold obligation. | [Reference](#folding-with-one-obligation) |
 | `fold(...) { requires P by ...; }` | control | Expansion output | Supply proofs for selected fold obligations. | [Reference](#folding-with-several-obligations) |
 | `construct(resource)` | simple | Specialized | Create an abstract token authorized by a `constructs` clause. | [Reference](#constructing-resources) |
-| `take(base[a..b])` | simple | Specialized | Take one element out of iterated ownership. | [Reference](#taking-a-range) |
-| `give(base[a..b])` | simple | Specialized | Return a taken element to iterated ownership. | [Reference](#giving-a-range) |
+| `unfold(resource(args)[i])` | simple | Specialized | Expose one guarded ownership slot. | [Reference](#indexed-resource-unfolding-and-folding) |
+| `fold(resource(args)[i])` | simple | Specialized | Restore one guarded ownership slot. | [Reference](#indexed-resource-unfolding-and-folding) |
 | `gather(resource(args))` | simple | Specialized | Form iterated ownership from its covering range. | [Reference](#gathering-resources) |
 | `scatter(resource(args))` | simple | Specialized | Dissolve iterated ownership into its covering range. | [Reference](#scattering-resources) |
 | `name(args, { binder: instance })` | simple | Specialized | Apply a verified tactic with resource bindings. | [Reference](#user-defined-tactic-calls) |
@@ -3425,7 +3481,7 @@ pure theorem too, where the listed premises are all there is to read.
   without facts. A quantified premise may name its own binder: a call's
   postcondition held under the binder its lowering chose is cited by a written
   form with another, as in `apply using`. Listing a stated range also cites
-  its two extent halves.
+  its two span halves.
 - The source `P` is a listed premise, follows from the listed premises by the
   kernel's atomic derivation (`old(p[0]) <= 7` from `old(p[0]) == 7`), or is
   a reflexive equality, under binders and guards, which needs no entry. At a
@@ -3562,7 +3618,7 @@ Beyond it:
 
 - A `viewable` target is decided by the kernel's viewability rules, so a range
   narrows to a sub-range the listed order facts place inside it, provided the
-  source range is established to be a valid 32-bit byte extent.
+  source range is established to be a valid 32-bit byte span.
 - A fact about an application of an `Integer` range-fold function whose body
   the kernel checks, reading its one `T[]` argument (for a C integer `T` such
   as `int32` or `uint64`) only at the fold's own index, crosses each store and
@@ -3838,98 +3894,30 @@ expansion preserves the checked step, and profiling charges one simple leaf.
 
 **Checked examples:** [`contract_tests.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/contract_tests.rs), [`authority_ordinary_token_construction.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_ordinary_token_construction.md), [`authority_authorized_token_construction_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_authorized_token_construction_rejected.md)
 
-### Taking a range
+### Indexed resource unfolding and folding
 
-**Form:** `take(base[a..b])`
+**Forms:** `unfold(resource(args)[i]);` and `fold(resource(args)[i]);`
 
-**Specialized.** Write it to use one element of an iterated ownership fact as
-ordinary owned memory. Move one element out of the unfolded iterated ownership
-fact whose elements live at `base`, as ordinary owned memory. The element's
-index must be known in range, its guard known true, and the index not already
-out; the fact then claims nothing at that index.
+Open the declaring resource first. Its arguments must determine the guarded
+iterated clause's bounds, layout, and guard. Those coordinates select one held
+clause, which supplies the memory range at the current `int32` index `i`.
 
-**Accepts**, at a C function's execution frontier before exit, a range that is
-one element of the one held iterated ownership fact whose elements live at
-`base` (the declaring resource already unfolded), when:
+- Indexed `unfold` requires `i` to be in range, its guard known true, and
+  `i` known distinct from every open slot. It exposes the element as owned
+  memory and records an open slot.
+- Indexed `fold` requires an open slot at `i`, its guard known true, and
+  direct ownership of the element's memory. A slot may have been opened by
+  indexed `unfold` or by a C store that made its guard true. Folding consumes
+  the direct ownership and restores the slot to the clause.
 
-- The range is the clause's element at some index `i`: for
-  `owns data[k..k + 1]` write `data[i..i + 1]`; for an offset clause
-  `data[k + 1..k + 2]` write `data[i + 1..i + 2]`; for a stride `s > 1`
-  write `data[s * i + a..s * i + b]`, with the offset in any arrangement of
-  the same affine form (`i * s`, `s * i`, or `i + i` for `s = 2`). `i` may be any
-  `int32` term, constants included.
-- `lo <= i` and `i < hi` are settled by the kernel's condition decision from
-  current facts: stated bounds, equalities (`j == index`), and chains of
-  bounds (`0 <= j`, `j <= index`).
-- The guard at `i` is settled true the same way, from a fact about the guard
-  cell (`occupied[i] == 0`, or `occupied[i] <= 0` with `occupied[i] >= 0`)
-  or from a C branch on it. Both `g[k] == v` and `g[k] != v` guards work.
-- `i` is settled different from every index already taken out.
+Write `at(point, resource(args))[i]` to select the clause using arguments
+at a recorded program point. The index, guard, and ownership transfer use
+the current state. The operation runs at an execution frontier before
+function exit. Expansion retains the indexed form.
 
-It adds the element as owned memory and records `i` as taken out. Several
-elements may be out at once.
-
-**Outside it**, with what to write instead:
-
-- A range wider or narrower than one element, such as `data[i..i + 2]` for
-  a one-cell clause: one `take` per element.
-- An iterated fact still folded inside its resource: `unfold` the resource
-  first.
-- An index whose range, guard, or distinctness is not settled: state it with
-  `have` or a `requires` first; a guard known false holds no element.
-- After the function exit: take before execution reaches the exit.
-
-**Failure, checking, and tools:**
-
-An unknown or false guard, an index that may already be out, an index not
-known in range, a range that is not one element, or two held iterated facts at
-the same base fails, each with its own message. The kernel re-derives the step
-from its input state when the trace is checked; expansion prints it unchanged,
-and profiling charges one guard cell and the fact's taken-out indices.
-
-**Checked examples:** [`iterated_ownership_allocate_one.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_allocate_one.md), [`iterated_ownership_rejects_take_false_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_take_false_guard.md), [`iterated_ownership_rejects_take_unknown_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_take_unknown_guard.md), [`take_refuses_an_element_already_taken_out.md`](https://github.com/clicklang/click/blob/master/mdtests/take_refuses_an_element_already_taken_out.md), [`take_refuses_a_range_that_is_not_one_element.md`](https://github.com/clicklang/click/blob/master/mdtests/take_refuses_a_range_that_is_not_one_element.md)
-
-### Giving a range
-
-**Form:** `give(base[a..b])`
-
-**Specialized.** Write it to return an element taken with `take`. Move a
-taken-out element back into its iterated ownership fact. Its guard must be known
-true.
-
-**Accepts**, at a C function's execution frontier before exit, a range that is
-one element of the one held iterated ownership fact at `base`, written as for
-`take`, when:
-
-- Its index is settled equal to an index taken out of the fact, by `take` or
-  by a C store that made the guard true.
-- The guard at that index is settled true by the kernel's condition decision.
-- The element's cells are owned.
-
-It consumes the element and clears the index from the taken-out set.
-
-Both `give` and `take` accept an explicitly saved pointer base:
-`give(at(opened, arena->data)[i..i + 1])` or `take(old(data)[i..i + 1])`.
-Only the base expression selects an earlier state. Bounds outside that selector
-refer to the current state, and guard checking and ownership transfer occur in
-the current state. This selects the recorded base directly when a fresh read
-of a descriptor field does not find its iterated ownership fact; it does not
-search for equivalent pointer forms.
-
-**Outside it**, with what to write instead:
-
-- An element never taken out: there is nothing to return; the fact already
-  holds it.
-- A guard known false or not settled: store the guard value in C, or state
-  the guard cell's value as a fact first.
-- After the function exit: give before execution reaches the exit.
-
-**Failure, checking, and tools:**
-
-A guard that is false or unknown, or an element that is not out, fails. Checked
-and expanded like `take`.
-
-**Checked examples:** [`iterated_saved_base_release.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_saved_base_release.md), [`iterated_saved_base_current_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_saved_base_current_bounds.md), [`iterated_ownership_release_one.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_release_one.md), [`iterated_ownership_rejects_give_false_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_give_false_guard.md)
+**Checked examples:** [Strided slot and saved arguments](https://github.com/clicklang/click/blob/master/mdtests/indexed_iterated_ownership.md),
+[Allocation](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_allocate_one.md),
+[Release](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_release_one.md).
 
 ### Gathering resources
 
@@ -4001,7 +3989,7 @@ elements must tile one range, which it adds as owned memory.
 
 **Outside it**, with what to write instead:
 
-- A fact with an element taken out: `give` it back first.
+- A fact with an open slot: restore it with indexed `fold` first.
 - A fact still folded inside its resource: `unfold` the resource first.
 - Guards not settled one way: as for `gather`.
 
@@ -4120,8 +4108,9 @@ decided:
 - After the function exit, or inside `have ... by { ... }`: observe at the
   frontier before.
 
-An `observe` whose guard is undecided currently succeeds and adds nothing.
-That is not a guarantee; decide the guard first.
+When projecting a composite body, `observe` reports an undecided guard and
+names the condition to prove or refute. A known-false guard selects an empty
+body and succeeds.
 
 **Failure, checking, and tools:**
 
@@ -4205,3 +4194,21 @@ proof, introduce a function absent from the generated scope, or replace a
 missing premise. Establish that premise in a `have` proof or use `solve()` to
 plan the required steps. The checked example is
 `mdtests/termination_ordinary_proof_steps.md`.
+
+### Explicit `Integer` algebra expansion
+
+Coefficient algebra and polynomial identities selected by `solve()` expand
+to applications of Integer distributivity, associativity, commutativity and
+sign laws, followed by explicit rewrites and `known()` additive or numeric
+leaves. Calls, reads, folds, and machine observations remain opaque operands.
+Polynomial discovery uses the existing tactic budget and a 4096-step output
+bound; it does not run inside `known()`. Supporting library proofs use
+ordinary tactics.
+
+Nonnegative quotient shifts use `integer::nonnegative_quotient_shift`: for
+`d != 0`, `1 <= d`, `0 <= x` and `0 <= k`,
+`truncating_quotient(x + d*k,d) == truncating_quotient(x,d)+k`.
+Automatic selection currently uses positive literal divisors and proves each
+sign guard from the selected premises. Missing selected guards are refused.
+
+Checked example: [`explicit_integer_algebra_laws.md`](https://github.com/clicklang/click/blob/master/mdtests/explicit_integer_algebra_laws.md).

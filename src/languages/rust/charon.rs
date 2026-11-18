@@ -1336,6 +1336,9 @@ struct BodyAdapter<'a, 'b> {
     body: &'a u::ExprBody,
     plumbing: closures::ClosurePlumbing,
     names: BTreeMap<a::LocalId, String>,
+    /// The locals whose source name is bound more than once: each one's
+    /// storage starts where rustc's does, so its declaration does too.
+    spelled: BTreeSet<a::LocalId>,
     slice_pairs: BTreeMap<a::LocalId, [String; 2]>,
     iterator_refs: BTreeMap<a::LocalId, a::LocalId>,
     iterator_discriminants: BTreeMap<a::LocalId, a::LocalId>,
@@ -1384,9 +1387,19 @@ impl BodyAdapter<'_, '_> {
             let iterator = self.local(root)?;
             let option = self.local(option)?;
             return Ok(Some(if shared {
-                S::SharedArrayNext { iterator, option }
+                S::SharedArrayNext {
+                    iterator,
+                    option: Some(option),
+                    payload: None,
+                    taken: None,
+                }
             } else {
-                S::ChunkNext { iterator, option }
+                S::ChunkNext {
+                    iterator,
+                    option: Some(option),
+                    payload: None,
+                    taken: None,
+                }
             }));
         }
         if let Some(statement) = self.split_slice_call(t)? {
@@ -2034,10 +2047,10 @@ impl BodyAdapter<'_, '_> {
                 let a::TyKind::Ref(_, array, source_kind) = source.kind() else {
                     return Err(unsupported("array unsize source"));
                 };
-                let a::TyKind::Array(element, extent, _) = array.kind() else {
+                let a::TyKind::Array(element, array_length, _) = array.kind() else {
                     return Err(unsupported("array unsize source"));
                 };
-                let Some(extent) = extent.as_usize_literal() else {
+                let Some(array_length) = array_length.as_usize_literal() else {
                     return Err(unsupported("symbolic array unsize"));
                 };
                 let mutable = matches!(destination.kind(), a::TyKind::Ref(_, _, a::RefKind::Mut));
@@ -2052,8 +2065,8 @@ impl BodyAdapter<'_, '_> {
                                     mutable: false,
                                 })))
                     || (mutable && *source_kind != a::RefKind::Mut)
-                    || length.as_usize_literal() != Some(extent)
-                    || extent
+                    || length.as_usize_literal() != Some(array_length)
+                    || array_length
                         > i32::MAX as u128
                             / match self.adapter.ty(element)? {
                                 Type::U8 => 1,
@@ -2221,7 +2234,8 @@ impl BodyAdapter<'_, '_> {
             }),
             u::StatementKind::StorageLive(id)
                 if (matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Adt(r) if self.adapter.records.contains_key(&r.id) || self.adapter.generic_records.contains_key(&r.id))
-                    || matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Array(..))) =>
+                    || matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Array(..))
+                    || self.spelled.contains(id)) =>
             {
                 Some(S::BeginStorage {
                     local: self.local(*id)?,
@@ -3522,6 +3536,8 @@ pub(super) fn decode_crate(
         let mut return_place = String::from("result");
         // The locals the source does not name, apart from the return slot.
         let mut temporaries = BTreeSet::new();
+        let mut spellings = BTreeMap::new();
+        let mut spelled = BTreeSet::new();
         for local in &body.locals.locals {
             if let Some(name) = &local.name {
                 *occurrences.entry(name).or_default() += 1;
@@ -3557,15 +3573,23 @@ pub(super) fn decode_crate(
                 return_place = name.clone();
                 name
             } else {
-                // rustc gives every nested `for` temporary the name `iter`.
-                // Preserve unique source names; ambiguous/unnamed locals use
-                // their compiler IDs in a namespace disjoint from source names.
+                // A source name bound more than once, as `word` in two
+                // `Some(word)` arms or `iter` in nested `for` loops, is one
+                // declaration per binding, each spelled as the source spells
+                // it (`spellings`), as C's are. Unnamed locals use their
+                // compiler IDs in a namespace disjoint from source names.
                 let mut generated = format!("__rust_mir_{}", local.index.index());
                 while !reserved.insert(generated.clone()) {
                     generated.push('_');
                 }
-                if local.index.index() != 0 {
-                    temporaries.insert(generated.clone());
+                match &local.name {
+                    Some(name) => {
+                        spellings.insert(generated.clone(), name.clone());
+                        spelled.insert(local.index);
+                    }
+                    None => {
+                        temporaries.insert(generated.clone());
+                    }
                 }
                 generated
             };
@@ -3628,6 +3652,7 @@ pub(super) fn decode_crate(
             body,
             plumbing,
             names,
+            spelled,
             slice_pairs,
             iterator_refs,
             iterator_discriminants,
@@ -3763,11 +3788,18 @@ pub(super) fn decode_crate(
         protocol::split_next_branches(&mut blocks)?;
         user_iterators::test_user_next_results(&mut blocks, &adapter.user_iterator_nexts);
         panics::assert_branches(&mut blocks);
+        let parameter_types = parameters
+            .iter()
+            .map(|parameter| (parameter.name.clone(), parameter.value_type.clone()))
+            .collect();
+        temporaries::substitute_literals(&mut locals, &mut blocks, &temporaries, &parameter_types);
         temporaries::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_range_payloads(&mut locals, &mut blocks, &temporaries);
+        temporaries::bind_slice_payloads(&mut locals, &mut blocks, &temporaries);
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
+        temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
         functions.push(out::Function {
             sites: source_statements
                 .iter()
@@ -3783,6 +3815,17 @@ pub(super) fn decode_crate(
             parameters,
             body: vec![],
             mir: Some(out::MirBody {
+                spellings: {
+                    // Only the locals the passes kept.
+                    let kept: BTreeSet<&str> = locals
+                        .iter()
+                        .map(|local: &out::Place| local.name.as_str())
+                        .collect();
+                    spellings
+                        .into_iter()
+                        .filter(|(key, _): &(String, String)| kept.contains(key.as_str()))
+                        .collect()
+                },
                 locals,
                 blocks,
                 return_place,
@@ -4191,7 +4234,7 @@ mod tests {
             };
             *count = length;
             // Only examine storage lowering: remove the four-element copy,
-            // whose type deliberately does not change with the test extent.
+            // whose type deliberately does not change with the test length.
             for block in &mut mir.blocks {
                 block.statements.retain(|s| !matches!(s, S::Assign { target: E::Local { name }, .. } if name == "array"));
             }
@@ -4591,58 +4634,6 @@ mod tests {
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         let claim = "verifying \"iteration.rs\"; fn signed(words: &[i32; 4]) -> i32 { views words[0..4]; ensures result == old(words[0]); }";
         assert!(ProgramVerificationSession::new_program_prepared(claim, &prepared).is_err());
-    }
-
-    #[test]
-    fn charon_shared_iteration_none_cannot_yield_a_scalar_reference() {
-        let mut export = decode(ITERATION_ARTIFACT, "iteration.rs", ITERATION_SOURCE).unwrap();
-        export.functions.retain(|f| f.name == "signed");
-        let f = &mut export.functions[0];
-        for local in f
-            .parameters
-            .iter_mut()
-            .chain(&mut f.mir.as_mut().unwrap().locals)
-        {
-            if let Type::Reference { pointee, .. } = &mut local.value_type
-                && let Type::Array { length, .. } = pointee.as_mut()
-            {
-                *length = 0;
-            }
-        }
-        let mir = f.mir.as_mut().unwrap();
-        let payload = mir
-            .blocks
-            .iter()
-            .flat_map(|b| &b.statements)
-            .find(|s| {
-                matches!(
-                    s,
-                    S::Assign {
-                        value: E::SharedArrayOptionElement { .. },
-                        ..
-                    }
-                )
-            })
-            .unwrap()
-            .clone();
-        let none_edge = mir
-            .blocks
-            .iter()
-            .find_map(|b| match b.terminator {
-                T::If {
-                    condition: E::SharedArrayHasNext { .. },
-                    else_target,
-                    ..
-                } => Some(else_target),
-                _ => None,
-            })
-            .unwrap();
-        let T::Goto { target: none } = mir.blocks[none_edge].terminator else {
-            panic!()
-        };
-        mir.blocks[none].statements.insert(0, payload);
-        let prepared = super::super::import::prepared_for_test(export).unwrap();
-        assert!(ProgramVerificationSession::new_program_prepared("verifying \"iteration.rs\"; fn signed(words: &[i32; 4]) -> i32 { ensures result == 0; }", &prepared).is_err());
     }
 
     const OWNED_ARRAY_ARTIFACT: &[u8] = include_bytes!(
@@ -5174,53 +5165,6 @@ mod tests {
         assert!(error.contains("iterator Option projection"), "{error}");
     }
 
-    #[test]
-    fn charon_chunk_none_cannot_supply_a_slice_payload() {
-        let mut export = decode(CHUNK_ARTIFACT, "chunks.rs", CHUNK_SOURCE).unwrap();
-        let mir = export
-            .functions
-            .iter_mut()
-            .find(|f| f.name == "next_len")
-            .unwrap()
-            .mir
-            .as_mut()
-            .unwrap();
-        let payload = mir
-            .blocks
-            .iter()
-            .flat_map(|b| &b.statements)
-            .find(|s| {
-                matches!(
-                    s,
-                    S::Assign {
-                        value: E::ChunkOptionSlice { .. },
-                        ..
-                    }
-                )
-            })
-            .unwrap()
-            .clone();
-        let none_edge = mir
-            .blocks
-            .iter()
-            .find_map(|b| match b.terminator {
-                T::If {
-                    condition: E::ChunkHasNext { .. },
-                    else_target,
-                    ..
-                } => Some(else_target),
-                _ => None,
-            })
-            .unwrap();
-        let T::Goto { target: none } = mir.blocks[none_edge].terminator else {
-            panic!()
-        };
-        mir.blocks[none].statements.insert(0, payload);
-        let prepared = super::super::import::prepared_for_test(export).unwrap();
-        let claim = "verifying \"chunks.rs\"; fn next_len(bytes: &[u8]) -> usize { requires bytes.len() == 0u64; ensures result == 0u64; }";
-        assert!(ProgramVerificationSession::new_program_prepared(claim, &prepared).is_err());
-    }
-
     const SLICE_ARTIFACT: &[u8] =
         include_bytes!("../../../design/charon-trial/slices/.click/slices/slices.rs.ullbc");
     const SLICE_SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/slices/slices.rs");
@@ -5568,7 +5512,9 @@ mod tests {
                     }
                 }
                 C::Loop { test, body, .. } => {
-                    let condition = test.execution_parts().0;
+                    let condition = test
+                        .source_condition()
+                        .expect("reconstructed while has one decision");
                     guards.push(format!("{condition:?}"));
                     visit(body, guards);
                 }

@@ -79,12 +79,12 @@ fn opening_a_conditional_is_its_case_split() {
         split,
         Some(Proposition::Or(
             Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(c.clone(), true)),
-                Box::new(Proposition::ConditionIs(a.clone(), false)),
+                Box::new(Proposition::condition_is(c.clone(), true)),
+                Box::new(Proposition::condition_is(a.clone(), false)),
             )),
             Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(c, false)),
-                Box::new(Proposition::ConditionIs(b, false)),
+                Box::new(Proposition::condition_is(c, false)),
+                Box::new(Proposition::condition_is(b, false)),
             )),
         ))
     );
@@ -222,9 +222,9 @@ fn an_unfolded_application_has_its_body_s_truth() {
 #[test]
 fn a_bool_read_is_one_value_per_cell() {
     let _session = VerificationSession::enter();
-    let memory = crate::kernel::intern_memory(Memory::new());
-    let read = ConditionTerm::bool_load(memory.clone(), Pointer::symbolic(Variable(70)));
-    let same = ConditionTerm::bool_load(memory, Pointer::symbolic(Variable(70)));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+    let read = ConditionTerm::bool_load(memory.clone(), Address::symbolic(Variable(70)));
+    let same = ConditionTerm::bool_load(memory, Address::symbolic(Variable(70)));
     let context = PureFactContext::new()
         .assume_condition(bool_equal(read, binder(71)), true)
         .assume_condition(binder(71), true);

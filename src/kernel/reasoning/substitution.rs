@@ -20,15 +20,42 @@ trait VariableSubstitution {
     fn from(&self) -> Variable;
     fn bitvector(&self, term: &MachineTerm) -> MachineTerm;
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm;
-    fn pointer(&self, pointer: &Pointer) -> Pointer;
+    fn pointer(&self, pointer: &Address) -> Address;
     /// The address of a local's storage slot.
-    fn local_slot(&self, pointer: &Pointer) -> Pointer;
+    fn local_slot(&self, pointer: &Address) -> Address;
     fn term(&self, term: &Term) -> Term;
     fn condition(&self, condition: &ConditionTerm) -> ConditionTerm;
+    fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm>;
+    fn stored_condition(&self, condition: &StoredConditionTerm) -> StoredConditionTerm {
+        if let Some(root) = condition.root().and_then(|root| self.condition_root(root)) {
+            return StoredConditionTerm::from_root(root).expect("logical condition substitution");
+        }
+        self.condition(condition.native_compat()).into()
+    }
     fn program_value(&self, value: &ProgramValue) -> ProgramValue;
     fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue;
+    /// Native program-value storage applies its existing typed literal
+    /// constructor after substitution. Keep that carrier without exporting a
+    /// common expression; only an atomic literal crosses this boundary.
+    fn stored_program_value(&self, value: &ExecutionValue) -> ExecutionValue {
+        let rewritten = self.expression_value(value);
+        if let Some(root) = rewritten.shared()
+            && let KernelTermNode::MachineLiteral(literal) = root.node()
+            && let Some(format) = MachineIntegerType::from_program_type(rewritten.program_type())
+        {
+            let raw = literal.value_at(format);
+            let normalized = self.program_value(&raw);
+            if normalized != raw {
+                return KernelTermImport::default()
+                    .argument(&PureFunctionArgument::Value(normalized))
+                    .into();
+            }
+        }
+        rewritten
+    }
+
     fn program_expression(&self, expression: &ProgramExpression) -> ProgramExpression;
-    fn memory(&self, memory: &Memory) -> Memory;
+    fn memory(&self, memory: &SymbolicMemory) -> SymbolicMemory;
     fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm;
     fn spec_expression(&self, expression: &SpecExpression) -> SpecExpression;
     fn spec_integer(&self, expression: &SpecIntegerExpression) -> SpecIntegerExpression;
@@ -61,10 +88,10 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
         substitute_bitvector_variable_in_integer(term, self.from, self.to)
     }
-    fn pointer(&self, pointer: &Pointer) -> Pointer {
+    fn pointer(&self, pointer: &Address) -> Address {
         substitute_bitvector_variable_in_pointer(pointer, self.from, self.to)
     }
-    fn local_slot(&self, pointer: &Pointer) -> Pointer {
+    fn local_slot(&self, pointer: &Address) -> Address {
         pointer.clone()
     }
     fn term(&self, term: &Term) -> Term {
@@ -72,6 +99,9 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     }
     fn condition(&self, condition: &ConditionTerm) -> ConditionTerm {
         substitute_bitvector_variable_in_condition(condition, self.from, self.to)
+    }
+    fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm> {
+        substitute_bitvector_variable_in_common_condition(condition, self.from, self.to)
     }
     fn program_value(&self, value: &ProgramValue) -> ProgramValue {
         substitute_bitvector_variable_in_program_value(value, self.from, self.to)
@@ -91,7 +121,7 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     fn program_expression(&self, expression: &ProgramExpression) -> ProgramExpression {
         substitute_bitvector_variable_in_program_expression(expression, self.from, self.to)
     }
-    fn memory(&self, memory: &Memory) -> Memory {
+    fn memory(&self, memory: &SymbolicMemory) -> SymbolicMemory {
         substitute_bitvector_variable_in_memory(memory, self.from, self.to)
     }
     fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm {
@@ -123,7 +153,7 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
 
 struct PointerSubstitution<'a> {
     from: Variable,
-    to: &'a Pointer,
+    to: &'a Address,
 }
 
 impl VariableSubstitution for PointerSubstitution<'_> {
@@ -138,10 +168,10 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
         term.clone()
     }
-    fn pointer(&self, pointer: &Pointer) -> Pointer {
+    fn pointer(&self, pointer: &Address) -> Address {
         substitute_pointer_variable_in_pointer(pointer, self.from, self.to)
     }
-    fn local_slot(&self, pointer: &Pointer) -> Pointer {
+    fn local_slot(&self, pointer: &Address) -> Address {
         self.pointer(pointer)
     }
     fn term(&self, term: &Term) -> Term {
@@ -149,6 +179,9 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     }
     fn condition(&self, condition: &ConditionTerm) -> ConditionTerm {
         substitute_pointer_variable_in_condition(condition, self.from, self.to)
+    }
+    fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm> {
+        substitute_pointer_variable_in_common_condition(condition, self.from, self.to)
     }
     fn program_value(&self, value: &ProgramValue) -> ProgramValue {
         substitute_pointer_variable_in_program_value(value, self.from, self.to)
@@ -168,7 +201,7 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     fn program_expression(&self, expression: &ProgramExpression) -> ProgramExpression {
         substitute_pointer_variable_in_program_expression(expression, self.from, self.to)
     }
-    fn memory(&self, memory: &Memory) -> Memory {
+    fn memory(&self, memory: &SymbolicMemory) -> SymbolicMemory {
         substitute_pointer_variable_in_memory(memory, self.from, self.to)
     }
     fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm {
@@ -277,7 +310,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_spec(
 pub(crate) fn substitute_pointer_variable_in_proposition(
     proposition: &Proposition,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> Proposition {
     walk_proposition(proposition, &PointerSubstitution { from, to })
 }
@@ -286,7 +319,7 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
 pub(crate) fn substitute_pointer_value_in_proposition(
     proposition: &Proposition,
     from: Variable,
-    to: &PointerValue,
+    to: &Pointer,
 ) -> Result<Proposition, String> {
     let c = std::collections::BTreeMap::from([(
         from,
@@ -307,7 +340,7 @@ pub(crate) fn substitute_pointer_value_in_proposition(
 fn substitute_pointer_variable_in_algebraic_value(
     value: &AlgebraicValue,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> AlgebraicValue {
     walk_algebraic_value(value, &PointerSubstitution { from, to })
 }
@@ -315,7 +348,7 @@ fn substitute_pointer_variable_in_algebraic_value(
 fn substitute_pointer_variable_in_pure_function_argument(
     argument: &PureFunctionArgument,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> PureFunctionArgument {
     walk_pure_function_argument(argument, &PointerSubstitution { from, to })
 }
@@ -323,7 +356,7 @@ fn substitute_pointer_variable_in_pure_function_argument(
 fn substitute_pointer_variable_in_sequence(
     sequence: &SequenceTerm,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> SequenceTerm {
     walk_sequence(sequence, &PointerSubstitution { from, to })
 }
@@ -332,7 +365,7 @@ fn substitute_pointer_variable_in_sequence(
 fn substitute_pointer_variable_in_execution_statement(
     statement: &ProgramStatement,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> ProgramStatement {
     walk_execution_statement(statement, &PointerSubstitution { from, to })
 }
@@ -340,7 +373,7 @@ fn substitute_pointer_variable_in_execution_statement(
 fn substitute_pointer_variable_in_execution_state(
     state: &ExecutionState,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> ExecutionState {
     walk_execution_state(state, &PointerSubstitution { from, to })
 }
@@ -349,7 +382,7 @@ fn substitute_pointer_variable_in_execution_state(
 fn substitute_pointer_variable_in_resource(
     resource: &Resource,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> Resource {
     walk_resource(resource, &PointerSubstitution { from, to })
 }
@@ -358,28 +391,30 @@ fn substitute_pointer_variable_in_resource(
 fn substitute_pointer_variable_in_program_function(
     function: &ProgramFunction,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> ProgramFunction {
     walk_program_function(function, &PointerSubstitution { from, to })
 }
 
-fn walk_algebraic_value<S: VariableSubstitution + ?Sized>(
-    value: &AlgebraicValue,
+fn walk_algebraic_value<'a, S: VariableSubstitution + ?Sized>(
+    value: impl Into<ResourceFieldValue<'a>>,
     s: &S,
 ) -> AlgebraicValue {
-    match value {
-        AlgebraicValue::Program(value) => AlgebraicValue::Program(s.program_value(value)),
-        AlgebraicValue::Integer(value) => AlgebraicValue::Integer(s.integer(value)),
-        AlgebraicValue::Algebraic(value) => AlgebraicValue::Algebraic(s.algebraic_term(value)),
+    match value.into() {
+        ResourceFieldValue::Program(value) => AlgebraicValue::Program(s.program_value(value)),
+        ResourceFieldValue::Integer(value) => AlgebraicValue::Integer(s.integer(value)),
+        ResourceFieldValue::Algebraic(value) => AlgebraicValue::Algebraic(s.algebraic_term(value)),
     }
 }
 
 fn walk_program_expression_outcome<S: VariableSubstitution + ?Sized>(
-    outcome: &ExpressionOutcome,
+    outcome: &ExpressionOutcome<StoredProgramValue>,
     s: &S,
-) -> ExpressionOutcome {
+) -> ExpressionOutcome<StoredProgramValue> {
     match outcome {
-        ExpressionOutcome::Value(value) => ExpressionOutcome::Value(s.program_value(value)),
+        ExpressionOutcome::Value(value) => ExpressionOutcome::Value(StoredProgramValue::from(
+            s.stored_program_value(value.value()),
+        )),
         ExpressionOutcome::UndefinedBehavior(kind) => {
             ExpressionOutcome::UndefinedBehavior(kind.clone())
         }
@@ -666,7 +701,10 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
             side: right.side,
             payload: right.payload.map_values(|v| walk_algebraic_value(v, s)),
             flag: s.pointer(&right.flag),
-            observed: right.observed.as_ref().map(|value| s.program_value(value)),
+            observed: right
+                .observed
+                .as_ref()
+                .map(|value| StoredProgramValue::from(s.stored_program_value(value.value()))),
         }),
         Resource::MutexUse(identity) => Resource::MutexUse(MutexUseIdentity {
             protected: identity.protected.as_ref().map(|p| {
@@ -686,7 +724,7 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
         }),
         Resource::ConditionalMutexGuard(carrier) => {
             let mut mapped = (**carrier).clone();
-            mapped.held = s.condition(&carrier.held);
+            mapped.held = s.condition(carrier.condition()).into();
             Resource::ConditionalMutexGuard(std::sync::Arc::new(mapped))
         }
         Resource::MutexGuard(identity) => Resource::MutexGuard(MutexIdentity {
@@ -712,11 +750,32 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                 .iter()
                 .map(|value| walk_algebraic_value(value, s))
                 .collect();
-            result.fields = instance
-                .fields
-                .iter()
-                .map(|value| walk_algebraic_value(value, s))
-                .collect();
+            result.fields =
+                ResourceFieldValues::from_stored((0..instance.fields.len()).map(|index| {
+                    match instance.fields.stored_field(index).expect("field index") {
+                        StoredResourceField::Input(value) => {
+                            StoredResourceField::Input(walk_algebraic_value(&value, s))
+                        }
+                        StoredResourceField::Program(value) => {
+                            StoredResourceField::from_program(s.stored_program_value(value.value()))
+                        }
+                        StoredResourceField::Integer(root) => {
+                            StoredResourceField::from_minted(AlgebraicValue::Integer(
+                                s.integer(root.integer_native_compat().expect("Integer field")),
+                            ))
+                        }
+                        StoredResourceField::Algebraic(root) => {
+                            let ProgramValue::Parameter(value) =
+                                root.algebraic_native_value().expect("algebraic field")
+                            else {
+                                unreachable!()
+                            };
+                            StoredResourceField::from_minted(AlgebraicValue::Algebraic(
+                                s.algebraic_term(value),
+                            ))
+                        }
+                    }
+                }));
             result.resource_arguments = crate::kernel::ResourceReference::map_captured_values(
                 instance.resource_arguments(),
                 |value| walk_algebraic_value(value, s),
@@ -905,18 +964,28 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. } => statement.clone(),
 
-        ProgramStatement::Declare {
-            initializer: Some(expression),
-            ..
-        } => {
+        ProgramStatement::Declare { .. } => {
             let mut statement = statement.clone();
-            if let ProgramStatement::Declare { initializer, .. } = &mut statement {
-                *initializer = Some(s.program_expression(expression));
+            if let ProgramStatement::Declare {
+                initializer,
+                zero_fill,
+                ..
+            } = &mut statement
+            {
+                *initializer = initializer
+                    .as_ref()
+                    .map(|value| s.program_expression(value));
+                if let Some(fill) = zero_fill
+                    && !fill.written_elements.is_empty()
+                {
+                    fill.written_elements = fill
+                        .written_elements
+                        .iter()
+                        .map(|(index, value)| (*index, s.program_expression(value)))
+                        .collect();
+                }
             }
             statement
         }
@@ -1252,7 +1321,7 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
         Proposition::VolatileAccess(event) => {
             Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
                 pointer: s.pointer(&event.pointer),
-                value: s.program_value(&event.value),
+                value: StoredProgramValue::from(s.stored_program_value(event.value.value())),
                 id: event.id,
                 kind: event.kind,
                 value_type: event.value_type,
@@ -1260,7 +1329,7 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
         }
         Proposition::Equal(left, right) => Proposition::Equal(s.term(left), s.term(right)),
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(s.condition(condition), *value)
+            Proposition::condition_is(s.stored_condition(condition), *value)
         }
         Proposition::Predicate { name, arguments } => Proposition::Predicate {
             name: name.clone(),
@@ -1329,10 +1398,12 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             outcome: walk_program_expression_outcome(outcome, s),
         },
         Proposition::MemoryReadDefined {
+            at,
             memory,
             pointer,
             value_type,
         } => Proposition::MemoryReadDefined {
+            at: *at,
             memory: s.memory(memory),
             pointer: s.pointer(pointer),
             value_type: *value_type,
@@ -1354,7 +1425,11 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
         } => Proposition::MemoryLoadable {
             memory: s.memory(memory),
             base: s.pointer(base),
-            bytes: s.bitvector(bytes),
+            bytes: match bytes.value() {
+                ExecutionValue::Native(_) => bytes.map_native(|term| s.bitvector(term)),
+                value => crate::kernel::StoredMachineTerm::from_value(s.expression_value(value))
+                    .expect("substitution preserves count type"),
+            },
             wide: *wide,
         },
         Proposition::ResourceSeparate { left, right } => Proposition::ResourceSeparate {
@@ -1494,9 +1569,14 @@ fn walk_resource_fact<S: VariableSubstitution + ?Sized>(
     s: &S,
 ) -> ResourceFact {
     match resource {
-        ResourceFact::Own(resource, quantity) => {
-            ResourceFact::Own(walk_resource(resource, s), Box::new(s.bitvector(quantity)))
-        }
+        ResourceFact::Own(resource, quantity) => ResourceFact::own_quantity_stored(
+            walk_resource(resource, s),
+            match quantity.value() {
+                ExecutionValue::Native(_) => quantity.map_native(|term| s.bitvector(term)),
+                value => crate::kernel::StoredMachineTerm::from_value(s.expression_value(value))
+                    .expect("substitution preserves quantity type"),
+            },
+        ),
         ResourceFact::View(resource) => ResourceFact::View(walk_resource(resource, s)),
     }
 }
@@ -1661,13 +1741,10 @@ fn walk_resource_term<S: VariableSubstitution + ?Sized>(
 
 fn walk_sequence<S: VariableSubstitution + ?Sized>(sequence: &SequenceTerm, s: &S) -> SequenceTerm {
     let node = match sequence.node.as_ref() {
-        SequenceTermNode::Literal(values) => SequenceTermNode::Literal(
-            values
-                .iter()
-                .map(|value| s.program_value(value))
-                .collect::<Vec<_>>()
-                .into(),
-        ),
+        SequenceTermNode::Literal(values) => SequenceTermNode::Literal(values.map_values(
+            |value| s.program_value(value),
+            |value| s.stored_program_value(value),
+        )),
         SequenceTermNode::Concat(left, right) => {
             SequenceTermNode::Concat(walk_sequence(left, s), walk_sequence(right, s))
         }
@@ -1686,12 +1763,12 @@ fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &
             s.bitvector(range.bound_terms().1),
         )
         .with_provenance(std::sync::Arc::new(s.pointer(&range.provenance)))
-        .with_opaque_extent(
+        .with_bounds_owner(
             range
-                .opaque_extent
+                .bounds_owner
                 .as_deref()
                 .map(|origin| std::sync::Arc::new(s.pointer(origin))),
-            range.carrier_extent_known,
+            range.carrier_bounds_known,
         );
     if !range.formation_coverage.is_empty() {
         result.formation_coverage = range
@@ -1710,8 +1787,8 @@ mod resource_frame_substitution_tests {
     #[test]
     fn guard_substitution_renames_abstract_authority_but_preserves_concrete_acquisition() {
         let variable = Variable(71_900);
-        let address = Pointer::symbolic(variable);
-        let replacement = Pointer::symbolic(Variable(71_901));
+        let address = Address::symbolic(variable);
+        let replacement = Address::symbolic(Variable(71_901));
         let abstract_guard = Resource::MutexGuard(MutexIdentity {
             epoch: None,
             mutex: address.clone(),
@@ -1736,8 +1813,8 @@ mod resource_frame_substitution_tests {
     #[test]
     fn lifetime_substitution_renames_abstract_authority_but_preserves_concrete_initialization() {
         let variable = Variable(71_900);
-        let address = Pointer::symbolic(variable);
-        let replacement = Pointer::symbolic(Variable(71_901));
+        let address = Address::symbolic(variable);
+        let replacement = Address::symbolic(Variable(71_901));
         let abstract_guard = Resource::MutexLive(MutexIdentity {
             epoch: None,
             mutex: address.clone(),
@@ -1762,9 +1839,9 @@ mod resource_frame_substitution_tests {
     #[test]
     fn use_substitution_preserves_exact_share_and_diagnostic_address() {
         let variable = Variable(71_900);
-        let address = Pointer {
-            block: PointerBlock::Symbolic(variable),
-            offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(variable), 1),
+        let address = Address {
+            base: AddressBase::Symbolic(variable),
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(variable), 1),
         };
         let live = ResourceFact::own(Resource::MutexLive(MutexIdentity {
             epoch: Some(123),
@@ -1785,7 +1862,7 @@ mod resource_frame_substitution_tests {
             substitute_pointer_variable_in_resource(
                 resource,
                 variable,
-                &Pointer::symbolic(Variable(71_901))
+                &Address::symbolic(Variable(71_901))
             ),
             *resource
         );
@@ -1801,18 +1878,18 @@ mod resource_frame_substitution_tests {
 
     #[test]
     fn unrelated_binder_preserves_nested_offset_state() {
-        let base = Memory::new();
-        let metadata = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::Add(
-                    Box::new(PointerOffsetTerm::scaled_int32_node(
+        let base = SymbolicMemory::new();
+        let metadata = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Add(
+                Box::new(AddressOffset::Add(
+                    Box::new(AddressOffset::scaled_int32_node(
                         MachineTerm::Variable(Variable(100_000)),
                         4,
                     )),
-                    Box::new(PointerOffsetTerm::Constant(8)),
+                    Box::new(AddressOffset::Constant(8)),
                 )),
-                Box::new(PointerOffsetTerm::Constant(4)),
+                Box::new(AddressOffset::Constant(4)),
             ),
         };
         let retained_state = crate::kernel::intern_memory(
@@ -1842,7 +1919,7 @@ mod resource_frame_substitution_tests {
         let pointer_substituted = substitute_pointer_variable_in_execution_state(
             &state,
             Variable(71_100),
-            &Pointer::symbolic(Variable(71_101)),
+            &Address::symbolic(Variable(71_101)),
         );
 
         let original = state.loan_ledger().expect("state has ledger");
@@ -1878,9 +1955,9 @@ mod resource_frame_substitution_tests {
     fn bitvector_substitution_rewrites_validated_inherited_ranges() {
         let from = Variable(71_001);
         let range = MemoryRange::new(
-            Pointer {
-                block: PointerBlock::Concrete("substitution:range".into()),
-                offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(from), 4),
+            Address {
+                base: AddressBase::Concrete("substitution:range".into()),
+                offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(from), 4),
             },
             MachineTerm::Variable(from),
             binary_node!(
@@ -1919,20 +1996,20 @@ mod resource_frame_substitution_tests {
             .expect("validated carrier must be retained");
         assert_eq!(actual[0].start(), &MachineTerm::constant(4));
         assert_eq!(actual[0].end(), &MachineTerm::constant(5));
-        assert_eq!(actual[0].base.offset, PointerOffsetTerm::Constant(16));
+        assert_eq!(actual[0].base.offset, AddressOffset::Constant(16));
     }
 
     #[test]
     fn pointer_substitution_rewrites_validated_ranges_and_derived_interface() {
         let from = Variable(71_002);
-        let replacement = Pointer {
-            block: PointerBlock::Concrete("substitution:replacement".into()),
-            offset: PointerOffsetTerm::Constant(2),
+        let replacement = Address {
+            base: AddressBase::Concrete("substitution:replacement".into()),
+            offset: AddressOffset::Constant(2),
         };
         let range = MemoryRange::new(
-            Pointer {
-                block: PointerBlock::Symbolic(from),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::Symbolic(from),
+                offset: AddressOffset::Constant(0),
             },
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -1964,9 +2041,9 @@ mod resource_frame_substitution_tests {
         );
 
         let derived_segment = MemorySegment::new(
-            ProgramExpression::Value(ProgramValue::pointer(Pointer {
-                block: PointerBlock::Symbolic(from),
-                offset: PointerOffsetTerm::Constant(0),
+            ProgramExpression::Value(ProgramValue::pointer(Address {
+                base: AddressBase::Symbolic(from),
+                offset: AddressOffset::Constant(0),
             })),
             ProgramExpression::Value(int32(0)),
             ProgramExpression::Value(int32(1)),
@@ -2055,7 +2132,7 @@ fn substitute_surface_load_binding(
     let mut collector =
         crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::checked();
     collector.collect(proposition);
-    collector.collect(&Proposition::ConditionIs(
+    collector.collect(&Proposition::condition_is(
         ConditionTerm::equal(MachineTerm::Variable(from), load.clone()),
         true,
     ));
@@ -2085,7 +2162,7 @@ pub fn resolve_minted_load_variables(
         if !fact.certified {
             continue;
         }
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -2093,7 +2170,7 @@ pub fn resolve_minted_load_variables(
                 right,
             },
             true,
-        ) = fact.proposition()
+        )) = fact.proposition().condition_native()
         else {
             continue;
         };
@@ -2141,7 +2218,7 @@ pub(crate) fn substitute_algebraic_variable_in_proposition(
             rewritten_term(right, from, to),
         ),
         Proposition::ConditionIs(condition, value) => {
-            let leaf = Proposition::ConditionIs(condition.clone(), *value);
+            let leaf = Proposition::condition_is(condition.clone(), *value);
             let source = AlgebraicTerm {
                 algebraic_type: to.algebraic_type.clone(),
                 node: AlgebraicTermNode::Variable(from),
@@ -2358,14 +2435,14 @@ fn collect_proposition_bound_variables_one(
     match proposition {
         Proposition::VolatileAccess(event) => {
             collect_pointer_bound_variables(&event.pointer, variables);
-            collect_program_value_bound_variables(&event.value, variables);
+            collect_expression_value_bound_variables(event.value.value(), variables);
         }
         Proposition::Equal(left, right) => {
             collect_term_bound_variables(left, variables);
             collect_term_bound_variables(right, variables);
         }
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_bound_variables(condition, variables);
+            collect_condition_bound_variables(condition.native_compat(), variables);
         }
         Proposition::Predicate { arguments, .. } => {
             for argument in arguments {
@@ -2442,7 +2519,7 @@ fn collect_proposition_bound_variables_one(
         } => {
             collect_memory_bound_variables(memory, variables);
             collect_pointer_bound_variables(base, variables);
-            collect_bitvector_bound_variables(bytes, variables);
+            collect_expression_value_bound_variables(bytes.value(), variables);
         }
         Proposition::ResourceViewable { memory, resource } => {
             collect_memory_bound_variables(memory, variables);
@@ -2527,8 +2604,12 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
 fn collect_sequence_bound_variables(sequence: &SequenceTerm, variables: &mut BTreeSet<Variable>) {
     match sequence.node.as_ref() {
         SequenceTermNode::Literal(values) => {
-            for value in values.iter() {
-                collect_program_value_bound_variables(value, variables);
+            for index in 0..values.len() {
+                if let Some(value) = values.retained_value_ref(index) {
+                    collect_expression_value_bound_variables(value, variables);
+                } else {
+                    collect_program_value_bound_variables(values.get(index).unwrap(), variables);
+                }
             }
         }
         SequenceTermNode::Concat(left, right) => {
@@ -2583,14 +2664,16 @@ fn collect_program_value_bound_variables(value: &ProgramValue, variables: &mut B
     }
 }
 
-fn collect_algebraic_value_bound_variables(
-    value: &AlgebraicValue,
+fn collect_algebraic_value_bound_variables<'a>(
+    value: impl Into<ResourceFieldValue<'a>>,
     variables: &mut BTreeSet<Variable>,
 ) {
-    match value {
-        AlgebraicValue::Program(value) => collect_program_value_bound_variables(value, variables),
-        AlgebraicValue::Integer(value) => collect_integer_bound_variables(value, variables),
-        AlgebraicValue::Algebraic(value) => collect_algebraic_bound_variables(value, variables),
+    match value.into() {
+        ResourceFieldValue::Program(value) => {
+            collect_program_value_bound_variables(value, variables)
+        }
+        ResourceFieldValue::Integer(value) => collect_integer_bound_variables(value, variables),
+        ResourceFieldValue::Algebraic(value) => collect_algebraic_bound_variables(value, variables),
     }
 }
 
@@ -2662,16 +2745,21 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. } => {}
 
         ProgramStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            for expression in initializer
+                .iter()
+                .chain(zero_fill.iter().flat_map(ZeroFill::expressions))
+            {
+                collect_program_expression_bound_variables(expression, variables);
+            }
         }
-        | ProgramStatement::Assign { expression, .. }
+        ProgramStatement::Assign { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression)
         | ProgramStatement::Assert {
@@ -2747,8 +2835,11 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            collect_program_expression_bound_variables(condition, variables);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                collect_program_expression_bound_variables(condition, variables);
+            }
             for proposition in invariant {
                 collect_proposition_bound_variables(proposition, variables);
             }
@@ -3012,20 +3103,20 @@ fn collect_program_function_specification_bound_variables(
 }
 
 fn collect_expression_outcome_bound_variables(
-    outcome: &ExpressionOutcome,
+    outcome: &ExpressionOutcome<StoredProgramValue>,
     variables: &mut BTreeSet<Variable>,
 ) {
     if let ExpressionOutcome::Value(value) = outcome {
-        collect_program_value_bound_variables(value, variables);
+        collect_expression_value_bound_variables(value.value(), variables);
     }
 }
 
-fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<Variable>) {
-    match &pointer.block {
-        PointerBlock::PureFunctionApplication(_) => {
+fn collect_pointer_bound_variables(pointer: &Address, variables: &mut BTreeSet<Variable>) {
+    match &pointer.base {
+        AddressBase::PureFunctionApplication(_) => {
             collect_proposition_capture_variables(
-                &Proposition::ConditionIs(
-                    ConditionTerm::PointerEqual(
+                &Proposition::condition_is(
+                    ConditionTerm::AddressEqual(
                         Box::new(pointer.clone()),
                         Box::new(pointer.clone()),
                     ),
@@ -3034,24 +3125,24 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
                 variables,
             );
         }
-        PointerBlock::FunctionSymbolic(variable)
-        | PointerBlock::Symbolic(variable)
-        | PointerBlock::ExternalObject(variable) => {
+        AddressBase::FunctionSymbolic(variable)
+        | AddressBase::Symbolic(variable)
+        | AddressBase::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        PointerBlock::ContractResult
-        | PointerBlock::ContractException
-        | PointerBlock::AggregateReturn { .. }
-        | PointerBlock::StaticObject { .. }
-        | PointerBlock::AutomaticLocal { .. }
-        | PointerBlock::ReferenceCarrier { .. }
-        | PointerBlock::Concrete(_)
-        | PointerBlock::StringLiteral { .. }
-        | PointerBlock::Function(_)
-        | PointerBlock::ExternalArgument
-        | PointerBlock::LoadedPointer(_)
-        | PointerBlock::Heap(_)
-        | PointerBlock::Temporary(_) => {}
+        AddressBase::ContractResult
+        | AddressBase::ContractException
+        | AddressBase::AggregateReturn { .. }
+        | AddressBase::StaticObject { .. }
+        | AddressBase::AutomaticLocal { .. }
+        | AddressBase::ReferenceCarrier { .. }
+        | AddressBase::Concrete(_)
+        | AddressBase::StringLiteral { .. }
+        | AddressBase::Function(_)
+        | AddressBase::ExternalArgument
+        | AddressBase::LoadedPointer(_)
+        | AddressBase::Heap(_)
+        | AddressBase::Temporary(_) => {}
     }
     collect_pointer_offset_bound_variables(&pointer.offset, variables);
 }
@@ -3075,7 +3166,7 @@ pub(crate) fn memory_bound_cell_visits() -> usize {
     MEMORY_BOUND_CELL_VISITS.with(std::cell::Cell::get)
 }
 
-fn collect_memory_bound_variables(memory: &Memory, variables: &mut BTreeSet<Variable>) {
+fn collect_memory_bound_variables(memory: &SymbolicMemory, variables: &mut BTreeSet<Variable>) {
     // While a fact set reserves a fact's variables, an interned state's
     // bound variables are walked once: they depend on the state alone,
     // and the set already reserves those of every state walked before.
@@ -3106,6 +3197,12 @@ fn collect_memory_bound_variables(memory: &Memory, variables: &mut BTreeSet<Vari
     {
         collect_pointer_bound_variables(pointer, variables);
     }
+    for (pointer, byte) in memory.heap.initialized.partial_map().iter() {
+        collect_pointer_bound_variables(pointer, variables);
+        if let Some(value) = &byte.value {
+            collect_program_value_bound_variables(value, variables);
+        }
+    }
     for contents in memory.blocks.values() {
         collect_bitvector_bound_variables(contents.size(), variables);
     }
@@ -3133,8 +3230,8 @@ fn collect_memory_bound_variables(memory: &Memory, variables: &mut BTreeSet<Vari
 /// differently from `base`: with `base`'s bound variables these include
 /// all of `memory`'s, and each is one of `memory`'s.
 fn collect_memory_bound_variables_entering(
-    base: &Memory,
-    memory: &Memory,
+    base: &SymbolicMemory,
+    memory: &SymbolicMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
     for (before, after) in [
@@ -3151,6 +3248,17 @@ fn collect_memory_bound_variables_entering(
             let pointer = change.key();
             if after.contains_key(pointer) {
                 collect_pointer_bound_variables(pointer, variables);
+            }
+        }
+    }
+    let before = base.heap.initialized.partial_map();
+    let after = memory.heap.initialized.partial_map();
+    for change in before.diff(after) {
+        let pointer = change.key();
+        if let Some(byte) = after.get(pointer) {
+            collect_pointer_bound_variables(pointer, variables);
+            if let Some(value) = &byte.value {
+                collect_program_value_bound_variables(value, variables);
             }
         }
     }
@@ -3204,7 +3312,7 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
             }
         }
         Resource::ConditionalMutexGuard(carrier) => {
-            collect_condition_bound_variables(&carrier.held, variables)
+            collect_condition_bound_variables(carrier.condition(), variables)
         }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
@@ -3218,12 +3326,22 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
                 .visit_values(|v| collect_algebraic_value_bound_variables(v, variables));
             collect_pointer_bound_variables(&right.flag, variables);
             if let Some(value) = &right.observed {
-                collect_program_value_bound_variables(value, variables);
+                collect_expression_value_bound_variables(value.value(), variables);
             }
         }
         Resource::Instance(instance) => {
-            for value in instance.arguments.iter().chain(instance.fields.iter()) {
+            for value in instance.arguments.iter() {
                 collect_algebraic_value_bound_variables(value, variables);
+            }
+            for index in 0..instance.fields.len() {
+                if let Some(value) = instance.fields.retained_program(index) {
+                    collect_expression_value_bound_variables(value, variables);
+                } else {
+                    collect_algebraic_value_bound_variables(
+                        instance.fields.get(index).expect("field index"),
+                        variables,
+                    );
+                }
             }
             crate::kernel::ResourceReference::visit_captured_values(
                 instance.resource_arguments(),
@@ -3392,13 +3510,13 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
             }
         }
         MachineTerm::MemoryLoad(memory, pointer, _) => {
-            // Memory states are immutable kernel values; their free
+            // SymbolicMemory states are immutable kernel values; their free
             // variable collector remains the source of truth for state
             // contents, while the pointer can contain nested fold terms.
             collect_memory_bitvector_variables(memory.memory(), variables);
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -3435,9 +3553,12 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
             // scalar variables and binders. Freshness must reserve them too.
             variables.insert(*variable);
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             collect_algebraic_value_bound_variables(
-                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                &AlgebraicTermNode::memory_load_carrier_value(memory.shared_memory(), pointer),
                 variables,
             );
         }
@@ -3496,7 +3617,7 @@ fn collect_condition_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_offset_bound_variables(&pointer.offset, variables);
             }
@@ -3527,11 +3648,11 @@ fn collect_condition_bound_variables(
             float_condition
                 .for_each_bitvector_term(|term| collect_bitvector_bound_variables(term, variables));
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_bound_variables(left, variables);
             collect_pointer_offset_bound_variables(right, variables);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_offset_bound_variables(&left.offset, variables);
             collect_pointer_offset_bound_variables(&right.offset, variables);
         }
@@ -3573,14 +3694,14 @@ fn collect_condition_bound_variables(
             collect_condition_bound_variables(right, variables);
         }
         ConditionTerm::BoolLoad(memory, pointer) => {
-            collect_memory_bitvector_variables(memory, variables);
+            collect_memory_bitvector_variables(memory.memory(), variables);
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
     }
 }
 
 fn collect_pointer_offset_bound_variables(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     variables: &mut BTreeSet<Variable>,
 ) {
     offset.for_each_scaled_operand(|value| {
@@ -3619,9 +3740,15 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
             algebraic_type: term.algebraic_type.clone(),
             node: match &term.node {
                 AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
-                AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+                AlgebraicTermNode::MemoryLoad {
+                    point: memory,
+                    pointer,
+                } => {
                     match substitute_bitvector_variable_in_algebraic_value(
-                        &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                        &AlgebraicTermNode::memory_load_carrier_value(
+                            memory.shared_memory(),
+                            pointer,
+                        ),
                         from,
                         to,
                     ) {
@@ -3985,7 +4112,7 @@ fn validate_integer_pure_proposition(
             validate_integer_atomic_proposition(proposition, collector)
         }
         Proposition::ConditionIs(condition, _) => {
-            validate_integer_pure_condition(condition, collector)
+            validate_integer_pure_condition(condition.native_compat(), collector)
         }
         Proposition::MemoryReadDefined { .. } | Proposition::MemoryLoadable { .. } => {
             // A symbolic array read contributes this obligation to the
@@ -4051,7 +4178,7 @@ fn validate_integer_pure_condition(
     collector: &mut crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector,
 ) -> Result<(), IntegerPureSubstitutionError> {
     validate_integer_atomic_proposition(
-        &Proposition::ConditionIs(condition.clone(), true),
+        &Proposition::condition_is(condition.clone(), true),
         collector,
     )
 }
@@ -4202,8 +4329,11 @@ fn substitute_pure_proposition_with_walker(
                         )?);
                     }
                     Proposition::ConditionIs(condition, value) => {
-                        rewritten.push(Proposition::ConditionIs(
-                            substitute_integer_pure_condition_with_walker(condition, walker)?,
+                        rewritten.push(Proposition::condition_is(
+                            substitute_integer_pure_condition_with_walker(
+                                condition.native_compat(),
+                                walker,
+                            )?,
                             *value,
                         ));
                     }
@@ -4446,13 +4576,13 @@ fn substitute_integer_pure_condition_with_walker(
     walker: &mut crate::kernel::proof::term_rewrite::TermRewrite<'_>,
 ) -> Result<ConditionTerm, IntegerPureSubstitutionError> {
     let Proposition::ConditionIs(result, _) = rewrite_integer_atomic_proposition_with_walker(
-        &Proposition::ConditionIs(condition.clone(), true),
+        &Proposition::condition_is(condition.clone(), true),
         walker,
     )?
     else {
         unreachable!()
     };
-    Ok(result)
+    Ok(result.native_compat().clone())
 }
 
 fn rewrite_integer_memory_loadable_with_walker(
@@ -4460,6 +4590,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     walker: &mut crate::kernel::proof::term_rewrite::TermRewrite<'_>,
 ) -> Result<Proposition, IntegerPureSubstitutionError> {
     if let Proposition::MemoryReadDefined {
+        at,
         memory,
         pointer,
         value_type,
@@ -4467,14 +4598,15 @@ fn rewrite_integer_memory_loadable_with_walker(
     {
         integer_work(1)?;
         let Term::ProgramValue(ProgramValue::Pointer(pointer)) = walker.term(&Term::ProgramValue(
-            ProgramValue::Pointer(PointerValue::new(pointer.clone(), ProgramType::VoidPointer)),
+            ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::VoidPointer)),
         )) else {
             unreachable!("pointer rewrite changed its carrier")
         };
         integer_substitution_refusal(walker.refusal())?;
         return Ok(Proposition::MemoryReadDefined {
+            at: *at,
             memory: memory.clone(),
-            pointer: pointer.pointer().clone(),
+            pointer: pointer.address().clone(),
             value_type: *value_type,
         });
     }
@@ -4488,7 +4620,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         unreachable!("memory-viewable helper called for another proposition carrier")
     };
     integer_work(1)?;
-    let pointer = ProgramValue::Pointer(PointerValue::new(base.clone(), ProgramType::VoidPointer));
+    let pointer = ProgramValue::Pointer(Pointer::new(base.clone(), ProgramType::VoidPointer));
     let Term::ProgramValue(ProgramValue::Pointer(pointer)) =
         walker.term(&Term::ProgramValue(pointer))
     else {
@@ -4497,14 +4629,21 @@ fn rewrite_integer_memory_loadable_with_walker(
     if walker.work_exhausted() {
         return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
     }
-    let bytes = walker.bits(bytes);
+    let bytes = walker.bits(bytes.native_compat());
     integer_substitution_refusal(walker.refusal())?;
     Ok(Proposition::MemoryLoadable {
-        // Memory states are immutable proof-state identities.  Keep the same
+        // SymbolicMemory states are immutable proof-state identities.  Keep the same
         // handle and rewrite only the selected address/width expressions.
         memory: memory.clone(),
-        base: pointer.pointer().clone(),
-        bytes,
+        base: pointer.address().clone(),
+        bytes: crate::kernel::StoredMachineTerm::new(
+            if *wide {
+                crate::kernel::MachineIntegerType::UInt64
+            } else {
+                crate::kernel::MachineIntegerType::Int32
+            },
+            bytes,
+        ),
         wide: *wide,
     })
 }
@@ -5330,10 +5469,10 @@ mod machine_integer_substitution_tests {
 }
 
 fn map_common_substitution_offsets(
-    arguments: &[crate::kernel::SharedPointerOffset; 2],
+    arguments: &[crate::kernel::SharedAddressOffset; 2],
     map_machine: &mut impl FnMut(&KernelTerm, MachineIntegerType) -> Option<SharedMachineIntegerTerm>,
-) -> Result<[crate::kernel::SharedPointerOffset; 2], ()> {
-    use crate::kernel::{KernelPointerOffset as O, SharedPointerOffset as S};
+) -> Result<[crate::kernel::SharedAddressOffset; 2], ()> {
+    use crate::kernel::{KernelAddressOffset as O, SharedAddressOffset as S};
     S::try_map_pair(arguments, |original, node| {
         let (value, width, wide) = match node {
             O::Add([a, b]) => {
@@ -5462,14 +5601,14 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                     ],
                 ));
             }
-            if let crate::kernel::KernelTermNode::PointerOffsetEqual { arguments } = leaf.node() {
+            if let crate::kernel::KernelTermNode::AddressOffsetEqual { arguments } = leaf.node() {
                 let offsets = map_common_substitution_offsets(arguments, &mut map_machine)?;
-                return Ok(KernelTerm::pointer_offset_equal(offsets));
+                return Ok(KernelTerm::address_offset_equal(offsets));
             }
-            let mut map_address = |address: &crate::kernel::SharedPointerAddress| {
+            let mut map_address = |address: &crate::kernel::SharedAddress| {
                 if matches!(
-                    address.node().block.native_atom(),
-                    PointerBlock::PureFunctionApplication(_)
+                    address.node().base.native_atom(),
+                    AddressBase::PureFunctionApplication(_)
                 ) {
                     crate::kernel::proof::term_rewrite::substitute_application_address_bits(
                         address, from, to,
@@ -5481,28 +5620,32 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                         &[offset.clone(), offset.clone()],
                         &mut map_machine,
                     )?;
-                    Ok(crate::kernel::SharedPointerAddress::new(
-                        address.node().block.clone(),
+                    Ok(crate::kernel::SharedAddress::new(
+                        address.node().base.clone(),
                         offsets[0].clone(),
                     ))
                 }
             };
             if let crate::kernel::KernelTermNode::BoolRead(read) = leaf.node() {
-                let (memory, address) = read.parts();
+                let (point, address) = read.parts();
                 return Ok(KernelTerm::boolean_read(
-                    substitute_bitvector_variable_in_shared_memory(memory, from, to),
+                    point.with_renamed_memory(substitute_bitvector_variable_in_shared_memory(
+                        point.shared_memory(),
+                        from,
+                        to,
+                    )),
                     map_address(address)?,
                 ));
             }
-            if let crate::kernel::KernelTermNode::PointerValueEqual(pair) = leaf.node() {
+            if let crate::kernel::KernelTermNode::PointerEqual(pair) = leaf.node() {
                 let [a, b] = pair.arguments();
-                return Ok(KernelTerm::pointer_value_equal_raw([
+                return Ok(KernelTerm::pointer_equal_raw([
                     a.map_condition_addresses(&mut map_address)?,
                     b.map_condition_addresses(&mut map_address)?,
                 ]));
             }
-            if let crate::kernel::KernelTermNode::PointerEqual { arguments } = leaf.node() {
-                return Ok(KernelTerm::pointer_equal([
+            if let crate::kernel::KernelTermNode::AddressEqual { arguments } = leaf.node() {
+                return Ok(KernelTerm::address_equal([
                     map_address(&arguments[0])?,
                     map_address(&arguments[1])?,
                 ]));
@@ -5519,27 +5662,27 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
 pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
     condition: &KernelTerm,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> Option<KernelTerm> {
     if crate::kernel::BooleanOperandView::Shared(condition).is_bool_value_form()
         || matches!(
             condition.node(),
-            crate::kernel::KernelTermNode::PointerValueEqual(_)
+            crate::kernel::KernelTermNode::PointerEqual(_)
         )
     {
         return crate::kernel::proof::term_rewrite::substitute_pointer_boolean_value(
             condition, from, to,
         );
     }
-    if let crate::kernel::KernelTermNode::PointerEqual { arguments } = condition.node() {
+    if let crate::kernel::KernelTermNode::AddressEqual { arguments } = condition.node() {
         use crate::kernel::{
-            KernelPointerOffset as O, SharedPointerAddress as A, SharedPointerBlock,
-            SharedPointerOffset as S,
+            KernelAddressOffset as O, SharedAddress as A, SharedAddressBase,
+            SharedAddressOffset as S,
         };
         let mut mapped = Vec::with_capacity(2);
         for address in arguments {
-            let block = address.node().block.native_atom();
-            if matches!(block, PointerBlock::PureFunctionApplication(_)) {
+            let block = address.node().base.native_atom();
+            if matches!(block, AddressBase::PureFunctionApplication(_)) {
                 mapped.push(
                     crate::kernel::proof::term_rewrite::substitute_application_address_pointer(
                         address, from, to,
@@ -5548,19 +5691,19 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
                 continue;
             }
             let replacement = match block {
-                PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable)
+                AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable)
                     if *variable == from =>
                 {
                     Some(to.clone())
                 }
-                PointerBlock::ExternalObject(variable) if *variable == from => {
+                AddressBase::ExternalObject(variable) if *variable == from => {
                     Some(to.object_identity())
                 }
                 _ => None,
             };
             mapped.push(match replacement {
                 Some(replacement) => A::new(
-                    SharedPointerBlock::import(&replacement.block),
+                    SharedAddressBase::import(&replacement.base),
                     S::add(
                         O::import(&replacement.offset),
                         address.node().offset.clone(),
@@ -5569,14 +5712,14 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
                 None => address.clone(),
             });
         }
-        return Some(KernelTerm::pointer_equal([
+        return Some(KernelTerm::address_equal([
             mapped[0].clone(),
             mapped[1].clone(),
         ]));
     }
     if matches!(
         condition.node(),
-        crate::kernel::KernelTermNode::PointerOffsetEqual { .. }
+        crate::kernel::KernelTermNode::AddressOffsetEqual { .. }
     ) {
         return Some(condition.clone());
     }
@@ -5682,15 +5825,15 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             substitute_bitvector_variable(value, from, to),
             *classification,
         ),
-        ConditionTerm::PointerOffsetEqual(left, right) => ConditionTerm::pointer_offset_equal(
+        ConditionTerm::AddressOffsetEqual(left, right) => ConditionTerm::address_offset_equal(
             substitute_bitvector_variable_in_pointer_offset(left, from, to),
             substitute_bitvector_variable_in_pointer_offset(right, from, to),
         ),
-        ConditionTerm::PointerValueEqual(left, right) => ConditionTerm::PointerValueEqual(
+        ConditionTerm::PointerEqual(left, right) => ConditionTerm::PointerEqual(
             Box::new(left.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
             Box::new(right.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
         ),
-        ConditionTerm::PointerEqual(left, right) => ConditionTerm::pointer_equal(
+        ConditionTerm::AddressEqual(left, right) => ConditionTerm::address_equal(
             substitute_bitvector_variable_in_pointer(left, from, to),
             substitute_bitvector_variable_in_pointer(right, from, to),
         ),
@@ -5766,8 +5909,8 @@ fn substitute_through_load_variable(
     }
     let (memory, pointer) = crate::kernel::eval::registered_load_for_variable(&variable)?;
     let kind = crate::kernel::eval::registered_load_kind_for_variable(&variable)?;
-    let substituted_pointer = Pointer {
-        block: pointer.block.clone(),
+    let substituted_pointer = Address {
+        base: pointer.base.clone(),
         offset: substitute_bitvector_variable_in_pointer_offset(&pointer.offset, from, to),
     };
     // Deciding that this load variable is untouched means rewriting the
@@ -5993,7 +6136,7 @@ pub(crate) fn substitute_bitvector_variable(
                 read.bytes,
             )
         }
-        MachineTerm::PointerAddress(pointer, class) => MachineTerm::object_pointer_address(
+        MachineTerm::IntegerAddress(pointer, class) => MachineTerm::object_pointer_address(
             substitute_bitvector_variable_in_pointer(pointer, from, to),
             class.class(),
         ),
@@ -6013,10 +6156,10 @@ pub(crate) fn substitute_bitvector_variable(
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer_offset(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     from: Variable,
     to: &MachineTerm,
-) -> PointerOffsetTerm {
+) -> AddressOffset {
     substitute_bitvector_variable_in_pointer_offset_cow(offset, from, to).into_owned()
 }
 
@@ -6025,26 +6168,23 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer_offset(
 /// key, which in turn mints a different state for a binder rename that did
 /// not occur anywhere in that cell.
 fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
-    offset: &'a PointerOffsetTerm,
+    offset: &'a AddressOffset,
     from: Variable,
     to: &MachineTerm,
-) -> std::borrow::Cow<'a, PointerOffsetTerm> {
+) -> std::borrow::Cow<'a, AddressOffset> {
     use std::borrow::Cow;
     match offset {
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => Cow::Borrowed(offset),
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Constant(_) | AddressOffset::Variable(_) => Cow::Borrowed(offset),
+        AddressOffset::Add(left, right) => {
             let left = substitute_bitvector_variable_in_pointer_offset_cow(left, from, to);
             let right = substitute_bitvector_variable_in_pointer_offset_cow(right, from, to);
             if matches!((&left, &right), (Cow::Borrowed(_), Cow::Borrowed(_))) {
                 Cow::Borrowed(offset)
             } else {
-                Cow::Owned(PointerOffsetTerm::add(
-                    left.into_owned(),
-                    right.into_owned(),
-                ))
+                Cow::Owned(AddressOffset::add(left.into_owned(), right.into_owned()))
             }
         }
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+        AddressOffset::Int32Scaled { value, byte_width } => {
             let rewritten = crate::kernel::memory_history::map_shared_pointer_index_with_fold(
                 value,
                 |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
@@ -6073,7 +6213,7 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
                 ))
             }
         }
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -6110,11 +6250,11 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
-    pointer: &Pointer,
+    pointer: &Address,
     from: Variable,
     to: &MachineTerm,
-) -> Pointer {
-    if matches!(pointer.block, PointerBlock::PureFunctionApplication(_)) {
+) -> Address {
+    if matches!(pointer.base, AddressBase::PureFunctionApplication(_)) {
         let source = MachineTerm::Variable(from);
         let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()));
         let Term::ProgramValue(ProgramValue::Pointer(result)) =
@@ -6124,8 +6264,8 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
         };
         return result.into_pointer();
     }
-    Pointer {
-        block: pointer.block.clone(),
+    Address {
+        base: pointer.base.clone(),
         offset: substitute_bitvector_variable_in_pointer_offset(&pointer.offset, from, to),
     }
 }
@@ -6140,7 +6280,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
 /// nested `unfold`s name a cell at each level, 96 variable substitutions cost
 /// 965,776 state rebuilds.
 ///
-/// Memory states are interned, so the rewrite of one is a pure function of its
+/// SymbolicMemory states are interned, so the rewrite of one is a pure function of its
 /// arena id and the `(from, to)` pair. Keyed by that id, each distinct
 /// state is rebuilt exactly once per substitution and the walk becomes
 /// linear in the DAG's nodes. The frame holds the borrowed replacement term's
@@ -6250,10 +6390,10 @@ fn substitute_bitvector_variable_in_shared_memory(
 /// rewrite` growing far faster than the proof, which is what `click profile`
 /// could not point at before.
 pub(in crate::kernel) fn substitute_bitvector_variable_in_memory(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     from: Variable,
     to: &MachineTerm,
-) -> Memory {
+) -> SymbolicMemory {
     // A state carried by value (a loadability or effect proposition) is
     // interned only to consult and fill the absent-variable memo; interning
     // an already-registered state is a shallow lookup.
@@ -6313,7 +6453,11 @@ fn run_slot_named_by_load_variable(
     (index < run.count() && !run.holes().contains(index)).then_some(index)
 }
 
-fn rewrite_memory_state(memory: &Memory, from: Variable, to: &MachineTerm) -> Memory {
+fn rewrite_memory_state(
+    memory: &SymbolicMemory,
+    from: Variable,
+    to: &MachineTerm,
+) -> SymbolicMemory {
     crate::instrumentation::measure_operation(
         "kernel",
         "substitution",
@@ -6344,30 +6488,33 @@ fn record_memory_lacks_variable(identity: (u32, u32), from: Variable) {
 #[test]
 fn state_size_substitution_preserves_declared_types_and_write_protection() {
     let from = Variable(84001);
-    let mut memory =
-        Memory::new().with_declared_scalar_block("local:word".into(), 4, ProgramType::UInt32);
+    let mut memory = SymbolicMemory::new().with_declared_scalar_block(
+        "local:word".into(),
+        4,
+        ProgramType::UInt32,
+    );
     let mut read_only = MemoryBlock::read_only(4);
-    read_only.size = HeapExtent::int32(MachineTerm::Variable(from));
+    read_only.size = AllocationSize::int32(MachineTerm::Variable(from));
     std::sync::Arc::make_mut(&mut memory.blocks).insert("global:protected".into(), read_only);
     let rewritten =
         substitute_bitvector_variable_in_memory_contents(&memory, from, &MachineTerm::constant(16));
     assert_eq!(
-        rewritten.blocks.get(&PointerBlock::from("local:word")),
-        memory.blocks.get(&PointerBlock::from("local:word"))
+        rewritten.blocks.get(&AddressBase::from("local:word")),
+        memory.blocks.get(&AddressBase::from("local:word"))
     );
     let protected = rewritten
         .blocks
-        .get(&PointerBlock::from("global:protected"))
+        .get(&AddressBase::from("global:protected"))
         .unwrap();
     assert!(protected.read_only);
-    assert_eq!(protected.size, HeapExtent::int32(16));
+    assert_eq!(protected.size, AllocationSize::int32(16));
 }
 
 fn substitute_bitvector_variable_in_memory_contents(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     from: Variable,
     to: &MachineTerm,
-) -> Memory {
+) -> SymbolicMemory {
     crate::instrumentation::record_deterministic_work(
         memory.cells.representation_len() + memory.union_cells.len() + memory.blocks.len(),
     );
@@ -6380,7 +6527,7 @@ fn substitute_bitvector_variable_in_memory_contents(
         },
         |run| run_slot_named_by_load_variable(run, from),
     ));
-    let mut result = Memory {
+    let mut result = SymbolicMemory {
         construction: None,
         pending_steps: None,
         blocks: std::sync::Arc::new(
@@ -6388,12 +6535,12 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .blocks
                 .iter()
                 .map(|(block, contents)| {
-                    // Substitution changes the extent term, not the storage
+                    // Substitution changes the size term, not the storage
                     // declaration or its write protection. Rebuilding a bare
                     // block erased these properties, even for a constant size.
                     let mut rewritten = contents.clone();
                     rewritten.size = contents
-                        .extent()
+                        .allocation_size()
                         .map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to));
                     (block.clone(), rewritten)
                 })
@@ -6485,9 +6632,10 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .iter()
                 .map(|base| substitute_bitvector_variable_in_pointer(base, from, to))
                 .collect(),
-            initialized: memory.heap.initialized.map_pointers(|pointer| {
-                substitute_bitvector_variable_in_pointer(pointer, from, to)
-            }),
+            initialized: memory.heap.initialized.map_pointers(
+                |pointer| substitute_bitvector_variable_in_pointer(pointer, from, to),
+                |value| substitute_bitvector_variable_in_program_value(value, from, to),
+            ),
             zeroed_allocations: memory
                 .heap
                 .zeroed_allocations
@@ -6531,6 +6679,15 @@ fn substitute_bitvector_variable_in_memory_contents(
                                 .zeroed_prefix
                                 .as_ref()
                                 .map(|prefix| substitute_bitvector_variable(prefix, from, to)),
+                            retirement_separation: pending.retirement_separation.as_ref().map(
+                                |goal| {
+                                    std::sync::Arc::new(
+                                        substitute_bitvector_variable_in_proposition(
+                                            goal, from, to,
+                                        ),
+                                    )
+                                },
+                            ),
                             initialized_prefix: pending.initialized_prefix.clone(),
                             copied_cells: pending
                                 .copied_cells
@@ -6630,7 +6787,7 @@ fn pointer_capture_avoiding_quantifier_body(
     sort: &Sort,
     body: &Proposition,
     from: Variable,
-    replacement: &Pointer,
+    replacement: &Address,
 ) -> (Proposition, Variable) {
     let mut replacement_variables = BTreeSet::new();
     collect_pointer_bound_variables(replacement, &mut replacement_variables);
@@ -6648,8 +6805,8 @@ fn pointer_capture_avoiding_quantifier_body(
     reserved.extend(replacement_variables);
     let fresh = KernelVariableGenerator::fresh_for(0, reserved).next();
     let pointer = match sort {
-        Sort::ProgramPointer(ProgramType::FunctionPointer(_)) => Pointer::symbolic_function(fresh),
-        Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => Pointer::symbolic(fresh),
+        Sort::ProgramPointer(ProgramType::FunctionPointer(_)) => Address::symbolic_function(fresh),
+        Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => Address::symbolic(fresh),
         _ => unreachable!("pointer capture avoidance only handles pointer binders"),
     };
     (
@@ -6658,7 +6815,7 @@ fn pointer_capture_avoiding_quantifier_body(
     )
 }
 
-fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Pointer) -> Term {
+fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address) -> Term {
     match term {
         Term::Condition(condition) => Term::Condition(substitute_pointer_variable_in_condition(
             condition, from, to,
@@ -6690,13 +6847,16 @@ fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Pointer
 fn substitute_pointer_variable_in_algebraic_term_node(
     term: &AlgebraicTerm,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> AlgebraicTermNode {
     match &term.node {
         AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             match substitute_pointer_variable_in_algebraic_value(
-                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                &AlgebraicTermNode::memory_load_carrier_value(memory.shared_memory(), pointer),
                 from,
                 to,
             ) {
@@ -6766,7 +6926,7 @@ fn substitute_pointer_variable_in_algebraic_term_node(
 fn substitute_pointer_variable_in_algebraic_term(
     term: &AlgebraicTerm,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> AlgebraicTerm {
     AlgebraicTerm {
         algebraic_type: term.algebraic_type.clone(),
@@ -6777,7 +6937,7 @@ fn substitute_pointer_variable_in_algebraic_term(
 fn substitute_pointer_variable_in_condition(
     condition: &ConditionTerm,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> ConditionTerm {
     match condition {
         ConditionTerm::IntegerLessThan(..)
@@ -6797,11 +6957,11 @@ fn substitute_pointer_variable_in_condition(
                 right, from, to,
             )),
         ),
-        ConditionTerm::PointerValueEqual(..) => {
+        ConditionTerm::PointerEqual(..) => {
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
                 .condition(condition)
         }
-        ConditionTerm::PointerEqual(left, right) => ConditionTerm::pointer_equal(
+        ConditionTerm::AddressEqual(left, right) => ConditionTerm::address_equal(
             substitute_pointer_variable_in_pointer(left, from, to),
             substitute_pointer_variable_in_pointer(right, from, to),
         ),
@@ -6817,7 +6977,7 @@ fn substitute_pointer_variable_in_condition(
 fn substitute_pointer_variable_in_program_value(
     value: &ProgramValue,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> ProgramValue {
     let Term::ProgramValue(value) =
         crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
@@ -6829,11 +6989,11 @@ fn substitute_pointer_variable_in_program_value(
 }
 
 fn substitute_pointer_variable_in_pointer(
-    pointer: &Pointer,
+    pointer: &Address,
     from: Variable,
-    to: &Pointer,
-) -> Pointer {
-    if matches!(&pointer.block, PointerBlock::PureFunctionApplication(_)) {
+    to: &Address,
+) -> Address {
+    if matches!(&pointer.base, AddressBase::PureFunctionApplication(_)) {
         let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()));
         let Term::ProgramValue(ProgramValue::Pointer(result)) =
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
@@ -6843,23 +7003,23 @@ fn substitute_pointer_variable_in_pointer(
         };
         return result.into_pointer();
     }
-    if matches!(pointer.block, PointerBlock::ExternalObject(variable) if variable == from) {
+    if matches!(pointer.base, AddressBase::ExternalObject(variable) if variable == from) {
         let identity = to.object_identity();
-        return Pointer {
-            block: identity.block,
-            offset: PointerOffsetTerm::add(identity.offset, pointer.offset.clone()),
+        return Address {
+            base: identity.base,
+            offset: AddressOffset::add(identity.offset, pointer.offset.clone()),
         };
     }
     let replaces_block = matches!(
-        (&pointer.block, &to.block),
-        (PointerBlock::Symbolic(variable), _) | (PointerBlock::FunctionSymbolic(variable), _)
+        (&pointer.base, &to.base),
+        (AddressBase::Symbolic(variable), _) | (AddressBase::FunctionSymbolic(variable), _)
             if *variable == from
     );
     let offset = pointer.offset.clone();
     if replaces_block {
-        Pointer {
-            block: to.block.clone(),
-            offset: PointerOffsetTerm::add(to.offset.clone(), offset),
+        Address {
+            base: to.base.clone(),
+            offset: AddressOffset::add(to.offset.clone(), offset),
         }
     } else {
         pointer.clone()
@@ -6869,7 +7029,7 @@ fn substitute_pointer_variable_in_pointer(
 fn substitute_pointer_variable_in_program_expression(
     expression: &ProgramExpression,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> ProgramExpression {
     match expression {
         ProgramExpression::Value(value) => ProgramExpression::Value(
@@ -7055,11 +7215,11 @@ fn substitute_pointer_variable_in_program_expression(
 }
 
 pub(crate) fn substitute_pointer_variable_in_memory(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     from: Variable,
-    to: &Pointer,
-) -> Memory {
-    let mut result = Memory {
+    to: &Address,
+) -> SymbolicMemory {
+    let mut result = SymbolicMemory {
         construction: None,
         pending_steps: None,
         blocks: std::sync::Arc::new(
@@ -7176,10 +7336,10 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                 .iter()
                 .map(|base| substitute_pointer_variable_in_pointer(base, from, to))
                 .collect(),
-            initialized: memory
-                .heap
-                .initialized
-                .map_pointers(|pointer| substitute_pointer_variable_in_pointer(pointer, from, to)),
+            initialized: memory.heap.initialized.map_pointers(
+                |pointer| substitute_pointer_variable_in_pointer(pointer, from, to),
+                |value| substitute_pointer_variable_in_program_value(value, from, to),
+            ),
             zeroed_allocations: memory
                 .heap
                 .zeroed_allocations
@@ -7218,6 +7378,13 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                             ),
                             old_bytes: pending.old_bytes.clone(),
                             zeroed_prefix: pending.zeroed_prefix.clone(),
+                            retirement_separation: pending.retirement_separation.as_ref().map(
+                                |goal| {
+                                    std::sync::Arc::new(substitute_pointer_variable_in_proposition(
+                                        goal, from, to,
+                                    ))
+                                },
+                            ),
                             initialized_prefix: pending.initialized_prefix.clone(),
                             copied_cells: pending
                                 .copied_cells
@@ -7245,7 +7412,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
         "substitute pointer variable",
         vec![memory.clone()],
         vec![
-            ProgramValue::pointer(Pointer::symbolic(from)),
+            ProgramValue::pointer(Address::symbolic(from)),
             ProgramValue::pointer(to.clone()),
         ],
     );
@@ -7253,43 +7420,45 @@ pub(crate) fn substitute_pointer_variable_in_memory(
 }
 
 fn substitute_pointer_variable_in_block(
-    block: &PointerBlock,
+    block: &AddressBase,
     from: Variable,
-    to: &Pointer,
-) -> PointerBlock {
+    to: &Address,
+) -> AddressBase {
     match block {
-        PointerBlock::PureFunctionApplication(_) => {
+        AddressBase::PureFunctionApplication(_) => {
             substitute_pointer_variable_in_pointer(
-                &Pointer {
-                    block: block.clone(),
-                    offset: PointerOffsetTerm::Constant(0),
+                &Address {
+                    base: block.clone(),
+                    offset: AddressOffset::Constant(0),
                 },
                 from,
                 to,
             )
-            .block
+            .base
         }
-        PointerBlock::ExternalObject(variable) if *variable == from => to.object_identity().block,
-        PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable)
+        AddressBase::ExternalObject(variable) if *variable == from => to.object_identity().base,
+        AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable)
             if *variable == from =>
         {
-            to.block.clone()
+            to.base.clone()
         }
         block => block.clone(),
     }
 }
 
-fn substitute_pointer_variable_in_spec_memory(
-    memory: &SpecMemory,
+fn substitute_pointer_variable_in_spec_point(
+    spec_point: &SpecPoint,
     from: Variable,
-    to: &Pointer,
-) -> SpecMemory {
-    match memory {
-        SpecMemory::Current => SpecMemory::Current,
-        SpecMemory::FunctionEntry => SpecMemory::FunctionEntry,
-        SpecMemory::LoopEntry => SpecMemory::LoopEntry,
-        SpecMemory::Fixed(memory) => {
-            SpecMemory::Fixed(substitute_pointer_variable_in_memory(memory, from, to))
+    to: &Address,
+) -> SpecPoint {
+    match spec_point {
+        SpecPoint::Current => SpecPoint::Current,
+        SpecPoint::FunctionEntry => SpecPoint::FunctionEntry,
+        SpecPoint::LoopEntry => SpecPoint::LoopEntry,
+        SpecPoint::At(point) => {
+            SpecPoint::At(point.with_renamed_memory(crate::kernel::intern_memory(
+                substitute_pointer_variable_in_memory(point.memory(), from, to),
+            )))
         }
     }
 }
@@ -7297,7 +7466,7 @@ fn substitute_pointer_variable_in_spec_memory(
 fn substitute_pointer_variable_in_spec_algebraic_expression(
     expression: &SpecAlgebraicExpression,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> SpecAlgebraicExpression {
     let node = match &expression.node {
         SpecAlgebraicExpressionNode::ResourceField(projection) => {
@@ -7394,7 +7563,7 @@ fn substitute_pointer_variable_in_spec_algebraic_expression(
 fn substitute_pointer_variable_in_spec_expression(
     expression: &SpecExpression,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> SpecExpression {
     match expression {
         SpecExpression::ObjectAddress(address) => {
@@ -7604,11 +7773,11 @@ fn substitute_pointer_variable_in_spec_expression(
             value_type: *value_type,
         },
         SpecExpression::MemoryLoad {
-            memory,
+            point: memory,
             pointer,
             value_type,
         } => SpecExpression::MemoryLoad {
-            memory: substitute_pointer_variable_in_spec_memory(memory, from, to),
+            point: substitute_pointer_variable_in_spec_point(memory, from, to),
             pointer: Box::new(substitute_pointer_variable_in_spec_expression(
                 pointer, from, to,
             )),
@@ -7620,7 +7789,7 @@ fn substitute_pointer_variable_in_spec_expression(
 fn substitute_pointer_variable_in_spec_function_argument(
     argument: &SpecPureFunctionArgument,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> SpecPureFunctionArgument {
     match argument {
         SpecPureFunctionArgument::ObjectPointer {
@@ -7642,11 +7811,11 @@ fn substitute_pointer_variable_in_spec_function_argument(
             substitute_pointer_variable_in_spec_algebraic_expression(expression, from, to),
         ),
         SpecPureFunctionArgument::ArrayRef {
-            memory,
+            point: memory,
             pointer,
             element_type,
         } => SpecPureFunctionArgument::ArrayRef {
-            memory: substitute_pointer_variable_in_spec_memory(memory, from, to),
+            point: substitute_pointer_variable_in_spec_point(memory, from, to),
             pointer: substitute_pointer_variable_in_spec_expression(pointer, from, to),
             element_type: *element_type,
         },
@@ -7656,7 +7825,7 @@ fn substitute_pointer_variable_in_spec_function_argument(
 fn substitute_pointer_variable_in_spec_integer(
     expression: &SpecIntegerExpression,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> SpecIntegerExpression {
     match expression {
         SpecIntegerExpression::ResourceField(_) => expression.clone(),
@@ -7801,7 +7970,7 @@ fn substitute_pointer_variable_in_spec_integer(
 fn substitute_pointer_variable_in_spec_proposition(
     proposition: &SpecProposition,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> SpecProposition {
     match proposition {
         SpecProposition::Truth(value) => SpecProposition::Truth(*value),
@@ -8012,14 +8181,13 @@ fn substitute_pointer_variable_in_spec_proposition(
                     SpecPredicateArgument::Value(expression) => SpecPredicateArgument::Value(
                         substitute_pointer_variable_in_spec_expression(expression, from, to),
                     ),
-                    SpecPredicateArgument::ArrayRef { memory, pointer } => {
-                        SpecPredicateArgument::ArrayRef {
-                            memory: substitute_pointer_variable_in_spec_memory(memory, from, to),
-                            pointer: substitute_pointer_variable_in_spec_expression(
-                                pointer, from, to,
-                            ),
-                        }
-                    }
+                    SpecPredicateArgument::ArrayRef {
+                        point: memory,
+                        pointer,
+                    } => SpecPredicateArgument::ArrayRef {
+                        point: substitute_pointer_variable_in_spec_point(memory, from, to),
+                        pointer: substitute_pointer_variable_in_spec_expression(pointer, from, to),
+                    },
                 })
                 .collect(),
         },
@@ -8027,24 +8195,25 @@ fn substitute_pointer_variable_in_spec_proposition(
             left: substitute_pointer_variable_in_spec_resource(left, from, to),
             right: substitute_pointer_variable_in_spec_resource(right, from, to),
         },
-        SpecProposition::ResourceViewable { memory, resource } => {
-            SpecProposition::ResourceViewable {
-                memory: substitute_pointer_variable_in_spec_memory(memory, from, to),
-                resource: substitute_pointer_variable_in_spec_resource(resource, from, to),
-            }
-        }
+        SpecProposition::ResourceViewable {
+            point: memory,
+            resource,
+        } => SpecProposition::ResourceViewable {
+            point: substitute_pointer_variable_in_spec_point(memory, from, to),
+            resource: substitute_pointer_variable_in_spec_resource(resource, from, to),
+        },
         SpecProposition::ResourceContains { parent, child } => SpecProposition::ResourceContains {
             parent: substitute_pointer_variable_in_spec_resource(parent, from, to),
             child: substitute_pointer_variable_in_spec_resource(child, from, to),
         },
         SpecProposition::MemoryLoadable {
-            memory,
+            point: memory,
             base,
             start,
             end,
             element_width,
         } => SpecProposition::MemoryLoadable {
-            memory: substitute_pointer_variable_in_spec_memory(memory, from, to),
+            point: substitute_pointer_variable_in_spec_point(memory, from, to),
             base: substitute_pointer_variable_in_spec_expression(base, from, to),
             start: substitute_pointer_variable_in_spec_expression(start, from, to),
             end: substitute_pointer_variable_in_spec_expression(end, from, to),
@@ -8062,7 +8231,7 @@ fn substitute_pointer_variable_in_spec_proposition(
 fn substitute_pointer_variable_in_spec_sequence(
     sequence: &SpecSequenceExpression,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> SpecSequenceExpression {
     match sequence {
         SpecSequenceExpression::Literal(elements) => SpecSequenceExpression::Literal(
@@ -8083,7 +8252,7 @@ fn substitute_pointer_variable_in_spec_sequence(
 fn substitute_pointer_variable_in_spec_resource(
     resource: &SpecResource,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> SpecResource {
     match resource {
         SpecResource::Star(a, b) => SpecResource::Star(
@@ -8126,7 +8295,7 @@ mod pointee_const_return_tests {
     #[test]
     fn pointee_const_return_value_substitution_preserves_qualifiers_and_identity() {
         let value = ProgramValue::typed_pointer(
-            Pointer::symbolic(Variable(918)),
+            Address::symbolic(Variable(918)),
             ProgramType::Int32Pointer,
         )
         .with_pointer_pointee_constant(true)
@@ -8140,11 +8309,11 @@ mod pointee_const_return_tests {
             value
         );
         assert_eq!(
-            substitute_pointer_variable_in_program_value(&value, Variable(919), &Pointer::null()),
+            substitute_pointer_variable_in_program_value(&value, Variable(919), &Address::null()),
             value
         );
         let replaced =
-            substitute_pointer_variable_in_program_value(&value, Variable(918), &Pointer::null());
+            substitute_pointer_variable_in_program_value(&value, Variable(918), &Address::null());
         assert!(matches!(replaced, ProgramValue::Pointer(pointer)
             if pointer.is_null() && pointer.pointee_constant() && pointer.pointee_volatile()));
     }
@@ -8170,7 +8339,7 @@ mod pointee_const_return_tests {
             substitute_pointer_variable_in_program_function(
                 &function,
                 Variable(914),
-                &Pointer::symbolic(Variable(915)),
+                &Address::symbolic(Variable(915)),
             )
             .return_pointee_is_constant()
         );
@@ -8230,30 +8399,31 @@ mod machine_integer_pointer_substitution_tests {
     #[test]
     fn pointer_substitution_reaches_integer_observations_and_composes_offsets() {
         let binder = Variable(610);
-        let source = Pointer {
-            block: PointerBlock::Symbolic(binder),
-            offset: PointerOffsetTerm::Constant(8),
+        let source = Address {
+            base: AddressBase::Symbolic(binder),
+            offset: AddressOffset::Constant(8),
         };
-        let replacement = Pointer {
-            block: PointerBlock::Symbolic(Variable(611)),
-            offset: PointerOffsetTerm::Constant(4),
+        let replacement = Address {
+            base: AddressBase::Symbolic(Variable(611)),
+            offset: AddressOffset::Constant(4),
         };
-        let expected = Pointer {
-            block: replacement.block.clone(),
-            offset: PointerOffsetTerm::Constant(12),
+        let expected = Address {
+            base: replacement.base.clone(),
+            offset: AddressOffset::Constant(12),
         };
         let bits =
-            MachineTerm::PointerAddress(Box::new(source), crate::kernel::AddressObjectClass::NONE);
+            MachineTerm::IntegerAddress(Box::new(source), crate::kernel::AddressObjectClass::NONE);
         let term =
             IntegerTerm::from_machine(crate::kernel::MachineIntegerType::UInt64, bits.clone())
                 .unwrap();
-        let proposition = Proposition::ConditionIs(
+        let proposition = Proposition::condition_is(
             ConditionTerm::integer_equal(term, IntegerTerm::constant_i64(0)),
             true,
         );
         let rewritten =
             substitute_pointer_variable_in_proposition(&proposition, binder, &replacement);
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) = rewritten else {
+        let Some((ConditionTerm::IntegerEqual(left, _), true)) = rewritten.condition_native()
+        else {
             panic!("unexpected proposition")
         };
         let IntegerTerm::Machine(observation) = left.as_ref() else {
@@ -8261,7 +8431,7 @@ mod machine_integer_pointer_substitution_tests {
         };
         assert_eq!(
             observation.value(),
-            &MachineTerm::PointerAddress(
+            &MachineTerm::IntegerAddress(
                 Box::new(expected.clone()),
                 crate::kernel::AddressObjectClass::NONE
             )
@@ -8285,7 +8455,7 @@ mod machine_integer_pointer_substitution_tests {
         };
         assert_eq!(
             *value,
-            SpecExpression::Value(ProgramValue::UInt64(MachineTerm::PointerAddress(
+            SpecExpression::Value(ProgramValue::UInt64(MachineTerm::IntegerAddress(
                 Box::new(expected),
                 crate::kernel::AddressObjectClass::NONE,
             )))
@@ -8678,7 +8848,7 @@ mod integer_mixed_quantifier_tests {
     #[test]
     fn integer_witness_replacement_reserves_registered_pointer_integer() {
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block("integer-witness-capture", 64),
+            crate::kernel::SymbolicMemory::new().with_block("integer-witness-capture", 64),
         );
         let source = Variable(9_100);
         // This ID is intentionally shared by the replacement's registered
@@ -8687,9 +8857,9 @@ mod integer_mixed_quantifier_tests {
         let free_index = Variable(9_101);
         let load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
-            &Pointer {
-                block: PointerBlock::Concrete("integer-witness-capture".into()),
-                offset: PointerOffsetTerm::scaled_int32_node(
+            &Address {
+                base: AddressBase::Concrete("integer-witness-capture".into()),
+                offset: AddressOffset::scaled_int32_node(
                     MachineTerm::IntegerToMachine {
                         value: IntegerTerm::var(free_index).into(),
                         destination: MachineIntegerType::Int32,
@@ -8743,7 +8913,7 @@ mod integer_mixed_quantifier_tests {
         assert_eq!(rewritten_memory, memory);
         assert!(matches!(
             rewritten_pointer.offset,
-            PointerOffsetTerm::Int32Scaled { value, .. }
+            AddressOffset::Int32Scaled { value, .. }
                 if matches!(value.structural_value(), MachineTerm::IntegerToMachine { value, .. }
                     if matches!(value.as_ref(), IntegerTerm::Variable(variable)
                 if *variable == free_index))
@@ -8846,15 +9016,15 @@ mod integer_mixed_quantifier_tests {
         let inner_pointer = Variable(9_222);
         let replacement = IntegerTerm::from_machine(
             MachineIntegerType::UInt64,
-            MachineTerm::PointerAddress(
-                Box::new(Pointer::symbolic(inner_pointer)),
+            MachineTerm::IntegerAddress(
+                Box::new(Address::symbolic(inner_pointer)),
                 crate::kernel::AddressObjectClass::NONE,
             ),
         )
         .expect("pointer observations are Integer-valued");
         let pointer_value = |variable| {
-            Term::ProgramValue(ProgramValue::Pointer(PointerValue::new(
-                Pointer::symbolic(variable),
+            Term::ProgramValue(ProgramValue::Pointer(Pointer::new(
+                Address::symbolic(variable),
                 ProgramType::Int32Pointer,
             )))
         };
@@ -9351,17 +9521,18 @@ mod integer_range_fold_substitution_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let binder = Variable(70_190);
         let renamed = Variable(70_191);
-        let pointer = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(binder), 4),
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(binder), 4),
         };
-        let source = crate::kernel::intern_memory(Memory::new().with_block("unrelated", 4).store(
-            Pointer {
-                block: PointerBlock::Concrete("unrelated".into()),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            ProgramValue::Int32(MachineTerm::constant(7)),
-        ));
+        let source =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block("unrelated", 4).store(
+                Address {
+                    base: AddressBase::Concrete("unrelated".into()),
+                    offset: AddressOffset::Constant(0),
+                },
+                ProgramValue::Int32(MachineTerm::constant(7)),
+            ));
         crate::kernel::eval::record_load_access_width(source.memory(), &pointer, 4);
         let original = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&source),
@@ -9404,11 +9575,11 @@ mod integer_range_fold_substitution_tests {
     fn quantified_load_substitution_preserves_access_width() {
         let _session = crate::kernel::VerificationSession::enter();
         for bytes in [4, 8] {
-            let memory = crate::kernel::intern_memory(Memory::new());
+            let memory = crate::kernel::intern_memory(SymbolicMemory::new());
             let binder = Variable(70_156 + u64::from(bytes));
-            let pointer = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(binder), 4),
+            let pointer = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(MachineTerm::Variable(binder), 4),
             };
             let original = crate::kernel::eval::scalar_read_for_exact_cell(
                 &memory,
@@ -9430,9 +9601,9 @@ mod integer_range_fold_substitution_tests {
             let renamed_pointer = observed.pointer;
             assert_eq!(
                 renamed_pointer,
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::scale_int32(
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::scale_int32(
                         MachineTerm::Variable(Variable(70_170 + u64::from(bytes))),
                         4
                     )
@@ -9444,10 +9615,10 @@ mod integer_range_fold_substitution_tests {
     #[test]
     fn int32_fold_substitution_rewrites_registered_load_address_only() {
         let item = Variable(70_056);
-        let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("array".into()),
-            offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(item), 4),
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
+        let pointer = Address {
+            base: AddressBase::Concrete("array".into()),
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(item), 4),
         };
         let load_variable = crate::kernel::eval::load_variable_for_cell(
             &memory,
@@ -9482,18 +9653,18 @@ mod integer_range_fold_substitution_tests {
         // A new address retains the producer's live memory, rather than
         // reusing the original address's empty version point.
         assert_eq!(retained_state, &memory);
-        assert_eq!(pointer.offset, PointerOffsetTerm::Constant(0));
+        assert_eq!(pointer.offset, AddressOffset::Constant(0));
     }
 
     #[test]
     fn int32_fold_substitution_canonicalizes_nonzero_load_base() {
         let item = Variable(70_058);
-        let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("array".into()),
-            offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::Constant(4)),
-                Box::new(PointerOffsetTerm::scaled_int32_node(
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
+        let pointer = Address {
+            base: AddressBase::Concrete("array".into()),
+            offset: AddressOffset::Add(
+                Box::new(AddressOffset::Constant(4)),
+                Box::new(AddressOffset::scaled_int32_node(
                     MachineTerm::Variable(item),
                     4,
                 )),
@@ -9532,7 +9703,7 @@ mod integer_range_fold_substitution_tests {
         // A new address retains the producer's live memory, rather than
         // reusing the original address's empty version point.
         assert_eq!(retained_state, &memory);
-        assert_eq!(pointer.offset, PointerOffsetTerm::Constant(4));
+        assert_eq!(pointer.offset, AddressOffset::Constant(4));
     }
 
     #[test]
@@ -9601,7 +9772,7 @@ mod resource_reference_substitution_tests {
             "cell".into(),
             vec![
                 AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(Variable(100)))),
-                AlgebraicValue::Program(ProgramValue::pointer(Pointer::symbolic(Variable(101)))),
+                AlgebraicValue::Program(ProgramValue::pointer(Address::symbolic(Variable(101)))),
             ]
             .into(),
             schema.clone(),
@@ -9641,7 +9812,7 @@ mod resource_reference_substitution_tests {
             Variable(100),
             &MachineTerm::constant(7),
         );
-        let pointer = Pointer::symbolic(Variable(103));
+        let pointer = Address::symbolic(Variable(103));
         let replaced = substitute_pointer_variable_in_resource(&replaced, Variable(101), &pointer);
         let Resource::Instance(instance) = replaced else {
             unreachable!()
@@ -9689,8 +9860,8 @@ mod checked_singleton_substitution_tests {
     use super::*;
     use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
 
-    fn pointer_value(variable: Variable) -> PointerValue {
-        PointerValue::new(Pointer::symbolic(variable), ProgramType::Int32Pointer)
+    fn pointer_value(variable: Variable) -> Pointer {
+        Pointer::new(Address::symbolic(variable), ProgramType::Int32Pointer)
     }
 
     fn pointer_term(variable: Variable) -> Term {
@@ -9863,7 +10034,7 @@ mod checked_singleton_substitution_tests {
     fn checked_singleton_substitution_refuses_unsupported_carriers() {
         let source = Proposition::Predicate {
             name: "opaque".into(),
-            arguments: vec![Term::Memory(Memory::new())],
+            arguments: vec![Term::Memory(SymbolicMemory::new())],
         };
         assert_eq!(
             substitute_machine_constant_in_pure_proposition(&source, Variable(70_103), 7),

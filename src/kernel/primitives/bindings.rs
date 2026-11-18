@@ -77,11 +77,18 @@ impl Hash for LocalFunctionId {
 /// is metadata, never part of the identity used for storage or execution.
 #[derive(Clone, Debug)]
 pub struct LocalBindingId(Arc<LocalDeclaration>);
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum LocalBindingKind {
+    Source,
+    Temporary,
+    LoopEscape,
+}
+
 #[derive(Debug)]
 struct LocalDeclaration {
     owner: LocalFunctionId,
     parameter: bool,
-    temporary: bool,
+    kind: LocalBindingKind,
     ordinal: u32,
     scope_depth: u32,
     spelling: Option<String>,
@@ -99,7 +106,7 @@ impl LocalBindingId {
         Self(Arc::new(LocalDeclaration {
             owner,
             parameter,
-            temporary: false,
+            kind: LocalBindingKind::Source,
             ordinal,
             scope_depth: 0,
             spelling,
@@ -113,7 +120,7 @@ impl LocalBindingId {
         Self(Arc::new(LocalDeclaration {
             owner,
             parameter: false,
-            temporary: true,
+            kind: LocalBindingKind::Temporary,
             ordinal,
             scope_depth: 0,
             spelling: None,
@@ -122,14 +129,28 @@ impl LocalBindingId {
             struct_name: OnceLock::new(),
         }))
     }
+    pub(crate) fn loop_escape(owner: LocalFunctionId, ordinal: u32) -> Self {
+        Self(Arc::new(LocalDeclaration {
+            owner,
+            parameter: false,
+            kind: LocalBindingKind::LoopEscape,
+            ordinal,
+            scope_depth: 0,
+            spelling: None,
+            program_type: OnceLock::from(ProgramType::Int32),
+            array_shape: OnceLock::new(),
+            struct_name: OnceLock::new(),
+        }))
+    }
+
     pub fn is_temporary(&self) -> bool {
-        self.0.temporary
+        self.0.kind == LocalBindingKind::Temporary
     }
     pub(crate) fn with_scope_depth(self, scope_depth: u32) -> Self {
         Self(Arc::new(LocalDeclaration {
             owner: self.0.owner.clone(),
             parameter: self.0.parameter,
-            temporary: self.0.temporary,
+            kind: self.0.kind,
             ordinal: self.0.ordinal,
             scope_depth,
             spelling: self.0.spelling.clone(),
@@ -187,13 +208,8 @@ impl LocalBindingId {
     pub fn program_type(&self) -> Option<ProgramType> {
         self.0.program_type.get().copied()
     }
-    fn identity(&self) -> (&LocalFunctionId, bool, bool, u32) {
-        (
-            &self.0.owner,
-            self.0.temporary,
-            self.0.parameter,
-            self.0.ordinal,
-        )
+    fn identity(&self) -> (&LocalFunctionId, LocalBindingKind, bool, u32) {
+        (&self.0.owner, self.0.kind, self.0.parameter, self.0.ordinal)
     }
 }
 
@@ -215,11 +231,13 @@ impl Ord for LocalBindingId {
 }
 impl Hash for LocalBindingId {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        if self.is_temporary() {
-            (&self.0.owner, 2u8, self.0.ordinal).hash(state);
-        } else {
-            // Preserve the hash domain of existing C declaration identities.
-            (&self.0.owner, self.0.parameter, self.0.ordinal).hash(state);
+        match self.0.kind {
+            // Preserve the hash domain of existing declaration identities.
+            LocalBindingKind::Source => {
+                (&self.0.owner, self.0.parameter, self.0.ordinal).hash(state)
+            }
+            LocalBindingKind::Temporary => (&self.0.owner, 2u8, self.0.ordinal).hash(state),
+            LocalBindingKind::LoopEscape => (&self.0.owner, 3u8, self.0.ordinal).hash(state),
         }
     }
 }
@@ -248,6 +266,12 @@ impl LocalBindingId {
 impl std::fmt::Display for CanonicalLocalBinding<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let id = self.0;
+        if id.is_temporary() {
+            return f.write_str("<temporary storage>");
+        }
+        if id.0.kind == LocalBindingKind::LoopEscape {
+            return f.write_str("<loop escape>");
+        }
         if let Some(source) = id.source() {
             write!(f, "{source:?}::")?;
         }
@@ -255,9 +279,7 @@ impl std::fmt::Display for CanonicalLocalBinding<'_> {
             f,
             "{}.{}({})",
             id.function(),
-            if id.is_temporary() {
-                "temporary"
-            } else if id.is_parameter() {
+            if id.is_parameter() {
                 "parameter"
             } else {
                 "local"
@@ -816,12 +838,15 @@ mod tests {
         assert_ne!(carrier, BindingName::from("&x"));
         assert_ne!(carrier, BindingName::reference_carrier(shadow));
         assert!(carrier.source_spelling().is_none());
-        let first = Memory::frame_local_pointer(1, carrier.clone());
-        assert_ne!(first, Memory::frame_local_pointer(1, referent));
-        assert_ne!(first, Memory::frame_local_pointer(1, "&x"));
-        assert_ne!(first, Memory::frame_local_pointer(2, carrier.clone()));
-        assert!(first.block.is_local_block());
-        assert!(first.blocks_proven_distinct(&Memory::frame_local_pointer(2, carrier)));
+        let first = SymbolicMemory::frame_local_pointer(1, carrier.clone());
+        assert_ne!(first, SymbolicMemory::frame_local_pointer(1, referent));
+        assert_ne!(first, SymbolicMemory::frame_local_pointer(1, "&x"));
+        assert_ne!(
+            first,
+            SymbolicMemory::frame_local_pointer(2, carrier.clone())
+        );
+        assert!(first.base.is_local_block());
+        assert!(first.blocks_proven_distinct(&SymbolicMemory::frame_local_pointer(2, carrier)));
     }
 
     #[test]
@@ -844,8 +869,8 @@ mod tests {
         let carrier = BindingName::reference_carrier("x");
         let variable = ProgramExpression::Variable(carrier);
         let fake = ProgramExpression::Variable("&x".into());
-        let pointer = ProgramValue::pointer(Pointer::symbolic(Variable(71)));
-        let other = ProgramValue::pointer(Pointer::symbolic(Variable(72)));
+        let pointer = ProgramValue::pointer(Address::symbolic(Variable(71)));
+        let other = ProgramValue::pointer(Address::symbolic(Variable(72)));
         let spec = ResourceSpec::declared_with_argument_states(
             ResourceFamily::Composite,
             ResourceAccessMode::Own,
@@ -904,15 +929,14 @@ mod tests {
             locals.set(&binding, int32(index as u32));
             assert_eq!(locals.get(&temporary).unwrap().native().as_ref(), &int32(7));
             assert!(
-                Memory::local_pointer(&temporary)
-                    .block
-                    .proven_distinct(&Memory::local_pointer(binding).block)
+                SymbolicMemory::local_pointer(&temporary)
+                    .base
+                    .proven_distinct(&SymbolicMemory::local_pointer(binding).base)
             );
         }
         assert_eq!(temporary.source_spelling(), None);
         assert_eq!(locals.active_source_name(&temporary), None);
         assert_eq!(locals.resolve_binding(&temporary), temporary);
-        assert_eq!(temporary.to_string(), "\"unit.cpp\"::f.temporary(0)");
         assert_ne!(temporary, BindingName::from(temporary.to_string()));
         assert_ne!(temporary, LocalBindingId::temporary(owner, 1).into());
         assert_ne!(
@@ -949,8 +973,8 @@ mod tests {
         assert_eq!(locals.active_source_name(&CONTRACT_RESULT), None);
         assert_eq!(CONTRACT_RESULT.named(), None);
         assert_eq!(CONTRACT_RESULT.to_string(), "result");
-        let result_slot = Memory::local_pointer(CONTRACT_RESULT);
-        assert_eq!(result_slot.block, PointerBlock::ContractResult);
+        let result_slot = SymbolicMemory::local_pointer(CONTRACT_RESULT);
+        assert_eq!(result_slot.base, AddressBase::ContractResult);
         for binding in [
             source,
             BindingName::from("result"),
@@ -958,8 +982,8 @@ mod tests {
         ] {
             assert!(
                 result_slot
-                    .block
-                    .proven_distinct(&Memory::local_pointer(binding).block)
+                    .base
+                    .proven_distinct(&SymbolicMemory::local_pointer(binding).base)
             );
         }
     }
@@ -988,12 +1012,12 @@ mod tests {
         assert_eq!(locals.active_source_name(&CONTRACT_EXCEPTION), None);
         assert_eq!(CONTRACT_EXCEPTION.named(), None);
         assert_eq!(CONTRACT_EXCEPTION.to_string(), "exception");
-        let result_slot = Memory::local_pointer(CONTRACT_EXCEPTION);
-        assert_eq!(result_slot.block, PointerBlock::ContractException);
+        let result_slot = SymbolicMemory::local_pointer(CONTRACT_EXCEPTION);
+        assert_eq!(result_slot.base, AddressBase::ContractException);
         assert!(
             result_slot
-                .block
-                .proven_distinct(&PointerBlock::ContractResult)
+                .base
+                .proven_distinct(&AddressBase::ContractResult)
         );
         for binding in [
             source,
@@ -1002,8 +1026,8 @@ mod tests {
         ] {
             assert!(
                 result_slot
-                    .block
-                    .proven_distinct(&Memory::local_pointer(binding).block)
+                    .base
+                    .proven_distinct(&SymbolicMemory::local_pointer(binding).base)
             );
         }
     }
@@ -1052,17 +1076,17 @@ mod tests {
         let binding = local(&owner, 0, "x", 1);
         let same_name_elsewhere = local(&LocalFunctionId::new(None, "g".into()), 0, "x", 1);
         let addresses = [
-            Memory::local_pointer(&binding),
-            Memory::value_parameter_pointer(&binding),
-            Memory::local_lifetime_pointer(1, &binding),
-            Memory::local_lifetime_pointer(2, &binding),
-            Memory::frame_local_pointer(1, &binding),
-            Memory::frame_local_pointer(2, &binding),
-            Memory::local_pointer(same_name_elsewhere),
+            SymbolicMemory::local_pointer(&binding),
+            SymbolicMemory::value_parameter_pointer(&binding),
+            SymbolicMemory::local_lifetime_pointer(1, &binding),
+            SymbolicMemory::local_lifetime_pointer(2, &binding),
+            SymbolicMemory::frame_local_pointer(1, &binding),
+            SymbolicMemory::frame_local_pointer(2, &binding),
+            SymbolicMemory::local_pointer(same_name_elsewhere),
         ];
         for (index, address) in addresses.iter().enumerate() {
             for other in &addresses[index + 1..] {
-                assert!(address.block.proven_distinct(&other.block));
+                assert!(address.base.proven_distinct(&other.base));
             }
         }
     }

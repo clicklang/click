@@ -27,7 +27,7 @@
 //! termination is checked where it is declared. No rule here reads an
 //! integer value of a `Bool`: the sort has none.
 
-use super::{ConditionTerm, Pointer, Proposition, PureFunctionArgument, SharedMemory};
+use super::{Address, ConditionTerm, Proposition, PureFunctionArgument, SharedMemory};
 use crate::kernel::SharedPureApplication;
 
 impl ConditionTerm {
@@ -90,8 +90,8 @@ impl ConditionTerm {
     // Built by the kernel's tests until a front end reads `bool` cells
     // (Stage 5, PR5) or a proof step asks for them.
     #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn bool_load(memory: SharedMemory, pointer: Pointer) -> Self {
-        Self::BoolLoad(memory, Box::new(pointer))
+    pub(crate) fn bool_load(memory: SharedMemory, pointer: Address) -> Self {
+        Self::BoolLoad(crate::kernel::ProgramPoint::at(&memory), Box::new(pointer))
     }
 
     /// Rule L-If: the case split `ConditionIs(self, value)` means, for a
@@ -115,11 +115,11 @@ impl ConditionTerm {
         crate::instrumentation::record_deterministic_work(1);
         let arm = |selected: bool, branch: &ConditionTerm| {
             Proposition::And(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     condition.as_ref().clone(),
                     selected,
                 )),
-                Box::new(Proposition::ConditionIs(branch.clone(), value)),
+                Box::new(Proposition::condition_is(branch.clone(), value)),
             )
         };
         Some(Proposition::Or(
@@ -137,7 +137,7 @@ impl ConditionTerm {
         application: SharedPureApplication,
         body: Self,
     ) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             Self::BoolEqual(Box::new(Self::BoolApplication(application)), Box::new(body)),
             true,
         )
@@ -168,7 +168,7 @@ impl ConditionTerm {
         &self,
         mut child: impl FnMut(&ConditionTerm) -> ConditionTerm,
         mut argument: impl FnMut(&PureFunctionArgument) -> PureFunctionArgument,
-        read: impl FnOnce(&SharedMemory, &Pointer) -> (SharedMemory, Pointer),
+        read: impl FnOnce(&SharedMemory, &Address) -> (SharedMemory, Address),
     ) -> Option<ConditionTerm> {
         Some(match self {
             Self::BoolApplication(application) => {
@@ -190,8 +190,8 @@ impl ConditionTerm {
                 Self::BoolEqual(Box::new(child(left)), Box::new(child(right)))
             }
             Self::BoolLoad(memory, pointer) => {
-                let (memory, pointer) = read(memory, pointer);
-                Self::BoolLoad(memory, Box::new(pointer))
+                let (memory, pointer) = read(memory.shared_memory(), pointer);
+                Self::BoolLoad(crate::kernel::ProgramPoint::at(&memory), Box::new(pointer))
             }
             _ => return None,
         })
@@ -324,7 +324,7 @@ impl ConditionTerm {
             condition = operand;
             value = !value;
         }
-        Proposition::ConditionIs(condition.clone(), value)
+        Proposition::condition_is(condition.clone(), value)
     }
 
     /// Integer to `Bool` (Stage 5): C's conversion of a scalar to `bool`,
@@ -373,7 +373,7 @@ impl ConditionTerm {
                 )
             }
             ProgramValue::Pointer(pointer) => {
-                crate::kernel::eval::pointer_is_null_condition(pointer.pointer().clone())
+                crate::kernel::eval::pointer_is_null_condition(pointer.address().clone())
             }
             _ => return None,
         };

@@ -125,6 +125,8 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     /// `iterations`; the back edge owes the invariants at `K + 1`.
     pub(in crate::surface::proof) iterations: Option<crate::kernel::IntegerTerm>,
     pub(in crate::surface::proof) checks: Vec<LoopInvariantCheck>,
+    /// A preselected pure test read again at the preservation boundary.
+    pub(in crate::surface::proof) entry_guard: Option<Arc<ProgramExpression>>,
     pub(in crate::surface::proof) ranking_measures: Vec<crate::kernel::RankingComponent>,
     /// The declared `decreases` components as the loop head writes them, in
     /// the order of `ranking_measures`. The back edge's descent member is
@@ -156,7 +158,7 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     /// The written names of the `int32` quantifier binders the declared
     /// invariants introduce, by the kernel variable each lowers its binder
     /// to. A bundle member synthesized from such an invariant, such as the
-    /// extent guard a quantified `viewable` invariant owes, spells its binder
+    /// span guard a quantified `viewable` invariant owes, spells its binder
     /// with the written name, so a proof focused on it can name it.
     pub(in crate::surface::proof) binder_names:
         Arc<BTreeMap<crate::kernel::Variable, SurfaceBinder>>,

@@ -83,12 +83,12 @@ impl Gen {
         }
     }
 
-    fn memory(&mut self) -> SpecMemory {
+    fn memory(&mut self) -> SpecPoint {
         match self.pick(4) {
-            0 => SpecMemory::Current,
-            1 => SpecMemory::FunctionEntry,
-            2 => SpecMemory::LoopEntry,
-            _ => SpecMemory::Fixed(Memory::new()),
+            0 => SpecPoint::Current,
+            1 => SpecPoint::FunctionEntry,
+            2 => SpecPoint::LoopEntry,
+            _ => SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
         }
     }
 
@@ -197,7 +197,7 @@ impl Gen {
                 byte_width: 4,
             },
             12 => SpecExpression::MemoryLoad {
-                memory: self.memory(),
+                point: self.memory(),
                 pointer: Box::new(self.pointer(d)),
                 value_type: ProgramType::Int32,
             },
@@ -372,7 +372,7 @@ impl Gen {
             1 => SpecPureFunctionArgument::Integer(self.int(depth)),
             2 => SpecPureFunctionArgument::Algebraic(self.alg(depth)),
             _ => SpecPureFunctionArgument::ArrayRef {
-                memory: self.memory(),
+                point: self.memory(),
                 pointer: self.expr(depth),
                 element_type: ProgramType::Int32,
             },
@@ -462,7 +462,7 @@ impl Gen {
                 arguments: vec![
                     SpecPredicateArgument::Value(self.expr(d)),
                     SpecPredicateArgument::ArrayRef {
-                        memory: self.memory(),
+                        point: self.memory(),
                         pointer: self.expr(d),
                     },
                 ],
@@ -473,7 +473,7 @@ impl Gen {
                 right: self.resource(d),
             },
             13 => SpecProposition::MemoryLoadable {
-                memory: self.memory(),
+                point: self.memory(),
                 base: self.expr(d),
                 start: self.expr(d),
                 end: self.expr(d),
@@ -486,7 +486,7 @@ impl Gen {
             15 => SpecProposition::Or(Box::new(self.prop(d)), Box::new(self.prop(d))),
             18 => SpecProposition::MutexHeld(Box::new(self.expr(d))),
             16 => SpecProposition::ResourceViewable {
-                memory: self.memory(),
+                point: self.memory(),
                 resource: self.resource(d),
             },
             _ => SpecProposition::ResourceContains {

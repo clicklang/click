@@ -31,11 +31,14 @@ int32 b(int32 j) {
     step();
     branch ensuring {
         fact forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 };
-    } then {
-        step();
-        have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
-    } else {
-        have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
+    } {
+        true => {
+            step();
+            have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
+        }
+        false => {
+            have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
+        }
     }
 }
 ```

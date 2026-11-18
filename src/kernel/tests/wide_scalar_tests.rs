@@ -9,7 +9,9 @@ fn evaluated(expression: ProgramExpression) -> ExpressionOutcome {
     let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         panic!("expected expression evaluation");
     };
-    outcome.clone()
+    let native_outcome = outcome.native_compat();
+    let outcome = &native_outcome;
+    outcome.clone().map_value(Into::into)
 }
 
 #[test]
@@ -123,6 +125,8 @@ fn wide_scalar_symbolic_identity_substitution_and_observation_preserve_type() {
         let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
+        let native_outcome = outcome.native_compat();
+        let outcome = &native_outcome;
         assert_eq!(outcome, &ExpressionOutcome::Value(value.clone()));
         let term = MachineTerm::Variable(variable);
         let observation = IntegerTerm::from_machine(ty, term).unwrap();
@@ -252,10 +256,7 @@ fn wide_scalar_truthiness_uses_all_bits_and_retains_symbolic_guards() {
             path.outcome,
             ExpressionOutcome::Value(ProgramValue::Int32(_))
         ));
-        assert!(path.facts.iter().any(|fact| matches!(
-            fact.proposition(),
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, _), _)
-        )));
+        assert!(path.facts.iter().any(|fact| matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))));
     }
 }
 
@@ -488,16 +489,13 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
     assert_eq!(result.program_type(), ProgramType::Int64);
     assert_eq!(obligations.len(), 2);
     for kind in [true, false] {
-        assert!(
-            obligations
-                .iter()
-                .any(|obligation| match obligation.proposition() {
-                    Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(_, _), true) =>
-                        kind,
-                    Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(_, _), true) => !kind,
-                    _ => false,
-                })
-        );
+        assert!(obligations.iter().any(|obligation| {
+            match obligation.proposition().condition_native() {
+                Some((ConditionTerm::IntegerGreaterEqual(_, _), true)) => kind,
+                Some((ConditionTerm::IntegerLessEqual(_, _), true)) => !kind,
+                _ => false,
+            }
+        }));
     }
     let bounds: Vec<_> = obligations
         .iter()
@@ -509,7 +507,8 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
             let Proposition::ConditionIs(condition, true) = proposition else {
                 unreachable!()
             };
-            assumptions = assumptions.assume_condition(condition.clone(), true);
+            assumptions =
+                assumptions.assume_condition((condition.clone()).native_compat().clone(), true);
         }
         let mut remaining = Vec::new();
         let result = coerce_program_value_to_type(
@@ -617,14 +616,16 @@ fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
 
 #[test]
 fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() {
-    let pointer = Pointer {
-        block: "wide-cast-source".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "wide-cast-source".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("wide-cast-source", 4).store(
-        pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant((-1i32) as u32)),
-    );
+    let memory = SymbolicMemory::new()
+        .with_block("wide-cast-source", 4)
+        .store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant((-1i32) as u32)),
+        );
     let load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(intern_memory(memory))),
         Box::new(pointer),
@@ -671,7 +672,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
                 assumptions,
             )
         };
-    let bound = Proposition::ConditionIs(
+    let bound = Proposition::condition_is(
         ConditionTerm::uint64_less_equal(
             bits.clone(),
             MachineTerm::uint64_constant(i64::MAX as u64),
@@ -705,7 +706,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
         Some(result)
     );
     assert!(remaining.is_empty());
-    let weaker = Proposition::ConditionIs(
+    let weaker = Proposition::condition_is(
         ConditionTerm::uint64_less_equal(
             bits.clone(),
             MachineTerm::uint64_constant((i64::MAX as u64) + 1),
@@ -759,9 +760,9 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
 #[test]
 fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
     for signed in [false, true] {
-        let pointer = Pointer {
-            block: "wide-cached-read".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "wide-cached-read".into(),
+            offset: AddressOffset::Constant(0),
         };
         let bits = if signed {
             MachineTerm::int64_constant(0x1_0000_0001)
@@ -774,7 +775,7 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
             ProgramValue::UInt64(bits.clone())
         };
         let memory = intern_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("wide-cached-read", 8)
                 .store(pointer.clone(), value),
         );

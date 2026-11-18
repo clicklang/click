@@ -72,7 +72,7 @@ impl ExecutionValue {
                 }),
         }
     }
-    pub fn pointer(&self) -> Option<&PointerValue> {
+    pub fn pointer(&self) -> Option<&Pointer> {
         let value = match self {
             Self::Native(value) => value,
             Self::Shared(root) => root.pointer_native()?,
@@ -124,8 +124,7 @@ impl ExecutionValue {
         let value = Self::retain_native(value);
         match value {
             Self::Native(ProgramValue::Pointer(pointer)) => {
-                KernelTerm::shared_pointer_value(SharedPointerValue::import_produced(&pointer))
-                    .into()
+                KernelTerm::shared_pointer_value(SharedPointer::import_produced(&pointer)).into()
             }
             value => value,
         }
@@ -199,7 +198,7 @@ impl ExecutionValue {
             Self::Shared(root) => root.clone(),
             Self::Native(ProgramValue::Pointer(pointer)) => {
                 KernelTerm::retained_pointer_read(pointer).unwrap_or_else(|| {
-                    KernelTerm::shared_pointer_value(SharedPointerValue::import_produced(pointer))
+                    KernelTerm::shared_pointer_value(SharedPointer::import_produced(pointer))
                 })
             }
             Self::Native(value) => {
@@ -513,7 +512,7 @@ enum StoredIdentity<'a> {
     Machine(&'a SharedMachineIntegerTerm),
     Native(NativeStorageIdentity<'a>),
 }
-/// Local machine keys own shared observation handles. Memory cells reuse the
+/// Local machine keys own shared observation handles. SymbolicMemory cells reuse the
 /// structural family projections and leave native numeric carriers explicit.
 #[derive(Debug)]
 enum StoredKey {
@@ -595,7 +594,7 @@ impl StoredKey {
     }
 }
 impl StoredExecutionValue {
-    fn same_retained_root(&self, other: &Self) -> bool {
+    pub(crate) fn same_retained_root(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.0, &other.0)
             || matches!((self.shared(), other.shared()), (Some(a), Some(b)) if a == b)
     }
@@ -717,8 +716,8 @@ mod tests {
             KernelTerm::variable(KernelType::Algebraic(ty.clone()), Variable(999764)),
             KernelTerm::algebraic_read(
                 ty.clone(),
-                intern_memory(Memory::new()),
-                SharedPointerAddress::import(&Pointer::symbolic(Variable(999765))),
+                crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
+                SharedAddress::import(&Address::symbolic(Variable(999765))),
             ),
         ];
         fn hash(value: &impl std::hash::Hash) -> u64 {
@@ -796,9 +795,9 @@ mod tests {
                     native_stored.cmp(&StoredExecutionValue::from(other))
                 );
             }
-            let address = Memory::local_pointer("stored_bool");
-            let memory = Memory::new()
-                .with_block(address.block.clone(), 1)
+            let address = SymbolicMemory::local_pointer("stored_bool");
+            let memory = SymbolicMemory::new()
+                .with_block(address.base.clone(), 1)
                 .store_retained(address.clone(), cell.into_value());
             assert_eq!(
                 memory.known_retained_value(&address).unwrap().shared(),
@@ -892,8 +891,8 @@ mod tests {
     #[test]
     fn pointer_local_storage_retains_root_and_native_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1027000)),
+        let pointer = Pointer::new(
+            Address::symbolic(Variable(1027000)),
             ProgramType::Int32Pointer,
         );
         let root = KernelTerm::shared_pointer_call(
@@ -902,7 +901,7 @@ mod tests {
                 "local_source".into(),
                 vec![],
             ),
-            SharedPointerValue::import(&pointer),
+            SharedPointer::import(&pointer),
         );
         let stored = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
         let native = StoredExecutionValue::from(ProgramValue::Pointer(pointer.clone()));
@@ -947,7 +946,7 @@ mod tests {
                     .unwrap()
                     .pointer_payload()
                     .unwrap()
-                    .same_source_payload(&SharedPointerValue::import(&expected))
+                    .same_source_payload(&SharedPointer::import(&expected))
             );
             assert_eq!(value.pointer().unwrap().pointee_constant(), constant);
             assert_eq!(value.pointer().unwrap().pointee_volatile(), volatile);
@@ -960,20 +959,20 @@ mod tests {
         assert_eq!(retagged.program_type(), ProgramType::VoidPointer);
         assert!(matches!(
             retagged.shared().unwrap().node(),
-            KernelTermNode::PointerValue { .. }
+            KernelTermNode::Pointer { .. }
         ));
     }
 
     #[test]
     fn pointer_memory_cells_keep_roots_and_the_previous_native_key() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1027500)),
+        let pointer = Pointer::new(
+            Address::symbolic(Variable(1027500)),
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true);
         let native = ProgramValue::Pointer(pointer.clone());
-        let root = KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer));
+        let root = KernelTerm::shared_pointer_value(SharedPointer::import(&pointer));
         let retained = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
         let native_cell = StoredMemoryValue::from(native.clone());
         assert_eq!(retained, native_cell);
@@ -986,7 +985,7 @@ mod tests {
         }
         assert_eq!(hash(&retained), hash(&native_cell));
         assert_eq!(format!("{retained:?}"), format!("{native:?}"));
-        let address = Pointer::symbolic(Variable(1027501));
+        let address = Address::symbolic(Variable(1027501));
         let mut cells = CellStore::new();
         cells.insert_retained(address.clone(), retained);
         assert_eq!(cells.get_retained(&address).unwrap().shared(), Some(&root));
@@ -1005,9 +1004,9 @@ mod tests {
     #[test]
     fn pointer_store_history_keeps_the_root_after_cache_forgetting() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Memory::local_pointer("retained_pointer_cell");
-        let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1027600)),
+        let address = SymbolicMemory::local_pointer("retained_pointer_cell");
+        let pointer = Pointer::new(
+            Address::symbolic(Variable(1027600)),
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true);
@@ -1017,10 +1016,10 @@ mod tests {
                 "stored_source".into(),
                 vec![],
             ),
-            SharedPointerValue::import(&pointer),
+            SharedPointer::import(&pointer),
         );
-        let memory = Memory::new()
-            .with_block(address.block.clone(), C_POINTER_BYTE_WIDTH)
+        let memory = SymbolicMemory::new()
+            .with_block(address.base.clone(), C_POINTER_BYTE_WIDTH)
             .store_retained(address.clone(), ExecutionValue::Shared(root.clone()));
         assert_eq!(
             memory.known_retained_value(&address).unwrap().shared(),
@@ -1034,7 +1033,7 @@ mod tests {
         assert!(forgotten.known_value(&address).is_none());
         for retained_state in [&memory, &forgotten] {
             let origin =
-                Pointer::loaded_value(&crate::kernel::intern_memory_ref(retained_state), &address);
+                Address::loaded_value(&crate::kernel::intern_memory_ref(retained_state), &address);
             let recovered =
                 crate::kernel::memory_history::complete_pointer_carrier_read_retained_value(
                     &origin,
@@ -1183,3 +1182,56 @@ mod float_cell_key_tests {
         }
     }
 }
+
+/// Immutable program-value storage. Native inputs remain explicit compatibility
+/// inputs; producer roots survive every clone and handoff without exporting.
+/// Equality follows native syntax, separately from execution observation keys.
+#[derive(Clone, Debug)]
+pub(crate) struct RetainedProgramValue(std::sync::Arc<ExecutionValue>);
+impl From<ProgramValue> for RetainedProgramValue {
+    fn from(value: ProgramValue) -> Self {
+        Self::from(ExecutionValue::Native(value))
+    }
+}
+impl From<ExecutionValue> for RetainedProgramValue {
+    fn from(value: ExecutionValue) -> Self {
+        Self(std::sync::Arc::new(value))
+    }
+}
+impl RetainedProgramValue {
+    pub(crate) fn value(&self) -> &ExecutionValue {
+        &self.0
+    }
+
+    pub(crate) fn program_type(&self) -> ProgramType {
+        self.0.program_type()
+    }
+    pub(crate) fn root(&self) -> Option<&KernelTerm> {
+        self.0.shared()
+    }
+    pub(crate) fn native_compat(&self) -> &ProgramValue {
+        match self.0.as_ref() {
+            ExecutionValue::Native(value) => value,
+            ExecutionValue::Shared(root) => root
+                .program_value_native_compat()
+                .expect("stored program value output"),
+        }
+    }
+    pub(crate) fn into_native_compat(self) -> ProgramValue {
+        self.into_value().into_native()
+    }
+    pub(crate) fn into_value(self) -> ExecutionValue {
+        match std::sync::Arc::try_unwrap(self.0) {
+            Ok(value) => value,
+            Err(value) => value.as_ref().clone(),
+        }
+    }
+}
+impl PartialEq for RetainedProgramValue {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+            || matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b)
+            || self.native_compat() == other.native_compat()
+    }
+}
+impl Eq for RetainedProgramValue {}

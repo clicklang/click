@@ -1174,12 +1174,12 @@ mod outcome_claim_goal_tests {
         let core = outcome();
         let goal = FunctionOutcomeObligation::new(0, Arc::new(OutcomeProofState::new(core, ())));
         let owner = outcome_root(goal.clone());
-        let fact = crate::kernel::Proposition::ConditionIs(
+        let fact = crate::kernel::Proposition::condition_is(
             crate::kernel::ConditionTerm::Constant(true),
             true,
         );
         assert!(owner.refute_function_outcome_in(&owner, &fact).is_err());
-        let false_fact = crate::kernel::Proposition::ConditionIs(
+        let false_fact = crate::kernel::Proposition::condition_is(
             crate::kernel::ConditionTerm::Constant(false),
             true,
         );

@@ -44,15 +44,15 @@ fn wide_equality_bounds_use_incremental_index_and_preserve_branches() {
 
 #[test]
 fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
-    let external = |variable| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+    let external = |variable| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let target = external(31_070);
     let loadable = |base| Proposition::MemoryLoadable {
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         base,
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
 
@@ -116,11 +116,11 @@ fn exact_signed_constant_bound_lookup_ignores_unrelated_facts() {
 #[test]
 fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
     let value = MachineTerm::Variable(Variable(87_910));
-    let premise = Proposition::ConditionIs(
+    let premise = Proposition::condition_is(
         ConditionTerm::signed_less_than(MachineTerm::constant(1), value.clone()),
         true,
     );
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::signed_greater_than(value, MachineTerm::constant(1)),
         true,
     );
@@ -128,7 +128,7 @@ fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
     for size in [16, 64, 256] {
         let mut premises = vec![premise.clone()];
         for index in 0..size {
-            premises.push(Proposition::ConditionIs(
+            premises.push(Proposition::condition_is(
                 ConditionTerm::signed_greater_equal(
                     MachineTerm::Variable(Variable(91_000 + index)),
                     MachineTerm::constant(2),
@@ -170,9 +170,9 @@ fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn resource_object_provenance_does_not_scan_same_raw_block() {
-    let pointer = |id| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Variable(Variable(895_000 + id)),
+    let pointer = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(895_000 + id)),
     };
     let target = pointer(0);
     let expression = crate::kernel::program_expression::less_equal(
@@ -216,11 +216,12 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
 fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
     for size in [8u64, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Pointer::symbolic(Variable(96_311));
+        let field = Address::symbolic(Variable(96_311));
         let stored = subobject_pointer(0, 0, 4);
-        let memory = Memory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
-        let read = PointerValue::from_read(
-            stored.pointer().clone(),
+        let memory =
+            SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
+        let read = Pointer::from_read(
+            stored.address().clone(),
             ProgramType::Int32Pointer,
             &crate::kernel::intern_memory_ref(&memory),
             &field,

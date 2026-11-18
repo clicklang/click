@@ -55,7 +55,7 @@ impl ResourceKey {
             .iter()
             .map(|argument| {
                 crate::instrumentation::record_deterministic_work(1);
-                if let AlgebraicValue::Program(value) = argument {
+                if let crate::kernel::ResourceFieldValue::Program(value) = argument {
                     let term = match value {
                         ProgramValue::Int8(t)
                         | ProgramValue::UInt8(t)
@@ -81,7 +81,7 @@ impl ResourceKey {
                         );
                     }
                 }
-                ResourceArgumentKey::Exact(argument.clone())
+                ResourceArgumentKey::Exact(argument.into_native())
             })
             .collect();
         match resource {
@@ -149,15 +149,16 @@ impl PropositionKey {
                     // Give native arithmetic the same existing observation
                     // reading as retained comparisons. This imports each selected
                     // operand once; additive cancellation uses shared children.
-                    let retained = matches!(condition,
+                    let retained = matches!(condition.native_compat(),
                         ConditionTerm::Compare { format, relation: CompareRelation::Equal, .. }
                         if format.format().bits() == 32
                     )
-                    .then(|| retained_arithmetic_comparison(condition))
+                    .then(|| retained_arithmetic_comparison(condition.native_compat()))
                     .flatten();
-                    if let Some(view) =
-                        comparison_view(retained.as_ref().unwrap_or(condition), *truth)
-                    {
+                    if let Some(view) = comparison_view(
+                        retained.as_ref().unwrap_or(condition.native_compat()),
+                        *truth,
+                    ) {
                         let view = view.widened().unwrap_or(view);
                         (Self::Comparison(key(&view)), true)
                     } else {
@@ -272,7 +273,7 @@ pub(in crate::kernel) fn same_comparison(
         crate::kernel::machine_integer::comparison::structural_native_comparison_view(
             condition, truth,
         ),
-        comparison_view(other, *value),
+        comparison_view(other.native_compat(), *value),
     ) {
         (Some(left), Some(right)) => key(&left) == key(&right),
         _ => false,
@@ -394,7 +395,7 @@ impl ObservationComparisons {
         }
         let view = comparison_view(condition, truth).expect("native equality");
         let key = key(&view);
-        let source = Proposition::ConditionIs(condition.clone(), truth);
+        let source = Proposition::condition_is(condition.clone(), truth);
         let sources = self
             .selected_native_equalities
             .get(&key)
@@ -435,16 +436,16 @@ impl ObservationComparisons {
     }
 
     pub(super) fn adjust(&mut self, condition: &ConditionTerm, truth: bool) {
-        let source = Proposition::ConditionIs(condition.clone(), truth);
-        if let ConditionTerm::PointerOffsetEqual(left, right) = condition {
+        let source = Proposition::condition_is(condition.clone(), truth);
+        if let ConditionTerm::AddressOffsetEqual(left, right) = condition {
             use crate::kernel::machine_integer::comparison::ComparisonOperand;
-            fn operand(offset: &PointerOffsetTerm) -> Option<ComparisonOperand<'_>> {
+            fn operand(offset: &AddressOffset) -> Option<ComparisonOperand<'_>> {
                 match offset {
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value,
                         byte_width: 4,
                     } => Some(ComparisonOperand::Observation(value.clone())),
-                    PointerOffsetTerm::Constant(bytes) if bytes % 4 == 0 => {
+                    AddressOffset::Constant(bytes) if bytes % 4 == 0 => {
                         i32::try_from(bytes / 4).ok().map(|value| {
                             ComparisonOperand::Constant(MachineTerm::constant(value as u32))
                         })
@@ -631,7 +632,7 @@ mod compound_observation_lookup_tests {
                         sum.clone(),
                         MachineTerm::constant_at32(format, bound),
                     );
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         if shared {
                             retained_arithmetic_comparison(&native).unwrap()
                         } else {
@@ -667,13 +668,13 @@ mod compound_observation_lookup_tests {
         let zero = MachineTerm::constant(0);
         for truth in [false, true] {
             for width in [4, 8] {
-                let source = ConditionTerm::PointerOffsetEqual(
-                    PointerOffsetTerm::Int32Scaled {
+                let source = ConditionTerm::AddressOffsetEqual(
+                    AddressOffset::Int32Scaled {
                         value: MachineOperandView::Shared(&root).retain(ty),
                         byte_width: width,
                     }
                     .into(),
-                    PointerOffsetTerm::Constant(0).into(),
+                    AddressOffset::Constant(0).into(),
                 );
                 let mut index = ObservationComparisons::default();
                 let parent = index.clone();
@@ -693,7 +694,7 @@ mod compound_observation_lookup_tests {
                 index.adjust(&source, truth);
                 assert_eq!(
                     query(&index, truth),
-                    (width == 4).then(|| Proposition::ConditionIs(source.clone(), truth))
+                    (width == 4).then(|| Proposition::condition_is(source.clone(), truth))
                 );
                 assert!(query(&parent, truth).is_none());
                 assert!(query(&index, !truth).is_none());
@@ -768,7 +769,7 @@ mod compound_observation_lookup_tests {
                 );
                 assert_eq!(
                     child.selected_comparison_source(&query, truth),
-                    Some(&Proposition::ConditionIs(native.clone(), truth))
+                    Some(&Proposition::condition_is(native.clone(), truth))
                 );
                 assert!(child.selected_comparison_source(&query, !truth).is_none());
                 assert!(parent.selected_comparison_source(&query, truth).is_none());
@@ -794,10 +795,10 @@ mod compound_observation_lookup_tests {
             IntegerTerm::Machine(retained.clone()),
             IntegerTerm::constant_i64(-1),
         );
-        let other = Proposition::ConditionIs(ConditionTerm::Variable(Variable(989003)), true);
+        let other = Proposition::condition_is(ConditionTerm::Variable(Variable(989003)), true);
         let guard = |condition, truth| {
             Proposition::Or(
-                Box::new(Proposition::ConditionIs(condition, truth)),
+                Box::new(Proposition::condition_is(condition, truth)),
                 Box::new(other.clone()),
             )
         };
@@ -956,9 +957,9 @@ impl PureFactContext {
 #[cfg(test)]
 mod resource_relation_tests {
     use super::*;
-    use crate::kernel::{LoadKind, Pointer, PointerValue, ProgramType, Variable};
+    use crate::kernel::{Address, LoadKind, Pointer, ProgramType, Variable};
 
-    fn relation(term: MachineTerm, pointer: PointerValue, separate: bool) -> Proposition {
+    fn relation(term: MachineTerm, pointer: Pointer, separate: bool) -> Proposition {
         let left = Resource::Composite {
             name: "storage".into(),
             arguments: vec![AlgebraicValue::Program(ProgramValue::Pointer(
@@ -995,10 +996,10 @@ mod resource_relation_tests {
     #[test]
     fn resource_relation_keys_match_read_names_without_erasing_their_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Pointer::symbolic(Variable(3_219_300));
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let address = Address::symbolic(Variable(3_219_300));
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let other_memory = crate::kernel::intern_memory(
-            Memory::new().store(address.clone(), ProgramValue::Int32(9u32.into())),
+            SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(9u32.into())),
         );
         let name = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
@@ -1006,7 +1007,7 @@ mod resource_relation_tests {
             LoadKind::Int32,
             4,
         );
-        let pointer = PointerValue::new(address.clone(), ProgramType::Int32Pointer);
+        let pointer = Pointer::new(address.clone(), ProgramType::Int32Pointer);
         let read = |memory, address, kind| MachineTerm::MemoryLoad(memory, Box::new(address), kind);
         for separate in [false, true] {
             let named = relation(MachineTerm::Variable(name), pointer.clone(), separate);
@@ -1045,8 +1046,7 @@ mod resource_relation_tests {
                     different_provenance,
                     separate
                 )));
-                let different_pointer =
-                    PointerValue::new(address.clone(), ProgramType::Int8Pointer);
+                let different_pointer = Pointer::new(address.clone(), ProgramType::Int8Pointer);
                 assert!(!facts.proves_exact(&relation(
                     MachineTerm::Variable(name),
                     different_pointer,

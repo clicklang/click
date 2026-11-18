@@ -6666,15 +6666,61 @@ theorem ctx_node_is_identity(ctx: Context, p: struct rb_node*) {
     ensures ctx_identity(ctx) == p by {
         let ih = induct(ctx);
         match ctx {
-            Context::Top => { unfold(ctx_identity(Context::Top)); have p == 0; known(); },
+            Context::Top => {
+                unfold(ctx_identity(Context::Top));
+                unfold(ctx_node_is(Context::Top, p));
+                have (if p == 0 { 1 } else { 0 }) == 1 by {
+                    rewrite(if p == 0 { 1 } else { 0 }, ctx_node_is(Context::Top, p));
+                    known();
+                }
+                have p == 0 by {
+                    if p == 0 {
+                        known();
+                    } else {
+                        have (if p == 0 { 1 } else { 0 }) != 1 by {
+                            normalize() using { p != 0; };
+                        }
+                        contradiction((if p == 0 { 1 } else { 0 }) == 1);
+                    }
+                }
+                known();
+            },
             Context::Left(identity, grandparent, color, sibling, up) => {
                 unfold(ctx_identity(Context::Left(identity, grandparent, color, sibling, up)));
-                have p == identity;
+                unfold(ctx_node_is(Context::Left(identity, grandparent, color, sibling, up), p));
+                have (if p == identity { 1 } else { 0 }) == 1 by {
+                    rewrite(if p == identity { 1 } else { 0 }, ctx_node_is(Context::Left(identity, grandparent, color, sibling, up), p));
+                    known();
+                }
+                have p == identity by {
+                    if p == identity {
+                        known();
+                    } else {
+                        have (if p == identity { 1 } else { 0 }) != 1 by {
+                            normalize() using { p != identity; };
+                        }
+                        contradiction((if p == identity { 1 } else { 0 }) == 1);
+                    }
+                }
                 known();
             },
             Context::Right(identity, grandparent, color, sibling, up) => {
                 unfold(ctx_identity(Context::Right(identity, grandparent, color, sibling, up)));
-                have p == identity;
+                unfold(ctx_node_is(Context::Right(identity, grandparent, color, sibling, up), p));
+                have (if p == identity { 1 } else { 0 }) == 1 by {
+                    rewrite(if p == identity { 1 } else { 0 }, ctx_node_is(Context::Right(identity, grandparent, color, sibling, up), p));
+                    known();
+                }
+                have p == identity by {
+                    if p == identity {
+                        known();
+                    } else {
+                        have (if p == identity { 1 } else { 0 }) != 1 by {
+                            normalize() using { p != identity; };
+                        }
+                        contradiction((if p == identity { 1 } else { 0 }) == 1);
+                    }
+                }
                 known();
             },
         }

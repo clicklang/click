@@ -766,8 +766,8 @@ impl PointerOffsetCongruenceEvidence {
 
     pub(in crate::kernel) fn checks(
         &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
         assumptions: &PureFactContext,
     ) -> bool {
         match self {
@@ -784,7 +784,9 @@ impl PointerOffsetCongruenceEvidence {
                 let Proposition::ConditionIs(condition, true) = premise.as_ref() else {
                     return false;
                 };
-                let Some((premise_left, premise_right)) = condition.pointer_offset_sides() else {
+                let Some((premise_left, premise_right)) =
+                    condition.native_compat().pointer_offset_sides()
+                else {
                     return false;
                 };
                 assumptions.contains_assumed_exact(premise)
@@ -796,10 +798,8 @@ impl PointerOffsetCongruenceEvidence {
                 second,
                 swapped,
             } => {
-                let (
-                    PointerOffsetTerm::Add(left_a, left_b),
-                    PointerOffsetTerm::Add(right_a, right_b),
-                ) = (left, right)
+                let (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) =
+                    (left, right)
                 else {
                     return false;
                 };
@@ -813,11 +813,11 @@ impl PointerOffsetCongruenceEvidence {
             }
             Self::Int32Scaled { byte_width, path } => {
                 let (
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: left,
                         byte_width: left_width,
                     },
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: right,
                         byte_width: right_width,
                     },
@@ -838,11 +838,11 @@ impl PointerOffsetCongruenceEvidence {
                 equality,
             } => {
                 let (
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: left,
                         byte_width: left_width,
                     },
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: right,
                         byte_width: right_width,
                     },
@@ -860,12 +860,12 @@ impl PointerOffsetCongruenceEvidence {
                 path,
             } => {
                 let (
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: left,
                         byte_width: left_width,
                         unsigned: left_unsigned,
                     },
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: right,
                         byte_width: right_width,
                         unsigned: right_unsigned,
@@ -932,7 +932,7 @@ impl SignedConstantEvidence {
         let Proposition::ConditionIs(condition, value) = source else {
             return None;
         };
-        let view = comparison_view(condition, *value)?;
+        let view = comparison_view(condition.native_compat(), *value)?;
         if !matches!(
             view.format,
             MachineIntegerType::Int32 | MachineIntegerType::UInt32
@@ -1021,7 +1021,7 @@ impl DirectBitvectorEqualityEvidence {
                                         return None;
                                     };
                                     let view = crate::kernel::assumptions::order_view_at_format(
-                                        condition,
+                                        condition.native_compat(),
                                         *truth,
                                         MachineIntegerType::Int32,
                                     )?;
@@ -1075,7 +1075,7 @@ impl DirectBitvectorEqualityEvidence {
                 checks(left, left_evidence) && checks(right, right_evidence)
             }
             Self::LeAndNotLt(evidence) => {
-                let less_equal = Proposition::ConditionIs(
+                let less_equal = Proposition::condition_is(
                     crate::kernel::machine_integer::comparison::condition_for_operand_views(
                         MachineIntegerType::Int32,
                         CompareRelation::LessEqual,
@@ -1083,7 +1083,7 @@ impl DirectBitvectorEqualityEvidence {
                     ),
                     true,
                 );
-                let not_less_than = Proposition::ConditionIs(
+                let not_less_than = Proposition::condition_is(
                     crate::kernel::machine_integer::comparison::condition_for_operand_views(
                         MachineIntegerType::Int32,
                         CompareRelation::LessThan,
@@ -1097,7 +1097,7 @@ impl DirectBitvectorEqualityEvidence {
                     && assumptions.contains_assumed_exact(&evidence.not_less_than)
             }
             Self::GeAndNotGt(evidence) => {
-                let greater_equal = Proposition::ConditionIs(
+                let greater_equal = Proposition::condition_is(
                     crate::kernel::machine_integer::comparison::condition_for_operand_views(
                         MachineIntegerType::Int32,
                         CompareRelation::GreaterEqual,
@@ -1105,7 +1105,7 @@ impl DirectBitvectorEqualityEvidence {
                     ),
                     true,
                 );
-                let not_greater_than = Proposition::ConditionIs(
+                let not_greater_than = Proposition::condition_is(
                     crate::kernel::machine_integer::comparison::condition_for_operand_views(
                         MachineIntegerType::Int32,
                         CompareRelation::GreaterThan,
@@ -1165,7 +1165,7 @@ impl LoadAddressCongruenceEvidence {
         proposition: &Proposition,
         assumptions: &PureFactContext,
     ) -> bool {
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -1173,7 +1173,7 @@ impl LoadAddressCongruenceEvidence {
                 right,
             },
             true,
-        ) = proposition
+        )) = proposition.condition_native()
         else {
             return false;
         };
@@ -1192,7 +1192,7 @@ impl LoadAddressCongruenceEvidence {
             && left.kind == right.kind
             && *left_pointer == self.left_pointer
             && *right_pointer == self.right_pointer
-            && left_pointer.block == right_pointer.block
+            && left_pointer.base == right_pointer.base
             && self
                 .offset
                 .checks(&left_pointer.offset, &right_pointer.offset, assumptions)
@@ -1321,7 +1321,6 @@ impl BitvectorEqualityDerivationStep {
     }
 }
 
-#[cfg(test)]
 impl PureFactContext {
     pub(crate) fn shares_persistent_storage_with(&self, other: &Self) -> bool {
         self.condition_facts
@@ -1402,7 +1401,7 @@ impl ExecutionBudget {
     ///
     /// The range overlaps none of the reserved ones: the execution counter
     /// runs `1_000_000 .. 2_000_000`, quantifiers stop at `4_000_000`,
-    /// algebraic binders stop at `4_000_000_000`, symbolic pointer blocks span
+    /// algebraic binders stop at `4_000_000_000`, symbolic address bases span
     /// `4_000_000_000 .. 8_000_000_000`, load variables span
     /// `1 << 40 .. 1 << 41`, and spec fold binders span
     /// `1 << 43 .. 1 << 44`. The kernel test
@@ -1441,7 +1440,7 @@ impl ExecutionBudget {
     /// The range overlaps none of the reserved ones: the C identities run
     /// below `1_000_000`, the execution counter runs
     /// `1_000_000 .. 2_000_000`, surface quantifiers run below `4_000_000`,
-    /// algebraic binders stop at `4_000_000_000`, symbolic pointer blocks span
+    /// algebraic binders stop at `4_000_000_000`, symbolic address bases span
     /// `4_000_000_000 .. 8_000_000_000`, load variables span
     /// `1 << 40 .. 1 << 41`, match binders span `1 << 41 .. 1 << 42`, and
     /// spec fold binders span `1 << 43 .. 1 << 44`. The
@@ -1470,32 +1469,32 @@ impl ExecutionBudget {
     }
 
     /// The first constant element range this budget's lowering refused as a
-    /// 32-bit byte extent, for the message a caller writes when the lowering
+    /// 32-bit byte span, for the message a caller writes when the lowering
     /// produced no path at all.
-    pub fn dropped_range_extent(&self) -> Option<&super::DroppedRangeExtent> {
-        self.dropped_range_extent.as_ref()
+    pub fn dropped_range_span(&self) -> Option<&super::DroppedRangeSpan> {
+        self.dropped_range_span.as_ref()
     }
 
     /// Whether a stated memory range was dropped because this context
-    /// refutes one of its extent guards, and whether that guard ordered the
+    /// refutes one of its span guards, and whether that guard ordered the
     /// range's endpoints (`true`) or bounded its byte count (`false`).
-    pub fn dropped_refuted_range_extent(&self) -> Option<bool> {
-        self.dropped_refuted_range_extent
+    pub fn dropped_refuted_range_span(&self) -> Option<bool> {
+        self.dropped_refuted_range_span
     }
 
     /// Records such a refusal. Diagnostic only; it decides nothing.
-    pub(in crate::kernel) fn record_dropped_refuted_range_extent(&mut self, reversed: bool) {
-        self.dropped_refuted_range_extent.get_or_insert(reversed);
+    pub(in crate::kernel) fn record_dropped_refuted_range_span(&mut self, reversed: bool) {
+        self.dropped_refuted_range_span.get_or_insert(reversed);
     }
 
-    pub(in crate::kernel) fn record_dropped_range_extent(
+    pub(in crate::kernel) fn record_dropped_range_span(
         &mut self,
         element_count: i64,
         element_width: u32,
         byte_limit: u32,
     ) {
-        self.dropped_range_extent
-            .get_or_insert(super::DroppedRangeExtent {
+        self.dropped_range_span
+            .get_or_insert(super::DroppedRangeSpan {
                 element_count,
                 element_width,
                 byte_limit,
@@ -1541,8 +1540,8 @@ impl ExecutionBudget {
             next_match_binder_variable: Self::MATCH_BINDER_VARIABLE_BASE,
             refuses_execution_identities: false,
             dropped_runtime_error: None,
-            dropped_range_extent: None,
-            dropped_refuted_range_extent: None,
+            dropped_range_span: None,
+            dropped_refuted_range_span: None,
             dropped_fold_body: None,
             dropped_comparison: None,
             program_byte_order: None,
@@ -1971,16 +1970,22 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
             | ProgramStatement::Break
             | ProgramStatement::Continue
             | ProgramStatement::Goto { .. }
-            | ProgramStatement::Declare {
-                initializer: None, ..
-            }
             | ProgramStatement::DeclareAggregate { .. } => {}
 
             ProgramStatement::Declare {
-                initializer: Some(expression),
+                initializer,
+                zero_fill,
                 ..
+            } => {
+                if let Some(expression) = initializer {
+                    cost.add_expression(1); // assignment target lvalue
+                    cost.add_expression(program_expression_source_steps(expression));
+                }
+                for expression in zero_fill.iter().flat_map(ZeroFill::expressions) {
+                    cost.add_expression(program_expression_source_steps(expression));
+                }
             }
-            | ProgramStatement::Assign { expression, .. } => {
+            ProgramStatement::Assign { expression, .. } => {
                 cost.add_expression(1); // assignment target lvalue
                 cost.add_expression(program_expression_source_steps(expression));
             }
@@ -2062,8 +2067,11 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
                 body,
                 ..
             } => {
-                let (condition, _, test) = loop_test.execution_parts();
-                cost.add_expression(program_expression_source_steps(condition));
+                let condition = loop_test.source_condition();
+                let test = loop_test.source_region();
+                if let Some(condition) = condition {
+                    cost.add_expression(program_expression_source_steps(condition));
+                }
                 pending.push(body);
                 if let Some(test) = test {
                     pending.push(&test.statement);

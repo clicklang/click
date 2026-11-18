@@ -10,7 +10,7 @@
 //! The fact denotes the separating conjunction, over every index `k` in
 //! `lo..hi` that is not a hole, of `base[s * k + a..s * k + b]` when the guard
 //! holds at `k` and of nothing when it does not. A hole is an index whose
-//! element the proof has taken out (`take`) or whose guard a C store has just
+//! element an indexed `unfold` exposed or whose guard a C store has just
 //! changed from false; the fact makes no claim about a hole. The checked
 //! operations that change holes, and the store rule that keeps the guard
 //! honest while the fact is held, are in `crate::kernel::iterated`.
@@ -21,14 +21,14 @@ use super::*;
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct IteratedGuard {
     /// Address of the guard cell at index 0.
-    pub(in crate::kernel) base: Pointer,
+    pub(in crate::kernel) base: Address,
     /// The C type of one guard cell (its loads are read at this type).
     pub(in crate::kernel) cell_type: ProgramType,
     /// The byte width of one guard cell.
     pub(in crate::kernel) cell_width: u32,
     /// `true` for `g[k] == value`, `false` for `g[k] != value`.
     pub(in crate::kernel) holds_when_equal: bool,
-    pub(in crate::kernel) value: MachineTerm,
+    pub(in crate::kernel) value: StoredMachineTerm,
 }
 
 /// The name of the resource definition whose clause formed a fact. It is
@@ -69,7 +69,7 @@ pub struct IteratedMemory {
     /// formed from, for diagnostics only.
     pub(in crate::kernel) owner: IteratedOwnerLabel,
     /// Address of element index 0's base (the clause's `base`).
-    pub(in crate::kernel) element_base: Pointer,
+    pub(in crate::kernel) element_base: Address,
     /// Byte width of one logical element of `base`.
     pub(in crate::kernel) element_width: u32,
     /// Element `k` covers `base[stride * k + start_offset..stride * k +
@@ -78,26 +78,51 @@ pub struct IteratedMemory {
     pub(in crate::kernel) stride: u32,
     pub(in crate::kernel) start_offset: i32,
     pub(in crate::kernel) end_offset: i32,
-    pub(in crate::kernel) lower: MachineTerm,
-    pub(in crate::kernel) upper: MachineTerm,
+    pub(in crate::kernel) lower: StoredMachineTerm,
+    pub(in crate::kernel) upper: StoredMachineTerm,
     pub(in crate::kernel) guard: IteratedGuard,
     /// Indices about which the fact currently makes no claim, in the order
     /// they were opened. Only explicit proof steps and checked C stores add
     /// one, so the list is bounded by the proof's own operations.
-    pub(in crate::kernel) holes: Arc<[MachineTerm]>,
+    pub(in crate::kernel) holes: Arc<[StoredMachineTerm]>,
 }
 
 impl IteratedMemory {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         owner: &str,
-        element_base: Pointer,
+        element_base: Address,
         element_width: u32,
         stride: u32,
         start_offset: i32,
         end_offset: i32,
         lower: MachineTerm,
         upper: MachineTerm,
+        guard: IteratedGuard,
+    ) -> Option<Self> {
+        Self::new_stored(
+            owner,
+            element_base,
+            element_width,
+            stride,
+            start_offset,
+            end_offset,
+            lower.into(),
+            upper.into(),
+            guard,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_stored(
+        owner: &str,
+        element_base: Address,
+        element_width: u32,
+        stride: u32,
+        start_offset: i32,
+        end_offset: i32,
+        lower: StoredMachineTerm,
+        upper: StoredMachineTerm,
         guard: IteratedGuard,
     ) -> Option<Self> {
         if stride == 0
@@ -115,8 +140,8 @@ impl IteratedMemory {
             stride,
             start_offset,
             end_offset,
-            lower,
-            upper,
+            lower: lower.into(),
+            upper: upper.into(),
             guard,
             holes: Arc::from(Vec::new()),
         })
@@ -126,7 +151,7 @@ impl IteratedMemory {
         &self.owner.0
     }
 
-    pub fn element_base(&self) -> &Pointer {
+    pub fn element_base(&self) -> &Address {
         &self.element_base
     }
 
@@ -135,18 +160,18 @@ impl IteratedMemory {
     }
 
     pub fn lower(&self) -> &MachineTerm {
-        &self.lower
+        self.lower.native_compat()
     }
 
     pub fn upper(&self) -> &MachineTerm {
-        &self.upper
+        self.upper.native_compat()
     }
 
     pub fn guard(&self) -> &IteratedGuard {
         &self.guard
     }
 
-    pub fn holes(&self) -> &[MachineTerm] {
+    pub fn holes(&self) -> &[StoredMachineTerm] {
         &self.holes
     }
 
@@ -176,8 +201,8 @@ impl IteratedMemory {
             || {
                 MemoryRange::new_with_element_width(
                     self.element_base.clone(),
-                    self.scaled(&self.lower, self.start_offset),
-                    self.scaled(&self.upper, self.start_offset),
+                    self.scaled(self.lower.native_compat(), self.start_offset),
+                    self.scaled(self.upper.native_compat(), self.start_offset),
                     self.element_width,
                 )
             },
@@ -190,10 +215,11 @@ impl IteratedMemory {
     /// memory the fact can ever hold, whatever its guards and holes say.
     pub(crate) fn spanning_range(&self) -> MemoryRange {
         self.covering_range().unwrap_or_else(|| {
-            let last = MachineTerm::subtract(self.upper.clone(), MachineTerm::constant(1));
+            let last =
+                MachineTerm::subtract(self.upper.native_compat().clone(), MachineTerm::constant(1));
             MemoryRange::new_with_element_width(
                 self.element_base.clone(),
-                self.scaled(&self.lower, self.start_offset),
+                self.scaled(self.lower.native_compat(), self.start_offset),
                 self.scaled(&last, self.end_offset),
                 self.element_width,
             )
@@ -201,7 +227,7 @@ impl IteratedMemory {
     }
 
     /// The address of the guard cell at `index`.
-    pub(crate) fn guard_cell(&self, index: &MachineTerm) -> Pointer {
+    pub(crate) fn guard_cell(&self, index: &MachineTerm) -> Address {
         self.guard
             .base
             .offset_by_elements(index.clone(), self.guard.cell_width)
@@ -211,15 +237,27 @@ impl IteratedMemory {
     pub(crate) fn guard_range(&self) -> MemoryRange {
         MemoryRange::new_with_element_width(
             self.guard.base.clone(),
-            self.lower.clone(),
-            self.upper.clone(),
+            self.lower.native_compat().clone(),
+            self.upper.native_compat().clone(),
             self.guard.cell_width,
         )
     }
 
+    /// The immutable clause coordinates, independent of its open slots.
+    pub(crate) fn without_holes(&self) -> Self {
+        Self {
+            holes: Arc::from([]),
+            ..self.clone()
+        }
+    }
+
     pub(crate) fn with_hole(&self, index: MachineTerm) -> Self {
+        self.with_stored_hole(index.into())
+    }
+
+    pub(crate) fn with_stored_hole(&self, index: StoredMachineTerm) -> Self {
         let mut holes = self.holes.to_vec();
-        holes.push(index);
+        holes.push(index.into());
         Self {
             holes: Arc::from(holes),
             ..self.clone()
@@ -241,7 +279,7 @@ impl IteratedMemory {
     pub(crate) fn map_terms(
         &self,
         mut term: impl FnMut(&MachineTerm) -> MachineTerm,
-        mut pointer: impl FnMut(&Pointer) -> Pointer,
+        mut pointer: impl FnMut(&Address) -> Address,
     ) -> Self {
         Self {
             owner: self.owner.clone(),
@@ -250,55 +288,73 @@ impl IteratedMemory {
             stride: self.stride,
             start_offset: self.start_offset,
             end_offset: self.end_offset,
-            lower: term(&self.lower),
-            upper: term(&self.upper),
+            lower: self.lower.map_native(&mut term),
+            upper: self.upper.map_native(&mut term),
             guard: IteratedGuard {
                 base: pointer(&self.guard.base),
                 cell_type: self.guard.cell_type,
                 cell_width: self.guard.cell_width,
                 holds_when_equal: self.guard.holds_when_equal,
-                value: term(&self.guard.value),
+                value: self.guard.value.map_native(&mut term),
             },
-            holes: self.holes.iter().map(&mut term).collect::<Vec<_>>().into(),
+            holes: self
+                .holes
+                .iter()
+                .map(|value| value.map_native(&mut term))
+                .collect::<Vec<_>>()
+                .into(),
         }
     }
 
     /// Every bitvector term the fact carries, pointers' offsets excluded.
     pub(crate) fn terms(&self) -> impl Iterator<Item = &MachineTerm> {
-        [&self.lower, &self.upper, &self.guard.value]
-            .into_iter()
-            .chain(self.holes.iter())
+        [
+            self.lower.native_compat(),
+            self.upper.native_compat(),
+            self.guard.value.native_compat(),
+        ]
+        .into_iter()
+        .chain(self.holes.iter().map(StoredMachineTerm::native_compat))
     }
 
     /// Both pointers the fact carries.
-    pub(crate) fn pointers(&self) -> [&Pointer; 2] {
+    pub(crate) fn pointers(&self) -> [&Address; 2] {
         [&self.element_base, &self.guard.base]
     }
 
     /// The two blocks the fact's denotation depends on.
-    pub(crate) fn blocks(&self) -> [&PointerBlock; 2] {
-        [&self.element_base.block, &self.guard.base.block]
+    pub(crate) fn blocks(&self) -> [&AddressBase; 2] {
+        [&self.element_base.base, &self.guard.base.base]
     }
 }
 
 impl IteratedGuard {
     pub(crate) fn new(
-        base: Pointer,
+        base: Address,
         cell_type: ProgramType,
         cell_width: u32,
         holds_when_equal: bool,
         value: MachineTerm,
+    ) -> Self {
+        Self::new_stored(base, cell_type, cell_width, holds_when_equal, value.into())
+    }
+    pub(crate) fn new_stored(
+        base: Address,
+        cell_type: ProgramType,
+        cell_width: u32,
+        holds_when_equal: bool,
+        value: StoredMachineTerm,
     ) -> Self {
         Self {
             base,
             cell_type,
             cell_width,
             holds_when_equal,
-            value,
+            value: value.into(),
         }
     }
 
-    pub fn base(&self) -> &Pointer {
+    pub fn base(&self) -> &Address {
         &self.base
     }
 
@@ -307,7 +363,7 @@ impl IteratedGuard {
     }
 
     pub fn value(&self) -> &MachineTerm {
-        &self.value
+        self.value.native_compat()
     }
 }
 

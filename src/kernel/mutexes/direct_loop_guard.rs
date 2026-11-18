@@ -118,7 +118,7 @@ fn source_mutex(
     state: &ExecutionState,
     spec: &ResourceSpec,
     assumptions: &PureFactContext,
-) -> Result<Pointer, String> {
+) -> Result<Address, String> {
     let ResourceTerm::MutexGuard {
         mutex,
         state_source: ResourceStateSource::Current,
@@ -154,7 +154,7 @@ fn source_mutex(
         Ok(_) => return Err("conditional loop guard requires a mutex pointer".into()),
         Err(message) => return Err(message.into()),
     };
-    Ok(pointer.pointer().clone())
+    Ok(pointer.address().clone())
 }
 
 fn missing_guard(spec: &ResourceSpec) -> String {
@@ -184,7 +184,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     spec: &ResourceSpec,
     identity: Variable,
     assumptions: &PureFactContext,
-) -> Result<(ExecutionState, Pointer, ResourceFact), String> {
+) -> Result<(ExecutionState, Address, ResourceFact), String> {
     let mutex = source_mutex(entry, spec, assumptions)?;
     // A previous loop may have left an empty or held carrier at its exit.
     // Retire it only by the same checked ownership exchange as a runtime use.
@@ -234,7 +234,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     {
         return Err(missing_guard(spec));
     }
-    let condition = source_condition(head, spec, assumptions)?;
+    let condition = StoredConditionTerm::from_minted(source_condition(head, spec, assumptions)?);
     let mut state = abstract_loop_mutex(head, &mutex, condition.clone())?;
     let ledger = state.mutex_ledger.as_ref().unwrap();
     let Resource::MutexGuard(guard) = ledger.guard_resource(&mutex).unwrap().resource().clone()
@@ -252,7 +252,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
             identity,
             guard,
             initialization,
-            held: condition,
+            held: condition.into(),
         }),
     });
     if let Some(guard) = old_guard {
@@ -279,7 +279,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
 
 pub(in crate::kernel) fn select_direct_loop_guards(
     state: &ExecutionState,
-    pointers: Vec<Pointer>,
+    pointers: Vec<Address>,
 ) -> ExecutionState {
     let Some(ledger) = &state.mutex_ledger else {
         return state.clone();
@@ -299,7 +299,7 @@ pub(in crate::kernel) fn select_direct_loop_guards(
 impl MutexContext {
     pub(super) fn open_direct_loop_guard(
         &self,
-        mutex: &Pointer,
+        mutex: &Address,
         assumptions: &PureFactContext,
     ) -> Result<Option<Self>, MutexTransitionError> {
         let Some(carrier) = self
@@ -313,8 +313,9 @@ impl MutexContext {
         if !owns_carrier(&self.state, carrier) {
             return Ok(None);
         }
-        let active = crate::kernel::loops::condition_is_decided(assumptions, &carrier.head.held)
-            .ok_or_else(|| MutexTransitionError::MissingGuard(mutex.clone()))?;
+        let active =
+            crate::kernel::loops::condition_is_decided(assumptions, carrier.head.condition())
+                .ok_or_else(|| MutexTransitionError::MissingGuard(mutex.clone()))?;
         let ledger = self.state.mutex_ledger.as_ref().unwrap();
         if ledger
             .guard_resource(mutex)
@@ -358,7 +359,7 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
     top: &ExecutionState,
     next: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Result<(ExecutionState, Vec<Pointer>), String> {
+) -> Result<(ExecutionState, Vec<Address>), String> {
     let mut state = next.clone();
     let mut checked = Vec::new();
     let Some(ledger) = &top.mutex_ledger else {
@@ -376,7 +377,7 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
         if source_mutex(&state, &carrier.source, assumptions)? != *mutex {
             return Err("conditional loop guard changed its mutex".into());
         }
-        if carrier.head.held == held
+        if carrier.head.condition() == &held
             && owns_carrier(&state, carrier)
             && state.mutex_ledger.as_ref().is_some_and(|next| {
                 matches!(

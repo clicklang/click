@@ -5,17 +5,18 @@ use super::*;
 /// Whether a composite fact names the base of `pointer` among its pointer
 /// arguments by structure: the same pointer, or one that `pointer` is a
 /// constant offset from.
-pub(super) fn composite_names_pointer_base(composite: &ResourceFact, pointer: &Pointer) -> bool {
+pub(super) fn composite_names_pointer_base(composite: &ResourceFact, pointer: &Address) -> bool {
     let Resource::Composite { arguments, .. } = composite.resource() else {
         return false;
     };
     arguments.iter().any(|argument| {
-        let AlgebraicValue::Program(ProgramValue::Pointer(argument)) = argument else {
+        let crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(argument)) = argument
+        else {
             return false;
         };
-        argument.pointer() == pointer
+        argument.address() == pointer
             || pointer
-                .shared_element_index_from_base_with_width(argument.pointer(), 1)
+                .shared_element_index_from_base_with_width(argument.address(), 1)
                 .is_some()
     })
 }
@@ -102,30 +103,11 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<Proposition>)> {
-    expand_all_composite_resource_facts_and_propositions_with_state(
-        context,
-        definitions,
-        &state.program_point(),
-        assumptions,
-        Some(state),
-    )
-}
-
-pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
-    context: &ResourceContext,
-    definitions: &[CompositeResourceDefinition],
-    at: &ProgramPoint,
-    assumptions: &PureFactContext,
-    population_state: Option<&ExecutionState>,
-) -> Option<(ResourceContext, Vec<Proposition>)> {
-    let memory = at.memory();
-    let (prepared, mut controls) = if let Some(state) = population_state {
-        expand_checked_authority_controls(context, definitions, state, assumptions)?
-    } else {
-        (context.clone(), Vec::new())
-    };
+    let at = state.program_point();
+    let (prepared, mut controls) =
+        expand_checked_authority_controls(context, definitions, state, assumptions)?;
     let (expanded, composites) =
-        expand_composite_resource_context(&prepared, definitions, at, assumptions)?;
+        expand_composite_resource_context(&prepared, definitions, &at, assumptions)?;
     controls.extend(composites);
     let mut propositions = Vec::new();
     // `assumptions` extended by `propositions[..extended]`: each composite's
@@ -139,12 +121,11 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
         let loadable = evaluate_composite_resource_loadable_propositions(
             &composite,
             definitions,
-            memory,
+            &at,
             assumptions,
         )?;
         propositions.extend(loadable);
-        let relations = if let Some(state) = population_state
-            && let Resource::Composite { name, .. } = composite.resource()
+        let relations = if let Resource::Composite { name, .. } = composite.resource()
             && let Some(definition) = definitions
                 .iter()
                 .find(|definition| definition.name() == name)
@@ -156,9 +137,13 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
             let (children, _) = state
                 .checked_authority_wrapper_body(&composite, definition, assumptions)
                 .ok()?;
-            let child_context = ResourceContext::new()
-                .try_compose_with_facts(children.clone(), assumptions)
-                .ok()?;
+            let child_context = ResourceContext::new_with_equalities(assumptions)
+                .install_established_partition(
+                    coalesce_written_resource_descriptions(children.clone(), assumptions),
+                    assumptions,
+                )
+                .ok()?
+                .0;
             let mut relations = vec![Proposition::ResourceComposition(child_context)];
             for child in children {
                 if let Some(owned) = child.owned_resource() {
@@ -173,7 +158,7 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
             evaluate_composite_resource_relation_propositions(
                 &composite,
                 definitions,
-                at,
+                &at,
                 assumptions,
             )?
         };
@@ -181,13 +166,13 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
         fact_assumptions =
             assumptions_with_propositions(&fact_assumptions, &propositions[extended..]);
         extended = propositions.len();
-        let instantiated = instantiate_composite_resource_facts_with_state(
+        // Evaluate declared facts at the same point as the expanded body.
+        let instantiated = instantiate_composite_resource_facts_in_state(
             &composite,
             definitions,
-            memory,
+            state.clone(),
             &expanded,
             &fact_assumptions,
-            population_state,
         )?;
         propositions.extend(instantiated.propositions);
     }
@@ -254,14 +239,19 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                     parameter.program_type(),
                 );
             }
-            bind_composite_witnesses(definition, &arguments, &mut population_state, assumptions)?;
+            bind_composite_witnesses(
+                definition,
+                &(&arguments).native_values(),
+                &mut population_state,
+                assumptions,
+            )?;
             let mut budget = ExecutionBudget::beside_live_state();
             let evaluation_assumptions = assumptions
                 .clone()
                 .allow_symbolic_contract_loads()
                 .prefer_symbolic_external_loads()
                 // Opening a held composite assumes the body its fold established.
-                .assume_entry_clause_extents()
+                .assume_entry_clause_spans()
                 .assume_held_resource_domains();
             match evaluate_composite_resource_body_condition(
                 definition,
@@ -285,14 +275,19 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 parameter.program_type(),
             );
         }
-        bind_composite_witnesses(definition, &arguments, &mut population_state, assumptions)?;
+        bind_composite_witnesses(
+            definition,
+            &(&arguments).native_values(),
+            &mut population_state,
+            assumptions,
+        )?;
         let mut budget = ExecutionBudget::beside_live_state();
         let evaluation_assumptions = assumptions
             .clone()
             .allow_symbolic_contract_loads()
             .prefer_symbolic_external_loads()
             // Opening a held composite assumes the body its fold established.
-            .assume_entry_clause_extents()
+            .assume_entry_clause_spans()
             .assume_held_resource_domains();
         if !body_active {
             continue;
@@ -335,11 +330,9 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 {
                     population_state.resources = population_state
                         .resources
-                        .try_compose_with_facts_delaying_normalization(
-                            [body_resource],
-                            &evaluation_assumptions,
-                        )
-                        .ok()?;
+                        .install_established_partition([body_resource], &evaluation_assumptions)
+                        .ok()?
+                        .0;
                 }
             }
         }
@@ -354,7 +347,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                     .allow_symbolic_contract_loads()
                     .prefer_symbolic_external_loads()
                     // Opening a held composite assumes the body its fold established.
-                    .assume_entry_clause_extents()
+                    .assume_entry_clause_spans()
                     .assume_held_resource_domains();
                 // Resource-definition loadability facts are symbolic summaries;
                 // their owning range supplies the concrete validity check when
@@ -459,14 +452,19 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )?;
     let mut budget = ExecutionBudget::beside_live_state();
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // Opening a held composite assumes the body its fold established.
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     let mut child_facts = Vec::new();
     let mut children = Vec::new();
@@ -504,9 +502,13 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
         // separation. Publishing one carrier lets certification answer
         // member-pair queries on demand instead of materializing O(N^2)
         // `ResourceSeparate` propositions.
-        let child_context = ResourceContext::new()
-            .try_compose_with_facts(child_facts, assumptions)
-            .ok()?;
+        let child_context = ResourceContext::new_with_equalities(assumptions)
+            .install_established_partition(
+                coalesce_written_resource_descriptions(child_facts, assumptions),
+                assumptions,
+            )
+            .ok()?
+            .0;
         propositions.push(Proposition::ResourceComposition(child_context));
     }
     for child in &children {
@@ -519,7 +521,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
 }
 
 /// The held body's exact ranges, including their pointer provenances and
-/// selected extents. Later clauses may read the cells declared before them
+/// selected bounds. Later clauses may read the cells declared before them
 /// in a scratch view context; the caller's composite remains folded.
 pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
     composite: &ResourceFact,
@@ -548,14 +550,19 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )?;
     let mut budget = ExecutionBudget::beside_live_state();
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // Opening a held composite assumes the body its fold established.
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     if !evaluate_composite_resource_body_condition(
         definition,
@@ -597,19 +604,15 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
 pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
-    let ranges = evaluate_composite_resource_memory_ranges(
-        composite,
-        definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
-        assumptions,
-    )?;
+    let ranges =
+        evaluate_composite_resource_memory_ranges(composite, definitions, at, assumptions)?;
     let mut propositions = Vec::new();
     for range in ranges {
-        propositions.extend(crate::kernel::admitted_memory_range_extent_facts(&range));
-        propositions.push(range.loadable_fact(memory));
+        propositions.extend(crate::kernel::admitted_memory_range_span_facts(&range));
+        propositions.push(range.loadable_fact(at.memory()));
     }
     Some(propositions)
 }
@@ -617,7 +620,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
 pub(in crate::kernel) fn evaluate_composite_resource_fact_propositions(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
@@ -636,17 +639,33 @@ pub(crate) struct InstantiatedCompositeResourceFacts {
 pub(crate) fn instantiate_composite_resource_facts(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
-    instantiate_composite_resource_facts_with_state(
+    instantiate_composite_resource_facts_in_state(
         composite,
         definitions,
-        memory,
+        ExecutionState::new().with_memory(memory.clone()),
         resources,
         assumptions,
-        None,
+    )
+}
+
+/// Instantiate the definition in a frame at the selected observation point.
+pub(crate) fn instantiate_composite_resource_facts_at(
+    composite: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    at: &ProgramPoint,
+    resources: &ResourceContext,
+    assumptions: &PureFactContext,
+) -> Option<InstantiatedCompositeResourceFacts> {
+    instantiate_composite_resource_facts_in_state(
+        composite,
+        definitions,
+        ExecutionState::at_point(at),
+        resources,
+        assumptions,
     )
 }
 
@@ -659,38 +678,34 @@ pub(crate) fn instantiate_private_member_body_facts(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
-    let memory = state.memory();
     let definitions = std::slice::from_ref(definition);
     let singleton = ResourceContext::new().unchecked_with_fact(composite.clone());
     let body = expand_composite_resource_fact(
         &singleton,
         composite,
         definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
+        &state.program_point(),
         assumptions,
     )?;
-    // Keep the current verification model and population state, but bind only
-    // this definition's parameters. Mutating a cloned caller-local map would
-    // copy the whole frame for every member fact instantiation.
+    // Keep the caller's observation point and population state. Bind only this
+    // definition's parameters and use only the private body as read authority.
     let mut fact_state = state.clone();
     fact_state.locals = LocalEnvironment::new();
-    instantiate_composite_resource_facts_with_state(
+    instantiate_composite_resource_facts_in_state(
         composite,
         definitions,
-        memory,
+        fact_state,
         &body,
         &assumptions.clone().require_owned_expression_loads(),
-        Some(&fact_state),
     )
 }
 
-pub(super) fn instantiate_composite_resource_facts_with_state(
+fn instantiate_composite_resource_facts_in_state(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    state: ExecutionState,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
-    population_state: Option<&ExecutionState>,
 ) -> Option<InstantiatedCompositeResourceFacts> {
     let Resource::Composite { name, arguments } = composite.resource() else {
         return None;
@@ -701,11 +716,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
     if definition.parameters().len() != arguments.len() {
         return None;
     }
-    let mut state = population_state
-        .cloned()
-        .unwrap_or_else(ExecutionState::new)
-        .with_memory(memory.clone())
-        .with_resource_context(resources.clone());
+    let mut state = state.with_resource_context(resources.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
         if parameter.program_type() != argument.program_type() {
@@ -717,7 +728,12 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )?;
     let mut result = Vec::new();
     let mut declared = Vec::new();
     let mut budget = ExecutionBudget::beside_live_state();
@@ -727,7 +743,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // Opening a held composite assumes the body its fold established.
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     if !evaluate_composite_resource_body_condition(
         definition,
@@ -750,7 +766,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
                 .allow_symbolic_contract_loads()
                 .prefer_symbolic_external_loads()
                 // Opening a held composite assumes the body its fold established.
-                .assume_entry_clause_extents()
+                .assume_entry_clause_spans()
                 .assume_held_resource_domains();
             // Resource-definition loadability facts are symbolic summaries;
             // their owning range supplies the concrete validity check when
@@ -787,7 +803,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
                 };
                 memory_states_proven_equal_at_pointer(
                     obligation_memory,
-                    memory,
+                    state.memory(),
                     base,
                     &fact_assumptions,
                 ) && bytes.as_const().is_some_and(|bytes| {

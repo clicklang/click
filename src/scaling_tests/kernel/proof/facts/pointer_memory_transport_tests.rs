@@ -2,37 +2,37 @@ use super::*;
 #[test]
 fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     let _session = VerificationSession::enter();
-    let cell = Pointer {
-        block: "pointer-retained_state-cell".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let cell = Address {
+        base: "pointer-retained_state-cell".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let before = intern_memory(Memory::new().with_block(cell.block.clone(), 8));
+    let before = intern_memory(SymbolicMemory::new().with_block(cell.base.clone(), 8));
     let after = intern_memory(before.memory().clone().with_block("other-local", 4));
     let pointer = |memory: &SharedMemory| {
-        PointerValue::from_read(
-            Pointer::loaded_value(memory, &cell),
+        Pointer::from_read(
+            Address::loaded_value(memory, &cell),
             ProgramType::Int32Pointer,
             memory,
             &cell,
         )
     };
-    let rhs = PointerValue::new(
-        Pointer::symbolic(Variable(991_100)),
+    let rhs = Pointer::new(
+        Address::symbolic(Variable(991_100)),
         ProgramType::Int32Pointer,
     );
     let fact = |pointer| {
-        Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(Box::new(pointer), Box::new(rhs.clone())),
+        Proposition::condition_is(
+            ConditionTerm::PointerEqual(Box::new(pointer), Box::new(rhs.clone())),
             true,
         )
     };
     let source = fact(pointer(&before));
     let target = fact(pointer(&after));
-    let origin = Arc::new(Pointer::symbolic(Variable(991_101)));
+    let origin = Arc::new(Address::symbolic(Variable(991_101)));
     let forged = fact(
         pointer(&after)
             .with_provenance(origin.clone())
-            .with_opaque_extent(Some(origin)),
+            .with_bounds_owner(Some(origin)),
     );
     let overwritten = intern_memory(after.memory().clone().store(
         cell.clone().offset_by_bytes(4),
@@ -43,7 +43,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     for size in [4u64, 16, 64, 256] {
         let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
         for index in 0..size {
-            facts = facts.with_fact(Proposition::ConditionIs(
+            facts = facts.with_fact(Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::Variable(Variable(992_100 + index)),
                     MachineTerm::constant(7),
@@ -52,12 +52,12 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
             ));
         }
         for index in 0..size {
-            let selected = pointer(&before).with_extent(Some(SubobjectExtent {
+            let selected = pointer(&before).with_bounds(Some(SubobjectBounds {
                 start: cell.clone(),
                 width: MachineTerm::constant(u32::try_from(index + 1).unwrap()),
             }));
-            facts = facts.with_fact(Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(Box::new(selected.clone()), Box::new(selected)),
+            facts = facts.with_fact(Proposition::condition_is(
+                ConditionTerm::PointerEqual(Box::new(selected.clone()), Box::new(selected)),
                 true,
             ));
         }

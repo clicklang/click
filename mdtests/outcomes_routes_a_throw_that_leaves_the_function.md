@@ -1,9 +1,9 @@
 # `outcomes` routes a throw that leaves the function
 
 At a maybe-throwing call outside any `try`, `outcomes` splits the call's
-two successors. The `threw` arm steps the call and ends at function exit
-with that throw; the `returned` arm steps the call and continues with the
-rest of the function, here into a second call's own nested `outcomes`.
+two successors. The `threw` arm starts at the exceptional function exit.
+The `returned` arm starts after the call and continues into the second call's
+own nested `outcomes`.
 Each arm proves the claims its paths owe.
 
 ```c filename=outcomes_routes_a_throw_that_leaves_the_function.c
@@ -32,22 +32,18 @@ int32 caller(int32 x) throws int32 {
         returned => {
             step();
             step();
-            step();
             outcomes {
                 returned => {
-                    step();
                     step();
                     step();
                     solve();
                 }
                 threw => {
-                    step();
                     solve();
                 }
             }
         }
         threw => {
-            step();
             solve();
         }
     }

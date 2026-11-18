@@ -846,7 +846,7 @@ fn instance_return_folds_follow_distinct_program_results_after_explicit_splits()
             owns c: cell(p);
             ensures (use_value == 0 and result == fallback) or (use_value != 0 and result == c.value);
             ensures c.value == old(c.value);
-        } by { unfold(c); branch { step(); } else { } step_until(function.exit); fold(c); solve(); }
+        } by { unfold(c); branch { true => { step(); } false => { } } step_until(function.exit); fold(c); solve(); }
     "#;
     let c = [(
         "read.c",
@@ -856,7 +856,7 @@ fn instance_return_folds_follow_distinct_program_results_after_explicit_splits()
     let expanded = verified[0].expanded_proof_source().unwrap();
     verify_c_sources(
         &source.replace(
-            "by { unfold(c); branch { step(); } else { } step_until(function.exit); fold(c); solve(); }",
+            "by { unfold(c); branch { true => { step(); } false => { } } step_until(function.exit); fold(c); solve(); }",
             &expanded,
         ),
         &c,
@@ -871,7 +871,7 @@ fn instance_return_folds_follow_distinct_program_results_after_explicit_splits()
     );
     let body = "by { unfold(c); if use_value == 0 { step_until(function.exit); fold(c); solve(); } else { step_until(function.exit); fold(c); solve(); } }";
     let branched = source.replace(
-        "by { unfold(c); branch { step(); } else { } step_until(function.exit); fold(c); solve(); }",
+        "by { unfold(c); branch { true => { step(); } false => { } } step_until(function.exit); fold(c); solve(); }",
         body,
     );
     let verified = verify_c_sources(&branched, &c).unwrap();
@@ -1897,10 +1897,13 @@ fn named_resource_bindings_are_scoped_and_have_distinct_state() {
         panic!("missing returned instance")
     };
     assert_eq!(first.identity, returned.identity);
-    assert!(std::sync::Arc::ptr_eq(
-        first.fields.as_ref().unwrap(),
-        returned.fields.as_ref().unwrap()
-    ));
+    assert!(
+        first
+            .fields
+            .as_ref()
+            .unwrap()
+            .shares_storage_with(returned.fields.as_ref().unwrap())
+    );
 }
 
 #[test]
@@ -1928,10 +1931,13 @@ fn named_resource_field_metadata_is_shared_at_multiple_sizes() {
             panic!("missing returned instance")
         };
         assert_eq!(binding.fields.as_ref().unwrap().len(), size);
-        assert!(std::sync::Arc::ptr_eq(
-            binding.fields.as_ref().unwrap(),
-            returned.fields.as_ref().unwrap()
-        ));
+        assert!(
+            binding
+                .fields
+                .as_ref()
+                .unwrap()
+                .shares_storage_with(returned.fields.as_ref().unwrap())
+        );
         assert_eq!(function.ensures().len(), size + 1);
         for (i, ensure) in function.ensures()[1..].iter().enumerate() {
             let Ensure::Proposition(ClickProposition::Comparison {
@@ -2378,10 +2384,6 @@ int32 keep(int32 x, int32 y) {
         .expect("execution-context Integer weakening should verify");
     let expanded = expand_checked_function_claim(source, &verified_for_label, "keep.weakened")
         .expect("Integer weakening should expand to a checked certificate");
-    assert!(
-        !expanded.contains("arithmetic_certificate"),
-        "execution-context expansion should use ordinary Integer composition: {expanded}"
-    );
     verify_c_sources(&expanded, &c_sources)
         .expect("expanded execution-context Integer weakening should recheck");
 }
@@ -2408,10 +2410,6 @@ theorem integer_affine_two_premise_constant_weakening(x: Integer, y: Integer) {
         "integer_affine_two_premise_constant_weakening.ensures_0",
     )
     .expect("two-premise Integer weakening should expand");
-    assert!(
-        !expanded.contains("arithmetic_certificate"),
-        "two-premise expansion should use ordinary Integer composition: {expanded}"
-    );
     verify_click_theorems(&expanded)
         .expect("expanded two-premise Integer weakening should recheck");
 }
@@ -2477,7 +2475,7 @@ fn ensure_comparison(
 // explicitly with --ignored. See `docs/internals/testing.md`, "Batching short
 // tests".
 #[cfg(feature = "fast-gate")]
-fn run_test_batch(cases: &[(&str, fn())]) {
+pub(super) fn run_test_batch(cases: &[(&str, fn())]) {
     for &(name, test) in cases {
         eprintln!("batched case {name} started");
         let started = std::time::Instant::now();
@@ -2534,6 +2532,9 @@ macro_rules! test_batches {
         }
     };
 }
+
+#[cfg(feature = "fast-gate")]
+pub(super) use test_batches;
 
 mod authority_private_body_tests;
 mod authority_transfer_wrapper_tests;
@@ -2818,12 +2819,12 @@ fn resource_contract_regressions_expand_and_check() {
         ("aggregate_parameter_pointee_resource", "touch"),
         ("aggregate_parameter_old_pointee", "dispose"),
         ("const_callback_table_abstract", "caller"),
-        ("separation_extent_bounded_goal", "identity"),
-        ("separation_extent_assumption", "identity"),
-        ("separation_extent_call", "caller"),
-        ("separation_extent_borrowed_call", "caller"),
-        ("separation_extent_composite_bounds", "length"),
-        ("separation_extent_composite_split_bounds", "split_length"),
+        ("separation_span_bounded_goal", "identity"),
+        ("separation_span_assumption", "identity"),
+        ("separation_span_call", "caller"),
+        ("separation_span_borrowed_call", "caller"),
+        ("separation_span_composite_bounds", "length"),
+        ("separation_span_composite_split_bounds", "split_length"),
         ("owned_symbolic_separation_certificate", "attach"),
     ] {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

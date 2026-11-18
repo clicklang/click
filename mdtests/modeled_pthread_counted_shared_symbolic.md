@@ -41,19 +41,25 @@ int32 run(void* p, void* q, int32 n) {
     step();
     step();
     branch {
-        have to_integer(count(ticket(p))) == to_integer(n);
-        unfold(ticket(p));
-        unfold(ticket(p));
-        step(); solve();
-    } else {}
+        true => {
+            have to_integer(count(ticket(p))) == to_integer(n);
+            unfold(ticket(p));
+            unfold(ticket(p));
+            step(); solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step();
-        unfold(ticket(p));
-        unfold(ticket(p));
-        have to_integer(count(ticket(q))) == 1;
-        step(); solve();
-    } else {}
+        true => {
+            step();
+            unfold(ticket(p));
+            unfold(ticket(p));
+            have to_integer(count(ticket(q))) == 1;
+            step(); solve();
+        }
+        false => {}
+    }
     step();
     unfold(ticket(p));
     have to_integer(count(ticket(p))) == to_integer(n - 1);

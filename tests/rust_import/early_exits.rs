@@ -58,3 +58,24 @@ fn charon_loop_early_exits_verify() {
         assert!(rendered.contains(expected), "{expected}: {rendered}");
     }
 }
+
+#[test]
+#[ignore = "nightly: Rust labeled loop escape proof expansion"]
+fn charon_labeled_loop_escape_expands_and_replays() {
+    let p = Project::from_fixture("design/charon-trial/early-exits");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    let claim = "skip_rows.contract";
+    let expanded =
+        click::surface::expand_program_prepared_claim_source_by_label(SIDECAR, &prepared, claim)
+            .unwrap();
+    assert!(!expanded.contains(".temporary("), "{expanded}");
+    assert!(!expanded.contains("<loop escape>"), "{expanded}");
+    assert!(!expanded.contains("__rust_loop_escape_"), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+    .unwrap();
+}

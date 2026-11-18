@@ -5,15 +5,15 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
-fn byte(offset: i64) -> Pointer {
-    Pointer {
-        block: PointerBlock::from("global:bytes"),
-        offset: PointerOffsetTerm::Constant(offset),
+fn byte(offset: i64) -> Address {
+    Address {
+        base: AddressBase::from("global:bytes"),
+        offset: AddressOffset::Constant(offset),
     }
 }
 
 fn read(offset: i64, kind: LoadKind) -> MachineTerm {
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     MachineTerm::memory_read(memory, byte(offset), kind)
 }
 
@@ -40,7 +40,7 @@ const BYTE_PAIRS: [(i64, i64); 7] = [
 #[test]
 fn a_signed_byte_read_is_its_own_load() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let signed = MachineTerm::memory_read(memory.clone(), byte(0), LoadKind::Int8);
     assert!(matches!(
         signed,
@@ -63,7 +63,7 @@ fn a_signed_byte_read_is_its_own_load() {
 #[test]
 fn signed_and_unsigned_symbolic_reads_of_one_byte_are_two_loads() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block("global:bytes", 4)
         .store(byte(1), crate::kernel::uint8(7));
     let read = |value_type| {

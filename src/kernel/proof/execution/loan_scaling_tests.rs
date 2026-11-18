@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::loans::{LoanLedger, LoanViewBinding};
-use crate::kernel::{PointerBlock, PointerOffsetTerm, int32};
+use crate::kernel::{AddressBase, AddressOffset, int32};
 use std::collections::BTreeSet;
 
 /// The two largest adjacent ratios of a doubling series, the same
@@ -84,9 +84,9 @@ fn interface_join_states(count: usize) -> (ExecutionState, ExecutionState) {
 /// unindexed bucket.
 fn parameter_view(variable: u64) -> ResourceFact {
     ResourceFact::view_memory(MemoryRange::new_with_element_width(
-        Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Variable(Variable(variable)),
+        Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Variable(Variable(variable)),
         },
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -114,13 +114,13 @@ fn symbolic_contract_input_ledger(count: usize) -> LoanLedger {
 }
 
 /// `count` concrete cells in the same block those loans protect.
-fn cells_in_the_symbolic_block(count: usize) -> Memory {
-    let mut memory = Memory::new();
+fn cells_in_the_symbolic_block(count: usize) -> SymbolicMemory {
+    let mut memory = SymbolicMemory::new();
     for index in 0..count {
         memory = memory.store(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(4 * index as i64),
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(4 * index as i64),
             },
             int32(0),
         );
@@ -134,7 +134,7 @@ fn symbolic_loan_retains_its_exact_cached_value_without_a_search() {
     let range = parameter_view(0).memory_range().unwrap().clone();
     assert!(ledger.permits_memory_access(&range).is_err());
     let pointer = range.base().clone();
-    let before = Memory::new().store(pointer.clone(), int32(7));
+    let before = SymbolicMemory::new().store(pointer.clone(), int32(7));
     let after = before.clone().with_loop_memory_havoc_preserving_loans(
         Variable(7),
         &BTreeSet::new(),

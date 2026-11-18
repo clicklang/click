@@ -41,7 +41,7 @@ fn indexed_surface_resolution_ignores_unrelated_available_facts() {
         operator: ComparisonOperator::Equal,
         right: current_int(1),
     };
-    let target = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    let target = Proposition::condition_is(ConditionTerm::Constant(true), true);
     let mut spellings = SurfacePropositionMap::default();
     spellings.record_lowering(&surface, &target).unwrap();
     let samples = [16, 32, 64, 128]
@@ -49,7 +49,7 @@ fn indexed_surface_resolution_ignores_unrelated_available_facts() {
         .map(|size| {
             let mut available = std::collections::BTreeSet::from([target.clone()]);
             available.extend((0..size).map(|index| {
-                Proposition::ConditionIs(ConditionTerm::Variable(Variable(95_000 + index)), true)
+                Proposition::condition_is(ConditionTerm::Variable(Variable(95_000 + index)), true)
             }));
             let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
                 spellings.available_kernel_matching(&surface, |kernel| available.contains(kernel))
@@ -67,12 +67,12 @@ fn indexed_surface_resolution_ignores_unrelated_available_facts() {
 
 #[test]
 fn memory_erased_surface_selection_scales_by_index_height() {
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
-    let load_fact = |memory: Memory, upper: u32| {
-        Proposition::ConditionIs(
+    let load_fact = |memory: SymbolicMemory, upper: u32| {
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -86,8 +86,8 @@ fn memory_erased_surface_selection_scales_by_index_height() {
             true,
         )
     };
-    let recorded = load_fact(Memory::new().with_block("entry-marker", 0), 7);
-    let query = load_fact(Memory::new().with_block("later-marker", 0), 7);
+    let recorded = load_fact(SymbolicMemory::new().with_block("entry-marker", 0), 7);
+    let query = load_fact(SymbolicMemory::new().with_block("later-marker", 0), 7);
     let surface = ClickProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::LessThan,
@@ -100,11 +100,11 @@ fn memory_erased_surface_selection_scales_by_index_height() {
             spellings.record_lowering(&surface, &recorded).unwrap();
             for index in 0..size {
                 let unrelated_surface = ClickProposition::Comparison {
-                    left: ContractExpression::CBinding(format!("unrelated_{index}")),
+                    left: ContractExpression::ProgramBinding(format!("unrelated_{index}")),
                     operator: ComparisonOperator::Equal,
                     right: current_int(index),
                 };
-                let unrelated = Proposition::ConditionIs(
+                let unrelated = Proposition::condition_is(
                     ConditionTerm::Variable(Variable((200_000 + index).into())),
                     true,
                 );
@@ -148,7 +148,7 @@ fn nested_implication_lowering_records_in_linear_work() {
                     operator: ComparisonOperator::Equal,
                     right: current_int(index % 3),
                 },
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Variable(Variable(u64::from(300_000 + index % 6))),
                     true,
                 ),
@@ -227,16 +227,16 @@ fn nested_implication_lowering_records_in_linear_work() {
 
 #[test]
 fn qualified_storage_source_index_preserves_forks_and_scales() {
-    fn pair(index: u32) -> (Pointer, ContractExpression, ClickProposition, Proposition) {
-        let pointer = Pointer {
-            block: PointerBlock::Concrete(format!("global:state#file-static:file{index}.c")),
-            offset: PointerOffsetTerm::Constant(0),
+    fn pair(index: u32) -> (Address, ContractExpression, ClickProposition, Proposition) {
+        let pointer = Address {
+            base: AddressBase::Concrete(format!("global:state#file-static:file{index}.c")),
+            offset: AddressOffset::Constant(0),
         };
         let expression = ContractExpression::QualifiedC {
             name: format!("file{index}::state"),
             lowered: ProgramExpression::TypedLoad {
                 pointer: Box::new(ProgramExpression::Value(ProgramValue::Pointer(
-                    crate::kernel::PointerValue::new(pointer.clone(), ProgramType::UInt64Pointer),
+                    crate::kernel::Pointer::new(pointer.clone(), ProgramType::UInt64Pointer),
                 ))),
                 value_type: ProgramType::UInt64,
                 volatile: false,
@@ -250,12 +250,14 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
             operator: ComparisonOperator::Equal,
             right: current_int(index),
         };
-        let kernel = Proposition::ConditionIs(
+        let kernel = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+                    crate::kernel::ProgramPoint::at(
+                        &(crate::kernel::intern_memory(SymbolicMemory::new())),
+                    ),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -304,7 +306,7 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
 
 #[test]
 fn requirement_spelling_selects_one_recorded_enclosing_clause() {
-    let target = Proposition::ConditionIs(ConditionTerm::Variable(Variable(8000)), true);
+    let target = Proposition::condition_is(ConditionTerm::Variable(Variable(8000)), true);
     let mut work = Vec::new();
     for size in [4, 16, 64, 256] {
         let mut spellings = SurfacePropositionMap::default();
@@ -317,7 +319,7 @@ fn requirement_spelling_selects_one_recorded_enclosing_clause() {
             };
             let guarded = Proposition::And(
                 Box::new(target.clone()),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Variable(Variable(index)),
                     true,
                 )),

@@ -6,13 +6,13 @@ use super::*;
 
 #[test]
 fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:projection:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("local:projection:data".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 512));
+        .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 512));
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {
         let mut memory = state.memory.clone();
@@ -104,9 +104,9 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn checked_transition_projection_ignores_unrelated_caller_frame() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:transition:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("local:transition:data".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {
@@ -136,7 +136,7 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
                 .collect::<Vec<_>>();
             let state = ExecutionState::new()
                 .with_local("p", ProgramValue::pointer(pointer.clone()))
-                .with_memory(Memory::new().with_block(pointer.block.clone(), 512))
+                .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 512))
                 .with_resource_context(ResourceContext::new().unchecked_with_facts(owned));
             let function = program_function(
                 ProgramType::Void,
@@ -198,9 +198,9 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
 
 #[test]
 fn checked_wrapper_projection_scales_with_used_members() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:wrapper:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("local:wrapper:data".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {
@@ -229,7 +229,7 @@ fn checked_wrapper_projection_scales_with_used_members() {
         );
         let state = ExecutionState::new()
             .with_local("p", ProgramValue::pointer(pointer.clone()))
-            .with_memory(Memory::new().with_block(pointer.block.clone(), 512))
+            .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 512))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_composite(
                     "TransitionWrapper".into(),
@@ -285,7 +285,7 @@ fn checked_wrapper_projection_scales_with_used_members() {
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
-    fn callback_fact(name: &str, pointer: Pointer, state: ExecutionState) -> Proposition {
+    fn callback_fact(name: &str, pointer: Address, state: ExecutionState) -> Proposition {
         Proposition::Predicate {
             name: FunctionContract::predicate_name_for(name),
             arguments: vec![
@@ -298,7 +298,7 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
         }
     }
 
-    let target = Pointer::symbolic_function(Variable(92_000));
+    let target = Address::symbolic_function(Variable(92_000));
     let mut samples = Vec::new();
     for calls in [1usize, 2, 4, 8, 16] {
         for unrelated in [4usize, 16, 64, 256, 1024] {
@@ -310,7 +310,7 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
             for index in 0..unrelated {
                 assumptions = assumptions.assume_proposition(callback_fact(
                     "Unrelated",
-                    Pointer::symbolic_function(Variable(93_000 + index as u64)),
+                    Address::symbolic_function(Variable(93_000 + index as u64)),
                     ExecutionState::new(),
                 ));
             }
@@ -374,25 +374,25 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
         arguments: vec![],
     };
     // An exactly available bare condition.
-    let exact = Proposition::ConditionIs(equality.clone(), true);
+    let exact = Proposition::condition_is(equality.clone(), true);
     // A bare condition the frozen checker decides against, read through `not`.
-    let negated = Proposition::Not(Box::new(Proposition::ConditionIs(refuted.clone(), true)));
+    let negated = Proposition::Not(Box::new(Proposition::condition_is(refuted.clone(), true)));
     // Compound clauses no exact route establishes. The logical descent that
     // used to split these now belongs to the refinement theorem's proof, so
     // the kernel answers no — and must do so without an ambient scan.
     let structural = Proposition::And(
-        Box::new(Proposition::ConditionIs(bound.clone(), true)),
+        Box::new(Proposition::condition_is(bound.clone(), true)),
         Box::new(Proposition::Or(
-            Box::new(Proposition::ConditionIs(equality.clone(), true)),
+            Box::new(Proposition::condition_is(equality.clone(), true)),
             Box::new(unproved.clone()),
         )),
     );
     let guarded = Proposition::Implies(
-        Box::new(Proposition::ConditionIs(refuted.clone(), true)),
+        Box::new(Proposition::condition_is(refuted.clone(), true)),
         Box::new(unproved),
     );
-    let integer_exact = Proposition::ConditionIs(size_invariant.clone(), true);
-    let integer_unproved = Proposition::ConditionIs(unrelated_size, true);
+    let integer_exact = Proposition::condition_is(size_invariant.clone(), true);
+    let integer_unproved = Proposition::condition_is(unrelated_size, true);
 
     let samples = [4, 16, 64, 256]
         .into_iter()
@@ -451,4 +451,69 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
         }),
         "refinement checking must not scan unrelated ambient facts: {samples:?}"
     );
+}
+
+#[test]
+fn established_callback_frame_rule_ignores_unrelated_owners_and_aliases() {
+    for aliases in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let contract = opaque_callback_contract();
+            let callback = Address::symbolic_function(Variable(8_961_000));
+            let (state, argument, held) = opaque_callback_state(if aliases { 1 } else { count });
+            let mut facts = PureFactContext::new()
+                .assume_proposition(named_contract_fact(&contract, callback.clone()));
+            if aliases {
+                for i in 0..count {
+                    facts = facts.assume_condition(
+                        ConditionTerm::address_equal(
+                            Address::symbolic(Variable(8_960_000)),
+                            Address::symbolic(Variable(8_962_000 + i)),
+                        ),
+                        true,
+                    );
+                }
+            }
+            let environment = ExecutionEnvironment::new().with_function_contract(contract.clone());
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "established callback frame rule",
+                );
+                let established = contracts_for_pointer(
+                    &callback,
+                    &facts,
+                    &environment,
+                    &contract.function_pointer_type(),
+                );
+                execute_program_function_contracts_paths(
+                    &state,
+                    &established.iter().collect::<Vec<_>>(),
+                    std::slice::from_ref(&argument),
+                    &facts,
+                    &environment,
+                    &mut ExecutionBudget::new(),
+                )
+                .unwrap()
+            });
+            let [
+                FunctionPath {
+                    outcome:
+                        FunctionOutcome::Return {
+                            state: returned, ..
+                        },
+                    ..
+                },
+            ] = paths.as_slice()
+            else {
+                panic!("{paths:?}")
+            };
+            assert!(returned.resources().contains_exact_representation(&held));
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 128),
+            "aliases={aliases}: {samples:?}"
+        );
+    }
 }

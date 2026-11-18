@@ -605,7 +605,7 @@ mod mixed_observation_tests {
             assert_eq!(format, ty);
             assert!(super::super::identity::same_exact_value(&reading, &exact));
             assert_eq!(KernelTermExport::machine_export_count(), exports);
-            let goal = Proposition::ConditionIs(
+            let goal = Proposition::condition_is(
                 ConditionTerm::integer_less_than(exact, IntegerTerm::constant_i64(0)),
                 true,
             );

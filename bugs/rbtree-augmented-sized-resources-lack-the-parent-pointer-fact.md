@@ -405,3 +405,61 @@ matched the same obligation on replay. Requirement deduplication now uses
 the same canonical comparison as replay. A reduced bounded-argument call
 checks expansion and replay with the implicit closer off, and refuses an
 argument that violates its upper bound.
+
+## Context rotation with arbitrary focused child subtrees
+
+All four selected proofs in
+`rbtree_size_insert_context_focus_rotation.click` now verify at default limits,
+including both insertion wrappers and the inorder-preservation theorem. Owned
+node observations retain the parent tags, child identities and inequalities
+through initialization and the loop's read-only prefix. The proof executes the
+missing local declaration and first rotation store, retains the unchanged and
+newly written links across the parent-update call, and explicitly normalizes
+the callback's count equation from `to_integer(gv) == 2 + to_integer(nv)`.
+
+Expansion, retained and cold verification, and fixed-point checks pass all 13
+audit sites at default limits.
+
+The focused node's child subtrees and valid cached sizes remain arbitrary.
+The C, three original function contracts, inorder theorem, writable callback,
+existing tree resources, and verifier are unchanged. Other sidecars and the
+full-directory audit still leave this report open.
+
+## Mirrored context rotation with arbitrary focused child subtrees
+
+All four selected proofs in
+`rbtree_size_insert_mirrored_context_focus_rotation.click` verify at default
+limits. The proof retains the node observations through the read-only steps,
+executes the local declaration and the first rotation store, and carries the
+child links through the parent update. The callback count equation uses the
+existing `to_integer(gv) == 2 + to_integer(nv)` premise.
+
+The focused subtrees and cached sizes remain arbitrary under the original
+contracts. The other sidecars and the full-directory audit remain open.
+
+All 12 expansion, retained and cold replay, and fixed-point audit sites pass
+at default limits on master `ecd9cba40` plus this repair.
+
+## Context rotation with nonempty black middle and uncle subtrees
+
+All three proofs in `rbtree_size_insert_context_uncle_rotation.click` verify
+at default limits on master `58b0c2c9e` plus the proof repair. The proof carries
+the parent and child observations through initialization and the black-uncle
+test. It executes the local declaration and both rotation stores, retains
+the new child links through the middle subtree's reparenting and the parent
+update, and carries the original uncle subtree into the rotated tree. The
+original contracts keep the subtrees and their valid cached sizes arbitrary.
+
+## Insertion exit at a black parent
+
+The proof in `rbtree_size_insert_black_parent.click` binds the packed parent
+tag at each unfold, then retains the ancestor's word and black bit in an
+owned resource across the reads. Refolding uses the saved tags and the
+proof executes the remaining local declaration before entering the loop.
+
+## Replacing a child link
+
+The augmented `__rb_change_child` proof retains the ancestor's packed tag and
+its typed parent cast, the sibling and root links, and the replaced child's
+cached size and parent cast across the store. The produced link uses the
+entry size, which the contract separately proves equals the exit size.

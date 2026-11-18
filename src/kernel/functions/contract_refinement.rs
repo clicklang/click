@@ -60,7 +60,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         contract_entry,
         contract.resource_requires(),
         contract.composite_resource_definitions(),
-        &assumptions.clone().assume_entry_clause_extents(),
+        &assumptions.clone().assume_entry_clause_spans(),
         budget,
     )?
     else {
@@ -70,7 +70,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         function_entry,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        &assumptions.clone().assume_entry_clause_extents(),
+        &assumptions.clone().assume_entry_clause_spans(),
         budget,
     )?
     else {
@@ -140,6 +140,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         return_resources: returned,
         ensured_views: returned_views,
         produced_borrowing_pieces,
+        returned_entry_partition,
     } = match evaluate_contract_return_resources(
         &transfer.caller_resources_after_requirements,
         escrowed_owners(&transfer),
@@ -158,6 +159,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         Ok(result) => result,
         Err(_) => return Ok(Some(false)),
     };
+    transfer.returned_entry_partition = returned_entry_partition;
     transfer.candidate_output_views = returned_views;
     transfer.produced_borrowing_pieces = produced_borrowing_pieces;
     if recover_candidate_stable_view_resources(
@@ -523,16 +525,16 @@ pub(super) fn mutable_footprint_is_compatible_for_interfaces(
     {
         return Ok(false);
     }
-    let mut available_by_family: BTreeMap<(PointerBlock, u32), Vec<&MemoryRange>> = BTreeMap::new();
+    let mut available_by_family: BTreeMap<(AddressBase, u32), Vec<&MemoryRange>> = BTreeMap::new();
     for available in contract_projection.ranges() {
         available_by_family
-            .entry((available.base.block.clone(), available.element_width))
+            .entry((available.base.base.clone(), available.element_width))
             .or_default()
             .push(available);
     }
     Ok(function_projection.ranges().iter().all(|required_range| {
         if let Some(candidates) = available_by_family.get(&(
-            required_range.base.block.clone(),
+            required_range.base.base.clone(),
             required_range.element_width,
         )) {
             candidates.iter().any(|available_range| {

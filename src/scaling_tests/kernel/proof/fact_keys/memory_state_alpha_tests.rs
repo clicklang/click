@@ -8,7 +8,7 @@ use super::*;
 fn state_alpha_work_ignores_unrelated_heap_size() {
     let make_memory = |unrelated_size| {
         crate::kernel::intern_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("retained_state-alpha", 8)
                 .with_block("unrelated-retained_state-alpha", unrelated_size),
         )
@@ -96,7 +96,8 @@ fn state_alpha_registered_load_branching_dags_stay_linear() {
 
 #[test]
 fn state_alpha_nested_shared_load_dags_scale_linearly() {
-    let memory = crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha", 8));
+    let memory =
+        crate::kernel::intern_memory(SymbolicMemory::new().with_block("retained_state-alpha", 8));
     let mut work = Vec::new();
     for depth in [8usize, 16, 32, 64] {
         let item = Variable(315_001);
@@ -142,7 +143,7 @@ fn machine_comparison_alpha_keys_retain_shared_dags() {
             var: Variable(98123),
             name: crate::kernel::BinderName::written("i"),
             sort: Sort::ProgramInteger(format),
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 ConditionTerm::IntegerLessThan(
                     IntegerTerm::Machine(operand.clone()).into(),
                     IntegerTerm::Constant(BigInt::from(100)).into(),
@@ -183,10 +184,10 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
         let read = AlgebraicTerm {
             algebraic_type: algebraic_type.clone(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory: memory.clone(),
-                pointer: Box::new(Pointer {
-                    block: PointerBlock::Heap(992_000),
-                    offset: PointerOffsetTerm::Constant(0),
+                point: crate::kernel::ProgramPoint::at(&memory.clone()),
+                pointer: Box::new(Address {
+                    base: AddressBase::Heap(992_000),
+                    offset: AddressOffset::Constant(0),
                 }),
             },
         };
@@ -207,12 +208,12 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
     };
     let mut work = Vec::new();
     for unrelated in [0u64, 8, 64, 512] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..unrelated {
             memory = memory.store(
-                Pointer {
-                    block: PointerBlock::Heap(993_000 + index),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Heap(993_000 + index),
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(0u32.into()),
             );

@@ -44,7 +44,7 @@ int32 sort3(int32 p[3]) {
     consumes p[0..3];
     ensures sorted: sorted(p, 3) by {
         unfold(sorted(p, 3));
-        unfold(sorted_range(p, 0, n));
+        unfold(sorted_range(p, 0, 3));
     }
 }
 ```

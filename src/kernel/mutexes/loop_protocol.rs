@@ -8,8 +8,8 @@ use super::*;
 
 pub(in crate::kernel) fn abstract_loop_mutex(
     state: &ExecutionState,
-    mutex: &Pointer,
-    held: ConditionTerm,
+    mutex: &Address,
+    held: impl Into<StoredConditionTerm>,
 ) -> Result<ExecutionState, String> {
     if state.preserves_mutex_protocols {
         return Err("loop mutex abstraction requires a concrete initialization".into());
@@ -39,7 +39,7 @@ pub(in crate::kernel) fn abstract_loop_mutex(
         MutexEntry::ConditionalLoop {
             initialization,
             epoch,
-            held,
+            held: held.into(),
         },
     ));
     Ok(result)
@@ -68,7 +68,7 @@ impl MutexContext {
     /// altering resources. Unlock still requires the exact owned guard atom.
     pub(super) fn materialize_loop_mutex(
         &self,
-        mutex: &Pointer,
+        mutex: &Address,
         assumptions: &PureFactContext,
     ) -> Result<Option<Self>, MutexTransitionError> {
         let Some(ledger) = &self.state.mutex_ledger else {
@@ -82,11 +82,10 @@ impl MutexContext {
         else {
             return Ok(None);
         };
-        let held = crate::kernel::loops::condition_is_decided(assumptions, held).ok_or(
-            MutexTransitionError::Refusal(
+        let held = crate::kernel::loops::condition_is_decided(assumptions, held.native_compat())
+            .ok_or(MutexTransitionError::Refusal(
                 "Requires the loop resource to determine whether the mutex is held",
-            ),
-        )?;
+            ))?;
         let entry = if held {
             MutexEntry::Locked {
                 initialization: *initialization,
@@ -112,7 +111,7 @@ impl MutexContext {
 }
 
 impl MutexLedger {
-    pub(in crate::kernel) fn is_loop_abstract(&self, mutex: &Pointer) -> bool {
+    pub(in crate::kernel) fn is_loop_abstract(&self, mutex: &Address) -> bool {
         matches!(self.get(mutex), Some(MutexEntry::ConditionalLoop { .. }))
     }
 
@@ -122,7 +121,7 @@ impl MutexLedger {
     pub(in crate::kernel) fn check_loop_protocol_state_since(
         &self,
         next: &Self,
-        checked_mutexes: &[Pointer],
+        checked_mutexes: &[Address],
     ) -> Result<(), MutexProtocolMismatch> {
         let mut compared = next.clone();
         let mut seen = std::collections::BTreeSet::new();
@@ -151,25 +150,25 @@ impl MutexLedger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{MachineTerm, PointerOffsetTerm, Variable};
+    use crate::kernel::{AddressOffset, MachineTerm, Variable};
 
-    fn mutex(index: usize) -> Pointer {
-        Pointer {
-            block: format!("loop-mutex-{index}").into(),
-            offset: PointerOffsetTerm::Constant(0),
+    fn mutex(index: usize) -> Address {
+        Address {
+            base: format!("loop-mutex-{index}").into(),
+            offset: AddressOffset::Constant(0),
         }
     }
-    fn initialized(address: &Pointer) -> MutexContext {
+    fn initialized(address: &Address) -> MutexContext {
         MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap()
     }
-    fn abstracted(context: &MutexContext, address: &Pointer, held: bool) -> MutexContext {
+    fn abstracted(context: &MutexContext, address: &Address, held: bool) -> MutexContext {
         MutexContext::new(
             abstract_loop_mutex(context.state(), address, ConditionTerm::Constant(held)).unwrap(),
         )
     }
-    fn reveal_guard(context: &MutexContext, address: &Pointer) -> MutexContext {
+    fn reveal_guard(context: &MutexContext, address: &Address) -> MutexContext {
         let mut state = context.state().clone();
         let guard = state
             .mutex_ledger
@@ -341,16 +340,16 @@ mod loop_rule_tests {
     use crate::kernel::functions::{loop_instance_guard, rewrite_resource_instance};
     use crate::kernel::loops::{loop_binder_state_components_match_at_back_edge, loop_binders};
     use crate::kernel::{
-        ComparisonOperator, CompositeResourceDefinition, PointerOffsetTerm, ProgramExpression,
+        AddressOffset, ComparisonOperator, CompositeResourceDefinition, ProgramExpression,
         ProgramType, ProgramValue, ResourceAccessMode, ResourceFamily, ResourceFieldSchema,
         ResourceFieldType, ResourceInstance, ResourceQuantity, ResourceSpec, ResourceStateSource,
         ResourceTerm, ResourceTransferRole, SpecExpression, SpecProposition, Variable, int32,
     };
 
-    fn address() -> Pointer {
-        Pointer {
-            block: "loop-rule-mutex".into(),
-            offset: PointerOffsetTerm::Constant(0),
+    fn address() -> Address {
+        Address {
+            base: "loop-rule-mutex".into(),
+            offset: AddressOffset::Constant(0),
         }
     }
     fn schema() -> ResourceFieldSchema {

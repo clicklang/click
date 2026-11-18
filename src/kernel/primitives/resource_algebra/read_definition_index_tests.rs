@@ -3,21 +3,20 @@ use super::*;
 #[test]
 fn token_discovery_follows_a_producer_defined_pointer_read() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_memory(Memory::new());
-    let field = Pointer {
-        block: "local:field".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+    let field = Address {
+        base: "local:field".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let value = Pointer::symbolic(Variable(976_000));
-    let read = Pointer::loaded_value(&memory, &field);
+    let value = Address::symbolic(Variable(976_000));
+    let read = Address::loaded_value(&memory, &field);
     let facts = PureFactContext::new();
     facts
         .equality_graph
         .register_pointer_read_definition(&value, &memory, &field);
-    let wrap =
-        |pointer| PointerValue::from_read(pointer, ProgramType::Int32Pointer, &memory, &field);
-    let held = ResourceFact::own_designated_allocation(wrap(read), &HeapExtent::int32(4));
-    let required = ResourceFact::own_designated_allocation(wrap(value), &HeapExtent::int32(4));
+    let wrap = |pointer| Pointer::from_read(pointer, ProgramType::Int32Pointer, &memory, &field);
+    let held = ResourceFact::own_designated_allocation(wrap(read), &AllocationSize::int32(4));
+    let required = ResourceFact::own_designated_allocation(wrap(value), &AllocationSize::int32(4));
     assert!(
         resource_fact_entails(&held, &required, &facts),
         "the common matcher knows the producer definition"
@@ -33,17 +32,17 @@ fn token_discovery_follows_a_producer_defined_pointer_read() {
 #[test]
 fn class_candidates_follow_merges_and_removals_without_leaking_to_siblings() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer::symbolic(Variable(976_100));
-    let alias = Pointer::symbolic(Variable(976_101));
+    let base = Address::symbolic(Variable(976_100));
+    let alias = Address::symbolic(Variable(976_101));
     let held = ResourceFact::own_allocation(base.clone(), 4);
     let required = ResourceFact::own_allocation(alias.clone(), 4);
     let facts = PureFactContext::new();
     let resources = ResourceContext::new().unchecked_with_fact(held.clone());
     resources.synchronize_memory_equalities(&facts);
-    let extended = facts.clone().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::pointer_value_equal(
-            PointerValue::new(base, ProgramType::Int32Pointer),
-            PointerValue::new(alias, ProgramType::Int32Pointer),
+    let extended = facts.clone().assume_proposition(Proposition::condition_is(
+        ConditionTerm::pointer_equal(
+            Pointer::new(base, ProgramType::Int32Pointer),
+            Pointer::new(alias, ProgramType::Int32Pointer),
         ),
         true,
     ));
@@ -73,17 +72,17 @@ mod scaling_tests {
 #[test]
 fn definitions_registered_after_publication_select_existing_payloads() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_memory(Memory::new());
-    let field = Pointer {
-        block: "local:late_field".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+    let field = Address {
+        base: "local:late_field".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let value = Pointer::symbolic(Variable(976_200));
-    let read = Pointer::loaded_value(&memory, &field);
-    let wrap = |p| PointerValue::from_read(p, ProgramType::Int32Pointer, &memory, &field);
-    let held = ResourceFact::own_designated_allocation(wrap(read), &HeapExtent::int32(4));
+    let value = Address::symbolic(Variable(976_200));
+    let read = Address::loaded_value(&memory, &field);
+    let wrap = |p| Pointer::from_read(p, ProgramType::Int32Pointer, &memory, &field);
+    let held = ResourceFact::own_designated_allocation(wrap(read), &AllocationSize::int32(4));
     let required =
-        ResourceFact::own_designated_allocation(wrap(value.clone()), &HeapExtent::int32(4));
+        ResourceFact::own_designated_allocation(wrap(value.clone()), &AllocationSize::int32(4));
     let facts = PureFactContext::new();
     let resources = ResourceContext::new().unchecked_with_fact(held.clone());
     resources.synchronize_memory_equalities(&facts);
@@ -107,7 +106,7 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
         for owned in [false, true] {
             let _session = crate::kernel::VerificationSession::enter();
             let facts = PureFactContext::new();
-            let p = Pointer::symbolic(Variable(976_300));
+            let p = Address::symbolic(Variable(976_300));
             let range = |start: u32, end: u32| {
                 if native {
                     MemoryRange::new_wide(
@@ -157,7 +156,7 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
                 );
                 let wrong = ResourceFact::view_memory(
                     range(1, 3)
-                        .with_provenance(std::sync::Arc::new(Pointer::symbolic(Variable(976_301))))
+                        .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(976_301))))
                         .with_typed_carrier(),
                 );
                 assert!(context.directly_supporting_fact(&wrong, &facts).is_none());

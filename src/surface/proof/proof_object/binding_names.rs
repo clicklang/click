@@ -12,8 +12,8 @@ pub(in crate::surface::proof) fn variable(expression: &ContractExpression) -> Op
     match expression {
         ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
             pointer,
-        ))) => match (&pointer.pointer().block, &pointer.pointer().offset) {
-            (crate::kernel::PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) => {
+        ))) => match (&pointer.address().base, &pointer.address().offset) {
+            (crate::kernel::AddressBase::Symbolic(variable), AddressOffset::Constant(0)) => {
                 Some(*variable)
             }
             _ => None,

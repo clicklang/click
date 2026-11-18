@@ -187,19 +187,35 @@ from owned pieces is
 (`mdtests/a_local_char_array_lends_its_c_string_view.md`,
 `mdtests/a_local_char_array_view_names_the_fact_its_bytes_lack.md`). Cross-clause conflicts (an owned clause overlapping a
 viewed one, or an owned piece inside a viewed frontier) are refused at
-planning as proven overlaps.
+planning as proven overlaps. For a composite lend, the planner checks the
+selected body frontier against the original entry partition, which still
+indexes the owners removed by reservation. The check visits the explicit
+frontier and uses indexed boundary queries. An undecided boundary retains
+its ordinary separation obligation. A view adapter that materializes a head
+from the caller's own pieces carries the partition established by consuming
+those pieces into the loan.
 
 A declared mutable effect is a consequence of the transferred authority.
 Each effect range is compared with the full checked view frontier; an effect
 and a view reserved from distinct caller occurrences are disjoint by the
 partition invariant, while the same occurrence needs an arithmetic proof.
-Every path that retires an allocation, definite or of undecided continuity,
-consults the ledger that carries the call's own loans. Automatic lifetime ends
-also consult it: normal scope exit, return, break, continue, jump, exception,
-and the retained proof event refuse to retire a block with a live loan.
-The same ledger already guards direct local assignments and alias stores,
+An ordinary verified call with exact write ranges requires those ranges to
+be separate from the caller's pre-existing live loans. The proof uses the
+ranges selected at call entry. The standard-library `memcpy` uses its
+checked destination byte range for this obligation. Its source view still
+participates in the call's resource partition.
+Call retirement requires the full input allocation to be separate from the
+entry ledger, including loans opened by the call. This applies to a definite
+free and to an output that leaves the allocation's continuity undecided.
+Scope exits, function returns and throws, and temporary cleanup check the
+ledger by automatic object identity. A live loan pins its backing object until the loan ends,
+including when its protected bytes have symbolic bounds. Retained proof
+events repeat the same check.
+
+Direct scalar assignments to address-taken locals and stores through their
+addresses require separation from the ledger's live memory footprint,
 including same-value writes. A nested reader reborrows the local loan through
-its exact resource binding. No new surface clause is needed.
+its exact resource binding.
 
 For a suspended modeled-pthread worker borrowing a parent view, the checked
 entry splits the parent's current share. The parent retains one sibling and
@@ -268,10 +284,18 @@ is refused as unsupported unless its external block is proven distinct from
 the local loan blocks.
 
 A nonempty subrange loan prevents freeing or reallocating its allocation.
-Locals, heap, and globals use the same access checks; a `static const`
-block is read-only storage with permanent read support and is not a way to
-give mutable memory an unbounded loan. Loop-head and interface havocs keep a
-cell only when a loan protects it and drop zero-width cells.
+Plain `free` with live memory loans requires separation of the allocation's
+complete byte range from the retained active-loan footprint. The proof
+prerequisite uses the argument at the free's entry point. `free(NULL)`
+leaves the state alone.
+
+A pending `realloc` retains the loan footprint at the call. A successful
+result requires separation from the full old allocation before retiring it.
+A failed result leaves its old allocation and loan ledger intact.
+
+A `static const` block is read-only storage with permanent read support and
+cannot give mutable memory an unbounded loan. Loop-head and interface havocs
+keep a cell only when a loan protects it and drop zero-width cells.
 
 ## Facts, observations, and composites
 
@@ -404,13 +428,13 @@ between compiler-checked borrow legality and Click's functional claims.
 
 | Rule | Tests |
 | --- | --- |
-| Lend, read, close, recover, write; same-value store refused | `checked_two_reader_lifecycle_recovers_exact_escrow_once`, `owner_authorized_write_into_a_lent_range_is_refused`, `owner_authorized_same_value_store_into_a_lent_range_is_refused`, `owner_authorized_aggregate_copy_into_a_lent_range_is_refused` |
+| Lend, read, close, recover, write; same-value store refused | `checked_two_reader_lifecycle_recovers_exact_escrow_once`, `owner_authorized_write_into_a_lent_range_is_refused`, `owner_authorized_same_value_store_into_a_lent_range_is_refused`, `owner_authorized_aggregate_copy_into_a_lent_range_requires_separation` |
 | Shares and scopes | `splitting_and_joining_require_exact_linear_siblings`, `shared_reader_recovery_rejects_wrong_sibling_reuse_and_stale_branch`, `nested_reborrow_must_rejoin_each_parent_before_scope_end`, `an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource`, `checked_call_evidence_rejects_stale_or_swapped_recovery` |
 | Aliased views and nested readers | `candidate_joint_planner_reuses_one_escrow_for_two_aliases`, `candidate_rejects_new_output_view`, `mdtests/stable_view_nested_reader.md` |
 | Partial borrows and widths | `mdtests/stable_view_partial_borrow.md`, `bytewise_overlap_is_decided_across_mismatched_element_widths`, `memory_entailment_relates_two_spellings_of_one_byte_footprint` |
-| Free and realloc under a loan | `active_stable_loan_rejects_overlapping_heap_free_and_realloc`, `undecided_continuity_retire_refuses_a_lent_allocation` |
+| Free and realloc under a loan | `heap_free_requires_separation_from_an_interior_loan_until_it_ends`, `realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation`, `call_retirement_requires_separation_from_its_own_loan` |
 | Local loans, bounds, and lifetime | `candidate_local_array_view_uses_a_checked_loan_and_recovers`, `thread_local_view_blocks_writes_and_all_scope_exits_until_join`, `automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement`, `local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow`, `mdtests/stable_view_local_job.md`, `local_job_views_expand_and_reverify_without_ownership_annotations` |
-| Locals and empty views | `active_stable_loan_rejects_direct_local_assignment_and_alias_store`, `candidate_local_array_view_out_of_bounds_is_refused`, `mdtests/empty_view_authorizes_nothing.md` |
+| Locals and empty views | `active_stable_loan_requires_separation_for_local_assignment_and_alias_store`, `mdtests/direct_local_write_separation.md`, `candidate_local_array_view_out_of_bounds_is_refused`, `mdtests/empty_view_authorizes_nothing.md` |
 | Entry footprint | `field_derived_view_does_not_retarget_after_a_pointer_write` |
 | Composites | `composite_loan_protects_primitive_frontier_and_restores_head_once`, `projection_extends_permitted_descriptions_without_a_transition`, `candidate_composite_with_unstable_facts_is_refused`, `candidate_composite_view_is_backed_by_a_covering_owned_composite`, `mdtests/produced_composite_body_overlapping_a_held_owner.md` |
 | Explicit frame evidence | `frame_queries_ignore_folded_compositions_until_explicitly_opened`, `mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md` |

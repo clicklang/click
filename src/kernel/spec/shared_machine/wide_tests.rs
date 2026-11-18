@@ -45,8 +45,8 @@ fn domain(value: &Proposition) -> Proposition {
     match value {
         Proposition::And(a, b) => Proposition::And(Box::new(domain(a)), Box::new(domain(b))),
         Proposition::Or(a, b) => Proposition::Or(Box::new(domain(a)), Box::new(domain(b))),
-        Proposition::ConditionIs(c, t) => Proposition::ConditionIs(
-            match c {
+        Proposition::ConditionIs(c, t) => Proposition::condition_is(
+            match c.native_compat() {
                 ConditionTerm::IntegerEqual(a, b) => {
                     ConditionTerm::integer_equal(integer(a), integer(b))
                 }
@@ -109,17 +109,21 @@ fn wide_casts_match_all_existing_integer_directions() {
 #[test]
 fn wide_reads_keep_type_and_state_in_casts_and_observations() {
     let _session = VerificationSession::enter();
-    let address = Pointer::symbolic(Variable(995703));
-    let before = crate::kernel::intern_memory(Memory::new());
+    let address = Address::symbolic(Variable(995703));
+    let before = crate::kernel::intern_memory(SymbolicMemory::new());
     let after = crate::kernel::intern_memory(
-        Memory::new().store(address.clone(), ProgramValue::Int32(7u32.into())),
+        SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(7u32.into())),
     );
     for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
         let kind = crate::kernel::LoadKind::of_type(format.program_type()).unwrap();
         let roots = [before.clone(), after.clone()].map(|memory| {
             KernelTermImport::default().machine(
                 format,
-                &MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(address.clone()), kind),
+                &MachineTerm::MemoryLoad(
+                    ProgramPoint::at(&memory),
+                    Box::new(address.clone()),
+                    kind,
+                ),
             )
         });
         assert_ne!(roots[0], roots[1]);
@@ -177,8 +181,10 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                                 MachineTerm::Variable(Variable(id)),
                             ),
                             5 => MachineTerm::MemoryLoad(
-                                ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
-                                Box::new(Pointer::symbolic(Variable(id))),
+                                ProgramPoint::at(
+                                    &(crate::kernel::intern_memory(SymbolicMemory::new())),
+                                ),
+                                Box::new(Address::symbolic(Variable(id))),
                                 crate::kernel::LoadKind::of_type(format.program_type()).unwrap(),
                             ),
                             _ => word(format, 2.into()),
@@ -223,7 +229,8 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                                 let actual_value = SpecValue::Shared(actual.value).into_native();
                                 let normalize = |value: &ProgramValue| {
                                     let format =
-                                        MachineIntegerType::from_program_type(value.program_type()).unwrap();
+                                        MachineIntegerType::from_program_type(value.program_type())
+                                            .unwrap();
                                     let crate::kernel::integer_c_value!(term) = value else {
                                         panic!()
                                     };

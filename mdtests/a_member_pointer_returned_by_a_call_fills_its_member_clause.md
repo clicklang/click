@@ -1,10 +1,10 @@
 # A member pointer returned by a call fills a clause of its member
 
 The control for `a_member_pointer_returned_by_a_call_keeps_its_subobject.md`.
-The result adopts `&p->first`'s extent through the contract's equality, and
-a reader's one-element clause lies exactly inside it. The extent's start is
-spelled through `p`, not through the fresh result, so the clause check
-respells the result at that start before measuring it.
+The contract's equality supplies the bounds of `&p->first` for checking the
+returned pointer. The reader's one-element clause fits inside that domain,
+and the existing view supplies its bytes. The symbolic result keeps its own
+address and pointer metadata.
 
 ```c filename=returned_member_control.c
 struct Pair { int32 first; int32 second; };

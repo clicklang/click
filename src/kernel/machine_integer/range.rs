@@ -28,7 +28,7 @@ pub(crate) fn range_fact(value: &SharedMachineIntegerTerm, upper: bool) -> Propo
     } else {
         ConditionTerm::integer_less_equal(IntegerTerm::constant(min), observed)
     };
-    Proposition::ConditionIs(condition, true)
+    Proposition::condition_is(condition, true)
 }
 
 /// The range of an observation's value: its format's, or the format of its

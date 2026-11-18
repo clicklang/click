@@ -1,36 +1,516 @@
 use super::*;
 
 #[test]
-#[ignore = "nightly: consumed field refusal, preservation expansion and cold replay"]
-fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
+#[ignore = "nightly: named-root alias proof, expansion, and cold replay"]
+fn named_root_preserves_aliased_pointer_fields_without_transport() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/named_root_call_preserves_aliased_pointer_field.md");
+    let sources = crate::cli::source_refs(&c_sources);
+    assert!(!source.contains("transport("));
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+
+    let label = "probe.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: ranked search proof, expansion, and cold replay"]
+fn ranked_search_preserves_its_reads_without_transport() {
+    let (source, c_sources) = mdtest_sources("mdtests/search_terminates_by_unmarked_count.md");
+    check_ranked_search_without_transport(&source, &c_sources);
+
+    // Writing zero leaves the counted cell unmarked and cannot prove descent.
+    let unmarked = c_sources[0]
+        .1
+        .replace("visited[cur] = 1;", "visited[cur] = 0;");
+    assert_ne!(unmarked, c_sources[0].1);
+    let source = inline_unmarked_count_lemmas(&source);
+    assert!(verify_c_sources(&source, &[(c_sources[0].0.as_str(), unmarked.as_str())]).is_err());
+}
+
+#[test]
+#[ignore = "nightly: saved-array application proof, expansion, and cold replay"]
+fn ranked_search_applies_point_update_with_a_saved_array() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/preserve_apply_names_its_missing_viewable.md");
+    check_ranked_search_without_transport(&source, &c_sources);
+
+    // Removing the observation makes the application prove the saved range's
+    // current viewability from ownership, as in the original fixture.
+    let without_observation = source.replace("observe(at(iter, visited)[0..n]);", "");
+    assert_ne!(without_observation, source);
+    let (name, c) = &c_sources[0];
+    verify_c_sources(
+        &inline_unmarked_count_lemmas(&without_observation),
+        &[(name, c)],
+    )
+    .unwrap_or_else(|error| panic!("{}", error.report()));
+}
+
+fn inline_unmarked_count_lemmas(source: &str) -> String {
+    // The in-memory verifier needs the fixture's file import in the same unit.
+    source.replace(
+        r#"import "unmarked_count_lemmas.click";"#,
+        include_str!("../../../mdtests/unmarked_count_lemmas.click"),
+    )
+}
+
+fn check_ranked_search_without_transport(source: &str, c_sources: &[(String, String)]) {
+    assert!(!source.contains("transport("));
+    let source = inline_unmarked_count_lemmas(source);
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    with_proof_trace("search", || {
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+
+    let label = "search.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: explicit frame refusal after expanding its execution prefix"]
+fn explicit_frame_refusal_replays_without_transport() {
+    let (source, c_sources) = mdtest_sources("mdtests/explicit_preserve_failure_is_prompt.md");
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    // Expand these sites individually so capture stops before the expected refusal.
+    let mut expanded = source;
+    for prefix_step in [
+        "have to_integer(s + 1) <= to_integer(e);",
+        "step_until(statement(2));",
+    ] {
+        let at = expansion::position_at_offset(&expanded, expanded.find(prefix_step).unwrap());
+        expanded = expand_c_tactic_source_at(&expanded, &sources, at.line, at.column)
+            .unwrap_or_else(|error| panic!("{prefix_step}: {}", error.report()));
+    }
+    assert!(!expanded.contains("transport("), "{expanded}");
+    let report =
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources).unwrap_err().report());
+    assert!(
+        report.contains("preserve separation is not exactly available"),
+        "{report}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: iterated owner stable-view refusal and cold replay"]
+fn iterated_owner_borrow_still_refuses_without_transport() {
     let (source, sources) =
-        mdtest_sources("mdtests/resource_unfold_field_binding_rejects_consumed_read.md");
+        mdtest_sources("mdtests/viewed_memory_call_frame_rejects_an_iterated_owner_borrow.md");
     let sources = sources
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    let error = verify_c_sources(&source, &sources).unwrap_err();
+    assert!(!source.contains("transport("));
+    let report = verify_c_sources(&source, &sources).unwrap_err().report();
+    assert!(report.contains("`root.contract`"), "{report}");
+    assert!(report.contains("stable-view"), "{report}");
     assert!(
-        error.message().contains("before.prefix"),
-        "{}",
-        error.report()
+        report.contains("selected resource `views b[0]`"),
+        "{report}"
     );
+
+    // Check the two callee proofs with the intentionally refused caller claim
+    // omitted. The control keeps the original C and callee contracts.
+    let (control, _) = source.split_once("\nint32 root(").unwrap();
+    verify_c_sources(control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let mut expanded = control.to_owned();
+    for label in ["touch.contract", "keep.contract"] {
+        expanded = expand_c_claim_source_by_label(&expanded, &sources, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    }
+    assert!(!expanded.contains("transport("), "{expanded}");
+    for label in ["touch.contract", "keep.contract"] {
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[ignore = "nightly: fold framing, C read authority, and cold replay"]
+fn preserved_fold_does_not_grant_c_read_authority() {
+    let (source, sources) = mdtest_sources("mdtests/fold_read_transport_grants_no_c_read.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    let report = verify_c_sources(&source, &sources).unwrap_err().report();
     assert!(
-        error.message().contains("unfold(before)` consumed it"),
-        "{}",
-        error.report()
+        report.contains("missing resource fact `views v[0]`"),
+        "{report}"
     );
-    // Only the intentionally invalid invariant changes in the positive control.
+    assert!(report.contains("return v[0]"), "{report}");
+
+    // Supply only the missing C read authority. The C and proof stay the same.
     let control = source.replace(
-        "invariant 0 <= i and i <= old(before.prefix);",
-        "invariant 0 <= i and i <= p;",
+        "    owns v[i..(i + 1)];",
+        "    owns v[i..(i + 1)];\n    views v[0];",
     );
     assert_ne!(control, source);
     verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
-    assert!(!source.contains("transport("), "{source}");
-    let expanded = expand_c_claim_source_by_label(&control, &sources, "claim.contract").unwrap();
+    let expanded = expand_c_claim_source_by_label(&control, &sources, "same_zeros.ensures_0")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&expanded, &sources, "set_then_read.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
     assert!(!expanded.contains("transport("), "{expanded}");
-    without_implicit_solve_for_claim("claim.contract", || {
+    for label in ["same_zeros.ensures_0", "set_then_read.contract"] {
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[ignore = "nightly: helper fold preservation and cold replay"]
+fn fold_through_a_helper_survives_the_endpoint_store_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/fold_read_transport_rejects_an_opaque_helper.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    with_proof_trace("set_end", || {
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "same_through.ensures_0")
+        .unwrap_or_else(|error| {
+            panic!(
+                "{}
+{source}",
+                error.report()
+            )
+        });
+    let expanded = expand_c_claim_source_by_label(&expanded, &sources, "set_end.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    for label in ["same_through.ensures_0", "set_end.contract"] {
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+
+    let overlapping = sources[0].1.replace("v[i] = 1;", "v[0] = 1;");
+    assert_ne!(overlapping, sources[0].1);
+    let report = verify_c_sources(&source, &[(sources[0].0, overlapping.as_str())])
+        .unwrap_err()
+        .report();
+    assert!(report.contains("footprint"), "{report}");
+}
+
+#[test]
+#[ignore = "nightly: viewability diagnostic and saved-premise replay"]
+fn earlier_viewable_premise_keeps_its_point_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_viewable_premise_from_an_earlier_point_prints_that_point.md");
+    let (name, c) = &sources[0];
+    assert!(!source.contains("transport("));
+    let error = verify_c_sources(&source, &[(name.as_str(), c.as_str())]).unwrap_err();
+    let report = error.report();
+    assert!(report.contains("goal: viewable(q[0..4])"), "{report}");
+    assert!(
+        report.contains("at(function.entry, viewable(q[0..k + 4u64 - k]))"),
+        "{report}"
+    );
+
+    let control = source.replace(
+        "    have viewable(q[0..4]) by {\n        rewrite(q, p + k);\n        known();\n    }",
+        "    have at(function.entry, viewable(p[k..k + 4u64])) by { known(); }",
+    );
+    assert_ne!(control, source);
+    // Read via the original pointer so the control isolates the saved view
+    // without requiring another proof of the aliases' return-value equality.
+    let control_c = c.replace("return q[3];", "return p[k + 3];");
+    assert_ne!(&control_c, c);
+    let sources = [(name.as_str(), control_c.as_str())];
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "last.contract";
+    let expanded = expand_c_claim_source_by_label(&control, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: wide element bounds, initializedness, and cold replay"]
+fn wide_viewable_element_needs_containment_and_initializedness() {
+    let (source, sources) =
+        mdtest_sources("mdtests/transport_wide_viewable_range_outside_element_is_refused.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    let report = verify_c_sources(&source, &sources).unwrap_err().report();
+    assert!(
+        report.contains("goal:") && report.contains("k < to_integer(n + 1u64)"),
+        "{report}"
+    );
+
+    // An inside index gets through containment, but viewability alone cannot
+    // establish that the byte has been initialized.
+    let inside = source.replace(
+        "k < n + 2u64 implies",
+        "to_integer(k) < to_integer(n + 1u64) implies",
+    );
+    assert_ne!(inside, source);
+    let report = verify_c_sources(&inside, &sources).unwrap_err().report();
+    assert!(report.contains("goal: defined"), "{report}");
+
+    let initialized = inside
+        .replace(
+            "    ensures result",
+            concat!(
+                "    requires forall (j: uint64) {\n",
+                "        to_integer(j) < to_integer(n + 1u64) implies defined(bytes[j])\n",
+                "    };\n    ensures result",
+            ),
+        )
+        .replace(
+            "            known();\n        }",
+            concat!(
+                "            instantiate(forall (j: uint64) {\n",
+                "                to_integer(j) < to_integer(n + 1u64) implies defined(old(bytes[j]))\n",
+                "            }, k);\n",
+                "            have defined(old(bytes[k])) by { known(); }\n",
+                "            have separate(memory(x), memory(bytes[k])) by { normalize(); }\n",
+                "            have separate(statement(0).footprint, memory(bytes[k])) by {\n",
+                "                normalize() using { separate(memory(x), memory(bytes[k])); };\n",
+                "            }\n",
+                "            preserve(memory(bytes[k]), statement(0));\n        }",
+            ),
+        );
+    verify_c_sources(&initialized, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "f.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&initialized, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: C string viewability and call authority"]
+fn cstr_viewability_without_transport_does_not_supply_call_authority() {
+    let (source, sources) = mdtest_sources("mdtests/cstr_dynamic_invalidated_transport.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    with_proof_trace("read_terminator", || {
+        let error = verify_c_sources(&source, &sources).unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("call to `strlen` needs a held `cstr_at` instance to give `n` its value"),
+            "{}\n{}",
+            error.report(),
+            error.trace_context_report().unwrap_or_default()
+        );
+    });
+
+    // Use the caller's length directly in the control so the whole proof,
+    // including witness construction and the self-assignment, can finish.
+    let stripped_call = sources[0]
+        .1
+        .replace("length = strlen(bytes);", "length = known_len;");
+    assert_ne!(sources[0].1, stripped_call);
+    let control = [(sources[0].0, stripped_call.as_str())];
+    verify_c_sources(&source, &control).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "read_terminator.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &control, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &control).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: viewability restriction expansion and cold replay"]
+fn viewable_requirement_supports_a_narrower_span_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/viewable_requirement_supports_a_narrower_span.md");
+    assert!(sources.is_empty());
+    assert!(!source.contains("transport("));
+    verify_c_sources(&source, &[]).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "narrow_viewable_requirement.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // With these endpoints the source spans 2^32 bytes, which wraps to zero.
+    // Prove that empty view locally so it carries no contract extent guards.
+    let wrapped = source
+        .replace(
+            "requires hi >= 0 and viewable(v[lo..hi]);",
+            "requires lo == 0;\n    requires hi == 1073741824;",
+        )
+        .replace(
+            "        have 0 < hi",
+            concat!(
+                "        have viewable(v[lo..hi]);\n",
+                "        have 0 <= to_integer(hi - lo) by {\n",
+                "            solve() using { lo == 0; hi == 1073741824; };\n",
+                "        }\n",
+                "        have 0 < hi",
+            ),
+        )
+        .replace(
+            "            viewable(v[lo..hi]);",
+            "            viewable(v[lo..hi]);\n            0 <= to_integer(hi - lo);",
+        );
+    let report = verify_c_sources(&wrapped, &[]).unwrap_err().report();
+    assert!(
+        report.contains("needs that range to be a valid 32-bit byte span"),
+        "{report}"
+    );
+    assert!(
+        report.contains("to_integer(hi - lo) <= 1073741823"),
+        "{report}"
+    );
+}
+
+#[test]
+fn named_contract_output_frame_rule_expands_and_replays() {
+    let (source, sources) =
+        mdtest_sources("mdtests/named_contract_outputs_retain_the_callers_frame.md");
+    let sources = sources
+        .iter()
+        .map(|(name, code)| (name.as_str(), code.as_str()))
+        .collect::<Vec<_>>();
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    for label in ["direct.contract", "indirect.contract", "refined.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+    let start = source.find("int32 indirect(").unwrap();
+    let missing = format!(
+        "{}{}",
+        &source[..start],
+        source[start..].replacen("    requires Transfer(callback);\n", "", 1)
+    );
+    assert_ne!(missing, source);
+    verify_c_sources(&missing, &sources)
+        .expect_err("a declaration alone cannot establish the callback contract");
+}
+
+#[test]
+fn verified_output_frame_rule_expands_without_geometry_discovery() {
+    let (source, sources) = mdtest_sources("mdtests/verified_outputs_retain_the_callers_frame.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "caller.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // An external description cannot issue a verified frame rule.
+    let external = r#"
+resource cell(p: int32*) { owns *p; }
+verifying "external_output_frame.c";
+extern int32* wrap(int32* p) {
+    consumes cell(p);
+    produces cell(result);
+}
+int32 caller(int32* p, int32* q) {
+    consumes cell(p);
+    owns *q;
+    ensures result == 0;
+} by { step_until(function.exit); solve(); }
+"#;
+    let external_sources = [(
+        "external_output_frame.c",
+        r#"
+int *wrap(int *p);
+int caller(int *p, int *q) {
+    int *h = wrap(p);
+    return 0;
+}
+"#,
+    )];
+    let error = without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(external, &external_sources).map_err(|error| error.report())
+    })
+    .expect_err("a description cannot issue the verified frame rule");
+    assert!(error.contains("symbolic ownership boundary"), "{error}");
+}
+
+#[test]
+fn symbolic_return_boundary_expands_and_replays_its_explicit_frame_proof() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_symbolic_return_boundary_uses_its_explicit_frame_proof.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let start = source.find("    have 0 <= n").unwrap();
+    let end = source.rfind("    step();").unwrap();
+    let mut missing = source.clone();
+    missing.replace_range(start..end, "");
+    let error = without_implicit_solve_for_claim("forward.contract", || {
+        verify_c_sources(&missing, &sources).map_err(|error| error.report())
+    })
+    .expect_err("a raw symbolic output needs its frame relationship");
+    assert!(error.contains("separate("), "{error}");
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "forward.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve_for_claim("forward.contract", || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
@@ -38,7 +518,7 @@ fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
 
 #[test]
 #[ignore = "nightly: repeated entry guard provenance"]
-fn entry_requirement_provenance_survives_repeated_extent_guards() {
+fn entry_requirement_provenance_survives_repeated_span_guards() {
     let sources = [("entry.c", "int32 entry(int32 a[], int32 n) { return 0; }")];
     let source = r#"
         verifying "entry.c";
@@ -772,7 +1252,6 @@ fn arithmetic_after_fold_rewrites_expands_and_rechecks() {
     let (source, _) = mdtest_sources("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
     let position = expansion::position_at_offset(&source, source.rfind("solve() using").unwrap());
     let expanded = expand_c_tactic_source_at(&source, &[], position.line, position.column).unwrap();
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("known();"), "{expanded}");
     verify_click_theorems(&expanded).unwrap();
     let invalid = expanded.replacen(
@@ -918,7 +1397,7 @@ fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_05")]
-fn member_pointer_addresses_retain_subobject_extents_through_expansion() {
+fn member_pointer_addresses_retain_subobject_bounds_through_expansion() {
     check_member_pointer_address_expansion("egraph_resource_pointer_load_alias", "check");
 }
 
@@ -930,7 +1409,7 @@ fn member_pointer_addresses_with_equal_numeric_addresses_expand() {
 
 #[test]
 #[ignore = "nightly: 0.63s after reducing duplicate verification"]
-fn nonzero_member_pointer_addresses_retain_subobject_extents_through_expansion() {
+fn nonzero_member_pointer_addresses_retain_subobject_bounds_through_expansion() {
     check_member_pointer_address_expansion("model_pointer_alias_nonzero_field_load", "probe");
 }
 
@@ -1167,7 +1646,6 @@ fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
         expanded.contains("normalize();") || expanded.contains("known();"),
         "{expanded}"
     );
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_click_theorems(&expanded).unwrap();
 }
 
@@ -1427,7 +1905,7 @@ fn selected_tactic_batch_removes_all_sites_in_a_dropped_arm() {
         "flag.c",
         "int32 flag(int32 x) { if (x > 0) { return 1; } return 0; }",
     )];
-    let source = "verifying \"flag.c\"; int32 flag(int32 x) { requires x <= 0; ensures result == 0; } by { branch { step(); solve(); solve(); } else {} step(); solve(); }";
+    let source = "verifying \"flag.c\"; int32 flag(int32 x) { requires x <= 0; ensures result == 0; } by { branch { true => { step(); solve(); solve(); } false => {} } step(); solve(); }";
     verify_c_sources(source, &c).unwrap();
     let sites = c_smart_tactic_source_sites(source, &c).unwrap();
     let positions = sites[..2]
@@ -2536,7 +3014,7 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
 }
 
 /// An invariant owes its side conditions as entry goals of their own beside
-/// its body: a quantified `viewable` invariant owes the extent bound too.
+/// its body: a quantified `viewable` invariant owes the span bound too.
 /// The closer's expansion states one `have` per owed goal, so that
 /// invariant is named twice. The script layout used to accept only one
 /// `have` per invariant, fell back to running the whole script against
@@ -2815,7 +3293,7 @@ theorem integer_forall_logical_solve() {
 theorem integer_exists_choose() {
     requires exists (z: Integer) { z == z };
     ensures chosen: exists (k: Integer) { k == k } by {
-        obtain (candidate: Integer) { candidate == candidate };
+        let candidate = obtain(exists (candidate: Integer) { candidate == candidate });
         witness(candidate);
         known();
     }
@@ -2841,7 +3319,7 @@ theorem integer_exists_choose() {
             // directly. The expanded claim must still verify below.
         } else {
             assert!(
-                expanded.contains("obtain (candidate: Integer) { candidate == candidate }"),
+                expanded.contains("let candidate = obtain(exists (candidate: Integer) { candidate == candidate });"),
                 "{label}: {expanded}"
             );
             assert!(
@@ -2867,9 +3345,9 @@ theorem guarded_integer_exists(value: int32) {
     ensures branched: exists (k: Integer) {
         k == to_integer(if value > 0 { value } else { value + 1 })
     } by {
-        obtain (candidate: Integer) {
+        let candidate = obtain(exists (candidate: Integer) {
             candidate == to_integer(if value > 0 { value } else { value + 1 })
-        };
+        });
         witness(candidate);
         known();
     }
@@ -2888,16 +3366,25 @@ theorem fixed_integer_witness(value: int32) {
     } by {
         witness(0);
         both {
-            both {
-                known();
-            } and {
-                known();
+            left => {
+                both {
+                    left => {
+                        known();
+                    }
+                    right => {
+                        known();
+                    }
+                }
             }
-        } and {
-            both {
-                normalize();
-            } and {
-                normalize();
+            right => {
+                both {
+                    left => {
+                        normalize();
+                    }
+                    right => {
+                        normalize();
+                    }
+                }
             }
         }
     }
@@ -3920,6 +4407,40 @@ fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
     assert!(expanded.contains("step(inner, {});"), "{expanded}");
 }
 
+#[test]
+#[ignore = "nightly: cold replay of two default call binding proofs"]
+fn bare_step_call_result_bindings_expand_and_replay() {
+    for (fixture, binding) in [
+        ("mdtests/c_static_function.md", "let { result: r } = step()"),
+        (
+            "mdtests/step_binds_call_result_with_default_resource.md",
+            "let { result: saved } = step()",
+        ),
+    ] {
+        let (source, owned_sources) = mdtest_sources(fixture);
+        let sources = crate::cli::source_refs(&owned_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "run.contract")
+            .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+        assert!(expanded.contains(binding), "{expanded}");
+        without_implicit_solve_for_claim("run.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    }
+
+    let (source, owned_sources) = mdtest_sources("mdtests/call_result_discarded.md");
+    let sources = crate::cli::source_refs(&owned_sources);
+    let source = source.replace("step(classify, { })", "step()");
+    let error = verify_c_sources(&source, &sources)
+        .expect_err("discarding a C call result leaves no value to bind");
+    assert!(
+        error.message().contains(
+            "requires a scalar assignment, a used call result, or a retained scalar value"
+        ),
+        "{error}"
+    );
+}
+
 /// The loop back edge needs both the current zero and the previous entry's
 /// one. The shared rewrite search must retain that entry when spelling its
 /// selected equality, including in a cold expanded proof.
@@ -4083,13 +4604,19 @@ int32 early(int32 x) {
     ensures result == 0 or result == 1;
 } by {
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     solve();
 }
@@ -4237,14 +4764,17 @@ theorem unsigned_compound(n: int32) {
     }
     let expanded = expand_c_claim_source_by_label(source, &[], "unsigned_compound.ensures_0")
         .expect("compound unsigned arithmetic should expand to a source certificate");
-    // `solve() using` tries arithmetic last, so a closer before it may
-    // prove the goal; either way the expansion is an explicit proof.
-    assert!(expanded.contains("normalize() using"), "{expanded}");
+    assert!(
+        expanded.contains("apply(click::integer::difference_le("),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
 
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_c_sources(&expanded, &[])
+        without_implicit_solve(|| verify_c_sources(&expanded, &[]))
     });
-    result.expect("expanded vector_grow should independently recheck");
+    result.expect("expanded compound bound should independently recheck");
     assert_eq!(
         planning, 0,
         "explicit certificate recheck must not plan: {expanded}"
@@ -5094,7 +5624,7 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
                 unfold(allocated_cell(owner));
                 // Declare both pointers, save the old cell, and allocate its replacement.
                 step(); step(); step(); step();
-                branch { step(); } else { }
+                branch { true => { step(); } false => { } }
                 step_until(function.exit);
                 fold(allocated_cell(owner));
                 solve();
@@ -5741,11 +6271,6 @@ fn post_execution_solve_builds_recursive_conjunction_on_proof() {
     )
     .expect("the retained conjunction should expand");
     assert!(!expanded.contains("solve();"), "{expanded}");
-    assert_eq!(
-        expanded.matches("arithmetic_certificate").count(),
-        0,
-        "{expanded}"
-    );
     assert!(expanded.contains("both {"), "{expanded}");
     verify_c_sources(&expanded, &[("first.c", c_source)])
         .expect("the retained conjunction should verify independently");
@@ -5820,11 +6345,6 @@ fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
     )
     .expect("the retained smart have should expand");
     assert!(!expanded.contains("by solve()"), "{expanded}");
-    assert_eq!(
-        expanded.matches("arithmetic_certificate").count(),
-        0,
-        "{expanded}"
-    );
     assert!(expanded.contains("both {"), "{expanded}");
     verify_c_sources(&expanded, &[("first.c", c_source)])
         .expect("the retained smart have should verify independently");
@@ -5884,7 +6404,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
             requires exists (k: int32) { k == x };
             ensures exists (j: int32) { j == result } by {
                 step_until(function.exit);
-                obtain (k: int32) { k == x };
+                let k = obtain(exists (k: int32) { k == x });
                 witness(k);
                 solve();
             }
@@ -5907,7 +6427,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
     )
     .expect("the retained choose/witness Proof should serialize");
     assert!(
-        expanded.contains("obtain (k: int32) { k == x };"),
+        expanded.contains("let k = obtain(exists (k: int32) { k == x });"),
         "{expanded}"
     );
     assert!(expanded.contains("witness(k);"), "{expanded}");
@@ -6578,11 +7098,14 @@ fn selected_pure_case_split_solve_expands_by_removal() {
                 ensures result >= 0;
             } by {
                 branch {
-                    step_until(function.exit);
-                    normalize();
-                } else {
-                    step_until(function.exit);
-                    normalize();
+                    true => {
+                        step_until(function.exit);
+                        normalize();
+                    }
+                    false => {
+                        step_until(function.exit);
+                        normalize();
+                    }
                 }
                 solve();
             }
@@ -6637,7 +7160,7 @@ fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
                 requires x <= 0;
                 ensures result == 0;
             } by {
-                branch { step(); solve(); } else {}
+                branch { true => { step(); solve(); } false => {} }
                 step();
                 solve();
             }
@@ -6664,7 +7187,10 @@ fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
     let expanded = expand_c_tactic_source_at(click_source, &sources, line, column)
         .expect("a smart tactic on a dropped C path should expand");
     assert!(!expanded.contains("step(); solve();"), "{expanded}");
-    assert!(expanded.contains("branch { step();"), "{expanded}");
+    assert!(
+        expanded.contains("branch { true => { step();"),
+        "{expanded}"
+    );
     verify_c_sources(&expanded, &sources)
         .expect("removing the dropped arm's closer should still verify");
 }
@@ -6889,14 +7415,14 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_branch_arm() {
         } by {\n\
         \x20   step();\n\
         \x20   step();\n\
-        \x20   branch {\n\
+        \x20   branch { true => {\n\
         \x20       have c != 0 by {\n\
         \x20           have c == c by solve();\n\
         \x20           solve();\n\
         \x20       }\n\
         \x20       step();\n\
         \x20       solve();\n\
-        \x20   } else {}\n\
+        \x20   } false => {} }\n\
         \x20   step();\n\
         \x20   step();\n\
         \x20   solve();\n\
@@ -7370,7 +7896,7 @@ fn post_execution_restricted_solve_checks_grouped_ownership_and_value_claims() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_35")]
-fn restricted_solve_expands_to_graph_normalization() {
+fn restricted_solve_expands_to_graph_known() {
     let click_source = r#"
             theorem equality_transitive(x: int32, y: int32, z: int32) {
                 requires x == y;
@@ -7402,16 +7928,16 @@ fn restricted_solve_expands_to_graph_normalization() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("restricted solve should expand");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    assert!(expanded.contains("x == y;"), "{expanded}");
-    assert!(expanded.contains("y == z;"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
-    verify_c_sources(&expanded, &[]).expect("explicit equality certificate should check");
+    without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+        .expect("expanded equality should check");
     for premise in ["requires x == y;", "requires y == z;"] {
         let missing = expanded.replace(premise, "");
         assert_ne!(missing, expanded);
-        assert!(verify_c_sources(&missing, &[]).is_err());
+        assert!(without_implicit_solve(|| verify_c_sources(&missing, &[])).is_err());
     }
 }
 
@@ -7552,17 +8078,18 @@ fn restricted_solve_after_unfold_expands_explicit_conjunction_extraction() {
         .expect("conjunction elimination should have an explicit expansion");
     assert!(expanded.contains("have x == y by"), "{expanded}");
     assert!(expanded.contains("have y == z by"), "{expanded}");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
-    verify_c_sources(&expanded, &[])
+    without_implicit_solve(|| verify_c_sources(&expanded, &[]))
         .expect("explicit conjunction-elimination certificate should check");
     // Delete the supporting equality itself: removing an extract step alone
     // leaves the true conjunction available in the checked context.
     for retained in ["x == y", "y == z"] {
         let missing = expanded.replace("x == y and y == z", retained);
         assert_ne!(missing, expanded);
-        assert!(verify_c_sources(&missing, &[]).is_err());
+        assert!(without_implicit_solve(|| verify_c_sources(&missing, &[])).is_err());
     }
 }
 
@@ -7594,7 +8121,6 @@ fn restricted_solve_expands_strict_order_to_nonstrict_arithmetic() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("strict-to-nonstrict solve should have an explicit certificate");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -7640,7 +8166,6 @@ fn post_execution_solve_applies_strict_order_rule() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("post-execution strict-order solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -7678,7 +8203,6 @@ fn restricted_solve_expands_negated_strict_order_to_greater_equal() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("negated strict-order solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -7724,7 +8248,6 @@ fn post_execution_solve_expands_successor_strict_increase() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("increment.c", c_source)], line, column)
             .expect("post-execution successor proof should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("increment.c", c_source)])
         .expect("expanded successor proof should check");
@@ -7761,7 +8284,6 @@ fn post_execution_solve_expands_increment_definedness() {
         position.column,
     )
     .expect("post-execution increment-definedness proof should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("increment.c", c_source)])
         .expect("expanded increment-definedness proof should check");
@@ -7810,7 +8332,6 @@ fn post_execution_solve_expands_increment_lower_bound() {
         column,
     )
     .expect("post-execution increment lower bound should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("increment_nonnegative.c", c_source)])
         .expect("expanded increment lower-bound proof should check");
@@ -7856,7 +8377,6 @@ fn post_execution_solve_expands_order_equality_closure() {
         column,
     )
     .expect("post-execution order equality should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -7895,7 +8415,6 @@ fn restricted_solve_expands_nonstrict_unequal_order() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("nonstrict unequal order should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -7945,7 +8464,6 @@ fn post_execution_solve_expands_increment_upper_bound() {
         column,
     )
     .expect("post-execution increment upper bound should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("increment_below.c", c_source)])
         .expect("expanded increment upper-bound proof should check");
@@ -7987,7 +8505,6 @@ fn post_execution_solve_expands_strict_transitivity() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("return_first.c", c_source)], line, column)
             .expect("post-execution strict transitivity should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -8033,7 +8550,6 @@ fn post_execution_solve_expands_greater_equal_transitivity() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("return_last.c", c_source)], line, column)
             .expect("post-execution non-strict transitivity should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -8083,7 +8599,6 @@ fn post_execution_solve_expands_greater_equal_increment_bound() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("increment_ge.c", c_source)], line, column)
             .expect("post-execution greater-equal increment bound should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("increment_ge.c", c_source)])
         .expect("expanded greater-equal increment proof should check");
@@ -8129,7 +8644,6 @@ fn post_execution_solve_expands_strict_greater_increment_bound() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("increment_gt.c", c_source)], line, column)
             .expect("post-execution strict-greater increment bound should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("increment_gt.c", c_source)])
         .expect("expanded strict-greater increment proof should check");
@@ -8174,7 +8688,6 @@ fn post_execution_solve_expands_greater_order_equality() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("identity_zero.c", c_source)], line, column)
             .expect("post-execution greater-order equality should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -8228,7 +8741,6 @@ fn post_execution_solve_composes_negated_successor_bound() {
     // The negated bound is the kernel's condition with the other value, so
     // the successor bound is an available fact and the chain needs only the
     // transitive step.
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -8269,7 +8781,6 @@ fn restricted_solve_composes_negated_successor_bound() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("restricted successor lower bound should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -8324,7 +8835,6 @@ fn post_execution_solve_unfolds_predicate_goal_explicitly() {
         expand_c_tactic_source_at(click_source, &[("compare_swap2.c", c_source)], line, column);
     let expanded = expanded.expect("post-execution predicate goal should expand");
     assert!(expanded.contains("unfold(sorted_pair("), "{expanded}");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -8408,7 +8918,6 @@ fn restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("increment upper-bound solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
@@ -8418,7 +8927,7 @@ fn restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_41")]
-fn restricted_solve_expands_positive_to_nonnegative_arithmetic_certificate() {
+fn restricted_solve_expands_positive_to_nonnegative_arithmetic_steps() {
     let click_source = r#"
         theorem positive_is_nonnegative(value: int32) {
             requires 0 < value;
@@ -8446,7 +8955,6 @@ fn restricted_solve_expands_positive_to_nonnegative_arithmetic_certificate() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("positive-to-nonnegative solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -8488,7 +8996,6 @@ fn restricted_solve_expands_positive_predecessor_to_ordinary_arithmetic() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("positive-predecessor solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
@@ -8526,7 +9033,6 @@ fn restricted_solve_expands_positive_predecessor_decrease_to_ordinary_arithmetic
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("positive-predecessor decrease solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
@@ -8555,7 +9061,6 @@ fn restricted_solve_expands_predecessor_upper_bound_to_ordinary_arithmetic() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("predecessor upper-bound solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 <= value;"), "{expanded}");
     assert!(expanded.contains("value <= bound;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
@@ -8583,8 +9088,6 @@ fn restricted_solve_retains_nested_one_le_predecessor_nonnegative_proof() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("one-le predecessor proof should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded nested predecessor proof should check");
@@ -8609,8 +9112,6 @@ fn restricted_solve_retains_nested_one_le_predecessor_decrease_proof() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("one-le predecessor-decrease proof should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded)
@@ -8637,11 +9138,11 @@ fn restricted_solve_retains_equal_one_predecessor_path() {
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("equal-one predecessor proof should expand");
     assert!(expanded.contains("1 == value"), "{expanded}");
-    assert!(expanded.contains("normalize()"), "{expanded}");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
-    verify_click_theorems(&expanded).expect("expanded equal-one predecessor proof should check");
+    without_implicit_solve(|| verify_click_theorems(&expanded))
+        .expect("expanded equal-one predecessor proof should check");
 }
 
 #[test]
@@ -8663,13 +9164,13 @@ fn restricted_solve_retains_equal_one_predecessor_zero_path() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("equal-one predecessor-zero proof should expand");
-    // Shared class folding closes this with the selected premise directly;
-    // an intermediate rewrite is no longer required.
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    assert!(expanded.contains("normalize()"), "{expanded}");
+    // The selected equality lets the graph close the goal directly.
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
-    verify_click_theorems(&expanded).expect("expanded predecessor-zero proof should check");
+    without_implicit_solve(|| verify_click_theorems(&expanded))
+        .expect("expanded predecessor-zero proof should check");
 }
 
 #[test]
@@ -8702,7 +9203,6 @@ fn restricted_solve_expands_strict_increment_to_ordinary_arithmetic() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("strict increment should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -8726,7 +9226,6 @@ fn solve_expands_increment_definedness_to_ordinary_arithmetic() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("increment-definedness solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < 2147483647;"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -8769,7 +9268,6 @@ fn restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("increment lower-bound solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("lower <= value;"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
@@ -8814,7 +9312,6 @@ fn restricted_solve_expands_increment_order_to_ordinary_arithmetic() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("increment order solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("lower <= value;"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
@@ -8865,7 +9362,6 @@ fn restricted_solve_rewrites_a_named_successor_before_increment_order() {
         column,
     )
     .expect("named successor order should lower to an explicit rewrite and increment rule");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("at(function.entry, value)"), "{expanded}");
     assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c_sources(&expanded, &[("named_successor.c", c_source)])
@@ -8986,7 +9482,6 @@ fn restricted_solve_expands_adjacent_order_to_ordinary_arithmetic() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("adjacent order solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -9033,7 +9528,6 @@ fn smart_solve_transcribes_a_three_edge_signed_order_path() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the retained three-edge order path should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -9084,7 +9578,7 @@ fn smart_solve_transcribes_a_three_edge_bitvector_equality_path() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_45")]
-fn smart_solve_retains_both_signed_equality_rules_as_arithmetic_certificates() {
+fn smart_solve_retains_both_signed_equality_rules_as_arithmetic_steps() {
     let click_source = r#"
         theorem le_and_not_lt_are_equal(left: int32, right: int32) {
             requires left <= right;
@@ -9119,7 +9613,6 @@ fn smart_solve_retains_both_signed_equality_rules_as_arithmetic_certificates() {
         + 1;
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the retained equality theorem should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -9140,7 +9633,6 @@ fn smart_solve_retains_both_signed_equality_rules_as_arithmetic_certificates() {
         + 1;
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the retained >=/not-> equality theorem should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -9221,7 +9713,6 @@ fn outcome_solve_closes_its_recorded_order_path_by_arithmetic() {
         position.column,
     )
     .expect("the retained outcome theorem path should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -9261,7 +9752,6 @@ fn restricted_solve_expands_constant_order_weakening_to_ordinary_arithmetic() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("constant order weakening solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -9292,7 +9782,6 @@ fn restricted_solve_expands_constant_strict_upper_bound_to_ordinary_arithmetic()
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("constant strict upper-bound solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
@@ -9322,8 +9811,6 @@ fn restricted_solve_retains_increment_under_a_larger_constant() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("increment constant-bound solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value <= 3;"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded increment constant-bound proof should check");
@@ -9386,7 +9873,6 @@ fn restricted_solve_retains_symbolic_subtract_definedness_by_integer_bounds() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("symbolic-subtract definedness solve should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("amount >= 0;"), "{expanded}");
     assert!(expanded.contains("value >= amount;"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
@@ -9407,8 +9893,7 @@ fn restricted_solve_retains_one_plus_operand_specific_certificates() {
                     }
                 }
             "#,
-            "one_plus_is_defined.ensures_0",
-            "arithmetic_certificate",
+            Some("apply(click::integer::int32_increment_below_max_is_defined("),
         ),
         (
             r#"
@@ -9419,22 +9904,24 @@ fn restricted_solve_retains_one_plus_operand_specific_certificates() {
                     }
                 }
             "#,
-            "one_plus_increases.ensures_0",
-            "arithmetic_certificate",
+            None,
         ),
     ];
-    for (click_source, _, application) in cases {
+    for (click_source, application) in cases {
         let verified = verify_click_theorems(click_source);
         verified.expect("the operand-order-specific one-plus rule should verify through Proof");
         let offset = click_source.find("solve() using").unwrap();
         let position = expansion::position_at_offset(click_source, offset);
         let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
             .expect("one-plus solve should expand");
-        assert!(!expanded.contains(application), "{expanded}");
-        assert!(expanded.contains("normalize()"), "{expanded}");
+        if let Some(application) = application {
+            assert!(expanded.contains(application), "{expanded}");
+        }
+        assert!(!expanded.contains("normalize("), "{expanded}");
         assert!(expanded.contains("2147483647 > value;"), "{expanded}");
         assert!(!expanded.contains("solve() using"), "{expanded}");
-        verify_click_theorems(&expanded).expect("expanded one-plus proof should check");
+        without_implicit_solve(|| verify_click_theorems(&expanded))
+            .expect("expanded one-plus proof should check");
     }
 }
 
@@ -9486,7 +9973,7 @@ fn restricted_solve_composes_equalities_with_adjacent_order() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_48")]
-fn restricted_solve_inside_have_expands_to_graph_normalization() {
+fn restricted_solve_inside_have_expands_to_graph_known() {
     let c_source = r#"
             int32 identity(int32 x, int32 y, int32 z) {
                 return x;
@@ -9532,12 +10019,8 @@ fn restricted_solve_inside_have_expands_to_graph_normalization() {
             .expect("restricted solve have should expand");
     let expanded_have = &expanded[expanded.find("have x == z").unwrap()
         ..expanded.find("step_until(function.exit);").unwrap()];
-    assert!(expanded_have.contains("x == y;"), "{expanded_have}");
-    assert!(
-        expanded_have.contains("normalize() using"),
-        "{expanded_have}"
-    );
-    assert!(expanded_have.contains("y == z;"), "{expanded_have}");
+    assert!(expanded_have.contains("known();"), "{expanded_have}");
+    assert!(!expanded_have.contains("normalize("), "{expanded_have}");
     assert!(!expanded_have.contains("solve() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
@@ -9774,13 +10257,10 @@ fn post_execution_restricted_solve_expands_without_derive() {
     let sources = [("identity.c", c_source)];
     verify_c_sources(click_source, &sources).expect("restricted solve should verify");
     let expanded = expand_c_tactic_source_at(click_source, &sources, line, column).unwrap();
-    let selected = &expanded[offset..];
-    assert!(selected.contains("normalize() using"), "{selected}");
-    assert!(
-        selected.contains("to_integer((x + 1)) == to_integer(y);"),
-        "{selected}"
-    );
-    assert!(selected.contains("y == z;"), "{selected}");
+    let selected = &expanded[offset..expanded.rfind("solve();").unwrap()];
+    assert!(selected.contains("known();"), "{selected}");
+    assert!(!selected.contains("normalize("), "{selected}");
+    assert!(!selected.contains("solve("), "{selected}");
     assert!(!selected.contains("derive using"), "{selected}");
     verify_c_sources(&expanded, &sources).expect("explicit post-execution proof should check");
     for premise in [
@@ -11016,19 +11496,22 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
             branch ensuring {
                 fact value == old(p[0]) or value == 0;
                 owns cell(p);
-            } then {
-                open(cell(p)) {
-                    step();
-                    have value == old(p[0]) or value == 0 by {
-                        have value == old(p[0]) by { normalize(); }
-                        known();
+            } {
+                true => {
+                    open(cell(p)) {
+                        step();
+                        have value == old(p[0]) or value == 0 by {
+                            have value == old(p[0]) by { normalize(); }
+                            known();
+                        }
                     }
                 }
-            } else {
-                step();
-                have value == old(p[0]) or value == 0 by {
-                    have value == 0 by { normalize(); }
-                    known();
+                false => {
+                    step();
+                    have value == old(p[0]) or value == 0 by {
+                        have value == 0 by { normalize(); }
+                        known();
+                    }
                 }
             }
             step();
@@ -11119,19 +11602,22 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
                     branch ensuring {
                         fact value == old(p[0]) or value == 0;
                         views p[0..1];
-                    } then {
-                        open(marker(flag)) {
-                            step();
-                            have value == old(p[0]) or value == 0 by {
-                                have value == old(p[0]) by { normalize(); }
-                                known();
+                    } {
+                        true => {
+                            open(marker(flag)) {
+                                step();
+                                have value == old(p[0]) or value == 0 by {
+                                    have value == old(p[0]) by { normalize(); }
+                                    known();
+                                }
                             }
                         }
-                    } else {
-                        step();
-                        have value == old(p[0]) or value == 0 by {
-                            have value == 0 by { normalize(); }
-                            known();
+                        false => {
+                            step();
+                            have value == old(p[0]) or value == 0 by {
+                                have value == 0 by { normalize(); }
+                                known();
+                            }
                         }
                     }
                 }
@@ -11212,16 +11698,19 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
             ensures result == x or result == 0;
         } by {
             branch {
-                if x >= 0 {
-                    step_until(function.exit);
-                    solve();
-                } else {
+                true => {
+                    if x >= 0 {
+                        step_until(function.exit);
+                        solve();
+                    } else {
+                        step_until(function.exit);
+                        solve();
+                    }
+                }
+                false => {
                     step_until(function.exit);
                     solve();
                 }
-            } else {
-                step_until(function.exit);
-                solve();
             }
         }
     "#;
@@ -11238,7 +11727,7 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
     assert!(
         matches!(
             tactics.first(),
-            Some(ProofTactic::If(outer))
+            Some(ProofTactic::Branch(outer))
                 if outer.then_tactics.iter().any(|tactic| matches!(
                     tactic,
                     ProofTactic::If(inner) if inner.condition == ClickProposition::Comparison {
@@ -11323,7 +11812,10 @@ fn branch_interface_retains_its_checked_abstract_join() {
         } by {
             branch ensuring {
                 fact x >= 0;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step();
             solve();
         }
@@ -11399,7 +11891,10 @@ fn branch_interface_retains_exact_unchanged_ownership() {
             branch ensuring {
                 fact y >= 0;
                 owns marker(x);
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step();
             solve();
         }
@@ -11466,7 +11961,10 @@ fn branch_interface_normalizes_an_entailed_owned_quantity_on_proof() {
             branch ensuring {
                 fact y >= 0;
                 owns marker(x);
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step();
             solve();
         }
@@ -11546,12 +12044,15 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
             step();
             branch ensuring {
                 fact lower <= upper;
-            } then {
-                step();
-                apply(ordered_is_less_equal(lower, upper));
-            } else {
-                step();
-                apply(ordered_is_less_equal(lower, upper));
+            } {
+                true => {
+                    step();
+                    apply(ordered_is_less_equal(lower, upper));
+                }
+                false => {
+                    step();
+                    apply(ordered_is_less_equal(lower, upper));
+                }
             }
             step();
             solve();
@@ -11621,7 +12122,10 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
             step();
             branch ensuring {
                 fact lower < upper;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             apply(ordered_is_less_equal(lower, upper));
             step();
             solve();
@@ -11694,7 +12198,10 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
             step();
             branch ensuring {
                 fact old(lower) < old(upper);
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             transport(old(lower) < old(upper), lower < upper);
             step();
             solve();
@@ -11775,7 +12282,10 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             branch ensuring {
                 fact selected > 0;
                 fact selected < 2147483647;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             have selected >= 0 by {
                 apply(positive_is_nonnegative(selected));
             }
@@ -11869,7 +12379,10 @@ fn branch_join_retains_linear_execute_on_its_common_successor() {
             branch ensuring {
                 fact selected > 0;
                 fact selected < 2147483647;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step_until(function.exit);
             solve();
         }
@@ -11943,7 +12456,10 @@ fn incremented_strict_lower_bound_retains_its_arithmetic_path() {
             branch ensuring {
                 fact selected > 0;
                 fact selected < 2147483647;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step_until(function.exit);
             solve();
         }
@@ -11962,8 +12478,6 @@ fn incremented_strict_lower_bound_retains_its_arithmetic_path() {
         ContractProofClaim::Grouped,
     )
     .expect("the strict-positive increment proof should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_c_sources(&expanded, &[("select_and_increment_positive.c", c_source)])
         .expect("the retained strict-positive theorem path should independently reverify");
 }
@@ -11993,7 +12507,10 @@ fn post_execution_have_anchors_strict_increment_arithmetic_premises() {
             branch ensuring {
                 fact selected > 0;
                 fact selected < 2147483647;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step_until(function.exit);
             have result > 0 by solve();
             solve();
@@ -12021,8 +12538,6 @@ fn post_execution_have_anchors_strict_increment_arithmetic_premises() {
         !expanded.contains("have result > 0 by solve()"),
         "{expanded}"
     );
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_c_sources(
         &expanded,
         &[("select_and_increment_positive_have.c", c_source)],
@@ -12059,12 +12574,15 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
             branch ensuring {
                 fact p[0] == 7;
                 owns p[0..2];
-            } then {
-                step();
-                transport(old(p[0]) == 7, p[0] == 7);
-            } else {
-                step();
-                transport(old(p[0]) == 7, p[0] == 7);
+            } {
+                true => {
+                    step();
+                    transport(old(p[0]) == 7, p[0] == 7);
+                }
+                false => {
+                    step();
+                    transport(old(p[0]) == 7, p[0] == 7);
+                }
             }
             step();
             solve();
@@ -12133,15 +12651,18 @@ fn branch_arms_retain_nested_have_proofs() {
             step();
             branch ensuring {
                 fact selected >= 0;
-            } then {
-                step();
-                have selected == selected by {
-                    apply(int32_reflexive(selected));
+            } {
+                true => {
+                    step();
+                    have selected == selected by {
+                        apply(int32_reflexive(selected));
+                    }
                 }
-            } else {
-                step();
-                have selected == selected by {
-                    apply(int32_reflexive(selected));
+                false => {
+                    step();
+                    have selected == selected by {
+                        apply(int32_reflexive(selected));
+                    }
                 }
             }
             step();
@@ -12208,9 +12729,12 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
             ensures result == 1 or result == 2;
         } by {
             branch {
-                step_until(function.exit);
-            } else {
-                step_until(function.exit);
+                true => {
+                    step_until(function.exit);
+                }
+                false => {
+                    step_until(function.exit);
+                }
             }
             solve();
         }
@@ -12221,13 +12745,16 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked terminal arms should retain an expansion");
-    let Some(ProofTactic::If(proof_if)) = tactics.first() else {
-        panic!("terminal execution branch should retain a logical if: {tactics:#?}");
+    let Some(ProofTactic::Branch(branch)) = tactics.first() else {
+        panic!("terminal execution should retain its C branch: {tactics:#?}");
     };
-    for arm in [&proof_if.then_tactics, &proof_if.else_tactics] {
-        assert!(
-            matches!(arm.get(..2), Some([ProofTactic::Step, ProofTactic::Step])),
-            "each terminal arm should begin with its checked entry and return steps: {arm:#?}"
+    for arm in [&branch.then_tactics, &branch.else_tactics] {
+        assert_eq!(
+            arm.iter()
+                .filter(|tactic| matches!(tactic, ProofTactic::Step))
+                .count(),
+            1,
+            "each terminal arm should retain only its checked return step: {arm:#?}"
         );
         assert!(
             arm.iter()
@@ -12611,7 +13138,10 @@ fn decided_branch_interface_retains_the_surviving_checked_state() {
         } by {
             branch ensuring {
                 fact x == 1;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step();
             solve();
         }
@@ -12670,7 +13200,10 @@ fn open_scope_retains_its_checked_branch_interface() {
             open(marker(x)) {
                 branch ensuring {
                     fact x >= 0;
-                } then { step(); } else { step(); }
+                } {
+                    true => { step(); }
+                    false => { step(); }
+                }
                 step();
             }
             solve();
@@ -12737,7 +13270,10 @@ fn open_scope_retains_its_checked_execution_branch() {
         } by {
             open(marker(x)) {
                 branch {
-                } else {
+                    true => {
+                    }
+                    false => {
+                    }
                 }
                 step();
             }
@@ -12804,7 +13340,7 @@ fn open_scope_retains_a_decided_execution_branch_and_its_continuation() {
             ensures result == 1;
         } by {
             open(marker(x)) {
-                branch { step(); } else { step(); }
+                branch { true => { step(); } false => { step(); } }
                 step();
             }
             solve();
@@ -12914,20 +13450,21 @@ fn automatic_terminal_branch_retains_its_checked_proof_outcomes() {
     let expanded = verified[0]
         .expanded_proof_tactics()
         .expect("terminal branch should retain an expansion");
-    let Some(ProofTactic::If(proof_if)) = expanded.first() else {
-        panic!("terminal branch should expand as a logical if: {expanded:#?}");
+    let Some(ProofTactic::Branch(branch)) = expanded.first() else {
+        panic!("terminal C split should expand as a branch: {expanded:#?}");
     };
     for (name, arm) in [
-        ("then", &proof_if.then_tactics),
-        ("else", &proof_if.else_tactics),
+        ("true", &branch.then_tactics),
+        ("false", &branch.else_tactics),
     ] {
         assert!(
-            matches!(arm.first(), Some(ProofTactic::Step)),
-            "{name} arm should retain its checked C-branch entry step: {arm:#?}"
-        );
-        assert!(
-            matches!(arm.get(1), Some(ProofTactic::Step)),
-            "{name} arm should retain its checked return step: {arm:#?}"
+            matches!(arm.first(), Some(ProofTactic::Step))
+                && arm
+                    .iter()
+                    .filter(|tactic| matches!(tactic, ProofTactic::Step))
+                    .count()
+                    == 1,
+            "{name} arm should retain only its checked return step: {arm:#?}"
         );
         assert!(
             arm.iter().all(|tactic| !matches!(
@@ -12940,8 +13477,11 @@ fn automatic_terminal_branch_retains_its_checked_proof_outcomes() {
     let expanded_source =
         expand_function_proof_source(click_source, &[("choose.c", c_source)], "choose")
             .expect("terminal branch should expand into source");
-    verify_c_sources(&expanded_source, &[("choose.c", c_source)])
-        .expect("the retained terminal branch should independently reverify");
+    without_implicit_solve_for_claim("choose.ensures_0", || {
+        verify_c_sources(&expanded_source, &[("choose.c", c_source)])
+            .map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded_source}"));
 }
 
 #[test]
@@ -12970,7 +13510,7 @@ fn fixed_state_smart_have_retains_a_checked_simple_closer() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_59")]
-fn fixed_state_smart_have_retains_a_checked_arithmetic_certificate() {
+fn fixed_state_smart_have_retains_checked_arithmetic_steps() {
     let c_source = r#"
             int32 first(int32 x, int32 y, int32 z) {
                 return x;
@@ -13001,7 +13541,6 @@ fn fixed_state_smart_have_retains_a_checked_arithmetic_certificate() {
     .expect("the theorem-backed have should expand into proof steps");
     assert!(!expanded.contains("have x < z by solve()"), "{expanded}");
     assert!(expanded.contains("have x < z by {"), "{expanded}");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
     verify_c_sources(&expanded, &[("first.c", c_source)])
         .expect("the retained theorem-backed have should independently reverify");
@@ -13458,22 +13997,25 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                     branch ensuring {
                         fact p[j] <= p[j + 1];
                         fact all_le_range(p, 0, j, p[j + 1]);
-                    } then {
-                        step();
-                        step();
-                        step();
-                        have defined(j + 1) by { solve(); }
-                        have p[j] <= p[j + 1] by { solve(); }
-                        have all_le_range(p, 0, j, p[j + 1]) by {
-                            unfold(all_le_range(p, 0, j, p[j + 1]));
-                            solve();
+                    } {
+                        true => {
+                            step();
+                            step();
+                            step();
+                            have defined(j + 1) by { solve(); }
+                            have p[j] <= p[j + 1] by { solve(); }
+                            have all_le_range(p, 0, j, p[j + 1]) by {
+                                unfold(all_le_range(p, 0, j, p[j + 1]));
+                                solve();
+                            }
                         }
-                    } else {
-                        have defined(j + 1) by { solve(); }
-                        have p[j] <= p[j + 1] by { solve(); }
-                        have all_le_range(p, 0, j, p[j + 1]) by {
-                            unfold(all_le_range(p, 0, j, p[j + 1]));
-                            solve();
+                        false => {
+                            have defined(j + 1) by { solve(); }
+                            have p[j] <= p[j + 1] by { solve(); }
+                            have all_le_range(p, 0, j, p[j + 1]) by {
+                                unfold(all_le_range(p, 0, j, p[j + 1]));
+                                solve();
+                            }
                         }
                     }
                     step();
@@ -13536,7 +14078,7 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
     if filename == "bubble_sort3_two_pass_sorted.md" {
         assert!(!expanded.contains("transport("), "{expanded}");
     }
-    // The bound may be discharged by an arithmetic certificate rather than
+    // The bound may be discharged by an arithmetic step rather than
     // a named theorem. Cold rechecking must retain the explicit proof and
     // must not recover it through implicit outcome planning.
     let (checked, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
@@ -13832,7 +14374,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
 // Compare both surrounding byte ranges so scoped checking cannot silently
 // omit a rewrite to a helper, contract, import, or another declaration.
 pub(super) fn only_function_proof_changed(before: &str, after: &str, function: &str) -> bool {
-    let extent = |text: &str| {
+    let text_span = |text: &str| {
         let signature = format!(" {function}(");
         assert_eq!(
             text.matches(&signature).count(),
@@ -13848,10 +14390,10 @@ pub(super) fn only_function_proof_changed(before: &str, after: &str, function: &
         let end = body + text[body..].find("\n}")? + "\n}".len();
         Some((body, end))
     };
-    let Some((before_start, before_end)) = extent(before) else {
+    let Some((before_start, before_end)) = text_span(before) else {
         return false;
     };
-    let Some((after_start, after_end)) = extent(after) else {
+    let Some((after_start, after_end)) = text_span(after) else {
         return false;
     };
     before[..before_start] == after[..after_start] && before[before_end..] == after[after_end..]
@@ -14254,10 +14796,10 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
 
         let expanded = expand_c_claim_source(click_source, &c_sources, function, claim)
             .unwrap_or_else(|error| panic!("failed to expand `{}`: {error:?}", path.display()));
-        // The selected outcome step is the one `have` closed by an explicit
-        // arithmetic certificate over the state-anchored premises the
-        // branch exported.
-        let retained = arithmetic_certificate_have_blocks(&expanded);
+        // The selected outcome step is the one `have` whose arithmetic steps
+        // cite, as listed premises, the state-anchored facts the branch
+        // exported.
+        let retained = anchored_arithmetic_have_blocks(&expanded);
         let [retained] = retained.as_slice() else {
             panic!("expected one retained arithmetic step, found {retained:?}:\n{expanded}");
         };
@@ -14265,10 +14807,8 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
         assert!(
             lines[retained.clone()].iter().any(|line| {
                 line.trim_start()
-                    .strip_prefix("premise 0: ")
-                    .is_some_and(|premise| {
-                        premise.trim_start_matches('(').starts_with("at(region(")
-                    })
+                    .trim_start_matches('(')
+                    .starts_with("at(region(")
             }),
             "the retained step does not cite the anchored branch premises:\n{expanded}"
         );
@@ -14294,30 +14834,35 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
     }
 }
 
-/// The line ranges of each `have ... by {` block whose proof is one explicit
-/// `arithmetic_certificate`, ending at the line that closes the block.
-fn arithmetic_certificate_have_blocks(source: &str) -> Vec<std::ops::Range<usize>> {
+/// The line ranges of each outermost `have ... by {` block that cites a
+/// premise read at a recorded program point (`at(region(..`), ending at the
+/// line that closes the block.
+fn anchored_arithmetic_have_blocks(source: &str) -> Vec<std::ops::Range<usize>> {
     let lines = source.lines().collect::<Vec<_>>();
     let mut blocks = Vec::new();
-    for (start, line) in lines.iter().enumerate() {
-        let trimmed = line.trim_start();
+    let mut start = 0;
+    while start < lines.len() {
+        let trimmed = lines[start].trim_start();
         if !(trimmed.starts_with("have ") && trimmed.ends_with(" by {")) {
-            continue;
-        }
-        if !lines
-            .get(start + 1)
-            .is_some_and(|next| next.trim_start().starts_with("arithmetic_certificate"))
-        {
+            start += 1;
             continue;
         }
         let mut depth = 0_isize;
-        for (end, line) in lines.iter().enumerate().skip(start) {
+        let mut end = start;
+        for (index, line) in lines.iter().enumerate().skip(start) {
             depth += line.matches('{').count() as isize - line.matches('}').count() as isize;
             if depth == 0 {
-                blocks.push(start..end + 1);
+                end = index;
                 break;
             }
         }
+        if lines[start..=end]
+            .iter()
+            .any(|line| line.contains("at(region("))
+        {
+            blocks.push(start..end + 1);
+        }
+        start = end + 1;
     }
     blocks
 }
@@ -15513,9 +16058,9 @@ fn qualified_static_struct_startup_and_expansion() {
     let parsed = super::super::verification::parse_verified_sources(&file, &map).unwrap();
     let state = parsed["main"].1.program_entry_state.as_ref().unwrap();
     assert_eq!(
-        state
-            .memory()
-            .load(&Memory::global_pointer("state#file-static:counter.c")),
+        state.memory().load(&SymbolicMemory::global_pointer(
+            "state#file-static:counter.c"
+        )),
         ExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
     );
     let verified_for_expansion = verify_c_sources(source, &sources).unwrap();
@@ -15904,7 +16449,6 @@ fn pure_folded_constant_successor_solve_expands_to_successor_bound() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the folded constant successor solve should have an explicit certificate");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
     assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded constant successor proof should check");
@@ -15973,7 +16517,7 @@ fn unfolded_conjunction_have_solve_expands_and_rechecks() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_68")]
-fn outcome_predecessor_bound_solve_expands_to_an_arithmetic_certificate() {
+fn outcome_predecessor_bound_solve_expands_to_arithmetic_steps() {
     let c_source = r#"
             struct pair {
                 int32 low;
@@ -16014,7 +16558,6 @@ fn outcome_predecessor_bound_solve_expands_to_an_arithmetic_certificate() {
     )
     .expect("the predecessor bound solve should expand to the named rule");
     assert!(expanded.contains("both {"), "{expanded}");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
     assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c_sources(&expanded, &[("drop_one.c", c_source)]).unwrap_or_else(|error| {
@@ -17080,6 +17623,42 @@ fn local_job_views_expand_and_reverify_without_ownership_annotations() {
 }
 
 #[test]
+#[ignore = "nightly: two-hop loop frame verification, expansion and cold replay"]
+fn two_hop_loop_frame_expands_and_cold_replays() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_frame_keeps_a_two_hop_map_beside_a_written_array.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    with_proof_trace("clear_data", || {
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+    assert!(!source.contains("transport("), "{source}");
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "clear_data.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve("), "{expanded}");
+    without_implicit_solve_for_claim("clear_data.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // Writing the framed map instead of the owned data array must be refused.
+    let bad_c = sources[0]
+        .1
+        .replace("arena->data[i] = 0;", "arena->occupied[i] = 0;");
+    assert_ne!(bad_c, sources[0].1);
+    assert!(verify_c_sources(&source, &[(sources[0].0, bad_c.as_str())]).is_err());
+}
+
+#[test]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn an_unfold_bound_scalar_field_expands_and_reverifies() {
     // `let { prefix: p } = unfold(before)` names the folded field value that
@@ -17148,12 +17727,78 @@ fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
         !expanded.contains("solve();"),
         "every smart site should be replaced: {expanded}"
     );
-    verify_c_sources(&expanded, &sources)
-        .unwrap_or_else(|error| panic!("the expansion should reverify: {error:?}\n{expanded}"));
+    assert!(
+        !expanded.contains("normalize() using {};"),
+        "intrinsic ranges at the loop entry should expand to known: {expanded}"
+    );
+    without_implicit_solve_for_claim("count_zero_run.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| format!("{error:?}"))
+    })
+    .unwrap_or_else(|error| panic!("the expansion should reverify: {error:?}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: expands and replays an entire loop contract"]
+fn retained_int32_addition_expands_with_ordinary_bounds() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "mdtests/a_byte_field_of_a_struct_array_element_in_a_loop_is_bounded_by_its_index.md",
+    );
+    let source = std::fs::read_to_string(&path).unwrap();
+    let mdtest = crate::cli::parse_mdtest(&path, &source).unwrap();
+    let sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let claim = "fill_items.contract";
+    let expanded =
+        expand_c_claim_source_by_label(mdtest.click_source.as_deref().unwrap(), &sources, claim)
+            .unwrap();
+    let mut bounds = expanded
+        .lines()
+        .zip(expanded.lines().skip(1))
+        .filter(|(line, _)| {
+            let line = line.trim_start();
+            (line.starts_with("have -2147483648 <= to_integer((at(")
+                && line.ends_with(", i) as int32)) by {"))
+                || (line.starts_with("have to_integer((at(")
+                    && line.ends_with(", i) as int32)) <= 2147483647 by {"))
+        })
+        .peekable();
+    assert!(bounds.peek().is_some(), "{expanded}");
+    for (bound, tactic) in bounds {
+        assert_eq!(tactic.trim(), "known();", "{bound}\n{tactic}\n{expanded}");
+    }
+    let increment = " + to_integer((1 as int32)))";
+    let mut sum_bounds = 0;
+    let mut identities = 0;
+    for (goal, tactic) in expanded.lines().zip(expanded.lines().skip(1)) {
+        let goal = goal.trim_start();
+        if !goal.starts_with("have ") || !goal.contains(increment) {
+            continue;
+        }
+        if goal.starts_with("have -2147483648 <= ") || goal.ends_with("<= 2147483647 by {") {
+            sum_bounds += 1;
+            assert!(
+                !tactic.contains("normalize("),
+                "{goal}\n{tactic}\n{expanded}"
+            );
+        } else if goal.starts_with("have to_integer(((at(")
+            && goal.contains(", i) + 1) as int32)) == ")
+        {
+            identities += 1;
+            assert_eq!(tactic.trim(), "known();", "{goal}\n{tactic}\n{expanded}");
+        }
+    }
+    assert!(sum_bounds >= 2 && identities > 0, "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| format!("{error:?}"))
+    })
+    .unwrap();
 }
 
 /// Expands every smart site of one claim in an iterated-ownership fixture and
-/// reverifies the result, checking that the explicit `take`/`give` steps
+/// reverifies the result, checking that the indexed `unfold` and `fold` steps
 /// survive expansion as written.
 fn expand_iterated_ownership_claim(fixture: &str, claim: &str, kept: &[&str]) {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(fixture);
@@ -17189,12 +17834,12 @@ fn expand_iterated_ownership_claim(fixture: &str, claim: &str, kept: &[&str]) {
 #[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn the_iterated_ownership_allocation_protocol_expands_and_reverifies() {
-    // `take` is a simple step: the expansion prints it unchanged, and the
+    // Indexed `unfold` is a simple step: the expansion prints it unchanged, and the
     // closers around it become explicit steps that verify on their own.
     expand_iterated_ownership_claim(
         "mdtests/iterated_ownership_allocate_one.md",
         "claim.contract",
-        &["take(data[index..(index + 1)]);"],
+        &["unfold(arena_cells(data, occupied, capacity)[index]);"],
     );
 }
 
@@ -17206,7 +17851,7 @@ fn the_iterated_ownership_claim_loop_expands_and_reverifies() {
     expand_iterated_ownership_claim(
         "mdtests/iterated_ownership_claim_loop.md",
         "claim_run.contract",
-        &["take(data[i..(i + 1)]);"],
+        &["unfold(arena_window(data, occupied, capacity, start, end)[i]);"],
     );
 }
 
@@ -17216,7 +17861,7 @@ fn the_iterated_ownership_release_loop_expands_and_reverifies() {
     expand_iterated_ownership_claim(
         "mdtests/iterated_ownership_release_loop.md",
         "release_run.contract",
-        &["give(data[i..(i + 1)]);"],
+        &["fold(arena_window(data, occupied, capacity, start, end)[i]);"],
     );
 }
 
@@ -18165,6 +18810,50 @@ fn throwing_call_forks_expand_and_reverify_in_every_position() {
 }
 
 #[test]
+#[ignore = "nightly: live and exit-time call payload expansion and replay"]
+fn call_outcome_payload_bindings_expand_and_replay() {
+    let (source, owned_sources) = mdtest_sources("mdtests/outcomes_payload_bindings.md");
+    let sources = crate::cli::source_refs(&owned_sources);
+    for label in ["live.contract", "deferred.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{label}: {error}"));
+        assert_eq!(
+            expanded.matches("returned(value) =>").count(),
+            2,
+            "{expanded}"
+        );
+        assert_eq!(expanded.matches("threw(error) =>").count(), 2, "{expanded}");
+        crate::surface::without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
+    }
+    for offset in source
+        .match_indices("have value == 5")
+        .map(|(offset, _)| offset)
+    {
+        let mut changed = source.clone();
+        changed.replace_range(offset..offset + "have value == 5".len(), "have value == 6");
+        assert!(verify_c_sources(&changed, &sources).is_err());
+    }
+    let discarded = owned_sources[0]
+        .1
+        .replacen("return helper(5) + 1;", "helper(5); return 6;", 1);
+    let bad_sources = [(owned_sources[0].0.as_str(), discarded.as_str())];
+    let error = verify_c_sources(&source, &bad_sources).expect_err("the call discards its result");
+    assert!(error.message().contains("no bindable payload"), "{error}");
+    let (nested, nested_sources) =
+        mdtest_sources("mdtests/outcomes_routes_a_throw_that_leaves_the_function.md");
+    let nested_sources = crate::cli::source_refs(&nested_sources);
+    let expanded = expand_c_claim_source_by_label(&nested, &nested_sources, "caller.contract")
+        .unwrap_or_else(|error| panic!("{error}"));
+    crate::surface::without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(&expanded, &nested_sources).map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() {
     for (c_source, expected) in [
@@ -18235,7 +18924,6 @@ fn integer_observed_product_identity_rewrites_expand_and_recheck() {
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
             .expect("observed product identity rewrite should expand");
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
                 verify_c_sources(&expanded, &[])
@@ -18351,44 +19039,56 @@ int64 identity(int64 x, int64 y) {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_75")]
-fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
-    for (name, premise, extra) in [
-        ("difference", "to_integer(a) <= to_integer(1000 - b)", ""),
-        ("equality", "to_integer(a) == to_integer(1000 - b)", ""),
-        (
-            "sum",
-            "to_integer(a + b) <= 1000",
-            "requires a >= 0; requires a <= 1000;",
-        ),
-        (
-            "both_roots",
-            "to_integer(a + b) <= to_integer(999 + b)",
-            "requires a >= 0; requires a <= 1000;",
-        ),
-    ] {
-        let extra_using = if extra.is_empty() {
-            ""
-        } else {
-            "a >= 0; a <= 1000;"
-        };
-        let source = format!("theorem {name}(a: int32, b: int32) {{
-            requires b >= 1; requires b <= 1000; {extra} requires {premise};
-            ensures a <= 999 by {{ solve() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
-        }}");
-        verify_c_sources(&source, &[]).expect("symbolic upper bound should verify");
-        let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
-            .expect("symbolic upper bound should expand");
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-        let (result, planning) =
-            crate::surface::proof::count_planning_statement_transitions(|| {
-                verify_c_sources(&expanded, &[])
-            });
-        result.unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
-        assert_eq!(planning, 0, "explicit certificate recheck must not plan");
-        let forged = expanded.replace("a <= 999", "a <= 998");
-        verify_c_sources(&forged, &[]).expect_err("a false tighter bound must be refused");
-    }
+fn symbolic_upper_difference_expands_and_cold_rechecks() {
+    check_symbolic_upper_expansion("difference", "to_integer(a) <= to_integer(1000 - b)", "");
+}
+
+#[test]
+fn symbolic_upper_equality_expands_and_cold_rechecks() {
+    check_symbolic_upper_expansion("equality", "to_integer(a) == to_integer(1000 - b)", "");
+}
+
+#[test]
+fn symbolic_upper_sum_expands_and_cold_rechecks() {
+    check_symbolic_upper_expansion(
+        "sum",
+        "to_integer(a + b) <= 1000",
+        "requires a >= 0; requires a <= 1000;",
+    );
+}
+
+#[test]
+fn symbolic_upper_both_roots_expand_and_cold_recheck() {
+    check_symbolic_upper_expansion(
+        "both_roots",
+        "to_integer(a + b) <= to_integer(999 + b)",
+        "requires a >= 0; requires a <= 1000;",
+    );
+}
+
+fn check_symbolic_upper_expansion(name: &str, premise: &str, extra: &str) {
+    let extra_using = if extra.is_empty() {
+        ""
+    } else {
+        "a >= 0; a <= 1000;"
+    };
+    let source = format!(
+        "theorem {name}(a: int32, b: int32) {{
+        requires b >= 1; requires b <= 1000; {extra} requires {premise};
+        ensures a <= 999 by {{ solve() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
+    }}"
+    );
+    // Expansion verifies this source's sole theorem and claim.
+    let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
+        .expect("symbolic upper bound should expand");
+    let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
+        without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+    });
+    result.unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    assert_eq!(planning, 0, "explicit certificate recheck must not plan");
+    let forged = expanded.replace("a <= 999", "a <= 998");
+    without_implicit_solve(|| verify_c_sources(&forged, &[]))
+        .expect_err("a false tighter bound must be refused");
 }
 
 fn check_counted_pthread_whole_claim_expansion(fixture: &str, claim: &str) {
@@ -18541,8 +19241,8 @@ fn whole_claim_expansion_routes_return_closers_only_to_checked_branches() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let tail = "branch { step(); solve(); } else {}\n    step(); solve();";
-    let original_branch = "branch { step(); solve(); } else { step(); solve(); }";
+    let tail = "branch { true => { step(); solve(); } false => {} }\n    step(); solve();";
+    let original_branch = "branch { true => { step(); solve(); } false => { step(); solve(); } }";
     for (case, source) in [
         ("then only", original.clone()),
         (
@@ -18608,8 +19308,11 @@ int32 f(int32 n) {
     ensures result == 5;
 } by {
     branch {
-        branch { step(); solve(); } else { step(); solve(); }
-    } else { step(); solve(); }
+        true => {
+            branch { true => { step(); solve(); } false => { step(); solve(); } }
+        }
+        false => { step(); solve(); }
+    }
 }
 "#;
     verify_c_sources(source, &[("nested.c", c)]).unwrap();
@@ -19054,7 +19757,7 @@ fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
     let function = "loop_entry_guard_before_written_implication";
     let label = format!("{function}.loop(0).preserve");
     let expanded = expand_c_claim_source_by_label(&click, &sources, &label).unwrap();
-    // Arithmetic certificates need no additional import; only the selected
+    // Arithmetic steps need no additional import; only the selected
     // phase changes, and the surrounding source stays byte-for-byte intact.
     let body = expanded.as_str();
     let written = "preserve by solve();";
@@ -19502,19 +20205,19 @@ void set(int32* p, int32* q, int32 x) {
     let expanded = expand_function_proof_source(click_source, &c_sources, "set")
         .expect("the bare open should expand");
     let start = expanded.find("open(cell(p)) {").expect("the expanded open");
-    let by = start + expanded[start..].find("} by {").unwrap_or_else(|| {
-        panic!(
-            "the implicit `solve`'s proof of the close should print as the open's `by`: {expanded}"
-        )
-    });
+    let have = start
+        + expanded[start..].find("        have ").unwrap_or_else(|| {
+            panic!("the closing fact should be proved inside the open block: {expanded}")
+        });
+    let end = have
+        + expanded[have..]
+            .find("\n    }")
+            .expect("the open block closes");
+    assert!(!expanded[end..].starts_with("\n    } by"), "{expanded}");
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &c_sources))
         .expect("the expansion should reverify cold");
-    let by_end = by
-        + expanded[by..]
-            .find("\n    }\n")
-            .expect("the open's `by` closes");
     let mut without_proof = expanded.clone();
-    without_proof.replace_range(by..by_end + "\n    }".len(), "}");
+    without_proof.replace_range(have..end, "");
     let error = crate::surface::proof::without_implicit_solve(|| {
         verify_c_sources(&without_proof, &c_sources)
     })
@@ -19524,6 +20227,38 @@ void set(int32* p, int32* q, int32 x) {
         "the refusal should name the closing fold: {}",
         error.message()
     );
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-replays two closing outcomes"]
+fn open_scope_closing_facts_replay_after_both_returns() {
+    let c_source = "int32 f(int32* p, int32 x, int32 y) {
+        if (x > 0) { p[0] = x; return x; }
+        else { p[0] = y; return y; }
+    }";
+    let click_source = r#"
+verifying "returns.c";
+resource cell(p: int32*) { owns p[0..1]; fact p[0] > 0 or p[0] < -1; }
+int32 f(int32* p, int32 x, int32 y) {
+    requires y > 0;
+    owns cell(p);
+    ensures result > 0;
+} by {
+    open(cell(p)) {
+        branch { true => { step_until(function.exit); } false => { step_until(function.exit); } }
+    }
+    solve();
+}
+"#;
+    let sources = [("returns.c", c_source)];
+    let expanded = expand_function_proof_source(click_source, &sources, "f").unwrap();
+    assert!(!expanded.contains("\n    } by {"), "{expanded}");
+    assert!(
+        expanded.contains("have p[0] > 0 or p[0] < -1"),
+        "{expanded}"
+    );
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 /// `expanded` with its first step's obligation proofs removed:
@@ -19559,7 +20294,7 @@ fn without_first_step_obligation_proofs(expanded: &str) -> String {
 
 #[test]
 #[ignore = "nightly: checks whole global object ownership through expansion and retained verification"]
-fn whole_global_objects_keep_their_extent_and_field_types() {
+fn whole_global_objects_keep_their_size_and_field_types() {
     let (source, sources) =
         mdtest_sources("mdtests/whole_global_struct_covers_addressed_object.md");
     let sources = sources
@@ -20202,16 +20937,19 @@ fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
         "split.c",
         "int32 split(int32 x) { if (x > 0) { x = 1; } else { x = 2; } return 0; }",
     )];
-    for head in ["branch", "branch ensuring { fact x >= 1; } then"] {
+    for head in ["branch", "branch ensuring { fact x >= 1; }"] {
         let source = format!(
             "verifying \"split.c\";
             int32 split(int32 x) {{ ensures result == 0; }} by {{
                 {head} {{
-                    step();
-                    have x >= 1 by {{ solve(); }}
-                }} else {{
-                    step();
-                    have x >= 1 by {{ solve(); }}
+                    false => {{
+                        step();
+                        have x == 2 by {{ solve(); }}
+                    }},
+                    true => {{
+                        step();
+                        have x == 1 by {{ solve(); }}
+                    }}
                 }}
                 step();
                 solve();
@@ -20334,9 +21072,12 @@ fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
  requires 0 <= b;
  ensures 0 <= a and 0 <= b by {
   both {
-   solve() using { 0 <= a; };
-  } and {
-   solve() using { 0 <= b; };
+      left => {
+       solve() using { 0 <= a; };
+      }
+      right => {
+       solve() using { 0 <= b; };
+      }
   }
  }
 }
@@ -20669,7 +21410,10 @@ fn saved_iterated_pointer_base_expands_and_rechecks() {
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "release.contract").unwrap();
-    assert!(expanded.contains("give(at(before, data)"), "{expanded}");
+    assert!(
+        expanded.contains("fold(at(before, arena_cells(data, occupied, capacity))[index]);"),
+        "{expanded}"
+    );
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
@@ -21395,15 +22139,18 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1) by {
                 both {
-                    have a == 0 by {
-                        rewrite(a, b); rewrite(b, 0); normalize();
+                    left => {
+                        have a == 0 by {
+                            rewrite(a, b); rewrite(b, 0); normalize();
+                        }
+                        known();
                     }
-                    known();
-                } and {
-                    intro();
-                    have a == 0 by { known(); }
-                    have a + 1 == 1 by { rewrite(a, 0); normalize(); }
-                    known();
+                    right => {
+                        intro();
+                        have a == 0 by { known(); }
+                        have a + 1 == 1 by { rewrite(a, 0); normalize(); }
+                        known();
+                    }
                 }
             }
         }
@@ -21431,7 +22178,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1)
-            {} both {{ known(); }} and {{ intro(); known(); }}
+            {} both {{ left => {{ known(); }} right => {{ intro(); known(); }} }}
             }}
         }}
     "#,
@@ -21478,7 +22225,7 @@ fn compact_store_proof_repairs_expand_and_replay() {
             "arena_write",
         ),
         (
-            "iterated_give_preserves_descriptor_loop_ownership",
+            "indexed_fold_preserves_descriptor_loop_ownership",
             "release_run",
         ),
         ("modeled_pthread_local_job_external_output", "worker"),
@@ -21550,7 +22297,7 @@ fn explicit_and_implicit_existential_requirements_expand_without_search() {
 }
 
 #[test]
-fn explicit_and_implicit_entry_witnesses_expand_without_search() {
+fn explicit_entry_witnesses_for_cstr_calls_expand_without_search() {
     for fixture in [
         "cstr_plain_char_kernel_requirement_reaches_callee",
         "cstr_signed_char_kernel_requirement_reaches_callee",
@@ -21560,17 +22307,18 @@ fn explicit_and_implicit_entry_witnesses_expand_without_search() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
-        for step in ["step();", "step() by solve();"] {
-            let source = format!("{} by {{ step(); {step} }}", source.trim_end());
-            let expanded = expand_c_claim_source_by_label(&source, &sources, "outer.ensures_0")
-                .unwrap_or_else(|error| panic!("{fixture}, {step}: {error}"));
-            assert!(expanded.contains("witness("), "{expanded}");
-            assert!(!expanded.contains("extract("), "{expanded}");
-            without_implicit_solve_for_claim("outer.contract", || {
-                verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
-            })
-            .unwrap_or_else(|error| panic!("{fixture}, {step}: {error}\n{expanded}"));
-        }
+        assert!(!source.contains("transport("));
+        verify_c_sources(&source, &sources)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "outer.ensures_0")
+            .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+        assert!(expanded.contains("witness("), "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("extract("), "{expanded}");
+        without_implicit_solve_for_claim("outer.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
     }
 }
 
@@ -21598,12 +22346,15 @@ void set(int32* p, int32* q, int32 x) {
 }
 "#;
     let expanded = expand_function_proof_source(source, &sources, "set").unwrap();
-    assert!(expanded.matches("} by {").count() >= 2, "{expanded}");
+    assert!(
+        expanded.contains("have q[0] > 0 or q[0] < -1"),
+        "{expanded}"
+    );
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .expect("nested closing obligations retain explicit proofs");
     let invalid = source.replace(
         "open(cell(q)) { step(); }",
-        "open(cell(q)) { step(); } by { known(); }",
+        "open(cell(q)) { step(); have q[0] < -1 by { known(); } }",
     );
     assert!(
         verify_c_sources(&invalid, &sources).is_err(),
@@ -21640,9 +22391,7 @@ fn solve_exact_goal_expands_to_known_in_pure_and_outcome_scopes() {
             expand_c_claim_source_by_label(&source, &sources, "known.ensures_0").unwrap();
         assert!(expanded.contains("known();"), "{expanded}");
         assert!(
-            !expanded.contains("normalize()")
-                && !expanded.contains("arithmetic_certificate")
-                && !expanded.contains("solve()"),
+            !expanded.contains("normalize()") && !expanded.contains("solve()"),
             "{expanded}"
         );
         // Outcome expansion opens the contract claim with `have`; the
@@ -21789,7 +22538,7 @@ test_batches! {
     ],
     expansion_batch_05: [
         integer_equality_does_not_identify_signed_and_unsigned_observations,
-        member_pointer_addresses_retain_subobject_extents_through_expansion,
+        member_pointer_addresses_retain_subobject_bounds_through_expansion,
         member_pointer_addresses_with_equal_numeric_addresses_expand,
     ],
     expansion_batch_06: [
@@ -21969,7 +22718,7 @@ test_batches! {
     expansion_batch_35: [
         post_execution_restricted_solve_continues_an_introduced_claim,
         post_execution_restricted_solve_checks_grouped_ownership_and_value_claims,
-        restricted_solve_expands_to_graph_normalization,
+        restricted_solve_expands_to_graph_known,
         uint64_bit_test_inequality_expands_to_rewrite_and_known,
     ],
     expansion_batch_36: [
@@ -22005,7 +22754,7 @@ test_batches! {
     expansion_batch_41: [
         pure_solve_retains_one_selected_equality_rewrite_before_known,
         restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic,
-        restricted_solve_expands_positive_to_nonnegative_arithmetic_certificate,
+        restricted_solve_expands_positive_to_nonnegative_arithmetic_steps,
         restricted_solve_expands_positive_predecessor_to_ordinary_arithmetic,
     ],
     expansion_batch_42: [
@@ -22029,7 +22778,7 @@ test_batches! {
     expansion_batch_45: [
         smart_solve_transcribes_a_three_edge_signed_order_path,
         smart_solve_transcribes_a_three_edge_bitvector_equality_path,
-        smart_solve_retains_both_signed_equality_rules_as_arithmetic_certificates,
+        smart_solve_retains_both_signed_equality_rules_as_arithmetic_steps,
         outcome_solve_consumes_its_recorded_bitvector_equality_path,
     ],
     expansion_batch_46: [
@@ -22045,7 +22794,7 @@ test_batches! {
         restricted_solve_composes_equalities_with_adjacent_order,
     ],
     expansion_batch_48: [
-        restricted_solve_inside_have_expands_to_graph_normalization,
+        restricted_solve_inside_have_expands_to_graph_known,
         restricted_solve_expands_computed_subrange_to_ordinary_steps,
         restricted_solve_rewrites_pointer_aliases_inside_memory_loads,
         post_execution_restricted_solve_expands_without_derive,
@@ -22112,7 +22861,7 @@ test_batches! {
     ],
     expansion_batch_59: [
         fixed_state_smart_have_retains_a_checked_simple_closer,
-        fixed_state_smart_have_retains_a_checked_arithmetic_certificate,
+        fixed_state_smart_have_retains_checked_arithmetic_steps,
         explicit_linear_fixed_state_have_uses_the_checked_proof_path,
         explicit_post_execution_have_uses_the_checked_outcome_proof_path,
     ],
@@ -22166,7 +22915,7 @@ test_batches! {
     expansion_batch_68: [
         pure_folded_constant_successor_solve_expands_to_successor_bound,
         unfolded_conjunction_have_solve_expands_and_rechecks,
-        outcome_predecessor_bound_solve_expands_to_an_arithmetic_certificate,
+        outcome_predecessor_bound_solve_expands_to_arithmetic_steps,
         loop_preservation_case_after_step_expands_in_place,
     ],
     expansion_batch_69: [
@@ -22202,7 +22951,6 @@ test_batches! {
     expansion_batch_75: [
         the_implicit_grouped_proof_expands_after_the_contract_and_reverifies,
         integer_equality_rewrite_expands_rechecks_and_rejects_forged_claims,
-        symbolic_upper_arithmetic_premises_expand_and_cold_recheck,
     ],
     expansion_batch_76: [
         counted_pthread_whole_claim_expansion_retire,
@@ -22585,6 +23333,24 @@ fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
 }
 
 #[test]
+fn indexed_store_bounds_expand_to_an_explicit_step_proof() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_store_exposes_its_bounds.md");
+    let implicit = source.replace("step() by { known(); }", "step();");
+    assert_ne!(implicit, source);
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&implicit, &sources, "set").unwrap();
+    assert!(expanded.contains("step() by"), "{expanded}");
+    crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+
+    let one_past = implicit.replace("requires 0 <= i and i < len;", "requires i == len;");
+    assert_ne!(one_past, implicit);
+    assert!(verify_c_sources(&one_past, &sources).is_err());
+}
+
+#[test]
 fn symbolic_view_restriction_expands_to_library_steps() {
     let source = r#"
         theorem restrict_view(data: int32[], lo: int32, hi: int32, end: int32) {
@@ -22686,7 +23452,6 @@ fn instantiated_bound_to_result_expands_without_transport() {
     let expanded = expand_function_proof_source(source, &sources, "stronger").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(expanded.contains("instantiate("), "{expanded}");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let false_claim = source.replace("p[i] < result", "p[i] + 1 < result");
@@ -23158,4 +23923,95 @@ fn returned_member_domain_access_expands_and_replays() {
     ] {
         assert!(verify_c_sources(&bad, &sources).is_err());
     }
+}
+
+#[test]
+#[ignore = "nightly: consumed field refusal, preservation expansion and cold replay"]
+fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
+    let (source, sources) =
+        mdtest_sources("mdtests/resource_unfold_field_binding_rejects_consumed_read.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c_sources(&source, &sources).unwrap_err();
+    assert!(
+        error.message().contains("before.prefix"),
+        "{}",
+        error.report()
+    );
+    assert!(
+        error.message().contains("unfold(before)` consumed it"),
+        "{}",
+        error.report()
+    );
+    // Only the intentionally invalid invariant changes in the positive control.
+    let control = source.replace(
+        "invariant 0 <= i and i <= old(before.prefix);",
+        "invariant 0 <= i and i <= p;",
+    );
+    assert_ne!(control, source);
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!source.contains("transport("), "{source}");
+    let expanded = expand_c_claim_source_by_label(&control, &sources, "claim.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("claim.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: fold model expansion and replay"]
+fn integer_fold_zero_contribution_expansion_replays_without_search() {
+    use crate::surface::{verify_c_sources, without_implicit_solve};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/fold_read_solve_extends_endpoint_with_zero_contribution.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let crate::cli::VerificationInput::Bundle(sources) =
+        crate::cli::prepare_mdtest_inputs(&fixture).unwrap()
+    else {
+        panic!("C bundle")
+    };
+    let source = fixture.click_source.as_ref().unwrap();
+    let refs = crate::cli::source_refs(&sources);
+    let verified = verify_c_sources(source, &refs).unwrap();
+    let expanded = verified[0].expanded_proof_source().unwrap();
+    let start = source.find("} by {").unwrap() + 2;
+    let replay = format!("{}{}", &source[..start], expanded);
+    without_implicit_solve(|| verify_c_sources(&replay, &refs)).unwrap();
+}
+
+#[test]
+fn indexed_iterated_ownership_expands_and_rechecks() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_iterated_ownership.md");
+    let sources = sources
+        .iter()
+        .map(|(name, body)| (name.as_str(), body.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "update_slot.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("unfold(arena_slots(data, free_slots, capacity)[i]);")
+            && expanded.contains("fold(at(opened, arena_slots(data, free_slots, capacity))[i]);"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("update_slot.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    let wrong = source.replace(
+        "fold(at(opened, arena_slots(data, free_slots, capacity))[i]);",
+        "fold(arena_slots(data, free_slots, capacity)[i]);",
+    );
+    assert_ne!(wrong, source);
+    let error = verify_c_sources(&wrong, &sources).unwrap_err();
+    assert!(
+        error
+            .report()
+            .contains("selected iterated ownership fact is not held"),
+        "{}",
+        error.report()
+    );
 }

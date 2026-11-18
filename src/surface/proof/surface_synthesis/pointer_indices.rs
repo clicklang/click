@@ -104,7 +104,7 @@ pub(super) fn load_free(root: V<'_>) -> bool {
                 }
                 N::MachineIf { arguments } => pending.extend(arguments[1..].iter().map(V::Shared)),
                 N::Fold(fold) => pending.extend(fold.arguments.iter().map(V::Shared)),
-                N::Legacy(_) | N::PointerAddress { .. } => match root.machine_conversion_leaf() {
+                N::Legacy(_) | N::IntegerAddress { .. } => match root.machine_conversion_leaf() {
                     Some(value) => pending.push(V::Legacy(value)),
                     None => return false,
                 },
@@ -113,7 +113,7 @@ pub(super) fn load_free(root: V<'_>) -> bool {
             V::Legacy(term) => match term {
                 MachineTerm::ThreadHandle(_) => {}
                 MachineTerm::MemoryLoad(..) => return false,
-                MachineTerm::PointerAddress(pointer, _) => pending.extend(
+                MachineTerm::IntegerAddress(pointer, _) => pending.extend(
                     pointer
                         .offset
                         .scaled_operands()
@@ -169,8 +169,8 @@ mod tests {
         let _session = VerificationSession::enter();
         let _scope = SurfaceSynthesisScope::enter();
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
-            Box::new(Pointer::symbolic(Variable(1014000))),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
+            Box::new(Address::symbolic(Variable(1014000))),
             crate::kernel::LoadKind::Int32,
         );
         let variable = MachineTerm::Variable(Variable(1014001));

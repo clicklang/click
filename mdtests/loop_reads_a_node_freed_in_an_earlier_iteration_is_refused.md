@@ -100,8 +100,11 @@ void release(struct node* p) {
                     step();
                     step();
                     branch {
-                        step();
-                    } else {}
+                        true => {
+                            step();
+                        }
+                        false => {}
+                    }
                     step();
                     step();
                     step();
