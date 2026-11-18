@@ -6,6 +6,25 @@ import click::integer;
 import "rbtree_size_insert_flips.click";
 import "rbtree_size_context_flip_frames.click";
 
+// Retain complete node observations through read-only C steps.
+resource sized_flip_chain_node_frame(p: struct rb_node*, up: struct rb_node*) {
+    field color: Color;
+    field word: uint64;
+    field left: int32*;
+    field right: int32*;
+    owns p->__rb_parent_color;
+    fact p->__rb_parent_color == word;
+    fact p->__rb_parent_color == address(up) + (p->__rb_parent_color & 1);
+    fact ((p->__rb_parent_color & ~3) as (struct rb_node*)) == up;
+    fact (p->__rb_parent_color & 1) == color_bit(color);
+    owns p->rb_left;
+    owns p->rb_right;
+    fact p->rb_left == left;
+    fact p->rb_right == right;
+    fact p->rb_left != p;
+    fact p->rb_right != p;
+}
+
 resource sized_flip_red_word(node: struct rb_node*) {
     field word: uint64;
     owns node->__rb_parent_color;
@@ -19,7 +38,7 @@ resource sized_flip_chain_root_link(root: struct rb_root*) {
     fact root->rb_node == node;
 }
 
-// Carry the common observations through the join of the stopping paths.
+// Track the root link alongside the loop focus and its ancestor path.
 resource sized_flip_chain_at(root: struct rb_root*) {
     field root_node: int32*;
     field chain: SizedFlipChain;
@@ -100,19 +119,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
             have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
             have ancestor == sized_context_parent(old(state.context), 0) by known();
             let entry_link = fold(sized_flip_chain_root_link(root), { node: old(root->rb_node) });
-            mark m0; step();
-            have *((&node->__rb_parent_color) as (int32 **)) == at(m0, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
-            mark m1; step();
-            have *((&node->__rb_parent_color) as (int32 **)) == at(m1, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
-            mark m2; step();
-            have *((&node->__rb_parent_color) as (int32 **)) == at(m2, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
-            mark m3; step();
-            have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
-            unfold(entry_link);
+            let entry_focus = fold(sized_flip_chain_node_frame(node, ancestor), {
+                color: shade, word: node->__rb_parent_color, left: node->rb_left, right: node->rb_right
+            });
+            step(); step(); step(); step();
+            unfold(entry_focus); unfold(entry_link);
             have root->rb_node == old(root->rb_node) by known();
             let focus = fold(sized_at(node), { model: SizedTree::Node(identity, ancestor, shade, value, left, right), metadata: metadata, left: l, right: r });
             let state = fold(sized_flip_chain_at(root), { root_node: old(root->rb_node), chain: old(state.chain), model: SizedTree::Node(identity, ancestor, shade, value, left, right), context: old(state.context), focus: focus, path: path });
@@ -1110,14 +1121,14 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
         SizedTree::Node(node_id, parent, shade, value, left, right) => {
             let { focus: focus, path: path } = unfold(state);
             have parent == sized_context_parent(path.model, 0) by known();
-            let boundary = fold(sized_flip_chain_at(root), {
+            let cursor = fold(sized_flip_chain_at(root), {
                 root_node: root->rb_node,
                 chain: old(state.chain),
                 model: SizedTree::Node(node_id, parent, shade, value, left, right),
                 context: path.model,
                 focus: focus, path: path
             });
-            let { whole: whole } = step(insert::__rb_insert, { state: boundary });
+            let { whole: whole } = step(insert::__rb_insert, { state: cursor });
             step_until(function.exit);
         },
     }
