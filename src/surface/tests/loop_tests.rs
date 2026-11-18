@@ -694,23 +694,50 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
 
 /// A reduction of the second sorting loop, not a replacement for its original C.
 /// Existing simple steps suffice when entry index and cell facts are explicit.
-fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String) {
+fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, String) {
     let c = "int32 swap(int32 p[3]) { int32 j; int32 tmp; j = 0; while (j < 1) { if (p[j + 1] < p[j]) { tmp = p[j]; p[j] = p[j + 1]; p[j + 1] = tmp; } j = j + 1; } return 0; }";
-    let transport = r#"
-        have p[0] == at(before_swap, p[1]) by {
-            transport(at(before_swap, p[1]) == at(before_swap, p[1]), p[0] == at(before_swap, p[1])) using {
-                at(before_swap, j) == 0;
-            }
+    let entry_bounds = r#"
+        have to_integer(j) != 2 by { normalize() using { j == 0; }; }
+        have to_integer(j + 1) == 1 by {
+            rewrite(j, 0);
+            normalize();
         }
-        have p[1] == at(before_swap, p[0]) by {
-            transport(at(before_swap, p[0]) == at(before_swap, p[0]), p[1] == at(before_swap, p[0])) using {
-                at(before_swap, j) == 0;
-            }
+        have to_integer(j + 1) != 2 by { rewrite(to_integer(j + 1), 1); normalize(); }
+        have to_integer(j + 1) != 0 by { rewrite(to_integer(j + 1), 1); normalize(); }
+        apply(click::separation::separate_elements(p, j, 2)) using { to_integer(j) != 2; };
+        apply(click::separation::separate_elements(p, j + 1, 2)) using { to_integer(j + 1) != 2; };
+        apply(click::separation::separate_elements(p, j + 1, 0)) using { to_integer(j + 1) != 0; };
+        have separate(statement(3).statement(0).statement(1).footprint, memory(p[2])) by {
+            normalize() using { separate(memory(p[j]), memory(p[2])); };
+        }
+        have at(statement(3).statement(0).statement(1).exit, p[2]) == at(statement(3).statement(0).statement(1).entry, p[2]) by {
+            preserve(memory(p[2]), statement(3).statement(0).statement(1));
+        }
+        have separate(statement(3).statement(0).statement(2).footprint, memory(p[2])) by {
+            normalize() using { separate(memory(p[j + 1]), memory(p[2])); };
+        }
+        have p[2] == at(statement(3).statement(0).statement(1).exit, p[2]) by {
+            preserve(memory(p[2]), statement(3).statement(0).statement(2));
         }
         have p[2] == at(before_swap, p[2]) by {
-            transport(at(before_swap, p[2]) == at(before_swap, p[2]), p[2] == at(before_swap, p[2])) using {
-                at(before_swap, j) == 0;
-            }
+            rewrite(p[2], at(statement(3).statement(0).statement(1).exit, p[2]));
+            known();
+        }
+        have separate(statement(3).statement(0).statement(2).footprint, memory(p[0])) by {
+            normalize() using { separate(memory(p[j + 1]), memory(p[0])); };
+        }
+        have p[0] == at(statement(3).statement(0).statement(1).exit, p[0]) by {
+            preserve(memory(p[0]), statement(3).statement(0).statement(2));
+        }
+        have at(statement(3).statement(0).statement(1).exit, p[0]) == at(before_swap, p[1]) by {
+            normalize() using { at(before_swap, j) == 0; };
+        }
+        have p[0] == at(before_swap, p[1]) by {
+            rewrite(p[0], at(statement(3).statement(0).statement(1).exit, p[0]));
+            known();
+        }
+        have p[1] == at(before_swap, p[0]) by {
+            normalize() using { at(before_swap, j) == 0; };
         }
         have p[0] <= p[2] by {
             rewrite(p[0], at(before_swap, p[1]));
@@ -723,7 +750,11 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
             known();
         }
     "#;
-    let transport = if include_transports { transport } else { "" };
+    let entry_bounds = if include_entry_bounds {
+        entry_bounds
+    } else {
+        ""
+    };
     let click = format!(
         r#"verifying "swap.c";
         int32 swap(int32 p[3]) {{
@@ -743,8 +774,9 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
                     }}
                     mark before_swap;
                     if p[j + 1] < p[j] {{
-                        step(); step(); step(); step(); step();
-                        {transport}
+                        step(); step(); step(); step();
+                        {entry_bounds}
+                        step();
                     }} else {{
                         step(); step(); step();
                     }}
@@ -759,24 +791,27 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
 
 #[test]
 #[ignore = "nightly: 2s in the parallel gate"]
-fn explicit_swap_loop_transports_both_entry_bounds_and_expands() {
+fn explicit_swap_loop_preserves_both_entry_bounds_and_expands() {
     let (c, click) = explicit_swap_loop_fixture(true);
     let sources = [("swap.c", c)];
     let verified_for_expansion =
         verify_c_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "swap")
         .unwrap_or_else(|e| panic!("{}", e.message()));
-    verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     assert!(!expanded.contains("close_invariants"));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("swap.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
 #[ignore = "nightly: 1.6s in the parallel gate"]
-fn explicit_swap_loop_rejects_missing_entry_bound_transports() {
-    let (c, missing_transports) = explicit_swap_loop_fixture(false);
-    assert!(!missing_transports.contains("transport("));
+fn explicit_swap_loop_rejects_missing_entry_bounds() {
+    let (c, missing_entry_bounds) = explicit_swap_loop_fixture(false);
     let sources = [("swap.c", c)];
-    let error = verify_c_sources(&missing_transports, &sources).unwrap_err();
+    let error = verify_c_sources(&missing_entry_bounds, &sources).unwrap_err();
     assert!(
         error
             .message()

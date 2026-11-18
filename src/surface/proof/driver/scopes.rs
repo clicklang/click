@@ -67,12 +67,12 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
-    /// Construct a signed addition certificate from the selected bounds.
-    pub(in crate::surface::proof) fn try_int32_addition_using(
+    /// Construct a signed addition or subtraction certificate from the selected bounds.
+    pub(in crate::surface::proof) fn try_int32_add_sub_using(
         &self,
         premises: &[ClickProposition],
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
-        let Some(body) = crate::kernel::search::ProofSearch::try_int32_addition_using(
+        let Some(body) = crate::kernel::search::ProofSearch::try_int32_add_sub_using(
             &self.proof.body,
             premises,
         )?

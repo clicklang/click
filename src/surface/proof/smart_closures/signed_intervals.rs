@@ -111,23 +111,29 @@ pub(super) fn has_retained_read_source(proposition: &ClickProposition) -> bool {
     found
 }
 
-/// Result range and native observation bridge for one signed int32 sum.
-/// Retained operands keep their exact lowered identities in the ordinary proof.
-pub(super) fn is_int32_addition_obligation(goal: &Proposition) -> bool {
+/// Result range and native observation bridge for signed int32 addition or subtraction.
+pub(super) fn is_int32_add_sub_obligation(goal: &Proposition) -> bool {
     use crate::kernel::IntegerTerm;
-    let int32_sum = |term: &IntegerTerm| {
-        matches!(term, IntegerTerm::Add(a, b)
-        if [a, b].iter().all(|operand| match operand.as_ref() {
-            IntegerTerm::Machine(value) => value.ty() == MachineIntegerType::Int32,
-            IntegerTerm::Constant(_) => true,
-            _ => false,
-        }))
+    let operation = |term: &IntegerTerm| {
+        let (op, a, b) = match term {
+            IntegerTerm::Add(a, b) => (MachineBinaryOp::Add, a, b),
+            IntegerTerm::Subtract(a, b) => (MachineBinaryOp::Subtract, a, b),
+            _ => return None,
+        };
+        [a, b]
+            .iter()
+            .all(|operand| match operand.as_ref() {
+                IntegerTerm::Machine(value) => value.ty() == MachineIntegerType::Int32,
+                IntegerTerm::Constant(_) => true,
+                _ => false,
+            })
+            .then_some(op)
     };
-    let native_add = |term: &IntegerTerm| {
-        matches!(term, IntegerTerm::Machine(value)
+    let observation = |native: &IntegerTerm, exact: &IntegerTerm| {
+        matches!(native, IntegerTerm::Machine(value)
             if value.ty() == MachineIntegerType::Int32
                 && matches!(value.operand_view().binary(),
-                    Some((MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, _))))
+                    Some((MachineIntegerType::Int32, op, _)) if operation(exact) == Some(op)))
     };
     let Some((condition, true)) = goal.condition_native() else {
         return false;
@@ -141,12 +147,12 @@ pub(super) fn is_int32_addition_obligation(goal: &Proposition) -> bool {
         ConditionTerm::IntegerLessEqual(left, right) => (left, right),
         ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
         ConditionTerm::IntegerEqual(left, right) => {
-            return (native_add(left) && int32_sum(right))
-                || (native_add(right) && int32_sum(left));
+            return observation(left, right) || observation(right, left);
         }
         _ => return false,
     };
-    (at_limit(left, i32::MIN) && int32_sum(right)) || (int32_sum(left) && at_limit(right, i32::MAX))
+    (at_limit(left, i32::MIN) && operation(right).is_some())
+        || (operation(left).is_some() && at_limit(right, i32::MAX))
 }
 
 /// The cast's destination and which written operand holds the original value.
@@ -259,14 +265,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         proof.driver().apply_step(ProofStep::Known).map(Some)
     }
 
-    /// Use one endpoint per operand, then weaken the summed endpoint.
+    /// Use one endpoint per operand, then weaken the resulting endpoint.
     /// All nonliteral endpoints come from the checked selected premises.
-    pub(in crate::surface::proof) fn try_int32_addition_using(
+    pub(in crate::surface::proof) fn try_int32_add_sub_using(
         input: &Proof<'a>,
         premises: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_int32_addition_using");
+        crate::kernel::search::record_discovery("try_int32_add_sub_using");
         use super::super::wide_arithmetic::have;
         use crate::kernel::IntegerTerm;
         let Some((goal, true)) = input.goal().and_then(Proposition::condition_native) else {
@@ -295,17 +301,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let lower = left.as_const().is_some();
-        let (sum, written_sum, limit) = if lower {
+        let (result, written_result, limit) = if lower {
             (right, written_right, i64::from(i32::MIN))
         } else {
             (left, written_left, i64::from(i32::MAX))
         };
-        let (IntegerTerm::Add(a, b), ContractExpression::Add(written_a, written_b)) =
-            (sum.as_ref(), &written_sum)
-        else {
-            return Ok(None);
+        let (subtract, operands, written_a, written_b) = match (result.as_ref(), &written_result) {
+            (IntegerTerm::Add(a, b), ContractExpression::Add(written_a, written_b)) => {
+                (false, [a, b], written_a, written_b)
+            }
+            (IntegerTerm::Subtract(a, b), ContractExpression::Subtract(written_a, written_b)) => {
+                (true, [a, b], written_a, written_b)
+            }
+            _ => return Ok(None),
         };
-        let operands = [a, b];
+        // Subtracting a larger right operand gives a smaller result.
+        let directions = [lower, lower != subtract];
         let literal = |term: &IntegerTerm| {
             term.as_const().and_then(ToPrimitive::to_i32).or_else(|| {
                 let IntegerTerm::Machine(value) = term else {
@@ -320,7 +331,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let mut endpoints = operands.map(|operand| literal(operand));
         for source in premises {
-            let premise = input.lower_cited_surface_proposition(source, "addition bound")?;
+            let premise =
+                input.lower_cited_surface_proposition(source, "addition or subtraction bound")?;
             if !input.facts().listed_premise_available(&premise, &[], false) {
                 return Ok(None);
             }
@@ -334,11 +346,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     | Some((ConditionTerm::IntegerGreaterEqual(hi, lo), true)) => (lo, hi),
                     _ => continue,
                 };
-                let (value, endpoint) = if lower { (hi, lo) } else { (lo, hi) };
-                let Some(endpoint) = literal(endpoint) else {
-                    continue;
-                };
-                for (operand, slot) in operands.iter().zip(&mut endpoints) {
+                for ((operand, slot), lower) in operands.iter().zip(&mut endpoints).zip(directions)
+                {
+                    let (value, endpoint) = if lower { (hi, lo) } else { (lo, hi) };
+                    let Some(endpoint) = literal(endpoint) else {
+                        continue;
+                    };
                     if operand.value_read() == value.value_read()
                         && slot.is_none_or(|old| {
                             if lower {
@@ -356,7 +369,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let [Some(a), Some(b)] = endpoints else {
             return Ok(None);
         };
-        let total = i64::from(a) + i64::from(b);
+        let total = if subtract {
+            i64::from(a) - i64::from(b)
+        } else {
+            i64::from(a) + i64::from(b)
+        };
         if (lower && total < limit) || (!lower && total > limit) {
             return Ok(None);
         }
@@ -379,13 +396,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 endpoint_b.clone(),
             )
         };
-        let sources = vec![le(a.clone(), b.clone()), le(c.clone(), d.clone())];
-        let summed = add(endpoint_a, endpoint_b);
+        let (law, right_bound, endpoint) = if subtract {
+            (
+                "subtract_le",
+                le(d.clone(), c.clone()),
+                ContractExpression::Subtract(Box::new(endpoint_a), Box::new(endpoint_b)),
+            )
+        } else {
+            (
+                "add_le",
+                le(c.clone(), d.clone()),
+                add(endpoint_a, endpoint_b),
+            )
+        };
+        let sources = vec![le(a.clone(), b.clone()), right_bound];
         let limit = typed(limit);
         let (first, middle, last) = if lower {
-            (limit, summed, written_sum)
+            (limit, endpoint, written_result)
         } else {
-            (written_sum, summed, limit)
+            (written_result, endpoint, limit)
         };
         let before = le(first.clone(), middle.clone());
         let after = le(middle.clone(), last.clone());
@@ -394,10 +423,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         } else {
             (before.clone(), after.clone())
         };
-        let proof = input.driver().apply_step(have(
-            combined,
-            vec![apply("add_le", vec![a, b, c, d], sources)],
-        ))?;
+        let proof = input
+            .driver()
+            .apply_step(have(combined, vec![apply(law, vec![a, b, c, d], sources)]))?;
         let proof = proof
             .driver()
             .apply_step(have(weakened, vec![ProofStep::Known]))?;
@@ -533,15 +561,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let scope = proof.driver().open_have(target.clone())?;
         let retained =
             has_retained_read_source(&target) || premises.iter().any(has_retained_read_source);
-        let addition = retained
-            && scope
-                .body()
-                .goal()
-                .is_some_and(is_int32_addition_obligation);
+        let add_sub = retained && scope.body().goal().is_some_and(is_int32_add_sub_obligation);
         let driver = scope.driver();
-        if addition
+        if add_sub
             && let Some(closed) =
-                attempt::candidate_outcome(driver.try_int32_addition_using(premises))?.flatten()
+                attempt::candidate_outcome(driver.try_int32_add_sub_using(premises))?.flatten()
         {
             return Ok(Some(closed.join()?));
         }

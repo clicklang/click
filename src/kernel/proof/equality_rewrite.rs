@@ -102,6 +102,23 @@ impl CheckedEqualityRewrite {
         true
     }
 
+    /// Lowering a reflexive constructor comparison in an induction case
+    /// yields true. Keep that spelling instead of an unraisable raw equality.
+    pub(crate) fn try_present_induction_case_as(&mut self, proposed: &Proposition) -> bool {
+        if matches!(
+            &self.proposition,
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+        ) && matches!(
+            proposed.condition_native(),
+            Some((ConditionTerm::Constant(true), true))
+        ) && super::fact_reasoning::computes_leaf(&self.proposition)
+        {
+            self.proposition = proposed.clone();
+            return true;
+        }
+        self.try_present_as(proposed)
+    }
+
     pub(crate) fn into_obligation<P, O>(
         self,
         presentation: P,

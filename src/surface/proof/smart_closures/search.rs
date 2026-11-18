@@ -387,10 +387,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let kernels = pairs.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
         let retained = signed_intervals::has_retained_read_source(surface_goal);
-        let addition = retained && signed_intervals::is_int32_addition_obligation(goal);
-        if addition
+        let add_sub = retained && signed_intervals::is_int32_add_sub_obligation(goal);
+        if add_sub
             && let Some(closed) =
-                attempt::candidate_outcome(Self::try_int32_addition_using(search_input, premises))?
+                attempt::candidate_outcome(Self::try_int32_add_sub_using(search_input, premises))?
                     .flatten()
         {
             return Ok(Some(closed));
@@ -7543,6 +7543,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<ClickProposition> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("surface_fact_raw_for_purpose");
+        let _binder_names = search_input.induction_binder_name_scope();
         // Option-based presentation misses must not restart work after a
         // candidate exhausted the verifier's sticky budget/deadline.
         if crate::instrumentation::deadline_exceeded() {
@@ -7691,7 +7692,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                     })
                                 && search_input.local_binding(name).is_none()
                                 && search_input.local_integer_values().get(name).is_none()
-                                && search_input.local_algebraic_values().get(name).is_none()
+                                && search_input.known_algebraic_value(name).is_none()
                         })
                     });
                 // A statement selector can be recorded again on a later
@@ -11195,50 +11196,55 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 search_input.step_error(format!("unknown induction hypothesis `{hypothesis}`"))
             );
         }
-        let [argument] = arguments else {
-            return Err(search_input.step_error(format!(
-                "induction hypothesis `{hypothesis}` expects one argument"
-            )));
-        };
-        // The elided form looks each premise up and proves none: a premise
-        // that is not an available fact is a search miss, fixed by stating it
-        // first with `have`.
-        let mut premises = pure_theorems::induction_application_surface_premises(setup, argument)?;
-        let mut cited = Vec::with_capacity(premises.len());
-        for mut premise in premises.drain(..) {
-            let premise = &mut premise;
-            let lowered =
-                search_input.lower_cited_surface_proposition(premise, "induction premise")?;
-            // The explicit form discharges a premise that evaluates to true,
-            // such as `0 <= n - 1u64`, without evidence; cite none for it.
-            if matches!(normalize_proposition(&lowered), NormalizedProposition::True) {
-                continue;
-            }
-            // A native premise at the argument's arithmetic, `0 <= n - 1`, is
-            // cited by the observations it compares.
-            *premise = observed_native_arithmetic(&lowered, premise);
-            // A proof states that premise in the spelling the refusal names,
-            // whose lowering cites the same observations.
-            // As in a `using` list, the same order claim stated from the
-            // other side, `n >= 0` for `0 <= n`, is the premise.
-            let available = crate::kernel::proof::fact_reasoning::order_claim_forms(&lowered)
-                .iter()
-                .chain(std::iter::once(&lowered))
-                .any(|form| search_input.facts().contains(form))
-                || search_input
-                    .lower_cited_surface_proposition(premise, "induction premise")
-                    .is_ok_and(|cited| search_input.facts().contains(&cited));
-            if !available {
+        let cited = if setup.structural_parameters.is_some() {
+            search_input
+                .structural_induction_instance(hypothesis, arguments)?
+                .surface_premises
+        } else {
+            let [argument] = arguments else {
                 return Err(search_input.step_error(format!(
+                    "induction hypothesis `{hypothesis}` expects one argument"
+                )));
+            };
+            let mut premises =
+                pure_theorems::induction_application_surface_premises(setup, argument)?;
+            let mut cited = Vec::with_capacity(premises.len());
+            for mut premise in premises.drain(..) {
+                let premise = &mut premise;
+                let lowered =
+                    search_input.lower_cited_surface_proposition(premise, "induction premise")?;
+                // The explicit form discharges a premise that evaluates to true,
+                // such as `0 <= n - 1u64`, without evidence; cite none for it.
+                if matches!(normalize_proposition(&lowered), NormalizedProposition::True) {
+                    continue;
+                }
+                // A native premise at the argument's arithmetic, `0 <= n - 1`, is
+                // cited by the observations it compares.
+                *premise = observed_native_arithmetic(&lowered, premise);
+                // A proof states that premise in the spelling the refusal names,
+                // whose lowering cites the same observations.
+                // As in a `using` list, the same order claim stated from the
+                // other side, `n >= 0` for `0 <= n`, is the premise.
+                let available = crate::kernel::proof::fact_reasoning::order_claim_forms(&lowered)
+                    .iter()
+                    .chain(std::iter::once(&lowered))
+                    .any(|form| search_input.facts().contains(form))
+                    || search_input
+                        .lower_cited_surface_proposition(premise, "induction premise")
+                        .is_ok_and(|cited| search_input.facts().contains(&cited));
+                if !available {
+                    return Err(search_input.step_error(format!(
                     "induction hypothesis `{hypothesis}` found no available fact for premise `{}`{}",
                     describe_click_proposition(premise),
                     crate::surface::proof::theorem_application::requirement_search_miss(
                         &crate::surface::printing::source_click_proposition(premise),
                     ),
                 )));
+                }
+                cited.push(premise.clone());
             }
-            cited.push(premise.clone());
-        }
+            cited
+        };
         search_input
             .driver()
             .apply_step(ProofStep::ApplyInductionUsing {

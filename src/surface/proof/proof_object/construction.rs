@@ -233,34 +233,10 @@ impl<'a> Proof<'a> {
             spec_definitions,
             theorem_environment,
             Some(induction_setup),
-            None,
         )
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::surface::proof) fn for_pure_surface_goal_with_structural_induction(
-        claim_label: &'a str,
-        requires: &[Proposition],
-        goal: Proposition,
-        surface_goal: ClickProposition,
-        theorem_context: &'a PureTheoremContext,
-        spec_definitions: SpecDefinitions<'a>,
-        theorem_environment: &'a TheoremEnvironment,
-        structural_induction_setup: PureStructuralInductionBranchSetup,
-    ) -> Self {
-        Self::for_pure_goal_with_surface_and_induction(
-            claim_label,
-            requires,
-            goal,
-            Some(surface_goal),
-            theorem_context,
-            spec_definitions,
-            theorem_environment,
-            None,
-            Some(structural_induction_setup),
-        )
-    }
-
     pub(super) fn for_pure_goal_with_surface(
         claim_label: &'a str,
         requires: &[Proposition],
@@ -279,7 +255,6 @@ impl<'a> Proof<'a> {
             spec_definitions,
             theorem_environment,
             None,
-            None,
         )
     }
 
@@ -293,7 +268,6 @@ impl<'a> Proof<'a> {
         spec_definitions: SpecDefinitions<'a>,
         theorem_environment: &'a TheoremEnvironment,
         induction_setup: Option<PureInductionSetup>,
-        structural_induction_setup: Option<PureStructuralInductionBranchSetup>,
     ) -> Self {
         let mut ambient_variables = std::collections::BTreeSet::new();
         let mut source_state = ExecutionState::new().with_memory(theorem_context.memory.clone());
@@ -305,14 +279,6 @@ impl<'a> Proof<'a> {
             crate::kernel::collect_spec_integer_variables(value, &mut ambient_variables);
         }
         ambient_variables.extend(crate::kernel::proposition_variables(&goal));
-        if let Some(setup) = &structural_induction_setup {
-            for value in setup.algebraic_values.values() {
-                crate::kernel::collect_spec_algebraic_expression_bitvector_variables(
-                    value,
-                    &mut ambient_variables,
-                );
-            }
-        }
         let facts =
             PureFactStore::from_ordered(requires).with_reserved_variables(ambient_variables);
         let mut proof = Self {
@@ -328,8 +294,7 @@ impl<'a> Proof<'a> {
                     .collect(),
                 spec_definitions,
                 theorem_environment,
-                induction_setup,
-                structural_induction_setup,
+                induction_setup: induction_setup.map(Arc::new),
             })),
             state: KernelProofObject::root(ProofLocals::default(), {
                 let context = BranchState {

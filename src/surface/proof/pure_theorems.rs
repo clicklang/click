@@ -4,8 +4,6 @@ use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::program_function_contract_refinement_obligations;
 
-const STRUCTURAL_INDUCTION_VARIABLE_BASE: u64 = 1 << 60;
-
 mod execution_theorems;
 use execution_theorems::verify_execution_theorem;
 
@@ -377,13 +375,14 @@ pub(super) struct PureInductionSetup {
     pub(super) hypothesis: String,
     pub(super) surface_requires: Vec<ClickProposition>,
     pub(super) surface_goal: ClickProposition,
+    /// Present for algebraic induction; applications may instantiate all parameters.
+    pub(super) structural_parameters: Option<Vec<FunctionParameter>>,
+    pub(super) structural_root: Option<crate::kernel::AlgebraicTerm>,
 }
 
 #[derive(Clone, Debug)]
 pub(super) struct PureStructuralInductionApplication {
-    /// The theorem's parameter list as this application spells it: either
-    /// every parameter in declaration order, or the inducted position alone.
-    pub(super) arguments: Vec<ContractExpression>,
+    /// The selected theorem's exact requirements at this child instance.
     pub(super) surface_premises: Vec<ClickProposition>,
     pub(super) kernel_premises: Vec<Proposition>,
     pub(super) implication: Proposition,
@@ -399,8 +398,6 @@ pub(super) struct PureStructuralInductionBranchSetup {
     pub(super) parameter_index: usize,
     /// This arm's bindings of the inducted datatype: the only values the
     /// inducted position may name.
-    pub(super) recursive_bindings: Vec<String>,
-    pub(super) applications: Vec<PureStructuralInductionApplication>,
     pub(super) algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
 }
 
@@ -431,24 +428,6 @@ pub(super) fn structural_induction_descent_argument(
     }
 }
 
-/// Checks the descent of one hypothesis application: the inducted position
-/// names a field this arm's pattern bound, of the datatype being inducted on.
-/// This is a bounded structural test against the arm's own binding list, not
-/// a search through the proof state.
-pub(super) fn structural_induction_descends(
-    setup: &PureStructuralInductionBranchSetup,
-    arguments: &[ContractExpression],
-) -> bool {
-    structural_induction_descent_argument(setup.parameter_index, arguments)
-        .and_then(induction_argument_name)
-        .is_some_and(|name| {
-            setup
-                .recursive_bindings
-                .iter()
-                .any(|binding| binding == name)
-        })
-}
-
 /// The substitution one `ih(...)` application makes in the theorem's own
 /// clauses.
 ///
@@ -457,13 +436,12 @@ pub(super) fn structural_induction_descends(
 /// spell the inducted position alone, which leaves every other parameter at
 /// its current value. A position that names its own parameter substitutes
 /// nothing, so the theorem's own elaboration of that parameter is retained.
-fn structural_induction_hypothesis_substitution(
-    theorem: &TheoremDefinition,
+pub(super) fn structural_induction_hypothesis_substitution(
+    parameters: &[FunctionParameter],
     parameter: &str,
     hypothesis: &str,
     arguments: &[ContractExpression],
 ) -> Result<BTreeMap<String, ContractExpression>, ClickError> {
-    let parameters = theorem.parameters();
     if arguments.len() == 1 {
         return Ok(BTreeMap::from([(
             parameter.to_string(),
@@ -485,56 +463,6 @@ fn structural_induction_hypothesis_substitution(
         substitution.insert(definition.name().to_string(), argument.clone());
     }
     Ok(substitution)
-}
-
-/// Collects the hypothesis parameter lists an arm's script spells, in order
-/// and without repetition. Each one becomes exactly one instantiated
-/// hypothesis premise, so an arm costs one instance per written application
-/// rather than an enumeration of candidate instances.
-fn collect_structural_induction_arguments(
-    tactics: &[ProofTactic],
-    hypothesis: &str,
-    collected: &mut Vec<Vec<ContractExpression>>,
-) {
-    for tactic in tactics {
-        match tactic {
-            ProofTactic::ApplyTheorem(application)
-            | ProofTactic::ApplyTheoremUsing { application, .. }
-                if application.name == hypothesis =>
-            {
-                if !collected.contains(&application.arguments) {
-                    collected.push(application.arguments.clone());
-                }
-            }
-            ProofTactic::If(proof_if) => {
-                collect_structural_induction_arguments(
-                    &proof_if.then_tactics,
-                    hypothesis,
-                    collected,
-                );
-                collect_structural_induction_arguments(
-                    &proof_if.else_tactics,
-                    hypothesis,
-                    collected,
-                );
-            }
-            ProofTactic::Both(both) => {
-                collect_structural_induction_arguments(&both.left_tactics, hypothesis, collected);
-                collect_structural_induction_arguments(&both.right_tactics, hypothesis, collected);
-            }
-            ProofTactic::Match(proof_match) => {
-                for arm in &proof_match.arms {
-                    collect_structural_induction_arguments(&arm.tactics, hypothesis, collected);
-                }
-            }
-            ProofTactic::Cases(proof_cases) => {
-                for arm in proof_cases.arms() {
-                    collect_structural_induction_arguments(arm.tactics(), hypothesis, collected);
-                }
-            }
-            _ => {}
-        }
-    }
 }
 
 pub(super) fn pure_induction_hypothesis(
@@ -644,26 +572,67 @@ fn prepare_pure_induction_tactics(
     theorem: &TheoremDefinition,
     goal: &ClickProposition,
     tactics: &[ProofTactic],
+    context: &PureTheoremContext,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Vec<ProofTactic>, Option<PureInductionSetup>), ClickError> {
-    let Some((induction_index, parameter, hypothesis)) =
-        tactics
-            .iter()
-            .enumerate()
-            .find_map(|(index, tactic)| match tactic {
+    fn declarations<'a>(tactics: &'a [ProofTactic], found: &mut Vec<(&'a String, &'a String)>) {
+        for tactic in tactics {
+            match tactic {
                 ProofTactic::Induct {
                     parameter,
                     hypothesis,
-                } => Some((index, parameter, hypothesis)),
-                _ => None,
-            })
-    else {
+                } => found.push((parameter, hypothesis)),
+                ProofTactic::If(proof_if) => {
+                    declarations(&proof_if.then_tactics, found);
+                    declarations(&proof_if.else_tactics, found);
+                }
+                ProofTactic::Both(both) => {
+                    declarations(&both.left_tactics, found);
+                    declarations(&both.right_tactics, found);
+                }
+                ProofTactic::Cases(cases) => {
+                    for arm in cases.arms() {
+                        declarations(arm.tactics(), found);
+                    }
+                }
+                ProofTactic::Have(have) => {
+                    if let SourceProof::Script(body) = &have.proof {
+                        declarations(body, found);
+                    }
+                }
+                ProofTactic::Match(proof_match) => {
+                    for arm in &proof_match.arms {
+                        declarations(&arm.tactics, found);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut found = Vec::new();
+    declarations(tactics, &mut found);
+    let Some(&(parameter, hypothesis)) = found.first() else {
         return Ok((tactics.to_vec(), None));
     };
+    let structural = theorem
+        .parameters()
+        .iter()
+        .any(|p| p.name() == parameter && matches!(p.click_type(), ClickType::Algebraic(_)));
+    if structural
+        && found
+            .iter()
+            .any(|&(p, h)| p != parameter || h != hypothesis)
+    {
+        return Err(ClickError::new(
+            "structural induction declarations must name the same theorem parameter and hypothesis",
+        ));
+    }
     if !theorem.parameters().iter().any(|candidate| {
         candidate.name() == parameter
             && matches!(
-                candidate.click_type().interface_type(),
-                Some(InterfaceType::Int32 | InterfaceType::UInt64(_))
+                candidate.click_type(),
+                ClickType::Algebraic(_)
+                    | ClickType::Program(InterfaceType::Int32 | InterfaceType::UInt64(_))
             )
     }) {
         return Err(ClickError::new(format!(
@@ -675,65 +644,74 @@ fn prepare_pure_induction_tactics(
     fn transform(
         tactics: &[ProofTactic],
         hypothesis: &str,
-        active: bool,
+        structural: bool,
+        mut active: bool,
     ) -> Result<Vec<ProofTactic>, ClickError> {
         tactics
             .iter()
             .map(|tactic| match tactic {
+                ProofTactic::Induct { .. } if structural => {
+                    if active {
+                        return Err(ClickError::new(
+                            "induction hypothesis was already introduced in this proof scope",
+                        ));
+                    }
+                    active = true;
+                    Ok(tactic.clone())
+                }
                 ProofTactic::Induct { .. } => Err(ClickError::new(
                     "a pure theorem proof may contain only one top-level `induct` tactic",
                 )),
                 ProofTactic::ApplyTheorem(application)
                     if active && application.name == hypothesis =>
                 {
-                    // Measure induction quantifies one scalar variable, so
-                    // its hypothesis names only the replacement measure.
-                    let [argument] = application.arguments.as_slice() else {
-                        return Err(ClickError::new(format!(
-                            "induction hypothesis `{hypothesis}` expects one argument"
-                        )));
-                    };
                     Ok(ProofTactic::ApplyInduction {
                         hypothesis: hypothesis.to_string(),
-                        arguments: vec![argument.clone()],
+                        arguments: application.arguments.clone(),
                     })
                 }
                 ProofTactic::ApplyTheoremUsing {
                     application,
                     premises,
                 } if active && application.name == hypothesis => {
-                    let [argument] = application.arguments.as_slice() else {
-                        return Err(ClickError::new(format!(
-                            "induction hypothesis `{hypothesis}` expects one argument"
-                        )));
-                    };
                     Ok(ProofTactic::ApplyInductionUsing {
                         hypothesis: hypothesis.to_string(),
-                        arguments: vec![argument.clone()],
+                        arguments: application.arguments.clone(),
                         premises: premises.clone(),
                     })
                 }
                 ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
                     condition: proof_if.condition.clone(),
                     ensuring: proof_if.ensuring.clone(),
-                    then_tactics: transform(&proof_if.then_tactics, hypothesis, active)?,
-                    else_tactics: transform(&proof_if.else_tactics, hypothesis, active)?,
+                    then_tactics: transform(
+                        &proof_if.then_tactics,
+                        hypothesis,
+                        structural,
+                        active,
+                    )?,
+                    else_tactics: transform(
+                        &proof_if.else_tactics,
+                        hypothesis,
+                        structural,
+                        active,
+                    )?,
                 })),
                 ProofTactic::Both(both) => Ok(ProofTactic::Both(ProofBoth {
-                    left_tactics: transform(&both.left_tactics, hypothesis, active)?,
-                    right_tactics: transform(&both.right_tactics, hypothesis, active)?,
+                    left_tactics: transform(&both.left_tactics, hypothesis, structural, active)?,
+                    right_tactics: transform(&both.right_tactics, hypothesis, structural, active)?,
                 })),
-                ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(
-                    proof_cases
-                        .try_map_tactics(|tactics| transform(tactics, hypothesis, active))?,
-                )),
+                ProofTactic::Cases(proof_cases) => {
+                    Ok(ProofTactic::Cases(proof_cases.try_map_tactics(
+                        |tactics| transform(tactics, hypothesis, structural, active),
+                    )?))
+                }
                 // Once declared, the hypothesis is in scope in every nested
                 // proof, a `have` body and a `match` arm included.
                 ProofTactic::Have(have) => Ok(ProofTactic::Have(ProofHave {
                     proposition: have.proposition.clone(),
                     proof: match &have.proof {
                         SourceProof::Script(tactics) => {
-                            SourceProof::Script(transform(tactics, hypothesis, active)?)
+                            SourceProof::Script(transform(tactics, hypothesis, structural, active)?)
                         }
                         proof => proof.clone(),
                     },
@@ -750,7 +728,12 @@ fn prepare_pure_induction_tactics(
                                     type_name: arm.type_name.clone(),
                                     variant: arm.variant.clone(),
                                     bindings: arm.bindings.clone(),
-                                    tactics: transform(&arm.tactics, hypothesis, active)?,
+                                    tactics: transform(
+                                        &arm.tactics,
+                                        hypothesis,
+                                        structural,
+                                        active,
+                                    )?,
                                 })
                             })
                             .collect::<Result<_, ClickError>>()?,
@@ -766,15 +749,63 @@ fn prepare_pure_induction_tactics(
             .collect()
     }
 
-    // Keep calls before the declaration as ordinary theorem applications.
-    // The checked `induct` step introduces the hypothesis at its source site.
-    let mut prepared = transform(&tactics[..induction_index], hypothesis, false)?;
-    prepared.push(tactics[induction_index].clone());
-    prepared.extend(transform(
-        &tactics[induction_index + 1..],
-        hypothesis,
-        true,
-    )?);
+    // Each branch keeps its own lexical declaration. In particular, expansion
+    // may copy a common declaration into the branches of an earlier `if`.
+    let prepared = if structural {
+        transform(tactics, hypothesis, true, false)?
+    } else {
+        let Some(induction_index) = tactics
+            .iter()
+            .position(|t| matches!(t, ProofTactic::Induct { .. }))
+        else {
+            return Err(ClickError::new(
+                "a pure theorem proof may contain only one top-level `induct` tactic",
+            ));
+        };
+        let mut prepared = transform(&tactics[..induction_index], hypothesis, false, false)?;
+        prepared.push(tactics[induction_index].clone());
+        prepared.extend(transform(
+            &tactics[induction_index + 1..],
+            hypothesis,
+            false,
+            true,
+        )?);
+        prepared
+    };
+    let structural_root = if structural {
+        let (index, p) = theorem
+            .parameters()
+            .iter()
+            .enumerate()
+            .find(|(_, p)| p.name() == parameter)
+            .expect("checked induction parameter");
+        let ClickType::Algebraic(algebraic_type) = p.click_type() else {
+            unreachable!()
+        };
+        let state = ExecutionState::new().with_memory(context.memory.clone());
+        let captured = capture_fixed_state_algebraic_expression(
+            &ContractExpression::AlgebraicVariable {
+                name: parameter.clone().into(),
+                algebraic_type: algebraic_type.clone(),
+                binder_index: index,
+            },
+            ContractEnvironment::new(&context.values, &context.array_refs),
+            FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+            spec_definitions,
+        )
+        .map_err(ClickError::new)?;
+        let crate::kernel::SpecAlgebraicExpressionNode::Variable(variable) = captured.node else {
+            return Err(ClickError::new(
+                "structural induction requires a symbolic theorem parameter",
+            ));
+        };
+        Some(crate::kernel::AlgebraicTerm {
+            algebraic_type: captured.algebraic_type,
+            node: crate::kernel::AlgebraicTermNode::Variable(variable),
+        })
+    } else {
+        None
+    };
     Ok((
         prepared,
         Some(PureInductionSetup {
@@ -782,6 +813,13 @@ fn prepare_pure_induction_tactics(
             hypothesis: hypothesis.clone(),
             surface_requires,
             surface_goal: goal.clone(),
+            structural_root,
+            structural_parameters: theorem
+                .parameters()
+                .iter()
+                .find(|p| p.name() == parameter)
+                .filter(|p| matches!(p.click_type(), ClickType::Algebraic(_)))
+                .map(|_| theorem.parameters().to_vec()),
         }),
     ))
 }
@@ -790,598 +828,6 @@ pub(super) fn click_type_from_algebraic_value_type(
     value_type: &AlgebraicValueType,
 ) -> Result<ClickType, ClickError> {
     Ok(generics::click_type_from_algebraic_value_type(value_type))
-}
-
-fn prepare_structural_induction_arm_tactics(
-    tactics: &[ProofTactic],
-    setup: &PureStructuralInductionBranchSetup,
-    bindings: &BTreeMap<String, ContractExpression>,
-) -> Result<Vec<ProofTactic>, ClickError> {
-    tactics
-        .iter()
-        .map(|tactic| match tactic {
-            ProofTactic::ApplyTheorem(application) if application.name == setup.hypothesis => {
-                // Every written application was instantiated when the arm's
-                // premises were built, so this is a lookup, not a search.
-                let Some(selected) = setup
-                    .applications
-                    .iter()
-                    .find(|candidate| candidate.arguments == application.arguments)
-                else {
-                    return Err(ClickError::new(
-                        "structural induction hypothesis expects an immediate recursive field",
-                    ));
-                };
-                Ok(ProofTactic::ApplyInductionUsing {
-                    hypothesis: setup.hypothesis.clone(),
-                    arguments: application.arguments.clone(),
-                    premises: selected.surface_premises.clone(),
-                })
-            }
-            ProofTactic::ApplyTheoremUsing {
-                application,
-                premises,
-            } if application.name == setup.hypothesis => Ok(ProofTactic::ApplyInductionUsing {
-                hypothesis: setup.hypothesis.clone(),
-                arguments: application.arguments.clone(),
-                premises: premises.clone(),
-            }),
-            ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
-                condition: proof_if.condition.clone(),
-                ensuring: proof_if.ensuring.clone(),
-                then_tactics: prepare_structural_induction_arm_tactics(
-                    &proof_if.then_tactics,
-                    setup,
-                    bindings,
-                )?,
-                else_tactics: prepare_structural_induction_arm_tactics(
-                    &proof_if.else_tactics,
-                    setup,
-                    bindings,
-                )?,
-            })),
-            ProofTactic::Both(both) => Ok(ProofTactic::Both(ProofBoth {
-                left_tactics: prepare_structural_induction_arm_tactics(
-                    &both.left_tactics,
-                    setup,
-                    bindings,
-                )?,
-                right_tactics: prepare_structural_induction_arm_tactics(
-                    &both.right_tactics,
-                    setup,
-                    bindings,
-                )?,
-            })),
-            ProofTactic::Cases(proof_cases) => {
-                Ok(ProofTactic::Cases(proof_cases.try_map_tactics(
-                    |tactics| prepare_structural_induction_arm_tactics(tactics, setup, bindings),
-                )?))
-            }
-            ProofTactic::Match(proof_match) => {
-                Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
-                    scrutinee: substitute_contract_expression(&proof_match.scrutinee, bindings)
-                        .map_err(ClickError::new)?,
-                    ensuring: proof_match.ensuring.clone(),
-                    arms: proof_match
-                        .arms
-                        .iter()
-                        .map(|arm| {
-                            Ok(ProofInductionArm {
-                                type_name: arm.type_name.clone(),
-                                variant: arm.variant.clone(),
-                                bindings: arm.bindings.clone(),
-                                tactics: prepare_structural_induction_arm_tactics(
-                                    &arm.tactics,
-                                    setup,
-                                    bindings,
-                                )?,
-                            })
-                        })
-                        .collect::<Result<_, ClickError>>()?,
-                })))
-            }
-            ProofTactic::Induct { .. } => Err(ClickError::new(
-                "nested induction is not supported in a structural induction arm",
-            )),
-            ProofTactic::ApplyInduction { .. } | ProofTactic::ApplyInductionUsing { .. } => Err(
-                ClickError::new("internal induction-application syntax is not accepted directly"),
-            ),
-            ProofTactic::ApplyTheorem(application)
-            | ProofTactic::ApplyTheoremUsing { application, .. } => {
-                // Ordinary applications use the same typed symbolic fields as
-                // the branch goal, including in their checked explicit form.
-                let mut application = application.clone();
-                application.arguments = application
-                    .arguments
-                    .iter()
-                    .map(|argument| {
-                        substitute_contract_expression(argument, bindings).map_err(ClickError::new)
-                    })
-                    .collect::<Result<_, _>>()?;
-                Ok(match tactic {
-                    ProofTactic::ApplyTheoremUsing { premises, .. } => {
-                        ProofTactic::ApplyTheoremUsing {
-                            application,
-                            premises: premises.clone(),
-                        }
-                    }
-                    _ => ProofTactic::ApplyTheorem(application),
-                })
-            }
-            tactic => Ok(tactic.clone()),
-        })
-        .collect()
-}
-
-fn check_pure_structural_induction(
-    theorem: &TheoremDefinition,
-    claim_label: &str,
-    context: &PureTheoremContext,
-    surface_goal: &ClickProposition,
-    spec_definitions: SpecDefinitions<'_>,
-    theorem_environment: &TheoremEnvironment,
-    tactics: &[ProofTactic],
-) -> Result<
-    (
-        ProofCertificate,
-        Vec<crate::kernel::proof::CheckedProposition>,
-    ),
-    ClickError,
-> {
-    let _timing = tactics
-        .first()
-        .and_then(|tactic| TacticTiming::pure_source(claim_label, vec![0], tactic));
-    let [
-        ProofTactic::Induct {
-            parameter,
-            hypothesis,
-        },
-        ProofTactic::Match(proof_match),
-    ] = tactics
-    else {
-        return Err(ClickError::new(
-            "structural induction requires `let ih = induct(xs);` followed by `match xs { ... }` as the two top-level tactics in a pure theorem proof",
-        ));
-    };
-    let Some((parameter_index, parameter_definition)) = theorem
-        .parameters()
-        .iter()
-        .enumerate()
-        .find(|(_, candidate)| candidate.name() == parameter)
-    else {
-        return Err(ClickError::new(format!(
-            "`induct({parameter})` requires a theorem parameter with that name"
-        )));
-    };
-    let ClickType::Algebraic(parameter_type) = parameter_definition.click_type() else {
-        return Err(ClickError::new(format!(
-            "constructor-branching `induct({parameter})` requires an algebraic theorem parameter"
-        )));
-    };
-    let parameter_expression = ContractExpression::AlgebraicVariable {
-        // Arbitrary types have no exhaustive constructor schema.
-        name: parameter.clone().into(),
-        algebraic_type: parameter_type.clone(),
-        binder_index: parameter_index,
-    };
-    if parameter_type.rigid {
-        return Err(ClickError::new(format!(
-            "`{claim_label}`: structural induction requires a datatype, not arbitrary type `{}`",
-            parameter_type.name
-        )));
-    }
-    let matches_parameter = match &proof_match.scrutinee {
-        ContractExpression::AlgebraicVariable { name, .. } => {
-            name.written() == Some(parameter.as_str())
-        }
-        ContractExpression::Binding(name) => name == parameter,
-        _ => false,
-    };
-    if !matches_parameter {
-        return Err(ClickError::new(format!(
-            "structural induction on `{parameter}` requires a match on that same parameter"
-        )));
-    }
-    if proof_match.ensuring.is_some() {
-        return Err(ClickError::new(
-            "a structural induction match proves the theorem goal in each arm and does not accept an `ensuring` interface",
-        ));
-    }
-    let arms = &proof_match.arms;
-    let _match_timing = TacticTiming::pure_source(claim_label, vec![1], &tactics[1]);
-    let state = ExecutionState::new().with_memory(context.memory.clone());
-    let parameter_value = capture_fixed_state_algebraic_expression(
-        &parameter_expression,
-        ContractEnvironment::new(&context.values, &context.array_refs),
-        FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
-        spec_definitions,
-    )
-    .map_err(|message| ClickError::new(format!("`{claim_label}`: {message}")))?;
-    // A Click library primitive type, `Vec<T>`, is rigid in the kernel: it
-    // has no constructors, so no set of arms covers its values.
-    if parameter_value.algebraic_type.rigid {
-        return Err(ClickError::new(format!(
-            "`{claim_label}`: structural induction requires a datatype; `{}` is a Click library primitive type with no constructors",
-            parameter_type.name
-        )));
-    }
-    let root_value_type = AlgebraicValueType::Algebraic {
-        name: parameter_value.algebraic_type.name.clone(),
-        arguments: parameter_value.algebraic_type.arguments.clone(),
-    };
-    let theorem_parameter_names = theorem
-        .parameters()
-        .iter()
-        .map(|parameter| parameter.name())
-        .collect::<BTreeSet<_>>();
-    // One normalization for every arm and every child hypothesis below, so a
-    // `views` premise is the same premise in the same position in all of them.
-    let theorem_requires = theorem_requirement_propositions(theorem)?;
-    let mut seen_variants = BTreeSet::new();
-    let mut completions = Vec::new();
-    let mut checked_arms = Vec::new();
-    for (arm_index, arm) in arms.iter().enumerate() {
-        if arm.type_name != parameter_value.algebraic_type.name {
-            return Err(ClickError::new(format!(
-                "structural induction pattern `{}::{}` does not match parameter type `{}`",
-                arm.type_name, arm.variant, parameter_value.algebraic_type.name
-            )));
-        }
-        if !seen_variants.insert(arm.variant.as_str()) {
-            return Err(ClickError::new(format!(
-                "duplicate structural induction arm `{}::{}`",
-                arm.type_name, arm.variant
-            )));
-        }
-        let Some(variant) = parameter_value
-            .algebraic_type
-            .variants
-            .iter()
-            .find(|candidate| candidate.name == arm.variant)
-        else {
-            return Err(ClickError::new(format!(
-                "unknown structural induction variant `{}::{}`",
-                arm.type_name, arm.variant
-            )));
-        };
-        if arm.bindings.len() != variant.fields.len() {
-            return Err(ClickError::new(format!(
-                "pattern `{}::{}` expects {} binding(s), got {}",
-                arm.type_name,
-                arm.variant,
-                variant.fields.len(),
-                arm.bindings.len()
-            )));
-        }
-        let mut distinct_bindings = BTreeSet::new();
-        for binding in &arm.bindings {
-            if !distinct_bindings.insert(binding.as_str()) {
-                return Err(ClickError::new(format!(
-                    "pattern `{}::{}` repeats binding `{binding}`",
-                    arm.type_name, arm.variant
-                )));
-            }
-            if theorem_parameter_names.contains(binding.as_str()) || binding == hypothesis {
-                return Err(ClickError::new(format!(
-                    "structural induction binding `{binding}` conflicts with a theorem parameter or the induction hypothesis"
-                )));
-            }
-        }
-
-        let mut branch_context = context.clone();
-        let mut branch_algebraic_values = BTreeMap::new();
-        let mut branch_bindings = BTreeMap::new();
-        let mut constructor_arguments = Vec::new();
-        for (field_index, (binding, field_type)) in
-            arm.bindings.iter().zip(&variant.fields).enumerate()
-        {
-            let binding_expression = ContractExpression::Binding(binding.clone());
-            constructor_arguments.push(binding_expression.clone());
-            match field_type {
-                AlgebraicValueType::Program(interface_type)
-                | AlgebraicValueType::ObjectPointer(interface_type, _) => {
-                    if matches!(
-                        interface_type,
-                        ProgramType::Void
-                            | ProgramType::Int8Array(_)
-                            | ProgramType::Int16Array(_)
-                            | ProgramType::UInt16Array(_)
-                            | ProgramType::Int32Array(_)
-                            | ProgramType::UInt8Array(_)
-                            | ProgramType::UInt32Array(_)
-                            | ProgramType::Int128Array(_)
-                            | ProgramType::Int64Array(_)
-                            | ProgramType::UInt128Array(_)
-                            | ProgramType::UInt64Array(_)
-                            | ProgramType::Float32Array(_)
-                            | ProgramType::Float64Array(_)
-                    ) {
-                        return Err(ClickError::new(
-                            "structural induction does not support void or array-valued constructor fields",
-                        ));
-                    }
-                    let variable = Variable(
-                        STRUCTURAL_INDUCTION_VARIABLE_BASE
-                            + (arm_index as u64) * 65_536
-                            + field_index as u64,
-                    );
-                    branch_context.values.insert(
-                        binding.clone(),
-                        field_type
-                            .symbolic_program_value(variable)
-                            .expect("C model field"),
-                    );
-                }
-                algebraic @ (AlgebraicValueType::Algebraic { .. }
-                | AlgebraicValueType::Parameter(_)) => {
-                    let ClickType::Algebraic(algebraic_type) =
-                        click_type_from_algebraic_value_type(algebraic)?
-                    else {
-                        unreachable!("algebraic field conversion preserves its family")
-                    };
-                    let symbolic = ContractExpression::AlgebraicVariable {
-                        name: binding.clone().into(),
-                        algebraic_type,
-                        binder_index: theorem.parameters().len()
-                            + 1
-                            + arm_index * 256
-                            + field_index,
-                    };
-                    let captured = capture_fixed_state_algebraic_expression(
-                        &symbolic,
-                        ContractEnvironment::new(
-                            &branch_context.values,
-                            &branch_context.array_refs,
-                        ),
-                        FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
-                        spec_definitions,
-                    )
-                    .map_err(|message| ClickError::new(format!("`{claim_label}`: {message}")))?;
-                    branch_algebraic_values.insert(binding.clone(), captured);
-                    branch_bindings.insert(binding.clone(), symbolic);
-                }
-                AlgebraicValueType::Integer => {
-                    return Err(ClickError::new(
-                        "structural induction over Integer-valued constructor fields is not yet supported",
-                    ));
-                }
-            }
-        }
-        let constructor = ContractExpression::AlgebraicConstructor {
-            algebraic_type: parameter_type.clone(),
-            variant: arm.variant.clone(),
-            arguments: constructor_arguments,
-        };
-        let case_substitution = BTreeMap::from([(parameter.clone(), constructor)]);
-        let branch_surface_goal = substitute_click_proposition(surface_goal, &case_substitution)
-            .map_err(ClickError::new)?;
-        let branch_goal = lower_pure_theorem_proposition_with_algebraic_values(
-            claim_label,
-            &branch_surface_goal,
-            ContractEnvironment::new(&branch_context.values, &branch_context.array_refs),
-            &branch_algebraic_values,
-            &branch_context.memory,
-            spec_definitions,
-        )
-        .map_err(ClickError::new)?;
-        let mut branch_surface_requires = Vec::new();
-        let mut branch_requires = Vec::new();
-        for requirement in &theorem_requires {
-            let surface = substitute_click_proposition(requirement, &case_substitution)
-                .map_err(ClickError::new)?;
-            let kernel = lower_pure_theorem_proposition_with_algebraic_values(
-                claim_label,
-                &surface,
-                ContractEnvironment::new(&branch_context.values, &branch_context.array_refs),
-                &branch_algebraic_values,
-                &branch_context.memory,
-                spec_definitions,
-            )
-            .map_err(ClickError::new)?;
-            branch_surface_requires.push(surface);
-            branch_requires.push(kernel);
-        }
-        let recursive_bindings = arm
-            .bindings
-            .iter()
-            .zip(&variant.fields)
-            .filter(|(_, field_type)| *field_type == &root_value_type)
-            .map(|(binding, _)| binding.clone())
-            .collect::<Vec<_>>();
-        // Every immediate recursive field keeps its hypothesis at the
-        // theorem's current parameters, and the arm's script adds one
-        // instance for each parameter list it spells.
-        let mut application_arguments = recursive_bindings
-            .iter()
-            .map(|binding| vec![ContractExpression::Binding(binding.clone())])
-            .collect::<Vec<_>>();
-        collect_structural_induction_arguments(
-            &arm.tactics,
-            hypothesis,
-            &mut application_arguments,
-        );
-        let mut applications = Vec::new();
-        for arguments in application_arguments {
-            let child_substitution = structural_induction_hypothesis_substitution(
-                theorem, parameter, hypothesis, &arguments,
-            )?;
-            let descends = structural_induction_descent_argument(parameter_index, &arguments)
-                .and_then(induction_argument_name)
-                .is_some_and(|name| recursive_bindings.iter().any(|binding| binding == name));
-            if !descends {
-                return Err(ClickError::new(
-                    "structural induction hypothesis expects an immediate recursive field",
-                ));
-            }
-            let mut surface_premises = Vec::new();
-            let mut kernel_premises = Vec::new();
-            for requirement in &theorem_requires {
-                let surface = substitute_click_proposition(requirement, &child_substitution)
-                    .map_err(ClickError::new)?;
-                let kernel = lower_pure_theorem_proposition_with_algebraic_values(
-                    claim_label,
-                    &surface,
-                    ContractEnvironment::new(&branch_context.values, &branch_context.array_refs),
-                    &branch_algebraic_values,
-                    &branch_context.memory,
-                    spec_definitions,
-                )
-                .map_err(ClickError::new)?;
-                surface_premises.push(surface);
-                kernel_premises.push(kernel);
-            }
-            let child_surface_goal =
-                substitute_click_proposition(surface_goal, &child_substitution)
-                    .map_err(ClickError::new)?;
-            let conclusion = lower_pure_theorem_proposition_with_algebraic_values(
-                claim_label,
-                &child_surface_goal,
-                ContractEnvironment::new(&branch_context.values, &branch_context.array_refs),
-                &branch_algebraic_values,
-                &branch_context.memory,
-                spec_definitions,
-            )
-            .map_err(ClickError::new)?;
-            // As in `pure_induction_hypothesis`: the hypothesis is the
-            // theorem's statement at the child, so a range premise carries the
-            // byte-count guards of the range the child substitution moved it
-            // to. `kernel_premises` keeps its positional pairing with
-            // `surface_premises`, so the guards enter the implication only.
-            let implication =
-                kernel_premises
-                    .iter()
-                    .rev()
-                    .fold(conclusion.clone(), |body, premise| {
-                        let body = crate::kernel::stated_loadable_span_guards(premise)
-                            .into_iter()
-                            .rev()
-                            .fold(body, |body, guard| {
-                                Proposition::Implies(Box::new(guard), Box::new(body))
-                            });
-                        Proposition::Implies(Box::new(premise.clone()), Box::new(body))
-                    });
-            // Two spellings of the same instance, such as `ih(tail)` and the
-            // complete list that repeats the other parameters, state one
-            // premise.
-            if !branch_requires.contains(&implication) {
-                branch_requires.push(implication.clone());
-            }
-            applications.push(PureStructuralInductionApplication {
-                arguments,
-                surface_premises,
-                kernel_premises,
-                implication,
-                conclusion,
-            });
-        }
-        branch_context.surface_requirements = SurfacePropositionMap::default();
-        for (surface, kernel) in branch_surface_requires.iter().zip(&branch_requires) {
-            branch_context
-                .surface_requirements
-                .record_lowering(surface, kernel)?;
-        }
-        // The branch assumes this case's own requirements, so a range among
-        // them carries its guards here too — the same list the branch's
-        // hypothesis applications owe. Appended after the pairing above, which
-        // a guard has no source clause for.
-        for guard in branch_requires
-            .iter()
-            .flat_map(crate::kernel::stated_loadable_span_guards)
-            .collect::<Vec<_>>()
-        {
-            if !branch_requires.contains(&guard) {
-                branch_requires.push(guard);
-            }
-        }
-        branch_context.requires = branch_requires.clone();
-        let branch_setup = PureStructuralInductionBranchSetup {
-            hypothesis: hypothesis.clone(),
-            parameter_index,
-            recursive_bindings,
-            applications,
-            algebraic_values: branch_algebraic_values,
-        };
-        let prepared = prepare_structural_induction_arm_tactics(
-            &arm.tactics,
-            &branch_setup,
-            &branch_bindings,
-        )?;
-        let root = Proof::for_pure_surface_goal_with_structural_induction(
-            claim_label,
-            &branch_requires,
-            branch_goal,
-            branch_surface_goal,
-            &branch_context,
-            spec_definitions,
-            theorem_environment,
-            branch_setup,
-        );
-        let mut search = super::attempt::search_scope("pure structural induction arm");
-        // Declaration 0 is followed by match 1. Its arms follow in written
-        // order, each numbered through its own nested tactics.
-        let first_source_index = 2 + arms[..arm_index]
-            .iter()
-            .map(|earlier| super::source_tactic_count(&earlier.tactics))
-            .sum::<usize>();
-        let sites = claim_script_sites(&root, &prepared, first_source_index);
-        let mut unfinished = None;
-        let attempted = match root.driver().try_addressed_linear_script(
-            &prepared,
-            &sites,
-            &mut None,
-            Some(&mut unfinished),
-        ) {
-            Ok(attempted) => attempted,
-            Err(error) => return Err(error.with_search_failures(search.finish())),
-        };
-        let Some(proof) = attempted else {
-            check_verification_deadline()?;
-            let error = unfinished.as_ref().unwrap_or(&root).step_error(format!(
-                "`{claim_label}` structural induction arm `{}::{}` did not close its goal",
-                arm.type_name, arm.variant
-            ));
-            return Err(error.with_search_failures(search.finish()));
-        };
-        search.succeed();
-        proof.record_accepted_trace(claim_label, completions.len());
-        completions.push(proof.completed_proposition()?);
-        checked_arms.push(ProofInductionArm {
-            type_name: arm.type_name.clone(),
-            variant: arm.variant.clone(),
-            bindings: arm.bindings.clone(),
-            tactics: proof.completed_certificate()?.to_proof_tactics(),
-        });
-    }
-    let missing = parameter_value
-        .algebraic_type
-        .variants
-        .iter()
-        .filter(|variant| !seen_variants.contains(variant.name.as_str()))
-        .map(|variant| variant.name.as_str())
-        .collect::<Vec<_>>();
-    if !missing.is_empty() {
-        return Err(ClickError::new(format!(
-            "structural induction is missing arm(s): {}",
-            missing.join(", ")
-        )));
-    }
-    let certificate = ProofCertificate::from_proof_tactics(&[
-        ProofTactic::Induct {
-            parameter: parameter.clone(),
-            hypothesis: hypothesis.clone(),
-        },
-        ProofTactic::Match(std::sync::Arc::new(ProofMatch {
-            scrutinee: proof_match.scrutinee.clone(),
-            ensuring: None,
-            arms: checked_arms,
-        })),
-    ])
-    .map_err(|error| {
-        ClickError::new(format!(
-            "structural induction for `{claim_label}` produced an invalid certificate: {error}"
-        ))
-    })?;
-    Ok((certificate, completions))
 }
 
 pub(super) fn pure_theorem_context(
@@ -2121,57 +1567,30 @@ fn verify_theorem_ensure(
                     "`{claim_label}` has an empty explicit proof script"
                 )));
             }
-            let structural_induction = tactics
-                .iter()
-                .find_map(|tactic| match tactic {
-                    ProofTactic::Induct { parameter, .. } => Some(parameter),
-                    _ => None,
-                })
-                .is_some_and(|name| {
-                    theorem.parameters().iter().any(|parameter| {
-                        parameter.name() == name
-                            && matches!(parameter.click_type(), ClickType::Algebraic(_))
-                    })
-                });
-            if structural_induction {
-                if let Some(error) = entry_requirements.refusals.first() {
-                    return Err(error.clone());
-                }
-                let (certificate, completions) = check_pure_structural_induction(
-                    theorem,
-                    claim_label,
-                    context,
-                    surface_goal,
-                    spec_definitions,
-                    theorem_environment,
-                    tactics,
-                )?;
-                (
-                    ProofKind::TacticScript,
-                    certificate,
-                    TheoremProofCompletion::StructuralInduction(completions),
-                )
-            } else {
-                let (tactics, setup) =
-                    prepare_pure_induction_tactics(theorem, surface_goal, tactics)?;
-                let (certificate, completion) = check_pure_script_with_proof(
-                    claim_label,
-                    context,
-                    surface_goal,
-                    &goal,
-                    &goal_introductions,
-                    &entry_requirements,
-                    &tactics,
-                    setup.as_ref(),
-                    spec_definitions,
-                    theorem_environment,
-                )?;
-                (
-                    ProofKind::TacticScript,
-                    certificate,
-                    TheoremProofCompletion::Proposition(completion),
-                )
-            }
+            let (tactics, setup) = prepare_pure_induction_tactics(
+                theorem,
+                surface_goal,
+                tactics,
+                context,
+                spec_definitions,
+            )?;
+            let (certificate, completion) = check_pure_script_with_proof(
+                claim_label,
+                context,
+                surface_goal,
+                &goal,
+                &goal_introductions,
+                &entry_requirements,
+                &tactics,
+                setup.as_ref(),
+                spec_definitions,
+                theorem_environment,
+            )?;
+            (
+                ProofKind::TacticScript,
+                certificate,
+                TheoremProofCompletion::Proposition(completion),
+            )
         }
     };
     let kernel_variables = theorem
@@ -3604,25 +3023,6 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     .map_err(|error| format!("pure theorem `{theorem_name}`: {error}"))
 }
 
-pub(super) fn lower_pure_theorem_proposition_with_algebraic_values(
-    theorem_name: &str,
-    proposition: &ClickProposition,
-    contract_environment: ContractEnvironment<'_>,
-    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    memory: &SymbolicMemory,
-    spec_definitions: SpecDefinitions<'_>,
-) -> Result<Proposition, String> {
-    lower_pure_theorem_proposition_with_algebraic_and_integer_values(
-        theorem_name,
-        proposition,
-        contract_environment,
-        algebraic_values,
-        &PersistentBinderMap::default(),
-        memory,
-        spec_definitions,
-    )
-}
-
 /// A pure theorem's proposition lowered at its parameter state by the
 /// kernel, with the calls named in `opaque_click_functions` kept as
 /// applications.
@@ -4105,23 +3505,15 @@ mod tests {
         for (bad, diagnostic) in [
             (
                 source.replace("match xs", "match ys"),
-                "match on that same parameter",
-            ),
-            (
-                source.replace("match xs", "match Chain::Nil"),
-                "match on that same parameter",
+                "immediate recursive field",
             ),
             (
                 source.replace("match xs {", "match xs ensuring { fact xs == xs; } {"),
-                "does not accept an `ensuring`",
-            ),
-            (
-                source.replace("let ih = induct(xs);", "let ih = induct(xs); known();"),
-                "two top-level tactics",
+                "does not take `ensuring`",
             ),
             (
                 source.replace("apply(ih(tail));", "let inner = induct(tail);"),
-                "nested induction",
+                "same theorem parameter",
             ),
             (
                 source.replace("apply(ih(tail));", "apply(ih(xs));"),
@@ -4132,6 +3524,74 @@ mod tests {
                 verify_instantiation_theorem(&bad).expect_err("invalid induction must fail");
             assert!(error.report().contains(diagnostic), "{}", error.report());
         }
+    }
+
+    #[test]
+    #[ignore = "nightly: structural induction scope, expansion, and cold replay matrix"]
+    fn structural_induction_surrounding_helpers_expand_and_cold_replay() {
+        let source = include_str!("../../../mdtests/structural_induction_surrounding_helpers.md")
+            .split_once("```click\n")
+            .unwrap()
+            .1
+            .split_once("\n```")
+            .unwrap()
+            .0;
+        crate::surface::verify_c_sources(source, &[]).unwrap();
+        for theorem in [
+            "surrounding",
+            "match_in_helper",
+            "branch_before_declaration",
+            "branch_after_declaration",
+        ] {
+            let expanded = crate::surface::expand_c_claim_source_by_label(
+                source,
+                &[],
+                &format!("{theorem}.ensures_0"),
+            )
+            .unwrap();
+            crate::surface::without_implicit_solve(|| {
+                crate::surface::verify_c_sources(&expanded, &[])
+            })
+            .unwrap();
+        }
+        let false_source = source.replace(
+            "Chain::Link(tail) => Chain::Link(copy_chain(tail))",
+            "Chain::Link(tail) => Chain::Nil",
+        );
+        assert!(crate::surface::verify_c_sources(&false_source, &[]).is_err());
+        let premature = source.replace(
+            "have before: n >= 0 by known();",
+            "have before: n >= 0 by { apply(ih(xs)); }",
+        );
+        assert!(crate::surface::verify_c_sources(&premature, &[]).is_err());
+        let continuation = include_str!("../../../mdtests/structural_induction_continuation.md")
+            .split_once("```click\n")
+            .unwrap()
+            .1
+            .split_once("\n```")
+            .unwrap()
+            .0;
+        let census = crate::surface::proof::raise_lower_census::capture(|| {
+            crate::surface::verify_c_sources(continuation, &[]).unwrap();
+        });
+        assert!(
+            census.iter().all(|line| line.starts_with("raised\t")),
+            "{census:#?}"
+        );
+        let expanded = crate::surface::expand_c_claim_source_by_label(
+            continuation,
+            &[],
+            "continuation.ensures_0",
+        )
+        .unwrap();
+        crate::surface::without_implicit_solve(|| crate::surface::verify_c_sources(&expanded, &[]))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+        let dangling =
+            continuation.replace("have xs == xs by known();", "have tail == tail by known();");
+        assert!(
+            crate::surface::verify_c_sources(&dangling, &[]).is_err(),
+            "match fields remain arm-local"
+        );
     }
 
     #[test]
@@ -4152,9 +3612,10 @@ mod tests {
             .unwrap()
             .remove(0);
         assert!(verified.kernel_authority.is_none());
-        assert!(
-            matches!(&verified.checked_completion, Some(TheoremProofCompletion::StructuralInduction(arms)) if arms.len() == 2)
-        );
+        assert!(matches!(
+            &verified.checked_completion,
+            Some(TheoremProofCompletion::Proposition(_))
+        ));
         assert!(
             matches!(verified.proof_certificate().unwrap().steps(), [ProofStep::Induct { .. }, ProofStep::Match { arms, .. }] if arms.len() == 2)
         );

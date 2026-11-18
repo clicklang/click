@@ -2403,7 +2403,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         include_owned_composite_cores,
         claim_label,
         &entry_authority_state.resources().clone(),
-        &entry_authority_state.memory().clone(),
+        &entry_authority_state,
     )?;
     // The entry partition facts are entry assumptions of this contract, on the
     // same footing as the `viewable(..)` fact a clause yields: they are
@@ -2722,7 +2722,7 @@ fn evaluate_entry_resource_context(
     include_owned_composite_cores: Option<resources::OwnedCores>,
     claim_label: &str,
     entry_resources: &ResourceContext,
-    entry_memory: &SymbolicMemory,
+    entry_memory_state: &ExecutionState,
 ) -> Result<(ExecutionState, Vec<Proposition>, Vec<Proposition>), ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
     let (resource_specs, _) = crate::surface::verification::function_resource_summary(
@@ -2817,7 +2817,9 @@ fn evaluate_entry_resource_context(
             .unchecked_with_facts(explicit_entry_facts)
             .unchecked_with_facts(precondition_read_facts),
     );
-    evaluation_state = evaluation_state.with_memory(entry_memory.clone());
+    // The entry memory is the entry state's, so stand where that state
+    // stood rather than at a new point that returns to older memory.
+    evaluation_state = evaluation_state.with_memory_of(entry_memory_state);
     for parameter in parsed_function.parameters() {
         if let Some(value) = values.get(parameter.name()) {
             evaluation_state = evaluation_state.with_local(parameter.binding_name(), value.clone());

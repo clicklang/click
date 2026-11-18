@@ -785,7 +785,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 || reverse_equality(kernel)
                     .is_some_and(|reverse| equality_rewrite_applies(goal, &reverse))
         };
-        equalities.sort_by_key(|equality| !applies(equality));
+        equalities.sort_by_cached_key(|equality| !applies(equality));
         let forms = |kernel: Proposition, surface: ClickProposition| {
             let mut forms = oriented_forms(kernel.clone(), surface.clone());
             if matches!(closers, RewriteClosers::GoalLocal { .. })

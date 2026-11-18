@@ -19,5 +19,5 @@ theorem rejected(xs: TestList<int32>) {
 ```
 
 ```expect
-fail: structural induction is missing arm(s): Cons
+fail: match must cover every constructor exactly once
 ```
