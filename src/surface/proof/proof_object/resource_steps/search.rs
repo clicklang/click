@@ -3,6 +3,50 @@
 use super::*;
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Spell the exact head already selected by call preparation. Only
+    /// ordinary, fact-free bodies can use this certificate rewrite: an
+    /// explicit open must introduce no new proof names or body facts.
+    pub(in crate::surface::proof) fn selected_call_supplier_unfold(
+        input: &Proof<'a>,
+        selected: &ResourceFact,
+    ) -> Option<ProofStep> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("selected_call_supplier_unfold");
+        let ProofContext::Execution(context) = input.context.as_ref() else {
+            return None;
+        };
+        let Resource::Composite { name, arguments } = selected.resource() else {
+            return None;
+        };
+        let state = input.execution()?.core.reached_state();
+        if selected.owned_quantity() != Some(1) || state.resources().exact_count(selected) != 1 {
+            return None;
+        }
+        let definition = context.resource_environment.get(name)?;
+        let body = definition.composite_body()?;
+        if definition.is_authorized()
+            || definition.is_sealed()
+            || !definition.is_fieldless()
+            || !definition.resource_parameters().is_empty()
+            || body.condition().is_some()
+            || !body.facts().is_empty()
+            || !body.witnesses().is_empty()
+            || body.matched.is_some()
+            || !body.children.is_empty()
+        {
+            return None;
+        }
+        let parameters = context.parameter_binding();
+        let clause = held_composite_resource_clause(
+            definition,
+            &arguments.native_values(),
+            parameters,
+            state,
+        )?;
+        let lowered = lower_resource_clause_at_state(&clause, parameters, state).ok()?;
+        (lowered == *selected).then_some(ProofStep::UnfoldResource(clause))
+    }
+
     /// `solve`'s automatic opening (design/proof-reuse.md R4): the `unfold`
     /// of the one folded resource whose body holds `missing`, applied, so
     /// that `solve` can retry a C operation refused for want of it. `None`

@@ -10710,6 +10710,8 @@ fn prepare_function_resource_transfer(
     )
 }
 
+pub(crate) mod call_supplier_selection;
+
 /// Unfolds exactly the folded composite owners a call's own requirements
 /// need, and nothing else.
 ///
@@ -10738,6 +10740,9 @@ fn candidate_planning_resources(
                     .is_empty())
     };
     let mut resources = caller_resources.clone();
+    if !call_supplier_selection::search_enabled() || !resources.has_folded_composites() {
+        return resources;
+    }
     for requirement in requirements {
         // A viewed composite requirement is lent folded, through the checked
         // composite backing, so opening it here would destroy the head that
@@ -10777,8 +10782,10 @@ fn candidate_planning_resources(
                     assumptions,
                 )
                 .filter(|expanded| supported(expanded, requirement))
+                .map(|expanded| (expanded, composite))
             });
-        if let Some(opened) = opened {
+        if let Some((opened, selected)) = opened {
+            call_supplier_selection::record(selected);
             resources = opened;
         }
     }
@@ -10840,10 +10847,13 @@ fn candidate_composite_view_adapter(
     let Resource::Composite { name, arguments } = required.resource() else {
         return Ok(None);
     };
-    let Some(definition) = definitions
-        .iter()
-        .find(|definition| definition.name() == name)
-    else {
+    let definition_for = |name: &str| {
+        definitions
+            .binary_search_by(|definition| definition.name().cmp(name))
+            .ok()
+            .map(|index| &definitions[index])
+    };
+    let Some(definition) = definition_for(name) else {
         return Ok(None);
     };
     if definition.owns_population_authority()
@@ -10902,61 +10912,62 @@ fn candidate_composite_view_adapter(
             restored: frontier,
         }));
     }
-    // The owned-composite form: one folded owner in the caller whose checked
-    // frontier covers this one. Only the caller's own composite facts are
-    // examined, and each is expanded at most once.
-    let owners = resources
-        .facts()
-        .iter()
-        .filter(|fact| fact.is_own() && matches!(fact.resource(), Resource::Composite { .. }))
-        .cloned()
-        .collect::<Vec<_>>();
-    for owner in owners {
+    let checked_cover = |owner: &ResourceFact, direct_only| {
         crate::instrumentation::record_deterministic_work(1);
-        let Resource::Composite {
-            name: owner_name, ..
-        } = owner.resource()
-        else {
-            continue;
+        let Resource::Composite { name, .. } = owner.resource() else {
+            return None;
         };
-        let Some(owner_definition) = definitions
-            .iter()
-            .find(|definition| definition.name() == owner_name)
-        else {
-            continue;
-        };
-        // An authority control's head is not the restoration recipe a lend
-        // needs: restoring it must restore the authority's ledger state too.
+        let owner_definition = definition_for(name)?;
+        // Restore the exact escrowed occurrence with no authority exchange.
         if owner_definition.owns_population_authority()
             || owner_definition.is_recursive()
             || !owner_definition.facts_are_loan_stable()
+            || (direct_only
+                && (owner.owned_quantity() != Some(1)
+                    || !owner_definition.has_argument_direct_body()))
+            || resources.exact_count(owner) != 1
         {
-            continue;
+            return None;
         }
-        // The escrow has to name one occurrence, as a same-composite lend
-        // does: two equal-looking owners are not the same authority (law 5).
-        if resources.owned_occurrences_for_fact(&owner).len() != 1 {
-            continue;
-        }
-        let Some(owner_frontier) =
-            checked_one_level_frontier(&owner, definitions, caller_state, assumptions)
-        else {
-            continue;
-        };
-        if checked_frontier_coverage(owner_frontier, &frontier, assumptions).is_none() {
-            continue;
-        }
-        if !facts_hold {
-            return refuse_for_the_fact();
-        }
-        return Ok(Some(CompositeViewAdapter {
-            resources: resources.clone(),
-            head: owner,
-            adapted: vec![required.clone()],
-            restored: Vec::new(),
-        }));
+        let owner_frontier =
+            checked_one_level_frontier(owner, definitions, caller_state, assumptions)?;
+        checked_frontier_coverage(owner_frontier, &frontier, assumptions)?;
+        Some(owner.clone())
+    };
+
+    // A positive memory span has at most one exclusive supplier in the
+    // caller's partition. The exact pointer bucket nominates one held head
+    // without visiting other folds. Its checked body must still cover the
+    // view; the index itself supplies no ownership.
+    let indexed = if let [piece] = frontier.as_slice()
+        && let Some(range) = piece.memory_own_range()
+        && super::primitives::constant_memory_coordinates(range)
+            .is_some_and(|(_, start, end)| start < end)
+    {
+        resources
+            .unique_owned_composite_with_pointer_argument(range.base())
+            .and_then(|owner| checked_cover(owner, true))
+    } else {
+        None
+    };
+    let selected = indexed.or_else(|| {
+        resources
+            .composite_facts()
+            .filter(|fact| fact.is_own())
+            .find_map(|owner| checked_cover(owner, false))
+    });
+    let Some(head) = selected else {
+        return Ok(None);
+    };
+    if !facts_hold {
+        return refuse_for_the_fact();
     }
-    Ok(None)
+    Ok(Some(CompositeViewAdapter {
+        resources: resources.clone(),
+        head,
+        adapted: vec![required.clone()],
+        restored: Vec::new(),
+    }))
 }
 
 /// The kernel's own one-level expansion of one owned composite head, read in
