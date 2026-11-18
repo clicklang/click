@@ -9,7 +9,7 @@ fn evaluated(expression: ProgramExpression) -> ExpressionOutcome {
     let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         panic!("expected expression evaluation");
     };
-    outcome.clone()
+    outcome.clone().map_value(Into::into)
 }
 
 #[test]

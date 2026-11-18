@@ -908,10 +908,13 @@ fn symbolic_floating_arithmetic_remains_typed_and_opaque() {
     let theorem =
         prove_program_expression_evaluation(state, expression).expect("symbolic float add");
     let Proposition::ProgramExpressionEvaluates {
-        outcome: ExpressionOutcome::Value(ProgramValue::Float32(term)),
+        outcome: ExpressionOutcome::Value(stored_outcome_value),
         ..
     } = theorem.proposition()
     else {
+        panic!("symbolic float addition should produce a float value");
+    };
+    let ProgramValue::Float32(term) = stored_outcome_value.native_compat() else {
         panic!("symbolic float addition should produce a float value");
     };
     assert!(matches!(term, MachineTerm::Float32Binary { .. }));
@@ -975,10 +978,13 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
     )
     .expect("symbolic integer-to-float conversion should evaluate");
     let Proposition::ProgramExpressionEvaluates {
-        outcome: ExpressionOutcome::Value(ProgramValue::Float64(term)),
+        outcome: ExpressionOutcome::Value(stored_outcome_value),
         ..
     } = theorem.proposition()
     else {
+        panic!("symbolic integer-to-float conversion should produce a double");
+    };
+    let ProgramValue::Float64(term) = stored_outcome_value.native_compat() else {
         panic!("symbolic integer-to-float conversion should produce a double");
     };
     assert!(matches!(term, MachineTerm::PureFunctionApplication { .. }));
@@ -992,10 +998,13 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
     )
     .expect("symbolic float widening conversion should evaluate");
     let Proposition::ProgramExpressionEvaluates {
-        outcome: ExpressionOutcome::Value(ProgramValue::Float64(term)),
+        outcome: ExpressionOutcome::Value(stored_outcome_value),
         ..
     } = theorem.proposition()
     else {
+        panic!("symbolic float widening conversion should produce a double");
+    };
+    let ProgramValue::Float64(term) = stored_outcome_value.native_compat() else {
         panic!("symbolic float widening conversion should produce a double");
     };
     assert!(matches!(term, MachineTerm::PureFunctionApplication { .. }));
@@ -1565,8 +1574,8 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
     else {
         panic!("explicit pointer cast did not produce a value");
     };
-    assert_eq!(value.program_type(), ProgramType::UInt8Pointer);
-    let ProgramValue::Pointer(value) = value else {
+    assert_eq!(value.value().program_type(), ProgramType::UInt8Pointer);
+    let ProgramValue::Pointer(value) = value.native_compat() else {
         unreachable!();
     };
     assert_eq!(value.address(), &address);
@@ -4208,10 +4217,13 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
         let theorem =
             prove_program_expression_evaluation(ExecutionState::new(), expression).unwrap();
         let Proposition::ProgramExpressionEvaluates {
-            outcome: ExpressionOutcome::Value(ProgramValue::Int64(value)),
+            outcome: ExpressionOutcome::Value(stored_outcome_value),
             ..
         } = theorem.proposition()
         else {
+            panic!("expected signed bits");
+        };
+        let ProgramValue::Int64(value) = stored_outcome_value.native_compat() else {
             panic!("expected signed bits");
         };
         assert_eq!(value.int64_as_const(), Some(bits as i64));
@@ -4225,10 +4237,13 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
             let theorem =
                 prove_program_expression_evaluation(ExecutionState::new(), ordinary).unwrap();
             let Proposition::ProgramExpressionEvaluates {
-                outcome: ExpressionOutcome::Value(ProgramValue::Int64(value)),
+                outcome: ExpressionOutcome::Value(stored_outcome_value),
                 ..
             } = theorem.proposition()
             else {
+                panic!("representable ordinary cast must preserve its value");
+            };
+            let ProgramValue::Int64(value) = stored_outcome_value.native_compat() else {
                 panic!("representable ordinary cast must preserve its value");
             };
             assert_eq!(value.int64_as_const(), Some(bits as i64));
@@ -4483,10 +4498,13 @@ fn evaluated_pointer(state: &ExecutionState, expression: ProgramExpression) -> P
     let theorem = prove_program_expression_evaluation(state.clone(), expression)
         .expect("the pointer expression should evaluate");
     let Proposition::ProgramExpressionEvaluates {
-        outcome: ExpressionOutcome::Value(ProgramValue::Pointer(value)),
+        outcome: ExpressionOutcome::Value(stored_outcome_value),
         ..
     } = theorem.proposition()
     else {
+        panic!("the pointer expression did not produce a pointer");
+    };
+    let ProgramValue::Pointer(value) = stored_outcome_value.native_compat() else {
         panic!("the pointer expression did not produce a pointer");
     };
     value.clone()
