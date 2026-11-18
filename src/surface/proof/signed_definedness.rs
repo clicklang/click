@@ -61,8 +61,8 @@ fn spell_signed_bound(
     let Proposition::ConditionIs(condition, value) = fact else {
         return None;
     };
-    use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
-    let view = comparison_view(condition, true)?;
+    use crate::kernel::machine_integer::comparison::structural_comparison_view;
+    let view = structural_comparison_view(condition)?;
     let format = match width {
         SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
         SignedDefinedWidth::Int64 => MachineIntegerType::Int64,
@@ -70,15 +70,16 @@ fn spell_signed_bound(
     if view.format != format
         && !(format == MachineIntegerType::Int32
             && view.format == MachineIntegerType::UInt32
-            && matches!(view.relation, Relation::Equal | Relation::NotEqual))
+            && view.relation == CompareRelation::Equal)
     {
         return None;
     }
     let operator = match view.relation {
-        Relation::Equal => ComparisonOperator::Equal,
-        Relation::NotEqual => ComparisonOperator::NotEqual,
-        Relation::Less => ComparisonOperator::LessThan,
-        Relation::LessEqual => ComparisonOperator::LessEqual,
+        CompareRelation::Equal => ComparisonOperator::Equal,
+        CompareRelation::LessThan => ComparisonOperator::LessThan,
+        CompareRelation::LessEqual => ComparisonOperator::LessEqual,
+        CompareRelation::GreaterThan => ComparisonOperator::GreaterThan,
+        CompareRelation::GreaterEqual => ComparisonOperator::GreaterEqual,
     };
     let expected = crate::kernel::SharedMachineIntegerTerm::intern(format, term.clone());
     let side = |side: crate::kernel::MachineOperandView<'_>| {
@@ -110,7 +111,7 @@ fn spell_signed_bound(
         operator,
         right: side(right)?,
     };
-    Some(if *value {
+    Some(if *value != view.negated {
         comparison
     } else {
         ClickProposition::Not(Box::new(comparison))

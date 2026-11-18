@@ -1,5 +1,9 @@
 //! Smart closure search and linear script interpretation.
+mod address_words;
+mod integer_algebra;
 mod integer_composition;
+mod pointer_offsets;
+mod quotient_shifts;
 mod signed_intervals;
 mod specialized;
 use crate::kernel::MachineCastSpelling;
@@ -1699,12 +1703,11 @@ impl<'a> Proof<'a> {
         if let Some(value) = term.as_const() {
             // Generated interval nodes can introduce a small machine
             // constant (for example the `+ 1` in a bump function) that has no
-            // separate source occurrence.  It is still source-printable as
-            // an ordinary signed literal, and the certificate checker will
-            // re-lower that literal before accepting the step.
+            // separate source occurrence. Retain its int32 type and bits;
+            // a negative decimal IntegerLiteral is not a native expression.
             if matches!(term, bits32_constant!(_)) {
-                return Some(ContractExpression::IntegerLiteral(
-                    i32::from_ne_bytes(value.to_ne_bytes()).to_string(),
+                return Some(ContractExpression::ProgramExpression(
+                    ProgramExpression::Value(int32(MachineTerm::constant(value))),
                 ));
             }
         }
