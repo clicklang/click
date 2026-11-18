@@ -424,7 +424,7 @@ fn scalar_array_region_writes_require_separation_for_the_entire_destination() {
                 panic!("expected a loan separation obligation");
             };
             let expected = MemoryRange::from_pointer_value(
-                &PointerValue::new(pointer("local:array-target", 0), ProgramType::UInt32Pointer),
+                &Pointer::new(pointer("local:array-target", 0), ProgramType::UInt32Pointer),
                 0u32.into(),
                 4u32.into(),
                 4,

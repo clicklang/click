@@ -2219,8 +2219,8 @@ impl Printer<'_> {
                 .find_map(|(parameter, value)| match value {
                     crate::kernel::ProgramExpression::Value(
                         crate::kernel::ProgramValue::Pointer(base),
-                    ) if base.pointer().base == pointer.base
-                        && base.pointer().offset == **base_offset
+                    ) if base.address().base == pointer.base
+                        && base.address().offset == **base_offset
                         && parameter.name().len() <= 256 =>
                     {
                         Some(parameter)
@@ -3273,10 +3273,8 @@ mod tests {
 
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address::symbolic(Variable(7));
-        let pointer_value = ProgramValue::Pointer(PointerValue::new(
-            pointer.clone(),
-            ProgramType::Int32Pointer,
-        ));
+        let pointer_value =
+            ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::Int32Pointer));
         let before = ExecutionState::new()
             .with_local("before_ptr", pointer_value.clone())
             .with_memory(SymbolicMemory::new());

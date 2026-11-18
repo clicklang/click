@@ -75,7 +75,7 @@ pub(in crate::surface) fn contract_environment_at_state(
             source_name.to_owned(),
             ClickArrayRef {
                 point: point.clone(),
-                pointer: pointer.pointer().clone(),
+                pointer: pointer.address().clone(),
                 element_type,
             },
         );
@@ -117,7 +117,7 @@ pub(in crate::surface) fn contract_environment_for_names(
                 name.clone(),
                 ClickArrayRef {
                     point: point.clone(),
-                    pointer: pointer.pointer().clone(),
+                    pointer: pointer.address().clone(),
                     element_type,
                 },
             );

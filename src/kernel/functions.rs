@@ -7430,7 +7430,7 @@ fn function_contract_requirement_is_proven(
             // carries its own contract, fixed to its captured values.
             let Some(target) = target else {
                 for source in contracts_for_pointer(
-                    pointer.pointer(),
+                    pointer.address(),
                     assumptions,
                     environment,
                     &pointer.program_type(),

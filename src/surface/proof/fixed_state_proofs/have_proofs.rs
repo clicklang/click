@@ -1122,7 +1122,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     Ok((
         ClickArrayRef {
             point,
-            pointer: pointer.pointer().clone(),
+            pointer: pointer.address().clone(),
             element_type,
         },
         pointer,

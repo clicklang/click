@@ -1369,7 +1369,7 @@ fn execute_program_aggregate_copy_paths(
                     );
                     memory_region_write_obligation_outcome(
                         state,
-                        target_pointer.pointer(),
+                        target_pointer.address(),
                         bytes,
                         &range,
                         &copy_assumptions,

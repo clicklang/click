@@ -4064,7 +4064,7 @@ pub(in crate::surface) fn array_refs_for_values(
                 name.clone(),
                 ClickArrayRef {
                     point: point.clone(),
-                    pointer: pointer.pointer().clone(),
+                    pointer: pointer.address().clone(),
                     element_type,
                 },
             ))
@@ -4137,7 +4137,7 @@ pub(in crate::surface) fn array_refs_for_parameters(
                 parameter.name().to_string(),
                 ClickArrayRef {
                     point: point.clone(),
-                    pointer: pointer.pointer().clone(),
+                    pointer: pointer.address().clone(),
                     element_type,
                 },
             ))
