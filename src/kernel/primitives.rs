@@ -2436,10 +2436,9 @@ impl SubobjectBounds {
     /// The fact that these opaque bounds cover `range`.
     pub(crate) fn coverage_fact(&self, range: &MemoryRange) -> Proposition {
         let pointer = |pointer: Address| {
-            Term::ProgramValue(ProgramValue::Pointer(Pointer::new(
-                pointer,
-                ProgramType::VoidPointer,
-            )))
+            Term::ProgramValue(
+                ProgramValue::Pointer(Pointer::new(pointer, ProgramType::VoidPointer)).into(),
+            )
         };
         let width = range.element_width();
         if let Some((start, end)) = range.wide_bounds() {
@@ -2448,8 +2447,8 @@ impl SubobjectBounds {
                 arguments: vec![
                     pointer(self.start.clone()),
                     pointer(range.base().clone()),
-                    Term::ProgramValue(ProgramValue::UInt64(start.clone())),
-                    Term::ProgramValue(ProgramValue::UInt64(end.clone())),
+                    Term::ProgramValue((ProgramValue::UInt64(start.clone())).into()),
+                    Term::ProgramValue((ProgramValue::UInt64(end.clone())).into()),
                 ],
             };
         }
@@ -7845,8 +7844,8 @@ pub struct VerifiedLoopRule {
     /// produced in; there is no other way to set it, so it is a record of what
     /// the body actually owed rather than a claim about it. A self-call inside
     /// the body raised its descent obligations exactly when this is `Some`,
-    /// and the rule exists at all only because every obligation on its paths
-    /// was discharged or assumable. Applying the rule and the termination
+    /// and the rule's paths retain any outstanding statement-entry
+    /// conditions for application. Applying the rule and the termination
     /// judgment both read it; see
     /// [`ExecutionEnvironment::applicable_verified_loop_rule`].
     pub(super) recursion_anchor: Option<std::sync::Arc<RecursionAnchor>>,
@@ -13234,7 +13233,7 @@ pub enum Term {
     Bitvector32(MachineTerm),
     Integer(IntegerTerm),
     PointerOffset(AddressOffset),
-    ProgramValue(ProgramValue),
+    ProgramValue(StoredProgramValue),
     Sequence(SequenceTerm),
     Algebraic(AlgebraicTerm),
     // Outcomes carry ExecutionState. Keep them out of Term's inline size so cloning
@@ -13247,7 +13246,7 @@ impl Term {
     /// Consume an owned payload without cloning its native expression prefix.
     pub(crate) fn into_program_value_native(self) -> Option<ProgramValue> {
         match self {
-            Self::ProgramValue(value) => Some(value),
+            Self::ProgramValue(value) => Some(value.into()),
             _ => None,
         }
     }
@@ -13276,7 +13275,7 @@ impl Term {
     }
     pub(crate) fn program_value_native(&self) -> Option<&ProgramValue> {
         match self {
-            Self::ProgramValue(value) => Some(value),
+            Self::ProgramValue(value) => Some(value.native_compat()),
             _ => None,
         }
     }
@@ -13320,7 +13319,7 @@ mod term_payload_view_tests {
                 std::ptr::from_ref(right.as_ref()),
             ];
             let Some(ProgramValue::Pointer(pointer)) =
-                Term::ProgramValue(value).into_program_value_native()
+                Term::ProgramValue(value.into()).into_program_value_native()
             else {
                 unreachable!()
             };
@@ -15125,6 +15124,8 @@ pub struct ProofObligation {
     /// Producer metadata: emitted on the false arm of a C assertion.
     /// This tags the existing truthiness obligation, not a new proposition.
     pub(super) assertion_failure: bool,
+    /// This condition must be established before applying the statement.
+    pub(super) statement_entry_required: bool,
     /// Source identity for a required call precondition, when this
     /// obligation was emitted while applying a selected callee contract.
     /// This is planning metadata only and is excluded from obligation
@@ -15152,6 +15153,7 @@ impl PartialEq for ProofObligation {
             && self.context == other.context
             && self.assumable == other.assumable
             && self.evaluation_domain == other.evaluation_domain
+            && self.statement_entry_required == other.statement_entry_required
     }
 }
 
@@ -15163,6 +15165,7 @@ impl Hash for ProofObligation {
         self.context.hash(state);
         self.assumable.hash(state);
         self.evaluation_domain.hash(state);
+        self.statement_entry_required.hash(state);
     }
 }
 
@@ -15173,6 +15176,10 @@ impl Ord for ProofObligation {
             .then_with(|| self.context.cmp(&other.context))
             .then_with(|| self.assumable.cmp(&other.assumable))
             .then_with(|| self.evaluation_domain.cmp(&other.evaluation_domain))
+            .then_with(|| {
+                self.statement_entry_required
+                    .cmp(&other.statement_entry_required)
+            })
     }
 }
 

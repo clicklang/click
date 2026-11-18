@@ -29,7 +29,10 @@ impl ReadType {
     }
 }
 
-type Reads = imbl::HashMap<(SharedMemory, Address, ReadType), ProgramValue>;
+use crate::kernel::program_point::ProgramPointId;
+
+type ReadKey = (SharedMemory, Address, ReadType, Option<ProgramPointId>);
+type Reads = imbl::HashMap<ReadKey, ProgramValue>;
 thread_local! {
     static READS: std::cell::RefCell<Option<Reads>> = const { std::cell::RefCell::new(None) };
 }
@@ -65,14 +68,24 @@ pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &Program
     };
     crate::instrumentation::record_deterministic_work(1);
     let kind = kind.key();
+    let version = match value {
+        ProgramValue::Int32(MachineTerm::MemoryLoad(point, _, LoadKind::Int32))
+        | ProgramValue::UInt32(MachineTerm::MemoryLoad(point, _, LoadKind::UInt32)) => {
+            point.read_version_id()
+        }
+        _ => None,
+    };
     let memory = crate::kernel::intern_memory_ref(memory);
     READS.with(|reads| {
         let mut slot = reads.borrow_mut();
         let reads = slot.as_mut().expect("active typed read scope");
-        reads.insert((memory.clone(), address.clone(), kind), value.clone());
+        reads.insert(
+            (memory.clone(), address.clone(), kind, version),
+            value.clone(),
+        );
         if matches!(kind, ReadType::Pointer(_)) {
             reads.insert(
-                (memory, address.clone(), ReadType::IntegerAddress),
+                (memory, address.clone(), ReadType::IntegerAddress, None),
                 value.clone(),
             );
         }
@@ -82,10 +95,38 @@ pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &Program
 /// Only the producer can file observations. A missing entry is not permission
 /// to evaluate a read here. The preservation goal names its reads by lowering
 /// them before applying the primitive.
+#[cfg(test)]
 pub(in crate::kernel) fn get(
     memory: &SymbolicMemory,
     address: &Address,
     kind: ReadType,
+) -> Option<ProgramValue> {
+    get_version(memory, address, kind, None)
+}
+
+pub(in crate::kernel) fn get_at(
+    point: &ProgramPoint,
+    memory: &SymbolicMemory,
+    address: &Address,
+    kind: ReadType,
+) -> Option<ProgramValue> {
+    let version = match kind {
+        ReadType::Integer(format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32)) => {
+            let load_kind = LoadKind::of_type(format.program_type()).expect("32-bit integer read");
+            point
+                .indexed_local_word32_version(address, load_kind)
+                .and_then(|point| point.read_version_id())
+        }
+        _ => None,
+    };
+    get_version(memory, address, kind, version)
+}
+
+fn get_version(
+    memory: &SymbolicMemory,
+    address: &Address,
+    kind: ReadType,
+    version: Option<ProgramPointId>,
 ) -> Option<ProgramValue> {
     crate::instrumentation::record_deterministic_work(1);
     READS.with(|reads| {
@@ -96,6 +137,7 @@ pub(in crate::kernel) fn get(
                 crate::kernel::intern_memory_ref(memory),
                 address.clone(),
                 kind.key(),
+                version,
             ))
             .cloned()
     })

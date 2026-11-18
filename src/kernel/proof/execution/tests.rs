@@ -340,8 +340,10 @@ fn constructor_partition_witnesses_avoid_source_facts_and_previous_matches() {
     let (core, value) = constructor_partition_fixture(2);
     let occupied = Variable(4_065_536);
     let root = PureFactStore::from_ordered(&[Proposition::Equal(
-        crate::kernel::Term::ProgramValue(ProgramValue::Int32(MachineTerm::Variable(occupied))),
-        crate::kernel::Term::ProgramValue(int32(0)),
+        crate::kernel::Term::ProgramValue(
+            ProgramValue::Int32(MachineTerm::Variable(occupied)).into(),
+        ),
+        crate::kernel::Term::ProgramValue(int32(0).into()),
     )]);
     let env = crate::kernel::ExecutionEnvironment::new();
     let (partition, fields, next) = core

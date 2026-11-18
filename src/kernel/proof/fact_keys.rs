@@ -682,10 +682,13 @@ pub(in crate::kernel) fn pointer_predicate_selector(proposition: &Proposition) -
                 if let Some(ProgramValue::Pointer(pointer)) =
                     term_source_0.program_value_native() =>
             {
-                Term::ProgramValue(ProgramValue::typed_pointer(
-                    crate::kernel::Address::null(),
-                    pointer.program_type(),
-                ))
+                Term::ProgramValue(
+                    ProgramValue::typed_pointer(
+                        crate::kernel::Address::null(),
+                        pointer.program_type(),
+                    )
+                    .into(),
+                )
             }
             other => other.clone(),
         })
@@ -892,6 +895,7 @@ enum AlphaBitvectorKey {
         arguments: Vec<AlphaPureFunctionArgumentKey>,
     },
     Load(Box<AlphaAddressKey>, LoadKind),
+    IndexedLoad(AlphaStateKey, Box<AlphaAddressKey>, LoadKind),
     RegisteredLoad(AlphaRegisteredLoadId),
     Address(Box<AlphaAddressKey>),
     IntegerToMachine(MachineIntegerType, AlphaIntegerKey),
@@ -978,6 +982,7 @@ enum AlphaAlgebraicValueKey {
 #[derive(Clone)]
 struct AlphaStateKey {
     identity: (u32, u32),
+    read_version: Option<crate::kernel::program_point::ProgramPointId>,
     _state: SharedMemory,
 }
 
@@ -985,6 +990,7 @@ impl AlphaStateKey {
     fn new(retained_state: &SharedMemory) -> Self {
         Self {
             identity: retained_state.arena_id(),
+            read_version: None,
             _state: retained_state.clone(),
         }
     }
@@ -992,16 +998,18 @@ impl AlphaStateKey {
 
 impl fmt::Debug for AlphaStateKey {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_tuple("AlphaStateKey")
-            .field(&self.identity)
-            .finish()
+        let mut key = formatter.debug_tuple("AlphaStateKey");
+        key.field(&self.identity);
+        if let Some(version) = self.read_version {
+            key.field(&version);
+        }
+        key.finish()
     }
 }
 
 impl PartialEq for AlphaStateKey {
     fn eq(&self, other: &Self) -> bool {
-        self.identity == other.identity
+        self.identity == other.identity && self.read_version == other.read_version
     }
 }
 
@@ -1015,13 +1023,16 @@ impl PartialOrd for AlphaStateKey {
 
 impl Ord for AlphaStateKey {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.identity.cmp(&other.identity)
+        (self.identity, self.read_version).cmp(&(other.identity, other.read_version))
     }
 }
 
 impl Hash for AlphaStateKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.identity.hash(state);
+        if let Some(version) = self.read_version {
+            version.hash(state);
+        }
     }
 }
 
@@ -2646,7 +2657,8 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
         }
         MachineTerm::MemoryLoad(memory, pointer, kind) if bindings.state_aware => {
             bindings.raw_state_load_seen = true;
-            let retained_state = alpha_retained_state_key(memory.shared_memory(), bindings)?;
+            let mut retained_state = alpha_retained_state_key(memory.shared_memory(), bindings)?;
+            retained_state.read_version = memory.read_version_id();
             let pointer =
                 alpha_pointer_key_with_bindings::<ALLOW_LOADS>(pointer, bindings, next_binder)?;
             let interner = match bindings.load_interner.clone() {
@@ -2664,6 +2676,20 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 pointer,
                 *kind,
             )?)
+        }
+        MachineTerm::MemoryLoad(point, pointer, kind) if point.read_version_id().is_some() => {
+            bindings.raw_state_load_seen = true;
+            let mut state = AlphaStateKey::new(point.shared_memory());
+            state.read_version = point.read_version_id();
+            AlphaBitvectorKey::IndexedLoad(
+                state,
+                Box::new(alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
+                    pointer,
+                    bindings,
+                    next_binder,
+                )?),
+                *kind,
+            )
         }
         MachineTerm::MemoryLoad(_, pointer, kind) => {
             bindings.raw_state_load_seen = true;
@@ -3696,7 +3722,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                         }
                         Term::ProgramValue(value) => AlphaPredicateArgumentKey::Value(
                             alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
-                                value,
+                                value.native_compat(),
                                 bindings,
                                 next_binder,
                             )?,
@@ -3734,6 +3760,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                 Some(AlphaPropositionKey::MemoryReadDefined {
                     memory: AlphaStateKey {
                         identity: retained_state.local_read_definedness_identity(pointer),
+                        read_version: None,
                         _state: retained_state.clone(),
                     },
                     pointer: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(

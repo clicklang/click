@@ -300,7 +300,7 @@ fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
             Term::ExecutionState(Box::new(
                 ExecutionState::new().with_population_creation_tracking(),
             )),
-            Term::ProgramValue(value),
+            Term::ProgramValue((value).into()),
         ],
     });
     let environment = ExecutionEnvironment::new().with_function_contract(contract);

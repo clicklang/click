@@ -44,9 +44,8 @@ impl FormattedOutput {
     }
 }
 
-/// A stream request is a concrete list in its contract. Keep generated
-/// terms within the surface language's nesting budget.
-const MAX_STREAM_OUTPUT_BYTES: usize = 64;
+/// Stream requests use Click byte string literals in the generated contract.
+const MAX_STREAM_OUTPUT_BYTES: usize = crate::source::BYTE_STRING_MAX_BYTES;
 
 pub(crate) fn stream_output_bytes(
     function: FormattedOutput,
@@ -212,32 +211,11 @@ pub(crate) fn describe_function(name: &str) -> Option<String> {
 }
 
 fn stream_contract(name: &str, bytes: &[u8]) -> String {
-    let mut message = String::new();
-    write_byte_list(&mut message, bytes, 0);
+    let message = crate::source::click_byte_string(bytes);
     include_str!("../../../library/c/stream_output.click.in")
         .replace("@function@", name)
         .replace("@length@", &bytes.len().to_string())
         .replace("@message@", &message)
-}
-
-/// Leave depth for the event constructor and the lists in the template.
-/// Longer requests use balanced appends so the generated term remains shallow.
-fn write_byte_list(message: &mut String, bytes: &[u8], nesting: usize) {
-    const MAX_LIST_DEPTH: usize = 13;
-    if bytes.len() + nesting > MAX_LIST_DEPTH {
-        let (left, right) = bytes.split_at(bytes.len() / 2);
-        message.push_str("click::list::append(");
-        write_byte_list(message, left, nesting + 1);
-        message.push_str(", ");
-        write_byte_list(message, right, nesting + 1);
-        message.push(')');
-        return;
-    }
-    for byte in bytes {
-        let _ = write!(message, "List::Cons({byte}u8, ");
-    }
-    message.push_str("List<uint8>::Nil");
-    message.extend(std::iter::repeat_n(')', bytes.len()));
 }
 
 /// The `extern` contract of the formatted-output function `name` for a

@@ -295,8 +295,6 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/separation.click",
     "library/nat.click",
     "library/list.click",
-    "library/option.click",
-    "library/result.click",
     "library/bytes.click",
     "library/c/string.click",
     "library/permutation.click",
@@ -312,6 +310,8 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/rust/u32.click",
     "library/rust/u64.click",
     "library/rust/usize.click",
+    "library/rust/option.click",
+    "library/rust/result.click",
     "library/rust/vec.click",
     "library/rust/slice.click",
 ];
@@ -528,6 +528,26 @@ fn short_module_name(identity: &str) -> &str {
         .and_then(|path| path.strip_suffix(".click"))
         .and_then(|path| path.rsplit('/').next())
         .unwrap_or(identity)
+}
+
+/// Names that an inferred source alias must not shadow.
+pub(super) fn is_library_qualifier(name: &str) -> bool {
+    static QUALIFIERS: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    QUALIFIERS
+        .get_or_init(|| {
+            library_declarations()
+                .iter()
+                .flat_map(|(identity, declarations)| {
+                    std::iter::once(short_module_name(identity).to_string()).chain(
+                        declarations
+                            .iter()
+                            .filter(|declaration| declaration.kind == DeclarationKind::Enum)
+                            .map(|declaration| declaration.name.clone()),
+                    )
+                })
+                .collect()
+        })
+        .contains(name)
 }
 
 /// What a qualified library name names.

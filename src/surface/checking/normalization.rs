@@ -135,7 +135,7 @@ pub(in crate::surface) fn normalize_term(term: &Term) -> Term {
             if let Some(value @ ProgramValue::PointerInteger(_)) =
                 term_source_0.program_value_native() =>
         {
-            normalize_term(&Term::ProgramValue(value.numeric_value().clone()))
+            normalize_term(&Term::ProgramValue(value.numeric_value().clone().into()))
         }
         Term::Condition(condition) => match normalize_condition_without_assumptions(condition) {
             Some(value) => Term::Condition(ConditionTerm::Constant(value)),
@@ -145,17 +145,17 @@ pub(in crate::surface) fn normalize_term(term: &Term) -> Term {
         term_source_0 @ Term::ProgramValue(_)
             if let Some(ProgramValue::Int32(term)) = term_source_0.program_value_native() =>
         {
-            Term::ProgramValue(ProgramValue::Int32(normalize_bitvector(term)))
+            Term::ProgramValue(ProgramValue::Int32(normalize_bitvector(term)).into())
         }
         term_source_0 @ Term::ProgramValue(_)
             if let Some(ProgramValue::Int64(term)) = term_source_0.program_value_native() =>
         {
-            Term::ProgramValue(ProgramValue::Int64(normalize_bitvector(term)))
+            Term::ProgramValue(ProgramValue::Int64(normalize_bitvector(term)).into())
         }
         term_source_0 @ Term::ProgramValue(_)
             if let Some(ProgramValue::UInt64(term)) = term_source_0.program_value_native() =>
         {
-            Term::ProgramValue(ProgramValue::UInt64(normalize_bitvector(term)))
+            Term::ProgramValue(ProgramValue::UInt64(normalize_bitvector(term)).into())
         }
         _ => term.clone(),
     }

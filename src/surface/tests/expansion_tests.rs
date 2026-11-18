@@ -17831,6 +17831,42 @@ fn retained_int32_addition_expands_with_ordinary_bounds() {
 
 #[test]
 #[ignore = "nightly: expands and replays an entire loop contract"]
+fn retained_int32_sum_result_bounds_expand_with_rewrite() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/a_break_exit_counts_the_passes_before_it.md");
+    let source = std::fs::read_to_string(&path).unwrap();
+    let mdtest = crate::cli::parse_mdtest(&path, &source).unwrap();
+    let sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let claim = "count_up.contract";
+    let expanded =
+        expand_c_claim_source_by_label(mdtest.click_source.as_deref().unwrap(), &sources, claim)
+            .unwrap();
+    for bound in [
+        "have 1 <= to_integer(((at(region(3).entry, i) + 1) as int32)) by {",
+        "have to_integer(((at(region(3).entry, i) + 1) as int32)) <= 1000 by {",
+    ] {
+        assert!(
+            expanded
+                .lines()
+                .zip(expanded.lines().skip(1))
+                .any(|(goal, tactic)| {
+                    goal.trim() == bound && tactic.trim_start().starts_with("rewrite(")
+                }),
+            "{bound} should expand with the operation's observation identity\n{expanded}"
+        );
+    }
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| format!("{error:?}"))
+    })
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: expands and replays an entire loop contract"]
 fn retained_int32_subtraction_expands_with_ordinary_bounds() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/loop_entry_memory_capture_countdown.md");
@@ -17849,6 +17885,20 @@ fn retained_int32_subtraction_expands_with_ordinary_bounds() {
         expanded.contains("apply(click::integer::subtract_le("),
         "{expanded}"
     );
+    for bound in [
+        "have -1 <= to_integer(((at(region(1).entry, n) - 1) as int32)) by {",
+        "have to_integer(((at(region(1).entry, n) - 1) as int32)) <= 2147483646 by {",
+    ] {
+        assert!(
+            expanded
+                .lines()
+                .zip(expanded.lines().skip(1))
+                .any(|(goal, tactic)| {
+                    goal.trim() == bound && tactic.trim_start().starts_with("rewrite(")
+                }),
+            "{bound} should expand with the operation's observation identity\n{expanded}"
+        );
+    }
     let mut endpoints = 0;
     let mut identities = 0;
     for (goal, tactic) in expanded.lines().zip(expanded.lines().skip(1)) {
@@ -24195,4 +24245,58 @@ fn indexed_iterated_ownership_expands_and_rechecks() {
         "{}",
         error.report()
     );
+}
+
+#[test]
+#[ignore = "nightly: three expansion and strict replay controls took 4.3s locally"]
+fn expanded_call_names_the_folded_supplier() {
+    let c = "void update(int *p) { *p = 7; } void caller(int *p) { update(p); }";
+    let inputs = [("folded.c", c)];
+    for count in [0, 4, 16] {
+        let decoys = (0..count)
+            .map(|i| format!("owns decoy({i});"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let source = format!(
+            r#"
+            resource cell(p: int32*) {{ owns p[0..1]; }}
+            resource wrapper(p: int32*) {{ owns cell(p); }}
+            abstract resource marker(k: int32);
+            resource decoy(k: int32) {{ owns marker(k); }}
+            verifying "folded.c";
+            void update(int32* p) {{ owns cell(p); }} by {{
+                unfold(cell(p));
+                step();
+                fold(cell(p));
+            }}
+            void caller(int32* p) {{
+                {decoys}
+                owns wrapper(p);
+            }} by {{
+                step();
+                fold(wrapper(p));
+            }}
+            "#,
+        );
+        let label = "caller.contract";
+        let missing_supplier = crate::kernel::call_supplier_selection::without_search(|| {
+            verify_c_sources(&source, &inputs)
+        })
+        .expect_err("the original call needs to find a supplier");
+        assert!(
+            missing_supplier.message().contains("missing resource fact"),
+            "{}",
+            missing_supplier.report()
+        );
+        let expanded = expand_c_claim_source_by_label(&source, &inputs, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        let caller = expanded.split_once("void caller").expect("caller proof").1;
+        assert!(caller.contains("unfold(wrapper(p));"), "{caller}");
+        crate::kernel::call_supplier_selection::without_search(|| {
+            without_implicit_solve_for_claim(label, || {
+                verify_c_sources(&expanded, &inputs).map_err(|error| error.report())
+            })
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
 }

@@ -1928,7 +1928,7 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
         name: "valid_pool".to_string(),
         arguments: vec![
             Term::ExecutionState(Box::new(ExecutionState::new())),
-            Term::ProgramValue(ProgramValue::pointer(pool.clone())),
+            Term::ProgramValue((ProgramValue::pointer(pool.clone())).into()),
         ],
     };
 
@@ -1979,9 +1979,9 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
             crate::kernel::FunctionContract::predicate_name_for("ordered"),
             vec![
                 state.clone(),
-                Term::ProgramValue(ProgramValue::pointer(Address::function(
-                    "compare".to_string()
-                ))),
+                Term::ProgramValue(
+                    (ProgramValue::pointer(Address::function("compare".to_string()))).into()
+                ),
             ],
         ),
         Some(ClickProposition::PredicateCall {
@@ -1994,7 +1994,9 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
     assert_eq!(
         synthesize(
             format!("{}4", crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX),
-            vec![Term::ProgramValue(ProgramValue::pointer(mutex.clone()))],
+            vec![Term::ProgramValue(
+                (ProgramValue::pointer(mutex.clone())).into()
+            )],
         ),
         None,
         "bookkeeping has no Click spelling"

@@ -2580,7 +2580,27 @@ fn collect_term_memory_loads(
             collect_pointer_offset_memory_loads(offset, current_memory, loads, seen_integers)
         }
         Term::ProgramValue(value) => {
-            collect_cvalue_memory_loads(value, current_memory, loads, seen_integers)
+            if let Some(root) = value.root()
+                && root.is_shared_machine_operand()
+                && !root.has_machine_conversions()
+                && let Some(format) =
+                    MachineIntegerType::from_program_type(value.value().program_type())
+            {
+                collect_shared_read_memory_loads(
+                    root,
+                    current_memory,
+                    loads,
+                    Some(format.format().byte_width()),
+                    seen_integers,
+                )
+            } else {
+                collect_cvalue_memory_loads(
+                    value.native_compat(),
+                    current_memory,
+                    loads,
+                    seen_integers,
+                )
+            }
         }
         Term::Sequence(sequence) => {
             collect_sequence_memory_loads(sequence, current_memory, loads, seen_integers)
@@ -10146,6 +10166,7 @@ impl ProofObligation {
             assumable: true,
             evaluation_domain: false,
             assertion_failure: false,
+            statement_entry_required: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -10161,6 +10182,7 @@ impl ProofObligation {
             assumable: false,
             evaluation_domain: false,
             assertion_failure: false,
+            statement_entry_required: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -10179,6 +10201,15 @@ impl ProofObligation {
 
     pub(crate) fn is_assertion_failure(&self) -> bool {
         self.assertion_failure
+    }
+
+    pub(in crate::kernel) fn with_statement_entry_required(mut self, required: bool) -> Self {
+        self.statement_entry_required = required;
+        self
+    }
+
+    pub(crate) fn requires_statement_entry(&self) -> bool {
+        self.statement_entry_required || self.call_requirement_site.is_some()
     }
 
     pub fn with_context(mut self, context: impl Into<String>) -> Self {
@@ -10266,6 +10297,7 @@ impl ProofObligation {
             assumable: self.assumable,
             evaluation_domain: self.evaluation_domain,
             assertion_failure: self.assertion_failure,
+            statement_entry_required: self.statement_entry_required,
             call_requirement_site: None,
             // The chain describes the head nodes of the proposition it was
             // recorded for. A rewrite adds or removes head nodes, so the
@@ -10949,7 +10981,7 @@ mod dynamic_current_load_tests {
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
-        let value = Term::ProgramValue(ProgramValue::Int64(load.clone()));
+        let value = Term::ProgramValue(ProgramValue::Int64(load.clone()).into());
         assert_eq!(
             current_memory_loads_in_term(&value, &memory).unwrap(),
             vec![(pointer.clone(), 8)]

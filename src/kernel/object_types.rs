@@ -25,7 +25,7 @@ pub(super) fn checked_call_type_fact(
 ) -> Proposition {
     Proposition::Predicate {
         name: format!("object_type[{class}]"),
-        arguments: vec![Term::ProgramValue(value.clone())],
+        arguments: vec![Term::ProgramValue((value.clone()).into())],
     }
 }
 
@@ -384,7 +384,7 @@ mod tests {
         let mut decoded = ProgramValue::Pointer(decoded);
         let facts = PureFactContext::new().assume_proposition(Proposition::Predicate {
             name: "checked_source".into(),
-            arguments: vec![Term::ProgramValue(original.clone())],
+            arguments: vec![Term::ProgramValue((original.clone()).into())],
         });
         assert!(refine_object_pointer_argument(
             &mut decoded,

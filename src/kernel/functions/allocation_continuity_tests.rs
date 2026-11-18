@@ -145,7 +145,6 @@ fn preserved_fold_can_continue_an_allocation_loaded_from_another_block() {
         &ResourceContext::new(),
         function.contract_interface(),
         &PureFactContext::new(),
-        None,
         &state,
         &state,
     )
@@ -207,7 +206,6 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
             &output,
             &FunctionContractInterface::new(ProgramType::Void, vec![]),
             &PureFactContext::new(),
-            None,
             &state,
             &state,
         )
@@ -280,7 +278,6 @@ fn contract_allocation_retirement_respects_initialized_mutex_storage() {
                 &output,
                 &interface,
                 &PureFactContext::new(),
-                None,
                 &state,
                 &state,
             );

@@ -3368,10 +3368,9 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state.memory(),
             )
         };
-        let write_requirements = if suspended.is_some() || !has_exact_write_ranges {
-            // Worker admission has its own effect rules. Folded or guarded
-            // projections can widen an effect to a span containing bytes
-            // the callee cannot write.
+        let write_requirements = if !has_exact_write_ranges {
+            // An unresolved projection can widen an effect to bytes the
+            // callee cannot write. Keep its conservative admission check.
             if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
                 transfer.memory_effects.iter().find_map(|range| {
                     ledger.memory_access_refusal(
@@ -3395,7 +3394,11 @@ fn execute_verified_function_applications_with_suspension(
                 &transfer.memory_effects,
                 call_site,
                 interface.contract_requires().len(),
-                "verified call write separation",
+                if suspended.is_some() {
+                    "suspended worker write separation"
+                } else {
+                    "verified call write separation"
+                },
             )
         };
         // A checked mutex-use call may execute runtime lock/unlock operations.
@@ -4587,11 +4590,6 @@ fn execute_verified_function_applications_with_suspension(
                     &output_resources,
                     interface,
                     &allocation_assumptions,
-                    if suspended.is_some() {
-                        post_state.loan_ledger()
-                    } else {
-                        None
-                    },
                     caller_state,
                     &post_state,
                 )
@@ -4809,6 +4807,7 @@ fn execute_verified_function_applications_with_suspension(
                     })
                 && worker_effects
                     .iter()
+                    .chain(&retired_allocations)
                     .all(|range| is_external_memory_pointer(range.base()))
                 && output_resources.facts().iter().all(|fact| match fact {
                     ResourceFact::Own(Resource::Memory(range), quantity) => {
@@ -4847,6 +4846,19 @@ fn execute_verified_function_applications_with_suspension(
                     deferred: deferred_exchange.clone(),
                 })
             };
+            // The checked partition has already separated projected writes
+            // from views issued to this worker. A whole allocation may
+            // exceed that projection, so retirement also protects the loans
+            // opened by the worker's entry transfer.
+            obligations.extend(write_requirements);
+            obligations.extend(verified_call_loan_requirements(
+                entry_state.loan_ledger(),
+                &retired_allocations,
+                call_site,
+                interface.contract_requires().len() + transfer.memory_effects.len(),
+                "suspended worker allocation retirement separation",
+            ));
+            worker_effects.extend(retired_allocations);
             completions.push((
                 super::threads::WorkerCompletion::checked(
                     plan,
@@ -5128,15 +5140,13 @@ fn execute_verified_function_applications_with_suspension(
         // The retirement ranges are the consumed allocation tokens at
         // entry. Return facts may decide continuity, but they cannot prove
         // that retiring one of those allocations was permitted.
-        if suspended.is_none() {
-            obligations.extend(verified_call_loan_requirements(
-                entry_state.loan_ledger(),
-                &retired_allocations,
-                call_site,
-                interface.contract_requires().len() + transfer.memory_effects.len(),
-                "verified call allocation retirement separation",
-            ));
-        }
+        obligations.extend(verified_call_loan_requirements(
+            entry_state.loan_ledger(),
+            &retired_allocations,
+            call_site,
+            interface.contract_requires().len() + transfer.memory_effects.len(),
+            "verified call allocation retirement separation",
+        ));
         paths.push(FunctionPath {
             outcome,
             facts,
@@ -7072,7 +7082,7 @@ pub(super) fn contracts_for_pointer(
                 .iter()
                 .skip(2)
                 .map(|argument| match argument {
-                    Term::ProgramValue(value) => Some(value.clone()),
+                    Term::ProgramValue(value) => Some(value.native_compat().clone()),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -7612,7 +7622,7 @@ fn function_contract_requirement_is_proven(
             let Some(values) = values
                 .iter()
                 .map(|value| match value {
-                    Term::ProgramValue(value) => Some(value.clone()),
+                    Term::ProgramValue(value) => Some(value.native_compat().clone()),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()
@@ -7976,10 +7986,11 @@ fn project_explicit_memory_segments(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     require_decided_guards: bool,
-) -> ExecutionResult<Result<(Vec<MemoryRange>, ExecutionFacts), String>> {
+) -> ExecutionResult<Result<FunctionMemoryEffectProjection, String>> {
     let mut projection_assumptions = assumptions.clone();
     let mut ranges = BTreeSet::new();
     let mut evidence_facts = Vec::new();
+    let mut has_exact_write_ranges = true;
     for segment in segments {
         if let Some(guard) = segment.guard() {
             match evaluate_guarded_contract_condition(guard, entry, &projection_assumptions, budget)
@@ -7989,7 +8000,7 @@ fn project_explicit_memory_segments(
                 None if require_decided_guards => {
                     return Ok(Err("mutable footprint guard is undecided".to_string()));
                 }
-                None => {}
+                None => has_exact_write_ranges = false,
             }
         }
         match evaluate_loop_effect_segment_with_facts(
@@ -8008,7 +8019,12 @@ fn project_explicit_memory_segments(
             Err(message) => return Ok(Err(message.into())),
         }
     }
-    Ok(Ok((ranges.into_iter().collect(), evidence_facts.into())))
+    Ok(Ok(FunctionMemoryEffectProjection {
+        ranges: ranges.into_iter().collect(),
+        evidence_facts: evidence_facts.into(),
+        has_exact_write_ranges,
+        range_sources: Vec::new(),
+    }))
 }
 
 /// The canonical owned memory ranges one checked owned fact denotes, derived
@@ -8571,7 +8587,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 .allow_symbolic_contract_loads()
                 .prefer_symbolic_external_loads(),
             ranges: Vec::new(),
-            exact: false,
+            exact: true,
             reaches_unnamed: false,
             undefined_family: false,
             work: 0,
@@ -8583,13 +8599,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
     /// it reaches has no definition in the set: the interface is malformed
     /// and the transition that needs the footprint is refused.
     fn derive(mut self, fact: &ResourceFact) -> Option<OwnedMemoryFootprint> {
-        self.exact = match fact {
-            ResourceFact::Own(Resource::Memory(_), _) => true,
-            ResourceFact::Own(Resource::Composite { .. }, quantity) => {
-                quantity.as_const() == Some(1)
-            }
-            _ => false,
-        };
         self.pending.push(OwnedFootprintTask::Fact(fact.clone()));
         while let Some(task) = self.pending.pop() {
             // Past the bound the footprint is unnamed memory, which covers
@@ -8685,14 +8694,23 @@ impl<'a> OwnedFootprintDerivation<'a> {
             self.reaches_unnamed = true;
             return false;
         }
+        self.exact &= definition.witnesses.is_empty()
+            && definition.resource_parameters.is_empty()
+            && !definition.authorized
+            && !definition.is_sealed();
         true
     }
 
     fn owned_fact(&mut self, fact: &ResourceFact) {
-        if !fact.is_own() {
+        let ResourceFact::Own(resource, quantity) = fact else {
             return;
-        }
-        match fact.resource() {
+        };
+        self.exact &= match resource {
+            Resource::Memory(_) => true,
+            Resource::Composite { .. } | Resource::Instance(_) => quantity.as_const() == Some(1),
+            _ => false,
+        };
+        match resource {
             Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
                 self.reaches_unnamed = true;
             }
@@ -8799,11 +8817,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
         if !self.enters(definition) {
             return;
         }
-        self.exact &= definition.condition.is_none()
-            && definition.witnesses.is_empty()
-            && definition.resource_parameters.is_empty()
-            && !definition.authorized
-            && !definition.is_sealed();
         if definition.instance_schema.is_some() || definition.matched.is_some() {
             self.reaches_unnamed = true;
             return;
@@ -8868,6 +8881,8 @@ impl<'a> OwnedFootprintDerivation<'a> {
             evaluation.instance_field_scope = ResourceContext::new()
                 .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance)));
             evaluation.resource_bindings = None;
+        } else {
+            self.exact = false;
         }
         for ((name, _), value) in schema.fields().iter().zip(fields) {
             if let Some(AlgebraicValue::Program(value)) = value {
@@ -8893,6 +8908,9 @@ impl<'a> OwnedFootprintDerivation<'a> {
             return;
         };
         for (arm, constructor) in self.footprint_arms(definition, matched, arguments, fields) {
+            // A union of possible arms is a conservative footprint, even
+            // when each individual arm names all of its memory.
+            self.exact &= constructor.is_some();
             let mut arm_evaluation = evaluation.clone();
             if let Some(constructor) = &constructor {
                 for ((name, binding_type), value) in
@@ -8986,21 +9004,28 @@ impl<'a> OwnedFootprintDerivation<'a> {
         let mut budget = ExecutionBudget::beside_live_state();
         // An undecided guard counts the body as active: the footprint is an
         // upper bound, and a body that is not active owns nothing extra.
-        if evaluate_composite_resource_body_condition(
+        match evaluate_composite_resource_body_condition(
             definition,
             &evaluation,
             &self.evaluation_assumptions,
             &mut budget,
-        ) == Some(false)
-        {
-            return;
+        ) {
+            Some(false) => return,
+            Some(true) => {}
+            None => self.exact = false,
         }
         for spec in contains {
-            // A flat body contributes exactly its unconditional memory
-            // clauses. Other terms may project a conservative span or child.
-            self.exact &= matches!(spec.term(), ResourceTerm::Memory(segment) if segment.guard().is_none())
-                && spec.guard().is_none()
-                && spec.resource_arguments().is_empty();
+            // Direct memory and ordinary nested bodies may be exact. Each
+            // owned child records its own certainty when the worklist visits it.
+            self.exact &= spec.guard().is_none()
+                && spec.resource_arguments().is_empty()
+                && match spec.term() {
+                    ResourceTerm::Memory(segment) => segment.guard().is_none(),
+                    ResourceTerm::Composite { .. } | ResourceTerm::Instance { .. } => {
+                        spec.access() == ResourceAccessMode::Own
+                    }
+                    _ => false,
+                };
             // Abstract tokens own no memory, regardless of their quantity.
             // Footprint discovery need not prove that quantity nonnegative;
             // the actual resource exchange still checks it. A population
@@ -9073,6 +9098,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     let [path] = paths.as_slice() else {
                         return None;
                     };
+                    self.exact &= path.obligations.is_empty();
                     let ExpressionOutcome::Value(value) = &path.outcome else {
                         return None;
                     };
@@ -9201,13 +9227,11 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     // modular-call source.  Functions without resource clauses retain their
     // explicit effect segments here.
     let explicit_segments = if !interface.resource_derived_mutable_frame() {
-        let segments = interface.contract_mutable();
-        has_exact_write_ranges = segments.iter().all(|segment| segment.guard().is_none());
-        segments
+        interface.contract_mutable()
     } else {
         &[]
     };
-    let (explicit_ranges, explicit_evidence) = match project_explicit_memory_segments(
+    let explicit = match project_explicit_memory_segments(
         entry,
         explicit_segments,
         assumptions,
@@ -9217,8 +9241,9 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
         Ok(result) => result,
         Err(message) => return Ok(Err(message)),
     };
-    ranges.extend(explicit_ranges);
-    evidence_facts.extend(explicit_evidence);
+    ranges.extend(explicit.ranges);
+    evidence_facts.extend(explicit.evidence_facts);
+    has_exact_write_ranges &= explicit.has_exact_write_ranges;
     Ok(Ok(FunctionMemoryEffectProjection {
         ranges: ranges.into_iter().collect(),
         evidence_facts: evidence_facts.into(),
@@ -9438,7 +9463,7 @@ fn evaluate_decided_contract_mutable_ranges_for_interface(
                 None => return Ok(None),
             }
         }
-        let Ok((mut projected, _)) = project_explicit_memory_segments(
+        let Ok(mut projected) = project_explicit_memory_segments(
             entry,
             std::slice::from_ref(segment),
             &guard_assumptions,
@@ -9448,7 +9473,7 @@ fn evaluate_decided_contract_mutable_ranges_for_interface(
         else {
             return Ok(None);
         };
-        let Some(range) = projected.pop() else {
+        let Some(range) = projected.ranges.pop() else {
             return Ok(None);
         };
         ranges.push(range);
@@ -9962,7 +9987,6 @@ fn apply_verified_heap_allocation_delta(
     output_resources: &ResourceContext,
     interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
-    worker_ledger: Option<&LoanLedger>,
     mutex_state: &ExecutionState,
     output_state: &ExecutionState,
 ) -> Result<VerifiedAllocationDelta, VerifiedAllocationDeltaError> {
@@ -10167,19 +10191,6 @@ fn apply_verified_heap_allocation_delta(
             ));
         }
         let allocation_range = bytes.byte_range(base.clone());
-        // Suspended worker admission still checks before publishing its
-        // separately recoverable state. Ordinary calls carry an obligation.
-        if let Some(diagnostic) = worker_ledger.and_then(|ledger| {
-            ledger.memory_access_refusal(
-                &allocation_range,
-                &allocation_assumptions,
-                LoanRefusalOperation::MemoryAccess,
-            )
-        }) {
-            return Err(VerifiedAllocationDeltaError::Runtime(
-                RuntimeError::LoanRefusal(Box::new(diagnostic)),
-            ));
-        }
         if let Some(error) = super::mutexes::storage_retirement_refusal(
             mutex_state,
             &allocation_range,
@@ -10697,6 +10708,8 @@ fn prepare_function_resource_transfer(
     )
 }
 
+pub(crate) mod call_supplier_selection;
+
 /// Unfolds exactly the folded composite owners a call's own requirements
 /// need, and nothing else.
 ///
@@ -10725,6 +10738,9 @@ fn candidate_planning_resources(
                     .is_empty())
     };
     let mut resources = caller_resources.clone();
+    if !call_supplier_selection::search_enabled() || !resources.has_folded_composites() {
+        return resources;
+    }
     for requirement in requirements {
         // A viewed composite requirement is lent folded, through the checked
         // composite backing, so opening it here would destroy the head that
@@ -10764,8 +10780,10 @@ fn candidate_planning_resources(
                     assumptions,
                 )
                 .filter(|expanded| supported(expanded, requirement))
+                .map(|expanded| (expanded, composite))
             });
-        if let Some(opened) = opened {
+        if let Some((opened, selected)) = opened {
+            call_supplier_selection::record(selected);
             resources = opened;
         }
     }
@@ -10827,10 +10845,13 @@ fn candidate_composite_view_adapter(
     let Resource::Composite { name, arguments } = required.resource() else {
         return Ok(None);
     };
-    let Some(definition) = definitions
-        .iter()
-        .find(|definition| definition.name() == name)
-    else {
+    let definition_for = |name: &str| {
+        definitions
+            .binary_search_by(|definition| definition.name().cmp(name))
+            .ok()
+            .map(|index| &definitions[index])
+    };
+    let Some(definition) = definition_for(name) else {
         return Ok(None);
     };
     if definition.owns_population_authority()
@@ -10889,61 +10910,62 @@ fn candidate_composite_view_adapter(
             restored: frontier,
         }));
     }
-    // The owned-composite form: one folded owner in the caller whose checked
-    // frontier covers this one. Only the caller's own composite facts are
-    // examined, and each is expanded at most once.
-    let owners = resources
-        .facts()
-        .iter()
-        .filter(|fact| fact.is_own() && matches!(fact.resource(), Resource::Composite { .. }))
-        .cloned()
-        .collect::<Vec<_>>();
-    for owner in owners {
+    let checked_cover = |owner: &ResourceFact, direct_only| {
         crate::instrumentation::record_deterministic_work(1);
-        let Resource::Composite {
-            name: owner_name, ..
-        } = owner.resource()
-        else {
-            continue;
+        let Resource::Composite { name, .. } = owner.resource() else {
+            return None;
         };
-        let Some(owner_definition) = definitions
-            .iter()
-            .find(|definition| definition.name() == owner_name)
-        else {
-            continue;
-        };
-        // An authority control's head is not the restoration recipe a lend
-        // needs: restoring it must restore the authority's ledger state too.
+        let owner_definition = definition_for(name)?;
+        // Restore the exact escrowed occurrence with no authority exchange.
         if owner_definition.owns_population_authority()
             || owner_definition.is_recursive()
             || !owner_definition.facts_are_loan_stable()
+            || (direct_only
+                && (owner.owned_quantity() != Some(1)
+                    || !owner_definition.has_argument_direct_body()))
+            || resources.exact_count(owner) != 1
         {
-            continue;
+            return None;
         }
-        // The escrow has to name one occurrence, as a same-composite lend
-        // does: two equal-looking owners are not the same authority (law 5).
-        if resources.owned_occurrences_for_fact(&owner).len() != 1 {
-            continue;
-        }
-        let Some(owner_frontier) =
-            checked_one_level_frontier(&owner, definitions, caller_state, assumptions)
-        else {
-            continue;
-        };
-        if checked_frontier_coverage(owner_frontier, &frontier, assumptions).is_none() {
-            continue;
-        }
-        if !facts_hold {
-            return refuse_for_the_fact();
-        }
-        return Ok(Some(CompositeViewAdapter {
-            resources: resources.clone(),
-            head: owner,
-            adapted: vec![required.clone()],
-            restored: Vec::new(),
-        }));
+        let owner_frontier =
+            checked_one_level_frontier(owner, definitions, caller_state, assumptions)?;
+        checked_frontier_coverage(owner_frontier, &frontier, assumptions)?;
+        Some(owner.clone())
+    };
+
+    // A positive memory span has at most one exclusive supplier in the
+    // caller's partition. The exact pointer bucket nominates one held head
+    // without visiting other folds. Its checked body must still cover the
+    // view; the index itself supplies no ownership.
+    let indexed = if let [piece] = frontier.as_slice()
+        && let Some(range) = piece.memory_own_range()
+        && super::primitives::constant_memory_coordinates(range)
+            .is_some_and(|(_, start, end)| start < end)
+    {
+        resources
+            .unique_owned_composite_with_pointer_argument(range.base())
+            .and_then(|owner| checked_cover(owner, true))
+    } else {
+        None
+    };
+    let selected = indexed.or_else(|| {
+        resources
+            .composite_facts()
+            .filter(|fact| fact.is_own())
+            .find_map(|owner| checked_cover(owner, false))
+    });
+    let Some(head) = selected else {
+        return Ok(None);
+    };
+    if !facts_hold {
+        return refuse_for_the_fact();
     }
-    Ok(None)
+    Ok(Some(CompositeViewAdapter {
+        resources: resources.clone(),
+        head,
+        adapted: vec![required.clone()],
+        restored: Vec::new(),
+    }))
 }
 
 /// The kernel's own one-level expansion of one owned composite head, read in

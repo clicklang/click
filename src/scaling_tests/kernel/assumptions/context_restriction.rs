@@ -8,13 +8,16 @@ fn selected_context_does_not_withdraw_ambient_pointer_facts() {
         for index in 0..size {
             context = context.assume_proposition(Proposition::Predicate {
                 name: "pointer_fact".into(),
-                arguments: vec![Term::ProgramValue(ProgramValue::Pointer(Pointer::new(
-                    Address {
-                        base: format!("ambient_{index}").into(),
-                        offset: AddressOffset::Constant(0),
-                    },
-                    ProgramType::Int32Pointer,
-                )))],
+                arguments: vec![Term::ProgramValue(
+                    (ProgramValue::Pointer(Pointer::new(
+                        Address {
+                            base: format!("ambient_{index}").into(),
+                            offset: AddressOffset::Constant(0),
+                        },
+                        ProgramType::Int32Pointer,
+                    )))
+                    .into(),
+                )],
             });
         }
         let (restricted, work) = crate::instrumentation::measure_deterministic_work(|| {

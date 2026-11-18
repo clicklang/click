@@ -839,10 +839,10 @@ pub(crate) fn render_read_resolution(
     if let Some(value) = &resolution.recovered {
         let equality = render_proposition_labeled(
             &Proposition::Equal(
-                Term::ProgramValue(value.clone()),
-                Term::ProgramValue(crate::kernel::ProgramValue::UInt64(
-                    resolution.expected.clone(),
-                )),
+                Term::ProgramValue(value.clone().into()),
+                Term::ProgramValue(
+                    crate::kernel::ProgramValue::UInt64(resolution.expected.clone()).into(),
+                ),
             ),
             labels,
         );
@@ -1791,7 +1791,7 @@ impl Renderer<'_> {
             Term::Bitvector32(v) => self.bitvector(v),
             Term::Integer(i) => self.integer(i),
             Term::PointerOffset(o) => self.offset(o, 0),
-            Term::ProgramValue(v) => self.cvalue(v),
+            Term::ProgramValue(v) => self.cvalue(v.native_compat()),
             Term::Memory(m) => self.memory(m),
             Term::ExecutionState(s) => self.state(s),
             Term::Sequence(_) => self.push("sequence(<bounded opaque value>)"),
@@ -3235,10 +3235,10 @@ mod tests {
     #[test]
     fn machine_and_program_value_types_remain_visible() {
         let int32 = render_proposition(&Proposition::Equal(
-            Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::constant(1))),
-            Term::ProgramValue(crate::kernel::ProgramValue::UInt32(MachineTerm::constant(
-                1,
-            ))),
+            Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::constant(1)).into()),
+            Term::ProgramValue(
+                crate::kernel::ProgramValue::UInt32(MachineTerm::constant(1)).into(),
+            ),
         ));
         assert!(int32.contains("int32(1)"));
         assert!(int32.contains("uint32(1)"));

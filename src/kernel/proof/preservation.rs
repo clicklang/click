@@ -161,7 +161,7 @@ fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Propos
     }
     let (address, bytes) = observation_footprint(kept)?;
     let observed = observation_type(kind, bytes)?;
-    observation_equality(&footprint.before, &footprint.after, address, observed, kind)
+    observation_equality(footprint, address, observed, kind)
 }
 
 /// The footprint and separated cell determine both endpoints. The goal selects
@@ -291,14 +291,13 @@ fn observation_type(comparison: ReadType, bytes: u32) -> Option<ReadType> {
 }
 
 fn observation_equality(
-    before: &SymbolicMemory,
-    after: &SymbolicMemory,
+    footprint: &crate::kernel::RegionFootprint,
     address: Address,
     kind: ReadType,
     comparison: ReadType,
 ) -> Option<Proposition> {
-    let after = typed_reads::get(after, &address, kind)?;
-    let before = typed_reads::get(before, &address, kind)?;
+    let after = typed_reads::get_at(&footprint.after_point, &footprint.after, &address, kind)?;
+    let before = typed_reads::get_at(&footprint.before_point, &footprint.before, &address, kind)?;
     // A promoted comparison of a byte read compares the reads' widenings.
     if let (ReadType::Integer(narrow), ReadType::Integer(MachineIntegerType::Int32)) =
         (kind, comparison)
@@ -965,6 +964,68 @@ mod tests {
             );
         }
         assert!(typed_reads::get(&memory, &address, kind).is_none());
+    }
+
+    #[test]
+    fn preserve_uses_the_uint32_version_of_each_selected_endpoint() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let _reads = typed_reads::ReadScope::enter();
+        let address = |name: &str| Address {
+            base: AddressBase::Concrete(name.into()),
+            offset: AddressOffset::Constant(0),
+        };
+        let slot = address("local:unsigned");
+        let other = address("local:signed");
+        let start = ExecutionState::new().with_memory(
+            SymbolicMemory::new()
+                .with_block("local:unsigned", 4)
+                .with_block("local:signed", 4),
+        );
+        let before = start.clone().with_memory(start.memory().clone().store(
+            slot.clone(),
+            ProgramValue::UInt32(MachineTerm::uint32_constant(0x8000_0000)),
+        ));
+        let after = before.clone().with_memory(
+            before
+                .memory()
+                .clone()
+                .store(other, ProgramValue::Int32(MachineTerm::constant(1))),
+        );
+        let read = |state: &ExecutionState| {
+            let version = state
+                .program_point()
+                .indexed_local_word32_version(&slot, LoadKind::UInt32)
+                .unwrap();
+            let path = crate::kernel::eval::evaluate_indexed_word32_read(
+                state.memory(),
+                version,
+                slot.clone(),
+                LoadKind::UInt32,
+                Default::default(),
+                Vec::new(),
+            );
+            let ExpressionOutcome::Value(ProgramValue::UInt32(bits)) = path.outcome else {
+                panic!("expected an unsigned read");
+            };
+            bits
+        };
+        let before_read = read(&before);
+        let after_read = read(&after);
+        assert_eq!(before_read, after_read);
+        let footprint = crate::kernel::RegionFootprint::transition(
+            "signed store".into(),
+            &before,
+            &after,
+            &Vec::<ExecutionPureFact>::new(),
+        );
+        let kind = ReadType::Integer(MachineIntegerType::UInt32);
+        assert_eq!(
+            observation_equality(&footprint, slot, kind, kind),
+            Some(Proposition::condition_is(
+                ConditionTerm::uint32_equal(after_read, before_read),
+                true,
+            )),
+        );
     }
 
     #[test]

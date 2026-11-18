@@ -1377,7 +1377,7 @@ impl Printer<'_> {
             {
                 Some(atom(value.to_string()))
             }
-            Term::ProgramValue(value) => self.cvalue(value, depth + 1),
+            Term::ProgramValue(value) => self.cvalue(value.native_compat(), depth + 1),
             Term::Algebraic(value) => self.algebraic(value, depth + 1),
             _ if !self.source_mode() => None,
             Term::Condition(condition) => self.condition(condition, true, depth + 1),
@@ -3357,7 +3357,7 @@ mod tests {
                 .chain(memories.into_iter().flat_map(|memory| {
                     [
                         Term::Memory(memory.clone()),
-                        Term::ProgramValue(pointer.clone()),
+                        Term::ProgramValue(pointer.clone().into()),
                     ]
                 }))
                 .collect(),
@@ -3393,14 +3393,17 @@ mod tests {
         let fact = |name: String, arguments: Vec<Term>| Proposition::Predicate { name, arguments };
         let same = fact(
             crate::kernel::SAME_OBJECT_PREDICATE_NAME.into(),
-            vec![Term::ProgramValue(cell("m")), Term::ProgramValue(cell("p"))],
+            vec![
+                Term::ProgramValue((cell("m")).into()),
+                Term::ProgramValue((cell("p")).into()),
+            ],
         );
         assert_eq!(source(&same, &mut labels), "same_object(m, p)");
         let contract = fact(
             crate::kernel::FunctionContract::predicate_name_for("ordered"),
             vec![
                 Term::ExecutionState(Box::new(state.clone())),
-                Term::ProgramValue(cell("p")),
+                Term::ProgramValue((cell("p")).into()),
             ],
         );
         assert_eq!(source(&contract, &mut labels), "ordered(p)");

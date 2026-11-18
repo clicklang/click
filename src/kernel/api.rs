@@ -5229,7 +5229,10 @@ fn symbolic_execution_statement_execution_with_loop_rule(
                     natural_exit_target: Some(exit_target),
                     ..
                 }, StatementOutcome::Jump { target, .. }) if target == exit_target
-            )) && path.obligations.iter().all(ProofObligation::is_assumable)
+            )) && path
+                .obligations
+                .iter()
+                .all(|obligation| obligation.is_assumable() || obligation.statement_entry_required)
         }))
     .then(|| VerifiedLoopRule {
         symbolic_entry_state: state.clone(),
@@ -5240,9 +5243,9 @@ fn symbolic_execution_statement_execution_with_loop_rule(
         composite_resource_definitions: Vec::new(),
         // The rule records the anchor its own body was stepped under. A
         // self-call in that body raised the descent obligations exactly when
-        // this is set, and the rule was only formed because every obligation
-        // on its paths was discharged or assumable, so this is the kernel's
-        // own note of what the summary already paid for.
+        // this is set. Every body obligation has already been discharged
+        // or was assumable. The application still owes any retained
+        // statement-entry conditions.
         recursion_anchor: environment.recursion_anchor_handle(),
         variable_index: Default::default(),
     });
@@ -7660,7 +7663,7 @@ pub(crate) fn prove_program_function_contract_refinement(
         || !values
             .iter()
             .zip(context.contract.value_arguments())
-            .all(|(term, value)| matches!(term, Term::ProgramValue(term) if term == value))
+            .all(|(term, value)| matches!(term, Term::ProgramValue(term) if term.native_compat() == value))
     {
         return None;
     }
@@ -7686,7 +7689,7 @@ pub(crate) fn prove_program_function_contract_refinement(
                 name: source.predicate_name(),
                 arguments: [
                     state.clone(),
-                    Term::ProgramValue(ProgramValue::Pointer(context.pointer.clone())),
+                    Term::ProgramValue(ProgramValue::Pointer(context.pointer.clone()).into()),
                 ]
                 .into_iter()
                 .chain(
@@ -7694,7 +7697,7 @@ pub(crate) fn prove_program_function_contract_refinement(
                         .value_arguments()
                         .iter()
                         .cloned()
-                        .map(Term::ProgramValue),
+                        .map(|value| Term::ProgramValue(value.into())),
                 )
                 .collect(),
             };
@@ -7814,10 +7817,15 @@ pub(crate) fn prove_executed_contract_refinement(
                 .predicate_name(),
             arguments: [
                 state.clone(),
-                Term::ProgramValue(ProgramValue::Pointer(pointer.clone())),
+                Term::ProgramValue(ProgramValue::Pointer(pointer.clone()).into()),
             ]
             .into_iter()
-            .chain(source_values.iter().cloned().map(Term::ProgramValue))
+            .chain(
+                source_values
+                    .iter()
+                    .cloned()
+                    .map(|value| Term::ProgramValue(value.into())),
+            )
             .collect(),
         };
         implication = Proposition::Implies(Box::new(premise), Box::new(implication));
@@ -7845,7 +7853,7 @@ fn executed_conclusion_values(
         .get(2..)?
         .iter()
         .map(|argument| match argument {
-            Term::ProgramValue(value) => Some(value.clone()),
+            Term::ProgramValue(value) => Some(value.native_compat().clone()),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;

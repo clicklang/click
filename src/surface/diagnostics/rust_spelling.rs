@@ -304,7 +304,7 @@ pub(crate) fn rust_variable_spelling(name: &str) -> Option<String> {
         crate::surface::rust_iterator_spelling(
             iterators,
             CURRENT_LOOP.with(std::cell::Cell::get),
-            name,
+            &name.into(),
         )
     }) {
         return Some(spelling);
@@ -316,32 +316,23 @@ pub(crate) fn rust_variable_spelling(name: &str) -> Option<String> {
         .then(|| format!("{slice}.len()"))
 }
 
-/// Render the typed count using the loop that exposes it to proofs.
-pub(super) fn rust_enumerate_count_spelling(name: &crate::kernel::BindingName) -> Option<String> {
+/// Render a program binding through its existing iterator or slice accessors.
+pub(crate) fn rust_binding_spelling(name: &crate::kernel::BindingName) -> Option<String> {
+    if let Some(name) = name.named() {
+        return rust_variable_spelling(name);
+    }
     if !name
         .local_id()
-        .is_some_and(crate::kernel::LocalBindingId::is_enumerate_count)
+        .is_some_and(crate::kernel::LocalBindingId::is_iterator_field)
     {
         return None;
     }
-    let current = CURRENT_LOOP.with(std::cell::Cell::get);
     with_rust_loop_iterators(|iterators| {
-        let matches = |iterator: &Option<RustLoopIterator>| {
-            iterator
-                .as_ref()
-                .and_then(|iter| iter.count_binding.as_ref())
-                == Some(name)
-        };
-        if current
-            .and_then(|index| iterators.get(index))
-            .is_some_and(matches)
-        {
-            return Some("iter.count".into());
-        }
-        iterators
-            .iter()
-            .position(matches)
-            .map(|index| format!("loop({index}).iter.count"))
+        crate::surface::rust_iterator_spelling(
+            iterators,
+            CURRENT_LOOP.with(std::cell::Cell::get),
+            name,
+        )
     })
 }
 

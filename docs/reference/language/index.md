@@ -3793,26 +3793,36 @@ See [Surface Click and Kernel Click](../../concepts/surface-and-kernel.md).
 
 ### File-qualified C objects
 
-A `verifying` declaration may introduce a file alias:
+In a C sidecar, `verifying "dir/counter.c";` supplies the default alias
+`counter`. The last filename component without its extension must be a
+Click identifier and available as a qualifier. Use `as` to choose a
+different alias or claim a name that would otherwise be inferred for
+another file. An explicit alias takes effect after its declaration.
+
+If two unaliased files share a stem, a reference through that stem is
+ambiguous. Give at least one file a distinct explicit alias. Inferred
+aliases leave Click library paths, datatype namespaces, `click::` and
+`program::` available for their usual uses.
+
+This example uses the default `left` and an explicit `right_file` alias.
 
 <!-- verified-example: mdtests/qualified_static_resource.md -->
 ```click
-verifying "left.c" as left;
-verifying "right.c" as right;
+verifying "left.c";
+verifying "right.c" as right_file;
 
 resource both() {
     owns left::count;
-    owns right::count;
-    fact right::count == 19u64;
+    owns right_file::count;
+    fact right_file::count == 19u64;
 }
 ```
 
-Declare the alias before using it. `counter::count` refers to the file-scope
-C object declared in `counter.c`, including a private `static` object. The
-alias is only a naming mechanism: it neither creates a module nor grants
-ownership. One resource can own objects from several files. Ordinary calls
-still need their declared resources, supplied initially by the program-entry
-proof or transferred by a caller.
+`counter::count` refers to the file-scope C object declared in
+`counter.c`, including a private `static` object. The alias identifies
+the declaration. Ordinary calls still need their declared resources,
+supplied initially by the program-entry proof or transferred by a
+caller. One resource can own objects from several files.
 
 Use the existing memory syntax: `&counter::count[0..1]` owns the storage of a
 scalar, `cache::entries[0..16]` owns array elements, and
@@ -3865,8 +3875,7 @@ is rejected as ambiguous.
 This syntax supports file-scope and function-local static scalars, scalar
 arrays (including multidimensional arrays), and struct objects. It does not
 qualify functions as values or arrays of structs.
-Aliases must be unique and cannot share a name with a specification datatype.
-Existing unqualified references and `verifying "file.c";` remain unchanged.
+Explicit aliases must be unique and cannot share a name with a specification datatype.
 
 ### Program binding references
 

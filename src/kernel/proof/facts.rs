@@ -4581,7 +4581,7 @@ mod integer_equality_fact_index_tests {
                 name: "sample".to_string(),
                 arguments: vec![
                     Term::ExecutionState(Box::new(state)),
-                    Term::ProgramValue(ProgramValue::Int32(MachineTerm::Variable(binder))),
+                    Term::ProgramValue((ProgramValue::Int32(MachineTerm::Variable(binder))).into()),
                 ],
             }),
         };

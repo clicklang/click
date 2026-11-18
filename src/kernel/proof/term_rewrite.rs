@@ -31,6 +31,7 @@ mod retained_folds;
 mod retained_integer;
 #[allow(dead_code)]
 mod retained_matches;
+mod retained_scalar_boolean;
 mod shared_comparison;
 pub(in crate::kernel) use common_boolean::{
     substitute_application_address_bits, substitute_application_address_pointer,
@@ -1508,7 +1509,9 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
     match term {
         Term::Integer(value) => collect_integer_carriers(value, variables, &mut BTreeSet::new()),
         Term::Bitvector32(value) => collect_bitvector_carriers(value, variables),
-        Term::ProgramValue(value) => collect_program_value_carriers(value, variables),
+        Term::ProgramValue(value) => {
+            collect_program_value_carriers(value.native_compat(), variables)
+        }
         Term::Condition(value) => collect_condition_carriers(value, variables),
         Term::PointerOffset(value) => collect_pointer_offset_carriers(value, variables),
         Term::Algebraic(value) => collect_algebraic_carriers(value, variables),
@@ -1636,7 +1639,12 @@ fn exhausted_term(term: &Term) -> Term {
         Term::Bitvector32(_) => Term::Bitvector32(MachineTerm::constant(0)),
         Term::Integer(value) => Term::Integer(exhausted_integer(value)),
         Term::PointerOffset(_) => Term::PointerOffset(exhausted_offset()),
-        Term::ProgramValue(value) => Term::ProgramValue(exhausted_program_value(value)),
+        Term::ProgramValue(value) => match value.value() {
+            ExecutionValue::Shared(_) => term.clone(),
+            ExecutionValue::Native(value) => {
+                Term::ProgramValue(exhausted_program_value(value).into())
+            }
+        },
         Term::Sequence(value) => Term::Sequence(exhausted_sequence(value)),
         Term::Algebraic(value) => Term::Algebraic(exhausted_algebraic(value)),
         _ => term.clone(),
@@ -3175,7 +3183,9 @@ impl<'a> TermRewrite<'a> {
                 Term::PointerOffset(offset) => {
                     collect_pointer_offset_carriers(offset, &mut variables)
                 }
-                Term::ProgramValue(value) => collect_program_value_carriers(value, &mut variables),
+                Term::ProgramValue(value) => {
+                    collect_program_value_carriers(value.native_compat(), &mut variables);
+                }
                 Term::Sequence(value) => collect_sequence_carriers(value, &mut variables),
                 Term::Algebraic(value) => {
                     collect_algebraic_carriers_seen(value, &mut variables, &mut seen)
@@ -3686,7 +3696,7 @@ impl<'a> TermRewrite<'a> {
             Term::Algebraic(v) => Term::Algebraic(self.algebraic(v)),
             Term::Bitvector32(v) => Term::Bitvector32(self.bits(v)),
             Term::Integer(v) => Term::Integer(self.integer(v)),
-            Term::ProgramValue(v) => Term::ProgramValue(self.value(v)),
+            Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),
             Term::Condition(v) => Term::Condition(self.condition(v)),
             Term::PointerOffset(v) => Term::PointerOffset(self.offset(v)),
             _ => term.clone(),

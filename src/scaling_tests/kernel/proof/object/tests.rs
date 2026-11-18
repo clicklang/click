@@ -695,12 +695,13 @@ fn known_quantified_identity_uses_selected_keys() {
         body: Box::new(Proposition::Predicate {
             name: "quantified_identity".into(),
             arguments: vec![
-                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::Variable(
-                    Variable(binder),
-                ))),
-                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::constant(
-                    index,
-                ))),
+                Term::ProgramValue(
+                    (crate::kernel::ProgramValue::Int32(MachineTerm::Variable(Variable(binder))))
+                        .into(),
+                ),
+                Term::ProgramValue(
+                    (crate::kernel::ProgramValue::Int32(MachineTerm::constant(index))).into(),
+                ),
             ],
         }),
         name: Default::default(),
@@ -772,12 +773,13 @@ fn apply_fact_quantified_sources_use_selected_alpha_keys() {
         body: Box::new(Proposition::Predicate {
             name: "selected_body".into(),
             arguments: vec![
-                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::Variable(
-                    Variable(binder),
-                ))),
-                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::constant(
-                    value,
-                ))),
+                Term::ProgramValue(
+                    (crate::kernel::ProgramValue::Int32(MachineTerm::Variable(Variable(binder))))
+                        .into(),
+                ),
+                Term::ProgramValue(
+                    (crate::kernel::ProgramValue::Int32(MachineTerm::constant(value))).into(),
+                ),
             ],
         }),
     };

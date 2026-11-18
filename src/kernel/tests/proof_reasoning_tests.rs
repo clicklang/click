@@ -37,7 +37,10 @@ fn refuted_disjunction_requires_the_source_and_every_exact_negation() {
     // Propagation may add intermediate disjunctions, their remaining arm,
     // and checked falsehood. The certificate must still reject every context
     // missing one of the original supports.
-    let goal = Proposition::Equal(Term::ProgramValue(int32(0)), Term::ProgramValue(int32(1)));
+    let goal = Proposition::Equal(
+        Term::ProgramValue(int32(0).into()),
+        Term::ProgramValue(int32(1).into()),
+    );
     let derivation = crate::kernel::search::ProofSearch::derive_proposition(&(context), &goal)
         .expect("all arms are refuted");
     assert!(derivation.check(&context));
@@ -4514,10 +4517,9 @@ fn forall_pointer_instantiation_takes_a_pointer_of_the_binder_type() {
     let binder = Variable(640);
     let pointer = |variable, program_type| Pointer::new(Address::symbolic(variable), program_type);
     let pointer_term = |variable| {
-        Term::ProgramValue(ProgramValue::Pointer(pointer(
-            variable,
-            ProgramType::Int32Pointer,
-        )))
+        Term::ProgramValue(
+            ProgramValue::Pointer(pointer(variable, ProgramType::Int32Pointer)).into(),
+        )
     };
     let quantified = Proposition::ForAll {
         name: Default::default(),
@@ -8134,13 +8136,11 @@ fn pointer_predicate_matching_preserves_types_arguments_states_and_scope() {
     ) -> Proposition {
         let mut arguments = vec![
             Term::ExecutionState(Box::new(state)),
-            Term::ProgramValue(int32(tag)),
+            Term::ProgramValue((int32(tag)).into()),
         ];
-        arguments.extend(
-            pointers.iter().map(|pointer| {
-                Term::ProgramValue(ProgramValue::typed_pointer(pointer.clone(), ty))
-            }),
-        );
+        arguments.extend(pointers.iter().map(|pointer| {
+            Term::ProgramValue(ProgramValue::typed_pointer(pointer.clone(), ty).into())
+        }));
         Proposition::Predicate {
             name: name.into(),
             arguments,
@@ -8231,10 +8231,13 @@ fn predicate_and_callback_lookup_share_late_pointer_class_merges() {
         name: FunctionContract::predicate_name_for("Invoke"),
         arguments: vec![
             Term::ExecutionState(Box::new(state)),
-            Term::ProgramValue(ProgramValue::typed_pointer(
-                pointer,
-                ProgramType::FunctionPointer(CallbackSignature::from_encoded(121_000)),
-            )),
+            Term::ProgramValue(
+                (ProgramValue::typed_pointer(
+                    pointer,
+                    ProgramType::FunctionPointer(CallbackSignature::from_encoded(121_000)),
+                ))
+                .into(),
+            ),
         ],
     };
     let source = fact(a.clone(), ExecutionState::new());
@@ -8281,10 +8284,9 @@ fn pointer_fact_payloads_are_not_revisited_when_fresh_aliases_join_a_large_class
         for index in 0..size {
             context = context.assume_proposition(Proposition::Predicate {
                 name: format!("Witness{index}"),
-                arguments: vec![Term::ProgramValue(ProgramValue::typed_pointer(
-                    target.clone(),
-                    ProgramType::Int32Pointer,
-                ))],
+                arguments: vec![Term::ProgramValue(
+                    (ProgramValue::typed_pointer(target.clone(), ProgramType::Int32Pointer)).into(),
+                )],
             });
         }
         EqualityGraph::take_pointer_fact_merge_visits();

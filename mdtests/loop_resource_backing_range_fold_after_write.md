@@ -13,9 +13,11 @@ void probe(struct holder* h, int32 n) {
     requires 0 <= n;
     requires n <= 536870911;
     views h->data;
+    requires separate(memory(h->data[0..n]), memory(h->data));
     owns cells(h->data, n);
 } by {
     step(); step();
+    have separate(memory(h->data[0..n]), memory(h->data)) by { known(); }
     loop {
         owns cells(h->data, n);
         decreases n - i;

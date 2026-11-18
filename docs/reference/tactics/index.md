@@ -808,8 +808,7 @@ loop's clauses and phases bare `iterations` is always the pass count; a
 program variable of that name is [`program::iterations`](../language/index.md#program-binding-references)
 ([`a_c_local_named_iterations_is_written_program_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_program_iterations.md)).
 Like any proof `Integer`, it compares with a C value directly, `i == iterations`
-([`a_loop_states_a_running_total_over_its_pass_count.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_states_a_running_total_over_its_pass_count.md),
-[`a_loop_pass_count_names_the_passes_after_the_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_pass_count_names_the_passes_after_the_loop.md),
+([`a_loop_pass_count_names_the_passes_after_the_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_pass_count_names_the_passes_after_the_loop.md),
 [`a_break_exit_counts_the_passes_before_it.md`](https://github.com/clicklang/click/blob/master/mdtests/a_break_exit_counts_the_passes_before_it.md),
 [`a_continue_is_a_pass_of_the_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/a_continue_is_a_pass_of_the_loop.md),
 [`an_inner_loop_counts_its_own_passes.md`](https://github.com/clicklang/click/blob/master/mdtests/an_inner_loop_counts_its_own_passes.md)).

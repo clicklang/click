@@ -1,7 +1,7 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
-use crate::kernel::CompareRelation;
 use crate::kernel::eval::SpecDivision;
+use crate::kernel::{CompareRelation, ProgramPoint};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 mod existential;
@@ -2825,7 +2825,9 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             Term::Integer(term) => integer_carrier_in_integer(term, variable),
             Term::Bitvector32(term) => integer_carrier_in_bitvector(term, variable),
             Term::Condition(condition) => condition_contains(condition, variable),
-            Term::ProgramValue(value) => integer_carrier_in_program_value(value, variable),
+            Term::ProgramValue(value) => {
+                integer_carrier_in_program_value(value.native_compat(), variable)
+            }
             Term::Sequence(sequence) => sequence_contains_integer_variable(sequence, variable),
             Term::PointerOffset(offset) => integer_carrier_in_pointer_offset(offset, variable),
             Term::Algebraic(value) => integer_carrier_in_algebraic(value, variable),
@@ -5921,9 +5923,7 @@ fn lower_spec_predicate_proposition_at_state_in(
                     };
                     arguments.push(Term::Memory(memory.clone()));
                 }
-                arguments.push(Term::ProgramValue(
-                    argument_path.value.clone().into_native(),
-                ));
+                arguments.push(Term::ProgramValue(argument_path.value.clone().into()));
                 next_paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
                     proposition: Proposition::Predicate { name, arguments },
@@ -7834,6 +7834,30 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 }
                 // `exact(place)` names the read by the selected state itself;
                 // an ordinary read names its version point.
+                if !*exact
+                    && matches!(value_type, ProgramType::Int32 | ProgramType::UInt32)
+                    && ProgramPoint::supports_indexed_local_word32_version(&pointer)
+                {
+                    let selected_point = match memory {
+                        SpecPoint::At(point) => point.clone(),
+                        _ => selected_state.expect("selected read state").program_point(),
+                    };
+                    let kind = LoadKind::of_type(*value_type).expect("32-bit integer read");
+                    if let Some(version) =
+                        selected_point.indexed_local_word32_version(&pointer, kind)
+                    {
+                        let read = crate::kernel::eval::evaluate_indexed_word32_read(
+                            memory_view,
+                            version,
+                            pointer,
+                            kind,
+                            pointer_path.facts,
+                            obligations,
+                        );
+                        paths.extend(spec_value_paths_in(vec![read], budget));
+                        continue;
+                    }
+                }
                 let read_paths = if *exact {
                     crate::kernel::eval::evaluate_exact_logical_memory_load_paths(
                         memory_view,

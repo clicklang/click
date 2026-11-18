@@ -262,3 +262,4 @@ try_bounded_cast_identity_using
 try_bounded_cast_identity_closure
 try_rewrite_conditional_arms_using
 try_native_integer_bound
+selected_call_supplier_unfold

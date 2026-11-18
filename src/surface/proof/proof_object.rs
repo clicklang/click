@@ -1803,9 +1803,7 @@ fn register_state_names(
             {
                 continue;
             }
-            let name = name
-                .named()
-                .and_then(crate::surface::diagnostics::rust_variable_spelling)
+            let name = crate::surface::diagnostics::rust_binding_spelling(name)
                 .unwrap_or_else(|| name.to_string());
             // A `usize` or `uintptr_t` local is a pointer integer; its
             // numeric value is the scalar the local held.
@@ -1916,10 +1914,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                             .map(|result| {
                                 crate::surface::diagnostics::describe_contract_expression(&result)
                             })
-                            .or_else(|| {
-                                name.named()
-                                    .and_then(crate::surface::diagnostics::rust_variable_spelling)
-                            })
+                            .or_else(|| crate::surface::diagnostics::rust_binding_spelling(name))
                             .unwrap_or_else(|| name.to_string());
                         labels.source_name(variable, spelling);
                     }
