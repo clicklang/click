@@ -811,8 +811,8 @@ src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::try_bou
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_bounded_cast_identity_closure	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::refute_definition_ends	try_rewrite_conditional_arms_using	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_rewrite_conditional_arms_using	rewrite_conditional_arms_using	1
-src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::try_int32_addition_using	driver	5
-src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::try_int32_addition_using	known_bridge_using	1
-src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	try_int32_addition_using	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	try_int32_addition_using	1
-src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_int32_addition_using	try_int32_addition_using	1
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::try_int32_add_sub_using	driver	5
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::try_int32_add_sub_using	known_bridge_using	1
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	try_int32_add_sub_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	try_int32_add_sub_using	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_int32_add_sub_using	try_int32_add_sub_using	1
