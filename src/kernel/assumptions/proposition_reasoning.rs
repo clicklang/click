@@ -368,13 +368,13 @@ impl PureFactContext {
                 base,
                 bytes,
                 wide: true,
-            } => self.proves_native_memory_loadable(memory, base, bytes),
+            } => self.proves_native_memory_loadable(memory, base, bytes.native_compat()),
             Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: false,
-            } => self.proves_memory_loadable(memory, base, bytes),
+            } => self.proves_memory_loadable(memory, base, bytes.native_compat()),
             Proposition::MemoryCanStore {
                 memory,
                 pointer,
@@ -580,14 +580,14 @@ impl PureFactContext {
                 base,
                 bytes,
                 wide: true,
-            } => self.proves_native_memory_loadable(memory, base, bytes),
+            } => self.proves_native_memory_loadable(memory, base, bytes.native_compat()),
             Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: false,
             } => {
-                self.proves_memory_loadable(memory, base, bytes)
+                self.proves_memory_loadable(memory, base, bytes.native_compat())
                     // Loadability survives writes: an assumed loadable fact
                     // for the same range transports across any chain of
                     // recorded effects connecting the states. Its
@@ -613,10 +613,10 @@ impl PureFactContext {
                                     || crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                                         fact_base, base, self,
                                     );
-                            let bytes_match = crate::kernel::api::canonicalize_atomic_loads(fact_bytes)
-                                == crate::kernel::api::canonicalize_atomic_loads(bytes)
+                            let bytes_match = crate::kernel::api::canonicalize_atomic_loads(fact_bytes.native_compat())
+                                == crate::kernel::api::canonicalize_atomic_loads(bytes.native_compat())
                                 || crate::kernel::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
-                                    fact_bytes, bytes, self,
+                                    fact_bytes.native_compat(), bytes.native_compat(), self,
                                 );
                             base_match
                                 && bytes_match
@@ -633,8 +633,8 @@ impl PureFactContext {
                     // Symbolic byte counts often fold to a constant width,
                     // unlocking the element-index coverage rules.
                     || {
-                        let simplified = self.simplify_bitvector_under_assumptions(bytes);
-                        simplified != *bytes
+                        let simplified = self.simplify_bitvector_under_assumptions(bytes.native_compat());
+                        simplified != *bytes.native_compat()
                             && self.proves_memory_loadable(memory, base, &simplified)
                     }
             }

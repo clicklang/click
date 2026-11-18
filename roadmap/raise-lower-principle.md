@@ -1379,6 +1379,20 @@ The initial post-switch selection passed 208/209 checks: the broader assignment
 scaler included the existing stack-memory export. It now isolates the event
 capture/clone operation; final focused validation is running.
 
+### 10q2b1 Loadability-count storage (in progress)
+
+`MemoryLoadable::bytes` uses the existing machine carrier. Native constructor
+fields retain their prior structure and explicitly select Int32 or UInt64
+storage from the existing `wide` flag. Native expression syntax, width metadata
+and count identity are unchanged. Collection and substitution retain shared
+operands; selected native checking, rewriting and raising reads remain explicit.
+
+This PR prepares storage and consumers. Range count producers keep their
+existing native arithmetic until 10q2b2, which owns canonical subtraction,
+common-base cancellation, multiplication and wide product spelling. Native
+format/hash and growing-root clone regressions cover the carrier boundary.
+Validation is pending.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

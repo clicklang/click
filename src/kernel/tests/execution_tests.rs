@@ -2080,7 +2080,7 @@ fn while_invariant_is_proof_obligation() {
     let invariant = Proposition::MemoryLoadable {
         memory: SymbolicMemory::new(),
         base: pointer,
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let state = ExecutionState::new().with_local("x", int32(0));

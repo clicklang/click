@@ -1994,7 +1994,7 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: MachineTerm::constant(bytes),
+        bytes: (MachineTerm::constant(bytes)).into(),
         wide: false,
     };
     // (sources stated about the goal's object, goal, premises the
@@ -6841,7 +6841,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
     let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: MachineTerm::constant(bytes),
+        bytes: (MachineTerm::constant(bytes)).into(),
         wide: false,
     };
     let equal = |left: u64, right: u64| {
@@ -6912,7 +6912,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                                 base: format!("other{index}").as_str().into(),
                                 offset: AddressOffset::Constant(0),
                             },
-                            bytes: MachineTerm::constant(16),
+                            bytes: (MachineTerm::constant(16)).into(),
                             wide: false,
                         });
                 }
@@ -7034,7 +7034,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: at(MachineTerm::constant(2)),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         let goal = Proposition::MemoryLoadable {
@@ -7044,7 +7044,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
                 Box::new(index_cell.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         context = context
@@ -7151,7 +7151,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                         base: format!("other{index}").as_str().into(),
                         offset: AddressOffset::scaled_int32_node(variable(482_000 + index), 4),
                     },
-                    bytes: MachineTerm::constant(16),
+                    bytes: (MachineTerm::constant(16)).into(),
                     wide: false,
                 });
         }
@@ -7230,7 +7230,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                             base: format!("extension{step}").as_str().into(),
                             offset: AddressOffset::Constant(0),
                         },
-                        bytes: MachineTerm::constant(16),
+                        bytes: (MachineTerm::constant(16)).into(),
                         wide: false,
                     });
                 let proof = crate::kernel::search::ProofSearch::derive_atomic_proposition(

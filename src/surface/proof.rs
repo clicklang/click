@@ -2771,7 +2771,7 @@ fn evaluate_entry_resource_context(
             let Proposition::MemoryLoadable { base, bytes, .. } = fact else {
                 return None;
             };
-            let range = match bytes {
+            let range = match bytes.native_compat() {
                 binary_term!(Int32, Multiply, left, right)
                     if **right == MachineTerm::constant(ProgramType::Int32.byte_width()) =>
                 {
@@ -2804,7 +2804,7 @@ fn evaluate_entry_resource_context(
                 _ => MemoryRange::new_with_element_width(
                     base.clone(),
                     MachineTerm::constant(0),
-                    bytes.clone(),
+                    bytes.native_compat().clone(),
                     1,
                 ),
             };

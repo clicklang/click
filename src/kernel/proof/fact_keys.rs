@@ -3503,19 +3503,19 @@ mod proposition_identity_tests {
         let left = Proposition::MemoryLoadable {
             memory: left_memory.clone(),
             base: pointer.clone(),
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         };
         let same = Proposition::MemoryLoadable {
             memory: left_memory,
             base: pointer.clone(),
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         };
         let changed = Proposition::MemoryLoadable {
             memory: right_memory,
             base: pointer,
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         };
         assert!(propositions_are_alpha_equal(&left, &same));
@@ -3765,7 +3765,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                         next_binder,
                     )?,
                     bytes: alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                        bytes,
+                        bytes.native_compat(),
                         bindings,
                         next_binder,
                     )?,

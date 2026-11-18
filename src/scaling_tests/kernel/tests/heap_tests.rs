@@ -678,7 +678,7 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
         facts = facts.assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: query.clone(),
-            bytes: MachineTerm::constant(8),
+            bytes: (MachineTerm::constant(8)).into(),
             wide: false,
         });
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {

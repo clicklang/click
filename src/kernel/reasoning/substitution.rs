@@ -1402,7 +1402,11 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
         } => Proposition::MemoryLoadable {
             memory: s.memory(memory),
             base: s.pointer(base),
-            bytes: s.bitvector(bytes),
+            bytes: match bytes.value() {
+                ExecutionValue::Native(_) => bytes.map_native(|term| s.bitvector(term)),
+                value => crate::kernel::StoredMachineTerm::from_value(s.expression_value(value))
+                    .expect("substitution preserves count type"),
+            },
             wide: *wide,
         },
         Proposition::ResourceSeparate { left, right } => Proposition::ResourceSeparate {
@@ -2492,7 +2496,7 @@ fn collect_proposition_bound_variables_one(
         } => {
             collect_memory_bound_variables(memory, variables);
             collect_pointer_bound_variables(base, variables);
-            collect_bitvector_bound_variables(bytes, variables);
+            collect_expression_value_bound_variables(bytes.value(), variables);
         }
         Proposition::ResourceViewable { memory, resource } => {
             collect_memory_bound_variables(memory, variables);
@@ -4594,14 +4598,21 @@ fn rewrite_integer_memory_loadable_with_walker(
     if walker.work_exhausted() {
         return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
     }
-    let bytes = walker.bits(bytes);
+    let bytes = walker.bits(bytes.native_compat());
     integer_substitution_refusal(walker.refusal())?;
     Ok(Proposition::MemoryLoadable {
         // SymbolicMemory states are immutable proof-state identities.  Keep the same
         // handle and rewrite only the selected address/width expressions.
         memory: memory.clone(),
         base: pointer.address().clone(),
-        bytes,
+        bytes: crate::kernel::StoredMachineTerm::new(
+            if *wide {
+                crate::kernel::MachineIntegerType::UInt64
+            } else {
+                crate::kernel::MachineIntegerType::Int32
+            },
+            bytes,
+        ),
         wide: *wide,
     })
 }

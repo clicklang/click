@@ -2580,7 +2580,14 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 base: base.base.clone(),
                 offset: rewrite_offset_term(&base.offset, left, right),
             },
-            bytes: rewrite_term(bytes, left, right),
+            bytes: crate::kernel::StoredMachineTerm::new(
+                if *wide {
+                    crate::kernel::MachineIntegerType::UInt64
+                } else {
+                    crate::kernel::MachineIntegerType::Int32
+                },
+                rewrite_term(bytes.native_compat(), left, right),
+            ),
             wide: *wide,
         },
         Proposition::Equal(Term::Algebraic(goal_left), Term::Algebraic(goal_right)) => {

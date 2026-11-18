@@ -185,7 +185,7 @@ int32 id(int32 x) {
                     crate::kernel::ProgramType::Int32,
                 ),
                 base: crate::kernel::Address::symbolic(Variable(700)),
-                bytes: MachineTerm::Variable(var),
+                bytes: (MachineTerm::Variable(var)).into(),
                 wide: false,
             }),
         };

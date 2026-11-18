@@ -772,7 +772,7 @@ fn source_range_universal_is_supported(proposition: &Proposition) -> bool {
     };
     *sort == Sort::ProgramInt32
         && matches!(base.base, crate::kernel::AddressBase::ExternalArgument)
-        && is_one_byte_external_range(bytes)
+        && is_one_byte_external_range(bytes.native_compat())
 }
 
 /// A whole written existential range can require a caller-witness projection
@@ -808,7 +808,8 @@ fn has_explicit_existential_byte_range(proposition: &Proposition) -> bool {
                 work.push(right);
             }
             Proposition::MemoryLoadable { base, bytes, .. }
-                if base.base == crate::kernel::AddressBase::ExternalArgument && *bytes == width =>
+                if base.base == crate::kernel::AddressBase::ExternalArgument
+                    && *bytes.native_compat() == width =>
             {
                 return true;
             }
@@ -925,10 +926,10 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
             Work::Proposition(Proposition::MemoryLoadable { base, bytes, .. }, _)
                 if quantified_external_range
                     && matches!(base.base, crate::kernel::AddressBase::ExternalArgument)
-                    && (is_one_byte_external_range(bytes) || explicit_range) =>
+                    && (is_one_byte_external_range(bytes.native_compat()) || explicit_range) =>
             {
                 saw_external_range = true;
-                work.push(Work::Bitvector(bytes));
+                work.push(Work::Bitvector(bytes.native_compat()));
                 work.push(Work::PointerOffset(&base.offset));
             }
             Work::Proposition(
@@ -1377,7 +1378,7 @@ mod tests {
         let range = Proposition::MemoryLoadable {
             memory: crate::kernel::SymbolicMemory::new(),
             base: pointer,
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         };
         let quantified = Proposition::ForAll {
@@ -1496,7 +1497,7 @@ mod tests {
             && let Proposition::Implies(_, consequent) = body.as_mut()
             && let Proposition::MemoryLoadable { bytes, .. } = consequent.as_mut()
         {
-            *bytes = MachineTerm::constant(2);
+            *bytes = MachineTerm::constant(2).into();
         }
         let wide_guarded = Proposition::Exists {
             name: "len".to_string(),

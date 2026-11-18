@@ -13381,7 +13381,7 @@ pub enum Proposition {
     MemoryLoadable {
         memory: SymbolicMemory,
         base: Address,
-        bytes: MachineTerm,
+        bytes: StoredMachineTerm,
         wide: bool,
     },
     /// A typed read is valid in this state, including initialization.

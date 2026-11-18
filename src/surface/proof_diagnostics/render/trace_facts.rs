@@ -229,7 +229,7 @@ mod tests {
                 Proposition::MemoryLoadable {
                     memory,
                     base: p,
-                    bytes: MachineTerm::constant(8),
+                    bytes: (MachineTerm::constant(8)).into(),
                     wide: false,
                 },
                 "bytes:uint32=8",

@@ -2877,7 +2877,9 @@ fn restore_range_span_spelling(
         ) => Proposition::MemoryLoadable {
             memory,
             base,
-            bytes: substituted_range_span(bytes, from, to).unwrap_or(folded),
+            bytes: substituted_range_span(bytes.native_compat(), from, to)
+                .map(Into::into)
+                .unwrap_or(folded),
             wide: false,
         },
         (Proposition::And(left, right), Proposition::And(renamed_left, renamed_right)) => {
@@ -4172,7 +4174,7 @@ mod integer_equality_fact_index_tests {
                     base: block.into(),
                     offset,
                 },
-                bytes: MachineTerm::constant(bytes),
+                bytes: (MachineTerm::constant(bytes)).into(),
                 wide: false,
             }),
         }
@@ -4206,7 +4208,7 @@ mod integer_equality_fact_index_tests {
                     base: block.into(),
                     offset,
                 },
-                bytes: MachineTerm::constant(bytes),
+                bytes: (MachineTerm::constant(bytes)).into(),
                 wide: false,
             }),
         }

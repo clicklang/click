@@ -1538,7 +1538,7 @@ impl Renderer<'_> {
                 } else {
                     ", bytes:uint32="
                 });
-                self.bitvector(bytes);
+                self.bitvector(bytes.native_compat());
                 self.push(")");
             }
             Proposition::MemoryCanStore {
@@ -3107,7 +3107,7 @@ mod tests {
                 base: crate::kernel::AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),
             },
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         }
     }

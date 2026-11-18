@@ -597,7 +597,7 @@ impl Printer<'_> {
             } => {
                 let fact = atom(format!(
                     "viewable({})",
-                    self.byte_range(base, bytes, *wide, depth)
+                    self.byte_range(base, bytes.native_compat(), *wide, depth)
                 ));
                 self.qualify_fact(memory, fact)
             }

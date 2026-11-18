@@ -3117,7 +3117,7 @@ fn nonempty_loadability_establishes_external_pointer_object_provenance() {
     let loadable = |bytes| Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: pointer.clone(),
-        bytes: MachineTerm::constant(bytes),
+        bytes: (MachineTerm::constant(bytes)).into(),
         wide: false,
     };
 
@@ -3355,12 +3355,13 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
         .assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: binary_node!(
+            bytes: (binary_node!(
                 Int32,
                 Multiply,
                 Box::new(n_bits.clone()),
                 Box::new(MachineTerm::constant(4)),
-            ),
+            ))
+            .into(),
             wide: false,
         })
         .assume_condition(

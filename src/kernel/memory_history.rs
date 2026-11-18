@@ -6361,7 +6361,7 @@ pub(crate) fn certified_store_loadability_facts(
             Some(Proposition::MemoryLoadable {
                 memory: store.after.clone(),
                 base: store.pointer.clone(),
-                bytes: MachineTerm::constant(byte_width),
+                bytes: (MachineTerm::constant(byte_width)).into(),
                 wide: false,
             })
         })
@@ -8947,7 +8947,7 @@ mod direct_unchanged_scaling_tests {
             let loadable = |memory: &SymbolicMemory, base: Address| Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base,
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             };
             // The queried state holds no target object, so no other

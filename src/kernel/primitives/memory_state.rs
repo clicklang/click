@@ -8167,7 +8167,7 @@ impl SymbolicMemory {
                     base: block.clone(),
                     offset: AddressOffset::Constant(0),
                 },
-                bytes: contents.size().clone(),
+                bytes: (contents.size().clone()).into(),
                 wide: false,
             })
             .collect()

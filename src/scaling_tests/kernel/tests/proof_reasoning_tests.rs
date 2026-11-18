@@ -654,7 +654,7 @@ fn loadability_same_base_span_graph_queries_scale_without_fact_index() {
         let fact = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: bytes(var(0)),
+            bytes: (bytes(var(0))).into(),
             wide: false,
         };
         let mut context = PureFactContext::new().assume_proposition(fact);
@@ -669,7 +669,7 @@ fn loadability_same_base_span_graph_queries_scale_without_fact_index() {
                 let goal = Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: base.clone(),
-                    bytes: bytes(var(index)),
+                    bytes: (bytes(var(index))).into(),
                     wide: false,
                 };
                 assert!(context.proves_atomic_without_search(&goal));
@@ -922,7 +922,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
             let target = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: data.offset_by_int32_elements(MachineTerm::Variable(target_index)),
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             };
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1480,14 +1480,20 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: root.offset_by_bytes(4 * (index + 1)),
-                bytes: MachineTerm::uint64_constant(16),
+                bytes: crate::kernel::StoredMachineTerm::new(
+                    crate::kernel::MachineIntegerType::UInt64,
+                    MachineTerm::uint64_constant(16),
+                ),
                 wide: true,
             });
         }
         context = context.assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: root.clone(),
-            bytes: MachineTerm::uint64_constant(16),
+            bytes: crate::kernel::StoredMachineTerm::new(
+                crate::kernel::MachineIntegerType::UInt64,
+                MachineTerm::uint64_constant(16),
+            ),
             wide: true,
         });
         // Construct the address index once before measuring hot queries.
@@ -1534,7 +1540,10 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: base.offset_by_bytes(4 * (index + 1)),
-                bytes: MachineTerm::uint64_constant(16),
+                bytes: crate::kernel::StoredMachineTerm::new(
+                    crate::kernel::MachineIntegerType::UInt64,
+                    MachineTerm::uint64_constant(16),
+                ),
                 wide: true,
             });
         }
@@ -1542,7 +1551,10 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
             .assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: base.clone(),
-                bytes: MachineTerm::uint64_constant(16),
+                bytes: crate::kernel::StoredMachineTerm::new(
+                    crate::kernel::MachineIntegerType::UInt64,
+                    MachineTerm::uint64_constant(16),
+                ),
                 wide: true,
             })
             .assume_proposition(Proposition::ConditionIs(
@@ -1589,14 +1601,20 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
                     base: base.base.clone(),
                     offset: AddressOffset::Constant(4 * (index + 1)),
                 },
-                bytes: MachineTerm::uint64_constant(8),
+                bytes: crate::kernel::StoredMachineTerm::new(
+                    crate::kernel::MachineIntegerType::UInt64,
+                    MachineTerm::uint64_constant(8),
+                ),
                 wide: true,
             });
         }
         context = context.assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: MachineTerm::uint64_constant(8),
+            bytes: crate::kernel::StoredMachineTerm::new(
+                crate::kernel::MachineIntegerType::UInt64,
+                MachineTerm::uint64_constant(8),
+            ),
             wide: true,
         });
         // Index construction is setup work. Repeated exact-range queries must

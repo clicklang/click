@@ -1422,7 +1422,7 @@ mod path_condition_tests {
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         };
         let guard = Proposition::ConditionIs(
@@ -1446,7 +1446,7 @@ mod path_condition_tests {
         let wider = Proposition::MemoryLoadable {
             memory,
             base,
-            bytes: MachineTerm::constant(2),
+            bytes: (MachineTerm::constant(2)).into(),
             wide: false,
         };
         let invalid = Proposition::And(Box::new(guard), Box::new(wider));

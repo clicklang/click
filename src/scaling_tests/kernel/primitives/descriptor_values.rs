@@ -122,3 +122,46 @@ fn proposition_outcome_handoffs_retain_growing_machine_and_float_operands() {
         assert_eq!(work, *baseline.get_or_insert(work), "size={size}");
     }
 }
+
+#[test]
+fn loadability_count_storage_shares_growing_machine_operands() {
+    let mut baseline = None;
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let mut root = KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(10993683),
+            );
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root],
+                );
+            }
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let fact = Proposition::MemoryLoadable {
+                    memory: SymbolicMemory::new(),
+                    base: Address::symbolic(Variable(10993684)),
+                    bytes: StoredMachineTerm::from_value(root.clone().into()).unwrap(),
+                    wide: format == MachineIntegerType::UInt64,
+                };
+                for _ in 0..32 {
+                    let Proposition::MemoryLoadable { bytes, .. } = fact.clone() else {
+                        unreachable!()
+                    };
+                    assert_eq!(bytes.root(), Some(&root));
+                }
+            });
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(!root.has_cached_native_argument());
+            assert_eq!(
+                work,
+                *baseline.get_or_insert(work),
+                "size={size} format={format:?}"
+            );
+        }
+    }
+}

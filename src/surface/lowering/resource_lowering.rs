@@ -1192,7 +1192,7 @@ fn check_segment_base_loadability(
     let obligation = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: cell.into_pointer(),
-        bytes: MachineTerm::constant(value_type.byte_width()),
+        bytes: (MachineTerm::constant(value_type.byte_width())).into(),
         wide: false,
     };
     if crate::kernel::execution_state_justifies_loadability_obligation(
@@ -3149,7 +3149,7 @@ fn loadable_requirement_props(
     let mut propositions = vec![Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes,
+        bytes: (bytes).into(),
         wide: false,
     }];
     propositions.extend(guards);
@@ -3296,7 +3296,7 @@ pub(in crate::surface) fn memory_range_loadable_atom_prop(
     Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes,
+        bytes: (bytes).into(),
         wide: false,
     }
 }

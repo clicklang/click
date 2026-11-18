@@ -27,7 +27,7 @@ fn facts_over_one_memory_reserve_its_variables_once() {
             .map(|index| Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(index),
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             })
             .collect::<Vec<_>>();
@@ -65,7 +65,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
             .map(|index| Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(index),
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             })
             .collect::<Vec<_>>();
@@ -81,7 +81,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
         let extended = built.with_fact(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: pointer(0),
-            bytes: MachineTerm::constant(8),
+            bytes: (MachineTerm::constant(8)).into(),
             wide: false,
         });
         assert_eq!(

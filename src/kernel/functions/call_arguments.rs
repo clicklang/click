@@ -764,7 +764,7 @@ pub(super) fn append_string_literal_loadable_facts(
         let proposition = Proposition::MemoryLoadable {
             memory: state.memory.clone(),
             base,
-            bytes: MachineTerm::constant(literal.bytes().len() as u32),
+            bytes: (MachineTerm::constant(literal.bytes().len() as u32)).into(),
             wide: false,
         };
         if !facts.iter().any(|fact| fact.proposition() == &proposition) {

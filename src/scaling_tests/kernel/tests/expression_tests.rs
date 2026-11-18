@@ -52,7 +52,7 @@ fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
     let loadable = |base| Proposition::MemoryLoadable {
         memory: SymbolicMemory::new(),
         base,
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
 

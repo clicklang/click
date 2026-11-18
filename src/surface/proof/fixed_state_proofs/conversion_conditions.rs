@@ -256,7 +256,7 @@ fn spell_condition(
             site.spell_proposition(&Proposition::MemoryLoadable {
                 memory: site.state.memory().clone(),
                 base: pointer.clone(),
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             })
             .as_ref(),

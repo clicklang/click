@@ -518,7 +518,14 @@ fn cached_body_loadability_preserves_exact_range_and_state_barriers() {
     let view = |memory, pointer, width, wide| Proposition::MemoryLoadable {
         memory,
         base: pointer,
-        bytes: MachineTerm::constant(width),
+        bytes: crate::kernel::StoredMachineTerm::new(
+            if wide {
+                crate::kernel::MachineIntegerType::UInt64
+            } else {
+                crate::kernel::MachineIntegerType::Int32
+            },
+            MachineTerm::constant(width),
+        ),
         wide,
     };
     let allowed = [view(before.clone(), at("body"), 8, false)]
@@ -871,10 +878,10 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
     let empty = PureFactStore::default();
     let (function, original) = returned_proposition_trace(&state, &empty);
     let context = returned_proposition_context(&state);
-    let read = |memory, base, bytes| Proposition::MemoryLoadable {
+    let read = |memory, base, bytes: MachineTerm| Proposition::MemoryLoadable {
         memory,
         base,
-        bytes,
+        bytes: (bytes).into(),
         wide: false,
     };
     let valid = read(memory.clone(), pointer.clone(), MachineTerm::constant(4));
@@ -1723,7 +1730,7 @@ fn interface_pointer_congruence_preserves_scope_and_read_obligations() {
         &Proposition::MemoryLoadable {
             memory: SymbolicMemory::new(),
             base: a,
-            bytes: MachineTerm::constant(8),
+            bytes: (MachineTerm::constant(8)).into(),
             wide: false,
         }
     ));
