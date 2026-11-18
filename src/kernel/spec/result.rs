@@ -850,7 +850,7 @@ mod condition_output_tests {
                                 .condition(&ConditionTerm::Constant(literal)),
                         )
                     } else {
-                        SpecValue::Native(ProgramValue::Bool(MachineTerm::bool_constant(literal)))
+                        SpecValue::Native(ProgramValue::bool_constant(literal))
                     };
                     for operator in [ComparisonOperator::Equal, ComparisonOperator::NotEqual] {
                         for reverse in [false, true] {

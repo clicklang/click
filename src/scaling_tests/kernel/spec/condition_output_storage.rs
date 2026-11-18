@@ -32,7 +32,7 @@ fn comparison_output_producers_keep_growing_logical_and_integer_roots() {
             let literal_output = SpecValue::Shared(logical.clone())
                 .comparison(
                     ComparisonOperator::Equal,
-                    &SpecValue::Native(ProgramValue::Bool(MachineTerm::bool_constant(true))),
+                    &SpecValue::Native(ProgramValue::bool_constant(true)),
                 )
                 .unwrap()
                 .unwrap();

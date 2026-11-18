@@ -1511,7 +1511,7 @@ and zero changed terms. Coverage includes the historical algebraic pointer-field
 regression corrected in 10q3b1. The condition-storage switch and retained
 producer handoffs remain separate required slices.
 
-### 10q3c Condition output storage (in progress)
+### 10q3c Condition output storage (landed)
 
 `ConditionIs` owns the existing exact condition carrier. Native constructors
 preserve their original syntax; retained inputs forward one logical Bool root.
@@ -1523,8 +1523,10 @@ There is no implicit dereference, cross-representation equality or additional
 native expression cache.
 
 All four focused storage/identity/visitor/DAG checks, all 6,737 regular unit
-checks, all 1,940 scaling checks and quality passed. The regular proof and
-fact-stability audit is in progress. The separate 10q3d producer handoffs and
+checks, all 1,940 scaling checks, all 5,623 regular proof fixtures and final
+quality passed. Fact stability recorded 121 refusals and zero changed terms or
+paths. [PR #3280](https://github.com/clicklang/click/pull/3280) merged, and both
+pushed commits were verified upstream. The separate 10q3d producer handoffs and
 10q4 expression-bearing `Term` outputs remain required; storage support alone
 does not close either boundary.
 
