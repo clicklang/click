@@ -1304,7 +1304,6 @@ fn region(
             // The loop's index is its place in preorder, the order its
             // `while` takes in the lowered body; its iterator is the one the
             // first `next` from its header on advances.
-            let ordinal = cx.loop_iterators.len();
             let iterator = loop_iterator(cx, mir, block, loop_);
             cx.loop_iterators.push(iterator);
             let body = region(
