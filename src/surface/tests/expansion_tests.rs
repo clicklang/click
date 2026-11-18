@@ -17660,7 +17660,7 @@ fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
 
 #[test]
 #[ignore = "nightly: expands and replays an entire loop contract"]
-fn listed_int32_type_bounds_expand_to_known() {
+fn retained_int32_addition_expands_with_ordinary_bounds() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
         "mdtests/a_byte_field_of_a_struct_array_element_in_a_loop_is_bounded_by_its_index.md",
     );
@@ -17690,6 +17690,28 @@ fn listed_int32_type_bounds_expand_to_known() {
     for (bound, tactic) in bounds {
         assert_eq!(tactic.trim(), "known();", "{bound}\n{tactic}\n{expanded}");
     }
+    let increment = " + to_integer((1 as int32)))";
+    let mut sum_bounds = 0;
+    let mut identities = 0;
+    for (goal, tactic) in expanded.lines().zip(expanded.lines().skip(1)) {
+        let goal = goal.trim_start();
+        if !goal.starts_with("have ") || !goal.contains(increment) {
+            continue;
+        }
+        if goal.starts_with("have -2147483648 <= ") || goal.ends_with("<= 2147483647 by {") {
+            sum_bounds += 1;
+            assert!(
+                !tactic.contains("normalize("),
+                "{goal}\n{tactic}\n{expanded}"
+            );
+        } else if goal.starts_with("have to_integer(((at(")
+            && goal.contains(", i) + 1) as int32)) == ")
+        {
+            identities += 1;
+            assert_eq!(tactic.trim(), "known();", "{goal}\n{tactic}\n{expanded}");
+        }
+    }
+    assert!(sum_bounds >= 2 && identities > 0, "{expanded}");
     without_implicit_solve_for_claim(claim, || {
         verify_c_sources(&expanded, &sources).map_err(|error| format!("{error:?}"))
     })
