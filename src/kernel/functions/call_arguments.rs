@@ -1063,6 +1063,7 @@ fn bind_program_function_arguments_impl(
         caller_state,
         function.contract_interface(),
         &mut callee_state,
+        None,
     )?;
     Some(callee_state)
 }
@@ -1079,6 +1080,7 @@ pub(super) fn bind_contract_arguments(
     values: &VerifiedCallArguments,
     storage: Option<&ProgramFunction>,
     roots: &[ExecutionValue],
+    obligations: &mut Vec<ProofObligation>,
 ) -> Option<ExecutionState> {
     let native = values.native_values();
     if native.map_or(roots.len(), <[_]>::len) != interface.parameters().len() {
@@ -1190,7 +1192,12 @@ pub(super) fn bind_contract_arguments(
                 parameter.pointee_is_constant(),
             );
     }
-    construction_return::bind(caller_state, interface, &mut callee_state)?;
+    construction_return::bind(
+        caller_state,
+        interface,
+        &mut callee_state,
+        Some(obligations),
+    )?;
     Some(callee_state)
 }
 

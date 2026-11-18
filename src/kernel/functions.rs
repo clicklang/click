@@ -3368,7 +3368,7 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state.memory(),
             )
         };
-        let write_requirements = if !has_exact_write_ranges {
+        let mut write_requirements = if !has_exact_write_ranges {
             // An unresolved projection can widen an effect to bytes the
             // callee cannot write. Keep its conservative admission check.
             if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
@@ -3445,32 +3445,21 @@ fn execute_verified_function_applications_with_suspension(
                 mutex_storage_effects.push(range);
             }
         }
-        if let Some(diagnostic) = mutex_storage_effects.iter().find_map(|range| {
-            transfer
-                .stable_view_plan
-                .as_ref()
-                .and_then(|plan| {
-                    plan.ledger.memory_access_refusal(
-                        range,
-                        &effective_assumptions,
-                        LoanRefusalOperation::MemoryAccess,
-                    )
-                })
-                .or_else(|| {
-                    entry_state.stable_loan_memory_access_refusal(
-                        range,
-                        &effective_assumptions,
-                        LoanRefusalOperation::MemoryAccess,
-                    )
-                })
-        }) {
-            paths.push(FunctionPath::new(
-                FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
-                facts,
-                obligations,
-            ));
-            continue;
-        }
+        let mutex_effect_ledger = transfer
+            .stable_view_plan
+            .as_ref()
+            .map(|plan| &plan.ledger)
+            .or_else(|| entry_state.loan_ledger());
+        let first_mutex_ordinal =
+            interface.contract_requires().len() + transfer.memory_effects.len();
+        write_requirements.extend(verified_call_loan_requirements(
+            mutex_effect_ledger,
+            &mutex_storage_effects,
+            call_site,
+            first_mutex_ordinal,
+            "verified call mutex storage write separation",
+        ));
+        let first_retirement_ordinal = first_mutex_ordinal + mutex_storage_effects.len();
         let copy_initialization = if let Some(effect) = application.representation_copy
             && !transfer.memory_effects.is_empty()
         {
@@ -4854,7 +4843,7 @@ fn execute_verified_function_applications_with_suspension(
                 entry_state.loan_ledger(),
                 &retired_allocations,
                 call_site,
-                interface.contract_requires().len() + transfer.memory_effects.len(),
+                first_retirement_ordinal,
                 "suspended worker allocation retirement separation",
             ));
             worker_effects.extend(retired_allocations);
@@ -5143,7 +5132,7 @@ fn execute_verified_function_applications_with_suspension(
             entry_state.loan_ledger(),
             &retired_allocations,
             call_site,
-            interface.contract_requires().len() + transfer.memory_effects.len(),
+            first_retirement_ordinal,
             "verified call allocation retirement separation",
         ));
         paths.push(FunctionPath {
@@ -5750,7 +5739,7 @@ fn prepare_verified_function_call<'a>(
                         .is_some_and(KernelTerm::is_shared_machine_operand)
             });
     crate::instrumentation::record_deterministic_work(parameters.len());
-    let (argument_values, argument_obligations) = if retains_words {
+    let (argument_values, mut argument_obligations) = if retains_words {
         (
             VerifiedCallArguments::BoundWords,
             arguments_path.obligations.clone(),
@@ -5773,6 +5762,7 @@ fn prepare_verified_function_call<'a>(
         &argument_values,
         application.storage,
         &arguments_path.values,
+        &mut argument_obligations,
     ) else {
         return Ok(Err(FunctionPath::new(
             FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
