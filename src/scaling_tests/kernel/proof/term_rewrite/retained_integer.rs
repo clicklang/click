@@ -68,3 +68,44 @@ fn retained_machine_observation_rewrites_keep_growing_numeric_dags_shared() {
         }
     }
 }
+
+#[test]
+fn retained_integer_conditionals_share_different_guards_with_common_prefixes() {
+    let _session = VerificationSession::enter();
+    for size in [16_usize, 64, 256] {
+        let from = Variable(995200);
+        let mut guard = KernelTerm::variable(KernelType::Bool, Variable(995201));
+        let mut root = KernelTerm::variable(KernelType::Integer, from);
+        for index in 0..size {
+            guard = KernelTerm::boolean_equal_raw([
+                guard,
+                KernelTerm::variable(KernelType::Bool, Variable(996000 + index as u64)),
+            ]);
+            let no = KernelTerm::integer_operation(
+                KernelIntegerOperator::Add,
+                vec![root.clone(), KernelTerm::integer_literal(1.into())],
+            )
+            .unwrap();
+            root = KernelTerm::integer_if_raw([guard.clone(), root, no]);
+        }
+        for source in [from, Variable(997000)] {
+            let replacement = IntegerTerm::Variable(Variable(997001));
+            let renamings = BTreeMap::new();
+            let mut rewrite =
+                TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
+            let exports = KernelTermExport::machine_export_count();
+            let (actual, work) = crate::instrumentation::measure_deterministic_work(|| {
+                rewrite.shared_integer_operand(&root).unwrap()
+            });
+            assert!(work <= 48 * (size + 1) + 128, "size={size}, work={work}");
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(!root.has_cached_native_argument());
+            assert!(!guard.has_cached_native_argument());
+            assert!(!actual.has_cached_native_argument());
+            assert!(rewrite.refusal().is_none());
+            if source != from {
+                assert_eq!(actual.id(), root.id());
+            }
+        }
+    }
+}

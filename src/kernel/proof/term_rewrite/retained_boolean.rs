@@ -53,8 +53,29 @@ impl TermRewrite<'_> {
         }
         // Both callbacks share this exact active scope. The traversal's local
         // node memo retains common connectives and avoids unfolding DAGs.
+        let memo = self
+            .shared_machine_cache
+            .get_or_insert_with(Default::default)
+            .clone();
+        let scope = (
+            self.scope_id,
+            self.source_disabled,
+            self.integer_shadowed,
+            self.resolve_registered_loads,
+        );
+        let key = |term: &KernelTerm| (term.id(), scope.0, scope.1, scope.2, scope.3);
+        let reuse = self.integer_exact.is_none()
+            && self.condition_exact.is_none()
+            && self.conditions.is_none()
+            && self.cited_conditions.is_none()
+            && self.collected_conditions.is_none();
         let rewrite = RefCell::new(self);
-        root.map_boolean_with_connectives(
+        root.map_boolean_with_connectives_cached(
+            |term| {
+                reuse
+                    .then(|| memo.borrow().get(&key(term)).cloned())
+                    .flatten()
+            },
             |term| {
                 let native = match term.node() {
                     KernelTermNode::BoolLiteral(value) => ConditionTerm::Constant(*value),
@@ -75,11 +96,13 @@ impl TermRewrite<'_> {
                 ) {
                     return Err(());
                 }
-                if result == native {
-                    Ok(term.clone())
+                let result = if result == native {
+                    term.clone()
                 } else {
-                    Ok(KernelTermImport::for_exact_field_inputs().condition(&result))
-                }
+                    KernelTermImport::for_exact_field_inputs().condition(&result)
+                };
+                memo.borrow_mut().insert(key(term), result.clone());
+                Ok(result)
             },
             |term, children| {
                 let mut rewrite = rewrite.borrow_mut();
@@ -88,7 +111,7 @@ impl TermRewrite<'_> {
                     return Err(());
                 }
                 let raw = rewrite.integer_exact.is_some();
-                match (term.node(), children) {
+                let result = match (term.node(), children) {
                     (KernelTermNode::BoolIf { .. }, [guard, yes, no]) => {
                         let arguments = [guard.clone(), yes.clone(), no.clone()];
                         Ok(if raw {
@@ -106,7 +129,9 @@ impl TermRewrite<'_> {
                         })
                     }
                     _ => Err(()),
-                }
+                }?;
+                memo.borrow_mut().insert(key(term), result.clone());
+                Ok(result)
             },
         )
         .ok()
@@ -252,6 +277,24 @@ mod tests {
             visits, 0,
             "exhausted source collection must stop before rewriting"
         );
+        assert!(!root.has_cached_native_argument());
+    }
+
+    #[test]
+    fn retained_boolean_atom_collection_is_replayed_on_cached_reads() {
+        let _session = VerificationSession::enter();
+        let input = ConditionTerm::Variable(Variable(992180));
+        let root = KernelTermImport::default().condition(&input);
+        let mut baseline = TermRewrite::empty();
+        baseline.collected_conditions = Some(Vec::new());
+        let mut rewrite = TermRewrite::empty();
+        rewrite.collected_conditions = Some(Vec::new());
+        for _ in 0..2 {
+            baseline.condition(&input);
+            rewrite.shared_boolean_operand(&root).unwrap();
+        }
+        assert_eq!(rewrite.collected_conditions, baseline.collected_conditions);
+        assert_eq!(rewrite.collected_conditions.as_ref().unwrap().len(), 2);
         assert!(!root.has_cached_native_argument());
     }
 
