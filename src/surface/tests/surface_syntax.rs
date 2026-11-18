@@ -70,15 +70,16 @@ fn integer_solve_expansion_rechecks_without_smart_search() {
         );
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         if parameters.contains("y: Integer") {
-            assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
             assert!(expanded.contains("le_antisymmetric"), "{expanded}");
         } else {
-            assert!(expanded.contains("normalize();"), "{expanded}");
+            assert!(expanded.contains("known();"), "{expanded}");
+            assert!(!expanded.contains("normalize("), "{expanded}");
         }
         assert!(!expanded.contains("solve"), "{expanded}");
         let rechecked = source.replace(&format!("by {{ {proof} }}"), &expanded);
-        verify_click_theorems(&rechecked)
+        without_implicit_solve(|| verify_click_theorems(&rechecked))
             .unwrap_or_else(|error| panic!("{rechecked}: {}", error.message()));
     }
 }

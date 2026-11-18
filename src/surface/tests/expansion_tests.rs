@@ -18659,44 +18659,57 @@ int64 identity(int64 x, int64 y) {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_75")]
-fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
-    for (name, premise, extra) in [
-        ("difference", "to_integer(a) <= to_integer(1000 - b)", ""),
-        ("equality", "to_integer(a) == to_integer(1000 - b)", ""),
-        (
-            "sum",
-            "to_integer(a + b) <= 1000",
-            "requires a >= 0; requires a <= 1000;",
-        ),
-        (
-            "both_roots",
-            "to_integer(a + b) <= to_integer(999 + b)",
-            "requires a >= 0; requires a <= 1000;",
-        ),
-    ] {
-        let extra_using = if extra.is_empty() {
-            ""
-        } else {
-            "a >= 0; a <= 1000;"
-        };
-        let source = format!("theorem {name}(a: int32, b: int32) {{
-            requires b >= 1; requires b <= 1000; {extra} requires {premise};
-            ensures a <= 999 by {{ solve() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
-        }}");
-        verify_c_sources(&source, &[]).expect("symbolic upper bound should verify");
-        let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
-            .expect("symbolic upper bound should expand");
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-        let (result, planning) =
-            crate::surface::proof::count_planning_statement_transitions(|| {
-                verify_c_sources(&expanded, &[])
-            });
-        result.unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
-        assert_eq!(planning, 0, "explicit certificate recheck must not plan");
-        let forged = expanded.replace("a <= 999", "a <= 998");
-        verify_c_sources(&forged, &[]).expect_err("a false tighter bound must be refused");
-    }
+fn symbolic_upper_difference_expands_and_cold_rechecks() {
+    check_symbolic_upper_expansion("difference", "to_integer(a) <= to_integer(1000 - b)", "");
+}
+
+#[test]
+fn symbolic_upper_equality_expands_and_cold_rechecks() {
+    check_symbolic_upper_expansion("equality", "to_integer(a) == to_integer(1000 - b)", "");
+}
+
+#[test]
+fn symbolic_upper_sum_expands_and_cold_rechecks() {
+    check_symbolic_upper_expansion(
+        "sum",
+        "to_integer(a + b) <= 1000",
+        "requires a >= 0; requires a <= 1000;",
+    );
+}
+
+#[test]
+fn symbolic_upper_both_roots_expand_and_cold_recheck() {
+    check_symbolic_upper_expansion(
+        "both_roots",
+        "to_integer(a + b) <= to_integer(999 + b)",
+        "requires a >= 0; requires a <= 1000;",
+    );
+}
+
+fn check_symbolic_upper_expansion(name: &str, premise: &str, extra: &str) {
+    let extra_using = if extra.is_empty() {
+        ""
+    } else {
+        "a >= 0; a <= 1000;"
+    };
+    let source = format!(
+        "theorem {name}(a: int32, b: int32) {{
+        requires b >= 1; requires b <= 1000; {extra} requires {premise};
+        ensures a <= 999 by {{ solve() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
+    }}"
+    );
+    verify_c_sources(&source, &[]).expect("symbolic upper bound should verify");
+    let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
+        .expect("symbolic upper bound should expand");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
+        without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+    });
+    result.unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    assert_eq!(planning, 0, "explicit certificate recheck must not plan");
+    let forged = expanded.replace("a <= 999", "a <= 998");
+    without_implicit_solve(|| verify_c_sources(&forged, &[]))
+        .expect_err("a false tighter bound must be refused");
 }
 
 fn check_counted_pthread_whole_claim_expansion(fixture: &str, claim: &str) {
@@ -22551,7 +22564,6 @@ test_batches! {
     expansion_batch_75: [
         the_implicit_grouped_proof_expands_after_the_contract_and_reverifies,
         integer_equality_rewrite_expands_rechecks_and_rejects_forged_claims,
-        symbolic_upper_arithmetic_premises_expand_and_cold_recheck,
     ],
     expansion_batch_76: [
         counted_pthread_whole_claim_expansion_retire,
