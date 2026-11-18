@@ -7344,7 +7344,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                         .replace('*', "_pointer")
                 ),
                 ProgramExpression::Load(_) => format!("*({operand})"),
-                ProgramExpression::AddressOf(_) => format!("&({operand})"),
+                ProgramExpression::AddressOf(_) | ProgramExpression::Subobject { .. } => {
+                    format!("&({operand})")
+                }
                 _ => unreachable!("CUnary stores a unary C operation"),
             }
         }

@@ -6809,6 +6809,10 @@ impl AnnotationLowerer<'_> {
                             byte_width: 1,
                         })
                     }
+                    ProgramExpression::Subobject { width, .. } => Ok(SpecExpression::Subobject {
+                        pointer: Box::new(value),
+                        width: *width,
+                    }),
                     ProgramExpression::TypedLoad { value_type, .. } => {
                         Ok(SpecExpression::MemoryLoad {
                             point: environment.current_point.clone(),

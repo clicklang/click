@@ -14273,6 +14273,21 @@ impl Parser {
                         ))),
                     });
                 }
+                // An embedded record is already lowered as its address,
+                // rather than a scalar load. Select that record's complete
+                // subobject bounds, just as the source frontend does.
+                if !matches!(lowered, ProgramExpression::TypedLoad { .. })
+                    && let Some(name) = self.contract_expression_struct_name(&expression)
+                    && let Some(layout) = self.struct_layouts.get(&name)
+                {
+                    return Ok(ContractExpression::CUnary {
+                        operand: Box::new(expression.clone()),
+                        lowered: ProgramExpression::Subobject {
+                            pointer: Box::new(lowered.clone()),
+                            width: layout.size_bytes(),
+                        },
+                    });
+                }
                 let source_base = (**base).clone();
                 let Some(base) = contract_expression_as_program_expression(base) else {
                     return Err(self.error("address-of field requires a current C pointer base"));
