@@ -63,10 +63,7 @@ fn surface_suffix_append_borrows_steps_on_a_small_stack() {
                 .spawn(move || {
                     // All fixture steps are already simple. Build their
                     // shared lists directly so this test isolates appending.
-                    let certificate = |steps| ProofCertificate {
-                        steps: Arc::new(steps),
-                        pruned_execution_arm: false,
-                    };
+                    let certificate = ProofCertificate::from_validated_steps;
                     let mut existing = certificate(vec![ProofStep::Step]);
                     let mut suffix = certificate(vec![ProofStep::Normalize]);
                     for index in 0..depth {

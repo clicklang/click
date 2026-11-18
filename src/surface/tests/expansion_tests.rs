@@ -11687,7 +11687,7 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
     assert!(
         matches!(
             tactics.first(),
-            Some(ProofTactic::If(outer))
+            Some(ProofTactic::Branch(outer))
                 if outer.then_tactics.iter().any(|tactic| matches!(
                     tactic,
                     ProofTactic::If(inner) if inner.condition == ClickProposition::Comparison {
@@ -12670,13 +12670,16 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked terminal arms should retain an expansion");
-    let Some(ProofTactic::If(proof_if)) = tactics.first() else {
-        panic!("terminal execution branch should retain a logical if: {tactics:#?}");
+    let Some(ProofTactic::Branch(branch)) = tactics.first() else {
+        panic!("terminal execution should retain its C branch: {tactics:#?}");
     };
-    for arm in [&proof_if.then_tactics, &proof_if.else_tactics] {
-        assert!(
-            matches!(arm.get(..2), Some([ProofTactic::Step, ProofTactic::Step])),
-            "each terminal arm should begin with its checked entry and return steps: {arm:#?}"
+    for arm in [&branch.then_tactics, &branch.else_tactics] {
+        assert_eq!(
+            arm.iter()
+                .filter(|tactic| matches!(tactic, ProofTactic::Step))
+                .count(),
+            1,
+            "each terminal arm should retain only its checked return step: {arm:#?}"
         );
         assert!(
             arm.iter()
@@ -13363,20 +13366,21 @@ fn automatic_terminal_branch_retains_its_checked_proof_outcomes() {
     let expanded = verified[0]
         .expanded_proof_tactics()
         .expect("terminal branch should retain an expansion");
-    let Some(ProofTactic::If(proof_if)) = expanded.first() else {
-        panic!("terminal branch should expand as a logical if: {expanded:#?}");
+    let Some(ProofTactic::Branch(branch)) = expanded.first() else {
+        panic!("terminal C split should expand as a branch: {expanded:#?}");
     };
     for (name, arm) in [
-        ("then", &proof_if.then_tactics),
-        ("else", &proof_if.else_tactics),
+        ("true", &branch.then_tactics),
+        ("false", &branch.else_tactics),
     ] {
         assert!(
-            matches!(arm.first(), Some(ProofTactic::Step)),
-            "{name} arm should retain its checked C-branch entry step: {arm:#?}"
-        );
-        assert!(
-            matches!(arm.get(1), Some(ProofTactic::Step)),
-            "{name} arm should retain its checked return step: {arm:#?}"
+            matches!(arm.first(), Some(ProofTactic::Step))
+                && arm
+                    .iter()
+                    .filter(|tactic| matches!(tactic, ProofTactic::Step))
+                    .count()
+                    == 1,
+            "{name} arm should retain only its checked return step: {arm:#?}"
         );
         assert!(
             arm.iter().all(|tactic| !matches!(
@@ -13389,8 +13393,11 @@ fn automatic_terminal_branch_retains_its_checked_proof_outcomes() {
     let expanded_source =
         expand_function_proof_source(click_source, &[("choose.c", c_source)], "choose")
             .expect("terminal branch should expand into source");
-    verify_c_sources(&expanded_source, &[("choose.c", c_source)])
-        .expect("the retained terminal branch should independently reverify");
+    without_implicit_solve_for_claim("choose.ensures_0", || {
+        verify_c_sources(&expanded_source, &[("choose.c", c_source)])
+            .map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded_source}"));
 }
 
 #[test]
