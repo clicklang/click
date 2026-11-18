@@ -3572,7 +3572,8 @@ fn raise_algebraic_read(
     else {
         return None;
     };
-    let (memory, address) = read.parts();
+    let (point, address) = read.parts();
+    let memory = point.shared_memory();
     let same_address = |pointer: &Address| address.syntax_equal(&SharedAddress::import(pointer));
     if let Some((parameter, _)) = parameter_binding
         .parameters
@@ -3993,11 +3994,11 @@ fn raise_kernel_term_dispatch(
         }
         Node::ProgramParameter { .. } => unreachable!("parameter envelope was peeled"),
         Node::PointerCall { call, .. } => recurse(call)?,
-        Node::ArrayReference {
-            memory, pointer, ..
-        } => synthesize_at_memory(memory, state, |selected| {
-            raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
-        })?,
+        Node::ArrayReference { point, pointer, .. } => {
+            synthesize_at_memory(point.shared_memory(), state, |selected| {
+                raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
+            })?
+        }
 
         Node::PointerRead { value, .. }
         | Node::PointerArithmetic { value, .. }

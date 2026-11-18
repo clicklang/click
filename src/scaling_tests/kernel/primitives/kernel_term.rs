@@ -583,13 +583,13 @@ fn shared_read_descriptor_identity_does_not_expand_offset_dags() {
                 crate::instrumentation::measure_deterministic_work(|| {
                     let first = KernelTerm::shared_scalar_read_descriptor(
                         MachineIntegerType::Int32,
-                        &memory,
+                        &crate::kernel::ProgramPoint::at(&memory),
                         &address,
                         LoadKind::Int32,
                     );
                     let second = KernelTerm::shared_scalar_read_descriptor(
                         MachineIntegerType::Int32,
-                        &memory,
+                        &crate::kernel::ProgramPoint::at(&memory),
                         &address,
                         LoadKind::Int32,
                     );
@@ -634,7 +634,7 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
         let memory = intern_memory(SymbolicMemory::new());
         let retained = KernelTerm::scalar_read_descriptor(
             MachineIntegerType::Int32,
-            &memory,
+            &crate::kernel::ProgramPoint::at(&memory),
             &pointer,
             LoadKind::Int32,
         )
@@ -651,7 +651,7 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
             let (again, work) = crate::instrumentation::measure_deterministic_work(|| {
                 KernelTerm::scalar_read_descriptor(
                     MachineIntegerType::Int32,
-                    &memory,
+                    &crate::kernel::ProgramPoint::at(&memory),
                     &pointer,
                     LoadKind::Int32,
                 )
@@ -691,11 +691,18 @@ fn pointer_read_roots_and_handoffs_do_not_expand_defining_address_dags() {
             );
             let exports = KernelTermExport::machine_export_count();
             let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let root =
-                    KernelTerm::shared_pointer_read(value.clone(), memory.clone(), address.clone());
+                let root = KernelTerm::shared_pointer_read(
+                    value.clone(),
+                    crate::kernel::ProgramPoint::at(&memory),
+                    address.clone(),
+                );
                 assert_eq!(
                     root,
-                    KernelTerm::shared_pointer_read(value.clone(), memory.clone(), address.clone())
+                    KernelTerm::shared_pointer_read(
+                        value.clone(),
+                        crate::kernel::ProgramPoint::at(&memory),
+                        address.clone()
+                    )
                 );
                 let mut carried = crate::kernel::ExecutionValue::from(root.clone());
                 for _ in 0..32 {
@@ -925,7 +932,11 @@ fn pointer_call_handoffs_retain_prepared_argument_dags() {
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert!(work <= 48, "size={size} unrelated={unrelated} work={work}");
             let (reference, work) = crate::instrumentation::measure_deterministic_work(|| {
-                KernelTerm::shared_array_reference(memory.clone(), root.clone(), ProgramType::Int32)
+                KernelTerm::shared_array_reference(
+                    crate::kernel::ProgramPoint::at(&memory),
+                    root.clone(),
+                    ProgramType::Int32,
+                )
             });
             let KernelTermNode::ArrayReference { pointer, .. } = reference.node() else {
                 panic!("array argument")

@@ -4724,7 +4724,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
                         pointer: ProgramValue::Pointer(pointer),
                         element_type,
                     } => Some(KernelTerm::shared_array_reference(
-                        crate::kernel::intern_memory_ref(memory),
+                        crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
                         common(pointer),
                         *element_type,
                     )),
