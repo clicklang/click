@@ -17,7 +17,9 @@ fn next_dispatch_output_scales_with_protocol_count() {
             if shared {
                 added[0].statements = vec![S::SharedArrayNext {
                     iterator: "iter".into(),
-                    option: "option".into(),
+                    option: Some("option".into()),
+                    payload: None,
+                    taken: None,
                 }];
                 if let T::If { condition, .. } = &mut added[1].terminator {
                     *condition = E::SharedArrayOptionTag {

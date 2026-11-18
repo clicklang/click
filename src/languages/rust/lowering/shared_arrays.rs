@@ -147,12 +147,87 @@ impl Context<'_> {
         Ok(result)
     }
 
+    /// `next` of a slice iterator: the `Option` built in `option`, or, once
+    /// the loop reads only its element, the element's reference assigned to
+    /// `payload`. When the `for` header's test decided whether it yields
+    /// (`taken`), only that arm runs; the arm that does not yield is nothing.
     pub(super) fn shared_array_next(
-        &self,
+        &mut self,
         iterator: &str,
-        option: &str,
+        option: Option<&str>,
+        payload: Option<&str>,
+        taken: Option<bool>,
     ) -> Result<ProgramStatement, String> {
-        self.shared_array_next_with(iterator, option, program_skip())
+        match (option, payload) {
+            (Some(option), None) => self.shared_array_next_with(iterator, option, program_skip()),
+            (None, Some(payload)) => {
+                if !self.shared_array_iterators.contains_key(iterator) {
+                    return Err("unknown shared iterator".into());
+                }
+                if taken == Some(false) {
+                    return Ok(program_skip());
+                }
+                use crate::kernel::program_expression::{add, subtract, uint64_literal, variable};
+                let field = |suffix: &str| format!("{iterator}_{suffix}");
+                if !self.locals.contains(payload) {
+                    return Err(format!("unknown Rust local `{payload}`"));
+                }
+                // The element's reference, assigned as `assign` assigns a
+                // local: stored to its object when it is memory-backed.
+                let bind = match self.memory_values.get(payload).copied() {
+                    Some(value_type) => program_typed_store(
+                        self.address(&E::Local {
+                            name: payload.into(),
+                        })?,
+                        variable(field("ptr")),
+                        value_type,
+                    ),
+                    None => program_assign(payload, variable(field("ptr"))),
+                };
+                let some = program_seq(
+                    bind,
+                    program_seq(
+                        program_assign(
+                            field("ptr"),
+                            add(variable(field("ptr")), uint64_literal(1)),
+                        ),
+                        program_assign(
+                            field("len"),
+                            subtract(variable(field("len")), uint64_literal(1)),
+                        ),
+                    ),
+                );
+                Ok(match taken {
+                    Some(_) => some,
+                    None => program_if(self.shared_array_has_next(iterator)?, some, program_skip()),
+                })
+            }
+            // The arm the header decided does not yield, once the loop reads no
+            // `Option`: the iterator is empty and stays so.
+            (None, None) if taken == Some(false) => {
+                if !self.shared_array_iterators.contains_key(iterator) {
+                    return Err("unknown shared iterator".into());
+                }
+                Ok(program_skip())
+            }
+            // The arm that yields, when nothing reads what it yields: the
+            // iterator only moves on.
+            (None, None) if taken == Some(true) => {
+                if !self.shared_array_iterators.contains_key(iterator) {
+                    return Err("unknown shared iterator".into());
+                }
+                use crate::kernel::program_expression::{add, subtract, uint64_literal, variable};
+                let field = |suffix: &str| format!("{iterator}_{suffix}");
+                Ok(program_seq(
+                    program_assign(field("ptr"), add(variable(field("ptr")), uint64_literal(1))),
+                    program_assign(
+                        field("len"),
+                        subtract(variable(field("len")), uint64_literal(1)),
+                    ),
+                ))
+            }
+            _ => Err("Rust slice next binds neither its Option nor its element".into()),
+        }
     }
 
     /// [`Self::shared_array_next`], also running `yielded` when it yields,

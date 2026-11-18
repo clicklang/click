@@ -1582,6 +1582,7 @@ fn prepare_closing_path(
             value,
             function,
         )
+        .map_err(|error| error.to_string())?
     };
     let mut claim_exit_state = raw_exit_state.clone();
     claim_exit_state.set_memory(exit_memory.clone());
@@ -2591,7 +2592,8 @@ impl<'a> FunctionEnsureGoalContext<'a> {
             return_state,
             value,
             function,
-        );
+        )
+        .ok()?;
         let claim_return_state = return_state.clone().with_memory(exit_memory.clone());
         let post_resources =
             crate::kernel::functions::expand_all_composite_resource_facts_at_state(

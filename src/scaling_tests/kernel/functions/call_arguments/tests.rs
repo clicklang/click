@@ -29,7 +29,7 @@ fn retained_contract_result_storage_and_exit_memory_skip_expression_prefixes() {
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
                 set_function_result(&mut state, &function, value.clone());
-                let memory = function_exit_memory(&caller, &state, &value, &function);
+                let memory = function_exit_memory(&caller, &state, &value, &function).unwrap();
                 assert_eq!(&memory, state.memory());
             }
         });

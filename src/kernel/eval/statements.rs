@@ -1158,12 +1158,8 @@ fn end_aggregate_step_lifetimes(
             continue;
         };
         let range = MemoryRange::new_with_element_width(pointer.clone(), 0.into(), bytes, 1);
-        if let Some(refusal) = next.stable_loan_memory_access_refusal(
-            &range,
-            &PureFactContext::default(),
-            crate::kernel::LoanRefusalOperation::MemoryAccess,
-        ) {
-            return Err(RuntimeError::LoanRefusal(Box::new(refusal)));
+        if let Some(error) = next.automatic_storage_loan_refusal(&pointer.base) {
+            return Err(error);
         }
         retire_automatic_storage_owner(&mut next, &range);
         next.set_memory(next.memory.without_local_block(&pointer.base));
@@ -3669,12 +3665,8 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
                     .clone(),
                 1,
             );
-            if let Some(refusal) = state.stable_loan_memory_access_refusal(
-                &range,
-                &PureFactContext::default(),
-                crate::kernel::LoanRefusalOperation::MemoryAccess,
-            ) {
-                return Err(RuntimeError::LoanRefusal(Box::new(refusal)));
+            if let Some(error) = state.automatic_storage_loan_refusal(&slot.base) {
+                return Err(error);
             }
             retire_automatic_storage_owner(&mut state, &range);
             memory = memory.without_local_block(&slot.base);
@@ -5761,12 +5753,8 @@ fn local_declaration_pointer(
             .unwrap_or(MachineTerm::Variable(Variable(u64::MAX)));
         let old_range =
             MemoryRange::new_with_element_width(previous.clone(), MachineTerm::constant(0), end, 1);
-        if let Some(refusal) = state.stable_loan_memory_access_refusal(
-            &old_range,
-            &PureFactContext::default(),
-            crate::kernel::LoanRefusalOperation::MemoryAccess,
-        ) {
-            return Err(RuntimeError::LoanRefusal(Box::new(refusal)));
+        if let Some(error) = state.automatic_storage_loan_refusal(&previous.base) {
+            return Err(error);
         }
         retire_automatic_storage_owner(state, &old_range);
         state.set_memory(state.memory.without_local_block(&previous.base));

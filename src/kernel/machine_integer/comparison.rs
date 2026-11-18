@@ -323,9 +323,9 @@ fn comparison_leaf_operand(operand: crate::kernel::MachineOperandView<'_>) -> Op
         .or_else(|| operand.variable().copied().map(MachineTerm::Variable))
 }
 
-/// Read a single bitwise operation, fixed shift, or wrapping sum or difference.
+/// Read a single bitwise operation, fixed shift, or wrapping arithmetic operation.
 /// Inspect only immediate leaves. Use the established word encoding for
-/// unsigned 32-bit sums and differences.
+/// unsigned 32-bit arithmetic.
 fn bounded_comparison_operand(
     observation: MachineIntegerType,
     operand: crate::kernel::MachineOperandView<'_>,
@@ -349,13 +349,13 @@ fn bounded_comparison_operand(
     use crate::kernel::MachineBinaryOp as O;
     let word32_arithmetic = observation == MachineIntegerType::UInt32
         && width == 32
-        && matches!(operator, O::Add | O::Subtract);
+        && matches!(operator, O::Add | O::Subtract | O::Multiply);
     match operator {
         O::BitwiseAnd | O::BitwiseOr | O::BitwiseXor => {}
-        // A uint32 sum or difference can carry the sign-free Int32 word
+        // Unsigned 32-bit arithmetic can carry the sign-free Int32 word
         // encoding. An explicitly unsigned operation carries its own type,
         // including under the Int64 filing format of wide equality.
-        O::Add | O::Subtract
+        O::Add | O::Subtract | O::Multiply
             if retain_wrapping
                 && (!format.format().is_signed() || word32_arithmetic)
                 && (arguments[0].variable().is_some() != arguments[1].variable().is_some()) => {}

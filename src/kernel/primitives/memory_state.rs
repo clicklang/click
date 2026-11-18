@@ -10350,6 +10350,16 @@ impl ExecutionState {
             .and_then(|ledger| ledger.memory_access_refusal(range, assumptions, operation))
     }
 
+    pub(in crate::kernel) fn automatic_storage_loan_refusal(
+        &self,
+        block: &AddressBase,
+    ) -> Option<RuntimeError> {
+        self.loan_ledger
+            .as_ref()?
+            .automatic_storage_retirement_refusal(block, self.memory.block_size(block)?)
+            .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
+    }
+
     pub fn locals(&self) -> &LocalEnvironment {
         &self.locals
     }

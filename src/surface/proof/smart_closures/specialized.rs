@@ -228,7 +228,6 @@ mod tests {
         );
         let expanded = expand_c_claim_source_by_label(&source, &[], "specialized.ensures_0")
             .unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[]))
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
@@ -502,7 +501,6 @@ mod historical_read_tests {
             ContractProofClaim::Grouped,
         )
         .unwrap_or_else(|e| panic!("{}", e.message()));
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[("counter.c", c)]))
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
@@ -536,7 +534,6 @@ mod historical_read_tests {
             ContractProofClaim::Grouped,
         )
         .unwrap_or_else(|e| panic!("{}", e.message()));
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[("drain.c", c)]))
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));

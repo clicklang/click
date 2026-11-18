@@ -2057,7 +2057,7 @@ fn apply_post_execution_arithmetic_using<'a>(
         let plan = crate::surface::checking::arithmetic_plans(goal, &kernel_premises, false)
             .next()
             .ok_or_else(|| {
-                focused.step_error("post-execution arithmetic certificate could not be constructed")
+                focused.step_error("post-execution arithmetic step could not be constructed")
             })?;
         match plan {
             ArithmeticPlan::Special(plan) => {
@@ -2115,7 +2115,7 @@ fn apply_post_execution_arithmetic_using<'a>(
                     .signed_plan_to_surface(&plan, &pairs, surface_goal)
                     .ok_or_else(|| {
                         focused.step_error(
-                            "post-execution signed arithmetic certificate could not be transcribed",
+                            "post-execution signed arithmetic step could not be transcribed",
                         )
                     })?;
                 return crate::kernel::search::ProofSearch::apply_signed_interval_composition(
