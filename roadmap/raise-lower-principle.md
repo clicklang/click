@@ -1069,7 +1069,7 @@ not a change to proof rules or snapshot architecture.
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Landed in [PR #3246](https://github.com/clicklang/click/pull/3246); all eight pushed commits verified upstream; 525 focused checks, all 1,919 regular scaling cases, 14 selected proofs, fact stability and quality passed; isolated upstream baseline limitation below. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Landed in [PR #3261](https://github.com/clicklang/click/pull/3261); all ten pushed commits verified upstream; 590 focused checks, all 1,926 regular scaling cases, indexed/resource-field proofs, fact stability and quality passed; one isolated upstream baseline failure. |
 | 10p5 | `PublicationRight::observed`, `ConditionalMutexGuard::held`, and the matching `MutexEntry::ConditionalLoop` condition. Preserve channel/acquisition identities and protocol rules. | Landed in [PR #3266](https://github.com/clicklang/click/pull/3266); all five pushed commits verified upstream; two producer regressions confirmed red; 690 focused checks, all 1,927 regular scaling cases and publication proofs passed; mutex proofs passed 215/216 with one identical parent failure. |
-| 10p6 | `ResourceFact::Own` and deferred worker-exchange quantities. Preserve counting semantics and existing resource identity readers. | Locally complete; 460 focused checks, all 1,935 regular scaling cases, all 5,621 regular proof fixtures, fact stability and quality passed. |
+| 10p6 | `ResourceFact::Own` and deferred worker-exchange quantities. Preserve counting semantics and existing resource identity readers. | Landed in [PR #3268](https://github.com/clicklang/click/pull/3268); all twelve pushed commits verified upstream; 472 final integration checks, all 1,935 regular scaling cases, all 5,621 regular proof fixtures, fact stability and quality passed. |
 
 `MemorySegment` source expressions and declared `ResourceQuantity` expressions
 are source input ASTs, not evaluated term storage to erase. Addresses, allocation
@@ -1338,7 +1338,9 @@ their evaluated values directly, with unchanged single-path/obligation and
 invalid-memory policies. All 458 focused checks, including growing machine-DAG
 and float-chain production/cloning, then passed. The obsolete native one-outcome
 evaluator helper is removed. After parent integration, all 470 selected checks
-passed; full regular validation is running.
+passed; all 1,936 regular scaling cases and all 5,621 regular proof fixtures then
+passed. Fact stability recorded 121 refusals and zero changed terms/paths;
+quality passed. Full nightly was not run.
 
 The native load-result-to-`Term::ProgramValue` reader in surface resource proofs
 is explicit and remains assigned to 10q4. Numeric memory cells retain their
