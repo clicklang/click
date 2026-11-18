@@ -4564,7 +4564,7 @@ pub(super) fn sequence_elements(sequence: &SequenceTerm) -> SequenceElements<'_>
 
 pub(super) struct SequenceElements<'a> {
     pending: Vec<&'a SequenceTerm>,
-    current: Option<std::slice::Iter<'a, ProgramValue>>,
+    current: Option<SequenceValuesIter<'a>>,
 }
 
 impl<'a> Iterator for SequenceElements<'a> {
@@ -4725,7 +4725,7 @@ fn evaluate_spec_sequence_at_state_in(
                             continue;
                         };
                         let mut next_values = values.clone();
-                        next_values.push(element_path.value.into_native());
+                        next_values.push(element_path.value);
                         next.push((next_values, merged_facts, merged_obligations));
                     }
                 }
@@ -4734,14 +4734,16 @@ fn evaluate_spec_sequence_at_state_in(
             Ok(paths
                 .into_iter()
                 .filter_map(|(values, facts, obligations)| {
-                    let element_type = values.first().map(ProgramValue::program_type);
+                    let element_type = values.first().map(ExecutionValue::program_type);
                     values
                         .iter()
                         .all(|value| Some(value.program_type()) == element_type)
                         .then(|| SpecSequencePath {
                             value: SequenceTerm {
                                 element_type,
-                                node: std::sync::Arc::new(SequenceTermNode::Literal(values.into())),
+                                node: std::sync::Arc::new(SequenceTermNode::Literal(
+                                    SequenceValues::from_values(values),
+                                )),
                             },
                             facts,
                             obligations,
