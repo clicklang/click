@@ -17602,8 +17602,14 @@ fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
         !expanded.contains("solve();"),
         "every smart site should be replaced: {expanded}"
     );
-    verify_c_sources(&expanded, &sources)
-        .unwrap_or_else(|error| panic!("the expansion should reverify: {error:?}\n{expanded}"));
+    assert!(
+        !expanded.contains("normalize() using {};"),
+        "intrinsic ranges at the loop entry should expand to known: {expanded}"
+    );
+    without_implicit_solve_for_claim("count_zero_run.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| format!("{error:?}"))
+    })
+    .unwrap_or_else(|error| panic!("the expansion should reverify: {error:?}\n{expanded}"));
 }
 
 /// Expands every smart site of one claim in an iterated-ownership fixture and

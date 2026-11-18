@@ -3408,6 +3408,13 @@ impl<'a> Proof<'a> {
         self.focus_fixed_state_goal_for_cell(kernel, Some(goal.clone()), None, Some(key))
     }
 
+    pub(in crate::surface::proof) fn ends_in_empty_normalize_using(&self) -> bool {
+        matches!(
+            self.node.step.as_deref(),
+            Some(ProofStep::NormalizeUsing(premises)) if premises.is_empty()
+        )
+    }
+
     pub(super) fn is_complete(&self) -> bool {
         self.state.is_complete()
     }

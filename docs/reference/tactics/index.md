@@ -2272,10 +2272,10 @@ before addition. The route supports uint8/uint16 source ranges, uint32 values
 above `INT32_MAX`, and nonnegative int64 constants through `UINT32_MAX`.
 Missing selected bounds and bounds one below the attainable sum are refused.
 See [`widened_unsigned_sum_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/widened_unsigned_sum_bounds.md)
-and its adjacent refusal fixture. Retained-read
-and history adapters keep their compatibility normalizer while read/state
-transport is migrated separately; they do not select a different memory state
-or version point. Other specialized selected rules
+and its adjacent refusal fixture. Exact type bounds on observations at
+program points expand to `known()` when the bound follows from the type.
+Other retained-read and history obligations keep the compatibility normalizer
+with their selected facts and version points. Other specialized selected rules
 normalize from explicit inputs, while polynomial
 search emits separate distribution and rewrite steps. All library proofs use
 ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
