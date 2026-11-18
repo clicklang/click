@@ -81,6 +81,8 @@ pub(super) use claim_proofs::{
     prove_claims_by_implicit_tail,
 };
 pub(in crate::surface) use cursor_execution::surface_program_point_selector;
+#[cfg(test)]
+pub(in crate::surface) use cursor_execution::take_step_diagnostic_resource_reads;
 use cursor_execution::*;
 
 #[cfg(test)]
