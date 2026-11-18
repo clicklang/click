@@ -1773,11 +1773,15 @@ fn register_state_names(
             // local's value, or a pointer local's whole address, is exactly
             // the local.
             // A temporary the translation introduced has no source spelling.
-            if name.named().is_some_and(|name| {
-                name.starts_with("__click")
-                    || name.starts_with("__rust_")
-                    || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-            }) {
+            if name
+                .local_id()
+                .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                || name.named().is_some_and(|name| {
+                    name.starts_with("__click")
+                        || name.starts_with("__rust_")
+                        || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                })
+            {
                 continue;
             }
             let name = name

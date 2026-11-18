@@ -4821,15 +4821,14 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     assert!(matches!(
         lowered.kernel_function().body(),
         ProgramStatement::Seq(sequence)
-            if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
-                returned.as_ref(),
-                ProgramStatement::Seq(sequence)
-                    if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
-                        returned.as_ref(),
-                        ProgramStatement::Return(ProgramExpression::Variable(name))
-                            if name.local_id().is_some_and(|id| id.is_temporary())
-                    ) }
-            ) }
+            if matches!(
+                sequence.iter().last().map(|stmt| stmt.as_ref()),
+                Some(ProgramStatement::Return(ProgramExpression::StepResult {
+                    origin: click::kernel::StepOrigin::Value(_),
+                    ends: true,
+                    ..
+                }))
+            )
     ));
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -4857,6 +4856,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
         !expanded.contains("__click_cpp_unwind_exception"),
         "{expanded}"
     );
+    assert!(!expanded.contains(".temporary("), "{expanded}");
     click::surface::without_implicit_solve_for_claim("capture.contract", || {
         verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
             .map_err(|error| error.report())
@@ -20060,6 +20060,15 @@ int32 probe(struct Sink& sink, int32 input) {
     }
     click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, &import))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    assert!(!expanded.contains(".temporary("), "{expanded}");
+    let explicit_materialization = source.replace(
+        "    ensures sink.total == input;\n}\nint32 probe(",
+        "    ensures sink.total == input;\n} by {\n    step_until(call(0));\n    have byte_offset(region(0).result, 0) == region(0).result;\n    step(); step();\n    have region(0).result == region(2).result;\n    have region(2).result.value == input;\n}\nint32 probe(",
+    );
+    assert_ne!(explicit_materialization, source);
+    let explicit_project = parsed.with_entry_source(explicit_materialization);
+    verify_program_prepared_project(&explicit_project, &import)
+        .expect("cite the object materialized by the void constructor");
     let false_value = source.replace("ensures result == input;", "ensures result == 7;");
     let sidecar = project.directory.join("false.click");
     fs::write(&sidecar, &false_value).unwrap();
@@ -21529,7 +21538,7 @@ fn cpp_record_reference_results_read_and_write_direct_fields() {
     while let Some(statement) = pending.pop() {
         match statement {
             ProgramStatement::Seq(body) => pending.extend(body.iter().rev().map(AsRef::as_ref)),
-            ProgramStatement::Assign {
+            ProgramStatement::StepValue {
                 expression: ProgramExpression::TypedLoad { .. },
                 ..
             } => operations.push("read right operand".to_owned()),

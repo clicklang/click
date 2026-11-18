@@ -2446,6 +2446,17 @@ impl Renderer<'_> {
             self.bitvector(&definition);
             return;
         }
+        if let Some(expression) = self
+            .labels
+            .recorded_states
+            .as_ref()
+            .and_then(|states| states.produced_address_expression(p))
+        {
+            self.push(&crate::surface::diagnostics::describe_contract_expression(
+                &expression,
+            ));
+            return;
+        }
         // An address inside an object the caller's tables name reads as its
         // source spelling, not as a block and an offset.
         if let Some(tables) = self.labels.naming.clone() {
