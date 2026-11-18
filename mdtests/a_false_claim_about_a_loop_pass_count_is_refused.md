@@ -32,10 +32,11 @@ int32 doubled(int32 n) {
         invariant 0 <= i and i <= n;
         invariant i == iterations;
         invariant total == 3 * iterations;
+        preserve by { step(); step(); }
     }
 }
 ```
 
 ```expect
-fail: closure body did not prove every invariant obligation
+fail: to_integer(total) == (3 * (iterations + 1))` remained open
 ```

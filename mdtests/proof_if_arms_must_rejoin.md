@@ -45,5 +45,5 @@ int32 peek(struct cell* node, int32 x) {
 ```
 
 ```expect
-fail: the arms of this proof `if` do not rejoin
+fail: the arms of this proof `if` do not rejoin: with tactics written after the `if`
 ```
