@@ -6746,6 +6746,16 @@ pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
 /// A field of the struct `base` points at: `c.field` through an object's
 /// address, `p->field` through a pointer.
 pub(super) fn describe_field_place(base: &str, field: &str) -> String {
+    // A field access binds tighter than a prefix operator: `&s->f` is the
+    // address of `s->f`. A base written with one, such as the address of a
+    // static object `&"file.c"::static(0)`, is parenthesized.
+    let parenthesized;
+    let base = if object_at_address(base).is_none() && base.starts_with(['&', '*', '-', '!']) {
+        parenthesized = format!("({base})");
+        parenthesized.as_str()
+    } else {
+        base
+    };
     match object_at_address(base) {
         Some(object) => format!("{object}.{field}"),
         // Rust writes a field through a reference with `.`, and a tuple

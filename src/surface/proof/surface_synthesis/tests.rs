@@ -400,43 +400,91 @@ fn spelling_validation_cannot_defer_its_debts_to_a_statement_probe() {
 }
 
 #[test]
-fn definedness_round_trips_at_a_distinct_point_with_equal_memory() {
+fn definedness_round_trips_at_distinct_points_after_unfold_names_a_cell() {
     let _session = crate::kernel::VerificationSession::enter();
+    let file = crate::surface::parse(
+        "resource cell(p: int32*) { owns *p; fact defined(*p); }\n\
+         int32 read(int32* p) { owns cell(p); ensures true; }",
+    )
+    .unwrap();
+    let [Requirement::Resource(resource)] = file.function_blocks()[0].requires() else {
+        panic!("expected the cell resource as the only requirement");
+    };
+    let parsed = syntax::parse_function("int32 read(int32* p) { return *p; }").unwrap();
+    let resources = ResourceEnvironment::new(file.resource_definitions());
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let specs = SpecDefinitions::new(&predicates, &functions);
     let pointer = Address::symbolic(Variable(981_301));
+    let value = ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer);
+    let arguments = [ProgramExpression::Value(value.clone())];
+    let parameters = ParameterBinding::new(parsed.parameters(), &arguments);
     let historical = ExecutionState::new()
-        .with_memory(SymbolicMemory::new())
-        .with_local(
-            "p",
-            ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
+        .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4))
+        .with_local("p", value.clone())
+        .with_resource_context(
+            ResourceContext::new()
+                .unchecked_with_fact(ResourceFact::own_composite("cell".into(), vec![value])),
         );
     let current = historical.clone().with_memory(historical.memory().clone());
+    let unfold = |state: ExecutionState| {
+        let point = state.observation_point_id().unwrap();
+        assert!(!matches!(
+            state.memory().load(&pointer),
+            ExpressionOutcome::Value(_)
+        ));
+        let checked = super::super::resources::unfold_composite_resource_for_proof(
+            &resources,
+            resource,
+            resource,
+            parameters,
+            state,
+            crate::kernel::proof::PureFactStore::default(),
+            &mut SurfacePropositionMap::default(),
+            specs,
+            "unfold before raising definedness",
+            0,
+            true,
+        )
+        .unwrap();
+        assert!(matches!(
+            checked.state.memory().load(&pointer),
+            ExpressionOutcome::Value(_)
+        ));
+        let fact = Proposition::MemoryReadDefined {
+            at: Some(point),
+            memory: checked.state.memory().clone(),
+            pointer: pointer.clone(),
+            value_type: ProgramType::Int32,
+        };
+        assert!(checked.added_facts.contains(&fact));
+        (checked.state, fact)
+    };
+    let (historical, historical_fact) = unfold(historical);
+    let (current, current_fact) = unfold(current);
+    assert_eq!(historical.memory(), current.memory());
+    assert_ne!(
+        historical.observation_point_id(),
+        current.observation_point_id()
+    );
     let selector = ProgramPointSelector::Mark("observed".into());
     let mut points = RecordedStates::new();
-    points.insert(selector.clone(), historical.clone());
+    points.insert(selector.clone(), historical);
     let _points = SynthesisRecordedPointsScope::enter(&points);
-    let fact = Proposition::MemoryReadDefined {
-        at: historical.program_point().id(),
-        memory: historical.memory().clone(),
-        pointer,
-        value_type: ProgramType::Int32,
-    };
-    let spelled = synthesize_surface_proposition(&fact, ParameterBinding::default(), &current)
-        .expect("the recorded observation has a source selector");
+    let historical = synthesize_surface_proposition(&historical_fact, parameters, &current)
+        .expect("the historical observation should have a spelling");
     assert!(
-        matches!(&spelled, ClickProposition::At { selector: selected, .. } if selected == &selector)
+        matches!(&historical, ClickProposition::At { selector: selected, .. } if selected == &selector)
     );
-    let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
-        &spelled,
-        &PureFactContext::new(),
-        ContractEnvironment::new(&ProgramValueBindings::new(), &ClickArrayRefs::new()),
-        FixedStateFrame::new(&current, &current, None, &points),
-        SpecDefinitions::new(
-            &PredicateEnvironment::new(&[]),
-            &ClickFunctionEnvironment::new(&[]),
-        ),
-        FixedStateLoweringOptions::default(),
-    ).map(|(proposition, _, _, _)| proposition);
-    assert_eq!(lowered, Ok(fact));
+    let present = synthesize_surface_proposition(&current_fact, parameters, &current)
+        .expect("the current observation should have a spelling");
+    assert!(matches!(&present, ClickProposition::Defined { .. }));
+    for (spelled, fact) in [(historical, historical_fact), (present, current_fact)] {
+        assert_eq!(
+            relower_written_proposition_with_states(&spelled, &current, &current, &points),
+            Ok(fact)
+        );
+    }
 }
 
 #[test]
