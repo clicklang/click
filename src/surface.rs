@@ -6419,7 +6419,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "all",
-        syntax: "all",
+        syntax: "all {",
         class: "control",
     },
     PublicTacticForm {
