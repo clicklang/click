@@ -8,10 +8,15 @@
 //! Surface records the name of each point it records a state at
 //! (`RecordedStates::point_name`).
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Weak};
 
-use super::{MemoryDerivation, SharedMemory, SymbolicMemory, intern_memory, intern_memory_ref};
+use crate::persistent::PersistentMap;
+
+use super::{
+    Address, AddressBase, AddressOffset, MachineTerm, MemoryDerivation, ProgramValue, SharedMemory,
+    SymbolicMemory, intern_memory, intern_memory_ref,
+};
 
 /// The identity of one point an execution path reached.
 ///
@@ -98,6 +103,11 @@ struct PointNode {
     predecessors: Box<[PathLink]>,
     /// For a branch join, the point where its arms split.
     split: Option<PathLink>,
+    /// The direct int32 write at this point, if there was one.
+    local_int32_write: Option<AddressBase>,
+    /// Older direct int32 writes to independent locals. The predecessor chain
+    /// owns these points, so the index need not retain another history.
+    local_int32_versions: PersistentMap<AddressBase, Weak<PointNode>>,
 }
 
 impl Drop for PointNode {
@@ -170,13 +180,17 @@ impl PathLink {
             .into_vec()
             .into_iter()
             .filter(|point| point.0.is_some())
-            .collect();
+            .collect::<Box<[_]>>();
+        let (local_int32_versions, local_int32_write) =
+            local_int32_versions(&predecessors, steps.as_deref());
         Self(Some(Arc::new(PointNode {
             id: ProgramPointId::fresh(),
             memory,
             steps,
             predecessors,
             split: split.filter(|point| point.0.is_some()),
+            local_int32_write,
+            local_int32_versions,
         })))
     }
 
@@ -220,6 +234,54 @@ impl PathLink {
     }
 }
 
+// Two automatic blocks with different identities are structurally disjoint.
+fn indexed_local(block: &AddressBase) -> bool {
+    matches!(block, AddressBase::AutomaticLocal { .. })
+        || matches!(block, AddressBase::Concrete(_) if block.is_local_block())
+}
+
+/// Classify just the newly produced transition. Until batches, joins and
+/// other effects have indexed rules, they end this stretch of known versions.
+fn local_int32_versions(
+    predecessors: &[PathLink],
+    steps: Option<&StepLog>,
+) -> (
+    PersistentMap<AddressBase, Weak<PointNode>>,
+    Option<AddressBase>,
+) {
+    let ([PathLink(Some(before))], Some(step)) = (predecessors, steps) else {
+        return Default::default();
+    };
+    let continued = || {
+        let mut versions = before.local_int32_versions.clone();
+        if let Some(written) = &before.local_int32_write {
+            versions.insert(written.clone(), Arc::downgrade(before));
+        }
+        (versions, None)
+    };
+    if step.previous.is_some() || step.step.base().arena_id() != before.memory.arena_id() {
+        return Default::default();
+    }
+    match step.step.as_ref() {
+        MemoryDerivation::Store { pointer, value, .. } if indexed_local(&pointer.base) => {
+            let (mut versions, _) = continued();
+            let written = if matches!(pointer.offset, AddressOffset::Constant(0))
+                && matches!(value.native(), ProgramValue::Int32(_))
+            {
+                Some(pointer.base.clone())
+            } else {
+                versions.remove(&pointer.base);
+                None
+            };
+            (versions, written)
+        }
+        MemoryDerivation::CellsForgotten { .. } | MemoryDerivation::CellObserved { .. } => {
+            continued()
+        }
+        _ => Default::default(),
+    }
+}
+
 impl PartialEq for PathLink {
     fn eq(&self, _: &Self) -> bool {
         true
@@ -249,13 +311,29 @@ impl Ord for PathLink {
 /// back to which the recorded steps show the cell unchanged, and holds that
 /// point.
 ///
-/// For now two points compare, hash and order by the interned memory state
-/// there; the path identity is carried but not yet compared. That is an
-/// implementation detail callers must not rely on.
-#[derive(Clone, Debug)]
+/// Indexed local int32 reads include their version point in the term key.
+/// Other callers still use the interned memory as their key.
+#[derive(Clone)]
 pub struct ProgramPoint {
     memory: SharedMemory,
     path: PathLink,
+    // A read that has selected its actual version keys on that identity too.
+    // Other users are still migrating off the legacy memory key.
+    key_by_path: bool,
+}
+
+impl std::fmt::Debug for ProgramPoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut point = f.debug_struct("ProgramPoint");
+        if let Some(version) = self.read_version_id() {
+            point.field("version", &version);
+        } else {
+            point
+                .field("memory", &self.memory)
+                .field("path", &self.path);
+        }
+        point.finish()
+    }
 }
 
 thread_local! {
@@ -288,7 +366,7 @@ fn pending_point(path: &PathLink, steps: &Arc<StepLog>, memory: &SharedMemory) -
 
 impl PartialEq for ProgramPoint {
     fn eq(&self, other: &Self) -> bool {
-        self.memory == other.memory
+        self.read_version_id() == other.read_version_id() && self.memory == other.memory
     }
 }
 
@@ -297,6 +375,9 @@ impl Eq for ProgramPoint {}
 impl std::hash::Hash for ProgramPoint {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.memory.hash(state);
+        if let Some(version) = self.read_version_id() {
+            version.hash(state);
+        }
     }
 }
 
@@ -308,7 +389,7 @@ impl PartialOrd for ProgramPoint {
 
 impl Ord for ProgramPoint {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.memory.cmp(&other.memory)
+        (self.read_version_id(), &self.memory).cmp(&(other.read_version_id(), &other.memory))
     }
 }
 
@@ -318,6 +399,7 @@ impl ProgramPoint {
         Self {
             memory: memory.clone(),
             path: PathLink::default(),
+            key_by_path: false,
         }
     }
 
@@ -343,6 +425,7 @@ impl ProgramPoint {
         Self {
             memory: shared,
             path,
+            key_by_path: false,
         }
     }
 
@@ -356,6 +439,7 @@ impl ProgramPoint {
         Self {
             memory,
             path: self.path.clone(),
+            key_by_path: self.key_by_path,
         }
     }
 
@@ -378,6 +462,52 @@ impl ProgramPoint {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn id(&self) -> Option<ProgramPointId> {
         self.path.id()
+    }
+
+    pub(crate) fn read_version_id(&self) -> Option<ProgramPointId> {
+        if self.key_by_path { self.id() } else { None }
+    }
+
+    pub(crate) fn supports_indexed_local_int32_version(pointer: &Address) -> bool {
+        matches!(pointer.offset, AddressOffset::Constant(0)) && indexed_local(&pointer.base)
+    }
+
+    /// A direct int32 cell's version, if this path has a recorded direct write
+    /// and the transitions after it preserve the object by construction.
+    pub(crate) fn indexed_local_int32_version(&self, pointer: &Address) -> Option<Self> {
+        if !Self::supports_indexed_local_int32_version(pointer) {
+            return None;
+        }
+        let node = self.path.0.as_ref()?;
+        if node.memory.arena_id() != self.memory.arena_id() {
+            // A substituted view has not replayed the stores on this path.
+            return None;
+        }
+        let version = if node.local_int32_write.as_ref() == Some(&pointer.base) {
+            node.clone()
+        } else {
+            node.local_int32_versions.get(&pointer.base)?.upgrade()?
+        };
+        Some(Self {
+            memory: version.memory.clone(),
+            path: PathLink(Some(version)),
+            key_by_path: true,
+        })
+    }
+
+    /// The recorded value of this indexed read's defining store. The
+    /// equation comes from the authored step, even if its view shares
+    /// storage with another point.
+    pub(crate) fn indexed_int32_store_bits(&self) -> Option<&MachineTerm> {
+        self.read_version_id()?;
+        let step = self.path.steps()?;
+        let MemoryDerivation::Store { value, .. } = step.step.as_ref() else {
+            return None;
+        };
+        let ProgramValue::Int32(bits) = value.native() else {
+            return None;
+        };
+        Some(bits)
     }
 
     /// The identities of the points this one was reached from.

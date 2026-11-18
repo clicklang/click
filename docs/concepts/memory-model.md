@@ -24,10 +24,18 @@ These names describe different things:
   handle. It records symbolic memory information, which may be incomplete,
   abstracted by a call or loop, or projected for one selected read. It is
   not a program point or a complete execution state.
-- A **version point** is the point a read is lowered to, selected by the
-  assumption-free version walk for a particular cell or observed block.
+- A **version point** is the point a read is lowered to for a particular
+  cell or observed block. Choosing it depends on the execution effects
+  that can change the cell and is independent of the available pure facts.
   The kernel represents points with `ProgramPoint`. A read's address, type,
   and version point determine its identity.
+
+For an ordinary `int32` read at the start of an automatic object, a lookup
+keyed by the object can select the write on the current execution path.
+Writes to other independently identified automatic objects preserve this
+index entry. The read retains the write's point, and its value equation
+comes from the recorded store. Other cases still use the existing version
+selection, including across joins and unclassified effects.
 
 A pending log of recorded transitions reaches a successor point even when
 its final memory contents equal its predecessor's. Repeatedly requesting that

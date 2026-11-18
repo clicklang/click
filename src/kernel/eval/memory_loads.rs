@@ -279,6 +279,36 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     paths
 }
 
+/// A logical int32 read whose version was selected from the execution path.
+pub(in crate::kernel) fn evaluate_indexed_int32_read(
+    memory: &SymbolicMemory,
+    version: ProgramPoint,
+    pointer: Address,
+    mut facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+) -> ExpressionPath {
+    let stored = version
+        .indexed_int32_store_bits()
+        .expect("an indexed int32 version comes from a direct store")
+        .clone();
+    let read = MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), LoadKind::Int32);
+    // Retain the read and publish its exact store equation separately.
+    facts.push(ExecutionPureFact {
+        logical_read_equation: true,
+        ..ExecutionPureFact::certified(Proposition::condition_is(
+            ConditionTerm::equal(read.clone(), stored),
+            true,
+        ))
+    });
+    let value = ProgramValue::Int32(read);
+    super::typed_reads::record(memory, &pointer, &value);
+    ExpressionPath {
+        outcome: ExpressionOutcome::Value(value),
+        facts,
+        obligations,
+    }
+}
+
 /// The value of Surface `exact(place)` (`design/exact-reads.md`): the read
 /// of the `value_type` cell at `pointer` named by `memory` itself. Unlike
 /// [`evaluate_logical_memory_load_paths`], it runs no version walk and
@@ -4841,6 +4871,9 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Machin
 /// publication are separate operations. Until exact-state lowering migrates,
 /// callers still retain the selected identity as their read term.
 pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
+    if matches!(bits, MachineTerm::MemoryLoad(point, _, _) if point.read_version_id().is_some()) {
+        return bits.clone();
+    }
     let Some(descriptor) = ScalarReadDescriptor::from_term(bits) else {
         return bits.clone();
     };

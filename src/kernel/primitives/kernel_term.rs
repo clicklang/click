@@ -356,7 +356,8 @@ impl PartialEq for NodeKey {
                         // The interner is process-wide; states belong to arenas.
                         // Comparing their contents across arenas would walk unrelated
                         // memory while registering one selected read.
-                        a.shared_memory().arena_id() == b.shared_memory().arena_id()
+                        a.read_version_id() == b.read_version_id()
+                            && a.shared_memory().arena_id() == b.shared_memory().arena_id()
                             && p == q
                             && k == l
                     }
