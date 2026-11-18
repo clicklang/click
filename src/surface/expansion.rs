@@ -2076,6 +2076,7 @@ fn claim_expansion_source(theorem: &VerifiedProgramTheorem) -> Result<String, Cl
     );
     let _reference_carriers =
         super::diagnostics::ParameterPlaceScope::enter(&theorem.function_block);
+    let _spelling = theorem.step_result_spelling_scope();
     let certificate = theorem.expanded_proof_certificate()?;
     if !theorem.function_block.is_tactic_procedure() {
         return Ok(super::printing::format_proof_block(
@@ -3676,8 +3677,12 @@ fn expand_selected_tactics_context(
             Some(file),
         )
     })?;
+    // The whole claim's tactics are rendered below, after checking ended:
+    // spell their step results by the checked function's layout.
+    let mut _whole_claim_spelling = None;
     if let Some((name, claim)) = whole_function {
         let theorem = select_expansion_theorem(&verified, name, claim)?;
+        _whole_claim_spelling = theorem.step_result_spelling_scope();
         let mut tactics = theorem.expanded_proof_certificate()?.to_proof_tactics();
         if theorem.function_block.is_tactic_procedure() {
             remove_tactic_procedure_ending(

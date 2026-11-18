@@ -5381,6 +5381,9 @@ pub(super) fn finish_ordered_proof<'a>(
                             ),
                             checked_proposition,
                             entry_context: proof_context.constants.entry_context.clone(),
+                            source_layout: TheoremSourceLayout(Some(
+                                proof_context.constants.source_layout.clone(),
+                            )),
                         });
                     }
                     if let Some(return_proof) = loop_return {

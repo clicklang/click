@@ -4268,6 +4268,25 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
+/// The outer call of `y = f(f(y));` owes `f`'s requirement of the inner
+/// call's result. Whole-claim expansion renders its certificate after
+/// checking ends, and must still spell that result by its call, never as
+/// the diagnostic `f(…)`.
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_18")]
+fn whole_claim_expansion_spells_an_inner_call_result_by_its_call() {
+    let (click, sources) = mdtest_sources("mdtests/execute_until_runs_to_a_statement_region.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&click, &sources, "probe.contract")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(!expanded.contains('…'), "{expanded}");
+    verify_c_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
 /// Refuted helper arms have no generated return/postcondition suffix. Both
 /// certification and whole-claim expansion must preserve their contradiction.
 #[test]
@@ -22810,6 +22829,7 @@ test_batches! {
         whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending,
     ],
     expansion_batch_18: [
+        whole_claim_expansion_spells_an_inner_call_result_by_its_call,
         whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms,
         whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm,
         whole_claim_expansion_keeps_tactics_before_a_nested_match,
