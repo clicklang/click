@@ -24131,6 +24131,7 @@ fn indexed_iterated_ownership_expands_and_rechecks() {
 }
 
 #[test]
+#[ignore = "nightly: three expansion and strict replay controls took 4.3s locally"]
 fn expanded_call_names_the_folded_supplier() {
     let c = "void update(int *p) { *p = 7; } void caller(int *p) { update(p); }";
     let inputs = [("folded.c", c)];
