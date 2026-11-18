@@ -612,7 +612,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | In progress: 10p1–10p5 landed with all pushed commits verified; 10p6 passed complete local validation and is ready for publication. |
-| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
+| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1 implemented and validating; the sequential family inventory below is authoritative. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
 | 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
 | 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
@@ -1312,7 +1312,8 @@ protocol, substitution and point checks passed, followed by quality.
 | Family | Owning output schema | Required preservation |
 | --- | --- | --- |
 | 10q1 | `ProgramExpressionEvaluates` and `MemoryLoads` outcomes | Retain evaluated program roots; exact native outcome identity, errors and source/state DTOs remain unchanged. |
-| 10q2 | `VolatileAccess::value` and `MemoryLoadable::bytes` | Retain value/count roots; nominal event identity and signed/wide count policy remain unchanged. |
+| 10q2a | `VolatileAccess::value` | Retain captured value roots; nominal event identity and read/write authority remain unchanged. |
+| 10q2b | `MemoryLoadable::bytes` | Retain count roots; signed/wide count policy and native input formats remain unchanged. |
 | 10q3 | `ConditionIs` logical payloads | Retain produced logical roots; native input syntax and existing comparison/fact/raising readers keep their exact contracts. |
 | 10q4 | Expression-bearing `Term` payloads in equality/predicate outputs | Retain numeric/program/algebraic roots at actual producer handoffs; preserve native term ordering, hashing, capture and proof admission. |
 
@@ -1325,14 +1326,26 @@ are accounted for in 10r–10t; they are not evidence that a store is migrated.
 
 The expression-evaluation and memory-load proposition schemas use
 `ExpressionOutcome<StoredProgramValue>`, preserving exact native value identity
-separately from execution observation equality. Native output DTO comparison
-is explicit; errors keep their original payloads. Value collection and
+separately from execution observation equality. Selected native output DTO views
+are explicit; errors keep their original payloads. Value collection and
 substitution use retained execution-value operations; rendering and capture
 checks retain selected native readers. Source expressions and recorded states
 keep their existing identities.
 
-The actual producer regressions are prepared; validation and producer switches
-are pending. This does not complete the logical/term payload families below.
+The actual producer regressions were red: 455 existing checks passed and
+exactly two root-retention checks failed. Both theorem factories now retain
+their evaluated values directly, with unchanged single-path/obligation and
+invalid-memory policies. All 458 focused checks, including growing machine-DAG
+and float-chain production/cloning, then passed. The obsolete native one-outcome
+evaluator helper is removed. After parent integration, all 470 selected checks
+passed; full regular validation is running.
+
+The native load-result-to-`Term::ProgramValue` reader in surface resource proofs
+is explicit and remains assigned to 10q4. Numeric memory cells retain their
+existing native-input policy; this slice preserves roots the memory already
+holds. Logical conditions and remaining term payloads retain their own slices.
+10q2 is split before implementation into independent volatile-value and
+loadability-count PRs; its original scope and proof rules are unchanged.
 
 ## Chunk 3: machine-valued pure-function results
 
