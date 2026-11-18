@@ -4019,9 +4019,9 @@ fn execute_verified_function_applications_with_suspension(
             };
         }
         let output_resource_state =
-            with_contract_interface_argument_views(&post_state, interface, &argument_values);
+            with_bound_contract_interface_argument_views(&post_state, interface, &argument_values);
         let entry_resource_state =
-            with_contract_interface_argument_views(&entry_state, interface, &argument_values);
+            with_bound_contract_interface_argument_views(&entry_state, interface, &argument_values);
 
         // Coordinate ensures are certified by the callee independently of
         // return admission. Carry them to the ownership producer before it
@@ -4510,70 +4510,88 @@ fn execute_verified_function_applications_with_suspension(
         // Postconditions are lowered against the caller's own states, so
         // their reads are the caller's reads.
         let canonical_entry_contract_state = entry_contract_state.clone();
-        let provisional_post_contract_state =
-            with_contract_interface_argument_views(&post_state, interface, &argument_values);
-        let provisional_post_contract_state = match checked_contract_control_read_state(
-            &provisional_post_contract_state,
-            &output_resources,
-            interface,
-            &effective_assumptions,
-        ) {
-            Ok(state) => state,
-            Err(error) => {
-                paths.push(FunctionPath::new(
-                    FunctionOutcome::RuntimeError(error),
-                    facts,
-                    obligations,
-                ));
-                continue;
-            }
-        };
-        let mut provisional_facts = facts.clone();
-        provisional_facts.extend_shared(&coordinate_facts);
-        let provisional_ensure_timing = crate::instrumentation::OperationTiming::new(
-            name,
-            "verified function rule application",
-            "verified call provisional ensure lowering",
-        );
-        add_verified_function_ensure_facts_selected_with_interface(
-            &mut provisional_facts,
-            &obligations,
-            &provisional_post_contract_state,
-            &canonical_entry_contract_state,
-            interface,
-            interface
-                .contract_ensures()
-                .iter()
-                .filter(|ensure| !early_coordinates || !return_coordinate_ensure(ensure)),
-            &effective_assumptions,
-            budget,
-        )?;
-        drop(provisional_ensure_timing);
-
-        let allocation_delta_timing = crate::instrumentation::OperationTiming::new(
-            name,
-            "verified function rule application",
-            "verified call heap allocation delta",
-        );
-        let allocation_assumptions =
-            assumptions_with_path_context(&effective_assumptions, &provisional_facts, &obligations);
-        let allocation_delta = apply_verified_heap_allocation_delta(
-            post_state.memory.clone(),
-            &entry_state.memory,
-            &transfer.callee_resources,
-            &caller_resources_after_requirements,
-            &output_resources,
-            interface,
-            &allocation_assumptions,
-            if suspended.is_some() {
-                post_state.loan_ledger()
+        // With no transferred input or output resources, there is no allocation
+        // to continue, retire, or publish. Lower the ensures only against the
+        // final state, where they will be filed as call facts.
+        let allocation_delta =
+            if transfer.callee_resources.is_empty() && output_resources.is_empty() {
+                Ok(VerifiedAllocationDelta {
+                    memory: post_state.memory.clone(),
+                    effects: ExecutionFacts::new(),
+                    retired_allocations: Vec::new(),
+                    continued_tokens: Vec::new(),
+                })
             } else {
-                None
-            },
-            caller_state,
-            &post_state,
-        );
-        drop(allocation_delta_timing);
+                let provisional_post_contract_state = with_bound_contract_interface_argument_views(
+                    &post_state,
+                    interface,
+                    &argument_values,
+                );
+                let provisional_post_contract_state = match checked_contract_control_read_state(
+                    &provisional_post_contract_state,
+                    &output_resources,
+                    interface,
+                    &effective_assumptions,
+                ) {
+                    Ok(state) => state,
+                    Err(error) => {
+                        paths.push(FunctionPath::new(
+                            FunctionOutcome::RuntimeError(error),
+                            facts,
+                            obligations,
+                        ));
+                        continue;
+                    }
+                };
+                let mut provisional_facts = facts.clone();
+                provisional_facts.extend_shared(&coordinate_facts);
+                let provisional_ensure_timing = crate::instrumentation::OperationTiming::new(
+                    name,
+                    "verified function rule application",
+                    "verified call provisional ensure lowering",
+                );
+                add_verified_function_ensure_facts_selected_with_interface(
+                    &mut provisional_facts,
+                    &obligations,
+                    &provisional_post_contract_state,
+                    &canonical_entry_contract_state,
+                    interface,
+                    interface
+                        .contract_ensures()
+                        .iter()
+                        .filter(|ensure| !early_coordinates || !return_coordinate_ensure(ensure)),
+                    &effective_assumptions,
+                    budget,
+                )?;
+                drop(provisional_ensure_timing);
+
+                let _allocation_delta_timing = crate::instrumentation::OperationTiming::new(
+                    name,
+                    "verified function rule application",
+                    "verified call heap allocation delta",
+                );
+                let allocation_assumptions = assumptions_with_path_context(
+                    &effective_assumptions,
+                    &provisional_facts,
+                    &obligations,
+                );
+                apply_verified_heap_allocation_delta(
+                    post_state.memory.clone(),
+                    &entry_state.memory,
+                    &transfer.callee_resources,
+                    &caller_resources_after_requirements,
+                    &output_resources,
+                    interface,
+                    &allocation_assumptions,
+                    if suspended.is_some() {
+                        post_state.loan_ledger()
+                    } else {
+                        None
+                    },
+                    caller_state,
+                    &post_state,
+                )
+            };
         let VerifiedAllocationDelta {
             memory,
             effects: allocation_effects,
@@ -4619,7 +4637,7 @@ fn execute_verified_function_applications_with_suspension(
             continue;
         }
         let post_contract_state =
-            with_contract_interface_argument_views(&post_state, interface, &argument_values);
+            with_bound_contract_interface_argument_views(&post_state, interface, &argument_values);
         let returned_body_state = post_contract_state.clone();
         let post_contract_state = match checked_contract_control_read_state(
             &post_contract_state,
@@ -4679,7 +4697,7 @@ fn execute_verified_function_applications_with_suspension(
             budget,
         )?;
         drop(ensure_timing);
-        {
+        if !output_resources.is_empty() {
             let ensured_assumptions =
                 assumptions_with_path_context(&effective_assumptions, &facts, &obligations);
             facts.extend(
@@ -4702,7 +4720,7 @@ fn execute_verified_function_applications_with_suspension(
             if additional.interface.return_type() != ProgramType::Void {
                 set_contract_result(&mut additional_post, additional.interface, result.clone());
             }
-            let additional_post = with_contract_interface_argument_views(
+            let additional_post = with_bound_contract_interface_argument_views(
                 &additional_post,
                 additional.interface,
                 &additional.argument_values,
@@ -5243,7 +5261,7 @@ fn exceptional_direct_function_path(
         .locals
         .set_typed(CONTRACT_EXCEPTION, payload.clone(), payload_type);
     let post_contract_state =
-        with_contract_interface_argument_views(&post_state, interface, argument_values);
+        with_bound_contract_interface_argument_views(&post_state, interface, argument_values);
     add_verified_function_ensure_facts_selected_with_interface(
         &mut facts,
         &obligations,
@@ -6093,8 +6111,11 @@ fn prepare_verified_function_call<'a>(
             };
         }
     }
-    let entry_contract_state =
-        with_contract_interface_argument_views(&entry_state, contract_interface, &argument_values);
+    let entry_contract_state = with_bound_contract_interface_argument_views(
+        &entry_state,
+        contract_interface,
+        &argument_values,
+    );
     // The callee's pure preconditions are read in the state its entry will
     // hold: the transferred clause set, opened through the composite
     // definitions the way the callee's own entry opens it. A precondition
@@ -9422,6 +9443,10 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
     effective_assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<()> {
+    let mut ensures = ensures.peekable();
+    if ensures.peek().is_none() {
+        return Ok(());
+    }
     // Every ensure is lowered under the call's context plus the facts
     // published so far, the earlier ensures' among them. Build that context
     // once and extend it by each ensure's own new facts: rebuilding it from
@@ -9444,7 +9469,7 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
     let entry_contract_state = opened_entry_state.as_ref().unwrap_or(entry_contract_state);
     let mut ensure_assumptions =
         assumptions_with_path_context(effective_assumptions, facts, obligations);
-    for ensure in ensures {
+    while let Some(ensure) = ensures.next() {
         let published_before = facts.len();
         // A verified callee certifies that its ensures, including the memory
         // loads used to state them, are well-defined. Lower those loads into
@@ -9649,10 +9674,15 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                 }
             }
         }
-        let published = facts.iter().skip(published_before);
-        crate::instrumentation::record_deterministic_work(published.len());
-        for fact in published {
-            ensure_assumptions = ensure_assumptions.assume_proposition(fact.proposition().clone());
+        // Only later ensures read this temporary context. The final delta
+        // will be admitted by the checked call's actual consumers.
+        if ensures.peek().is_some() {
+            let published = facts.iter().skip(published_before);
+            crate::instrumentation::record_deterministic_work(published.len());
+            for fact in published {
+                ensure_assumptions =
+                    ensure_assumptions.assume_proposition(fact.proposition().clone());
+            }
         }
     }
     Ok(())
