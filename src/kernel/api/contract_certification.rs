@@ -2103,7 +2103,7 @@ fn program_function_contract_entry_facts(
                 continue;
             }
             Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
-                (name.as_str(), arguments.as_ref())
+                (name.as_str(), arguments)
             }
             Resource::PopulationAuthority(description) => {
                 (description.family(), description.arguments())

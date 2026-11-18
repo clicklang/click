@@ -121,7 +121,7 @@ void Stack<int>::push(int value) {
     ensures to_integer(this->count) == length(after.items);
 } by {
     step_until(function.exit);
-    let after = fold(nodes(this->head), { items: List::Cons(value, old(before.items)) }, { tail: before });
+    let after = fold(nodes(this->head), { items: List::Cons(value, old(before.items)), tail: before });
     unfold(length(List::Cons(value, old(before.items))));
     have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
     have to_integer(old(this->count) + 1u64) == length(List::Cons(value, old(before.items))) by solve() using {
@@ -176,7 +176,7 @@ bool Stack<int>::pop(int& out) {
                 },
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
-                    let after = fold(nodes(this->head), { items: List::Cons(next_value, next_items) }, { tail: next });
+                    let after = fold(nodes(this->head), { items: List::Cons(next_value, next_items), tail: next });
                     have to_integer(old(this->count)) == length(tail_items) + 1 by solve() using {
                         to_integer(old(this->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;

@@ -46,5 +46,5 @@ void copy_across(struct pair *p) {
 ```
 
 ```expect
-fail: fold of `pair_state` must supply its named child `second` in its child map
+fail: fold of `pair_state` must supply its named child `second` in its input map
 ```

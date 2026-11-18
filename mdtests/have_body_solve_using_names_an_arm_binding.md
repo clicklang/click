@@ -96,8 +96,10 @@ unsigned long peek(struct node* p) {
                 normalize() using { (p->word & 1) == color_bit(color); };
             }
             step();
-            let t = fold(tree_at(p), { model: Tree::Node(id, color, left_model) },
-                { left: l });
+            let t = fold(tree_at(p), {
+                model: Tree::Node(id, color, left_model),
+                left: l
+            });
             solve();
         },
     }

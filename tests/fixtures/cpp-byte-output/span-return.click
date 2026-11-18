@@ -17,7 +17,7 @@ std::span<std::byte> probe(std::span<int> span) {
         normalize() using { separate(memory(at(call(0).exit, call(0).result)[0..8]), memory(at(before_return, span)[0])); };
     }
     have std_span_data(result) == std_span_data(call(0).result) by {
-        preserve(separate(region(1).footprint, memory(at(call(0).exit, call(0).result)[0..8])));
+        preserve(memory(at(call(0).exit, call(0).result)[0..8]), region(1));
     }
     have std_span_size(call(0).parameter(__sp)) == old(std_span_size(span)) by { solve(); }
     have std_span_size(call(0).result) == old(std_span_size(span)) * 4u64 by { solve(); }
@@ -25,7 +25,7 @@ std::span<std::byte> probe(std::span<int> span) {
         normalize() using { separate(memory(at(call(0).exit, call(0).result)[8..16]), memory(at(before_return, span)[0])); };
     }
     have std_span_size(result) == std_span_size(call(0).result) by {
-        preserve(separate(region(1).footprint, memory(at(call(0).exit, call(0).result)[8..16])));
+        preserve(memory(at(call(0).exit, call(0).result)[8..16]), region(1));
     }
     solve();
 }

@@ -149,8 +149,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let kernel = search_input.lower_integer_surface_proposition(&canonical, "product bound")?;
-        let Some((ConditionTerm::IntegerLessEqual(a, b), true)) = (&kernel).condition_native()
-        else {
+        let Some((ConditionTerm::IntegerLessEqual(a, b), true)) = kernel.condition_native() else {
             return Ok(None);
         };
         let (product, target, lower) = if let Some(target) = a.as_const() {
@@ -392,6 +391,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             && let Some(closed) =
                 attempt::candidate_outcome(Self::try_int32_add_sub_using(search_input, premises))?
                     .flatten()
+        {
+            return Ok(Some(closed));
+        }
+        if retained
+            && let [source] = kernels.as_slice()
+            && let Some(closed) = Self::try_native_integer_bound(search_input, source)?
+            && closed.is_complete()
         {
             return Ok(Some(closed));
         }

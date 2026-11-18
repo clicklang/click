@@ -190,8 +190,7 @@ impl TermRewrite<'_> {
             };
             memo.borrow_mut().insert(key(&term), value);
         }
-        let result = memo.borrow().get(&key(root)).cloned();
-        result
+        memo.borrow().get(&key(root)).cloned()
     }
 }
 

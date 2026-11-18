@@ -69,7 +69,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             unfold(frames);
             step_until(function.exit);
             let frames = fold(sized_context_at(new,root->rb_node,0, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Top });
-            let after = fold(sized_link_at(new,root, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Top }, { frames: frames });
+            let after = fold(sized_link_at(new,root, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Top, frames: frames });
             unfold(old_tag);
             unfold(old_size);
             have (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size) by known();
@@ -100,8 +100,8 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             step_until(function.exit);
             unfold(tag); unfold(sibling_link); unfold(root_link);
             have root->rb_node == old(root->rb_node) by known();
-            let frames = fold(sized_context_at(new,old(root->rb_node),0, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Left(a, above, shade, value, sibling_model, up_model) }, { metadata: a_size, sibling: sibling, up: up });
-            let after = fold(sized_link_at(new,root, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Left(a, above, shade, value, sibling_model, up_model) }, { frames: frames });
+            let frames = fold(sized_context_at(new,old(root->rb_node),0, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Left(a, above, shade, value, sibling_model, up_model), metadata: a_size, sibling: sibling, up: up });
+            let after = fold(sized_link_at(new,root, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Left(a, above, shade, value, sibling_model, up_model), frames: frames });
             unfold(old_tag);
             unfold(old_size);
             have (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size) by known();
@@ -140,8 +140,8 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                     step_until(function.exit);
                     unfold(tag); unfold(sibling_link); unfold(root_link);
                     have root->rb_node == old(root->rb_node) by known();
-                    let frames = fold(sized_context_at(new,old(root->rb_node),0, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model) }, { metadata: a_size, sibling: sibling, up: up });
-                    let after = fold(sized_link_at(new,root, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model) }, { frames: frames });
+                    let frames = fold(sized_context_at(new,old(root->rb_node),0, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model), metadata: a_size, sibling: sibling, up: up });
+                    let after = fold(sized_link_at(new,root, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model), frames: frames });
                     unfold(old_tag);
                     unfold(old_size);
                     have (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size) by known();
@@ -160,7 +160,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                         rewrite(a->rb_left, identity); known();
                     }
                     let old_tag = fold(change_child_old_tag(old), { word: old(old->__rb_parent_color), parent: old(((old->__rb_parent_color & ~3) as (struct rb_node *))) });
-                    let sibling = fold(sized_at(identity), { model: SizedTree::Node(identity,sp,sc,size,sl,sr) }, { metadata: s_size, left: s_left, right: s_right });
+                    let sibling = fold(sized_at(identity), { model: SizedTree::Node(identity,sp,sc,size,sl,sr), metadata: s_size, left: s_left, right: s_right });
                     let tag = fold(change_child_parent_tag(a, above), { color: shade });
                     let sibling_link = fold(change_child_sibling_link(a, &a->rb_left), { child: identity });
                     let root_link = fold(change_child_root_link(root), { node: old(root->rb_node) });
@@ -168,8 +168,8 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                     step_until(function.exit);
                     unfold(tag); unfold(sibling_link); unfold(root_link);
                     have root->rb_node == old(root->rb_node) by known();
-                    let frames = fold(sized_context_at(new,old(root->rb_node),0, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model) }, { metadata: a_size, sibling: sibling, up: up });
-                    let after = fold(sized_link_at(new,root, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model) }, { frames: frames });
+                    let frames = fold(sized_context_at(new,old(root->rb_node),0, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model), metadata: a_size, sibling: sibling, up: up });
+                    let after = fold(sized_link_at(new,root, old((old as (void *) as (struct sized_node *))->size)), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model), frames: frames });
                     unfold(old_tag);
                     unfold(old_size);
                     have (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size) by known();

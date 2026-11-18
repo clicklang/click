@@ -629,6 +629,9 @@ mod tests {
             "theorem check() { ensures (|binder(5): uint64| -> uint64 { binder(5) + 1u64 })(41u64) == 42u64 by solve(); }",
             "spec enum Boxed { Value(Integer) } function unpack(b: Boxed) -> Integer { match b { Boxed::Value(binder(2)) => binder(2) } } theorem check() { ensures unpack(Boxed::Value(42)) == 42 by { unfold(unpack(Boxed::Value(42))); solve(); } }",
             "theorem check() { ensures (let binder(7): fn(Integer) -> Integer = |x: Integer| -> Integer { x + 1 }; binder(7)(41)) == 42 by solve(); }",
+            // Expansion spells a range predicate it cannot show as a lambda
+            // value with an untyped generated item.
+            "theorem check(lo: int32, hi: int32) { requires lo < hi; ensures (lo..hi).all(|binder(9)| { binder(9) < hi }) by { intro(); intro(); solve(); } }",
             "function apply(x: Integer, y: Integer) -> Integer { (|y: Integer| -> Integer { x + y })(0) } theorem check(y: Integer) { ensures apply(y, 99) == y by { unfold(apply(y, 99)); solve(); } }",
             "theorem check(__click_binder_0: Integer, __lambda_0: Integer, __click_lambda_0: Integer) { ensures (|x: Integer| -> Integer { x + __click_binder_0 })(__lambda_0) == __lambda_0 + __click_binder_0 by solve(); }",
         ] {

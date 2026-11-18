@@ -56,7 +56,7 @@ void keep_wrapper(int32* p) {
 } by {
     let { amount: n, label: l } = unfold(s);
     step_until(function.exit);
-    let s = fold(wrapper(p), { amount: n }, { label: l });
+    let s = fold(wrapper(p), { amount: n, label: l });
     solve();
 }
 ```

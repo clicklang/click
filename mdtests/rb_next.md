@@ -1765,13 +1765,18 @@ struct rb_node* rb_next(struct rb_node* node) {
                     }
                     let { left: right_l, right: right_r } = unfold(entry_r);
                     have node->rb_right != 0;
-                    let t = fold(rb_at(node->rb_right), { model: entry_right }, { left: right_l,
-                            right: right_r });
+                    let t = fold(rb_at(node->rb_right), {
+                        model: entry_right,
+                        left: right_l,
+                            right: right_r
+                    });
                     step();
                     step();
-                    let ctx = fold(ctx_at(node->rb_right), { model: Context::Right(node,
-                                entry_parent, entry_color, entry_left, old(c.model)) },
-                        { sibling: entry_l, up: c });
+                    let ctx = fold(ctx_at(node->rb_right), {
+                        model: Context::Right(node,
+                                entry_parent, entry_color, entry_left, old(c.model)),
+                        sibling: entry_l, up: c
+                    });
                     have ctx.model == Context::Right(node, entry_parent, entry_color,
                         entry_left, old(c.model)) by { solve(); }
                     match ctx.model {
@@ -1942,9 +1947,11 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                         known();
                                                     }
                                                     let frame = fold(ctx_at(node->rb_left),
-                                                        { model: Context::Left(node, par, color,
-                                                                right_model, ctx.model) },
-                                                        { sibling: rt, up: ctx });
+                                                        {
+                                                        model: Context::Left(node, par, color,
+                                                                right_model, ctx.model),
+                                                        sibling: rt, up: ctx
+                                                    });
                                                     step();
                                                 },
                                             }
@@ -1979,9 +1986,11 @@ struct rb_node* rb_next(struct rb_node* node) {
                                         normalize();
                                     }
                                     have node != 0;
-                                    let sub = fold(rb_at(node), { model: RbTree::Node(identity,
-                                                par, color, left_model, right_model) },
-                                        { left: l, right: rt });
+                                    let sub = fold(rb_at(node), {
+                                        model: RbTree::Node(identity,
+                                                par, color, left_model, right_model),
+                                        left: l, right: rt
+                                    });
                                     have rb_left(sub.model) == RbTree::Empty by {
                                         rewrite(sub.model, RbTree::Node(identity, par, color,
                                                 left_model, right_model));
@@ -2073,8 +2082,11 @@ struct rb_node* rb_next(struct rb_node* node) {
                     step();
                     step();
                     step();
-                    let t = fold(rb_at(node), { model: old(t.model) }, { left: entry_l,
-                            right: entry_r });
+                    let t = fold(rb_at(node), {
+                        model: old(t.model),
+                        left: entry_l,
+                            right: entry_r
+                    });
                     have rb_list_ends_with(rb_inorder(t.model), old(node)) == 1 by {
                         rewrite(t.model, RbTree::Node(entry_identity, entry_parent,
                                 entry_color, entry_left, entry_right));
@@ -2134,9 +2146,11 @@ struct rb_node* rb_next(struct rb_node* node) {
                                         rewrite(parent, par);
                                         normalize();
                                     }
-                                    let t = fold(rb_at(node), { model: RbTree::Node(identity,
-                                                par, color, left_model, right_model) },
-                                        { left: l, right: r });
+                                    let t = fold(rb_at(node), {
+                                        model: RbTree::Node(identity,
+                                                par, color, left_model, right_model),
+                                        left: l, right: r
+                                    });
                                     have rb_list_ends_with(rb_inorder(t.model),
                                         old(node)) == 1 by {
                                         rewrite(t.model, RbTree::Node(identity, par, color,
@@ -2236,10 +2250,12 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                         { model: RbTree::Empty });
                                                     step();
                                                     let c = fold(ctx_at(node),
-                                                        { model: Context::Left(frame_identity,
+                                                        {
+                                                        model: Context::Left(frame_identity,
                                                                 frame_parent, frame_color,
-                                                                frame_right, above) },
-                                                        { sibling: s, up: u });
+                                                                frame_right, above),
+                                                        sibling: s, up: u
+                                                    });
                                                     have ctx_node_is(c.model, parent) == 1 by {
                                                         rewrite(c.model, Context::Left(frame_identity,
                                                                 frame_parent, frame_color,
@@ -2278,18 +2294,25 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                             right: sibling_r } = unfold(s);
                                                     step();
                                                     let s = fold(rb_at(parent->rb_right),
-                                                        { model: frame_right },
-                                                        { left: sibling_l, right: sibling_r });
+                                                        {
+                                                        model: frame_right,
+                                                        left: sibling_l, right: sibling_r
+                                                    });
                                                     let t = fold(rb_at(node),
-                                                        { model: RbTree::Node(identity, par,
+                                                        {
+                                                        model: RbTree::Node(identity, par,
                                                                 color, left_model,
-                                                                right_model) }, { left: node_l,
-                                                            right: node_r });
+                                                                right_model),
+                                                        left: node_l,
+                                                            right: node_r
+                                                    });
                                                     let c = fold(ctx_at(node),
-                                                        { model: Context::Left(frame_identity,
+                                                        {
+                                                        model: Context::Left(frame_identity,
                                                                 frame_parent, frame_color,
-                                                                frame_right, above) },
-                                                        { sibling: s, up: u });
+                                                                frame_right, above),
+                                                        sibling: s, up: u
+                                                    });
                                                     have ctx_node_is(c.model, parent) == 1 by {
                                                         rewrite(c.model, Context::Left(frame_identity,
                                                                 frame_parent, frame_color,
@@ -2437,11 +2460,13 @@ struct rb_node* rb_next(struct rb_node* node) {
                                             step();
                                             step();
                                             let lifted = fold(rb_at(node),
-                                                { model: RbTree::Node(frame_identity,
+                                                {
+                                                model: RbTree::Node(frame_identity,
                                                         frame_parent, frame_color, frame_left,
                                                         RbTree::Node(identity, par, color,
-                                                            left_model, right_model)) },
-                                                { left: s, right: t });
+                                                            left_model, right_model)),
+                                                left: s, right: t
+                                            });
                                         },
                                     }
                                 },
@@ -2491,7 +2516,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                             let ctx = fold(ctx_at(parent), { model: Context::Top });
                             let sub = fold(rb_at(parent), { model: RbTree::Empty });
                             let rest = fold(rb_remainder_at(parent),
-                                { model: Remainder::Whole(node, t.model) }, { whole: t });
+                                { model: Remainder::Whole(node, t.model), whole: t });
                             step();
                             solve();
                         },
@@ -2586,7 +2611,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                             }
                                             unfold(u);
                                             let ctx = fold(ctx_at(parent), { model: Context::Top });
-                                            let sub = fold(rb_at(parent), { model: RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right) }, { left: t, right: s });
+                                            let sub = fold(rb_at(parent), { model: RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right), left: t, right: s });
                                             let rest = fold(rb_remainder_at(parent), { model: Remainder::More });
                                             have plug(ctx.model, sub.model) == plug(old(c.model), old(t.model)) by {
                                                 rewrite(ctx.model, Context::Top);
@@ -2613,9 +2638,11 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                 known();
                                             }
                                             let { sibling: up_s, up: up_u } = unfold(u);
-                                            let ctx = fold(ctx_at(parent), { model: Context::Left(up_identity, up_parent, up_color, up_sibling, up_above) },
-                                                { sibling: up_s, up: up_u });
-                                            let sub = fold(rb_at(parent), { model: RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right) }, { left: t, right: s });
+                                            let ctx = fold(ctx_at(parent), {
+                                                model: Context::Left(up_identity, up_parent, up_color, up_sibling, up_above),
+                                                sibling: up_s, up: up_u
+                                            });
+                                            let sub = fold(rb_at(parent), { model: RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right), left: t, right: s });
                                             let rest = fold(rb_remainder_at(parent), { model: Remainder::More });
                                             have plug(ctx.model, sub.model) == plug(old(c.model), old(t.model)) by {
                                                 rewrite(ctx.model, Context::Left(up_identity, up_parent, up_color, up_sibling, up_above));
@@ -2642,9 +2669,11 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                 known();
                                             }
                                             let { sibling: up_s, up: up_u } = unfold(u);
-                                            let ctx = fold(ctx_at(parent), { model: Context::Right(up_identity, up_parent, up_color, up_sibling, up_above) },
-                                                { sibling: up_s, up: up_u });
-                                            let sub = fold(rb_at(parent), { model: RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right) }, { left: t, right: s });
+                                            let ctx = fold(ctx_at(parent), {
+                                                model: Context::Right(up_identity, up_parent, up_color, up_sibling, up_above),
+                                                sibling: up_s, up: up_u
+                                            });
+                                            let sub = fold(rb_at(parent), { model: RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right), left: t, right: s });
                                             let rest = fold(rb_remainder_at(parent), { model: Remainder::More });
                                             have plug(ctx.model, sub.model) == plug(old(c.model), old(t.model)) by {
                                                 rewrite(ctx.model, Context::Right(up_identity, up_parent, up_color, up_sibling, up_above));

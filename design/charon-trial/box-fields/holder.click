@@ -50,7 +50,7 @@ impl box_fields::Holder {
             Option::None => {
                 let {} = unfold(before);
                 step_until(function.exit);
-                let after = fold(slot(self.slot), { value: Option<u32>::Some(x) }, {});
+                let after = fold(slot(self.slot), { value: Option<u32>::Some(x) });
             }
             Option::Some(v) => {
                 let {} = unfold(before);
@@ -66,7 +66,7 @@ impl box_fields::Holder {
                 have at(region(39).exit, self.slot) == at(region(39).entry, self.slot) by {
                     preserve(memory(self.slot), region(39));
                 }
-                let after = fold(slot(self.slot), { value: Option<u32>::Some(x) }, {});
+                let after = fold(slot(self.slot), { value: Option<u32>::Some(x) });
             }
         }
     }

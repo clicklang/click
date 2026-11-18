@@ -31,10 +31,10 @@ int32 read_or_zero(int32* p) {
     let {} = unfold(before);
     if old(before.v) != 0 {
         step_until(function.exit);
-        let after = fold(cell(p), { v: old(before.v) + 1 }, {});
+        let after = fold(cell(p), { v: old(before.v) + 1 });
     } else {
         step_until(function.exit);
-        let after = fold(cell(p), { v: old(before.v) + 1 }, {});
+        let after = fold(cell(p), { v: old(before.v) + 1 });
     }
 }
 ```

@@ -64,8 +64,9 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                     }
                     unfold(color_bit(Color::Black));
                     let after = fold(sized_recompute_at(rb), {
-                        model: SizedTree::Node(identity, p, Color::Black, value, left_model, right_model)
-                    }, { metadata: metadata, left: left, right: right });
+                        model: SizedTree::Node(identity, p, Color::Black, value, left_model, right_model),
+                        metadata: metadata, left: left, right: right
+                    });
                     unfold(sized_reparent(SizedTree::Node(identity, before, shade, value, left_model, right_model), p));
                     step_until(function.exit);
                 },
@@ -98,8 +99,9 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                     }
                     unfold(color_bit(Color::Red));
                     let after = fold(sized_recompute_at(rb), {
-                        model: SizedTree::Node(identity, p, Color::Red, value, left_model, right_model)
-                    }, { metadata: metadata, left: left, right: right });
+                        model: SizedTree::Node(identity, p, Color::Red, value, left_model, right_model),
+                        metadata: metadata, left: left, right: right
+                    });
                     unfold(sized_reparent(SizedTree::Node(identity, before, shade, value, left_model, right_model), p));
                     step_until(function.exit);
                 },

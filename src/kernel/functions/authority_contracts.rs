@@ -1270,11 +1270,7 @@ pub(super) fn check_quantity_exchange_at_return(
                 .iter()
                 .zip(output_arguments.iter())
                 .all(|(left, right)| {
-                    crate::kernel::resource_field_values_proven_equal(
-                        (left).into(),
-                        (right).into(),
-                        assumptions,
-                    )
+                    crate::kernel::resource_field_values_proven_equal(left, right, assumptions)
                 }) =>
         {
             let description = ResourceDescription::new(

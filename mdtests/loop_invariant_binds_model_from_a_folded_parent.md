@@ -52,7 +52,7 @@ int32 count_down(struct node* p, int32 n) {
     produces w: wrap_at(p);
     ensures w.model == Wrap::Wrap(old(c.model));
 } by {
-    let w = fold(wrap_at(p), { model: Wrap::Wrap(old(c.model)) }, { inner: c });
+    let w = fold(wrap_at(p), { model: Wrap::Wrap(old(c.model)), inner: c });
     match w.model {
         Wrap::Wrap(entry_model) => {
             have Wrap::Wrap(entry_model) == Wrap::Wrap(old(c.model)) by {

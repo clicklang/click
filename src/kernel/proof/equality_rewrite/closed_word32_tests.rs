@@ -125,8 +125,7 @@ fn newly_closed_word32_arithmetic_keeps_undefined_values_opaque() {
                 right: Box::new(word(operand)),
             };
             let result = rewrite_observation(format, expression, &variable, word(value), shared);
-            let Some((ConditionTerm::IntegerLessEqual(left, _), true)) =
-                (&result).condition_native()
+            let Some((ConditionTerm::IntegerLessEqual(left, _), true)) = result.condition_native()
             else {
                 panic!("{result:?}");
             };

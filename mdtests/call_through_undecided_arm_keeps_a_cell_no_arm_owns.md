@@ -82,7 +82,7 @@ void overwrite(struct node* p) {
         Slot::Full(v) => {
             let { rest: r } = unfold(s);
             step_until(function.exit);
-            let s = fold(slot_at(p), { model: Slot::Full(v) }, { rest: r });
+            let s = fold(slot_at(p), { model: Slot::Full(v), rest: r });
             solve();
         },
     }
@@ -97,8 +97,8 @@ int32 caller(struct node* p) {
     let { tag: ot0 } = unfold(oc0);
     step();
     step();
-    let oc0 = fold(spare0(p), { tag: ot0 }, {});
-    let o = fold(spare1(p), { tag: ot1 }, { child: oc0 });
+    let oc0 = fold(spare0(p), { tag: ot0 });
+    let o = fold(spare1(p), { tag: ot1, child: oc0 });
     mark before;
     step(overwrite, { s: s });
     have p->spare == at(before, p->spare) by {
@@ -113,8 +113,8 @@ int32 caller(struct node* p) {
     let { tag: rt0 } = unfold(rc0);
     step();
     step();
-    let rc0 = fold(spare0(p), { tag: rt0 }, {});
-    let o = fold(spare1(p), { tag: rt1 }, { child: rc0 });
+    let rc0 = fold(spare0(p), { tag: rt0 });
+    let o = fold(spare1(p), { tag: rt1, child: rc0 });
 }
 ```
 

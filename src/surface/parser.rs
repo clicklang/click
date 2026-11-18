@@ -612,6 +612,9 @@ pub(super) fn parse_file_items_for_module(
     }
     parser.in_contract_definition = false;
     for definition in imported_resources {
+        parser
+            .declared_resource_fields
+            .insert(definition.name().to_string(), definition.fields().to_vec());
         if let Some(body) = definition.composite_body() {
             parser
                 .declared_resource_child_slots
@@ -7806,7 +7809,6 @@ impl Parser {
                         fields: None,
                         fold_fields: None,
                         child_bindings: None,
-                        default_child_bindings: None,
                     },
                     resource: Box::new(protected),
                 });
@@ -8002,7 +8004,6 @@ impl Parser {
                     fields: binding.fields,
                     fold_fields: None,
                     child_bindings: binding.child_bindings,
-                    default_child_bindings: None,
                 },
                 resource,
             },
@@ -8052,7 +8053,6 @@ impl Parser {
                         fields: None,
                         fold_fields: None,
                         child_bindings: None,
-                        default_child_bindings: None,
                     },
                     resource: Box::new(ResourceClause::Declared {
                         type_schema: None,
@@ -8301,7 +8301,6 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
-                default_child_bindings: None,
             },
             resource: Box::new(resource),
         };
@@ -8356,7 +8355,6 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
-                default_child_bindings: None,
             },
             resource: Box::new(target),
         };
@@ -9340,9 +9338,18 @@ impl Parser {
         self.expect(Token::LParen)?;
         // An untyped item binder is contextual sugar for a predicate lambda.
         // A typed literal or another expression is an ordinary predicate value.
+        // The item may be a generated binder, spelled `binder(N)`.
+        let binder_end = if self.tokens.get(self.position + 1)
+            == Some(&Token::Ident("binder".into()))
+            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+        {
+            self.position + 5
+        } else {
+            self.position + 2
+        };
         let untyped_binder = self.peek() == Some(&Token::Pipe)
             && matches!(self.peek_next(), Some(Token::Ident(_)))
-            && self.tokens.get(self.position + 2) == Some(&Token::Pipe);
+            && self.tokens.get(binder_end) == Some(&Token::Pipe);
         if !untyped_binder {
             let predicate = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
@@ -9945,27 +9952,6 @@ impl Parser {
         }
     }
 
-    fn parse_resource_child_bindings(
-        &mut self,
-        parent: &ResourceClause,
-        introduce: bool,
-    ) -> Result<Vec<(String, String, Variable)>, ClickError> {
-        self.expect(Token::LBrace)?;
-        let mut bindings = Vec::new();
-        while self.peek() != Some(&Token::RBrace) {
-            let slot = self.expect_ident("child slot")?;
-            self.expect(Token::Colon)?;
-            let name = self.expect_ident("child resource name")?;
-            bindings.push((slot, name));
-            if self.peek() != Some(&Token::Comma) {
-                break;
-            }
-            self.position += 1;
-        }
-        self.expect(Token::RBrace)?;
-        self.bind_resource_child_names(parent, None, bindings, introduce)
-    }
-
     /// Binds the names of an unfold or fold pattern over `parent`, whose
     /// resource is `family` when the instance recorded one other than its
     /// clause's.
@@ -10061,7 +10047,6 @@ impl Parser {
                             fields: None,
                             fold_fields: None,
                             child_bindings: Some(Vec::new().into()),
-                            default_child_bindings: None,
                         },
                         resource: Box::new(parent.clone()),
                     },
@@ -10298,7 +10283,7 @@ impl Parser {
         self.parse_fold_construction(Some(name))
     }
 
-    /// `fold(resource, { field: value }, { slot: child })` after its opening
+    /// `fold(resource, { field: value, slot: child })` after its opening
     /// parenthesis. `let name = fold(...)` binds the instance to `name`. A
     /// resource whose every field is hidden is folded without a name,
     /// `fold(pair(p), { first: c });`, under the binder it is held by.
@@ -10335,56 +10320,61 @@ impl Parser {
             self.next_resource_identity += 1;
             identity
         };
-        // A resource whose every field is retained from children has no
-        // declared field initializer, so its one brace is the child map; a map whose
-        // every child defaults by name may be left out with it.
         let declared = self
             .declared_resource_fields
             .get(resource_name)
             .cloned()
             .unwrap_or_default();
-        let only_hidden =
-            !declared.is_empty() && declared.iter().all(|field| field.name.contains('.'));
-        if !(only_hidden && self.peek() == Some(&Token::RParen)) {
-            self.expect(Token::Comma)?;
-        }
         let mut fields = Vec::new();
-        if !only_hidden {
+        let mut children = Vec::new();
+        if self.peek() == Some(&Token::Comma) {
+            self.position += 1;
             self.expect(Token::LBrace)?;
+            let mut entries = BTreeSet::new();
             while self.peek() != Some(&Token::RBrace) {
-                let field = self.expect_ident("resource field name")?;
+                let key = self.expect_ident("fold field or child slot")?;
+                if !entries.insert(key.clone()) {
+                    return Err(self.error(format!("duplicate fold entry `{key}`")));
+                }
                 self.expect(Token::Colon)?;
-                let value = self.parse_contract_expression()?;
-                // An `Integer` field's value is read where an Integer is
-                // expected.
-                let value = if declared.iter().any(|declared| {
-                    declared.name() == field && declared.click_type() == &ClickType::Integer
-                }) {
-                    self.at_integer_position(value)
-                } else {
-                    value
+                let is_child = match self.declared_resource_child_slots.get(resource_name) {
+                    Some(slots) => slots.contains_key(&key),
+                    // For a later declaration, read a bare resource binding
+                    // as a child selection. Declaration expansion checks
+                    // that the key names a child of the declared family.
+                    None => self.peek_ident().is_some_and(|name| {
+                        matches!(self.peek_next(), Some(Token::Comma | Token::RBrace))
+                            && self.names.resource_bindings.contains_key(name)
+                            && !self.names.is_program_variable(name)
+                    }),
                 };
-                fields.push((field, value));
+                if is_child {
+                    children.push((key, self.expect_ident("child resource name")?));
+                } else {
+                    let value = self.parse_contract_expression()?;
+                    let value = if declared.iter().any(|field| {
+                        field.name() == key && field.click_type() == &ClickType::Integer
+                    }) {
+                        self.at_integer_position(value)
+                    } else {
+                        value
+                    };
+                    fields.push((key, value));
+                }
                 if self.peek() != Some(&Token::Comma) {
                     break;
                 }
                 self.position += 1;
             }
             self.expect(Token::RBrace)?;
+        } else if self.peek() != Some(&Token::RParen) {
+            return Err(self.error("expected a single fold input map or `)`"));
         }
-        let child_bindings = if only_hidden && self.peek() == Some(&Token::LBrace) {
-            self.parse_resource_child_bindings(&resource, false)?
-        } else if !only_hidden && self.peek() == Some(&Token::Comma) {
-            self.position += 1;
-            self.parse_resource_child_bindings(&resource, false)?
-        } else {
-            Vec::new()
-        };
-        let default_child_bindings =
-            self.default_fold_child_bindings(resource_name, &name, &child_bindings);
-        let mut hidden_sources = child_bindings.clone();
-        hidden_sources.extend(default_child_bindings.iter().cloned());
-        self.fill_hidden_fold_fields(&declared, &hidden_sources, &mut fields);
+        let child_bindings = self.bind_resource_child_names(&resource, None, children, false)?;
+        self.fill_hidden_fold_fields(&declared, &child_bindings, &mut fields);
+        if self.peek() == Some(&Token::Comma) {
+            return Err(self.error("fold takes one map containing both fields and child slots"));
+        }
         self.expect(Token::RParen)?;
         let binding = ResourceInstanceBinding {
             name: name.clone(),
@@ -10394,7 +10384,6 @@ impl Parser {
             fields: None,
             fold_fields: None,
             child_bindings: Some(Vec::new().into()),
-            default_child_bindings: None,
         };
         self.names
             .bind_instance(name.clone(), (identity, resource_name.clone()));
@@ -10411,46 +10400,10 @@ impl Parser {
             binding: ResourceInstanceBinding {
                 fold_fields: Some(fields),
                 child_bindings: Some(child_bindings.into()),
-                default_child_bindings: (!default_child_bindings.is_empty())
-                    .then(|| default_child_bindings.into()),
                 ..binding
             },
             resource: Box::new(resource),
         }))
-    }
-
-    /// The child slots of `family` that a fold's map left out and that an
-    /// in-scope resource of the same name could fill: `{ left: left }` is
-    /// written `{}` or not at all. A name the map already uses, the fold's
-    /// own result, or a name that is also a pure binding fills nothing.
-    /// Which of these the fold keeps is decided by the arm it selects.
-    #[inline(never)]
-    fn default_fold_child_bindings(
-        &self,
-        family: &str,
-        result: &str,
-        explicit: &[(String, String, Variable)],
-    ) -> Vec<(String, String, Variable)> {
-        let Some(slots) = self.declared_resource_child_slots.get(family) else {
-            return Vec::new();
-        };
-        slots
-            .keys()
-            .filter(|slot| {
-                slot.as_str() != result
-                    && !explicit
-                        .iter()
-                        .any(|(bound, name, _)| bound == *slot || name == *slot)
-                    && !self.names.contains(NameKind::ContractBinding, slot)
-                    && !self.names.contains(NameKind::IntegerParameter, slot)
-                    && !self.names.contains(NameKind::IntegerLet, slot)
-                    && !self.names.contains(NameKind::ProofBinder, slot)
-            })
-            .filter_map(|slot| {
-                let (identity, _) = self.names.resource_bindings.get(slot)?;
-                Some((slot.clone(), slot.clone(), *identity))
-            })
-            .collect()
     }
 
     /// A hidden field `slot.field` is the field of the child bound to
@@ -11604,7 +11557,6 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
-                default_child_bindings: None,
             },
             resource: Box::new(resource),
         };
@@ -14440,7 +14392,7 @@ impl Parser {
         let carrier = self.reference_binding_carrier(name);
         self.position += 2;
         Ok(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable((carrier).into()),
+            ProgramExpression::Variable(carrier),
         ))
     }
 
@@ -14468,9 +14420,8 @@ impl Parser {
                     "`{name}` is a struct reference; name a field as `{name}.field`, or its address as `&{name}`"
                 )));
             }
-            expression = ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                (carrier).into(),
-            ));
+            expression =
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(carrier));
             if !is_struct {
                 if self.peek() == Some(&Token::LBracket) {
                     return Err(self.error(format!(
@@ -16921,7 +16872,7 @@ impl Parser {
             };
             let carrier = self.reference_binding_carrier(name);
             self.position += 2;
-            return Ok(CExpression::Variable((carrier).into()));
+            return Ok(CExpression::Variable(carrier));
         }
         if self.peek() == Some(&Token::Amp) {
             self.check_unary_nesting_limit(depth)?;
@@ -16974,7 +16925,7 @@ impl Parser {
             Some(Token::Ident(name)) if self.is_reference_binding(&name) => {
                 let carrier = self.reference_binding_carrier(&name);
                 let is_struct = self.names.struct_params.contains_key(carrier.source_name());
-                let carrier = CExpression::Variable((carrier).into());
+                let carrier = CExpression::Variable(carrier);
                 Ok(if is_struct {
                     carrier
                 } else {

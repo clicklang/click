@@ -58,8 +58,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
             let state = ExecutionState::new().with_memory(memory.clone());
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 apply_verified_heap_allocation_delta(
-                    memory.clone(),
-                    &memory,
+                    &state,
                     &ResourceContext::new(),
                     &kept,
                     &output,
@@ -155,8 +154,7 @@ fn consuming_call_does_not_expand_unrelated_folded_allocations() {
         let state = ExecutionState::new().with_memory(memory.clone());
         let apply = |kept: &ResourceContext| {
             apply_verified_heap_allocation_delta(
-                memory.clone(),
-                &memory,
+                &state,
                 &input,
                 kept,
                 &output,
@@ -348,7 +346,7 @@ fn exit_allocation_candidates_ignore_unrelated_token_owners() {
                 .cloned()
                 .collect::<Vec<_>>()
         });
-        assert_eq!(selected, [token.clone()]);
+        assert_eq!(selected, std::slice::from_ref(&token));
         let retired = with_token.without_exact_representation(&token).unwrap();
         let state = ExecutionState::new().with_resource_context(retired);
         let (result, absence_work) = crate::instrumentation::measure_deterministic_work(|| {

@@ -151,12 +151,14 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
                     step();
                     step();
                     let lifted = fold(ptree_at(node, parent), {
-                        model: HeapTree::Node(identity, value, t.model, sibling_model)
-                    }, { left: t, right: s });
+                        model: HeapTree::Node(identity, value, t.model, sibling_model),
+                        left: t, right: s
+                    });
                     let kept = fold(pctx_at(node, parent), {
                         model: Context::Left(identity, grandparent, value,
-                                             sibling_model, up_model)
-                    }, { sibling: s, up: u });
+                                             sibling_model, up_model),
+                        sibling: s, up: u
+                    });
                 },
                 Context::Right(identity, grandparent, value, sibling_model, up_model) => {
                     have plug(up_model,
@@ -175,8 +177,9 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
                     step();
                     step();
                     let lifted = fold(ptree_at(node, parent), {
-                        model: HeapTree::Node(identity, value, sibling_model, t.model)
-                    }, { left: s, right: t });
+                        model: HeapTree::Node(identity, value, sibling_model, t.model),
+                        left: s, right: t
+                    });
                 },
             }
         }
@@ -202,8 +205,9 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
             }
             let { left: l, right: r } = unfold(t);
             let sub = fold(ptree_at(node, parent), {
-                model: HeapTree::Node(identity, value, left_model, right_model)
-            }, { left: l, right: r });
+                model: HeapTree::Node(identity, value, left_model, right_model),
+                left: l, right: r
+            });
             have sub.model == plug(old(c.model), old(t.model)) by {
                 rewrite(sub.model, HeapTree::Node(identity, value, left_model, right_model));
                 known();

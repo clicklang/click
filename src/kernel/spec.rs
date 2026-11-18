@@ -5078,15 +5078,15 @@ fn evaluate_spec_resource_at_state_in(
                 Box::new(move |values| {
                     if let [base, start, end] = values.as_slice() {
                         let base_value = base.clone().into_native();
-                        if let ProgramValue::Pointer(base) = &base_value {
-                            if let Some(range) = MemoryRange::from_retained_bounds(
+                        if let ProgramValue::Pointer(base) = &base_value
+                            && let Some(range) = MemoryRange::from_retained_bounds(
                                 base,
                                 start.clone(),
                                 end.clone(),
                                 element_width,
-                            ) {
-                                return Some(Resource::Memory(range));
-                            }
+                            )
+                        {
+                            return Some(Resource::Memory(range));
                         }
                     }
                     // Mixed/signed-wide bounds retain their existing conversion

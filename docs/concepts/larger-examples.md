@@ -351,7 +351,7 @@ One iteration is five steps, and each is an ordinary tactic:
    closes by `contradiction` on the first invariant.
 2. `let { left: l, right: rt } = unfold(t)` takes the node apart into its three
    cells and its two child instances.
-3. `fold(ctx_at(root->left), { model: Context::Left(...) }, { sibling: rt, up:
+3. `fold(ctx_at(root->left), { model: Context::Left(...), sibling: rt, up:
    ctx })` builds the new frame from the parent's cells, the untaken sibling,
    and the old frame. Those children are consumed by the fold, which is what
    keeps the frame stack linear — a body that folds a second frame from the

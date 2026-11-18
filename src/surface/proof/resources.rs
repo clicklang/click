@@ -1169,7 +1169,7 @@ pub(super) fn project_initial_composite_resource_cores(
         }
         let substitutions = resource_value_substitutions_with_witnesses(
             definition,
-            &(&resource_arguments).native_values(),
+            &resource_arguments.native_values(),
             state.memory(),
             state.resources(),
             &assumptions,

@@ -91,11 +91,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             step(); step(); step(); step();
             unfold(initial_focus); unfold(initial_root);
             have root->rb_node == old(root->rb_node) by known();
-            let focus = fold(sized_at(node), { model: SizedTree::Node(identity, ancestor, shade, value, left, right) }, { metadata: metadata, left: l, right: r });
+            let focus = fold(sized_at(node), { model: SizedTree::Node(identity, ancestor, shade, value, left, right), metadata: metadata, left: l, right: r });
             have focus.model == old(state.model) by known();
             let state = fold(flip_boundary_frame(root), {
-                root_node: old(root->rb_node), chain: old(state.chain), model: old(state.model), context: old(state.context)
-            }, { focus: focus, path: path });
+                root_node: old(root->rb_node), chain: old(state.chain), model: old(state.model), context: old(state.context),
+                focus: focus, path: path
+            });
             step(); // Declare tmp before the C loop.
             loop {
                 owns state: flip_boundary_frame(root);
@@ -165,7 +166,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(node->__rb_parent_color, 1);
                                 rewrite(color_bit(Color::Black), 1); normalize();
                             }
-                            let focus = fold(sized_at(node), { model: SizedTree::Node(identity, 0, Color::Black, value, left, right) }, { metadata: metadata, left: l, right: r });
+                            let focus = fold(sized_at(node), { model: SizedTree::Node(identity, 0, Color::Black, value, left, right), metadata: metadata, left: l, right: r });
                             have sized_value(focus.model) == value by {
                                 rewrite(focus.model, SizedTree::Node(identity, 0, Color::Black, value, left, right));
                                 unfold(sized_value(SizedTree::Node(identity, 0, Color::Black, value, left, right))); normalize();
@@ -193,8 +194,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             unfold(loop_root);
                             have root->rb_node == old(root->rb_node) by known();
                             let state = fold(flip_boundary_frame(root), {
-                                root_node: old(root->rb_node), chain: old(state.chain), model: SizedTree::Node(identity, 0, Color::Black, value, left, right), context: SizedContext::Top
-                            }, { focus: focus, path: path });
+                                root_node: old(root->rb_node), chain: old(state.chain), model: SizedTree::Node(identity, 0, Color::Black, value, left, right), context: SizedContext::Top,
+                                focus: focus, path: path
+                            });
                             have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by known();
                             step();
                         },
@@ -239,7 +241,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                     step(); step(); step();
                                     unfold(loop_root);
                                     have root->rb_node == old(root->rb_node) by known();
-                                    let path = fold(sized_context_at(node, root->rb_node, 0, value), { model: SizedContext::Left(a, gp, color, cached, sibling, up) }, { metadata: a_size, sibling: held_sibling, up: held_up });
+                                    let path = fold(sized_context_at(node, root->rb_node, 0, value), { model: SizedContext::Left(a, gp, color, cached, sibling, up), metadata: a_size, sibling: held_sibling, up: held_up });
                                     have sized_value(focus.model) == value by {
                                         rewrite(focus.model, old(state.model));
                                         rewrite(old(state.model), SizedTree::Node(identity, ancestor, shade, value, left, right));
@@ -262,8 +264,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         unfold(sized_context_parent(SizedContext::Left(a, gp, color, cached, sibling, up), 0)); known();
                                     }
                                     let state = fold(flip_boundary_frame(root), {
-                                        root_node: old(root->rb_node), chain: old(state.chain), model: SizedTree::Node(identity, ancestor, shade, value, left, right), context: SizedContext::Left(a, gp, color, cached, sibling, up)
-                                    }, { focus: focus, path: path });
+                                        root_node: old(root->rb_node), chain: old(state.chain), model: SizedTree::Node(identity, ancestor, shade, value, left, right), context: SizedContext::Left(a, gp, color, cached, sibling, up),
+                                        focus: focus, path: path
+                                    });
                                     have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by known();
                                     step();
                                 },
@@ -288,7 +291,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                     step(); step(); step();
                                     unfold(loop_root);
                                     have root->rb_node == old(root->rb_node) by known();
-                                    let path = fold(sized_context_at(node, root->rb_node, 0, value), { model: SizedContext::Right(a, gp, color, cached, sibling, up) }, { metadata: a_size, sibling: held_sibling, up: held_up });
+                                    let path = fold(sized_context_at(node, root->rb_node, 0, value), { model: SizedContext::Right(a, gp, color, cached, sibling, up), metadata: a_size, sibling: held_sibling, up: held_up });
                                     have sized_value(focus.model) == value by {
                                         rewrite(focus.model, old(state.model));
                                         rewrite(old(state.model), SizedTree::Node(identity, ancestor, shade, value, left, right));
@@ -311,8 +314,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         unfold(sized_context_parent(SizedContext::Right(a, gp, color, cached, sibling, up), 0)); known();
                                     }
                                     let state = fold(flip_boundary_frame(root), {
-                                        root_node: old(root->rb_node), chain: old(state.chain), model: SizedTree::Node(identity, ancestor, shade, value, left, right), context: SizedContext::Right(a, gp, color, cached, sibling, up)
-                                    }, { focus: focus, path: path });
+                                        root_node: old(root->rb_node), chain: old(state.chain), model: SizedTree::Node(identity, ancestor, shade, value, left, right), context: SizedContext::Right(a, gp, color, cached, sibling, up),
+                                        focus: focus, path: path
+                                    });
                                     have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by known();
                                     step();
                                 },
@@ -381,8 +385,9 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
                 root_node: root->rb_node,
                 chain: old(state.chain),
                 model: SizedTree::Node(node_id, parent, shade, value, left, right),
-                context: path.model
-            }, { focus: focus, path: path });
+                context: path.model,
+                focus: focus, path: path
+            });
             let { whole: whole } = step(__rb_insert, { state: boundary });
             step_until(function.exit);
         },

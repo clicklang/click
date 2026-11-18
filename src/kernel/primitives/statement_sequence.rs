@@ -96,7 +96,9 @@ impl ProgramStatementSequence {
         }
     }
 
-    /// How many statements the sequence runs; at least two.
+    /// How many statements the sequence runs; at least two, so it is never
+    /// empty.
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.items.len() - self.start
     }

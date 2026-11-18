@@ -44,8 +44,8 @@ impl StoredMachineTerm {
     }
     pub(crate) fn from_value(value: ExecutionValue) -> Option<Self> {
         MachineIntegerType::from_program_type(value.program_type())?;
-        if let ExecutionValue::Native(value) = &value {
-            if !matches!(
+        if let ExecutionValue::Native(value) = &value
+            && !matches!(
                 value,
                 ProgramValue::Int8(_)
                     | ProgramValue::UInt8(_)
@@ -57,9 +57,9 @@ impl StoredMachineTerm {
                     | ProgramValue::UInt64(_)
                     | ProgramValue::Int128(_)
                     | ProgramValue::UInt128(_)
-            ) {
-                return None;
-            }
+            )
+        {
+            return None;
         }
         Some(Self(value.into()))
     }

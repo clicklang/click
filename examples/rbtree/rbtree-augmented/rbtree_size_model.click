@@ -191,7 +191,7 @@ tactic certify_size(p: struct rb_node*) {
             }
             have sized_counts_valid(left_model) == 1 by { rewrite(left_model, left.model); known(); }
             have sized_counts_valid(right_model) == 1 by { rewrite(right_model, right.model); known(); }
-            let checked = fold(sized_at(p), { model: SizedTree::Node(identity, parent, color, value, left_model, right_model) }, { metadata: metadata, left: left, right: right });
+            let checked = fold(sized_at(p), { model: SizedTree::Node(identity, parent, color, value, left_model, right_model), metadata: metadata, left: left, right: right });
             have checked.model == old(tree.model);
             have sized_counts_valid(checked.model) == 1 by {
                 rewrite(checked.model, SizedTree::Node(identity, parent, color, value, left_model, right_model));

@@ -62,8 +62,9 @@ int32 live_count(struct arena* arena) {
     let f = fold(free_suffix(arena->data, arena->capacity), { start: arena->capacity });
     let state = fold(arena_prefix_state(arena), {
         prefix: old(state.prefix),
-        live: old(state.live)
-    }, { marks: m, free: f });
+        live: old(state.live),
+        marks: m, free: f
+    });
 }
 ```
 

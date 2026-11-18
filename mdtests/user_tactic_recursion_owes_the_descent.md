@@ -93,7 +93,7 @@ tactic convert(p: struct node*) {
             }
             let { y: r2 } = convert(p->next, { x: r });
             have r2.model == rest_model;
-            let y = fold(list2_at(p), { model: Links::Cons(rest_model) }, { rest: r2 });
+            let y = fold(list2_at(p), { model: Links::Cons(rest_model), rest: r2 });
             have y.model == old(x.model);
         },
     }

@@ -673,7 +673,6 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         "library/bytes.click",
         include_str!("../library/bytes.click"),
     ),
-    ("library/cstr.click", include_str!("../library/cstr.click")),
     (
         "library/c/builtins.click",
         include_str!("../library/c/builtins.click"),
@@ -2237,11 +2236,6 @@ pub struct ResourceInstanceBinding {
     /// Explicit child slot, surface name, and instance identity. Shared to
     /// keep recursive tactic syntax small.
     child_bindings: Option<std::sync::Arc<[(String, String, Variable)]>>,
-    /// On a `fold` construction, the child slots its map left out that an
-    /// in-scope resource of the same name could fill, as slot, name and
-    /// identity. The fold step keeps the ones its selected arm owns and
-    /// hands the kernel the explicit map; the rest are dropped.
-    default_child_bindings: Option<std::sync::Arc<[(String, String, Variable)]>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

@@ -217,8 +217,11 @@ One iteration is one proof:
    the invariant.
 2. `let { left: l, right: rt } = unfold(t)` takes the node apart into its three
    cells and the two child instances.
-3. `fold(ctx_at(root->left), { model: Context::Left(root, value, right_model,
-   ctx.model) }, { sibling: rt, up: ctx })` builds the new frame from the
+3. `fold(ctx_at(root->left), {
+    model: Context::Left(root, value, right_model,
+   ctx.model),
+    sibling: rt, up: ctx
+})` builds the new frame from the
    parent's cells, the untaken sibling, and the old frame. Both children are
    consumed by that fold, which is what makes the frame stack linear.
 4. `step()` runs `root = root->left`.

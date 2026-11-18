@@ -46,7 +46,7 @@ impl resource_state::Store<u32> for resource_state::Slot {
             Option::None => {
                 let {} = unfold(state);
                 step_until(function.exit);
-                let state = fold(boxed(self.item), { value: Option<u32>::Some(x) }, {});
+                let state = fold(boxed(self.item), { value: Option<u32>::Some(x) });
             }
             Option::Some(v) => {
                 let {} = unfold(state);
@@ -62,7 +62,7 @@ impl resource_state::Store<u32> for resource_state::Slot {
                 have at(region(39).exit, self.item) == at(region(39).entry, self.item) by {
                     preserve(memory(self.item), region(39));
                 }
-                let state = fold(boxed(self.item), { value: Option<u32>::Some(x) }, {});
+                let state = fold(boxed(self.item), { value: Option<u32>::Some(x) });
             }
         }
     }
@@ -72,13 +72,13 @@ impl resource_state::Store<u32> for resource_state::Slot {
             Option::None => {
                 let {} = unfold(state);
                 step_until(function.exit);
-                let state = fold(boxed(self.item), { value: Option<u32>::None }, {});
+                let state = fold(boxed(self.item), { value: Option<u32>::None });
                 solve();
             }
             Option::Some(v) => {
                 let {} = unfold(state);
                 step_until(function.exit);
-                let state = fold(boxed(self.item), { value: Option<u32>::None }, {});
+                let state = fold(boxed(self.item), { value: Option<u32>::None });
                 solve();
             }
         }

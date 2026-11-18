@@ -192,7 +192,7 @@ impl Context<'_> {
                 };
                 some = program_seq(
                     program_assign(
-                        self.binding(&payload),
+                        self.binding(payload),
                         reference_view(
                             variable(self.binding(&field("v"))),
                             ProgramType::UInt8Pointer,

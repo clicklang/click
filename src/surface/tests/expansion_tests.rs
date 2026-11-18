@@ -2191,7 +2191,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
             return length;
         }
     "#;
-    let click_source = r#"import click::cstr;
+    let click_source = r#"import click::c::string;
 
         verifying "source_identity.c";
 
@@ -4241,10 +4241,11 @@ theorem nested_sites(x: int32) {
 }
 
 /// A user tactic's proof is checked with an ending the checker supplies: one
-/// step over the empty procedure's `return` and an `known` per claim.
-/// That ending cannot be written in a tactic's proof, so whole-claim
-/// expansion must leave it out; with it, the expanded proof is refused for
-/// using `step`.
+/// step over the empty procedure's `return` and a `known` per claim and per
+/// contract-closing goal. That ending cannot be written in a tactic's proof,
+/// so whole-claim expansion must leave it out; with it, the expanded proof is
+/// refused for using `step`. The targeted recheck, which turns the implicit
+/// closer off, must still find the contract-closing goals closed.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_17")]
 fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
@@ -4260,6 +4261,10 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
     assert!(!proof.contains("step();"), "{proof}");
     assert!(proof.contains("have y.tag == 7 by {"), "{proof}");
     verify_c_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    let position =
+        expansion::position_at_offset(&expanded, expanded.find("have y.tag == 7 by {").unwrap());
+    verify_c_sources_at(&expanded, &sources, position.line, position.column)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
@@ -9329,7 +9334,7 @@ fn restricted_solve_expands_increment_order_to_ordinary_arithmetic() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
-fn restricted_solve_rewrites_a_named_successor_before_increment_order() {
+fn restricted_solve_expands_named_successor_order() {
     let c_source = r#"
         int32 named_successor(int32 value) {
             int32 successor;
@@ -9368,8 +9373,8 @@ fn restricted_solve_rewrites_a_named_successor_before_increment_order() {
         line,
         column,
     )
-    .expect("named successor order should lower to an explicit rewrite and increment rule");
-    assert!(expanded.contains("at(function.entry, value)"), "{expanded}");
+    .expect("named successor order should expand to explicit arithmetic");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
     assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c_sources(&expanded, &[("named_successor.c", c_source)])
         .expect("named successor certificate should check");
@@ -17098,7 +17103,7 @@ int read(int* p) {
         Bi::Zero => {
             unfold(c);
             step_until(function.exit);
-            let c = fold(cell(p), { model: Bi::Zero }, {});
+            let c = fold(cell(p), { model: Bi::Zero });
             have bi_code(old(c.model)) == 0 by {
                 rewrite(old(c.model), Bi::Zero);
                 unfold(bi_code(Bi::Zero));
@@ -17109,7 +17114,7 @@ int read(int* p) {
         Bi::Other(value) => {
             unfold(c);
             step_until(function.exit);
-            let c = fold(cell(p), { model: Bi::Other(value) }, {});
+            let c = fold(cell(p), { model: Bi::Other(value) });
             have bi_code(old(c.model)) == value by {
                 rewrite(old(c.model), Bi::Other(value));
                 unfold(bi_code(Bi::Other(value)));
@@ -17788,6 +17793,14 @@ fn retained_int32_addition_expands_with_ordinary_bounds() {
             "the exact cited bound should close with known: {goal}\n{expanded}"
         );
     }
+    assert!(
+        expanded.contains("apply(click::integer::lt_le_predecessor("),
+        "the native strict upper bound should use Integer discreteness: {expanded}"
+    );
+    assert!(
+        !expanded.contains("normalize() using"),
+        "all retained interval bounds in this fixture should be ordinary: {expanded}"
+    );
     let increment = " + to_integer((1 as int32)))";
     let mut sum_bounds = 0;
     let mut identities = 0;
@@ -19522,6 +19535,73 @@ fn whole_function_expansion_validates_against_imported_pure_declarations() {
     let false_claim = expanded.replace("result == spec(x)", "result == spec(x) + 1");
     verify_c_project(&project.with_entry_source(false_claim), &sources)
         .expect_err("import resolution must not bypass the expanded claim check");
+}
+
+#[test]
+fn fold_map_resolves_imported_fields_and_children_and_replays() {
+    let source = r#"
+        import "resources.click";
+        verifying "pack.c";
+        void pack(int32* p, int32 n) {
+            requires n == 2147483647;
+            consumes held: cell(p);
+            produces wrapped: wrapper(p);
+            ensures wrapped.total == 2147483648;
+        } by {
+            step_until(function.exit);
+            let wrapped = fold(wrapper(p), { child: held, total: n + 1, value: held.value });
+        }
+    "#;
+    let resources = r#"
+        resource cell(p: int32*) {
+            field value: int32;
+            owns *p;
+        }
+        resource wrapper(p: int32*) {
+            field value: int32;
+            field total: Integer;
+            owns child: cell(p);
+            fact child.value == value;
+        }
+    "#;
+    let project = ClickProject::new(
+        "pack.click",
+        [
+            ClickModuleSource::new("pack.click", source, ["resources.click".to_owned()]),
+            ClickModuleSource::new("resources.click", resources, []),
+        ],
+    );
+    let sources = [("pack.c", "void pack(int32* p, int32 n) {}")];
+    let expanded = expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::Bundle(sources.to_vec()),
+        "pack.contract",
+    )
+    .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("value: held.value, child: held }"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("pack.contract", || {
+        verify_c_project(&project.with_entry_source(&expanded), &sources)
+            .map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    for (map, message) in [
+        (
+            "{ total: n + 1, value: held.value }, { child: held }",
+            "fold takes one map containing both fields and child slots",
+        ),
+        (
+            "{ child: held, total: n + 1, value: held.value, child: held }",
+            "duplicate fold entry `child`",
+        ),
+    ] {
+        let invalid = source.replace("{ child: held, total: n + 1, value: held.value }", map);
+        let error = verify_c_project(&project.with_entry_source(invalid), &sources).unwrap_err();
+        assert!(error.report().contains(message), "{}", error.report());
+    }
 }
 
 #[test]
@@ -22838,7 +22918,7 @@ test_batches! {
     expansion_batch_44: [
         restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic,
         restricted_solve_expands_increment_order_to_ordinary_arithmetic,
-        restricted_solve_rewrites_a_named_successor_before_increment_order,
+        restricted_solve_expands_named_successor_order,
         restricted_solve_expands_adjacent_order_to_ordinary_arithmetic,
     ],
     expansion_batch_45: [

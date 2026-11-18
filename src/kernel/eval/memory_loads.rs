@@ -2810,8 +2810,7 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
     if crate::instrumentation::deadline_exceeded_with_work(0) {
         return None;
     }
-    if let Some((ConditionTerm::AddressEqual(left, right), value)) = (&resolved).condition_native()
-    {
+    if let Some((ConditionTerm::AddressEqual(left, right), value)) = resolved.condition_native() {
         let left_value = pointer_read_over_write_value(left);
         let right_value = pointer_read_over_write_value(right);
         if left_value.is_some() || right_value.is_some() {
@@ -2831,8 +2830,7 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
     // so each read side resolves to the whole stored value, and the
     // comparison is rebuilt from the two values: equal addresses alone never
     // make two pointer values equal.
-    if let Some((ConditionTerm::PointerEqual(left, right), value)) = (&resolved).condition_native()
-    {
+    if let Some((ConditionTerm::PointerEqual(left, right), value)) = resolved.condition_native() {
         let resolve = |side: &Pointer| {
             // The whole stored value defines the unmodified read. An
             // explicitly selected subobject or changed domain is a different
@@ -5355,6 +5353,34 @@ mod tests {
             Address::canonical_read(&after, &cell),
             Address::canonical_read(&rewritten, &cell),
         );
+    }
+
+    #[test]
+    fn a_pointer_version_point_read_does_not_cross_a_write_to_its_upper_half() {
+        // A pointer cell is eight bytes. A store to its upper four bytes
+        // changes the pointer, so the version-point read after the store is
+        // not the read before it, even when the cell was observed as two
+        // four-byte halves first.
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Address::symbolic(Variable(92_399));
+        let before = SymbolicMemory::new();
+        let observed = before
+            .clone()
+            .materialize_symbolic_cell(cell.clone(), ProgramType::Int32)
+            .materialize_symbolic_cell(cell.clone().offset_by_bytes(4), ProgramType::Int32);
+        let overwritten = observed.clone().store(
+            cell.clone().offset_by_bytes(4),
+            ProgramValue::UInt32(0u32.into()),
+        );
+        for read in [Address::canonical_read, Address::canonical_loaded_value] {
+            let read = |memory: &SymbolicMemory| read(&intern_memory_ref(memory), &cell);
+            assert_eq!(
+                read(&before),
+                read(&observed),
+                "observing the halves changes no bytes"
+            );
+            assert_ne!(read(&observed), read(&overwritten));
+        }
     }
 
     #[test]

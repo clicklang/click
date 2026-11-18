@@ -480,11 +480,6 @@ fn prepare_iterated_clause_unfold(
     Ok(ConstructedIteratedExposure { frame, range })
 }
 
-#[cfg(test)]
-mod scaling_tests {
-    include!("../scaling_tests/kernel/iterated.rs");
-}
-
 /// The reserved identity of the arbitrary index whole-clause folding and unfolding
 /// instantiate the range's guard at. It is bound only inside the one
 /// hypothetical fact context those checks build.
@@ -742,4 +737,9 @@ pub(crate) fn plan_iterated_guard_store(
         replacements.push((fact.clone(), during, after));
     }
     Ok(IteratedStorePlan { replacements })
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../scaling_tests/kernel/iterated.rs");
 }

@@ -388,9 +388,7 @@ mod tests {
                 ConditionTerm::pointer_equal(left.clone(), right.clone()),
                 expected
             );
-            let shared = KernelTerm::pointer_equal(
-                [&left, &right].map(|value| SharedPointer::import(value)),
-            );
+            let shared = KernelTerm::pointer_equal([&left, &right].map(SharedPointer::import));
             assert_eq!(
                 format!("{:?}", KernelTermExport::condition(&shared).unwrap()),
                 format!("{expected:?}")

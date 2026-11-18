@@ -67,8 +67,9 @@ void tree_node_init(struct tree_node* node, int value,
 } by {
     step_until(function.exit);
     let root = fold(tree_at(node), {
-        model: HeapTree::Node(node, value, l.model, r.model)
-    }, { left: l, right: r });
+        model: HeapTree::Node(node, value, l.model, r.model),
+        left: l, right: r
+    });
     solve();
 }
 
@@ -80,7 +81,7 @@ int read_value(struct tree_node* node) {
 } by {
     let { left: l, right: r } = unfold(root);
     step_until(function.exit);
-    let root = fold(tree_at(node), { model: old(root.model) }, { left: l, right: r });
+    let root = fold(tree_at(node), { model: old(root.model), left: l, right: r });
     solve();
 }
 
