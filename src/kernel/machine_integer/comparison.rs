@@ -234,9 +234,9 @@ fn logical_comparison(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
-    retain_wrapping: bool,
+    in_conditional: bool,
 ) -> ConditionTerm {
-    retained_comparison_for_operand_views(format, relation, operands, retain_wrapping)
+    retained_comparison_for_operand_views(format, relation, operands, in_conditional)
         .unwrap_or_else(|| condition_for_operand_views(format, relation, operands))
 }
 
@@ -244,7 +244,7 @@ fn retained_comparison_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
-    retain_wrapping: bool,
+    in_conditional: bool,
 ) -> Option<ConditionTerm> {
     let variables = operands.map(|operand| operand.variable().copied());
     let [left, right] = if matches!(format.format().bits(), 32 | 64)
@@ -259,7 +259,7 @@ fn retained_comparison_for_operand_views(
             return None;
         }
         let [left, right] =
-            operands.map(|operand| bounded_comparison_operand(format, operand, retain_wrapping));
+            operands.map(|operand| bounded_comparison_operand(format, operand, in_conditional));
         if left.is_none() && right.is_none() {
             return None;
         }
@@ -323,13 +323,13 @@ fn comparison_leaf_operand(operand: crate::kernel::MachineOperandView<'_>) -> Op
         .or_else(|| operand.variable().copied().map(MachineTerm::Variable))
 }
 
-/// Read a single bitwise operation, fixed shift, or wrapping arithmetic operation.
+/// Read a bounded bitwise, shift, wrapping arithmetic, or widening cast operand.
 /// Inspect only immediate leaves. Use the established word encoding for
 /// unsigned 32-bit arithmetic.
 fn bounded_comparison_operand(
     observation: MachineIntegerType,
     operand: crate::kernel::MachineOperandView<'_>,
-    retain_wrapping: bool,
+    in_conditional: bool,
 ) -> Option<MachineTerm> {
     if let Some((format, op @ crate::kernel::MachineUnaryOp::BitwiseNot, child)) = operand.unary()
         && matches!(format.format().bits(), 32 | 64)
@@ -340,6 +340,25 @@ fn bounded_comparison_operand(
             op,
             operand: Box::new(comparison_leaf_operand(child)?),
         });
+    }
+    if in_conditional
+        && observation.format().bits() == 64
+        && let Some((spelling, source, destination, child)) = operand.cast()
+        && matches!(
+            spelling,
+            crate::kernel::MachineCastSpelling::Int64From32
+                | crate::kernel::MachineCastSpelling::Int64FromUInt32
+                | crate::kernel::MachineCastSpelling::UInt64FromInt32
+                | crate::kernel::MachineCastSpelling::UInt64From32
+        )
+    {
+        crate::instrumentation::record_deterministic_work(1);
+        return Some(MachineTerm::cast_node(
+            spelling,
+            source,
+            destination,
+            comparison_leaf_operand(child)?,
+        ));
     }
     let (format, operator, arguments) = operand.binary()?;
     let width = format.format().bits();
@@ -356,7 +375,7 @@ fn bounded_comparison_operand(
         // encoding. An explicitly unsigned operation carries its own type,
         // including under the Int64 filing format of wide equality.
         O::Add | O::Subtract | O::Multiply
-            if retain_wrapping
+            if in_conditional
                 && (!format.format().is_signed() || word32_arithmetic)
                 && (arguments[0].variable().is_some() != arguments[1].variable().is_some()) => {}
         O::ShiftRight | O::ShiftLeft

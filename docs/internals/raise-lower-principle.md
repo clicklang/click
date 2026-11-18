@@ -458,9 +458,11 @@ The comparison boundary recognizes fixed-size native conditionals. The guard can
 be a Boolean variable or a 32/64-bit comparison, and the comparison operands and
 arms can be literal or variable leaves, one bitwise operation (`&`, `|`, `^`, `~`)
 over such leaves, a right shift or unsigned left shift by an in-range literal
-count, or an unsigned sum, difference, or product over a variable and a literal. The
-comparison or conditional result type can identify a `uint32` operation whose
-node carries the shared 32-bit word encoding.
+count, an unsigned sum, difference, or product over a variable and a literal,
+or a 32-to-64-bit widening cast of a leaf. Wide equality retains an unsigned
+widening in its original type, even though the equality is filed as `Int64`.
+The comparison or conditional result type can identify a `uint32` operation
+whose node carries the shared 32-bit word encoding.
 Standalone comparisons also recognize the bounded bitwise and shift operands.
 Even intrinsically decided guards in these forms retain their conditional;
 checking selects the arm. The

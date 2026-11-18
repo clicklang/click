@@ -7919,3 +7919,35 @@ fn call_capture_names_the_selected_result_at_its_declared_type() {
     points.record_call_result(0, Some(ProgramValue::UInt32(term.clone())));
     assert_ne!(raise(&points, &term, &state), Some(expected));
 }
+
+#[test]
+fn widening_casts_in_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (destination, spelling) in [(T::Int64, "int64"), (T::UInt64, "uint64")] {
+        for source in [T::Int32, T::UInt32] {
+            let mut fixture = ConditionalRoundTrip::new(destination, spelling);
+            fixture.state = fixture.state.with_local(
+                "w",
+                source.value_from_term(MachineTerm::Variable(Variable(999712))),
+            );
+            let equality = fixture.lower(&format!("x == (w as {spelling})"));
+            for reverse in [false, true] {
+                for (guard, arm) in [
+                    ("flag", "x"),
+                    ("not flag", "x"),
+                    ("x < y", "z"),
+                    ("x == y", "z"),
+                    ("y <= x", "z"),
+                    ("y != x", "z"),
+                ] {
+                    fixture.check(
+                        &fixture.goal(guard, reverse, arm),
+                        &equality,
+                        guard,
+                        reverse,
+                    );
+                }
+            }
+        }
+    }
+}
