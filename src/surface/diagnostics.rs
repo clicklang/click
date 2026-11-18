@@ -636,8 +636,15 @@ pub(super) fn describe_pure_fact_with_environment(
         }
         None => skeleton,
     };
+    // A proved theorem is a fact only where it is applied: the caller cites
+    // it before the step that needs the contract.
+    let apply = skeleton
+        .strip_prefix("theorem ")
+        .and_then(|rest| rest.split_once('('))
+        .map(|(name, _)| format!("\nthen apply it before the call: `apply({name}());`"))
+        .unwrap_or_default();
     format!(
-        "function `{target}` does not satisfy named contract `{contract}` automatically;\nprove it explicitly:\n{skeleton}"
+        "function `{target}` does not satisfy named contract `{contract}` automatically;\nprove it explicitly:\n{skeleton}{apply}"
     )
 }
 
