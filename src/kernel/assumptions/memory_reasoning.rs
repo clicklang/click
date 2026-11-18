@@ -4845,7 +4845,11 @@ impl PureFactContext {
                 let Proposition::Predicate { arguments, .. } = fact else {
                     return false;
                 };
-                let Some(Term::ProgramValue(ProgramValue::Pointer(source))) = arguments.first()
+                let Some(term_source_0 @ Term::ProgramValue(_)) = arguments.first() else {
+                    return false;
+                };
+                let (Some(ProgramValue::Pointer(source)),) =
+                    (term_source_0.program_value_native(),)
                 else {
                     return false;
                 };

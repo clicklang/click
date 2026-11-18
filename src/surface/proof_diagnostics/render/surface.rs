@@ -536,9 +536,13 @@ impl Printer<'_> {
                         // Each array argument is a (memory, pointer) pair.
                         // Its state is part of the argument's identity.
                         Term::Memory(memory) => {
-                            let pointer @ Term::ProgramValue(crate::kernel::ProgramValue::Pointer(
-                                _,
-                            )) = arguments.next()?
+                            let pointer @ term_source_0 @ Term::ProgramValue(_) =
+                                arguments.next()?
+                            else {
+                                return None;
+                            };
+                            let (Some(crate::kernel::ProgramValue::Pointer(_)),) =
+                                (term_source_0.program_value_native(),)
                             else {
                                 return None;
                             };
@@ -1368,7 +1372,11 @@ impl Printer<'_> {
         match term {
             Term::Bitvector32(value) => self.bitvector(value, None, depth + 1),
             Term::Integer(value) => self.integer(value, depth + 1),
-            Term::Condition(ConditionTerm::Constant(value)) => Some(atom(value.to_string())),
+            term_source_0 @ Term::Condition(_)
+                if let Some(ConditionTerm::Constant(value)) = term_source_0.condition_native() =>
+            {
+                Some(atom(value.to_string()))
+            }
             Term::ProgramValue(value) => self.cvalue(value, depth + 1),
             Term::Algebraic(value) => self.algebraic(value, depth + 1),
             _ if !self.source_mode() => None,
