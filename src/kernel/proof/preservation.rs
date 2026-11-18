@@ -26,7 +26,13 @@ pub(crate) fn apply(
     if !separation_available {
         return Err("preserve separation is not exactly available".into());
     }
-    let derived = if let Proposition::MemoryReadDefined { value_type, .. } = result {
+    let derived = if matches!(result, Proposition::MemoryLoadable { .. }) {
+        let (before, after) = preserve_viewability(separation)?;
+        if !available(&before) {
+            return Err("preserve requires viewability at the footprint entry".into());
+        }
+        after
+    } else if let Proposition::MemoryReadDefined { value_type, .. } = result {
         let (before, after) = preserve_definedness(separation, *value_type).ok_or(
             "preserve definedness requires a footprint separated from a complete typed cell",
         )?;
@@ -56,6 +62,27 @@ pub(crate) fn apply(
         return Err("preserve's constructed result does not match the goal".into());
     }
     Ok(())
+}
+
+fn preserve_viewability(separation: &Proposition) -> Result<(Proposition, Proposition), String> {
+    let Proposition::ResourceSeparate { left, right } = separation else {
+        return Err("preserve viewability requires footprint separation".into());
+    };
+    let (footprint, range) = match (left.as_ref(), right.as_ref()) {
+        (Resource::Footprint(fp), Resource::Memory(range))
+        | (Resource::Memory(range), Resource::Footprint(fp)) => (fp, range),
+        _ => return Err("preserve viewability requires a separated memory range".into()),
+    };
+    if !footprint.complete || !footprint.uninitialized_local_declaration {
+        return Err(
+            "preserve viewability requires a complete fresh uninitialized local declaration footprint"
+                .into(),
+        );
+    }
+    Ok((
+        range.loadable_fact(&footprint.before),
+        range.loadable_fact(&footprint.after),
+    ))
 }
 
 // The written result selects only the observation's type. Its endpoints are

@@ -8444,7 +8444,9 @@ impl ExecutionProofCore {
             .map(|view| self.checked_call_events.new_event(view))
             .collect::<Vec<_>>();
         let before = match checked_evidence_conclusion(&theorem) {
-            Proposition::ProgramStatementVerifies { state, .. } => Some(state.as_ref()),
+            Proposition::ProgramStatementVerifies {
+                state, statement, ..
+            } => Some((state.as_ref(), statement.as_ref())),
             _ => None,
         };
         let after = match &outcome {
@@ -8457,9 +8459,10 @@ impl ExecutionProofCore {
             | StatementOutcome::Throw { state, .. } => Some(state.as_ref()),
             _ => None,
         };
-        self.last_footprint = before.zip(after).map(|(before, after)| {
-            crate::kernel::RegionFootprint::transition(
+        self.last_footprint = before.zip(after).map(|((before, statement), after)| {
+            crate::kernel::RegionFootprint::statement_transition(
                 format!("region({}).footprint", self.frontier.next_statement_index),
+                statement,
                 before,
                 after,
                 execution_facts,
