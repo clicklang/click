@@ -10107,9 +10107,9 @@ impl ExecutionState {
         self
     }
 
-    /// Use a temporary view that only names cells at this state's observation
+    /// Use a view that only names cells at this state's observation
     /// point. Settle the source's pending steps first, then discard the naming
-    /// entries from the temporary view's path log.
+    /// entries from the new view's path log.
     pub(crate) fn with_materialized_memory_at_current_point(
         mut self,
         mut memory: SymbolicMemory,

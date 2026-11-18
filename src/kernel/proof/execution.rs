@@ -2945,7 +2945,7 @@ impl CheckedResourceObservation {
                 // locals, resource context, or loan ledger enters construction.
                 named_state = before_state
                     .clone()
-                    .with_memory_continuing(before_state, memory.clone());
+                    .with_materialized_memory_at_current_point(memory.clone());
                 (&named_state, true)
             }
             #[cfg(not(test))]
