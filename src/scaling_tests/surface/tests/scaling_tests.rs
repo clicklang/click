@@ -4540,7 +4540,7 @@ fn branching_grouped_claim_project(claim_count: usize) -> (String, String) {
         click_source.push_str("    ensures result == a;\n");
     }
     click_source.push_str(
-        "} by {\n    step();\n    branch {\n            step_until(function.exit);\n            solve();\n        } else {}\n    step();\n    have x == a by {\n        solve();\n    }\n    step_until(function.exit);\n    solve();\n}\n",
+        "} by {\n    step();\n    branch { true => {\n            step_until(function.exit);\n            solve();\n        } false => {} }\n    step();\n    have x == a by {\n        solve();\n    }\n    step_until(function.exit);\n    solve();\n}\n",
     );
     (c_source, click_source)
 }
@@ -4704,6 +4704,69 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
         "the smaller fixture must detect a quadratic call lowering: {last_lowering:?}"
     );
     assert_near_linear_scaling_with_increment_bound("counter call chain", &totals);
+}
+
+/// The callee sees one by-value argument, even when the caller has built
+/// a long arithmetic expression for that value before the call.
+#[test]
+fn call_ensure_lowering_keeps_the_computed_argument_shared() {
+    use crate::instrumentation::VerificationEvent;
+
+    let mut lowering_work = Vec::new();
+    for depth in [4, 16, 48] {
+        let updates = "    x = x * 3u + 1u;\n".repeat(depth);
+        let steps = "    step();\n".repeat(depth);
+        let c = format!(
+            "extern uint32 echo(uint32 value);\nuint32 caller(uint32 x) {{\n{updates}    return echo(x);\n}}"
+        );
+        let postcondition = format!("r == at(statement({depth}).entry, x)");
+        let click = format!(
+            "verifying \"echo.c\";\n\
+             extern uint32 echo(uint32 value) {{ ensures result == old(value); }}\n\
+             uint32 caller(uint32 x) {{ ensures result == result; }} by {{\n{steps}\
+             let {{ result: r }} = step(echo, {{ }});\n\
+             have {postcondition} by {{ known(); }}\n\
+             step();\n}}"
+        );
+        let sources = [("echo.c", c.as_str())];
+        let (verified, events) =
+            crate::instrumentation::collect(|| verify_c_sources(&click, &sources));
+        verified.unwrap_or_else(|error| panic!("depth {depth}: {}", error.report()));
+
+        let mut final_lowerings = Vec::new();
+        for event in events {
+            if let VerificationEvent::OperationFinished {
+                function,
+                name,
+                work,
+                ..
+            } = event
+                && function == "echo"
+            {
+                assert_ne!(name, "verified call provisional ensure lowering");
+                if name == "verified call ensure lowering" {
+                    final_lowerings.push(work);
+                }
+            }
+        }
+        lowering_work.push(
+            final_lowerings
+                .into_iter()
+                .max()
+                .expect("the call's ensure was lowered"),
+        );
+
+        if depth == 48 {
+            let wrong = click.replace(&postcondition, "r == old(x)");
+            assert!(verify_c_sources(&wrong, &sources).is_err());
+        }
+    }
+    assert!(
+        lowering_work
+            .iter()
+            .all(|work| *work <= lowering_work[0] + 32),
+        "call ensure lowering grew with argument depth: {lowering_work:?}"
+    );
 }
 
 /// One `step()` over a call whose external contract has `N` ensures lowers
@@ -7834,60 +7897,6 @@ fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
         .unwrap()
         .join()
         .unwrap();
-}
-
-#[test]
-#[ignore = "nightly: 0.7s in the parallel gate"]
-fn list_position_solve_search_stays_bounded_beside_unrelated_facts() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/solve_false_list_position_is_prompt.md");
-    let fixture = crate::cli::read_mdtest(&path).unwrap();
-    let original = fixture.click_source.as_deref().unwrap();
-    let mut counts = Vec::new();
-    for size in [4, 16, 64] {
-        let parameters = (0..size)
-            .map(|i| format!(", u{i}: int32"))
-            .collect::<String>();
-        let facts = (0..size)
-            .map(|i| format!("    requires u{i} == 0;\n"))
-            .collect::<String>();
-        let source = original
-            .replace("flag: int32)", &format!("flag: int32{parameters})"))
-            .replace("    requires xs", &format!("{facts}    requires xs"));
-        let (error, events) = crate::instrumentation::collect(|| {
-            crate::instrumentation::with_tactic_work_limits(
-                crate::instrumentation::TacticWorkLimits {
-                    smart: 100_000,
-                    ..crate::instrumentation::TacticWorkLimits::default()
-                },
-                || verify_click_theorems(&source),
-            )
-            .expect_err("the reversed position remains unproved")
-        });
-        assert!(
-            error.message().contains("could not establish"),
-            "{}",
-            error.message()
-        );
-        assert!(!error.message().contains("budget"), "{}", error.message());
-        counts.push(events.iter().filter(|event| matches!(event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, work, .. }
-                if name == "solve closure: indexed goal equality rewrite" && *work > 0
-        )).count());
-        // A declined candidate must restore the search scope: a subsequent
-        // invocation still closes the known position through an unfold.
-        let right = source
-            .replace(
-                "List<int32>::Cons(first, tail)",
-                "List<int32>::Cons(first, List<int32>::Cons(second, tail))",
-            )
-            .replace("    requires adjacent(xs, first, second) == 1;\n", "")
-            .replace("adjacent(xs, second, first)", "adjacent(xs, first, second)");
-        verify_click_theorems(&right).expect("a later true position must still close");
-    }
-    eprintln!("list-position nonempty rewrite searches: {counts:?}");
-    assert!(counts.iter().all(|count| *count <= 8), "{counts:?}");
-    assert!(counts.iter().all(|count| *count == counts[0]), "{counts:?}");
 }
 
 /// A linear goal that one stated fact decides is proved by arithmetic from

@@ -36,16 +36,22 @@ int32 f(int32 c) {
     step();
     branch ensuring {
         fact 1 == 1;
-    } then {
-        step();
-        solve();
-    } else {
+    } {
+        true => {
+            step();
+            solve();
+        }
+        false => {
+        }
     }
     branch ensuring {
         fact 1 == 1;
-    } then {
-        step();
-    } else {
+    } {
+        true => {
+            step();
+        }
+        false => {
+        }
     }
 }
 ```

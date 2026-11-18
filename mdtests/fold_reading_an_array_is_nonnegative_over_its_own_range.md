@@ -10,19 +10,20 @@ fact.
 That fact is now provable, so the workaround is not needed. `induct(hi)` gives
 an induction hypothesis guarded by the theorem's own `requires` at the smaller
 endpoint; `have viewable(v[lo..hi - 1]);` narrows the theorem's
-own range to that endpoint, against the order facts proved just above it, and
-`known()` assembles the hypothesis premise the guard is written as. Every other
-step is unchanged from the version with `n`.
+own range to that endpoint, against the order facts established by the shared
+`array_fold_induction_bounds` theorem. Then `known()` assembles the conjunction
+required by the induction hypothesis.
 
 The theorem also carries `hi <= 1073741823`, which with `0 <= lo` bounds the
 range's element count by the largest count a four-byte range can have and still
 be a valid 32-bit byte span. The induction hypothesis needs that bound at the
 smaller endpoint like every other precondition, and the narrowing step needs the
-count itself pinned to `0..=1073741823`, which the two `have`s state. This is a
+count itself pinned to `0..=1073741823`, which the shared theorem supplies. This is a
 real precondition of the shape, not bookkeeping: a range of `1 << 30` `int32`
 elements has a byte span of `1 << 32`, which wraps to `0`.
 
 ```click
+import "array_fold_induction_bounds.click";
 import click::integer;
 
 function unmarked(v: int32[], lo: int32, hi: int32) -> Integer {
@@ -41,25 +42,13 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
             solve();
         } else {
             have lo < hi;
-            have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) >= 0 by { solve() using { 0 <= lo; lo < hi; }; }
-            have 0 <= to_integer(hi - lo) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) <= 1073741823 by {
-                solve() using { 0 <= hi; hi <= 1073741823; };
-            }
-            have to_integer(hi - lo) <= 1073741823 by {
-                solve() using { 0 <= lo; lo < hi; hi <= 1073741823; };
-            }
+            apply(array_fold_induction_bounds(lo, hi)) using {
+                0 <= lo;
+                lo < hi;
+                hi <= 1073741823;
+            };
             have viewable(v[lo..hi - 1]);
             have to_integer(hi - 1) >= 0 and viewable(v[lo..hi - 1]) by known();
-            have 0 <= to_integer(hi - 1 - lo) by {
-                solve() using { 0 <= lo; lo < hi; hi <= 1073741823; };
-            }
-            have to_integer(hi - 1 - lo) <= 1073741823 by {
-                solve() using { 0 <= lo; lo < hi; hi <= 1073741823; };
-            }
             apply(ih(hi - 1)) using {
                 0 <= to_integer(hi - 1);
                 to_integer(hi - 1) < to_integer(hi);
@@ -69,7 +58,6 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
                 0 <= to_integer(hi - 1 - lo);
                 to_integer(hi - 1 - lo) <= 1073741823;
             };
-            have to_integer(hi - 1) < 2147483647 by { solve() using { 0 <= lo; lo < hi; }; }
             unfold(unmarked(v, lo, hi));
             have 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
             solve() using { 0 <= unmarked(v, lo, hi - 1); to_integer(0) <= to_integer(if v[hi - 1] == 0 { 1 } else { 0 }); };

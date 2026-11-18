@@ -2095,6 +2095,14 @@ theorem check_add_right_order(a: Integer, b: Integer, c: Integer) {
     }
 }
 
+theorem check_subtract_le(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a <= b;
+    requires d <= c;
+    ensures a - c <= b - d by {
+        apply(integer::subtract_le(a, b, c, d)) using { a <= b; d <= c; };
+    }
+}
+
 theorem check_subtract_right_order(a: Integer, b: Integer, c: Integer) {
     requires a <= b;
         ensures a - c <= b - c by {

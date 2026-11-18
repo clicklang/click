@@ -770,13 +770,10 @@ impl<'a> Proof<'a> {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .filter_map(|name| {
-                self.local_algebraic_values()
-                    .get(&name)
+                self.known_algebraic_value(&name)
                     .cloned()
                     .or_else(|| {
-                        context
-                            .structural_induction_setup
-                            .as_ref()?
+                        self.structural_induction_setup()?
                             .algebraic_values
                             .get(&name)
                             .cloned()
@@ -857,8 +854,7 @@ impl<'a> Proof<'a> {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .filter_map(|name| {
-                self.local_algebraic_values()
-                    .get(&name)
+                self.known_algebraic_value(&name)
                     .cloned()
                     .map(|value| (name, value))
             })
@@ -911,8 +907,7 @@ impl<'a> Proof<'a> {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .filter_map(|name| {
-                self.local_algebraic_values()
-                    .get(&name)
+                self.known_algebraic_value(&name)
                     .cloned()
                     .map(|value| (name, value))
             })
@@ -1653,8 +1648,7 @@ impl<'a> Proof<'a> {
             let algebraic_values = names
                 .into_iter()
                 .filter_map(|name| {
-                    self.local_algebraic_values()
-                        .get(&name)
+                    self.known_algebraic_value(&name)
                         .cloned()
                         .map(|value| (name, value))
                 })
@@ -1863,13 +1857,10 @@ impl<'a> Proof<'a> {
         let algebraic_values = names
             .iter()
             .filter_map(|name| {
-                self.local_algebraic_values()
-                    .get(name)
+                self.known_algebraic_value(name)
                     .cloned()
                     .or_else(|| {
-                        context
-                            .structural_induction_setup
-                            .as_ref()?
+                        self.structural_induction_setup()?
                             .algebraic_values
                             .get(name)
                             .cloned()
@@ -2045,13 +2036,10 @@ impl<'a> Proof<'a> {
         let algebraic_values = names
             .iter()
             .filter_map(|name| {
-                self.local_algebraic_values()
-                    .get(name)
+                self.known_algebraic_value(name)
                     .cloned()
                     .or_else(|| {
-                        context
-                            .structural_induction_setup
-                            .as_ref()?
+                        self.structural_induction_setup()?
                             .algebraic_values
                             .get(name)
                             .cloned()
@@ -2114,9 +2102,7 @@ impl<'a> Proof<'a> {
         let algebraic = names
             .iter()
             .filter_map(|name| {
-                context
-                    .structural_induction_setup
-                    .as_ref()?
+                self.structural_induction_setup()?
                     .algebraic_values
                     .get(name)
                     .map(|value| (name.clone(), value.clone()))
@@ -2237,13 +2223,10 @@ impl<'a> Proof<'a> {
             let algebraic_values = names
                 .iter()
                 .filter_map(|name| {
-                    self.local_algebraic_values()
-                        .get(name)
+                    self.known_algebraic_value(name)
                         .cloned()
                         .or_else(|| {
-                            context
-                                .structural_induction_setup
-                                .as_ref()?
+                            self.structural_induction_setup()?
                                 .algebraic_values
                                 .get(name)
                                 .cloned()
@@ -2302,8 +2285,7 @@ impl<'a> Proof<'a> {
             let algebraic_values = contract_expression_referenced_names(&argument)
                 .into_iter()
                 .filter_map(|name| {
-                    self.local_algebraic_values()
-                        .get(&name)
+                    self.known_algebraic_value(&name)
                         .cloned()
                         .map(|value| (name, value))
                 })
@@ -2750,11 +2732,18 @@ impl<'a> Proof<'a> {
                 Some(("equality", equality.clone(), None)),
             )
         })?;
+        let induction = self.uses_structural_induction();
         let surface_goal = self.surface_goal().and_then(|surface_goal| {
             let checked_candidate = |candidate: ClickProposition| {
                 self.lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
                     .ok()
-                    .filter(|lowered| rewritten.try_present_as(lowered))
+                    .filter(|lowered| {
+                        if induction {
+                            rewritten.try_present_induction_case_as(lowered)
+                        } else {
+                            rewritten.try_present_as(lowered)
+                        }
+                    })
                     .map(|_| candidate)
             };
             let mut checked_candidate = checked_candidate;
@@ -2768,7 +2757,18 @@ impl<'a> Proof<'a> {
                     .and_then(checked_candidate)
                 })
         });
-        let surface_goal = surface_goal.or_else(|| self.spelled_goal(rewritten.proposition()));
+        let surface_goal = surface_goal.or_else(|| {
+            if !induction {
+                return self.spelled_goal(rewritten.proposition());
+            }
+            let candidate = self.structural_proposition_candidate(rewritten.proposition())?;
+            let lowered = self
+                .lower_surface_proposition_direct(&candidate, "rewritten goal raising")
+                .ok()?;
+            rewritten
+                .try_present_induction_case_as(&lowered)
+                .then_some(candidate)
+        });
         let presentation = self.refinement_presentation(surface_goal, None);
         let (obligation, facts) =
             rewritten.into_obligation(presentation, self.refinement_outcome());

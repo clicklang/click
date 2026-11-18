@@ -3809,8 +3809,10 @@ fn spell_bounded_uint64_operand(
             MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply => {
                 matches!(
                     arguments.each_ref().map(|child| child.node()),
-                    [Node::Variable(_), Node::MachineLiteral(_)]
-                        | [Node::MachineLiteral(_), Node::Variable(_)]
+                    [
+                        Node::Variable(_),
+                        Node::Variable(_) | Node::MachineLiteral(_)
+                    ] | [Node::MachineLiteral(_), Node::Variable(_)]
                 )
             }
             MachineBinaryOp::Divide | MachineBinaryOp::Remainder => {

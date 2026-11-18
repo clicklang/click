@@ -81,16 +81,19 @@ int cell_same(struct cell* p, struct cell* q) {
             have p == identity;
             have p->value == value;
             branch {
-                step();
-                let c = fold(cell_at(p), { model: old(c.model) });
-                have address(identity) == address(q) by { rewrite(identity, p); normalize() using { address(p) == address(q); }; }
-                have result == cell_member(old(c.model), q) by {
-                    rewrite(old(c.model), CellModel::Present(identity, value));
-                    unfold(cell_member(CellModel::Present(identity, value), q));
-                    normalize() using { address(identity) == address(q); };
+                true => {
+                    step();
+                    let c = fold(cell_at(p), { model: old(c.model) });
+                    have address(identity) == address(q) by { rewrite(identity, p); normalize() using { address(p) == address(q); }; }
+                    have result == cell_member(old(c.model), q) by {
+                        rewrite(old(c.model), CellModel::Present(identity, value));
+                        unfold(cell_member(CellModel::Present(identity, value), q));
+                        normalize() using { address(identity) == address(q); };
+                    }
+                    solve();
                 }
-                solve();
-            } else {}
+                false => {}
+            }
             step();
             let c = fold(cell_at(p), { model: old(c.model) });
             have not(address(identity) == address(q)) by { rewrite(identity, p); normalize() using { not(address(p) == address(q)); }; }

@@ -1202,7 +1202,7 @@ fn every_standard_library_symbol_has_a_verified_use() {
     }
 }
 
-/// A C++ or Rust library model is used by the import tests that exercise its
+/// A C++ or Rust library interface is used by the import tests that exercise its
 /// family, not by `mdtests/stdlib_every_symbol.md`: the **Verified use** of
 /// its reference entry links a Rust test file, and the files it links call
 /// the modeled function, `.subspan(` or `push(`, or subscript for
@@ -1283,17 +1283,17 @@ fn every_sidecar_library_contract_has_a_cited_use() {
     assert!(checked > 0, "no sidecar library contracts in the inventory");
 }
 
-/// `docs/concepts/trust.md` lists every library model family the
+/// `docs/concepts/trust.md` lists every library interface family the
 /// `click verify` assumption report prints, the thread runtime included,
 /// names every `extern` model the C library declares, and names each C++ and
-/// Rust library model file in its family's row.
+/// Rust library interface file in its family's row.
 #[test]
 fn every_library_model_family_is_a_listed_assumption() {
     let trust = fs::read_to_string(root().join("docs/concepts/trust.md")).expect("read trust");
     let models = trust
-        .split_once("\n## Library models\n")
+        .split_once("\n## Library interfaces\n")
         .and_then(|(_, rest)| rest.split("\n## ").next())
-        .expect("trust.md has a Library models section");
+        .expect("trust.md has a Library interfaces section");
     let tags = click::surface::ModelFamily::ALL
         .map(click::surface::ModelFamily::label)
         .into_iter()
@@ -1301,7 +1301,7 @@ fn every_library_model_family_is_a_listed_assumption() {
     for tag in tags {
         assert!(
             models.contains(&format!("| `{tag}` |")),
-            "library model family `{tag}` is not listed in trust.md's Library models"
+            "library interface family `{tag}` is not listed in trust.md's Library interfaces"
         );
     }
     for id in inventory_ids("library.extern.")
@@ -1310,7 +1310,7 @@ fn every_library_model_family_is_a_listed_assumption() {
     {
         assert!(
             models.contains(&format!("`{id}`")),
-            "library model `{id}` is not listed in trust.md's Library models"
+            "library interface `{id}` is not listed in trust.md's Library interfaces"
         );
     }
     // A sidecar library file is named in its family's row, which states
@@ -1330,7 +1330,7 @@ fn every_library_model_family_is_a_listed_assumption() {
             models
                 .lines()
                 .any(|row| row.contains(family) && row.contains(&format!("`{file}`"))),
-            "library model file `{file}` is not named in trust.md's `{family}` row"
+            "library interface file `{file}` is not named in trust.md's `{family}` row"
         );
     }
 }

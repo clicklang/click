@@ -21,10 +21,13 @@ extern int32 b(int32 x) { ensures result == x; }
 int32 h(int32 x) { requires x == 3; ensures result == 1; } by {
     step(); step();
     branch {
-        step(); step();
-        have statement(0).and(0).result == 1;
-    } else {
-        step();
+        true => {
+            step(); step();
+            have statement(0).and(0).result == 1;
+        }
+        false => {
+            step();
+        }
     }
     step(); step();
 }

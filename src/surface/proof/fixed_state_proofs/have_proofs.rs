@@ -1086,6 +1086,8 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     expression: &ContractExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
+    algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(ClickArrayRef, crate::kernel::Pointer), String> {
@@ -1099,10 +1101,12 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     {
         return Ok((array_ref.clone(), value.clone()));
     }
-    let value = evaluate_fixed_state_expression_through_kernel(
+    let value = evaluate_fixed_state_expression_through_kernel_with_algebraic_and_integer_values(
         expression,
         assumptions,
         contract_environment,
+        algebraic_values,
+        integer_values,
         fixed_state,
         spec_definitions,
         &std::collections::BTreeSet::new(),
@@ -1910,6 +1914,8 @@ fn fixed_array_argument_retains_the_selected_point_with_equal_memory() {
             &expression,
             &PureFactContext::new(),
             ContractEnvironment::new(&values, &arrays),
+            BTreeMap::new(),
+            &PersistentBinderMap::default(),
             FixedStateFrame::new(&entry, &later, None, &recorded),
             SpecDefinitions::new(
                 &PredicateEnvironment::new(&[]),

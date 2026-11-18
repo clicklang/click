@@ -75,6 +75,7 @@ try_product_bound_using
 try_integer_algebra
 try_address_words_using
 
+try_int32_add_sub_using
 try_interval_fact_using
 try_restricted_signed_definedness_closure
 try_rewrite_conditional_arms_using

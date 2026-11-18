@@ -1511,7 +1511,7 @@ and zero changed terms. Coverage includes the historical algebraic pointer-field
 regression corrected in 10q3b1. The condition-storage switch and retained
 producer handoffs remain separate required slices.
 
-### 10q3c Condition output storage (in progress)
+### 10q3c Condition output storage (landed)
 
 `ConditionIs` owns the existing exact condition carrier. Native constructors
 preserve their original syntax; retained inputs forward one logical Bool root.
@@ -1522,9 +1522,92 @@ visit retained conditions directly with the existing common-term operations.
 There is no implicit dereference, cross-representation equality or additional
 native expression cache.
 
-Validation is in progress. The separate 10q3d producer handoffs and 10q4
-expression-bearing `Term` outputs remain required; storage support alone does
-not close either boundary.
+All four focused storage/identity/visitor/DAG checks, all 6,737 regular unit
+checks, all 1,940 scaling checks, all 5,623 regular proof fixtures and final
+quality passed. Fact stability recorded 121 refusals and zero changed terms or
+paths. [PR #3280](https://github.com/clicklang/click/pull/3280) merged, and both
+pushed commits were verified upstream. The separate 10q3d producer handoffs and
+10q4 expression-bearing `Term` outputs remain required; storage support alone
+does not close either boundary.
+
+### 10q3d Evaluated condition producer handoffs (in progress)
+
+Deliver the producer families sequentially; the machine family starts with an
+independent scaling prerequisite:
+
+| Subslice | Boundary | Status |
+| --- | --- | --- |
+| 10q3d1 | Boolean, Integer and shared float comparison/classification outputs | PR #3281 merged as `0f7849d09`; all seven pushed commits were verified upstream. |
+| 10q3d2a | Partial-borrow scaling contract | PR #3300 merged as `c5befccfb`; all pushed commits were verified upstream. |
+| 10q3d2b | Typed machine comparison outputs in `SpecValue::comparison_in` | Implemented and validated; retain exact canonical output and native dependency scope. |
+
+10q3d1 forwards logical Boolean equality roots directly. Literal comparisons
+retain the logical operand and apply the existing truth polarity and outer
+negation rule. Integer comparisons retain their evaluated Integer operands;
+the existing native observation-spelling rule runs only on atomic observation
+and literal inputs. Same-format shared float comparisons and classifications
+retain their operands with the existing IEEE literal-folding rules. Their
+selected literal read uses a query-local DAG memo, including refused
+nonconstant results. Native float inputs keep their exact input policy.
+
+The existing compatibility slot retains already-produced native conditions.
+Cached Integer comparison variable readers reuse their existing native operand
+summaries; known nonconstant Integer outputs avoid redundant Boolean
+normalization. The clean candidate passed all 1,943 regular scaling checks,
+615 affected regular checks and quality, including growing Integer DAGs across
+five variable-reading modes. The exact previously failing CI proof shard also
+passed all 1,124 fixtures. The equivalent narrowed producer path passed all
+5,623 regular proof fixtures, with 121 fact-stability refusals and zero changed
+terms or paths. Full nightly was excluded. No search budget or proof fixture
+is changed.
+
+10q3d2a measures the selected call after subtracting only its recorded ownership
+footprint publications, using the existing flat-work band. A separate kernel
+scaler bounds preparation visits and builds by the pre-update tree height,
+checks that held facts are not enumerated, and checks split, borrow, return and
+restoration contents. It covers 16, 64, 256 and 1,024 owners at different selected
+positions. This accepts legitimate tree shapes without permitting ambient
+scans. Deliberate cached-subtree traversal and sorted-fact enumeration each
+failed the new contract. On the initial 10q3d1 baseline, all 1,944 regular
+scaling checks and 68 affected checks passed. After integrating upstream
+`d5ca2616e`, all 1,949 regular scaling checks, 1,033 affected regular checks,
+12 new proof fixtures and quality passed. Nightly-only tests remained skipped.
+After integrating `214cbacd7`, all 1,950 regular scaling checks, 208 affected
+checks, nine selected regular proof fixtures with fact auditing, and quality
+passed. The fixtures include the unchanged byte-storage frontier, proof-branch
+and loop refusals, and array-fold library and callers. Nightly fixtures were
+not run. After integrating the labeled-branch and interval changes in
+`d9457ebdb`, all 330 focused step, canonical-footprint, parser, interval,
+expansion and proof-object checks passed, along with three audited regular
+proof fixtures and quality. Only test counters and test code change;
+production algorithms and machine output remain unchanged.
+
+10q3d2b retains the typed machine comparison constructor's actual output in
+the existing condition carrier. The producer oracle covers four formats, six
+relations and both guard modes, checking exact native output, root retention
+and repeated reads without exports.
+
+Exact field imports retain a registered load's written variable name instead
+of expanding it into the same root as its structural read. Those native forms
+have distinct identities and dependency scopes; keeping separate roots prevents
+one from selecting the other's cached output. Default numeric imports still
+expand registered reads. Cached scalar comparisons reuse the existing native
+variable reader only for variable, constant and memory-read descriptors;
+arithmetic and logical DAGs retain their common traversal. All five variable
+modes retain their ordinary, connection and frame policies.
+
+Both regressions were reproduced before repair: a registered load lost its
+load ID, and a growing structural read repeated common summary work. The final
+candidate passed all 180 affected checks, including raising/lowering and exact
+identity, all 1,951 regular scaling checks, and all 5,639 regular proof fixtures.
+The unchanged fold-alias refusal passed both in isolation and in the full
+corpus. Fact auditing recorded 121 refusals and zero changed terms or paths;
+quality passed and full nightly was excluded. No search budget, proof claim or
+C program was changed.
+
+Existing native numeric-coercion readers remain explicit adapters for the later
+10r–10t audit; mixed-format conversion rules are unchanged. Expression-bearing
+equality and predicate `Term` payloads remain assigned to 10q4.
 
 ## Chunk 3: machine-valued pure-function results
 

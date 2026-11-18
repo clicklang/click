@@ -22,5 +22,5 @@ theorem rejected(xs: TestList<int32>) {
 ```
 
 ```expect
-fail: pattern `TestList::Cons` expects 2 binding(s), got 1
+fail: proof `match` pattern has the wrong number of fields
 ```

@@ -535,6 +535,14 @@ struct ProofLocals {
     checked_lowerings: SurfacePropositionMap,
     termination_diagnostics: super::program_termination::TerminationDiagnostics,
     next_choice_variable: u64,
+    /// Induction declarations and case witnesses belong to the current proof
+    /// scope, independently of other open branches.
+    /// Producer names needed to spell retained facts after a match arm ends.
+    /// These are distinct from the authored lexical bindings in `values`.
+    retained_match_algebraic: PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
+    retained_match_integers: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+    induction_active: bool,
+    structural_induction_setup: Option<Arc<PureStructuralInductionBranchSetup>>,
 }
 
 pub(in crate::surface::proof) mod binding_names;
@@ -575,6 +583,10 @@ impl Default for ProofLocals {
             checked_lowerings: SurfacePropositionMap::default(),
             termination_diagnostics: Default::default(),
             next_choice_variable: 3_000_000,
+            retained_match_algebraic: PersistentBinderMap::default(),
+            retained_match_integers: PersistentBinderMap::default(),
+            induction_active: false,
+            structural_induction_setup: None,
         }
     }
 }
@@ -1538,6 +1550,13 @@ impl Proof<'_> {
             self.state.locals().value_names.clone(),
             shadows,
         )
+    }
+
+    pub(in crate::surface::proof) fn induction_binder_name_scope(
+        &self,
+    ) -> Option<super::surface_synthesis::ProofBindingNamesScope> {
+        self.uses_structural_induction()
+            .then(|| self.requirement_binder_name_scope())
     }
 
     /// The kernel variables the proof's binders name, as synthesis reads
@@ -2921,6 +2940,29 @@ impl<'a> Proof<'a> {
         values
     }
 
+    pub(in crate::surface::proof) fn retained_match_algebraic_values(
+        &self,
+    ) -> &PersistentBinderMap<crate::kernel::SpecAlgebraicExpression> {
+        &self.state().locals().retained_match_algebraic
+    }
+
+    pub(in crate::surface::proof) fn retained_match_integer_values(
+        &self,
+    ) -> &PersistentBinderMap<crate::kernel::SpecIntegerExpression> {
+        &self.state().locals().retained_match_integers
+    }
+
+    pub(in crate::surface::proof) fn known_algebraic_value<
+        Q: crate::surface::binders::BinderKey + ?Sized,
+    >(
+        &self,
+        name: &Q,
+    ) -> Option<&crate::kernel::SpecAlgebraicExpression> {
+        self.local_algebraic_values()
+            .get(name)
+            .or_else(|| self.state().locals().retained_match_algebraic.get(name))
+    }
+
     pub(super) fn local_algebraic_values(
         &self,
     ) -> &PersistentBinderMap<crate::kernel::SpecAlgebraicExpression> {
@@ -3153,6 +3195,7 @@ impl<'a> Proof<'a> {
         &self,
         goal: &Proposition,
     ) -> Option<ClickProposition> {
+        let _binder_names = self.induction_binder_name_scope();
         use super::surface_synthesis as synthesis;
         let _qualified = (self)
             .premise_surface_facts()
@@ -3900,6 +3943,7 @@ mod resource_steps;
 mod scope;
 mod splits_and_scopes;
 mod step_application;
+mod structural_induction;
 mod trace_surface;
 
 #[cfg(test)]

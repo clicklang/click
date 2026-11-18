@@ -9826,6 +9826,117 @@ fn execution_resource_observation_is_retained_transactional_and_logarithmic() {
 }
 
 #[test]
+fn observe_composite_keeps_the_defined_read_at_the_selected_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let click_file = crate::surface::parse(
+        r#"
+        resource cell(p: int32*) {
+            views *p;
+            fact defined(*p);
+        }
+        verifying "read.c";
+        int32 read(int32* p) {
+            views cell(p);
+            ensures true;
+        }
+        "#,
+    )
+    .unwrap();
+    let function_block = &click_file.function_blocks()[0];
+    let [Requirement::Resource(resource)] = function_block.requires() else {
+        panic!("expected the cell resource as the only requirement");
+    };
+    let parsed = syntax::parse_function("int32 read(int32* p) { return *p; }").unwrap();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let resources = ResourceEnvironment::new(click_file.resource_definitions());
+    let specs = SpecDefinitions::new(&predicates, &functions);
+    let view_input = ResourceSpec::composite(
+        KernelResourceAccessMode::View,
+        "cell".into(),
+        vec![crate::kernel::program_expression::variable("p")],
+        vec![ProgramType::Int32Pointer],
+    );
+    let function = parsed
+        .to_kernel_function()
+        .with_resource_summary(vec![view_input], vec![])
+        .with_composite_resource_definitions(
+            crate::surface::verification::composite_resource_definitions(&resources, specs)
+                .unwrap(),
+        );
+    let environment = ExecutionEnvironment::new();
+    let pointer = Address::symbolic(Variable(88_022));
+    let arguments = [ProgramExpression::Value(ProgramValue::typed_pointer(
+        pointer.clone(),
+        ProgramType::Int32Pointer,
+    ))];
+    let memory = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
+    let held = lower_resource_clause(
+        resource,
+        ParameterBinding::new(parsed.parameters(), &arguments),
+        &memory,
+    )
+    .unwrap();
+    let state = ExecutionState::new()
+        .with_memory(memory)
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(held));
+    let state = crate::kernel::execution_state_with_borrowed_contract_inputs(
+        state,
+        &function,
+        &arguments,
+        &PureFactContext::new(),
+    )
+    .unwrap();
+    assert!(matches!(
+        state.memory().load(&pointer),
+        ExpressionOutcome::UndefinedBehavior(_)
+    ));
+    let point = state.observation_point_id().unwrap();
+    let root = Proof::for_execution_frontier(
+        "observe a defined cell",
+        0,
+        ExecutionProofState::at_entry(
+            state,
+            ExecutionFrontier::default(),
+            RecordedStates::new(),
+            SurfacePropositionMap::default(),
+            PersistentSequence::default(),
+        ),
+        vec![],
+        ExecutionProofConstants::default(),
+        function_block,
+        &function,
+        &parsed,
+        &arguments,
+        &environment,
+        &resources,
+        specs,
+        &theorems,
+    );
+    let observed = root
+        .driver()
+        .apply_step(ProofStep::ObserveResource(resource.clone()))
+        .expect("observe should name the held cell and publish its definedness");
+    let after = &observed.execution().unwrap().core.state;
+    assert!(matches!(
+        after.memory().load(&pointer),
+        ExpressionOutcome::Value(_)
+    ));
+    assert_eq!(after.observation_point_id(), Some(point));
+    assert!(
+        observed
+            .added_facts()
+            .contains(&Proposition::MemoryReadDefined {
+                at: Some(point),
+                memory: after.memory().clone(),
+                pointer,
+                value_type: ProgramType::Int32,
+            })
+    );
+}
+
+#[test]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn execution_resource_unfold_is_retained_transactional_and_logarithmic() {
     let click_file = crate::surface::parse(
@@ -13053,11 +13164,14 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         r#"int32 caller(bool construct, bool should_throw) {
             ensures result == result by {
                 branch {
-                    outcomes {
-                        returned => { }
-                        threw => { step_until(function.exit); }
+                    true => {
+                        outcomes {
+                            returned => { }
+                            threw => { step_until(function.exit); }
+                        }
                     }
-                } else { }
+                    false => { }
+                }
                 step();
             }
         }"#,

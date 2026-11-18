@@ -18,9 +18,11 @@ how far it is trusted:
   `library/c/builtins.click`, and are documented under
   [verifier primitives](../language/index.md#verifier-primitives) in the
   language reference, not here.
-- **Language library models** state what the C, C++ or Rust library the
-  verified code calls does. Each is an assumed `extern` contract, listed in
-  [trust](../../concepts/trust.md#the-click-library), and it comes with the
+- **Language library interfaces** state what the C, C++ or Rust library the
+  verified code calls does, designed as
+  [library interfaces](../../concepts/library-interfaces.md) describes. Each
+  is an assumed `extern` contract, listed in
+  [trust](../../concepts/trust.md#library-interfaces), and it comes with the
   code that uses it, not with a sidecar import. `click::c::string` is written
   in Click below. The C front end builds in the allocator family
   ([heap allocation](../language/c.md#heap-allocation)) and writes the
@@ -48,12 +50,12 @@ how far it is trusted:
 | [`click::bytes`](#clickbytes) | `import click::bytes;`, or with `click::c::string` | specification |
 | [`click::cstr`](#clickcstr) | `import click::cstr;`, or with `click::c::string` | specification |
 | [`click::format`](#clickformat) | `import click::format;`; named by path in `snprintf` contracts | specification |
-| [`click::c::string`](#clickcstring) | when the C declares or calls one of its functions | C library model |
-| [C++ standard library models](#c-standard-library-models), `library/cpp/` (not a module) | when a C++ import calls one of its functions | C++ library model |
+| [`click::c::string`](#clickcstring) | when the C declares or calls one of its functions | C library interface |
+| [C++ standard library interfaces](#c-standard-library-interfaces), `library/cpp/` (not a module) | when a C++ import calls one of its functions | C++ library interface |
 | [`click::rust::i8` ... `click::rust::usize`](#clickrusti8-through-clickrustusize) | `import click::rust::u32;`; named by path in Rust core-method contracts | specification |
 | [`click::rust::vec`](#clickrustvec) | `import click::rust::vec;` | specification, with trusted axioms |
 | [`click::rust::slice`](#clickrustslice) | `import click::rust::slice;` | specification |
-| [Rust core models](#rust-core-models), `library/rust/core.click` (not a module) | when a Rust import calls one of its methods | Rust library model |
+| [Rust core interfaces](#rust-core-interfaces), `library/rust/core.click` (not a module) | when a Rust import calls one of its methods | Rust library interface |
 | [`click::separation`](#clickseparation) | `import click::separation;` | specification |
 
 `click::primitives` and `click::c::builtins` are implicit too; they hold the
@@ -67,7 +69,7 @@ Every declaration below is copied exactly from the library and checked by the
 documentation gate. The same gate compares declaration names bidirectionally,
 so adding, removing, or changing a public symbol requires a matching reference
 update.
-A C++ or Rust library model is named by the path it models,
+A C++ or Rust library interface is named by the path it models,
 `std::span<T>::size` or `Vec::push`, and the gate checks that the tests its
 **Verified use** cites call it.
 
@@ -6806,6 +6808,27 @@ theorem subtract_left_order(a: Integer, b: Integer, c: Integer) {
 }
 ```
 
+### `integer::subtract_le`
+
+```click
+theorem subtract_le(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a <= b;
+    requires d <= c;
+    ensures a - c <= b - d by {
+        have a - c <= b - c by {
+            apply(integer::subtract_right_order(a, b, c)) using { a <= b; };
+        }
+        have b - c <= b - d by {
+            apply(integer::subtract_left_order(d, c, b)) using { d <= c; };
+        }
+        apply(integer::le_transitive(a - c, b - c, b - d)) using {
+            a - c <= b - c;
+            b - c <= b - d;
+        };
+    }
+}
+```
+
 ### `integer::negate_multiply`
 
 ```click
@@ -9469,7 +9492,7 @@ theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
 
 ## `click::c::string`
 
-Source: `library/c/string.click`, a C library model: it comes with a C declaration of, or call to, one of its functions, not with an import.
+Source: `library/c/string.click`, a C library interface: it comes with a C declaration of, or call to, one of its functions, not with an import.
 
 ### External C contracts
 
@@ -9575,7 +9598,7 @@ names the string a call assembles; and
 [`mdtests/cstr_dynamic_indexed_read_requires_permission.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_dynamic_indexed_read_requires_permission.md)
 refuses a caller that holds only `cstr::readable`.
 
-## C++ standard library models
+## C++ standard library interfaces
 
 Source: `library/cpp/span.click`, `library/cpp/array.click` and
 `library/cpp/as_writable_bytes.click`. These files are not modules: the C++
@@ -9659,7 +9682,7 @@ without reading it; the subviews require the subview to lie inside the view
 and keep the backing storage. `subspan`'s count `std::dynamic_extent`,
 `18446744073709551615u64`, means "to the end".
 
-**Kind:** C++ standard library model. Each declaration is an explicit verification assumption, reported as `C++ std`.
+**Kind:** C++ standard library interface. Each declaration is an explicit verification assumption, reported as `C++ std`.
 
 **Verified use:** [`tests/bitcoin_core_money_range.rs`](https://github.com/clicklang/click/blob/master/tests/bitcoin_core_money_range.rs) calls each through `axiomatic_span_*` probes, and refuses each requirement it drops (nightly).
 
@@ -9718,7 +9741,7 @@ the template argument, written at an instance as a literal, `4u64`; only the
 data pointer is state. The subviews taking a runtime count are
 dynamic-extent spans.
 
-**Kind:** C++ standard library model. Each declaration is an explicit verification assumption, reported as `C++ std`.
+**Kind:** C++ standard library interface. Each declaration is an explicit verification assumption, reported as `C++ std`.
 
 **Verified use:** [`tests/bitcoin_core_money_range.rs`](https://github.com/clicklang/click/blob/master/tests/bitcoin_core_money_range.rs) reads, measures and subviews `std::span<int, 4>` and `std::span<const unsigned char, 32>` in `axiomatic_static_extent_*` (nightly).
 
@@ -9766,7 +9789,7 @@ written as its own template; an instance is written from the overload whose
 receiver constness it has. The element accessors require an index inside
 the array and form an address without reading it.
 
-**Kind:** C++ standard library model. Each declaration is an explicit verification assumption, reported as `C++ std`.
+**Kind:** C++ standard library interface. Each declaration is an explicit verification assumption, reported as `C++ std`.
 
 **Verified use:** [`tests/bitcoin_core_money_range.rs`](https://github.com/clicklang/click/blob/master/tests/bitcoin_core_money_range.rs) reads and writes elements in `axiomatic_std_array_reference_element_resources_verify`, and calls `size`, `data` and `back` in the nightly `axiomatic_std_array_*` tests.
 
@@ -9784,7 +9807,7 @@ template<class T, std::size_t N> extern std::span<std::byte> std::as_writable_by
 The argument is a span passed by value, so the result is stated from it as
 it was on entry.
 
-**Kind:** C++ standard library model. Each declaration is an explicit verification assumption, reported as `C++ std`.
+**Kind:** C++ standard library interface. Each declaration is an explicit verification assumption, reported as `C++ std`.
 
 **Verified use:** [`tests/bitcoin_core_money_range.rs`](https://github.com/clicklang/click/blob/master/tests/bitcoin_core_money_range.rs) views an `std::span<int>` as bytes in `pinned_writable_byte_span_*` (nightly).
 
@@ -11058,7 +11081,7 @@ subslice `s[a..b]` is `Slice::Slice(s.as_ptr() + a, slice::subslice_len(a,
 b, s.len()))`, and prints as `s[a..b]`.
 
 
-## Rust core models
+## Rust core interfaces
 
 Source: `library/rust/core.click`. This file is not a module: the Rust
 importer appends it to a sidecar when an import calls one of its methods,

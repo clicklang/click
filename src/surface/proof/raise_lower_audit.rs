@@ -289,6 +289,40 @@ mod tests {
         );
     }
 
+    /// `rewrite` states its result in the one form for a comparison of
+    /// exact observations: substituting into `to_integer(x) ==
+    /// to_integer(y)` leaves `old(n[0]) == 0`, not `to_integer(old(n[0]))
+    /// == 0`, which lowers to the native comparison and would not round-trip.
+    #[test]
+    fn rewritten_observation_comparisons_round_trip() {
+        let fixture = crate::cli::parse_mdtest(
+            std::path::Path::new("a_loop_condition_s_call_and_test_are_the_loop_s_own.md"),
+            include_str!("../../../mdtests/a_loop_condition_s_call_and_test_are_the_loop_s_own.md"),
+        )
+        .unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let lines = capture(|| {
+            let _ = crate::surface::verify_c_sources(
+                fixture.click_source.as_deref().unwrap(),
+                &sources,
+            );
+        });
+        let rewrites = lines
+            .iter()
+            .map(|line| line.split('\t').collect::<Vec<_>>())
+            .filter(|fields| fields[4] == "rewrite")
+            .collect::<Vec<_>>();
+        assert!(!rewrites.is_empty());
+        assert!(
+            rewrites.iter().all(|fields| fields[0] == "same"),
+            "{rewrites:#?}"
+        );
+    }
+
     #[test]
     fn a_checked_step_records_how_each_added_fact_round_trips() {
         let fixture = crate::cli::parse_mdtest(

@@ -163,7 +163,7 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
                 sidecar.replace("    requires 2u64 <= std_span_size(s);\n", ""),
                 "::operator[]",
             ),
-            // A sidecar does not restate a library model.
+            // A sidecar does not restate a library interface.
             (
                 format!("extern int& {SPAN}::operator[](unsigned long i) const {{\n}}\n{sidecar}"),
                 "has the Click library's contract",
@@ -181,6 +181,52 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
     assert!(
         matches!(&reported[..], [(ModelFamily::CppStd, name)] if name.ends_with("::operator[]")),
         "{reported:?}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: pinned libc++ import, contract expansion, and negative controls"]
+fn libcxx_span_empty_checks_abstract_state() {
+    let (root, import) = libcxx_fixture(
+        "abstract-empty",
+        "#include <span>\nbool probe(const std::span<int>& s) noexcept { return s.empty(); }\n",
+        &["libcxx/include/c++/v1/span"],
+    );
+    let library = "
+abstract resource span_state(s: const std::span<int>*) {
+    field size: uint64;
+}
+extern bool std::span<int>::empty() const {
+    owns state: span_state(this);
+    ensures state.size == old(state.size);
+    ensures state.size == 0u64 implies result;
+    ensures state.size != 0u64 implies not result;
+}";
+    let client = "
+bool probe(const std::span<int>& s) {
+    owns state: span_state(&s);
+    ensures state.size == old(state.size);
+    ensures state.size == 0u64 implies result;
+    ensures state.size != 0u64 implies not result;
+}";
+    check(
+        &root,
+        &import,
+        &format!("{library}\n{client}"),
+        &[
+            (
+                format!("{library}\nbool probe(const std::span<int>& s) {{ ensures true; }}"),
+                "unbound instance binder `state`",
+            ),
+            (
+                format!(
+                    "{library}\n{}",
+                    client.replace("0u64 implies result;", "0u64 implies not result;")
+                ),
+                "unclosed goal",
+            ),
+        ],
     );
     fs::remove_dir_all(root).unwrap();
 }

@@ -2451,7 +2451,7 @@ fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
     )));
     assert!(events.iter().any(|event| matches!(event,
         VerificationEvent::TacticStarted(tactic) if tactic.claim == "induction_shape.ensures_0"
-            && tactic.source_tactic_path.as_deref() == Some(&[3])
+            && tactic.source_tactic_path.as_deref() == Some(&[1, 1, 0])
     )));
 }
 
@@ -4223,7 +4223,7 @@ fn failed_branch_interface_retains_its_arm_and_written_requirement() {
                 {precondition}
                 ensures result == result by {{
                     step();
-                    branch ensuring {{ fact {requirement}; }} then {{ step(); }} else {{ step(); }}
+                    branch ensuring {{ fact {requirement}; }} {{ true => {{ step(); }} false => {{ step(); }} }}
                     step(); solve();
                 }}
             }}
@@ -4343,7 +4343,7 @@ fn failed_invariant_after_branch_join_reports_the_join() {
                 loop {
                     invariant len == 16u64;
                     initialize by known();
-                    preserve by { branch { step(); } else { step(); } }
+                    preserve by { branch { true => { step(); } false => { step(); } } }
                 }
                 step_until(function.exit); solve();
             }
@@ -4384,7 +4384,7 @@ fn failed_postcondition_after_branch_join_keeps_the_join_trace() {
             ensures result == 16u64;
         } by {
             step();
-            branch { step(); } else { step(); }
+            branch { true => { step(); } false => { step(); } }
             step();
         }
     "#;

@@ -961,7 +961,7 @@ position. The other non-integer core methods are stated there the same way:
 the `Vec` methods ([Vec values](#vec-values)), `Option` and `Result`
 `unwrap`, `expect` and `unwrap_or` ([Panics](#panics),
 [Result values](#result-values)), and the slice-iterator operations
-([Rust core models](library/index.md#rust-core-models)). The importer
+([Rust core interfaces](library/index.md#rust-core-interfaces)). The importer
 writes no contract text; it keeps only a name table from each core method to
 its library file. The instance at `u32` is:
 
@@ -1650,11 +1650,15 @@ cargo run --bin click -- verify examples/rust-field-borrow/guard.click
 
 A `Box<R>` of a crate struct `R` with no drop glue is the address of an
 allocation it owns: `Box::new(r)` allocates `size_of::<R>()` bytes, moves the record local
-`r` into them, and gives the box their address; `b.field` reads and writes
+`r` into them, and gives the box their address; `Box::new(R { a, b })` writes
+the field values into the allocation, with no record local; `b.field` reads and writes
 through it; the box's drop frees the allocation. Allocation failure aborts the
 process, so the body continues only on success and the proof sees a non-null,
 owned allocation. The compiler places the drop; the free is the kernel's
-checked heap free, as for C `free`.
+checked heap free, as for C `free`. The importer lowers `Box::new` and the
+drop itself, and each proof writes the box's ownership resource; both are
+[departures](../concepts/library-interfaces.md#where-the-implementation-departs-from-this)
+that `Box`'s library contracts and resource are to replace.
 [`design/charon-trial/boxes`](https://github.com/clicklang/click/blob/master/design/charon-trial/boxes/boxed.rs)
 verifies
 
@@ -1682,7 +1686,9 @@ the compiler takes for the call serves only the call, the exporter checks the
 callee is the library's own `Option::take` and lowers `t = o.take()` to
 `t = o; o = None`, for an option of a box, an option of a scalar, and the
 referent of a `&mut Option<T>`. The box moves into `t`, so it is freed once,
-with `t`.
+with `t`. This rewrite is a
+[departure](../concepts/library-interfaces.md#where-the-implementation-departs-from-this),
+to be replaced by a generic `Option::take<T>` contract.
 [`design/charon-trial/option-take`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-take/take.click)
 verifies `taken`, which takes a boxed `Cell` and finds the option `None`
 after, `taken_twice`, whose second `take` finds `None`, `scalar_taken`, and

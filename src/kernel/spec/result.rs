@@ -224,9 +224,49 @@ impl SpecValue {
                 comparison::logical_condition_for_operand_views(format, relation, [left, right])
             };
             return Ok(Some(Proposition::condition_is(
-                condition,
+                StoredConditionTerm::from_minted(condition),
                 op != ComparisonOperator::NotEqual,
             )));
+        }
+        if matches!(op, ComparisonOperator::Equal | ComparisonOperator::NotEqual) {
+            let literal = |value: &Self| match value {
+                Self::Shared(root) if root.ty() == &KernelType::Bool => match root.node() {
+                    KernelTermNode::BoolLiteral(value) => Some(*value),
+                    _ => None,
+                },
+                Self::Native(ProgramValue::Bool(word)) => word.bool_constant_value(),
+                _ => None,
+            };
+            let logical_root = |value: &Self| {
+                value
+                    .shared()
+                    .filter(|root| {
+                        root.ty() == &KernelType::Bool
+                            && !matches!(root.node(), KernelTermNode::BoolLiteral(_))
+                    })
+                    .cloned()
+            };
+            if let Some((mut root, literal)) = logical_root(self)
+                .zip(literal(right))
+                .or_else(|| logical_root(right).zip(literal(self)))
+            {
+                let mut truth = literal == (op == ComparisonOperator::Equal);
+                // The existing truth-claim rule removes outer logical
+                // negations only; it does not evaluate a compound guard.
+                while let KernelTermNode::BoolIf { arguments } = root.node() {
+                    if !matches!(arguments[1].node(), KernelTermNode::BoolLiteral(false))
+                        || !matches!(arguments[2].node(), KernelTermNode::BoolLiteral(true))
+                    {
+                        break;
+                    }
+                    root = arguments[0].clone();
+                    truth = !truth;
+                }
+                return Ok(Some(Proposition::condition_is(
+                    StoredConditionTerm::from_root(root).expect("logical truth claim"),
+                    truth,
+                )));
+            }
         }
         // Logical Bool equality builds its common operands before the explicit
         // proposition output boundary. Raw C words retain their nonzero policy.
@@ -247,9 +287,48 @@ impl SpecValue {
         {
             let root = KernelTerm::boolean_equal([left, right]);
             return Ok(Some(Proposition::condition_is(
-                KernelTermExport::condition(&root).expect("Boolean equality"),
+                StoredConditionTerm::from_root(root).expect("Boolean equality"),
                 op == ComparisonOperator::Equal,
             )));
+        }
+        if let (Some(left), Some(right_view)) = (self.float(), right.float())
+            && left.format() == right_view.format()
+            && self.shared().is_some()
+            && right.shared().is_some()
+        {
+            let format = left.format();
+            // Preserve the native producer's IEEE literal folding. The shared
+            // float reader uses the same bit operations without exporting trees.
+            let condition = match (
+                float_condition_constant_bits(left),
+                float_condition_constant_bits(right_view),
+            ) {
+                (Some(left), Some(right)) => {
+                    let native = match format {
+                        KernelFloatType::Float32 => ConditionTerm::float32_compare(
+                            MachineTerm::uint32_constant(left as u32),
+                            MachineTerm::uint32_constant(right as u32),
+                            op,
+                        ),
+                        KernelFloatType::Float64 => ConditionTerm::float64_compare(
+                            MachineTerm::uint64_constant(left),
+                            MachineTerm::uint64_constant(right),
+                            op,
+                        ),
+                    };
+                    StoredConditionTerm::from_minted(native)
+                }
+                _ => StoredConditionTerm::from_root(
+                    KernelTerm::float_compare(
+                        format,
+                        op,
+                        [self.common_operand(), right.common_operand()],
+                    )
+                    .expect("same float format"),
+                )
+                .expect("logical float comparison"),
+            };
+            return Ok(Some(Proposition::condition_is(condition, true)));
         }
         let left = self.native();
         let right = right.native();
@@ -273,6 +352,86 @@ impl SpecValue {
             .transpose()?
             .or_else(|| program_value_comparison_proposition(&left, op, &right)))
     }
+}
+
+/// The existing float predicate producer folds literal arithmetic before
+/// constructing its condition. Read a retained DAG once per selected operand;
+/// repeated children share their result, including nonconstant refusals.
+pub(super) fn float_condition_constant_bits(view: FloatOperandView<'_>) -> Option<u64> {
+    let FloatOperandView::Shared(root) = view else {
+        return view.constant_bits();
+    };
+    enum Task<'a> {
+        Enter(&'a KernelTerm),
+        Negate(&'a KernelTerm, &'a KernelTerm),
+        BinaryLeft(&'a KernelTerm, FloatBinaryOperator, [&'a KernelTerm; 2]),
+        BinaryRight(&'a KernelTerm, FloatBinaryOperator, [&'a KernelTerm; 2]),
+    }
+    let mut values = std::collections::HashMap::new();
+    let mut pending = vec![Task::Enter(root)];
+    while let Some(task) = pending.pop() {
+        match task {
+            Task::Enter(root) => {
+                if values.contains_key(&root.id()) {
+                    continue;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                match root.node() {
+                    KernelTermNode::FloatNegate { operand } => {
+                        pending.push(Task::Negate(root, operand));
+                        pending.push(Task::Enter(operand));
+                    }
+                    KernelTermNode::FloatBinary {
+                        operator,
+                        arguments,
+                    } => {
+                        pending.push(Task::BinaryLeft(root, *operator, arguments.each_ref()));
+                        pending.push(Task::Enter(&arguments[0]));
+                    }
+                    _ => {
+                        values.insert(root.id(), FloatOperandView::Shared(root).constant_bits());
+                    }
+                }
+            }
+            Task::Negate(root, operand) => {
+                let sign = match FloatOperandView::Shared(root).format() {
+                    KernelFloatType::Float32 => 0x8000_0000,
+                    KernelFloatType::Float64 => 0x8000_0000_0000_0000,
+                };
+                values.insert(root.id(), values[&operand.id()].map(|bits| bits ^ sign));
+            }
+            Task::BinaryLeft(root, operator, arguments) => {
+                if values[&arguments[0].id()].is_none() {
+                    values.insert(root.id(), None);
+                } else {
+                    pending.push(Task::BinaryRight(root, operator, arguments));
+                    pending.push(Task::Enter(arguments[1]));
+                }
+            }
+            Task::BinaryRight(root, operator, arguments) => {
+                let value = values[&arguments[0].id()]
+                    .zip(values[&arguments[1].id()])
+                    .and_then(|(left, right)| {
+                        let format = FloatOperandView::Shared(root).format();
+                        let native = match format {
+                            KernelFloatType::Float32 => MachineTerm::float32_binary(
+                                MachineTerm::constant(left as u32),
+                                MachineTerm::constant(right as u32),
+                                operator,
+                            ),
+                            KernelFloatType::Float64 => MachineTerm::float64_binary(
+                                MachineTerm::uint64_constant(left),
+                                MachineTerm::uint64_constant(right),
+                                operator,
+                            ),
+                        };
+                        FloatOperandView::Native(format, &native).constant_bits()
+                    });
+                values.insert(root.id(), value);
+            }
+        }
+    }
+    values[&root.id()]
 }
 
 /// Call assembly retains machine results while subsequent arguments branch.
@@ -483,5 +642,315 @@ mod pointer_observation_tests {
         );
         assert_eq!(projected.observe(), SpecValue::Native(numeric).observe());
         assert_eq!(complete.into_native(), value);
+    }
+}
+
+#[cfg(test)]
+mod condition_output_tests {
+    use super::*;
+    #[test]
+    fn evaluated_machine_comparisons_retain_roots_and_exact_native_outputs() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let left = SpecValue::Shared(KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(10993720),
+            ));
+            let right = SpecValue::Shared(KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(10993721),
+            ));
+            for (operator, relation) in [
+                (ComparisonOperator::Equal, CompareRelation::Equal),
+                (ComparisonOperator::NotEqual, CompareRelation::Equal),
+                (ComparisonOperator::LessThan, CompareRelation::LessThan),
+                (ComparisonOperator::LessEqual, CompareRelation::LessEqual),
+                (
+                    ComparisonOperator::GreaterThan,
+                    CompareRelation::GreaterThan,
+                ),
+                (
+                    ComparisonOperator::GreaterEqual,
+                    CompareRelation::GreaterEqual,
+                ),
+            ] {
+                for guard in [false, true] {
+                    use crate::kernel::machine_integer::comparison;
+                    let operands = [left.machine().unwrap().1, right.machine().unwrap().1];
+                    let expected = if guard {
+                        comparison::logical_conditional_guard_for_operand_views(
+                            format, relation, operands,
+                        )
+                    } else {
+                        comparison::logical_condition_for_operand_views(format, relation, operands)
+                    };
+                    let Proposition::ConditionIs(condition, truth) = left
+                        .comparison_in(operator, &right, guard)
+                        .unwrap()
+                        .unwrap()
+                    else {
+                        unreachable!()
+                    };
+                    assert!(condition.root().is_some());
+                    assert_eq!(condition.native_compat(), &expected);
+                    assert_eq!(
+                        condition.root(),
+                        Some(&KernelTermImport::for_exact_field_inputs().condition(&expected))
+                    );
+                    assert_eq!(truth, operator != ComparisonOperator::NotEqual);
+                    let exports = KernelTermExport::machine_export_count();
+                    for _ in 0..4 {
+                        assert_eq!(condition.native_compat(), &expected);
+                    }
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn evaluated_boolean_comparison_outputs_retain_the_produced_root() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let left = KernelTerm::variable(KernelType::Bool, Variable(10993721));
+        let right = KernelTerm::variable(KernelType::Bool, Variable(10993722));
+        for operator in [ComparisonOperator::Equal, ComparisonOperator::NotEqual] {
+            let expected = KernelTerm::boolean_equal([left.clone(), right.clone()]);
+            let output = SpecValue::Shared(left.clone())
+                .comparison(operator, &SpecValue::Shared(right.clone()))
+                .unwrap()
+                .unwrap();
+            let Proposition::ConditionIs(condition, truth) = output else {
+                unreachable!();
+            };
+            assert_eq!(condition.root(), Some(&expected));
+            assert_eq!(truth, operator == ComparisonOperator::Equal);
+            assert!(!left.has_cached_native_argument());
+            assert!(!right.has_cached_native_argument());
+            assert!(!expected.has_cached_native_argument());
+        }
+    }
+    #[test]
+    fn evaluated_float_comparison_outputs_retain_shared_operands() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let left = KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(10993723),
+            );
+            let right = KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(10993724),
+            );
+            for operator in [
+                ComparisonOperator::Equal,
+                ComparisonOperator::NotEqual,
+                ComparisonOperator::LessThan,
+                ComparisonOperator::LessEqual,
+                ComparisonOperator::GreaterThan,
+                ComparisonOperator::GreaterEqual,
+            ] {
+                let expected =
+                    KernelTerm::float_compare(format, operator, [left.clone(), right.clone()])
+                        .unwrap();
+                let exports = KernelTermExport::float_export_count();
+                let output = SpecValue::Shared(left.clone())
+                    .comparison(operator, &SpecValue::Shared(right.clone()))
+                    .unwrap()
+                    .unwrap();
+                let Proposition::ConditionIs(condition, truth) = output else {
+                    unreachable!();
+                };
+                assert_eq!(condition.root(), Some(&expected));
+                assert!(truth);
+                assert_eq!(KernelTermExport::float_export_count(), exports);
+                assert!(!left.has_cached_native_argument());
+                assert!(!right.has_cached_native_argument());
+            }
+        }
+    }
+
+    #[test]
+    fn integer_comparison_outputs_keep_native_observation_spelling_and_roots() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let values = [
+            IntegerTerm::Variable(Variable(10993725)),
+            IntegerTerm::constant_i64(7),
+            IntegerTerm::from_machine(
+                MachineIntegerType::Int32,
+                MachineTerm::Variable(Variable(10993726)),
+            )
+            .unwrap(),
+            IntegerTerm::from_machine(
+                MachineIntegerType::UInt64,
+                MachineTerm::Variable(Variable(10993727)),
+            )
+            .unwrap(),
+            IntegerTerm::Add(
+                IntegerTerm::Variable(Variable(10993728)).into(),
+                IntegerTerm::constant_i64(3).into(),
+            ),
+        ];
+        for left in &values {
+            for right in &values {
+                for operator in [
+                    IntegerComparisonOperator::Equal,
+                    IntegerComparisonOperator::NotEqual,
+                    IntegerComparisonOperator::LessThan,
+                    IntegerComparisonOperator::LessEqual,
+                    IntegerComparisonOperator::GreaterThan,
+                    IntegerComparisonOperator::GreaterEqual,
+                ] {
+                    let native = match operator {
+                        IntegerComparisonOperator::Equal => {
+                            ConditionTerm::IntegerEqual(left.clone().into(), right.clone().into())
+                        }
+                        IntegerComparisonOperator::NotEqual => ConditionTerm::IntegerNotEqual(
+                            left.clone().into(),
+                            right.clone().into(),
+                        ),
+                        IntegerComparisonOperator::LessThan => ConditionTerm::IntegerLessThan(
+                            left.clone().into(),
+                            right.clone().into(),
+                        ),
+                        IntegerComparisonOperator::LessEqual => ConditionTerm::IntegerLessEqual(
+                            left.clone().into(),
+                            right.clone().into(),
+                        ),
+                        IntegerComparisonOperator::GreaterThan => {
+                            ConditionTerm::IntegerGreaterThan(
+                                left.clone().into(),
+                                right.clone().into(),
+                            )
+                        }
+                        IntegerComparisonOperator::GreaterEqual => {
+                            ConditionTerm::IntegerGreaterEqual(
+                                left.clone().into(),
+                                right.clone().into(),
+                            )
+                        }
+                    };
+                    let expected = match crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(&native, true) {
+                        Some((ConditionTerm::Constant(_), _)) | None => (native, true),
+                        Some(result) => result,
+                    };
+                    let actual = retained_integer_comparison(
+                        &left.clone().into(),
+                        operator,
+                        &right.clone().into(),
+                    );
+                    assert!(actual.0.root().is_some());
+                    assert_eq!(
+                        (actual.0.native_compat(), actual.1),
+                        (&expected.0, expected.1)
+                    );
+                    let expected_root =
+                        KernelTermImport::for_exact_field_inputs().condition(&expected.0);
+                    assert_eq!(actual.0.root(), Some(&expected_root));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn lowered_float_classification_keeps_the_execution_value_root() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let root = KernelTerm::float_call(format, "classification_source".into(), vec![]);
+            let state = ExecutionState::new().with_retained_local("x", root.clone().into());
+            for classification in [
+                FloatClassification::Finite,
+                FloatClassification::Infinite,
+                FloatClassification::Zero,
+                FloatClassification::Subnormal,
+                FloatClassification::Nan,
+            ] {
+                let expression = SpecProposition::FloatClassification {
+                    expression: SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                        "x".into(),
+                    )),
+                    classification,
+                };
+                let exports = KernelTermExport::float_export_count();
+                let paths = lower_spec_proposition_at_state_with_loop_entry(
+                    &state,
+                    &expression,
+                    None,
+                    &PureFactContext::new(),
+                    &mut ExecutionBudget::new(),
+                )
+                .unwrap();
+                assert_eq!(paths.len(), 1);
+                let Proposition::ConditionIs(condition, truth) = &paths[0].proposition else {
+                    unreachable!();
+                };
+                let expected =
+                    KernelTerm::float_classify(format, classification, root.clone()).unwrap();
+                assert_eq!(condition.root(), Some(&expected));
+                assert!(*truth);
+                assert_eq!(KernelTermExport::float_export_count(), exports);
+            }
+        }
+    }
+
+    #[test]
+    fn logical_literal_comparisons_keep_roots_polarity_and_outer_negation_rules() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = KernelTerm::variable(KernelType::Bool, Variable(10993736));
+        for depth in [0, 1, 2, 3] {
+            let mut root = base.clone();
+            for _ in 0..depth {
+                root = KernelTerm::boolean_if_raw([
+                    root,
+                    KernelTermImport::default().condition(&ConditionTerm::Constant(false)),
+                    KernelTermImport::default().condition(&ConditionTerm::Constant(true)),
+                ]);
+            }
+            for literal in [false, true] {
+                for shared_literal in [false, true] {
+                    let value = if shared_literal {
+                        SpecValue::Shared(
+                            KernelTermImport::default()
+                                .condition(&ConditionTerm::Constant(literal)),
+                        )
+                    } else {
+                        SpecValue::Native(ProgramValue::bool_constant(literal))
+                    };
+                    for operator in [ComparisonOperator::Equal, ComparisonOperator::NotEqual] {
+                        for reverse in [false, true] {
+                            let exports = KernelTermExport::machine_export_count();
+                            let logical = SpecValue::Shared(root.clone());
+                            let output = if reverse {
+                                value.comparison(operator, &logical)
+                            } else {
+                                logical.comparison(operator, &value)
+                            }
+                            .unwrap()
+                            .unwrap();
+                            let Proposition::ConditionIs(condition, truth) = output else {
+                                unreachable!();
+                            };
+                            assert_eq!(condition.root(), Some(&base));
+                            assert_eq!(
+                                truth,
+                                (literal == (operator == ComparisonOperator::Equal))
+                                    ^ (depth % 2 == 1)
+                            );
+                            assert_eq!(KernelTermExport::machine_export_count(), exports);
+                            assert!(!root.has_cached_native_argument());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/spec/condition_output_storage.rs");
     }
 }

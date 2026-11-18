@@ -2781,7 +2781,7 @@ impl CheckedIteratedStep {
 
 /// Surface can request naming of cells for an ordinary observation. The
 /// kernel builds the successor's resource partition from the selected body.
-/// Borrowed and counted observations retain their existing checking route.
+/// Counted observations use their ledger rule.
 pub(crate) enum ResourceObservationInput<'a> {
     NamedCells(&'a SymbolicMemory),
     Legacy(&'a ExecutionState),
@@ -2945,9 +2945,14 @@ impl CheckedResourceObservation {
                 // locals, resource context, or loan ledger enters construction.
                 named_state = before_state
                     .clone()
-                    .with_memory_continuing(before_state, memory.clone());
+                    .with_materialized_memory_at_current_point(memory.clone());
                 (&named_state, true)
             }
+            #[cfg(not(test))]
+            ResourceObservationInput::Legacy(_) => {
+                return Err("ordinary resource observation requires named cells");
+            }
+            #[cfg(test)]
             ResourceObservationInput::Legacy(after_state) => {
                 if !after_state.loan_bindings_are_consistent() {
                     return Err("resource observation carries mismatched loan dependency sidecar");
@@ -3012,72 +3017,132 @@ impl CheckedResourceObservation {
                         .directly_supporting_fact(fact, assumptions)
                         .is_some()
                 });
-        let expected_views = if body_is_already_exposed {
-            Vec::new()
+        let borrowed = if before_state.loan_view_bindings().is_empty() {
+            None
         } else {
-            raw_children
-                .iter()
-                .filter_map(|fact| fact.core_with_assumptions(assumptions))
-                .filter(|fact| !before_state.resources().contains_exact_representation(fact))
-                .collect::<Vec<_>>()
+            before_state
+                .unique_borrowed_resource_dependency(observed)
+                .map_err(|_| "resource observation refused ambiguous or inactive parent loan")?
         };
-        let after_state = if construct {
-            if !before_state.loan_view_bindings().is_empty() {
-                return Err(
-                    "resource observation with loan bindings requires the loan projection rule",
-                );
+        let all_views = raw_children
+            .iter()
+            .filter_map(|fact| fact.core_with_assumptions(assumptions));
+        let mut expected_views = Vec::new();
+        for child in all_views {
+            if before_state
+                .resources()
+                .contains_exact_representation(&child)
+            {
+                if let Some(parent) = &borrowed {
+                    let existing = before_state
+                        .unique_borrowed_resource_dependency(&child)
+                        .map_err(
+                            |_| "resource observation refused ambiguous or inactive child loan",
+                        )?;
+                    if existing.as_ref().is_none_or(|binding| {
+                        binding.loan != parent.loan
+                            || binding.scope != parent.scope
+                            || binding.share != parent.share
+                            || binding.support != parent.support
+                    }) {
+                        return Err(
+                            "resource observation cannot reuse an unbound or differently bound child",
+                        );
+                    }
+                }
+            } else if !body_is_already_exposed {
+                expected_views.push(child);
             }
+        }
+        let after_state = if construct {
             let resources = before_state.resources().clone();
             let witness = (!body_is_already_exposed)
                 .then(|| resources.open_structural_witness(observed, assumptions))
                 .flatten();
-            let resources = match observation_support {
+            let (resources, inserted) = match observation_support {
                 Some((occurrence, support)) => resources
-                    .unchecked_with_supported_facts_from_occurrence_with_memory(
+                    .unchecked_with_supported_facts_from_occurrence_with_memory_and_occurrences(
                         occurrence,
                         support,
                         expected_views,
                         after_state.memory(),
                     ),
-                None => resources.unchecked_with_facts(expected_views),
+                None => resources.unchecked_with_facts_and_occurrences(expected_views),
             };
-            after_state
-                .clone()
-                .with_resource_context(resources.with_opened_structural_witnesses(
-                    witness,
-                    &raw_children,
-                    true,
-                    assumptions,
-                ))
-        } else {
-            let Some(resource_delta) = after_state
-                .resources()
-                .facts()
-                .strip_prefix(before_state.resources().facts())
-            else {
-                return Err("resource observation changed an existing resource representation");
-            };
-            if resource_delta != expected_views.as_slice() {
-                return Err("resource observation produced an unchecked resource delta");
-            }
-            if let Some((support_occurrence, support)) = observation_support {
-                if !after_state
-                    .resources()
-                    .support_occurrence_is_live(support_occurrence, support)
-                {
-                    return Err("resource observation support is stale or malformed");
-                }
-                if expected_views.iter().any(|fact| {
-                    !after_state.resources().has_supported_projection(
-                        fact,
-                        support_occurrence,
-                        support,
+            let resources = resources.with_opened_structural_witnesses(
+                witness,
+                &raw_children,
+                true,
+                assumptions,
+            );
+            let mut next = after_state.clone();
+            if let Some(binding) = borrowed.filter(|_| !inserted.is_empty()) {
+                let evidence =
+                    crate::kernel::loans::CompositeProjectionEvidence::from_checked_expansion(
+                        observed.clone(),
+                        inserted.iter().map(|(child, _)| child.clone()).collect(),
                     )
-                }) {
-                    return Err("resource observation views are missing their owned support");
-                }
+                    .ok_or("resource observation cannot project a non-view child of a loan")?;
+                let ledger = before_state
+                    .loan_ledger()
+                    .zip(before_state.loan_participant())
+                    .ok_or("resource observation has no active loan holder")?;
+                let ledger = ledger
+                    .0
+                    .project_observed_body(ledger.1, &binding, evidence)
+                    .map_err(
+                        |_| "resource observation cannot project a child of the viewed composite",
+                    )?;
+                next = next.with_loan_ledger(Some(ledger));
+                next.with_resource_context_and_loan_dependencies(
+                    resources,
+                    inserted.into_iter().map(|(viewed, occurrence)| {
+                        (
+                            occurrence,
+                            crate::kernel::LoanViewBinding {
+                                viewed,
+                                ..binding.clone()
+                            },
+                        )
+                    }),
+                )
+            } else {
+                next.with_resource_context(resources)
             }
-            after_state.clone()
+        } else {
+            #[cfg(not(test))]
+            unreachable!("ordinary observation only accepts a naming input");
+            #[cfg(test)]
+            {
+                let Some(resource_delta) = after_state
+                    .resources()
+                    .facts()
+                    .strip_prefix(before_state.resources().facts())
+                else {
+                    return Err("resource observation changed an existing resource representation");
+                };
+                if resource_delta != expected_views.as_slice() {
+                    return Err("resource observation produced an unchecked resource delta");
+                }
+                if let Some((support_occurrence, support)) = observation_support {
+                    if !after_state
+                        .resources()
+                        .support_occurrence_is_live(support_occurrence, support)
+                    {
+                        return Err("resource observation support is stale or malformed");
+                    }
+                    if expected_views.iter().any(|fact| {
+                        !after_state.resources().has_supported_projection(
+                            fact,
+                            support_occurrence,
+                            support,
+                        )
+                    }) {
+                        return Err("resource observation views are missing their owned support");
+                    }
+                }
+                after_state.clone()
+            }
         };
 
         let introduced = after_facts
@@ -11768,7 +11833,6 @@ impl ExecutionProofCore {
             deferred_contract_exit_errors,
             // Empty conclusion placeholders; checked resource clauses replace
             // them before any live resource query.
-            checked_returned_resources: vec![crate::kernel::ResourceContext::new(); path_count],
             entry_representation_origin: has_checked_entry
                 .then_some(self.function_entry.as_ref())
                 .flatten()

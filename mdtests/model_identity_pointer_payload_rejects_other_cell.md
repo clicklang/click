@@ -53,9 +53,12 @@ int cell_same(struct cell* p, struct cell* q) {
             unfold(c);
             have identity == q;
             branch {
-                step_until(function.exit);
-                let c = fold(cell_at(p), { model: old(c.model) });
-            } else {}
+                true => {
+                    step_until(function.exit);
+                    let c = fold(cell_at(p), { model: old(c.model) });
+                }
+                false => {}
+            }
             step_until(function.exit);
             let c = fold(cell_at(p), { model: old(c.model) });
         },

@@ -39,13 +39,16 @@ int classify(int x) {
     ensures result == classified(x);
 } by {
     branch {
-        step();
-        have result == classified(x) by {
-            unfold(classified(x));
-            normalize() using { x == 0; };
+        true => {
+            step();
+            have result == classified(x) by {
+                unfold(classified(x));
+                normalize() using { x == 0; };
+            }
+            solve();
         }
-        solve();
-    } else {}
+        false => {}
+    }
     step();
     have result == classified(x) by {
         unfold(classified(x));
@@ -60,12 +63,15 @@ int has_class(int x) {
 } by {
     let { result: r } = step(classify, { });
     branch {
-        step();
-        have classified(x) != 0 by {
-            solve() using { r != 0; r == classified(x); };
+        true => {
+            step();
+            have classified(x) != 0 by {
+                solve() using { r != 0; r == classified(x); };
+            }
+            solve();
         }
-        solve();
-    } else {}
+        false => {}
+    }
     step();
     have classified(x) == 0 by {
         solve() using { r == 0; r == classified(x); };

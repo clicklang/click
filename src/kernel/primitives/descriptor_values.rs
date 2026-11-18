@@ -218,8 +218,9 @@ impl StoredConditionTerm {
     }
     /// Already-evaluated scalar conditions produced by the loop guard checker.
     pub(crate) fn from_minted(value: ConditionTerm) -> Self {
-        Self::from_root(KernelTermImport::for_exact_field_inputs().condition(&value))
-            .expect("logical condition")
+        let root = KernelTermImport::for_exact_field_inputs().condition(&value);
+        root.retain_native_condition_output(value);
+        Self::from_root(root).expect("logical condition")
     }
     pub(crate) fn root(&self) -> Option<&KernelTerm> {
         match &self.0 {
@@ -342,6 +343,31 @@ mod protocol_value_tests {
             }
         }
     }
+    #[test]
+    fn minted_condition_native_views_reuse_the_produced_output_without_exports() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let value = MachineTerm::if_then_else(
+            ConditionTerm::Variable(Variable(10993740)),
+            MachineTerm::Variable(Variable(10993741)),
+            MachineTerm::constant(3),
+        );
+        let native = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(value),
+            right: Box::new(MachineTerm::constant(9)),
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let stored = StoredConditionTerm::from_minted(native.clone());
+        assert!(stored.root().is_some());
+        assert_eq!(stored.native_compat(), &native);
+        assert_eq!(format!("{stored:?}"), format!("{native:?}"));
+        let view = BooleanOperandView::Shared(stored.root().unwrap()).native();
+        assert!(matches!(&view, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(view.as_ref(), &native);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
     #[test]
     fn condition_proposition_storage_keeps_roots_and_native_fact_identity() {
         let _session = crate::kernel::VerificationSession::enter();

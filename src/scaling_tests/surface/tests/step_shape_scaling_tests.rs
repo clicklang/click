@@ -259,13 +259,13 @@ fn branches(n: usize) -> (String, String) {
             "        branch ensuring {{
             fact 0 <= s;
             fact s <= {bound};
-        }} then {{
+        }} {{ true => {{
             step();
             have 0 <= s by {{ solve(); }}
             have s <= {bound} by {{ solve(); }}
-        }} else {{
+        }} false => {{
             have s <= {bound} by {{ solve(); }}
-        }}"
+        }} }}"
         )
     });
     let click = format!(
@@ -800,26 +800,59 @@ fn a_call_ignores_unrelated_owned_objects() {
 // that happen to share its external-argument memory block.
 #[test]
 fn a_partial_borrow_call_ignores_unrelated_owned_objects() {
+    use crate::instrumentation::VerificationEvent as Event;
     let samples = [1_usize, 8, 64].map(|size| {
-        let run = run(partial_borrow_beside_objects, size);
-        let work = run
+        let (run, events) =
+            crate::instrumentation::collect(|| run(partial_borrow_beside_objects, size));
+        let (step_index, (_, work)) = run
             .statement_steps("partial_borrow_beside_objects")
             .iter()
-            .filter(|(role, _)| role == "touch_half(data);")
-            .map(|(_, work)| *work)
-            .max()
-            .unwrap();
-        (size, work)
+            .enumerate()
+            .find(|(_, (role, _))| role == "touch_half(data);")
+            .expect("one partial borrow call");
+        let mut active = Vec::new();
+        let mut footprint_work = 0;
+        let mut publications = 0;
+        for event in events {
+            match event {
+                Event::TacticStarted(tactic) => active.push(tactic),
+                Event::TacticFinished { tactic, .. } | Event::TacticFailed(tactic) => {
+                    if let Some(index) = active.iter().rposition(|current| current == &tactic) {
+                        active.remove(index);
+                    }
+                }
+                Event::OperationFinished { name, work, .. }
+                    if name == "prepare ownership footprint"
+                        && active.last().is_some_and(|tactic| {
+                            tactic.claim.contains("caller")
+                                && tactic.tactic_name == "step"
+                                && tactic.tactic_index == step_index
+                        }) =>
+                {
+                    footprint_work += work;
+                    publications += 1;
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            publications > 0,
+            "size={size}: no ownership publication recorded"
+        );
+        let selected_work = work
+            .checked_sub(footprint_work)
+            .expect("publication work belongs to the selected step's exclusive work");
+        (size, selected_work)
     });
-    // Splitting and restoring the borrowed slice updates the frame's cached
-    // footprint. Its tree paths may grow logarithmically; a scan of unrelated
-    // objects would make the second increment eight times the first.
-    let first = samples[1].1.saturating_sub(samples[0].1);
-    let second = samples[2].1.saturating_sub(samples[1].1);
-    assert!(
-        second <= first * 3 + 2,
-        "partial borrow footprint updates: {samples:?}"
-    );
+    // Publication updates only canonical-tree paths, separately bounded by
+    // the footprint scaling test. Their lengths vary with legitimate retained
+    // observation identities; the rest of this selected call stays flat.
+    for (size, work) in &samples[1..] {
+        assert!(
+            *work <= samples[0].1 + band(samples[0].1),
+            "partial borrow selected work at {size}: {samples:?}"
+        );
+    }
 }
 
 #[test]

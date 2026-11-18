@@ -26,46 +26,58 @@ int32 f(int32 x, int32 a0, int32 b0, int32 a1, int32 b1, int32 a2, int32 b2, int
         branch ensuring {
             fact x >= 0;
             fact x <= 1000;
-        } then {
-            step();
-            have x >= 0;
-            have x <= 1000;
-        } else {
-            have x >= 0;
-            have x <= 1000;
+        } {
+            true => {
+                step();
+                have x >= 0;
+                have x <= 1000;
+            }
+            false => {
+                have x >= 0;
+                have x <= 1000;
+            }
         }
         branch ensuring {
             fact x >= 0;
             fact x <= 1001;
-        } then {
-            step();
-            have x >= 0;
-            have x <= 1001;
-        } else {
-            have x >= 0;
-            have x <= 1001;
+        } {
+            true => {
+                step();
+                have x >= 0;
+                have x <= 1001;
+            }
+            false => {
+                have x >= 0;
+                have x <= 1001;
+            }
         }
         branch ensuring {
             fact x >= 0;
             fact x <= 1002;
-        } then {
-            step();
-            have x >= 0;
-            have x <= 1002;
-        } else {
-            have x >= 0;
-            have x <= 1002;
+        } {
+            true => {
+                step();
+                have x >= 0;
+                have x <= 1002;
+            }
+            false => {
+                have x >= 0;
+                have x <= 1002;
+            }
         }
         branch ensuring {
             fact x >= 0;
             fact x <= 1003;
-        } then {
-            step();
-            have x >= 0;
-            have x <= 1003;
-        } else {
-            have x >= 0;
-            have x <= 1003;
+        } {
+            true => {
+                step();
+                have x >= 0;
+                have x <= 1003;
+            }
+            false => {
+                have x >= 0;
+                have x <= 1003;
+            }
         }
         step();
         solve();

@@ -2604,7 +2604,8 @@ impl BodyAdapter<'_, '_> {
                         return Err(unsupported("Box::new destination type"));
                     }
                     return Ok(T::BoxNew {
-                        source: self.local(*source_local)?,
+                        source: Some(self.local(*source_local)?),
+                        fields: Vec::new(),
                         record: name,
                         destination: self.local(*destination)?,
                         target: target.index(),
@@ -3790,6 +3791,7 @@ pub(super) fn decode_crate(
             .collect();
         temporaries::substitute_literals(&mut locals, &mut blocks, &temporaries, &parameter_types);
         temporaries::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
+        temporaries::box_initializers(&mut locals, &mut blocks, &temporaries);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_range_payloads(&mut locals, &mut blocks, &temporaries);

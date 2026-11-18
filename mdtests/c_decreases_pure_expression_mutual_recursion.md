@@ -47,24 +47,27 @@ int32 even(int32 n) {
 } by {
     step();
     branch {
-        have 0 <= level(n - 1) by {
-            unfold(level(n - 1));
-            solve() using {
-                n > 0;
-            };
+        true => {
+            have 0 <= level(n - 1) by {
+                unfold(level(n - 1));
+                solve() using {
+                    n > 0;
+                };
+            }
+            have level(n - 1) < level(n) by {
+                unfold(level(n - 1));
+                unfold(level(n));
+                solve() using {
+                    n > 0;
+                };
+            }
+            step();
+            step();
+            step();
+            solve();
         }
-        have level(n - 1) < level(n) by {
-            unfold(level(n - 1));
-            unfold(level(n));
-            solve() using {
-                n > 0;
-            };
-        }
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        false => {}
+    }
     step();
     solve();
 }
@@ -76,24 +79,27 @@ int32 odd(int32 n) {
 } by {
     step();
     branch {
-        have 0 <= level(n - 1) by {
-            unfold(level(n - 1));
-            solve() using {
-                n > 0;
-            };
+        true => {
+            have 0 <= level(n - 1) by {
+                unfold(level(n - 1));
+                solve() using {
+                    n > 0;
+                };
+            }
+            have level(n - 1) < level(n) by {
+                unfold(level(n - 1));
+                unfold(level(n));
+                solve() using {
+                    n > 0;
+                };
+            }
+            step();
+            step();
+            step();
+            solve();
         }
-        have level(n - 1) < level(n) by {
-            unfold(level(n - 1));
-            unfold(level(n));
-            solve() using {
-                n > 0;
-            };
-        }
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        false => {}
+    }
     step();
     solve();
 }

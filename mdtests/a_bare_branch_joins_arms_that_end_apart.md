@@ -34,8 +34,11 @@ int32 note(int32 x) {
     step();
     step();
     branch {
-        step();
-    } else {
+        true => {
+            step();
+        }
+        false => {
+        }
     }
     step();
     solve();

@@ -46,10 +46,13 @@ int32 in_arm(int32 x) {
     requires x >= 0;
     ensures result >= 0 by {
         branch {
-            step();
-            solve();
-        } else {
-            have to_integer(x + 1) >= 1;
+            true => {
+                step();
+                solve();
+            }
+            false => {
+                have to_integer(x + 1) >= 1;
+            }
         }
         step();
         solve();

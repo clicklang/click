@@ -19,11 +19,14 @@ int32 returning_branch(int32 x) {
     ensures result >= 0 by {
         branch ensuring {
             fact x >= 0;
-        } then {
-            step();
-            solve();
-        } else {
-            have x >= 0;
+        } {
+            true => {
+                step();
+                solve();
+            }
+            false => {
+                have x >= 0;
+            }
         }
         step();
         solve();

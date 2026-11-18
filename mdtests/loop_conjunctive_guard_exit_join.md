@@ -60,22 +60,25 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
         }
     }
     branch {
-        have p[0] == 0 by {
-            cases {
-                a == 0 => {
-                    have a == 0 by {
+        true => {
+            have p[0] == 0 by {
+                cases {
+                    a == 0 => {
+                        have a == 0 by {
+                            known();
+                        }
+                        contradiction(a == 0);
+                    }
+                    p[0] == 0 => {
                         known();
                     }
-                    contradiction(a == 0);
-                }
-                p[0] == 0 => {
-                    known();
                 }
             }
+            step();
+            solve();
         }
-        step();
-        solve();
-    } else {}
+        false => {}
+    }
     step();
     solve();
 }

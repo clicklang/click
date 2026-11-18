@@ -302,7 +302,7 @@ int32 run_first_destroyed(int32 payload) {
 } by {
     step();
     step();
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     fold(authority(child_ref(kid)));
     fold(child_storage(kid));
     step();
@@ -310,10 +310,10 @@ int32 run_first_destroyed(int32 payload) {
     fold(child_control(kid));
     step();
     step();
-    branch { step(); step(); solve(); } else {}
+    branch { true => { step(); step(); solve(); } false => {} }
     step();
     step();
-    branch { step(); step(); step(); solve(); } else {}
+    branch { true => { step(); step(); step(); solve(); } false => {} }
     let { link: first_link } = step(parent_attach, {});
     let { link: second_link } = step(parent_attach, {});
     step(child_release, {});
@@ -377,7 +377,7 @@ int32 run_second_destroyed(int32 payload) {
 } by {
     step();
     step();
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     fold(authority(child_ref(kid)));
     fold(child_storage(kid));
     step();
@@ -385,10 +385,10 @@ int32 run_second_destroyed(int32 payload) {
     fold(child_control(kid));
     step();
     step();
-    branch { step(); step(); solve(); } else {}
+    branch { true => { step(); step(); solve(); } false => {} }
     step();
     step();
-    branch { step(); step(); step(); solve(); } else {}
+    branch { true => { step(); step(); step(); solve(); } false => {} }
     let { link: first_link } = step(parent_attach, {});
     let { link: second_link } = step(parent_attach, {});
     step(child_release, {});

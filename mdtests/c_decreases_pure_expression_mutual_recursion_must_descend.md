@@ -41,22 +41,25 @@ int32 even(int32 n) {
 } by {
     step();
     branch {
-        have 0 <= level(n - 1) by {
-            unfold(level(n - 1));
-            have 0 <= n - 1;
+        true => {
+            have 0 <= level(n - 1) by {
+                unfold(level(n - 1));
+                have 0 <= n - 1;
+                solve();
+            }
+            have level(n - 1) < level(n) by {
+                unfold(level(n - 1));
+                unfold(level(n));
+                have n - 1 < n;
+                solve();
+            }
+            step();
+            step();
+            step();
             solve();
         }
-        have level(n - 1) < level(n) by {
-            unfold(level(n - 1));
-            unfold(level(n));
-            have n - 1 < n;
-            solve();
-        }
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        false => {}
+    }
     step();
     solve();
 }
@@ -68,22 +71,25 @@ int32 odd(int32 n) {
 } by {
     step();
     branch {
-        have 0 <= level(n - 1) by {
-            unfold(level(n - 1));
-            have 0 <= n - 1;
+        true => {
+            have 0 <= level(n - 1) by {
+                unfold(level(n - 1));
+                have 0 <= n - 1;
+                solve();
+            }
+            have level(n - 1) < level(n) by {
+                unfold(level(n - 1));
+                unfold(level(n));
+                have n - 1 < n;
+                solve();
+            }
+            step();
+            step();
+            step();
             solve();
         }
-        have level(n - 1) < level(n) by {
-            unfold(level(n - 1));
-            unfold(level(n));
-            have n - 1 < n;
-            solve();
-        }
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        false => {}
+    }
     step();
     solve();
 }

@@ -32,10 +32,13 @@ struct node* pick(struct node* p, struct node* q, int32 c) {
     step();
     branch ensuring {
         fact is_node(r) == 1;
-    } then {
-        step();
-    } else {
-        step();
+    } {
+        true => {
+            step();
+        }
+        false => {
+            step();
+        }
     }
     step();
     solve();

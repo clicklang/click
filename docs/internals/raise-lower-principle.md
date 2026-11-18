@@ -469,7 +469,8 @@ The comparison boundary recognizes fixed-size native conditionals. The guard can
 be a Boolean variable or a 32/64-bit comparison, and the comparison operands and
 arms can be literal or variable leaves, one bitwise operation (`&`, `|`, `^`, `~`)
 over such leaves, a right shift or unsigned left shift by an in-range literal
-count, an unsigned sum, difference, or product over a variable and a literal,
+count, an unsigned sum, difference, or product over two variables or a variable
+and a literal,
 an unsigned quotient or remainder of a variable by a nonzero literal,
 or a 32-to-64-bit widening or 64-to-32-bit low-word cast of a leaf. A signed
 comparison spells the low-word cast with its signed destination. Wide equality retains an unsigned
@@ -719,14 +720,6 @@ its search succeeds and is expanded, but a written step's facts and goal may
 be cited by the next written step. The census only observes; it does not
 change any proof. A unit test can record the same lines in memory with
 `raise_lower_census::capture` and assert that a step's facts are raised.
-
-Audit-budget limitation (2026-10-31): enabling both census and fact-stability
-instrumentation together pushes `solve_false_list_position_is_prompt` over
-its 100,000-unit smart-work budget, changing the expected rejection diagnostic.
-The ordinary gate and isolated runs with either flag pass that fixture. Run
-the corpus audits separately for validation; do not increase the proof budget.
-This is an instrumentation-accounting issue to investigate, not a recorded
-fact-dependent lowering.
 
 The census sorts a miss into one of three gaps, each with its own fix:
 

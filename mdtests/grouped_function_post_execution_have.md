@@ -55,11 +55,14 @@ int32 branch_value(int32 flag) {
     ensures result >= 0;
 } by {
     branch {
-        step_until(function.exit);
-        have result >= 0;
-    } else {
-        step_until(function.exit);
-        have result >= 0;
+        true => {
+            step_until(function.exit);
+            have result >= 0;
+        }
+        false => {
+            step_until(function.exit);
+            have result >= 0;
+        }
     }
 }
 

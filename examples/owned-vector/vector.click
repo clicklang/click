@@ -1091,15 +1091,18 @@ int32 vector_replace_if(
     step();
     step();
     branch {
-        step();
-        step();
-        have replace != 0 implies selected == replacement;
-    } else {
-        step();
-        step();
-        have replace != 0 implies selected == replacement by {
-            intro();
-            contradiction(not replace != 0);
+        true => {
+            step();
+            step();
+            have replace != 0 implies selected == replacement;
+        }
+        false => {
+            step();
+            step();
+            have replace != 0 implies selected == replacement by {
+                intro();
+                contradiction(not replace != 0);
+            }
         }
     }
     step();

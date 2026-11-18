@@ -18,7 +18,6 @@ fn retained_closing_work_tracks_outcomes_and_clauses_without_walking_ambient_fac
                             false,
                             false,
                             None,
-                            ResourceContext::new(),
                             false,
                             None,
                         )

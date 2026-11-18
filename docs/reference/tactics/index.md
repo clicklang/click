@@ -49,7 +49,7 @@ remains supported.
   [Execution](#execution).
 - `step_until(target)`: run to one statement, loop, or `function.exit`
   without splitting. See [Execution](#execution).
-- `branch { ... } else { ... }`: prove each arm of the C `if` at the
+- `branch { true => { ... } false => { ... } }`: prove each arm of the C `if` at the
   frontier. See [Execution](#execution).
 - `loop { ... }`: prove a C loop from its invariants, which the back edge
   closes member by member with `solve()`. See [Execution](#execution) and
@@ -347,7 +347,7 @@ the one execution transition that fails.
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
 | `let { result: name } = step()` | simple | Specialized | Bind a checked assignment, call, or scalar step result. | [Reference](#binding-a-statement-result) |
 | `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
-| `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
+| `branch [ensuring { ... }] { true => { ... } false => { ... } }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
 | `step(callee, { binder: instance })` | simple | Specialized | Map a call's instance binders and value parameters, and name what it produces. | [Reference](#calls-with-binder-maps) |
@@ -715,12 +715,11 @@ site.
 
 ### Source branches
 
-**Form:** `branch [ensuring { ... } then] { ... } else { ... }`
+**Form:** `branch [ensuring { ... }] { true => { ... } false => { ... } }`
 
-A plain `branch` starts its first arm directly with `{`. With an `ensuring`
-interface, `then` separates that interface from the first arm. The same rule
-applies to a proof `if`; `then` is required with the interface and refused
-without it.
+The `true` and `false` labels select the two outcomes of the C condition.
+Write both arms in either order. An arm body may be empty, and commas
+between arms are optional. An `ensuring` interface goes before the arm block.
 
 **Core.** At a C `if` frontier, prove every feasible arm and join nonreturning
 arms into one continuation. Arms that end in one state join as they are. Arms
@@ -2234,6 +2233,7 @@ Arithmetic automation expands to ordinary proofs. Arithmetic operations correspo
 | Arithmetic operation | Ordinary law |
 | --- | --- |
 | Add two non-strict Integer bounds | `integer::add_le(a, b, c, d)` |
+| Subtract two Integer bounds with the right order reversed | `integer::subtract_le(a, b, c, d)` |
 | Scale an inequality by a nonnegative factor | `integer::multiply_order_nonnegative(a, b, factor)` |
 | Turn strict order into a successor bound | `integer::lt_step_le(a, b)` |
 | Restore strict order from a successor bound | `integer::step_le_lt(a, b)` |
@@ -2987,12 +2987,21 @@ constructor cases; each immediate recursive field admits `ih(field)`, and
 `ih(field, other, ...)` states the theorem at that field and any well-typed
 terms in the remaining parameter positions.
 
-The declaration and its exhaustive `match` are the two top-level tactics in
-this form of a pure theorem proof. The match must inspect the inducted
-parameter itself. Each arm proves the theorem goal; a join `ensuring`
-interface is not supported. Both statements use the ordinary `induct` and
-`match` Surface and certificate nodes. Expansion preserves the declaration
-and expands the proofs inside the match arms. The retired
+The declaration preserves the goal and introduces the local hypothesis at
+its written position. Helper proofs may precede it or separate it from a
+`match`. A match on the inducted parameter exposes hypotheses for that arm's
+immediate recursive fields; matches on other values do not. The match may
+appear inside `if`, `have`, or other ordinary proof blocks, and may use the
+ordinary shared continuation after its arms. Field names remain arm-local.
+
+The original theorem goal must still be focused at each declaration. All
+structural declarations in one proof name the same theorem parameter and
+hypothesis; a path cannot introduce that hypothesis twice. The declaration
+may be in a proof block when that block is proving the original theorem goal.
+Expansion can therefore copy a shared declaration into earlier branches.
+Each match arm is checked by the ordinary pure-match driver, which does not accept a
+join `ensuring` interface. Expansion preserves the declaration and checked
+match structure and expands its helper proofs and continuations. The retired
 `induct(xs) as ih { ... }` spelling is refused.
 
 **Failure, checking, and tools:**
@@ -3003,7 +3012,7 @@ a parameter list of the wrong length, and an instantiation whose substituted
 requirements are unavailable. Click checks every arm; expansion recurses through
 the arm certificates.
 
-**Checked examples:** [`algebraic_structural_induction.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_structural_induction.md), [`algebraic_structural_induction_generalizes_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_structural_induction_generalizes_parameters.md)
+**Checked examples:** [`structural_induction_surrounding_helpers.md`](https://github.com/clicklang/click/blob/master/mdtests/structural_induction_surrounding_helpers.md), [`structural_induction_continuation.md`](https://github.com/clicklang/click/blob/master/mdtests/structural_induction_continuation.md), [`algebraic_structural_induction.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_structural_induction.md), [`algebraic_structural_induction_generalizes_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_structural_induction_generalizes_parameters.md)
 
 ### Induction hypothesis application
 

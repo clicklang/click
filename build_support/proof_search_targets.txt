@@ -252,6 +252,7 @@ try_integer_algebra
 try_quotient_shift_using
 try_address_words_using
 
+try_int32_add_sub_using
 try_interval_fact_using
 try_widened_unsigned_sum_using
 rewrite_conditional_arms_using

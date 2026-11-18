@@ -20,7 +20,7 @@ int32 use_allocation() { ensures result == 0; } by {
     step();
     step();
     have statement(1).result == p by normalize();
-    branch { step(); } else {}
+    branch { true => { step(); } false => {} }
     have statement(1).allocation == p;
     have statement(1).allocation != 0;
     step();

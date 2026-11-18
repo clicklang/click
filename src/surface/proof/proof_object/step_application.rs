@@ -1501,6 +1501,27 @@ impl<'a> Proof<'a> {
         if self.goal() != Some(&expected_goal) {
             return Err(self.step_error("`induct` requires the original theorem goal"));
         }
+        if setup.structural_parameters.is_some() {
+            if self.state().locals().induction_active {
+                return Err(self.step_error("induction hypothesis was already introduced"));
+            }
+            let value = setup
+                .structural_root
+                .as_ref()
+                .expect("checked structural parameter");
+            if value.algebraic_type.rigid {
+                return Err(self.step_error("structural induction requires a datatype; this is a Click library primitive type with no constructors"));
+            }
+            let mut locals = self.state().locals().clone();
+            locals.induction_active = true;
+            return Ok(self.checked_fact_transition(
+                locals,
+                self.facts().clone(),
+                false,
+                Vec::new(),
+                Vec::new(),
+            ));
+        }
         match context.theorem_context.values.get(parameter) {
             Some(ProgramValue::Int32(current)) => {
                 let nonnegative = Proposition::condition_is(
@@ -1552,10 +1573,13 @@ impl<'a> Proof<'a> {
         let ProofContext::Pure(context) = self.context.as_ref() else {
             return Err(self.step_error("induction application requires a pure theorem proof"));
         };
-        if let Some(setup) = context.structural_induction_setup.as_ref() {
+        if context
+            .induction_setup
+            .as_ref()
+            .is_some_and(|setup| setup.structural_parameters.is_some())
+        {
             return self.apply_structural_induction_hypothesis(
                 context,
-                setup,
                 hypothesis,
                 arguments,
                 surface_premises,
@@ -1679,48 +1703,17 @@ impl<'a> Proof<'a> {
     fn apply_structural_induction_hypothesis(
         &self,
         _context: &PureProofContext<'_>,
-        setup: &PureStructuralInductionBranchSetup,
         hypothesis: &str,
         arguments: &[ContractExpression],
         surface_premises: &[ClickProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        if hypothesis != setup.hypothesis {
-            return Err(self.step_error(format!("unknown induction hypothesis `{hypothesis}`")));
-        }
-        // The inducted position must name a field this arm's pattern bound,
-        // whatever the remaining positions instantiate. This is a bounded
-        // test against the arm's own bindings.
-        if !super::super::pure_theorems::structural_induction_descends(setup, arguments) {
-            return Err(self.step_error(
-                "structural induction hypothesis expects an immediate recursive field",
-            ));
-        }
-        let Some(application) = setup
-            .applications
-            .iter()
-            .find(|candidate| candidate.arguments == *arguments)
-        else {
-            return Err(self.step_error(
-                "structural induction hypothesis expects an immediate recursive field",
-            ));
-        };
+        let application = self.structural_induction_instance(hypothesis, arguments)?;
         if surface_premises != application.surface_premises {
             return Err(self.step_error(
                 "structural induction application changed its exact requirement premises",
             ));
         }
-        let explicit_premises = surface_premises
-            .iter()
-            .map(|premise| self.lower_surface_proposition(premise, "induction premise"))
-            .collect::<Result<Vec<_>, _>>()?;
-        if explicit_premises != application.kernel_premises {
-            return Err(self.step_error(
-                "structural induction application lowered different requirement premises",
-            ));
-        }
-        if !self.facts().contains(&application.implication) {
-            return Err(self.step_error("structural induction hypothesis is not active"));
-        }
+        let explicit_premises = &application.kernel_premises;
         if let Some(missing) = explicit_premises
             .iter()
             .find(|premise| !self.facts().listed_premise_available(premise, &[], true))
@@ -1730,10 +1723,11 @@ impl<'a> Proof<'a> {
                 self.render_diagnostic_proposition(missing)
             )));
         }
-        if !self.facts().contains(&application.conclusion)
-            && !self
-                .facts()
-                .contains_discharged_implication_consequent(&application.conclusion)
+        let instantiated = self
+            .facts()
+            .with_kernel_checked_fact(application.implication.clone());
+        if !instantiated.contains(&application.conclusion)
+            && !instantiated.contains_discharged_implication_consequent(&application.conclusion)
         {
             return Err(self.step_error("kernel rejected structural induction application"));
         }
@@ -1741,7 +1735,7 @@ impl<'a> Proof<'a> {
             .then(|| application.conclusion.clone())
             .into_iter()
             .collect::<Vec<_>>();
-        let mut facts = self.facts().clone();
+        let mut facts = instantiated;
         for fact in &added {
             facts = facts.with_kernel_checked_fact(fact.clone());
         }

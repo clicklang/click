@@ -111,7 +111,11 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
                 .check_equality_rewrite(&goal(ty, source), &cited)
                 .unwrap();
             assert!(rewrite.try_present_as(&original));
-            assert_eq!(rewrite.proposition(), &original);
+            // The rewrite states the observation comparison in its one form.
+            assert_eq!(
+                rewrite.proposition(),
+                &crate::kernel::assumptions::canonical_observation_form(&original)
+            );
             let other = match ty {
                 MachineIntegerType::Int32 => MachineIntegerType::UInt32,
                 _ => MachineIntegerType::Int32,

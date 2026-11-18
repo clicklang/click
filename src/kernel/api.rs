@@ -5645,7 +5645,6 @@ pub fn prove_checked_program_function_execution_with_environment(
         deferred_contract_exit_errors: vec![None; path_count],
         // Empty certificate placeholders, replaced by checked clause contexts;
         // they never receive unchecked memory deltas or answer permission queries.
-        checked_returned_resources: vec![ResourceContext::new(); path_count],
         entry_representation_origin: None,
         boundary_transfer: None,
         checked_call_events: Default::default(),

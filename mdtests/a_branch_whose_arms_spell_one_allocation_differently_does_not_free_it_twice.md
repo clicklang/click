@@ -53,13 +53,16 @@ int32 twice(int32* p, int32 flag) {
     step();
     branch ensuring {
         owns allocated(s);
-    } then {
-        step();
-        step();
-    } else {
-        step();
-        unfold(allocated(p));
-        fold(allocated(s));
+    } {
+        true => {
+            step();
+            step();
+        }
+        false => {
+            step();
+            unfold(allocated(p));
+            fold(allocated(s));
+        }
     }
     unfold(allocated(s));
     step();

@@ -372,3 +372,45 @@ fn scalar_array_write_loan_requirement_ignores_alias_and_loan_counts() {
         }
     }
 }
+
+#[test]
+fn local_scalar_array_tail_fill_replaces_values_independent_of_length_and_other_blocks() {
+    let format = MachineIntegerType::Int16;
+    let short = |bits| {
+        let constant = MachineIntegerConstant::from_bits(format.format(), bits).unwrap();
+        ProgramValue::Int16(format.constant_term(constant).unwrap())
+    };
+    let samples = [(4, 0), (1024, 64), (1_000_000, 1024)].map(|(count, unrelated)| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let prefix = pointer("local:tail", 0);
+        let start = prefix.offset_by_bytes(2);
+        let last = prefix.offset_by_bytes(2 * count);
+        let mut memory = SymbolicMemory::new()
+            .with_block(prefix.base.clone(), 2 * (count + 1))
+            .store(prefix.clone(), short(42))
+            .store(last.clone(), short(7));
+        for index in 0..unrelated {
+            memory =
+                memory.with_uninitialized_object(pointer(&format!("local:other-{index}"), 0), 2);
+        }
+        let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
+            memory
+                .write_scalar_array_region(
+                    &start,
+                    ProgramType::Int16,
+                    count,
+                    short(0),
+                    false,
+                    false,
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+        });
+        assert_eq!(memory.load(&prefix), ExpressionOutcome::Value(short(42)));
+        assert_eq!(memory.load(&last), ExpressionOutcome::Value(short(0)));
+        assert_eq!(memory.cells.runs_in_block(&prefix.base).count(), 1);
+        work
+    });
+    eprintln!("local scalar array tail fill (small, medium, large): {samples:?}");
+    assert!(samples.iter().all(|work| *work <= samples[0] + 32));
+}

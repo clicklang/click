@@ -269,7 +269,9 @@ theorem's Integer bindings in the induction hypothesis. See
 
 For a recursive algebraic parameter, introduce the structural induction
 hypothesis with `let ih = induct(xs);` and prove the constructor cases with
-`match xs`:
+`match xs`. Helpers may precede the declaration, separate it from the match,
+or continue the proof after the match. The match can also be inside a `have`
+proof, while the declaration still targets the original theorem goal:
 
 <!-- verified-example: mdtests/algebraic_structural_induction.md -->
 ```click

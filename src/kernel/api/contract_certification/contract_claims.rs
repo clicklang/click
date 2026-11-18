@@ -1202,7 +1202,6 @@ fn prepare_function_claim_path(
     checked_resource_transition: bool,
     deferred_contract_exit: bool,
     deferred_contract_exit_error: Option<RuntimeError>,
-    checked_returned_resources: crate::kernel::ResourceContext,
     capture_failure: bool,
     checked_transfer: Option<&crate::kernel::functions::CheckedBoundaryResourceTransfer>,
     checked_outcome: Option<&FunctionOutcome>,
@@ -1336,7 +1335,6 @@ fn prepare_function_claim_path(
         checked_resource_transition,
         deferred_contract_exit,
         deferred_contract_exit_error,
-        checked_returned_resources,
         capture_failure,
         checked_transfer,
     )
@@ -1353,7 +1351,6 @@ fn prepare_closing_path(
     checked_resource_transition: bool,
     deferred_contract_exit: bool,
     deferred_contract_exit_error: Option<RuntimeError>,
-    checked_returned_resources: ResourceContext,
     capture_failure: bool,
     checked_transfer: Option<&crate::kernel::functions::CheckedBoundaryResourceTransfer>,
 ) -> Result<CertifiedFunctionClaimPath, ContractPathPreparationFailure> {
@@ -1370,47 +1367,6 @@ fn prepare_closing_path(
         outcome.clone(),
         &assumptions,
     );
-    let deferred_body_outcome = if deferred_contract_exit {
-        match outcome {
-            FunctionOutcome::Return { value, state } => {
-                // An authority deferred exit can retain an output occurrence that was
-                // already folded in the body. The checked return context
-                // describes that occurrence, rather than a second owner.
-                // Preserve every checked output and replace only identical
-                // representations left in the body outcome.
-                let mut body_resources = state.resources().clone();
-                {
-                    for fact in checked_returned_resources.facts() {
-                        if let Some(without) =
-                            body_resources.clone().without_exact_representation(fact)
-                        {
-                            body_resources = without;
-                        }
-                    }
-                }
-                let resources = body_resources
-                    .try_compose_with_facts(
-                        checked_returned_resources.facts().iter().cloned(),
-                        &assumptions,
-                    )
-                    .map_err(|error| {
-                        format!(
-                            "the checked returned resources cannot be composed into the deferred body outcome: {error}"
-                        )
-                    })?;
-                let mut state = state.clone();
-                state = Box::new(state.with_resource_context(resources));
-                Some(FunctionOutcome::Return {
-                    value: value.clone(),
-                    state,
-                })
-            }
-            FunctionOutcome::Throw { .. } => Some(outcome.clone()),
-            _ => None,
-        }
-    } else {
-        None
-    };
     let resolved_outcome = if deferred_contract_exit {
         let Some(error) = deferred_contract_exit_error.as_ref().filter(|error| {
             crate::kernel::functions::is_deferred_conditional_resource_effect_error(error)
@@ -1426,7 +1382,10 @@ fn prepare_closing_path(
             caller_state,
             checked_transfer.map_or(function, |transfer| transfer.checked_function()),
             arguments,
-            deferred_body_outcome.as_ref().unwrap_or(outcome),
+            // The boundary consumes its selected output units jointly from
+            // this retained body partition. Individual claim receipts do
+            // not mint another owner or replace the body's occurrences.
+            outcome,
             checked_transfer,
             &assumptions,
             &mut budget,
@@ -1604,7 +1563,11 @@ fn prepare_closing_path(
     );
     let post_resource_facts = post_resources.observable_facts_assuming_valid(&assumptions);
     let mut assumptions = assumptions_with_propositions(&assumptions, &post_resource_facts);
-    let mut post_state = entry_state.clone().with_memory(exit_memory);
+    // The exit memory came from the exit state, so the post state stands
+    // after the exit state's point, with the entry's locals.
+    let mut post_state = entry_state
+        .clone()
+        .with_memory_continuing(raw_exit_state, exit_memory);
     post_state = post_state.with_resource_context(post_resources.clone());
     post_state.observed_population_families = raw_exit_state.observed_population_families.clone();
     // Population counts live in the creation ledger, and observed families
@@ -2610,7 +2573,11 @@ impl<'a> FunctionEnsureGoalContext<'a> {
             )?,
             None => expand_certification_exit(function, &claim_return_state, assumptions)?,
         };
-        let mut post_state = entry_state.clone().with_memory(exit_memory);
+        // The exit memory came from the return state, so the post state
+        // stands after the return state's point, with the entry's locals.
+        let mut post_state = entry_state
+            .clone()
+            .with_memory_continuing(return_state, exit_memory);
         post_state = post_state.with_resource_context(resources);
         post_state.observed_population_families = return_state.observed_population_families.clone();
         // Preserve checked body consumption evidence when reconstructing the exit.

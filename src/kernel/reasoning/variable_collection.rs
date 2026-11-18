@@ -960,16 +960,21 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. } => {}
 
         ProgramStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            for expression in initializer
+                .iter()
+                .chain(zero_fill.iter().flat_map(ZeroFill::expressions))
+            {
+                collect_program_expression_bitvector_variables(expression, variables);
+            }
         }
-        | ProgramStatement::Assign { expression, .. }
+        ProgramStatement::Assign { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression)
         | ProgramStatement::Assert {
@@ -1532,6 +1537,7 @@ fn collect_spec_bound_identities(
     });
 }
 
+#[cfg(test)]
 pub(crate) fn collect_spec_algebraic_expression_bitvector_variables(
     expression: &SpecAlgebraicExpression,
     variables: &mut BTreeSet<Variable>,

@@ -45,8 +45,11 @@ int use_pick(int x) {
     step();
     step();
     branch {
-        step_until(function.exit);
-    } else {
+        true => {
+            step_until(function.exit);
+        }
+        false => {
+        }
     }
     step_until(function.exit);
     have result == 18 by {
