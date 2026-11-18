@@ -116,13 +116,7 @@ fn wide_scalar_integer_conversion_checks_bounds_and_keeps_symbolic_obligations()
         assert_eq!(paths.len(), 1);
         assert_eq!(paths[0].value.program_type(), destination.program_type());
         assert_eq!(paths[0].obligations.len(), 2);
-        assert!(paths[0].obligations.iter().any(|obligation| matches!(
-            obligation.proposition(),
-            Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(_, _), true)
-        )));
-        assert!(paths[0].obligations.iter().any(|obligation| matches!(
-            obligation.proposition(),
-            Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(_, _), true)
-        )));
+        assert!(paths[0].obligations.iter().any(|obligation| matches!(&obligation.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerGreaterEqual(_, _), _))))));
+        assert!(paths[0].obligations.iter().any(|obligation| matches!(&obligation.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerLessEqual(_, _), _))))));
     }
 }

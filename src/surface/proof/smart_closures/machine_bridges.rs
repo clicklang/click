@@ -42,16 +42,24 @@ fn integer_parts(
     &crate::kernel::SharedIntegerTerm,
 )> {
     match proposition {
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerLessEqual(a, b)
-            | ConditionTerm::IntegerLessThan(a, b)
-            | ConditionTerm::IntegerEqual(a, b),
-            true,
-        ) => Some((a, b)),
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerGreaterEqual(a, b) | ConditionTerm::IntegerGreaterThan(a, b),
-            true,
-        ) => Some((b, a)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::IntegerLessEqual(a, b)
+                | ConditionTerm::IntegerLessThan(a, b)
+                | ConditionTerm::IntegerEqual(a, b),
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some((a, b))
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::IntegerGreaterEqual(a, b) | ConditionTerm::IntegerGreaterThan(a, b),
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some((b, a))
+        }
         _ => None,
     }
 }

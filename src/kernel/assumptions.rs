@@ -3961,7 +3961,10 @@ impl PureFactContext {
                 Term::ProgramValue(ProgramValue::Pointer(left)),
                 Term::ProgramValue(ProgramValue::Pointer(right)),
             ) => (left, right),
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::PointerEqual(left, right), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 (left.as_ref(), right.as_ref())
             }
             _ => return,
@@ -3999,7 +4002,10 @@ impl PureFactContext {
     fn adjust_algebraic_graph_equality(&mut self, proposition: &Proposition) {
         let (left, right) = match proposition {
             Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => (a, b),
-            Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 (a.as_ref(), b.as_ref())
             }
             _ => return,
@@ -5487,16 +5493,14 @@ impl PureFactContext {
     }
 
     fn adjust_pointer_class_fact(&mut self, proposition: &Proposition) {
-        if !matches!(
+        if !(matches!(
             proposition,
             Proposition::Equal(..)
                 | Proposition::Predicate { .. }
                 | Proposition::ResourceSeparate { .. }
-                | Proposition::ConditionIs(
-                    ConditionTerm::AlgebraicEqual(..) | ConditionTerm::PointerEqual(..),
-                    true
-                )
-        ) {
+        ) || matches!(&proposition, condition_source @ Proposition::ConditionIs(_, true)
+                if matches!(condition_source.condition_native(), Some((ConditionTerm::AlgebraicEqual(..) | ConditionTerm::PointerEqual(..), _)))))
+        {
             return;
         }
         let key = match proposition {
@@ -7107,10 +7111,10 @@ impl PureFactContext {
         // An exact full-pointer premise directly supplies its numeric
         // equality. Retain the actual source premise for proof reconstruction; this
         // projection never runs in the reverse direction.
-        if let Proposition::ConditionIs(
+        if let Some((
             condition @ (ConditionTerm::AddressEqual(..) | ConditionTerm::AddressOffsetEqual(..)),
             true,
-        ) = proposition
+        )) = (proposition).condition_native()
             && let Some(source) = self
                 .equality_graph
                 .admitted
@@ -7254,7 +7258,10 @@ impl PureFactContext {
             Proposition::Predicate { .. } => {
                 self.equality_graph.knows_pointer_predicate(proposition)
             }
-            Proposition::ConditionIs(condition @ ConditionTerm::PointerEqual(..), value) => {
+            condition_source_0 @ Proposition::ConditionIs(_, value)
+                if let Some((condition @ ConditionTerm::PointerEqual(..), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 self.decide(condition) == Some(*value)
             }
             Proposition::ConditionIs(condition, value) => {
@@ -8445,9 +8452,7 @@ impl PureFactContext {
                     .comparison_views
                     .get(&observation_comparisons::PropositionKey::new(proposition))
                     .is_some())
-            || matches!(proposition,
-                Proposition::ConditionIs(condition @ ConditionTerm::Compare { .. }, truth)
-                if self.observation_comparisons.source(condition, *truth).is_some())
+            || matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, truth) if matches!(condition_source_0.condition_native(), Some((condition @ ConditionTerm::Compare { .. }, _)) if (self.observation_comparisons.source(condition, *truth).is_some())))
     }
 
     pub(super) fn includes(&self, required: &Self) -> bool {
@@ -10284,7 +10289,10 @@ impl ExecutionPureFact {
         }
         if self.is_logical_read_equation() {
             match self.proposition() {
-                Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
+                condition_source_0 @ Proposition::ConditionIs(_, true)
+                    if let Some((ConditionTerm::PointerEqual(left, right), _)) =
+                        condition_source_0.condition_native() =>
+                {
                     context
                         .equality_graph
                         .add_checked_pointer_equality(left, right);
@@ -10293,7 +10301,10 @@ impl ExecutionPureFact {
                 // A complete value equation simplifies to address equality
                 // when its provenance and bounds already match. Retain that
                 // exact producer conclusion without adding object authority.
-                Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) => {
+                condition_source_0 @ Proposition::ConditionIs(_, true)
+                    if let Some((ConditionTerm::AddressEqual(left, right), _)) =
+                        condition_source_0.condition_native() =>
+                {
                     context
                         .equality_graph
                         .add_checked_read_equality(left, right);

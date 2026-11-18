@@ -2548,22 +2548,20 @@ mod tests {
         let Proposition::And(defining, ordering) = guard.as_ref() else {
             unreachable!("the empty form carries the defining equation beside its guard")
         };
-        assert!(matches!(
-            defining.as_ref(),
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, _), true)
-        ));
-        assert!(matches!(
-            ordering.as_ref(),
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
+        assert!(
+            matches!(&defining.as_ref(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))
+        );
+        assert!(
+            matches!(&ordering.as_ref(), condition_source_0 @ Proposition::ConditionIs(
+                _,
+                true
+            ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: _,
                     right: _
-                },
-                true
-            )
-        ));
+                }, _))))
+        );
         let Some((ConditionTerm::IntegerEqual(left, right), true)) =
             conclusion.as_ref().condition_native()
         else {
@@ -2603,18 +2601,11 @@ mod tests {
         let defining = premises
             .iter()
             .filter(|premise| {
-                matches!(
-                    premise,
-                    Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, _), true)
-                )
+                matches!(&premise, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))
             })
             .count();
         assert_eq!(defining, 2, "both defining equations must be premises");
-        assert!(premises.iter().any(|premise| matches!(
-            premise,
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true)
-                if left.as_ref() == &prior
-        )));
+        assert!(premises.iter().any(|premise| matches!(&premise, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(left, _), _)) if (left.as_ref() == &prior)))));
         let Some((ConditionTerm::IntegerEqual(left, right), true)) =
             conclusion.as_ref().condition_native()
         else {

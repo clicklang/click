@@ -4238,14 +4238,13 @@ fn forall_int32_instantiation_avoids_capturing_the_argument_variable() {
         panic!("nested quantifier should remain in the instance");
     };
     assert_ne!(renamed, inner, "the inner binder must be renamed");
-    assert!(matches!(
-        body.as_ref(),
-        Proposition::ConditionIs(
-            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right },
+    assert!(
+        matches!(&body.as_ref(), condition_source_0 @ Proposition::ConditionIs(
+            _,
             true
-        ) if left.as_ref() == &MachineTerm::Variable(inner)
-            && right.as_ref() == &MachineTerm::Variable(renamed)
-    ));
+        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }, _)) if (left.as_ref() == &MachineTerm::Variable(inner)
+            && right.as_ref() == &MachineTerm::Variable(renamed))))
+    );
 }
 
 #[test]
@@ -4419,12 +4418,10 @@ fn forall_integer_instantiation_renames_nested_forall_and_exists_once() {
     assert_ne!(renamed_forall, repeated);
     assert_ne!(*renamed_exists, repeated);
     assert_ne!(renamed_forall, *renamed_exists);
-    assert!(matches!(
-        body.as_ref(),
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
-            if left.as_ref() == &IntegerTerm::var(repeated)
-                && right.as_ref() == &IntegerTerm::var(*renamed_exists)
-    ));
+    assert!(
+        matches!(&body.as_ref(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(left, right), _)) if (left.as_ref() == &IntegerTerm::var(repeated)
+                && right.as_ref() == &IntegerTerm::var(*renamed_exists))))
+    );
 }
 
 #[test]

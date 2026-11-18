@@ -170,8 +170,10 @@ impl Proposition {
         fn retain(part: Proposition) -> Option<Proposition> {
             crate::instrumentation::record_deterministic_work(1);
             match part {
-                Proposition::ConditionIs(ConditionTerm::Constant(actual), expected)
-                    if actual == expected =>
+                condition_source_0 @ Proposition::ConditionIs(_, expected)
+                    if let Some((ConditionTerm::Constant(actual), _)) =
+                        condition_source_0.condition_native()
+                        && (*actual == expected) =>
                 {
                     None
                 }
@@ -343,10 +345,7 @@ mod construction_tests {
                 IntegerTerm::from_machine(source, MachineTerm::Variable(Variable(987001))).unwrap();
             let range = Proposition::arithmetic_result_range(destination, value);
             assert_eq!(
-                matches!(
-                    range,
-                    Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-                ),
+                matches!(&range, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _)))),
                 fits
             );
         }

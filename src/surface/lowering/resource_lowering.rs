@@ -3230,7 +3230,12 @@ fn reject_impossible_range_guards(
     assumptions: &PureFactContext,
 ) -> Result<(), ClickError> {
     if guards.iter().any(|guard| match guard {
-        Proposition::ConditionIs(ConditionTerm::Constant(false), true) => true,
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::Constant(false), _)) =
+                condition_source_0.condition_native() =>
+        {
+            true
+        }
         Proposition::ConditionIs(condition, true) => assumptions.decide(condition) == Some(false),
         _ => false,
     }) {

@@ -1042,11 +1042,8 @@ impl super::ProofSearch<PureFactContext> {
         // Unsigned arithmetic guards often lower to `false or bound`. Try
         // the bound before spending the context on contradiction search for
         // the false arm. Keep that arm as a fallback for inconsistent contexts.
-        if matches!(
-            left,
-            Proposition::ConditionIs(ConditionTerm::Constant(actual), expected)
-                if actual != expected
-        ) {
+        if matches!(&left, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(actual), _)) if (actual != expected)))
+        {
             return crate::kernel::search::ProofSearch::derive_proposition_using(
                 context,
                 right,
@@ -2052,7 +2049,7 @@ pub(crate) fn connected_equalities(
         }
         // `σ(x) == x` is `x == x` under rule K6: true of every word and no
         // rewrite (`MachineTerm::is_sign_cast32_of`).
-        if let Proposition::ConditionIs(
+        if let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -2060,42 +2057,26 @@ pub(crate) fn connected_equalities(
                 right,
             },
             true,
-        ) = &fact
+        )) = (&fact).condition_native()
             && left.is_sign_cast32_of(right)
         {
             continue;
         }
-        if matches!(
-            fact,
-            Proposition::ConditionIs(
-                // An 8- or 16-bit equality is the same fact as the `int32`
-                // equality of its widenings (rule K8) and rewrites at its
-                // own width.
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32
-                        | MachineIntegerType::UInt32
-                        | MachineIntegerType::Int8
-                        | MachineIntegerType::UInt8
-                        | MachineIntegerType::Int16
-                        | MachineIntegerType::UInt16,
-                    relation: CompareRelation::Equal,
-                    ..
-                } | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::Equal,
-                    ..
-                } | ConditionTerm::PointerEqual(..)
-                    | ConditionTerm::AddressEqual(..)
-                    | ConditionTerm::AddressOffsetEqual(..)
-                    | ConditionTerm::IntegerEqual(..)
-                    | ConditionTerm::AlgebraicEqual(..)
-                    | ConditionTerm::BoolEqual(..),
-                true
-            )
-            // A `Bool` application's claim is its equality with a literal
-            // (Stage 5): `f(x)` is `f(x) == true`.
-            | Proposition::ConditionIs(ConditionTerm::BoolApplication(_), _)
-        ) {
+        if matches!(&fact, condition_source @ Proposition::ConditionIs(_, true)
+        if matches!(condition_source.condition_native(), Some((
+            // An 8- or 16-bit equality is the same fact as the int32
+            // equality of its widenings (rule K8), and rewrites at its own width.
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32 | MachineIntegerType::Int8
+                    | MachineIntegerType::UInt8 | MachineIntegerType::Int16 | MachineIntegerType::UInt16,
+                relation: CompareRelation::Equal, ..
+            } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, .. }
+                | ConditionTerm::PointerEqual(..) | ConditionTerm::AddressEqual(..) | ConditionTerm::AddressOffsetEqual(..)
+                | ConditionTerm::IntegerEqual(..) | ConditionTerm::AlgebraicEqual(..) | ConditionTerm::BoolEqual(..), _))))
+        // A Bool application's claim is its equality with a literal (Stage 5).
+        || matches!(&fact, condition_source @ Proposition::ConditionIs(_, _)
+            if matches!(condition_source.condition_native(), Some((ConditionTerm::BoolApplication(_), _))))
+        {
             equalities.push(fact);
         }
     }
@@ -2341,53 +2322,70 @@ fn reduce_solve_atomic_premises(
         return Some((context, context_id, evidence));
     }
     let query = match proposition {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) => match (left.as_ref(), right.as_ref()) {
-            (MachineTerm::Variable(left), MachineTerm::Variable(right)) => {
-                Some(AtomicReductionQuery::VariableEquality32(*left, *right))
-            }
-            _ => None,
-        },
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            },
-            true,
-        ) => match (left.as_ref(), right.as_ref()) {
-            (
-                MachineTerm::Binary {
-                    format: MachineIntegerType::UInt64,
-                    op: MachineBinaryOp::Subtract,
-                    left: base,
-                    right: amount,
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
                 },
-                MachineTerm::Variable(upper),
-            ) => match (base.as_ref(), amount.as_ref()) {
-                (MachineTerm::Variable(base), uint64_constant!(amount)) => {
-                    Some(AtomicReductionQuery::UnsignedSubtractionLessThan(
-                        *base,
-                        constant_u64(*amount),
-                        *upper,
-                    ))
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            match (left.as_ref(), right.as_ref()) {
+                (MachineTerm::Variable(left), MachineTerm::Variable(right)) => {
+                    Some(AtomicReductionQuery::VariableEquality32(*left, *right))
                 }
                 _ => None,
-            },
-            _ => None,
-        },
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => Some(
-            AtomicReductionQuery::IntegerLessEqual(left.id(), right.id()),
-        ),
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
+            }
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::LessThan,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            match (left.as_ref(), right.as_ref()) {
+                (
+                    MachineTerm::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::Subtract,
+                        left: base,
+                        right: amount,
+                    },
+                    MachineTerm::Variable(upper),
+                ) => match (base.as_ref(), amount.as_ref()) {
+                    (MachineTerm::Variable(base), uint64_constant!(amount)) => {
+                        Some(AtomicReductionQuery::UnsignedSubtractionLessThan(
+                            *base,
+                            constant_u64(*amount),
+                            *upper,
+                        ))
+                    }
+                    _ => None,
+                },
+                _ => None,
+            }
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some(AtomicReductionQuery::IntegerLessEqual(
+                left.id(),
+                right.id(),
+            ))
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some(AtomicReductionQuery::IntegerEqual(left.id(), right.id()))
         }
         _ => None,

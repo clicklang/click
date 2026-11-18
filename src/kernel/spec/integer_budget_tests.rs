@@ -592,9 +592,7 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
         }
     ));
     assert!(!matches!(
-        &paths[0].proposition,
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-    ));
+        &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _)))));
 }
 
 #[test]
@@ -632,9 +630,7 @@ fn defined_memory_load_retains_typed_validity_for_an_already_known_cell() {
         }
     ));
     assert!(!matches!(
-        &paths[0].proposition,
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-    ));
+        &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _)))));
 }
 
 #[test]

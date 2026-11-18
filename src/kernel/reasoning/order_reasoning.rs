@@ -221,11 +221,9 @@ pub(in crate::kernel) fn finite_forall_ranges_allowing_empty(
         // unsigned bound folds to: `k < 0u64` has no member. The leaf is
         // vacuous at every point, as under an empty range of every binder,
         // and a binder no other leaf ranges is given that empty range.
-        if matches!(
-            antecedent,
-            Proposition::ConditionIs(ConditionTerm::Constant(false), true)
-                | Proposition::ConditionIs(ConditionTerm::Constant(true), false)
-        ) {
+        if matches!(&antecedent, condition_source @ Proposition::ConditionIs(_, _)
+            if matches!(condition_source.condition_native(), Some((ConditionTerm::Constant(false), true) | (ConditionTerm::Constant(true), false))))
+        {
             for variable in variables {
                 hull.entry(*variable).or_insert((0, -1));
             }

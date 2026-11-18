@@ -44,10 +44,8 @@ pub(crate) fn apply(
         preserve_field(separation, field).ok_or(
             "preserve requires the selected field of a resource separated from the footprint",
         )?
-    } else if matches!(
-        result,
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-    ) {
+    } else if matches!(&result, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _))))
+    {
         result.clone()
     } else {
         preserve_footprint(
@@ -89,37 +87,46 @@ fn preserve_viewability(separation: &Proposition) -> Result<(Proposition, Propos
 // never used to manufacture the primitive's conclusion.
 fn read_type(result: &Proposition) -> Option<ReadType> {
     match result {
-        Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true)
-            if a.algebraic_type == b.algebraic_type =>
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
+                condition_source_0.condition_native()
+                && (a.algebraic_type == b.algebraic_type) =>
         {
             Some(ReadType::Abstract)
         }
-        Proposition::ConditionIs(ConditionTerm::AddressEqual(..), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressEqual(..), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some(ReadType::IntegerAddress)
         }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(a, b), true)
-            if a.program_type() == b.program_type() =>
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::PointerEqual(a, b), _)) =
+                condition_source_0.condition_native()
+                && (a.program_type() == b.program_type()) =>
         {
             Some(ReadType::Pointer(a.program_type()))
         }
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format,
-                relation: CompareRelation::Equal,
-                ..
-            },
-            true,
-        ) if matches!(
-            format,
-            MachineIntegerType::Int8
-                | MachineIntegerType::UInt8
-                | MachineIntegerType::Int16
-                | MachineIntegerType::UInt16
-                | MachineIntegerType::Int32
-                | MachineIntegerType::UInt32
-                | MachineIntegerType::Int64
-                | MachineIntegerType::UInt64
-        ) =>
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format,
+                    relation: CompareRelation::Equal,
+                    ..
+                },
+                _,
+            )) = condition_source_0.condition_native()
+                && (matches!(
+                    format,
+                    MachineIntegerType::Int8
+                        | MachineIntegerType::UInt8
+                        | MachineIntegerType::Int16
+                        | MachineIntegerType::UInt16
+                        | MachineIntegerType::Int32
+                        | MachineIntegerType::UInt32
+                        | MachineIntegerType::Int64
+                        | MachineIntegerType::UInt64
+                )) =>
         {
             Some(ReadType::Integer(*format))
         }

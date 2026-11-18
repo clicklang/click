@@ -2367,7 +2367,7 @@ fn synthesize_surface_atomic_proposition(
     // A `bool` local's truth, C's test `w != 0` at `uint8` of its carrier:
     // the claim on the local, `w` or `not w`, which is what a claim on it
     // lowers to. Compared with an integer, as `w != 0`, it would not lower.
-    if let Proposition::ConditionIs(
+    if let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt8,
             relation: CompareRelation::Equal,
@@ -2375,7 +2375,7 @@ fn synthesize_surface_atomic_proposition(
             right,
         },
         value,
-    ) = proposition
+    )) = (proposition).condition_native()
         && right.bool_constant_value() == Some(false)
         && let Some(word) =
             synthesize_surface_bitvector(left, parameter_binding, state, bound_variables)
@@ -2388,7 +2388,7 @@ fn synthesize_surface_atomic_proposition(
             claim
         });
     }
-    if let Proposition::ConditionIs(
+    if let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -2396,7 +2396,7 @@ fn synthesize_surface_atomic_proposition(
             right,
         },
         true,
-    ) = proposition
+    )) = (proposition).condition_native()
         && let (MachineTerm::Variable(variable), MachineTerm::MemoryLoad(memory, pointer, kind)) =
             (left.as_ref(), right.as_ref())
         && crate::kernel::is_load_variable(variable)

@@ -9031,10 +9031,9 @@ mod comparison_read_batch_tests {
                 let mut structural = TermRewrite::for_bits(&read, &three);
                 let result = structural.proposition(&input);
                 assert!(structural.refusal().is_none());
-                assert!(matches!(
-                    result,
-                    Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
-                ));
+                assert!(
+                    matches!(&result, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+                );
             }
         }
     }

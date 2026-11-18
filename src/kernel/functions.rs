@@ -8203,10 +8203,7 @@ fn matched_instance_body_ownership(
         assumptions,
     );
     if clauses.iter().any(|clause| {
-        matches!(
-            clause.proposition,
-            Proposition::ConditionIs(ConditionTerm::Constant(false), true)
-        )
+        matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(false), _))))
     }) {
         return None;
     }
@@ -9512,74 +9509,90 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
             let mut discharged_premises: Vec<Proposition> = Vec::new();
             while let Proposition::Implies(premise, body) = specialized {
                 let reversed_order = match premise.as_ref() {
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::GreaterThan,
-                            left,
-                            right,
-                        },
-                        value,
-                    ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessThan,
-                            left: right.clone(),
-                            right: left.clone(),
-                        },
-                        *value,
-                    )),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::GreaterEqual,
-                            left,
-                            right,
-                        },
-                        value,
-                    ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessEqual,
-                            left: right.clone(),
-                            right: left.clone(),
-                        },
-                        *value,
-                    )),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessThan,
-                            left,
-                            right,
-                        },
-                        value,
-                    ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::GreaterThan,
-                            left: right.clone(),
-                            right: left.clone(),
-                        },
-                        *value,
-                    )),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessEqual,
-                            left,
-                            right,
-                        },
-                        value,
-                    ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::GreaterEqual,
-                            left: right.clone(),
-                            right: left.clone(),
-                        },
-                        *value,
-                    )),
+                    condition_source_0 @ Proposition::ConditionIs(_, value)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::GreaterThan,
+                                left,
+                                right,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        Some(Proposition::ConditionIs(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessThan,
+                                left: right.clone(),
+                                right: left.clone(),
+                            },
+                            *value,
+                        ))
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, value)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::GreaterEqual,
+                                left,
+                                right,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        Some(Proposition::ConditionIs(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessEqual,
+                                left: right.clone(),
+                                right: left.clone(),
+                            },
+                            *value,
+                        ))
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, value)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessThan,
+                                left,
+                                right,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        Some(Proposition::ConditionIs(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::GreaterThan,
+                                left: right.clone(),
+                                right: left.clone(),
+                            },
+                            *value,
+                        ))
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, value)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessEqual,
+                                left,
+                                right,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        Some(Proposition::ConditionIs(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::GreaterEqual,
+                                left: right.clone(),
+                                right: left.clone(),
+                            },
+                            *value,
+                        ))
+                    }
                     _ => None,
                 };
                 // A closed premise, such as the constant condition left by
@@ -14615,7 +14628,7 @@ fn resource_body_fact_is_established(
     // packed-word equation. Query only exact 64-bit neighbors of the stated
     // endpoints and captured variables, using checked equality substitution. A
     // candidate must still be established by the original context.
-    if let Proposition::ConditionIs(
+    if let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
@@ -14623,7 +14636,7 @@ fn resource_body_fact_is_established(
             right,
         },
         true,
-    ) = proposition
+    )) = (proposition).condition_native()
     {
         let mut variables = std::collections::BTreeSet::new();
         crate::kernel::reasoning::variable_collection::collect_proposition_capture_variables(
@@ -14664,22 +14677,19 @@ fn resource_body_fact_is_established(
     // logical read retains its own producer identity. Reuse only the exact
     // typed read relation already checked for contract facts: it requires
     // the same recorded state and address, or a checked stored value.
-    if let Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) = proposition
+    if let Some((ConditionTerm::AddressEqual(left, right), true)) = (proposition).condition_native()
         && crate::kernel::memory_history::pointer_read_has_recorded_value(left, right, established)
     {
         return true;
     }
-    if matches!(
-        proposition,
-        Proposition::ConditionIs(
-            ConditionTerm::AddressOffsetEqual(left, right),
-            true,
-        ) if crate::kernel::memory_history::pointer_load_offset_proven_equal(
-            left,
-            right,
-            established,
-        )
-    ) {
+    if matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(
+        _,
+        true,
+    ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressOffsetEqual(left, right), _)) if (crate::kernel::memory_history::pointer_load_offset_proven_equal(
+        left,
+        right,
+        established,
+    )))) {
         return true;
     }
     // A field of an abstract type is read at the fold's state, while the

@@ -60,10 +60,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 vec![kernel]
             };
             for kernel in readings {
-                if let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(x, y), true) =
-                    kernel
+                if let Some((ConditionTerm::IntegerLessEqual(x, y), true)) =
+                    (kernel).condition_native()
                 {
-                    orders.push((source, a.clone(), b.clone(), x, y));
+                    orders.push((source, a.clone(), b.clone(), x.clone(), y.clone()));
                 }
             }
         }

@@ -189,7 +189,12 @@ fn exact_propagation_preserves_models_of_nested_boolean_formulas() {
             Proposition::Predicate { name, .. } => {
                 assignment & (1 << name.parse::<usize>().unwrap()) != 0
             }
-            Proposition::ConditionIs(ConditionTerm::Constant(a), b) => a == b,
+            condition_source_0 @ Proposition::ConditionIs(_, b)
+                if let Some((ConditionTerm::Constant(a), _)) =
+                    condition_source_0.condition_native() =>
+            {
+                a == b
+            }
             Proposition::Not(p) => !eval(p, assignment),
             Proposition::And(a, b) => eval(a, assignment) && eval(b, assignment),
             Proposition::Or(a, b) => eval(a, assignment) || eval(b, assignment),

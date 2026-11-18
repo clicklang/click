@@ -197,9 +197,7 @@ impl ReferenceObservationSource {
             ReferenceObservation::Read { source: _, pointer: expected, retained_state, at: expected_point, value_type: expected_type } => matches!(proposition,
                 Proposition::MemoryReadDefined { memory, pointer, value_type, at }
                 if expected_point == at && *retained_state == MemoryStateIdentity::of(memory) && expected == pointer && expected_type == value_type),
-            ReferenceObservation::Borrow(birth) => matches!(proposition,
-                Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true)
-                if left.as_ref() == &birth.pointer && right.as_ref() == &birth.pointer),
+            ReferenceObservation::Borrow(birth) => matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(left, right), _)) if (left.as_ref() == &birth.pointer && right.as_ref() == &birth.pointer))),
         })
     }
 }

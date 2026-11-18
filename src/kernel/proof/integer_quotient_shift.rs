@@ -5,8 +5,7 @@ use crate::kernel::{ConditionTerm, IntegerTerm, Proposition, SharedIntegerTerm};
 use num_traits::{Signed, Zero};
 
 fn nonnegative(p: &Proposition, value: &SharedIntegerTerm) -> bool {
-    matches!(p, Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(zero, x), true)
-        if zero.as_const().is_some_and(|c| c.is_zero()) && x == value)
+    matches!(&p, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerLessEqual(zero, x), _)) if (zero.as_const().is_some_and(|c| c.is_zero()) && x == value)))
 }
 pub(super) fn check(
     node: usize,

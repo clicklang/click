@@ -6347,7 +6347,7 @@ fn checked_int32_reassociated_add_domain_as_written(
             .operands
             .each_ref()
             .map(|operand| operand.operand_view())
-    } else if let Proposition::ConditionIs(
+    } else if let Some((
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
@@ -6355,7 +6355,7 @@ fn checked_int32_reassociated_add_domain_as_written(
             right,
         },
         false,
-    ) = goal
+    )) = (goal).condition_native()
     {
         [View::Legacy(left), View::Legacy(right)]
     } else {

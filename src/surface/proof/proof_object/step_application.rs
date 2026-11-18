@@ -318,10 +318,10 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
 
 /// Whether a held `uint32` order goal has a plain variable as an operand.
 fn unsigned_order_names_a_variable(goal: &crate::kernel::Proposition) -> bool {
-    matches!(
-        goal,
-        crate::kernel::Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::Compare {
+    matches!(&goal, condition_source_0 @ crate::kernel::Proposition::ConditionIs(
+            _,
+            true,
+        ) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::UInt32,
                 relation: crate::kernel::CompareRelation::LessThan
                     | crate::kernel::CompareRelation::LessEqual
@@ -329,11 +329,8 @@ fn unsigned_order_names_a_variable(goal: &crate::kernel::Proposition) -> bool {
                     | crate::kernel::CompareRelation::GreaterEqual,
                 left,
                 right,
-            },
-            true,
-        ) if matches!(left.as_ref(), crate::kernel::MachineTerm::Variable(_))
-            || matches!(right.as_ref(), crate::kernel::MachineTerm::Variable(_))
-    )
+            }, _)) if (matches!(left.as_ref(), crate::kernel::MachineTerm::Variable(_))
+            || matches!(right.as_ref(), crate::kernel::MachineTerm::Variable(_)))))
 }
 
 /// The step as `click expand` writes it, for a step with a `using` list,

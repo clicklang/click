@@ -80,13 +80,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_quotient_shift_using");
-        if !matches!(
-            input.goal(),
-            Some(Proposition::ConditionIs(
-                ConditionTerm::IntegerEqual(..),
+        if !matches!(&input.goal(), Some(condition_source_0 @ Proposition::ConditionIs(
+                _,
                 true
-            ))
-        ) {
+            )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(..), _))))
+        {
             return Ok(None);
         }
         let Some(ClickProposition::Comparison {

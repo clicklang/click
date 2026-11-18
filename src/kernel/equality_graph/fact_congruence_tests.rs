@@ -383,9 +383,7 @@ fn pointer_comparison_preserves_base_evidence_through_aliases_and_scopes() {
                 false,
             );
             assert!(matches!(
-                &source,
-                Proposition::ConditionIs(ConditionTerm::AddressEqual(..), false)
-            ));
+                &source, condition_source_0 @ Proposition::ConditionIs(_, false) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(..), _)))));
             let alias = Proposition::ConditionIs(
                 ConditionTerm::address_equal(right.clone(), alias_pointer.clone()),
                 true,
@@ -727,10 +725,9 @@ fn checked_pointer_read_retention_keeps_a_simplified_address_equation() {
     let named = Address::symbolic(Variable(9073));
     let value = Pointer::new(read.clone(), ProgramType::Int32Pointer).with_address(named.clone());
     let fact = crate::kernel::ExecutionPureFact::logical_read_equation(value, read.clone());
-    assert!(matches!(
-        fact.proposition(),
-        Proposition::ConditionIs(ConditionTerm::AddressEqual(..), true)
-    ));
+    assert!(
+        matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(..), _))))
+    );
     let context = PureFactContext::new();
     let isolated = context.clone();
     let untrusted = crate::kernel::ExecutionPureFact::new(fact.proposition().clone());

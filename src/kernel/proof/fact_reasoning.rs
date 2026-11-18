@@ -373,16 +373,11 @@ fn normalize_condition_selection(
     // Native orders can be the lowered form of written Integer observations.
     // Use their unique order reading, retaining the actual operand handles.
     // No fact selection is involved: at most four explicit bounds are read.
-    if matches!(
-        (premises.len(), goal),
-        (
-            2,
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), true)
-        ) | (
-            4,
-            Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(..), true)
-        )
-    ) {
+    if matches!(&(premises.len(), goal), (2, condition_source @ Proposition::ConditionIs(_, true))
+        if matches!(condition_source.condition_native(), Some((ConditionTerm::IntegerEqual(..), _))))
+        || matches!(&(premises.len(), goal), (4, condition_source @ Proposition::ConditionIs(_, true))
+            if matches!(condition_source.condition_native(), Some((ConditionTerm::IntegerLessEqual(..), _))))
+    {
         let bounds = premises
             .iter()
             .map(|premise| {
@@ -394,8 +389,14 @@ fn normalize_condition_selection(
                     .next()
                     .unwrap_or_else(|| premise.clone());
                 match reading {
-                    Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(a, b), true) => {
-                        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(b, a), true)
+                    ref condition_source_0 @ Proposition::ConditionIs(_, true)
+                        if let Some((ConditionTerm::IntegerGreaterEqual(a, b), _)) =
+                            condition_source_0.condition_native() =>
+                    {
+                        Proposition::ConditionIs(
+                            ConditionTerm::IntegerLessEqual(b.clone(), a.clone()),
+                            true,
+                        )
                     }
                     other => other,
                 }
@@ -3291,15 +3292,19 @@ pub(crate) fn premise_bridged_by_load_variable_chain(
         Proposition::ConditionIs(condition, true) if condition.pointer_offset_sides().is_some() => {
             bridged_by_load_variable_edges::<AddressOffset>(premise, facts)
         }
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left: _,
-                right: _,
-            },
-            true,
-        ) => bridged_by_load_variable_edges::<MachineTerm>(premise, facts),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    relation: CompareRelation::Equal,
+                    left: _,
+                    right: _,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            bridged_by_load_variable_edges::<MachineTerm>(premise, facts)
+        }
         _ => false,
     }
 }
@@ -3323,15 +3328,19 @@ pub(crate) fn premise_bridged_by_load_variable_chain_with_origins(
         Proposition::ConditionIs(condition, true) if condition.pointer_offset_sides().is_some() => {
             bridged_with_origins::<AddressOffset>(premise, facts, assumptions)
         }
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left: _,
-                right: _,
-            },
-            true,
-        ) => bridged_with_origins::<MachineTerm>(premise, facts, assumptions),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    relation: CompareRelation::Equal,
+                    left: _,
+                    right: _,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            bridged_with_origins::<MachineTerm>(premise, facts, assumptions)
+        }
         _ => false,
     }
 }

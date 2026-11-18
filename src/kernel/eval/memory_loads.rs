@@ -2753,7 +2753,8 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
     if crate::instrumentation::deadline_exceeded_with_work(0) {
         return None;
     }
-    if let Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), value) = &resolved {
+    if let Some((ConditionTerm::AddressEqual(left, right), value)) = (&resolved).condition_native()
+    {
         let left_value = pointer_read_over_write_value(left);
         let right_value = pointer_read_over_write_value(right);
         if left_value.is_some() || right_value.is_some() {
@@ -2773,7 +2774,8 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
     // so each read side resolves to the whole stored value, and the
     // comparison is rebuilt from the two values: equal addresses alone never
     // make two pointer values equal.
-    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value) = &resolved {
+    if let Some((ConditionTerm::PointerEqual(left, right), value)) = (&resolved).condition_native()
+    {
         let resolve = |side: &Pointer| {
             // The whole stored value defines the unmodified read. An
             // explicitly selected subobject or changed domain is a different

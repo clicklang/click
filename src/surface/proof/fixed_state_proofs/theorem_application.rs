@@ -84,17 +84,19 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
                 Proposition::ConditionIs(ConditionTerm::Constant(_), _) => {
                     " (it is false at this instance)"
                 }
-                Proposition::ConditionIs(
-                    condition @ ConditionTerm::Compare {
-                        format,
-                        left,
-                        right,
-                        ..
-                    },
-                    expected,
-                ) if format.constant_from_term(left).is_some()
-                    && format.constant_from_term(right).is_some()
-                    && PureFactContext::new().decide(condition) == Some(!expected) =>
+                condition_source_0 @ Proposition::ConditionIs(_, expected)
+                    if let Some((
+                        condition @ ConditionTerm::Compare {
+                            format,
+                            left,
+                            right,
+                            ..
+                        },
+                        _,
+                    )) = condition_source_0.condition_native()
+                        && (format.constant_from_term(left).is_some()
+                            && format.constant_from_term(right).is_some()
+                            && PureFactContext::new().decide(condition) == Some(!expected)) =>
                 {
                     " (it is false at this instance)"
                 }

@@ -131,12 +131,8 @@ fn is_reflexive_pointer_equality(mut proposition: &Proposition) -> bool {
         proposition = inner;
         positive = !positive;
     }
-    matches!(proposition,
-        Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), value)
-            if *value == positive && left == right)
-        || matches!(proposition,
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value)
-                if *value == positive && left == right)
+    matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, value) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(left, right), _)) if (*value == positive && left == right)))
+        || matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, value) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(left, right), _)) if (*value == positive && left == right)))
 }
 
 fn collect_signed_surface_terms<'a>(
@@ -5373,19 +5369,23 @@ mod scaling_tests {
 /// as the `int32` equality of its widenings (rule K8).
 fn rewrite_equality_sides(equality: &Proposition) -> Option<(&MachineTerm, &MachineTerm)> {
     match equality {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) if format.format().bits() < 32
-            || matches!(
-                format,
-                MachineIntegerType::Int32 | MachineIntegerType::UInt32 | MachineIntegerType::Int64
-            ) =>
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native()
+                && (format.format().bits() < 32
+                    || matches!(
+                        format,
+                        MachineIntegerType::Int32
+                            | MachineIntegerType::UInt32
+                            | MachineIntegerType::Int64
+                    )) =>
         {
             Some((left, right))
         }

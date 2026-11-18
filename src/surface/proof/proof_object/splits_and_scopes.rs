@@ -981,7 +981,7 @@ impl<'a> Proof<'a> {
         // and validate it against the producer's exact obligation.
         if let ClickProposition::Loadable { segment } = &body_surface
             && let Some((_, start, end)) = segment.surface_range()
-            && let Proposition::ConditionIs(
+            && let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::UInt64,
                     relation: CompareRelation::LessEqual,
@@ -989,7 +989,7 @@ impl<'a> Proof<'a> {
                     right: limit,
                 },
                 true,
-            ) = kernel
+            )) = (kernel).condition_native()
             && let uint64_constant!(limit) = limit.as_ref()
         {
             // A zero-based span is stored as its end. Its spelling must

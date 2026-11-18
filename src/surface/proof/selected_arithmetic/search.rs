@@ -212,14 +212,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("disequality_goal_equality");
         let kernel = match search_input.goal()? {
-            Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(left, right), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::IntegerNotEqual(left, right), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 Proposition::ConditionIs(
                     ConditionTerm::IntegerEqual(left.clone(), right.clone()),
                     true,
                 )
             }
-            Proposition::ConditionIs(
-                condition @ (ConditionTerm::IntegerEqual(..)
+            condition_source_0 @ Proposition::ConditionIs(_, false)
+                if let Some((condition @ (ConditionTerm::IntegerEqual(..)
                 // An 8- or 16-bit equality is the same fact as the `int32`
                 // equality of its widenings (rule K8).
                 | ConditionTerm::Compare {
@@ -236,9 +239,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     ..
-                }),
-                false,
-            ) => Proposition::ConditionIs(condition.clone(), true),
+                }), _)) = condition_source_0.condition_native() =>
+            {
+                Proposition::ConditionIs(condition.clone(), true)
+            }
             _ => return None,
         };
         let surface = match search_input.surface_goal()? {
@@ -534,7 +538,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_equality_by_bounds_early");
         if let (
-            Some(Proposition::ConditionIs(
+            Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
@@ -543,8 +547,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 true,
             )),
             Some(ClickProposition::Comparison { left, right, .. }),
-        ) = (search_input.goal(), search_input.surface_goal())
-            && !writes_sum_or_difference(left, right)
+        ) = (
+            search_input.goal().and_then(Proposition::condition_native),
+            search_input.surface_goal(),
+        ) && !writes_sum_or_difference(left, right)
         {
             return Ok(None);
         }
@@ -1981,16 +1987,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )
             .unwrap_or_else(|| candidate.clone());
             if !matches!(
-                &query,
-                Proposition::ConditionIs(
-                    ConditionTerm::Overflows {
+                &query, condition_source_0 @ Proposition::ConditionIs(
+                    _,
+                    false
+                ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32 | MachineIntegerType::Int64,
                         op: OverflowOperation::Add | OverflowOperation::Subtract,
                         ..
-                    },
-                    false
-                )
-            ) || !seen.insert(query.clone())
+                    }, _))))
+                || !seen.insert(query.clone())
             {
                 continue;
             }

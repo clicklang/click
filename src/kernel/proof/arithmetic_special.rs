@@ -871,13 +871,22 @@ fn pointer_sides(
     Option<(&AddressBase, &AddressBase)>,
 )> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::PointerEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((&left.offset, &right.offset, Some((&left.base, &right.base))))
         }
-        Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((&left.offset, &right.offset, Some((&left.base, &right.base))))
         }
-        Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressOffsetEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((left, right, None))
         }
         _ => None,
@@ -1191,14 +1200,17 @@ fn pointer_translation(
     bound_propositions: &[&Proposition],
     goal: &Proposition,
 ) -> bool {
-    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = goal {
+    if let Some((ConditionTerm::PointerEqual(left, right), true)) = (goal).condition_native() {
         let same_domain = |a: &Pointer, b: &Pointer| {
             a.provenance() == b.provenance()
                 && a.bounds() == b.bounds()
                 && a.bounds_are_known() == b.bounds_are_known()
         };
         let linked = match relation {
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(a, b), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::PointerEqual(a, b), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 (same_domain(left, a) && same_domain(right, b))
                     || (same_domain(left, b) && same_domain(right, a))
             }

@@ -1330,7 +1330,8 @@ before those consumers are ready:
 | Subslice | Boundary | Acceptance |
 | --- | --- | --- |
 | 10q3a | Native condition destructuring in `let` readers | Selected payload inspection is explicit; each existing match/refusal and exact native spelling is preserved. |
-| 10q3b | Native condition patterns in match/conditional readers | Preserve arm ordering, guards and owned/borrowed payload contracts through explicit selected views. |
+| 10q3b1 | Polarity-specific match/conditional readers and predicates | Preserve arm ordering, truth checks, guards and owned/borrowed payload contracts through explicit selected views. |
+| 10q3b2 | Remaining catch-all and macro condition patterns | Audit anonymous wildcard fields as well as named syntax children; complete these readers before changing storage. |
 | 10q3c | `ConditionIs` storage, constructors and ordinary readers | Use the existing exact condition carrier; root-aware visitors retain logical operands and native DTO reads stay explicit. |
 | 10q3d | Evaluated logical/comparison producer handoffs | Forward the actual produced roots without export/reimport; preserve canonical comparison and fact identity rules. |
 
@@ -1448,7 +1449,7 @@ loadability and memory-reasoning checks passed, followed by quality. This landed
 in [PR #3276](https://github.com/clicklang/click/pull/3276); all four pushed
 commits were verified upstream before the clean primary advanced through Git.
 
-### 10q3a Explicit native condition destructuring (in progress)
+### 10q3a Explicit native condition destructuring (landed)
 
 Selected nested `let` readers inspect `Proposition::condition_native()` rather
 than destructuring its condition storage directly. The view borrows the exact
@@ -1459,6 +1460,39 @@ results retain a local owner while their payload is inspected. All 675 selected
 condition/proposition/substitution checks passed, followed by 618 selected
 preservation, rewrite, Integer, surface synthesis and smart-closure checks.
 Quality passed. These prepare consumers; the output schema is unchanged.
+This landed in [PR #3277](https://github.com/clicklang/click/pull/3277); all seven
+pushed commits were verified upstream before the clean primary advanced through Git.
+
+### 10q3b Condition pattern readers (in progress)
+
+10q3b1 makes selected native condition inspection explicit in match arms,
+conditional readers and predicates. Outer proposition/truth matching precedes
+native payload inspection. Predicate macros borrow inspected propositions;
+ordinary match guards and nested `matches!` expressions preserve their existing
+fallthrough and refusal behavior. Extracted observation handles retain an owner
+when they outlive a local proposition. Native rebuilt equalities copy the same
+exact field payloads. The output schema is unchanged. All 767 selected
+condition/proposition/substitution/arithmetic checks passed, followed by all
+669 selected ownership-sensitive checks and all 1,939 regular scaling cases.
+All 5,623 regular proof fixtures passed. Fact stability recorded 121 refusals
+and zero changed terms/paths; quality passed. Full nightly was not run.
+
+Additional execution checks exposed a predicate-grouping regression: a negated
+mixed predicate had been split into two `matches!` expressions without keeping
+the surrounding parentheses, so pointer-equality type evidence was discarded.
+The existing historical struct-pointer constructor test was red on this slice.
+Restoring the original Boolean grouping made it and all 62 selected pointer/field
+checks pass. The other split predicates were audited for the same issue.
+All 6,735 regular unit/library checks then passed, including the full execution
+batches. All 1,939 regular scaling cases passed after the correction as well.
+Regular proof/fact-stability and quality validation is running again before
+publication. No proof rules or source proofs changed.
+
+The initial inventory considered named syntax children and missed anonymous
+wildcard truth markers. The corrected inventory records 47 further patterns
+(45 ignoring truth and two additional macro cases). They are assigned to
+10q3b2 and remain required before 10q3c; the earlier zero-remainder count is not
+completion evidence. Neither family adds proof rules, search indexes or budgets.
 
 ## Chunk 3: machine-valued pure-function results
 

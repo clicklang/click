@@ -636,10 +636,8 @@ fn operation_bounds_hold_at_every_format() {
                     assert_eq!(bound, None, "{ty:?}");
                     continue;
                 }
-                let Some(Proposition::ConditionIs(
-                    ConditionTerm::IntegerLessEqual(low, high),
-                    true,
-                )) = bound
+                let Some((ConditionTerm::IntegerLessEqual(low, high), true)) =
+                    bound.as_ref().and_then(Proposition::condition_native)
                 else {
                     panic!("{ty:?} {division:?} upper {upper} has a bound");
                 };

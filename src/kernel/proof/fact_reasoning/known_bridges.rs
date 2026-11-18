@@ -257,25 +257,42 @@ pub(crate) fn known_bridge_leaf(
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match goal {
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             identity(a, b, available) || identity(b, a, available)
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             mask_bound(a, b, available)
         }
-        Proposition::ConditionIs(ConditionTerm::BoolEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::BoolEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             bool_arm(a, |arm| arm == b.as_ref(), available)
                 || bool_arm(b, |arm| arm == a.as_ref(), available)
         }
-        Proposition::ConditionIs(condition @ ConditionTerm::BoolIf { .. }, truth) => bool_arm(
-            condition,
-            |arm| holds(&arm.truth_claim(*truth), available),
-            available,
-        ),
+        condition_source_0 @ Proposition::ConditionIs(_, truth)
+            if let Some((condition @ ConditionTerm::BoolIf { .. }, _)) =
+                condition_source_0.condition_native() =>
+        {
+            bool_arm(
+                condition,
+                |arm| holds(&arm.truth_claim(*truth), available),
+                available,
+            )
+        }
         Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
             algebraic_arm(a, b, available) || algebraic_arm(b, a, available)
         }
-        Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             algebraic_arm(a, b, available) || algebraic_arm(b, a, available)
         }
         _ => crate::kernel::proof::arithmetic_special::finite_float_reflexivity_premise(goal)

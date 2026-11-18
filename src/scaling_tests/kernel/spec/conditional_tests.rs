@@ -244,7 +244,7 @@ fn symbolic_comparisons_ignore_ambient_guard_facts() {
                 assert_eq!(paths.len(), 1);
                 let actual = &paths[0].proposition;
                 assert!(
-                    matches!(actual, Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) if matches!(left.as_ref(), MachineTerm::If { .. }))
+                    matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), MachineTerm::If { .. }))))
                 );
                 assert_eq!(actual, expected.get_or_insert_with(|| actual.clone()));
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -306,8 +306,7 @@ fn boolean_guard_comparisons_ignore_ambient_flag_facts() {
             assert_eq!(paths.len(), 1);
             let actual = &paths[0].proposition;
             assert!(
-                matches!(actual, Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true)
-                if matches!(left.as_ref(), MachineTerm::If { condition, .. } if condition.as_ref() == &guard))
+                matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), MachineTerm::If { condition, .. } if condition.as_ref() == &guard))))
             );
             assert_eq!(actual, expected.get_or_insert_with(|| actual.clone()));
             assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -379,7 +378,7 @@ fn reflexive_conditionals_ignore_unrelated_facts_and_value_aliases() {
                 assert_eq!(paths.len(), 1);
                 let actual = &paths[0].proposition;
                 assert!(
-                    matches!(actual, Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) if matches!(left.as_ref(), MachineTerm::If { .. }))
+                    matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), MachineTerm::If { .. }))))
                 );
                 assert_eq!(actual, expected.get_or_insert_with(|| actual.clone()));
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -546,8 +545,7 @@ fn bitwise_arm_comparisons_ignore_ambient_flag_and_operand_facts() {
                         assert_eq!(paths.len(), 1);
                         let actual = &paths[0].proposition;
                         assert!(
-                            matches!(actual, Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true)
-                            if matches!(left.as_ref(), MachineTerm::If { then_term, .. } if matches!(then_term.as_ref(), MachineTerm::Binary { .. })))
+                            matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), MachineTerm::If { then_term, .. } if matches!(then_term.as_ref(), MachineTerm::Binary { .. })))))
                         );
                         assert_eq!(actual, expected.get_or_insert_with(|| actual.clone()));
                         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -591,9 +589,7 @@ fn bitwise_arm_comparison_work_scales_with_explicit_source() {
                 )
                 .unwrap();
                 assert!(matches!(
-                    &paths[0].proposition,
-                    Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
-                ));
+                    &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _)))));
             }
         });
         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -724,8 +720,7 @@ fn bitwise_guard_comparisons_ignore_ambient_truth_and_operand_aliases() {
                         assert_eq!(paths.len(), 1);
                         let actual = &paths[0].proposition;
                         assert!(
-                            matches!(actual, Proposition::ConditionIs(ConditionTerm::Compare { left, .. },true)
-                            if matches!(left.as_ref(),MachineTerm::If { condition, .. } if matches!(condition.as_ref(), ConditionTerm::Compare { .. })))
+                            matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_,true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(),MachineTerm::If { condition, .. } if matches!(condition.as_ref(), ConditionTerm::Compare { .. })))))
                         );
                         assert_eq!(actual, expected.get_or_insert_with(|| actual.clone()));
                         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -769,9 +764,7 @@ fn bitwise_guard_comparison_work_scales_with_written_source() {
                 )
                 .unwrap();
                 assert!(matches!(
-                    &paths[0].proposition,
-                    Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
-                ));
+                    &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _)))));
             }
         });
         assert_eq!(KernelTermExport::machine_export_count(), exports);
