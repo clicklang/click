@@ -224,7 +224,7 @@ impl SpecValue {
                 comparison::logical_condition_for_operand_views(format, relation, [left, right])
             };
             return Ok(Some(Proposition::condition_is(
-                condition,
+                StoredConditionTerm::from_minted(condition),
                 op != ComparisonOperator::NotEqual,
             )));
         }
@@ -648,6 +648,71 @@ mod pointer_observation_tests {
 #[cfg(test)]
 mod condition_output_tests {
     use super::*;
+    #[test]
+    fn evaluated_machine_comparisons_retain_roots_and_exact_native_outputs() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let left = SpecValue::Shared(KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(10993720),
+            ));
+            let right = SpecValue::Shared(KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(10993721),
+            ));
+            for (operator, relation) in [
+                (ComparisonOperator::Equal, CompareRelation::Equal),
+                (ComparisonOperator::NotEqual, CompareRelation::Equal),
+                (ComparisonOperator::LessThan, CompareRelation::LessThan),
+                (ComparisonOperator::LessEqual, CompareRelation::LessEqual),
+                (
+                    ComparisonOperator::GreaterThan,
+                    CompareRelation::GreaterThan,
+                ),
+                (
+                    ComparisonOperator::GreaterEqual,
+                    CompareRelation::GreaterEqual,
+                ),
+            ] {
+                for guard in [false, true] {
+                    use crate::kernel::machine_integer::comparison;
+                    let operands = [left.machine().unwrap().1, right.machine().unwrap().1];
+                    let expected = if guard {
+                        comparison::logical_conditional_guard_for_operand_views(
+                            format, relation, operands,
+                        )
+                    } else {
+                        comparison::logical_condition_for_operand_views(format, relation, operands)
+                    };
+                    let Proposition::ConditionIs(condition, truth) = left
+                        .comparison_in(operator, &right, guard)
+                        .unwrap()
+                        .unwrap()
+                    else {
+                        unreachable!()
+                    };
+                    assert!(condition.root().is_some());
+                    assert_eq!(condition.native_compat(), &expected);
+                    assert_eq!(
+                        condition.root(),
+                        Some(&KernelTermImport::for_exact_field_inputs().condition(&expected))
+                    );
+                    assert_eq!(truth, operator != ComparisonOperator::NotEqual);
+                    let exports = KernelTermExport::machine_export_count();
+                    for _ in 0..4 {
+                        assert_eq!(condition.native_compat(), &expected);
+                    }
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                }
+            }
+        }
+    }
+
     #[test]
     fn evaluated_boolean_comparison_outputs_retain_the_produced_root() {
         let _session = crate::kernel::VerificationSession::enter();

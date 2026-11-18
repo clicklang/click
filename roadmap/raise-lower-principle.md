@@ -1538,8 +1538,8 @@ independent scaling prerequisite:
 | Subslice | Boundary | Status |
 | --- | --- | --- |
 | 10q3d1 | Boolean, Integer and shared float comparison/classification outputs | PR #3281 merged as `0f7849d09`; all seven pushed commits were verified upstream. |
-| 10q3d2a | Partial-borrow scaling contract | Separate flat selected-call work from bounded footprint publication; local candidate validated before upstream integration. |
-| 10q3d2b | Typed machine comparison outputs in `SpecValue::comparison_in` | Required after the prerequisite; preserve actual shared operands, exact canonical output and fold-alias refusal behavior. |
+| 10q3d2a | Partial-borrow scaling contract | PR #3300 merged as `c5befccfb`; all pushed commits were verified upstream. |
+| 10q3d2b | Typed machine comparison outputs in `SpecValue::comparison_in` | Implemented and validated; retain exact canonical output and native dependency scope. |
 
 10q3d1 forwards logical Boolean equality roots directly. Literal comparisons
 retain the logical operand and apply the existing truth polarity and outer
@@ -1582,15 +1582,28 @@ expansion and proof-object checks passed, along with three audited regular
 proof fixtures and quality. Only test counters and test code change;
 production algorithms and machine output remain unchanged.
 
-10q3d2 remains part of this family. Its first activation passed 1,942 of
-1,943 scaling checks after the other eight regressions were repaired, but
-failed the partial-borrow work check and the fold-alias proof fixture. Restoring
-only the machine-output handoff passed that work check and all 5,623 regular
-proof fixtures while retaining the other new producer families. The machine
-comparison constructor therefore keeps its existing native result in 10q3d1;
-that boundary is not counted as migrated. The follow-up must account for actual
-shared machine operands, including UInt64 equality whose canonical condition
-uses Integer operands, and close these regressions before activation.
+10q3d2b retains the typed machine comparison constructor's actual output in
+the existing condition carrier. The producer oracle covers four formats, six
+relations and both guard modes, checking exact native output, root retention
+and repeated reads without exports.
+
+Exact field imports retain a registered load's written variable name instead
+of expanding it into the same root as its structural read. Those native forms
+have distinct identities and dependency scopes; keeping separate roots prevents
+one from selecting the other's cached output. Default numeric imports still
+expand registered reads. Cached scalar comparisons reuse the existing native
+variable reader only for variable, constant and memory-read descriptors;
+arithmetic and logical DAGs retain their common traversal. All five variable
+modes retain their ordinary, connection and frame policies.
+
+Both regressions were reproduced before repair: a registered load lost its
+load ID, and a growing structural read repeated common summary work. The final
+candidate passed all 180 affected checks, including raising/lowering and exact
+identity, all 1,951 regular scaling checks, and all 5,639 regular proof fixtures.
+The unchanged fold-alias refusal passed both in isolation and in the full
+corpus. Fact auditing recorded 121 refusals and zero changed terms or paths;
+quality passed and full nightly was excluded. No search budget, proof claim or
+C program was changed.
 
 Existing native numeric-coercion readers remain explicit adapters for the later
 10r–10t audit; mixed-format conversion rules are unchanged. Expression-bearing
