@@ -27,17 +27,23 @@ int32 advance_sequential_joins(int32 x) {
         step();
         branch ensuring {
             fact y >= 0;
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         branch ensuring {
             fact z >= 0;
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         step();
         solve();

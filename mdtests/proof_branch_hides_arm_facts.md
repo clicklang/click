@@ -23,10 +23,13 @@ int32 advance_hidden_branch_fact(int32 x) {
         step();
         branch ensuring {
             fact y >= 0;
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         step();
         solve();

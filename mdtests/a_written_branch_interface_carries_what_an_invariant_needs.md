@@ -48,10 +48,13 @@ int32 flip(int32 n) {
         preserve by {
             branch ensuring {
                 fact 0 <= x and x <= 1;
-            } then {
-                step();
-            } else {
-                step();
+            } {
+                true => {
+                    step();
+                }
+                false => {
+                    step();
+                }
             }
             step();
         }

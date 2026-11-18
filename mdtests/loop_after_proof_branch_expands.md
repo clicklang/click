@@ -40,9 +40,12 @@ int32 count_after_guard(int32 n) {
 } by {
     step();
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     loop {
         decreases n - i;

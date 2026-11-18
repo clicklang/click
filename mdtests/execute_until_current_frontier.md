@@ -78,10 +78,13 @@ int32 execute_until_after_advance(int32 flag) {
         step();
         branch ensuring {
             fact y >= 0;
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         step_until(region(6));
         step();

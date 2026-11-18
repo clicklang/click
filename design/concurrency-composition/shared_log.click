@@ -990,30 +990,39 @@ int32 run_two_producers(struct shared_log* log) {
     let state = fold(log_state(log), { cap: before.cap, slack: 2 }, { items: before });
     let { lifetime: lifetime } = step(pthread_mutex_init, { state: state });
     branch {
-        let { cap: cap1, slack: slack1, items: after } = unfold(state);
-        unfold(credit(log));
-        unfold(credit(log));
-        step();
-        solve();
-    } else {}
+        true => {
+            let { cap: cap1, slack: slack1, items: after } = unfold(state);
+            unfold(credit(log));
+            unfold(credit(log));
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        let { cap: cap2, slack: slack2, items: after } = unfold(state);
-        unfold(credit(log));
-        unfold(credit(log));
-        step();
-        solve();
-    } else {}
+        true => {
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            let { cap: cap2, slack: slack2, items: after } = unfold(state);
+            unfold(credit(log));
+            unfold(credit(log));
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step();
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        let { cap: cap3, slack: slack3, items: after } = unfold(state);
-        unfold(credit(log));
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            let { cap: cap3, slack: slack3, items: after } = unfold(state);
+            unfold(credit(log));
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     step(pthread_mutex_destroy, { lifetime: lifetime });

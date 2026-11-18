@@ -43,12 +43,15 @@ void put(struct Node *p, struct Node *q, int32 x, uint64 stamp) {
         step(set_word, {});
         have child == q;
         have child->tag == address(id) + stamp by { rewrite(id, r); solve(); }
-        branch ensuring { fact child->tag == address(id) + stamp; } then {
-            step();
-            have child->tag == address(id) + stamp;
-        } else {
-            step();
-            have child->tag == address(id) + stamp;
+        branch ensuring { fact child->tag == address(id) + stamp; } {
+            true => {
+                step();
+                have child->tag == address(id) + stamp;
+            }
+            false => {
+                step();
+                have child->tag == address(id) + stamp;
+            }
         }
         mark joined;
         have at(joined, child->tag) - stamp == address(id);

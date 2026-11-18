@@ -259,9 +259,12 @@ When the execution frontier is a C `if`, use `branch`:
 <!-- verified-example: mdtests/step_proof_case_condition.md -->
 ```click
 branch {
-    step(); // Execute the first statement in the C then arm.
-} else {
-    step(); // Execute the first statement in the C else arm.
+    true => {
+        step(); // Execute the first statement in the C then arm.
+    }
+    false => {
+        step(); // Execute the first statement in the C else arm.
+    }
 }
 ```
 
@@ -284,10 +287,13 @@ branch ensuring {
     fact p[0] >= 0;
     fact p[0] < 2147483647;
     owns p[0..1];
-} then {
-    step();
-} else {
-    step();
+} {
+    true => {
+        step();
+    }
+    false => {
+        step();
+    }
 }
 step();
 ```

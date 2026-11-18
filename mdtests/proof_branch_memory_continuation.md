@@ -27,10 +27,13 @@ int32 advance_memory_interface(int32* p, int32 x) {
             fact p[0] >= 0;
             fact p[0] < 2147483647;
             owns p[0..1];
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         step();
         step();

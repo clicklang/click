@@ -22,10 +22,13 @@ int32 choose(int32 x, int32 flag) {
         mark function_start;
         branch ensuring {
             fact at(function_start, x) == old(x);
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
     }
 }

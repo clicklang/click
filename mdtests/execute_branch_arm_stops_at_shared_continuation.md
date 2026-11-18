@@ -28,9 +28,12 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m, int32 c) {
 } by {
     mark entry;
     branch {
-        step();
-        step();
-    } else {}
+        true => {
+            step();
+            step();
+        }
+        false => {}
+    }
 }
 ```
 

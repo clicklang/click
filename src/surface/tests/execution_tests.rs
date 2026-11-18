@@ -1231,7 +1231,7 @@ fn linear_execute_checks_the_branch_arm_refusal_program() {
     let mdtest = crate::cli::parse_mdtest(std::path::Path::new("branch-arm.md"), markdown).unwrap();
     let source = mdtest.click_source.as_deref().unwrap();
     let linear = source.replace(
-        "    branch {\n        step();\n        step();\n    } else {}\n",
+        "    branch {\n        true => {\n            step();\n            step();\n        }\n        false => {}\n    }\n",
         "",
     );
     assert_ne!(
@@ -2027,9 +2027,12 @@ fn branch_continuation_tactics_are_timed_as_source_operations() {
         } by {
             step();
             branch {
-                step_until(function.exit);
-                solve();
-            } else {}
+                true => {
+                    step_until(function.exit);
+                    solve();
+                }
+                false => {}
+            }
             step();
             have x == a by {
                 solve();

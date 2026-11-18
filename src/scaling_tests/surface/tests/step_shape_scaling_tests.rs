@@ -259,13 +259,13 @@ fn branches(n: usize) -> (String, String) {
             "        branch ensuring {{
             fact 0 <= s;
             fact s <= {bound};
-        }} then {{
+        }} {{ true => {{
             step();
             have 0 <= s by {{ solve(); }}
             have s <= {bound} by {{ solve(); }}
-        }} else {{
+        }} false => {{
             have s <= {bound} by {{ solve(); }}
-        }}"
+        }} }}"
         )
     });
     let click = format!(

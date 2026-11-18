@@ -1,8 +1,8 @@
 # A proof `match` in a `branch` continuation keeps the branch's attribution
 
-The outer `match` arm runs a `branch` whose `then` arm returns and whose
-`else` arm continues into the rest of the arm: a nested proof `match` that
-runs to function exit inside the `else` arm, splitting at the C's second `if`
+The outer `match` arm runs a `branch` whose `true` arm returns and whose
+`false` arm continues into the rest of the arm: a nested proof `match` that
+runs to function exit inside the `false` arm, splitting at the C's second `if`
 with a proof `if` whose cases each step to exit with
 `step_until(function.exit)`. A proof `match` attributes its
 diagnostics to its own tactic while it runs. It used to leave the shared arm
@@ -48,9 +48,12 @@ int32 f(int32* p, int32 x) {
     match c.m {
         T::A(v) => {
             branch {
-                step();
-                solve();
-            } else {}
+                true => {
+                    step();
+                    solve();
+                }
+                false => {}
+            }
             match c.m {
                 T::A(w) => {
                     if x < 5 {

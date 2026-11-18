@@ -26,9 +26,12 @@ int64 CFeeRate::GetFee(int32 virtual_bytes) const {
     let { result: empty } = step(FeeFrac::IsEmpty, { });
     step();
     branch {
-        have this->m_feerate.base.size == 0;
-        step_until(function.exit); solve();
-    } else {
+        true => {
+            have this->m_feerate.base.size == 0;
+            step_until(function.exit); solve();
+        }
+        false => {
+        }
     }
     have not (this->m_feerate.base.size == 0);
     have this->m_feerate.base.size > 0 by { solve() using { this->m_feerate.base.size >= 0; not (this->m_feerate.base.size == 0); } }

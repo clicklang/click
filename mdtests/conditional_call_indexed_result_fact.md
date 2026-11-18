@@ -63,7 +63,7 @@ int32 caller(int32 *next, int32 *visited, int32 n, int32 cur) {
     }
     let { result: r } = step(visit, {});
     have r == 0 implies visited[at(entry, next[cur])] != 0 by { known(); }
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     step(); solve();
 }
 ```

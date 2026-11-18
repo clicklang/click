@@ -259,12 +259,15 @@ def branches(n):
         f"""        branch ensuring {{
             fact 0 <= s;
             fact s <= {i + 1};
-        }} then {{
-            step();
-            have 0 <= s by {{ solve(); }}
-            have s <= {i + 1} by {{ solve(); }}
-        }} else {{
-            have s <= {i + 1} by {{ solve(); }}
+        }} {{
+            true => {{
+                step();
+                have 0 <= s by {{ solve(); }}
+                have s <= {i + 1} by {{ solve(); }}
+            }}
+            false => {{
+                have s <= {i + 1} by {{ solve(); }}
+            }}
         }}"""
         for i in range(n)
     )

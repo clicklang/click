@@ -49,9 +49,12 @@ int32 publish_once(struct channel* channel) diverges {
     step(atomic_init, { payload: ready_payload(channel) });
     step();
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     unfold(ready_payload(channel));

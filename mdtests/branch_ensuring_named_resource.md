@@ -35,12 +35,15 @@ void set_sign(struct cell* node, int32 x) {
     branch ensuring {
         owns c: cell(node);
         fact c.model >= 1;
-    } then {
-        step();
-        let c = fold(cell(node), { model: 1 });
-    } else {
-        step();
-        let c = fold(cell(node), { model: 2 });
+    } {
+        true => {
+            step();
+            let c = fold(cell(node), { model: 1 });
+        }
+        false => {
+            step();
+            let c = fold(cell(node), { model: 2 });
+        }
     }
     step();
     solve();

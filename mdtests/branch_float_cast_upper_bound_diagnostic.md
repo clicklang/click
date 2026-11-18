@@ -17,7 +17,7 @@ int32 positive(double d) {
     requires d >= float64_from_bits(0xc1e0000000000000u64);
     ensures result >= 0;
 } by {
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     step();
     solve();
 }

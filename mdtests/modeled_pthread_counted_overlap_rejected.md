@@ -41,14 +41,17 @@ int32 run(void* p, void* q) {
     step();
     step();
     step();
-    branch { have count(ticket(p)) == 2; step(); solve(); } else {}
+    branch { true => { have count(ticket(p)) == 2; step(); solve(); } false => {} }
     step();
     branch {
-        step();
-        have count(ticket(p)) == 0;
-        have count(ticket(q)) == 1;
-        step(); solve();
-    } else {}
+        true => {
+            step();
+            have count(ticket(p)) == 0;
+            have count(ticket(q)) == 1;
+            step(); solve();
+        }
+        false => {}
+    }
     step();
     have count(ticket(q)) == 0;
     step();
