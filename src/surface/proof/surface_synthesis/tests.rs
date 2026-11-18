@@ -8028,3 +8028,23 @@ fn low_word_casts_in_conditionals_round_trip_after_rewrite() {
         }
     }
 }
+
+#[test]
+fn recorded_volatile_read_slots_retain_the_producer_value() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let root = crate::kernel::KernelTerm::variable(
+        crate::kernel::KernelType::Program(ProgramType::Float32),
+        Variable(10993674),
+    );
+    let mut points = RecordedStates::new();
+    points.record_read_retained_event_values(3, std::iter::once(root.clone().into()));
+    assert_eq!(
+        points.read_event_results.get(&(3, 0)).unwrap().root(),
+        Some(&root)
+    );
+    let branch = points.clone();
+    assert_eq!(
+        branch.read_event_results.get(&(3, 0)).unwrap().root(),
+        Some(&root)
+    );
+}

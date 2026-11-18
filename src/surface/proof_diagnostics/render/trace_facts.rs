@@ -248,7 +248,7 @@ mod tests {
                     kind: crate::kernel::VolatileAccessKind::Write,
                     pointer: Address::symbolic(Variable(986_703)),
                     value_type: crate::kernel::ProgramType::UInt64,
-                    value: ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
+                    value: ProgramValue::UInt64(MachineTerm::uint64_constant(1)).into(),
                 })),
                 "volatile-write-event#123(",
             ),

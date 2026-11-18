@@ -585,7 +585,7 @@ fn collect_proposition_bitvector_variables_one(
     match proposition {
         Proposition::VolatileAccess(event) => {
             collect_pointer_bitvector_variables(&event.pointer, variables);
-            collect_program_value_bitvector_variables(&event.value, variables);
+            collect_expression_value_bitvector_variables(event.value.value(), variables);
         }
         Proposition::Equal(left, right) => {
             collect_term_bitvector_variables(left, variables);

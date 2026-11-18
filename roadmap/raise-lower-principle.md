@@ -1347,6 +1347,30 @@ holds. Logical conditions and remaining term payloads retain their own slices.
 10q2 is split before implementation into independent volatile-value and
 loadability-count PRs; its original scope and proof rules are unchanged.
 
+### 10q2a Volatile-event values (in progress)
+
+`VolatileAccess::value` uses the exact program-value carrier. Native inputs
+retain their syntax; variable collection and substitution use retained values.
+Read-result certification, event identities, pointer/type metadata and access
+rules are unchanged. The existing native read-result getter remains explicit
+and materializes only read values, not writes. Native proof rewriting and
+rendering retain selected compatibility readers.
+
+The already-retained recorded read-event slot now accepts the event's retained
+value directly. Existing naming indices and native merge/replay interfaces
+keep their identity policy; no index or enclosing value cache is added.
+The actual volatile-local write regression was red while 207 other checks
+passed. Evaluator read/write handoffs now forward retained values. Ordinary
+memory writes retain the already-coerced input; bit-field writes preserve the
+actual newly combined native byte rather than substituting the incoming value.
+The local stack-memory compatibility conversion remains unchanged. Event
+capture/cloning is measured separately from that existing memory boundary;
+the actual write regression still checks producer-root retention.
+
+The initial post-switch selection passed 208/209 checks: the broader assignment
+scaler included the existing stack-memory export. It now isolates the event
+capture/clone operation; final focused validation is running.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

@@ -1298,7 +1298,7 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
         Proposition::VolatileAccess(event) => {
             Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
                 pointer: s.pointer(&event.pointer),
-                value: s.program_value(&event.value),
+                value: StoredProgramValue::from(s.stored_program_value(event.value.value())),
                 id: event.id,
                 kind: event.kind,
                 value_type: event.value_type,
@@ -2408,7 +2408,7 @@ fn collect_proposition_bound_variables_one(
     match proposition {
         Proposition::VolatileAccess(event) => {
             collect_pointer_bound_variables(&event.pointer, variables);
-            collect_program_value_bound_variables(&event.value, variables);
+            collect_expression_value_bound_variables(event.value.value(), variables);
         }
         Proposition::Equal(left, right) => {
             collect_term_bound_variables(left, variables);
