@@ -472,3 +472,8 @@ links through initialization, then carries the root link through the
 recolor-to-black and black-parent exits. The stopping contracts return the
 tree at the entry root pointer and prove that the root pointer is unchanged.
 The arbitrary-length flip-chain proof and full-directory audit remain open.
+
+All three proofs in `rbtree_size_insert_context_stop.click` also verify for
+a black parent on either side of the focused subtree. The proof states the
+parent equality for each concrete context and keeps the ancestor path folded
+through the read-only test. Its contracts prove the same unchanged root link.
