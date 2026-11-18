@@ -8323,6 +8323,39 @@ impl Parser {
         named
     }
 
+    /// An application (or an `at` around one) followed by an index.
+    fn indexed_resource_target_follows(&self) -> bool {
+        self.peek_ident().is_some()
+            && self.peek_next() == Some(&Token::LParen)
+            && self.matching_parentheses[self.position + 1]
+                .is_some_and(|close| self.tokens.get(close + 1) == Some(&Token::LBracket))
+    }
+
+    fn parse_iterated_slot(&mut self) -> Result<Box<IteratedSlot>, ClickError> {
+        let point = if self.peek_ident() == Some("at") {
+            self.position += 1;
+            self.expect(Token::LParen)?;
+            let point = self.parse_program_point_selector()?;
+            self.expect(Token::Comma)?;
+            Some(point)
+        } else {
+            None
+        };
+        let resource = self.parse_declared_resource_call_with_access(ResourceAccessMode::Own)?;
+        if point.is_some() {
+            self.expect(Token::RParen)?;
+        }
+        self.expect(Token::LBracket)?;
+        let index = self.parse_contract_expression()?;
+        self.expect(Token::RBracket)?;
+        self.expect(Token::RParen)?;
+        Ok(Box::new(IteratedSlot {
+            resource,
+            point,
+            index,
+        }))
+    }
+
     fn parse_owned_resource_target(&mut self) -> Result<ResourceClause, ClickError> {
         if let Some(mut target) = self
             .peek_ident()
@@ -11052,6 +11085,11 @@ impl Parser {
             }
             "unfold" => {
                 self.expect(Token::LParen)?;
+                if self.indexed_resource_target_follows() {
+                    let slot = self.parse_iterated_slot()?;
+                    self.expect(Token::Semicolon)?;
+                    return Ok(ProofTactic::Iterated(IteratedTactic::UnfoldSlot(slot)));
+                }
                 // Look ahead without parsing: parsing an expression may split
                 // generic `>>` tokens, so rewinding only the cursor is unsafe.
                 let mut depth = 0usize;
@@ -11384,6 +11422,11 @@ impl Parser {
             }
             "fold" => {
                 self.expect(Token::LParen)?;
+                if self.indexed_resource_target_follows() {
+                    let slot = self.parse_iterated_slot()?;
+                    self.expect(Token::Semicolon)?;
+                    return Ok(ProofTactic::Iterated(IteratedTactic::FoldSlot(slot)));
+                }
                 if self
                     .peek_ident()
                     .is_some_and(|resource| self.is_hidden_record(resource))

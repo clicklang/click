@@ -23792,3 +23792,37 @@ fn integer_fold_zero_contribution_expansion_replays_without_search() {
     let replay = format!("{}{}", &source[..start], expanded);
     without_implicit_solve(|| verify_c_sources(&replay, &refs)).unwrap();
 }
+
+#[test]
+fn indexed_iterated_ownership_expands_and_rechecks() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_iterated_ownership.md");
+    let sources = sources
+        .iter()
+        .map(|(name, body)| (name.as_str(), body.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "update_slot.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("unfold(arena_slots(data, free_slots, capacity)[i]);")
+            && expanded.contains("fold(at(opened, arena_slots(data, free_slots, capacity))[i]);"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("update_slot.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    let wrong = source.replace(
+        "fold(at(opened, arena_slots(data, free_slots, capacity))[i]);",
+        "fold(arena_slots(data, free_slots, capacity)[i]);",
+    );
+    assert_ne!(wrong, source);
+    let error = verify_c_sources(&wrong, &sources).unwrap_err();
+    assert!(
+        error
+            .report()
+            .contains("selected iterated ownership fact is not held"),
+        "{}",
+        error.report()
+    );
+}

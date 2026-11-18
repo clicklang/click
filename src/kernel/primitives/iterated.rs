@@ -217,6 +217,14 @@ impl IteratedMemory {
         )
     }
 
+    /// The immutable clause coordinates, independent of its open slots.
+    pub(crate) fn without_holes(&self) -> Self {
+        Self {
+            holes: Arc::from([]),
+            ..self.clone()
+        }
+    }
+
     pub(crate) fn with_hole(&self, index: MachineTerm) -> Self {
         let mut holes = self.holes.to_vec();
         holes.push(index);

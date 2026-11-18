@@ -1360,6 +1360,16 @@ pub(in crate::surface) fn describe_iterated_tactic(tactic: &IteratedTactic) -> S
                     ),
                 }
             }
+            IteratedTactic::UnfoldSlot(slot) | IteratedTactic::FoldSlot(slot) => {
+                let resource = format_resource_target(&slot.resource);
+                let target = match &slot.point {
+                    Some(point) => {
+                        format!("at({}, {resource})", describe_program_point_selector(point))
+                    }
+                    None => resource,
+                };
+                format!("{target}[{}]", describe_contract_expression(&slot.index))
+            }
             IteratedTactic::Gather(resource) | IteratedTactic::Scatter(resource) => {
                 format_resource_target(resource)
             }

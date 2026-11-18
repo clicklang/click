@@ -1955,6 +1955,10 @@ fn expand_declared_resource_tactic_with_resources(
     tactic: ProofTactic,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ProofTactic, ClickError> {
+    let expand_slot = |mut slot: Box<IteratedSlot>| -> Result<Box<IteratedSlot>, ClickError> {
+        slot.resource = expand_declared_resource_clause(slot.resource, resource_definitions)?;
+        Ok(slot)
+    };
     match tactic {
         ProofTactic::UnfoldResource(resource) => Ok(ProofTactic::UnfoldResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
@@ -1982,6 +1986,12 @@ fn expand_declared_resource_tactic_with_resources(
                 expand_declared_resource_clause(resource, resource_definitions)?,
             )))
         }
+        ProofTactic::Iterated(IteratedTactic::UnfoldSlot(slot)) => Ok(ProofTactic::Iterated(
+            IteratedTactic::UnfoldSlot(expand_slot(slot)?),
+        )),
+        ProofTactic::Iterated(IteratedTactic::FoldSlot(slot)) => Ok(ProofTactic::Iterated(
+            IteratedTactic::FoldSlot(expand_slot(slot)?),
+        )),
         tactic @ (ProofTactic::Iterated(IteratedTactic::Take(_) | IteratedTactic::Give(_))
         | ProofTactic::ObserveSavedMemory { .. }) => Ok(tactic),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),

@@ -22,6 +22,15 @@ pub(crate) enum IteratedStep {
     Take { element: MemoryRange },
     /// `give(base[a..b])`: move one element back into the fact.
     Give { element: MemoryRange },
+    /// The named clause supplies the range at the written index.
+    UnfoldSlot {
+        template: IteratedMemory,
+        index: MachineTerm,
+    },
+    FoldSlot {
+        template: IteratedMemory,
+        index: MachineTerm,
+    },
     /// `gather(resource)`: form `template` (a hole-free fact) from the
     /// covering owned range when every guard is known true, or from nothing
     /// when every guard is known false.
@@ -355,6 +364,102 @@ fn replace_iterated(
         .ok_or_else(|| "the iterated ownership fact is not held".to_string())
 }
 
+fn unfold_slot(
+    state: &ExecutionState,
+    current: &ResourceFact,
+    iterated: &IteratedMemory,
+    index: &MachineTerm,
+    element: MemoryRange,
+    assumptions: &PureFactContext,
+) -> Result<ExecutionState, String> {
+    if !index_in_range(assumptions, iterated, index) {
+        return Err(
+            "the index is not known to lie in the iterated range; establish `lo <= index` and `index < hi` first"
+                .to_string(),
+        );
+    }
+    if let Some(hole) = iterated
+        .holes()
+        .iter()
+        .find(|hole| !terms_distinct(assumptions, hole, index))
+    {
+        let _ = hole;
+        return Err(
+            "this element may already be taken out: the index is not known to differ from an element taken out earlier"
+                .to_string(),
+        );
+    }
+    match iterated_guard_at(state, iterated, index, assumptions)? {
+        Some(true) => {}
+        Some(false) => {
+            return Err(
+                "the guard is false at this index, so the iterated ownership fact holds no element there"
+                    .to_string(),
+            );
+        }
+        None => {
+            return Err(
+                "the guard at this index is not known to hold; state the guard cell's value as a fact first"
+                    .to_string(),
+            );
+        }
+    }
+    let next = iterated.with_hole(index.clone());
+    let resources = replace_iterated(state.resources().clone(), current, next)?;
+    // The checked owner lost exactly this element to its new hole.
+    // Guard stores preserve that partition; exposing the element is
+    // construction in this same frame, not new ownership admission.
+    // Keep unrelated occurrences and support metadata untouched.
+    let resources = resources.unchecked_with_fact(ResourceFact::own_memory(element));
+    Ok(state.clone().with_resource_context(resources))
+}
+
+fn fold_slot(
+    state: &ExecutionState,
+    current: &ResourceFact,
+    iterated: &IteratedMemory,
+    index: &MachineTerm,
+    assumptions: &PureFactContext,
+) -> Result<ExecutionState, String> {
+    match iterated_guard_at(state, iterated, index, assumptions)? {
+        Some(true) => {}
+        Some(false) => {
+            return Err(
+                "the guard is false at this index, so the iterated ownership fact cannot hold the element; set the guard cell first"
+                    .to_string(),
+            );
+        }
+        None => {
+            return Err(
+                "the guard at this index is not known to hold; state the guard cell's value as a fact first"
+                    .to_string(),
+            );
+        }
+    }
+    let Some(position) = iterated
+        .holes()
+        .iter()
+        .position(|hole| terms_equal(assumptions, hole, index))
+    else {
+        return Err(
+            "this element was not taken out of the iterated ownership fact; only an element taken out, or whose guard a store just made true, can be given back"
+                .to_string(),
+        );
+    };
+    let next = iterated.without_hole_at(position);
+    // Selection checked the base and exact element shape. Consume in
+    // that clause's coordinates instead of rediscovering its held
+    // supplier through a later pointer-read spelling.
+    let owned_element = iterated.element_range(index);
+    let resources = state
+        .resources()
+        .clone()
+        .without_fact_incrementally(&ResourceFact::own_memory(owned_element), assumptions)
+        .ok_or_else(|| "the element is not owned here".to_string())?;
+    let resources = replace_iterated(resources, current, next)?;
+    Ok(state.clone().with_resource_context(resources))
+}
+
 /// Applies one checked iterated-ownership step to `state`. Each step reads
 /// the one fact it names, one guard cell, the fact's holes, and the element
 /// it moves; the index range is never enumerated.
@@ -364,95 +469,40 @@ pub(crate) fn apply_iterated_step(
     assumptions: &PureFactContext,
 ) -> Result<ExecutionState, String> {
     match step {
-        IteratedStep::Take { element } => {
+        IteratedStep::Take { element } | IteratedStep::Give { element } => {
             let (current, iterated) =
                 iterated_fact_for_element(state.resources(), element, assumptions)?;
             let index = &element_index(iterated, element)?;
             check_element_at(iterated, element, index, assumptions)?;
-            if !index_in_range(assumptions, iterated, index) {
-                return Err(
-                    "the index is not known to lie in the iterated range; establish `lo <= index` and `index < hi` first"
-                        .to_string(),
-                );
+            match step {
+                IteratedStep::Take { .. } => unfold_slot(
+                    state,
+                    current,
+                    iterated,
+                    index,
+                    element.clone(),
+                    assumptions,
+                ),
+                _ => fold_slot(state, current, iterated, index, assumptions),
             }
-            if let Some(hole) = iterated
-                .holes()
-                .iter()
-                .find(|hole| !terms_distinct(assumptions, hole, index))
-            {
-                let _ = hole;
-                return Err(
-                    "this element may already be taken out: the index is not known to differ from an element taken out earlier"
-                        .to_string(),
-                );
-            }
-            match iterated_guard_at(state, iterated, index, assumptions)? {
-                Some(true) => {}
-                Some(false) => {
-                    return Err(
-                        "the guard is false at this index, so the iterated ownership fact holds no element there"
-                            .to_string(),
-                    );
-                }
-                None => {
-                    return Err(
-                        "the guard at this index is not known to hold; state the guard cell's value as a fact first"
-                            .to_string(),
-                    );
-                }
-            }
-            let next = iterated.with_hole(index.clone());
-            let resources = replace_iterated(state.resources().clone(), current, next)?;
-            // The checked owner lost exactly this element to its new hole.
-            // Guard stores preserve that partition; exposing the element is
-            // construction in this same frame, not new ownership admission.
-            // Keep unrelated occurrences and support metadata untouched.
-            let resources =
-                resources.unchecked_with_fact(ResourceFact::own_memory(element.clone()));
-            Ok(state.clone().with_resource_context(resources))
         }
-        IteratedStep::Give { element } => {
-            let (current, iterated) =
-                iterated_fact_for_element(state.resources(), element, assumptions)?;
-            let index = &element_index(iterated, element)?;
-            check_element_at(iterated, element, index, assumptions)?;
-            match iterated_guard_at(state, iterated, index, assumptions)? {
-                Some(true) => {}
-                Some(false) => {
-                    return Err(
-                        "the guard is false at this index, so the iterated ownership fact cannot hold the element; set the guard cell first"
-                            .to_string(),
-                    );
-                }
-                None => {
-                    return Err(
-                        "the guard at this index is not known to hold; state the guard cell's value as a fact first"
-                            .to_string(),
-                    );
-                }
-            }
-            let Some(position) = iterated
-                .holes()
-                .iter()
-                .position(|hole| terms_equal(assumptions, hole, index))
-            else {
-                return Err(
-                    "this element was not taken out of the iterated ownership fact; only an element taken out, or whose guard a store just made true, can be given back"
-                        .to_string(),
-                );
+        IteratedStep::UnfoldSlot { template, index }
+        | IteratedStep::FoldSlot { template, index } => {
+            let current = state.resources().owned_iterated_clause(template)?;
+            let Resource::Iterated(iterated) = current.resource() else {
+                unreachable!("the iterated clause index holds only iterated facts");
             };
-            let next = iterated.without_hole_at(position);
-            // Selection checked the base and exact element shape. Consume in
-            // that clause's coordinates instead of rediscovering its held
-            // supplier through a later pointer-read spelling.
-            let owned_element = iterated.element_range(index);
-            let resources = state
-                .resources()
-                .clone()
-                .without_fact_incrementally(&ResourceFact::own_memory(owned_element), assumptions)
-                .ok_or_else(|| "the element is not owned here".to_string())?;
-            let resources = replace_iterated(resources, current, next)?;
-            Ok(state.clone().with_resource_context(resources))
+            match step {
+                IteratedStep::UnfoldSlot { .. } => unfold_slot(
+                    state,
+                    current,
+                    iterated,
+                    index,
+                    iterated.element_range(index),
+                    assumptions,
+                ),
+                _ => fold_slot(state, current, iterated, index, assumptions),
+            }
         }
         IteratedStep::Gather { template } => {
             if !template.holes().is_empty() {

@@ -2187,10 +2187,23 @@ pub enum IteratedTactic {
     Take(IteratedElement),
     /// `give(base[a..b]);` moves one element back.
     Give(IteratedElement),
+    /// `unfold(resource(args)[i]);` opens one slot of an exposed clause.
+    UnfoldSlot(Box<IteratedSlot>),
+    /// `fold(resource(args)[i]);` restores that slot.
+    FoldSlot(Box<IteratedSlot>),
     /// `gather(resource(...));` forms the named resource's iterated fact.
     Gather(ResourceClause),
     /// `scatter(resource(...));` dissolves it.
     Scatter(ResourceClause),
+}
+
+/// One index in a resource's exposed iterated clause. A saved point selects
+/// the resource arguments only; the index and guard use the current state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IteratedSlot {
+    resource: ResourceClause,
+    point: Option<ProgramPointSelector>,
+    index: ContractExpression,
 }
 
 /// A current range or a range through an explicitly selected saved pointer.
@@ -2209,6 +2222,8 @@ impl IteratedTactic {
         match self {
             Self::Take(_) => "take",
             Self::Give(_) => "give",
+            Self::UnfoldSlot(_) => "unfold",
+            Self::FoldSlot(_) => "fold",
             Self::Gather(_) => "gather",
             Self::Scatter(_) => "scatter",
         }

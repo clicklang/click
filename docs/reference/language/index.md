@@ -2981,6 +2981,16 @@ Without an `if`, the clause owns every element; it must then be the
 one-cell element `base[k..k + 1]`, and it is exactly the range `owns
 base[lo..hi]` and lowers to it.
 
+Once the resource is open, `unfold(arena_cells(data, occupied, capacity)[i]);`
+exposes just the element at `i`. The iterated clause supplies its memory
+range. `fold(arena_cells(data, occupied, capacity)[i]);` restores that element.
+Both require its guard to hold. The resource arguments select the exact
+held clause. If C has reassigned an argument, an explicit point can select
+the old arguments, as in
+`fold(at(opened, arena_cells(data, occupied, capacity))[i]);`.
+The index and guard are still read in the current state.
+See `mdtests/indexed_iterated_ownership.md`.
+
 Four simple steps move ownership in and out of an unfolded iterated fact.
 Each reads the one fact it names, one guard cell or one quantified guard fact,
 and the indices currently taken out:

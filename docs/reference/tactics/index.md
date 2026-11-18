@@ -3873,6 +3873,25 @@ expansion preserves the checked step, and profiling charges one simple leaf.
 
 **Checked examples:** [`contract_tests.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/contract_tests.rs), [`authority_ordinary_token_construction.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_ordinary_token_construction.md), [`authority_authorized_token_construction_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_authorized_token_construction_rejected.md)
 
+### Indexed resource unfolding and folding
+
+**Forms:** `unfold(resource(args)[i]);` and `fold(resource(args)[i]);`
+
+The resource must declare guarded iterated ownership. Open the whole
+resource first. The written arguments select its held clause, and the
+clause supplies the element range at the current `int32` index `i`.
+Indexed `unfold` moves the element to ordinary owned memory, leaving an
+open slot. Indexed `fold` consumes that memory and restores the slot.
+The same checks apply as for [taking](#taking-a-range) and
+[giving](#giving-a-range).
+
+Write `at(point, resource(args))[i]` to select the clause using arguments
+at a recorded program point. The index, guard, and ownership transfer
+use the current state. An absent or ambiguous held clause is refused.
+Expansion retains the indexed form.
+
+**Checked example:** `mdtests/indexed_iterated_ownership.md`
+
 ### Taking a range
 
 **Form:** `take(base[a..b])`

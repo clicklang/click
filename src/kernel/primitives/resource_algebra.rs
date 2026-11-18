@@ -654,6 +654,13 @@ impl ResourceContextIndex {
                 result.iterated_by_block =
                     insert_resource_index_entry(&result.iterated_by_block, second.clone(), entry);
             }
+            if fact.is_own() {
+                result.owned_iterated_by_clause = insert_resource_index_entry(
+                    &result.owned_iterated_by_clause,
+                    iterated.without_holes(),
+                    entry,
+                );
+            }
         }
         let hash = resource_fact_content_hash(fact);
         result.fact_hash = result.fact_hash.wrapping_add(hash);
@@ -1049,6 +1056,13 @@ impl ResourceContextIndex {
             if second != first {
                 result.iterated_by_block =
                     remove_resource_index_entry(&result.iterated_by_block, second, entry);
+            }
+            if fact.is_own() {
+                result.owned_iterated_by_clause = remove_resource_index_entry(
+                    &result.owned_iterated_by_clause,
+                    &iterated.without_holes(),
+                    entry,
+                );
             }
         }
         let hash = resource_fact_content_hash(fact);
@@ -3439,6 +3453,24 @@ impl ResourceContext {
             .flat_map(ResourceEntryIds::iter)
             .map(|entry| self.fact(*entry))
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    }
+
+    /// Select the unique owned occurrence with these exact clause coordinates.
+    pub(in crate::kernel) fn owned_iterated_clause(
+        &self,
+        template: &IteratedMemory,
+    ) -> Result<&ResourceFact, &'static str> {
+        crate::instrumentation::record_deterministic_work(1);
+        let entries = self
+            .storage
+            .index
+            .owned_iterated_by_clause
+            .get(template)
+            .ok_or("the selected iterated ownership fact is not held; unfold its resource or select its saved arguments")?;
+        if entries.len() != 1 {
+            return Err("more than one owned iterated fact has the selected clause");
+        }
+        Ok(self.fact(*entries.last().expect("a singleton clause has an entry")))
     }
 
     /// Every iterated guarded-ownership fact held, each once, from the block
