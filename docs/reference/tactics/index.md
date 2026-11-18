@@ -3433,8 +3433,8 @@ mathematical product.
 | `construct(resource)` | simple | Specialized | Create an abstract token authorized by a `constructs` clause. | [Reference](#constructing-resources) |
 | `unfold(resource(args)[i])` | simple | Specialized | Expose one guarded ownership slot. | [Reference](#indexed-resource-unfolding-and-folding) |
 | `fold(resource(args)[i])` | simple | Specialized | Restore one guarded ownership slot. | [Reference](#indexed-resource-unfolding-and-folding) |
-| `gather(resource(args))` | simple | Specialized | Form iterated ownership from its covering range. | [Reference](#gathering-resources) |
-| `scatter(resource(args))` | simple | Specialized | Dissolve iterated ownership into its covering range. | [Reference](#scattering-resources) |
+| `fold(resource(args)[..])` | simple | Specialized | Form the whole iterated clause from its covering range. | [Reference](#whole-clause-resource-unfolding-and-folding) |
+| `unfold(resource(args)[..])` | simple | Specialized | Recover the covering range from the whole iterated clause. | [Reference](#whole-clause-resource-unfolding-and-folding) |
 | `name(args, { binder: instance })` | simple | Specialized | Apply a verified tactic with resource bindings. | [Reference](#user-defined-tactic-calls) |
 | `observe(resource)` | simple | Specialized | Read a resource's persistent observations. | [Reference](#observing-resources) |
 
@@ -3920,86 +3920,44 @@ function exit. Expansion retains the indexed form.
 [Allocation](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_allocate_one.md),
 [Release](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_release_one.md).
 
-### Gathering resources
+### Whole-clause resource unfolding and folding
 
-**Form:** `gather(resource(args))`
+**Forms**
 
-**Specialized.** Write it to form an iterated ownership fact from the range it
-covers. Form the iterated ownership fact the named resource's clause denotes:
-from the owned range its elements cover when a quantified fact says every guard
-is true, or from nothing when every guard is false.
+- `fold(resource(args)[..]);` forms the named resource's whole iterated clause.
+  It requires ownership of the guard cells and consumes the covering memory
+  range when every guard is true. When every guard is false, it forms an empty
+  clause without consuming element memory. A subsequent `fold(resource(args));`
+  can package the clause and the rest of the resource body.
+- `unfold(resource(args)[..]);` consumes the whole iterated clause and returns
+  its covering range when every guard is true, or no element memory when every
+  guard is false. First open the outer resource if it is folded and restore
+  any open slots with indexed `fold`.
 
-The guard cells must be owned.
+Both forms run at an execution frontier before function exit. Write
+`at(point, resource(args))[..]` to select the clause using saved arguments.
+The guards and ownership transfer use the current state. Expansion retains
+the whole-clause form.
 
-**Accepts**, at a C function's execution frontier before exit, a declared
-resource whose body has an iterated clause over `lo..hi`, instantiated at the
-written arguments, when:
+For a clause over `lo..hi`, both forms require every guard to be decided the
+same way. The kernel checks the guard once at an arbitrary in-range index
+using available quantified facts. For example,
+`forall (k: int32) { lo <= k and k < hi implies occupied[k] == 0 }`
+establishes that every guard `occupied[k] == 0` holds. A fact over a wider range
+or one establishing every guard false also works. State the conjoined bounds
+with `have` if the available fact uses nested implications.
 
-- The guard cells of the whole range are owned.
-- Every guard is settled one way: the guard at a fresh index `k` with
-  `lo <= k` and `k < hi` is decided by the kernel's condition decision after
-  instantiating each `forall (k: int32) { A implies B }` fact once. A fact
-  `forall (k: int32) { lo <= k and k < hi implies occupied[k] == 0 }`, one
-  over a wider range, or one stating the negation (`occupied[k] != 0`,
-  `occupied[k] == 1`) qualifies.
-- When every guard is true, the elements tile one range
-  (`b - a == s` in `base[s * k + a..s * k + b]`) and that range
-  `base[s * lo + a..s * hi + a]` is owned, possibly inside a larger owned
-  range.
+With true guards, the elements must tile a contiguous range. For elements
+`base[s * k + a..s * k + b]`, this means `b - a == s`, yielding
+`base[s * lo + a..s * hi + a]`. False guards allow gapped layouts because
+there is no element memory to transfer. Mixed or unknown guards prevent
+whole-clause conversion. Folding may form more than one empty fact when all
+guards are false. Proofs should avoid relying on this behavior.
 
-It consumes the covering range (nothing when every guard is false) and adds
-the iterated fact with nothing taken out, as an `unfold` of the resource would
-expose it; `fold` then forms the resource.
-
-**Outside it**, with what to write instead:
-
-- Guards mixed or not settled by one instantiation, including a curried
-  `forall (k: int32) { lo <= k implies (k < hi implies guard) }`: state the
-  conjoined form with `have` first.
-- Gapped elements (`b - a < s`) with true guards: there is no single covering
-  range to gather from. With every guard false, `gather` forms the gapped
-  fact from nothing.
-- A resource without an iterated clause: `fold` it.
-- After the function exit: gather before execution reaches the exit.
-
-`gather` does not check that the same fact is already held: with every guard
-false, gathering twice holds two empty facts. That is not a guarantee.
-
-**Failure, checking, and tools:**
-
-Guards that are not all known one way, an unowned guard range, or an unowned
-covering range fails. The kernel instantiates the quantified guard fact once at
-an arbitrary index; the range is never enumerated.
-
-**Checked examples:** [`iterated_ownership_gather_scatter.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_gather_scatter.md), [`iterated_ownership_gather_fresh_heap_map.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_gather_fresh_heap_map.md), [`iterated_ownership_rejects_gather_unknown_guards.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_gather_unknown_guards.md), [`gather_refuses_elements_that_do_not_tile_a_range.md`](https://github.com/clicklang/click/blob/master/mdtests/gather_refuses_elements_that_do_not_tile_a_range.md)
-
-### Scattering resources
-
-**Form:** `scatter(resource(args))`
-
-**Specialized.** Write it to dissolve an iterated ownership fact back into its
-range. The converse of `gather`: consume the named clause's iterated fact, with
-nothing taken out, and return the covering range when every guard is true, or
-nothing when every guard is false.
-
-**Accepts**, at a C function's execution frontier before exit, a declared
-resource whose body has an iterated clause, when the iterated fact that clause
-denotes at the written arguments is held with nothing taken out, and every
-guard is settled one way as for `gather`. When every guard is true the
-elements must tile one range, which it adds as owned memory.
-
-**Outside it**, with what to write instead:
-
-- A fact with an open slot: restore it with indexed `fold` first.
-- A fact still folded inside its resource: `unfold` the resource first.
-- Guards not settled one way: as for `gather`.
-
-**Failure, checking, and tools:**
-
-As for `gather`; a fact not held, or held with an element out, fails with
-"scattering needs the iterated ownership fact with no element taken out".
-
-**Checked examples:** [`iterated_ownership_gather_scatter.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_gather_scatter.md)
+**Checked examples** [Whole-clause round trip](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_whole_clause.md),
+[Fresh guard map](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_fold_fresh_heap_map.md),
+[Unknown guards](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_whole_fold_unknown_guards.md),
+[Gapped elements](https://github.com/clicklang/click/blob/master/mdtests/whole_fold_refuses_elements_that_do_not_tile_a_range.md).
 
 ### User-defined tactic calls
 

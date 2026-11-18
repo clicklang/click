@@ -1336,10 +1336,9 @@ fn bare_step_proves_an_open_obligation_by_implicit_solve() {
 }
 
 #[test]
-fn explicit_transport_keeps_evaluated_tagged_pointer_sources_after_a_join() {
-    // The pointer comes from a tagged integer, as in rbtree insertion. After
-    // joining the cases, the stored pointer equality evaluates to true.
-    // Re-lowering only the source symbolically used to lose its cited fact.
+fn explicit_preservation_keeps_a_tagged_pointer_after_a_join() {
+    // Both arms store the pointer decoded from the tag, as in rbtree
+    // insertion. Preserve that joined observation across the tag write.
     let c_source = r#"struct node { unsigned long tag; struct node *left; struct node *right; };
 void change(struct node *g, struct node *source, struct node *t) {
     struct node *p = (struct node *)(source->tag & ~3UL);
@@ -1384,14 +1383,21 @@ void change(struct node *g, struct node *source, struct node *t) {
     have at(before_tag, g->right == p) by { known(); }
     have separate(memory(g->right), memory(p->tag)) by { known(); }
     step();
-    transport(at(before_tag, g->right == p), g->right == p) using {
-        at(before_tag, g->right == p);
-    };
+    have separate(statement(2).footprint, memory(g->right)) by {
+        normalize() using { separate(memory(g->right), memory(p->tag)); };
+    }
+    have g->right == at(before_tag, g->right) by {
+        preserve(memory(g->right), statement(2));
+    }
+    have g->right == p by {
+        rewrite(g->right, at(before_tag, g->right));
+        known();
+    }
     step(); solve();
 }
 "#;
     verify_c_sources(click_source, &[("join.c", c_source)])
-        .expect("an evaluated pointer store remains a valid transport source");
+        .expect("the joined pointer value survives the disjoint tag write");
     let expanded = expand_c_claim_source(
         click_source,
         &[("join.c", c_source)],
@@ -1399,41 +1405,52 @@ void change(struct node *g, struct node *source, struct node *t) {
         ContractProofClaim::Grouped,
     )
     .expect("the tagged-pointer proof should expand");
+    assert!(!expanded.contains("transport("), "{expanded}");
     crate::surface::proof::without_implicit_solve(|| {
         verify_c_sources(&expanded, &[("join.c", c_source)])
     })
     .expect("the expanded proof should check independently");
 
     let false_source = click_source.replace(
-        "transport(at(before_tag, g->right == p),",
-        "transport(false,",
+        "at(before_tag, g->right == p)",
+        "at(before_tag, g->right != p)",
     );
     let error = verify_c_sources(&false_source, &[("join.c", c_source)])
         .expect_err("an available target must not bypass a false source");
     assert!(
-        error.message().contains("requires a source"),
+        error
+            .message()
+            .contains("requires the current goal as an available semantic fact"),
         "{}",
         error.message()
     );
 
-    let absent_premise =
-        click_source.replace("        at(before_tag, g->right == p);", "        false;");
+    let absent_premise = click_source.replace(
+        "normalize() using { separate(memory(g->right), memory(p->tag)); };",
+        "normalize() using { false; };",
+    );
     let error = verify_c_sources(&absent_premise, &[("join.c", c_source)])
         .expect_err("an available target must not bypass an unavailable premise");
     assert!(
-        error.message().contains("requires an exact premise"),
+        error
+            .message()
+            .contains("premise 0 is not exactly available"),
         "{}",
         error.message()
     );
 
     let overwritten_c = c_source.replace("    p->tag = 1;", "    g->right = 0;\n    p->tag = 1;");
     let overwritten_proof = click_source.replace(
-        "    step();\n    transport(at(before_tag,",
-        "    step(); step();\n    transport(at(before_tag,",
+        "    step();\n    have separate(statement(2)",
+        "    step(); step();\n    have separate(statement(2)",
     );
     let error = verify_c_sources(&overwritten_proof, &[("join.c", &overwritten_c)])
-        .expect_err("transport must refuse a pointer overwritten after its source state");
-    assert!(error.message().contains("transport"), "{}", error.message());
+        .expect_err("separation must refuse the store that overwrites the pointer");
+    assert!(
+        error.message().contains("did not normalize to true"),
+        "{}",
+        error.message()
+    );
 }
 
 #[path = "../../../scaling_tests/surface/tests/tactic_tests/statement_steps.rs"]
