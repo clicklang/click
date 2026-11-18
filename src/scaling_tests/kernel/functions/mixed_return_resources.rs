@@ -3107,3 +3107,77 @@ fn opaque_matched_envelopes_scale_with_selected_leaves_not_ambient_state() {
         }
     }
 }
+
+#[test]
+fn cached_composite_expansion_keeps_split_owners_without_rechecking_the_frame() {
+    for axis in ["same-block owners", "other owners", "aliases"] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let pointer = Address::symbolic(Variable(9_831_000));
+            let memory = |base, start: u32, end: u32| {
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                    base,
+                    start.into(),
+                    end.into(),
+                    1,
+                ))
+            };
+            let head = ResourceFact::own(Resource::Composite {
+                name: "cached_cell".into(),
+                arguments: Vec::new().into(),
+            });
+            let left = memory(pointer.clone(), 0, 2);
+            let right = memory(pointer.clone(), 2, 4);
+            let mut context = ResourceContext::new().unchecked_with_facts([
+                head.clone(),
+                left.clone(),
+                right.clone(),
+            ]);
+            let left_occurrence = context.unique_owned_occurrence_for_fact(&left).unwrap().0;
+            let right_occurrence = context.unique_owned_occurrence_for_fact(&right).unwrap().0;
+            let mut facts = PureFactContext::new();
+            for index in 0..count {
+                let other = Address::symbolic(Variable(9_831_100 + u64::from(index)));
+                match axis {
+                    "aliases" => {
+                        facts = facts.assume_condition(
+                            ConditionTerm::pointer_equal(pointer.clone(), other),
+                            true,
+                        );
+                    }
+                    "same-block owners" => {
+                        let start = 8 + index * 4;
+                        context =
+                            context.unchecked_with_fact(memory(pointer.clone(), start, start + 2));
+                    }
+                    _ => context = context.unchecked_with_fact(memory(other, 0, 2)),
+                }
+            }
+            let whole = memory(pointer.clone(), 0, 4);
+            let context = context.with_cached_supported_expansion(&head, vec![whole.clone()]);
+            context.synchronize_memory_equalities(&facts);
+            let at = ExecutionState::new().program_point();
+            let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast =
+                    crate::kernel::search::FastOperationScope::enter("cached composite expansion");
+                expand_all_composite_resource_facts(&context, &[], &at, &facts).unwrap()
+            });
+            assert_eq!(
+                expanded.owned_fact_for_occurrence(left_occurrence),
+                Some(&left)
+            );
+            assert_eq!(
+                expanded.owned_fact_for_occurrence(right_occurrence),
+                Some(&right)
+            );
+            assert!(!expanded.contains_exact_representation(&whole));
+            assert!(!expanded.contains_exact_representation(&head));
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 48),
+            "{axis}: {samples:?}"
+        );
+    }
+}
