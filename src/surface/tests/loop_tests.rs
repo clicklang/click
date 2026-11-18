@@ -191,7 +191,8 @@ fn nested_conjunction_extraction_precedes_explicit_arithmetic_steps() {
     assert!(expanded.contains("have n >= 0 by"), "{expanded}");
     // The extracted conjunct is the initialization's own fact; the
     // decrease and the exit equality are explicit arithmetic steps.
-    assert!(expanded.contains("normalize"), "{expanded}");
+    assert!(expanded.contains("apply(click::integer::"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
