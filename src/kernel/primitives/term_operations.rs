@@ -4995,10 +4995,18 @@ impl Address {
     /// term. Unlike [`Self::canonical_loaded_value`], a stored pointer does
     /// not replace the read.
     pub(crate) fn canonical_read(memory: &SharedMemory, address: &Address) -> Self {
+        // A pointer read covers the whole pointer cell. Record that width
+        // before the walk, so a write to any of its bytes stops the walk even
+        // when an earlier narrower read of the cell recorded a smaller one.
+        crate::kernel::eval::record_load_access_width(
+            memory.memory(),
+            address,
+            crate::kernel::C_POINTER_BYTE_WIDTH,
+        );
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(memory),
             Box::new(address.clone()),
-            LoadKind::Int32,
+            LoadKind::Bits64,
         );
         named_pointer_read(
             canonical_pointer_read(&read).expect("a memory load has a canonical read"),
@@ -5012,10 +5020,15 @@ impl Address {
         if let Some(ProgramValue::Pointer(stored)) = memory.memory().known_value(address) {
             return stored.address().clone();
         }
+        crate::kernel::eval::record_load_access_width(
+            memory.memory(),
+            address,
+            crate::kernel::C_POINTER_BYTE_WIDTH,
+        );
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(memory),
             Box::new(address.clone()),
-            LoadKind::Int32,
+            LoadKind::Bits64,
         );
         match canonical_pointer_read(&read) {
             Some(named) => named_pointer_read(named),

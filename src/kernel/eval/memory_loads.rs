@@ -5358,6 +5358,34 @@ mod tests {
     }
 
     #[test]
+    fn a_pointer_version_point_read_does_not_cross_a_write_to_its_upper_half() {
+        // A pointer cell is eight bytes. A store to its upper four bytes
+        // changes the pointer, so the version-point read after the store is
+        // not the read before it, even when the cell was observed as two
+        // four-byte halves first.
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Address::symbolic(Variable(92_399));
+        let before = SymbolicMemory::new();
+        let observed = before
+            .clone()
+            .materialize_symbolic_cell(cell.clone(), ProgramType::Int32)
+            .materialize_symbolic_cell(cell.clone().offset_by_bytes(4), ProgramType::Int32);
+        let overwritten = observed.clone().store(
+            cell.clone().offset_by_bytes(4),
+            ProgramValue::UInt32(0u32.into()),
+        );
+        for read in [Address::canonical_read, Address::canonical_loaded_value] {
+            let read = |memory: &SymbolicMemory| read(&intern_memory_ref(memory), &cell);
+            assert_eq!(
+                read(&before),
+                read(&observed),
+                "observing the halves changes no bytes"
+            );
+            assert_ne!(read(&observed), read(&overwritten));
+        }
+    }
+
+    #[test]
     fn exact_read_descriptors_and_comparison_identities_keep_distinct_roles() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {
