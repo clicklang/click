@@ -1551,11 +1551,11 @@ pub(in crate::kernel) fn collect_loop_effect_bitvector_variables(
 }
 
 pub(in crate::kernel) fn collect_program_expression_outcome_bitvector_variables(
-    outcome: &ExpressionOutcome,
+    outcome: &ExpressionOutcome<crate::kernel::StoredProgramValue>,
     variables: &mut BTreeSet<Variable>,
 ) {
     if let ExpressionOutcome::Value(value) = outcome {
-        collect_program_value_bitvector_variables(value, variables);
+        collect_expression_value_bitvector_variables(value.value(), variables);
     }
 }
 

@@ -13324,7 +13324,7 @@ pub enum Proposition {
     ProgramExpressionEvaluates {
         state: Box<ExecutionState>,
         expression: ProgramExpression,
-        outcome: ExpressionOutcome,
+        outcome: ExpressionOutcome<StoredProgramValue>,
     },
     ProgramConditionEvaluates {
         state: Box<ExecutionState>,
@@ -13357,7 +13357,7 @@ pub enum Proposition {
     MemoryLoads {
         memory: SymbolicMemory,
         pointer: Address,
-        outcome: ExpressionOutcome,
+        outcome: ExpressionOutcome<StoredProgramValue>,
     },
     MemoryCanStore {
         memory: SymbolicMemory,

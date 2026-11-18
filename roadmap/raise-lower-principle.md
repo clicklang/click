@@ -1286,6 +1286,19 @@ opaque state/event/resource identities and existing proof rules are not payloads
 to erase. Selected native checking/rewriting/raising adapters stay explicit and
 are accounted for in 10r–10t; they are not evidence that a store is migrated.
 
+### 10q1 Evaluated proposition outcomes (in progress)
+
+The expression-evaluation and memory-load proposition schemas use
+`ExpressionOutcome<StoredProgramValue>`, preserving exact native value identity
+separately from execution observation equality. Native output DTO comparison
+is explicit; errors keep their original payloads. Value collection and
+substitution use retained execution-value operations; rendering and capture
+checks retain selected native readers. Source expressions and recorded states
+keep their existing identities.
+
+The actual producer regressions are prepared; validation and producer switches
+are pending. This does not complete the logical/term payload families below.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

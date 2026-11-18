@@ -412,7 +412,7 @@ fn floating_point_constant_conversions_round_in_integer_space() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -452,7 +452,7 @@ fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1401,7 +1401,7 @@ fn int32_comparisons_return_c_int32_zero_or_one() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1462,7 +1462,7 @@ fn pointer_equality_returns_c_int32_zero_or_one() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1777,7 +1777,7 @@ fn pointer_equality_accepts_int32_zero_as_null_pointer_constant() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1884,7 +1884,7 @@ fn not_equal_and_not_return_c_int32_zero_or_one() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1933,7 +1933,7 @@ fn logical_and_or_short_circuit_right_operand() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -2049,10 +2049,13 @@ fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(ProgramValue::typed_pointer(
-                    pointer.offset_by_bytes(1),
-                    ProgramType::VoidPointer,
-                )),
+                outcome: ExpressionOutcome::Value(
+                    (ProgramValue::typed_pointer(
+                        pointer.offset_by_bytes(1),
+                        ProgramType::VoidPointer,
+                    ))
+                    .into()
+                ),
             }
         );
     }
@@ -2611,7 +2614,7 @@ fn pointer_addition_allows_the_one_past_int32_element() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value(ProgramValue::pointer(result)),
+            outcome: ExpressionOutcome::Value((ProgramValue::pointer(result)).into()),
         }
     );
 }
@@ -2725,7 +2728,7 @@ fn pointer_relational_comparison_orders_same_block_elements() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(int32(expected)),
+                outcome: ExpressionOutcome::Value((int32(expected)).into()),
             }
         );
     }
@@ -2757,7 +2760,7 @@ fn pointer_subtraction_returns_same_block_element_distance() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value(int32(2)),
+            outcome: ExpressionOutcome::Value((int32(2)).into()),
         }
     );
 }
@@ -2796,7 +2799,7 @@ fn uint8_pointer_subtraction_returns_byte_distance() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value(int32(3)),
+            outcome: ExpressionOutcome::Value((int32(3)).into()),
         }
     );
 }
@@ -2827,7 +2830,7 @@ fn pointer_subtraction_by_one_steps_back_one_element() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value(ProgramValue::pointer(result)),
+            outcome: ExpressionOutcome::Value((ProgramValue::pointer(result)).into()),
         }
     );
 }

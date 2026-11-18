@@ -395,11 +395,13 @@ fn walk_algebraic_value<'a, S: VariableSubstitution + ?Sized>(
 }
 
 fn walk_program_expression_outcome<S: VariableSubstitution + ?Sized>(
-    outcome: &ExpressionOutcome,
+    outcome: &ExpressionOutcome<StoredProgramValue>,
     s: &S,
-) -> ExpressionOutcome {
+) -> ExpressionOutcome<StoredProgramValue> {
     match outcome {
-        ExpressionOutcome::Value(value) => ExpressionOutcome::Value(s.program_value(value)),
+        ExpressionOutcome::Value(value) => ExpressionOutcome::Value(StoredProgramValue::from(
+            s.stored_program_value(value.value()),
+        )),
         ExpressionOutcome::UndefinedBehavior(kind) => {
             ExpressionOutcome::UndefinedBehavior(kind.clone())
         }
@@ -3069,11 +3071,11 @@ fn collect_program_function_specification_bound_variables(
 }
 
 fn collect_expression_outcome_bound_variables(
-    outcome: &ExpressionOutcome,
+    outcome: &ExpressionOutcome<StoredProgramValue>,
     variables: &mut BTreeSet<Variable>,
 ) {
     if let ExpressionOutcome::Value(value) = outcome {
-        collect_program_value_bound_variables(value, variables);
+        collect_expression_value_bound_variables(value.value(), variables);
     }
 }
 

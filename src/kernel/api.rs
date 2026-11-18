@@ -4684,7 +4684,7 @@ pub fn prove_program_expression_evaluation(
     Some(Theorem::new(Proposition::ProgramExpressionEvaluates {
         state: Box::new(state),
         expression,
-        outcome,
+        outcome: outcome.map_value(Into::into),
     }))
 }
 
@@ -8509,7 +8509,7 @@ pub fn prove_memory_load(memory: SymbolicMemory, pointer: Address) -> Theorem {
     Theorem::new(Proposition::MemoryLoads {
         memory,
         pointer,
-        outcome,
+        outcome: outcome.map_value(Into::into),
     })
 }
 
@@ -8523,7 +8523,7 @@ pub fn prove_memory_load_after_store_same(
     Theorem::new(Proposition::MemoryLoads {
         memory: stored,
         pointer,
-        outcome: ExpressionOutcome::Value(value),
+        outcome: ExpressionOutcome::Value((value).into()),
     })
 }
 
@@ -8547,7 +8547,7 @@ pub fn prove_memory_load_after_store_other(
     Some(Theorem::new(Proposition::MemoryLoads {
         memory: stored,
         pointer: loaded_pointer,
-        outcome,
+        outcome: outcome.map_value(Into::into),
     }))
 }
 
