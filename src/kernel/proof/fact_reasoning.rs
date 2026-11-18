@@ -237,7 +237,9 @@ pub(crate) fn normalize_using_conditions(
             return Err(ConditionalNormalizationError::UnavailablePremise(index));
         }
     }
-    if intervals::reduces_one_operation(goal, premises) {
+    if PureFactContext::checks_listed_signed_order_chain(goal, premises)
+        || intervals::reduces_one_operation(goal, premises)
+    {
         return Ok(());
     }
     // Ordinary cited rewrites and bounds take their established fast path.
@@ -2008,6 +2010,38 @@ pub(crate) fn fact_conflicts_with_assumptions(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn listed_signed_order_chain_requires_connected_edges_and_strictness() {
+        use super::*;
+
+        let terms = [701, 702, 703, 704].map(|id| MachineTerm::Variable(Variable(id)));
+        let order = |from: usize, to: usize, strict| {
+            let left = terms[from].clone();
+            let right = terms[to].clone();
+            Proposition::ConditionIs(
+                if strict {
+                    ConditionTerm::signed_less_than(left, right)
+                } else {
+                    ConditionTerm::signed_less_equal(left, right)
+                },
+                true,
+            )
+        };
+        let goal = order(0, 3, true);
+        let chain = [order(0, 1, false), order(1, 2, true), order(2, 3, false)];
+        assert!(PureFactContext::checks_listed_signed_order_chain(
+            &goal, &chain
+        ));
+        assert!(!PureFactContext::checks_listed_signed_order_chain(
+            &goal,
+            &chain[..2]
+        ));
+        let weak = [chain[0].clone(), order(1, 2, false), chain[2].clone()];
+        assert!(!PureFactContext::checks_listed_signed_order_chain(
+            &goal, &weak
+        ));
+    }
 
     #[test]
     fn retained_atomic_comparison_matching_needs_no_operand_imports() {

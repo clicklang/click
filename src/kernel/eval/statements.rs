@@ -54,8 +54,20 @@ fn execute_program_lvalue_assignment_paths_with_source(
     budget: &mut ExecutionBudget,
     store_source: StatementStoreSource,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let bounds = indexed_store_bounds(state, target, assumptions);
+    // Use the bounds only while preparing this statement. The driver gets the
+    // original input context and must prove the condition before publishing
+    // the prepared successor.
+    let conditional_context = bounds.as_ref().map(|[lower, upper]| {
+        assumptions
+            .clone()
+            .assume_proposition(lower.clone())
+            .assume_proposition(upper.clone())
+    });
+    let execution_assumptions = conditional_context.as_ref().unwrap_or(assumptions);
     let mut paths = Vec::new();
-    for target_path in evaluate_program_lvalue_paths(state, target, assumptions, budget)? {
+    for target_path in evaluate_program_lvalue_paths(state, target, execution_assumptions, budget)?
+    {
         let LValuePath {
             outcome: target_outcome,
             facts: target_facts,
@@ -104,7 +116,7 @@ fn execute_program_lvalue_assignment_paths_with_source(
                         value,
                         facts,
                         obligations,
-                        assumptions,
+                        execution_assumptions,
                         budget,
                         false,
                         store_source.clone(),
@@ -125,8 +137,92 @@ fn execute_program_lvalue_assignment_paths_with_source(
             }
         }
     }
+    if let Some([lower, upper]) = bounds {
+        let requirement = ProofObligation::verification_condition(Proposition::And(
+            Box::new(lower),
+            Box::new(upper),
+        ))
+        .with_context("indexed store requires an in-bounds index");
+        for path in &mut paths {
+            path.obligations.push(requirement.clone());
+        }
+    }
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+/// Bounds for a plain signed index into one directly held external array.
+/// The block bucket supplies at most one owner. The original access check
+/// still validates the chosen storage, provenance, and write permission.
+fn indexed_store_bounds(
+    state: &ExecutionState,
+    target: &ProgramExpression,
+    assumptions: &PureFactContext,
+) -> Option<[Proposition; 2]> {
+    if !assumptions.retains_required_obligations() {
+        return None;
+    }
+    let (base, index) = match target {
+        ProgramExpression::Load(pointer)
+        | ProgramExpression::TypedLoad {
+            pointer,
+            value_type: ProgramType::Int32,
+            ..
+        } => match pointer.as_ref() {
+            ProgramExpression::Add(base, index) => (base, index),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let (ProgramExpression::Variable(base), ProgramExpression::Variable(index)) =
+        (base.as_ref(), index.as_ref())
+    else {
+        return None;
+    };
+    let binding = |name, expected| match state.locals.binding(name) {
+        Some(LocalBinding::Object {
+            value,
+            program_type,
+            volatile: false,
+            ..
+        }) if *program_type == expected => Some(value.native()),
+        _ => None,
+    };
+    let base = binding(base, ProgramType::Int32Pointer)?;
+    let index = binding(index, ProgramType::Int32)?;
+    let (ProgramValue::Pointer(base), ProgramValue::Int32(index)) = (base.as_ref(), index.as_ref())
+    else {
+        return None;
+    };
+    let address = base.address();
+    if address.base != AddressBase::ExternalArgument
+        || address != &address.object_base()
+        || base.provenance() != &address.object_identity()
+        || base.bounds().is_some()
+        || index.as_const().is_some()
+    {
+        return None;
+    }
+    let mut owners = state.resources().owned_memory_facts_in_block(&address.base);
+    let range = owners.next()?.memory_own_range()?;
+    if owners.next().is_some()
+        || range.base() != address
+        || range.wide_bounds().is_some()
+        || range.element_width() != ProgramType::Int32.byte_width()
+        || range.start().as_const() != Some(0)
+    {
+        return None;
+    }
+    Some([
+        Proposition::ConditionIs(
+            ConditionTerm::signed_less_equal(range.start().clone(), index.clone()),
+            true,
+        ),
+        Proposition::ConditionIs(
+            ConditionTerm::signed_less_than(index.clone(), range.end().clone()),
+            true,
+        ),
+    ])
 }
 
 fn execute_program_lvalue_update_paths(

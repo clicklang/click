@@ -23162,6 +23162,24 @@ fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
 }
 
 #[test]
+fn indexed_store_bounds_expand_to_an_explicit_step_proof() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_store_exposes_its_bounds.md");
+    let implicit = source.replace("step() by { known(); }", "step();");
+    assert_ne!(implicit, source);
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&implicit, &sources, "set").unwrap();
+    assert!(expanded.contains("step() by"), "{expanded}");
+    crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+
+    let one_past = implicit.replace("requires 0 <= i and i < len;", "requires i == len;");
+    assert_ne!(one_past, implicit);
+    assert!(verify_c_sources(&one_past, &sources).is_err());
+}
+
+#[test]
 fn symbolic_view_restriction_expands_to_library_steps() {
     let source = r#"
         theorem restrict_view(data: int32[], lo: int32, hi: int32, end: int32) {
