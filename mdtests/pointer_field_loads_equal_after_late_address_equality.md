@@ -34,11 +34,14 @@ int32 equal_reads(struct node* a, struct node* b, struct node* c,
     step();
     step();
     branch {
-        step();
-        solve();
-    } else {}
-    branch { step(); solve(); } else {}
-    branch { step(); solve(); } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
+    branch { true => { step(); solve(); } false => {} }
+    branch { true => { step(); solve(); } false => {} }
     have x == y;
     step();
     solve();

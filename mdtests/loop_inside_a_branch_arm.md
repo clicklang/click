@@ -31,13 +31,16 @@ int32 count_up(int32 n) {
     step();
     branch ensuring {
         fact i >= 0;
-    } then {
-        loop {
-            decreases n - i;
-            invariant i >= 0;
-            invariant i <= n;
+    } {
+        true => {
+            loop {
+                decreases n - i;
+                invariant i >= 0;
+                invariant i <= n;
+            }
         }
-    } else {}
+        false => {}
+    }
     step();
     solve();
 }

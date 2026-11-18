@@ -4540,7 +4540,7 @@ fn branching_grouped_claim_project(claim_count: usize) -> (String, String) {
         click_source.push_str("    ensures result == a;\n");
     }
     click_source.push_str(
-        "} by {\n    step();\n    branch {\n            step_until(function.exit);\n            solve();\n        } else {}\n    step();\n    have x == a by {\n        solve();\n    }\n    step_until(function.exit);\n    solve();\n}\n",
+        "} by {\n    step();\n    branch { true => {\n            step_until(function.exit);\n            solve();\n        } false => {} }\n    step();\n    have x == a by {\n        solve();\n    }\n    step_until(function.exit);\n    solve();\n}\n",
     );
     (c_source, click_source)
 }

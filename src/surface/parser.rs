@@ -10713,10 +10713,33 @@ impl Parser {
             })));
         }
         if name == "branch" {
-            let ensuring = self.parse_binary_join_interface()?;
-            let then_tactics = self.parse_possibly_empty_tactic_block()?;
-            self.expect_ident_spelling("else")?;
-            let else_tactics = self.parse_possibly_empty_tactic_block()?;
+            let ensuring = self.parse_optional_join_interface()?;
+            self.expect(Token::LBrace)?;
+            let mut then_tactics = None;
+            let mut else_tactics = None;
+            while self.peek() != Some(&Token::RBrace) {
+                let arm = self.expect_ident("`true` or `false`")?;
+                let slot = match arm.as_str() {
+                    "true" => &mut then_tactics,
+                    "false" => &mut else_tactics,
+                    _ => {
+                        return Err(self
+                            .error(format!("`branch` arms are `true` and `false`, got `{arm}`")));
+                    }
+                };
+                if slot.is_some() {
+                    return Err(self.error(format!("duplicate `branch` arm `{arm}`")));
+                }
+                self.expect(Token::FatArrow)?;
+                *slot = Some(self.parse_possibly_empty_tactic_block()?);
+                if self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                }
+            }
+            self.expect(Token::RBrace)?;
+            let (Some(then_tactics), Some(else_tactics)) = (then_tactics, else_tactics) else {
+                return Err(self.error("`branch` needs both a `true` and a `false` arm"));
+            };
             self.skip_redundant_semicolon();
             return Ok(ProofTactic::Branch(ProofBranch {
                 ensuring,
@@ -11410,7 +11433,7 @@ impl Parser {
         Ok(tactic)
     }
 
-    /// Binary proof splits use `then` exactly when an interface precedes the arms.
+    /// A proof `if` uses `then` when an interface precedes its arms.
     fn parse_binary_join_interface(&mut self) -> Result<Option<Vec<ProofAssertion>>, ClickError> {
         let ensuring = self.parse_optional_join_interface()?;
         if ensuring.is_some() {
@@ -18225,7 +18248,7 @@ mod tactic_classification_tests {
         ),
         (
             "branch",
-            "branch ensuring { fact x == 1; } then { normalize(); } else { normalize(); }",
+            "branch ensuring { fact x == 1; } { true => { normalize(); } false => { normalize(); } }",
         ),
         (
             "outcomes",
@@ -18265,6 +18288,28 @@ mod tactic_classification_tests {
             "check_termination_callbacks();",
         ),
     ];
+
+    #[test]
+    fn branch_requires_two_distinct_labeled_arms() {
+        for (branch, expected) in [
+            ("branch { true => {} }", "`branch` needs both"),
+            (
+                "branch { true => {} true => {} }",
+                "duplicate `branch` arm `true`",
+            ),
+            (
+                "branch { yes => {} false => {} }",
+                "`branch` arms are `true` and `false`",
+            ),
+        ] {
+            let source = format!("void f() {{}} by {{ {branch} }}");
+            assert!(parse(&source).unwrap_err().message().contains(expected));
+        }
+        assert!(parse("void f() {} by { branch {} else {} }").is_err());
+        assert!(
+            parse("void f() {} by { branch ensuring { fact true; } then {} else {} }").is_err()
+        );
+    }
 
     fn label(class: TacticClass) -> &'static str {
         match class {

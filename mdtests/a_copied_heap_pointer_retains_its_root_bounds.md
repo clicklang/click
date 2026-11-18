@@ -23,7 +23,7 @@ void use_copy(struct holder* out) {
 } by {
     step();
     step();
-    branch { step(); } else {}
+    branch { true => { step(); } false => {} }
     step();
     have out->data == p;
     fold(cell(out->data));

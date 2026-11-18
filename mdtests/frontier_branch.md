@@ -28,16 +28,22 @@ int32 nested_branch(int32 x, int32 y) {
         step();
         branch ensuring {
             fact at(region(6).entry, program::result) > 0;
-        } then {
-            branch ensuring {
-                fact at(region(6).entry, program::result) > 0;
-            } then {
-                step();
-            } else {
+        } {
+            true => {
+                branch ensuring {
+                    fact at(region(6).entry, program::result) > 0;
+                } {
+                    true => {
+                        step();
+                    }
+                    false => {
+                        step();
+                    }
+                }
+            }
+            false => {
                 step();
             }
-        } else {
-            step();
         }
         step();
         solve();

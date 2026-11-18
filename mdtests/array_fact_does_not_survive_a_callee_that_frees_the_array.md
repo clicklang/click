@@ -79,9 +79,12 @@ int32 caller(int32 a[], int32 n) {
     step();
     step();
     branch {
-        step_until(function.exit);
-        solve();
-    } else {
+        true => {
+            step_until(function.exit);
+            solve();
+        }
+        false => {
+        }
     }
     have icount(a, 0, 1) == 5;
 }

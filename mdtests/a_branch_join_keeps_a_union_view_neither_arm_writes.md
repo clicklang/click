@@ -45,9 +45,12 @@ int32 branch_writes_nothing(int32 c) {
     step();
     branch ensuring {
         fact 1 == 1;
-    } then {
-        step();
-    } else {
+    } {
+        true => {
+            step();
+        }
+        false => {
+        }
     }
 }
 ```

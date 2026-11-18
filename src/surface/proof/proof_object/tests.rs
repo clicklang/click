@@ -13053,11 +13053,14 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         r#"int32 caller(bool construct, bool should_throw) {
             ensures result == result by {
                 branch {
-                    outcomes {
-                        returned => { }
-                        threw => { step_until(function.exit); }
+                    true => {
+                        outcomes {
+                            returned => { }
+                            threw => { step_until(function.exit); }
+                        }
                     }
-                } else { }
+                    false => { }
+                }
                 step();
             }
         }"#,

@@ -142,76 +142,88 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     step();
     step();
     branch {
-        step();
-        fold(arena_initialized_storage(
-            arena->data,
-            arena->occupied,
-            arena->capacity,
-            result
-        ));
-        fold(arena_initialized_access(
-            arena->data,
-            arena->occupied,
-            arena->capacity,
-            result
-        ));
-        fold(arena_init_result(arena, result));
-        solve();
-    } else {}
+        true => {
+            step();
+            fold(arena_initialized_storage(
+                arena->data,
+                arena->occupied,
+                arena->capacity,
+                result
+            ));
+            fold(arena_initialized_access(
+                arena->data,
+                arena->occupied,
+                arena->capacity,
+                result
+            ));
+            fold(arena_init_result(arena, result));
+            solve();
+        }
+        false => {}
+    }
     branch {
-        step();
-        fold(arena_initialized_storage(
-            arena->data,
-            arena->occupied,
-            arena->capacity,
-            result
-        ));
-        fold(arena_initialized_access(
-            arena->data,
-            arena->occupied,
-            arena->capacity,
-            result
-        ));
-        fold(arena_init_result(arena, result));
-        solve();
-    } else {}
+        true => {
+            step();
+            fold(arena_initialized_storage(
+                arena->data,
+                arena->occupied,
+                arena->capacity,
+                result
+            ));
+            fold(arena_initialized_access(
+                arena->data,
+                arena->occupied,
+                arena->capacity,
+                result
+            ));
+            fold(arena_init_result(arena, result));
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step();
-        fold(arena_initialized_storage(
-            arena->data,
-            arena->occupied,
-            arena->capacity,
-            result
-        ));
-        fold(arena_initialized_access(
-            arena->data,
-            arena->occupied,
-            arena->capacity,
-            result
-        ));
-        fold(arena_init_result(arena, result));
-        solve();
-    } else {}
+        true => {
+            step();
+            fold(arena_initialized_storage(
+                arena->data,
+                arena->occupied,
+                arena->capacity,
+                result
+            ));
+            fold(arena_initialized_access(
+                arena->data,
+                arena->occupied,
+                arena->capacity,
+                result
+            ));
+            fold(arena_init_result(arena, result));
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step();
-        step();
-        fold(arena_initialized_storage(
-            arena->data,
-            arena->occupied,
-            arena->capacity,
-            result
-        ));
-        fold(arena_initialized_access(
-            arena->data,
-            arena->occupied,
-            arena->capacity,
-            result
-        ));
-        fold(arena_init_result(arena, result));
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            fold(arena_initialized_storage(
+                arena->data,
+                arena->occupied,
+                arena->capacity,
+                result
+            ));
+            fold(arena_initialized_access(
+                arena->data,
+                arena->occupied,
+                arena->capacity,
+                result
+            ));
+            fold(arena_init_result(arena, result));
+            solve();
+        }
+        false => {}
+    }
     have 1 <= capacity by {
         solve() using {
             not (capacity <= 0);

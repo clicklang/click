@@ -212,36 +212,48 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     step();
     step();
     branch {
-        step();
-        let outcome = fold(arena_init_outcome(arena), {
-            model: ArenaInitOutcome::Failure
-        });
-        solve();
-    } else {}
+        true => {
+            step();
+            let outcome = fold(arena_init_outcome(arena), {
+                model: ArenaInitOutcome::Failure
+            });
+            solve();
+        }
+        false => {}
+    }
     branch {
-        step();
-        let outcome = fold(arena_init_outcome(arena), {
-            model: ArenaInitOutcome::Failure
-        });
-        solve();
-    } else {}
+        true => {
+            step();
+            let outcome = fold(arena_init_outcome(arena), {
+                model: ArenaInitOutcome::Failure
+            });
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step();
-        let outcome = fold(arena_init_outcome(arena), {
-            model: ArenaInitOutcome::Failure
-        });
-        solve();
-    } else {}
+        true => {
+            step();
+            let outcome = fold(arena_init_outcome(arena), {
+                model: ArenaInitOutcome::Failure
+            });
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step();
-        step();
-        let outcome = fold(arena_init_outcome(arena), {
-            model: ArenaInitOutcome::Failure
-        });
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            let outcome = fold(arena_init_outcome(arena), {
+                model: ArenaInitOutcome::Failure
+            });
+            solve();
+        }
+        false => {}
+    }
     have 1 <= capacity;
     step();
     have separate(memory(occupied[0..capacity]), memory(*arena)) by { known(); }

@@ -27,23 +27,32 @@ int32 g(uint32 tag, int32 *p, int32 **restored) {
     step();
     step();
     branch {
-        step_until(function.exit);
-        solve();
-    } else {}
+        true => {
+            step_until(function.exit);
+            solve();
+        }
+        false => {}
+    }
     have separate(memory((src as (uint8*))[0..16]), memory(p[0..1])) by { solve(); }
     step();
     step();
     branch {
-        step_until(function.exit);
-        solve();
-    } else {}
+        true => {
+            step_until(function.exit);
+            solve();
+        }
+        false => {}
+    }
     have separate(memory(buf[0..16]), memory(p[0..1])) by { solve(); }
     step();
     step();
     branch {
-        step_until(function.exit);
-        solve();
-    } else {}
+        true => {
+            step_until(function.exit);
+            solve();
+        }
+        false => {}
+    }
     have separate(memory((dst as (uint8*))[0..16]), memory(p[0..1])) by { solve(); }
 }
 

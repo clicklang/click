@@ -846,7 +846,7 @@ fn instance_return_folds_follow_distinct_program_results_after_explicit_splits()
             owns c: cell(p);
             ensures (use_value == 0 and result == fallback) or (use_value != 0 and result == c.value);
             ensures c.value == old(c.value);
-        } by { unfold(c); branch { step(); } else { } step_until(function.exit); fold(c); solve(); }
+        } by { unfold(c); branch { true => { step(); } false => { } } step_until(function.exit); fold(c); solve(); }
     "#;
     let c = [(
         "read.c",
@@ -856,7 +856,7 @@ fn instance_return_folds_follow_distinct_program_results_after_explicit_splits()
     let expanded = verified[0].expanded_proof_source().unwrap();
     verify_c_sources(
         &source.replace(
-            "by { unfold(c); branch { step(); } else { } step_until(function.exit); fold(c); solve(); }",
+            "by { unfold(c); branch { true => { step(); } false => { } } step_until(function.exit); fold(c); solve(); }",
             &expanded,
         ),
         &c,
@@ -871,7 +871,7 @@ fn instance_return_folds_follow_distinct_program_results_after_explicit_splits()
     );
     let body = "by { unfold(c); if use_value == 0 { step_until(function.exit); fold(c); solve(); } else { step_until(function.exit); fold(c); solve(); } }";
     let branched = source.replace(
-        "by { unfold(c); branch { step(); } else { } step_until(function.exit); fold(c); solve(); }",
+        "by { unfold(c); branch { true => { step(); } false => { } } step_until(function.exit); fold(c); solve(); }",
         body,
     );
     let verified = verify_c_sources(&branched, &c).unwrap();

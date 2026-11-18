@@ -39,7 +39,7 @@ int32 branch_arm_break(int32 n) {
 
         initialize by solve();
         preserve by {
-            branch { step(); } else { }
+            branch { true => { step(); } false => { } }
             step();
         }
     }

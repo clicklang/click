@@ -1438,9 +1438,12 @@ its condition as a logical case split:
 <!-- verified-example: mdtests/proof_branch_old_state_interface.md -->
 ```click
 branch {
-    step();
-} else {
-    step();
+    true => {
+        step();
+    }
+    false => {
+        step();
+    }
 }
 step();
 ```
@@ -1489,10 +1492,13 @@ optional common-frontier interface to `branch`:
 ```click
 branch ensuring {
     fact y >= 0;
-} then {
-    step();
-} else {
-    step();
+} {
+    true => {
+        step();
+    }
+    false => {
+        step();
+    }
 }
 step();
 ```

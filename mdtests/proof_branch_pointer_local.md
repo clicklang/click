@@ -32,17 +32,20 @@ int32 advance_selected_pointer(int32* left, int32* right, int32 choose_left) {
         branch ensuring {
             fact selected == left or selected == right;
             views selected[0..1];
-        } then {
-            step();
-            have selected == left or selected == right by {
-                have selected == left by normalize();
-                known();
+        } {
+            true => {
+                step();
+                have selected == left or selected == right by {
+                    have selected == left by normalize();
+                    known();
+                }
             }
-        } else {
-            step();
-            have selected == left or selected == right by {
-                have selected == right by normalize();
-                known();
+            false => {
+                step();
+                have selected == left or selected == right by {
+                    have selected == right by normalize();
+                    known();
+                }
             }
         }
         step();

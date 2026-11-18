@@ -153,10 +153,13 @@ int32 caller(struct child* kid) {
     step();
     step();
     branch {
-        step(child_release, {});
-        step();
-        solve();
-    } else {}
+        true => {
+            step(child_release, {});
+            step();
+            solve();
+        }
+        false => {}
+    }
     let { link: link } = step(parent_attach, {});
     have count(child_ref(kid)) == 2;
     have kid->refs == count(child_ref(kid));

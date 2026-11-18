@@ -2466,16 +2466,19 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
             ensures value == old(value);
         } by {
             branch {
-                step();
-                step();
-                outcomes {
-                    returned => {
-                        step(); // destructor
-                        step(); // retire the guard's automatic storage
+                true => {
+                    step();
+                    step();
+                    outcomes {
+                        returned => {
+                            step(); // destructor
+                            step(); // retire the guard's automatic storage
+                        }
+                        threw => { step_until(function.exit); solve(); }
                     }
-                    threw => { step_until(function.exit); solve(); }
                 }
-            } else { }
+                false => { }
+            }
             step();
             solve();
         }

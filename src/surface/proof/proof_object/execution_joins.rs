@@ -3175,7 +3175,7 @@ impl<'a> Proof<'a> {
                 .current_statement_index()?
                 .map_or_else(String::new, |index| format!(" at region({index})"));
             return Err(self.step_error(format!(
-                "the implicit tail split at more than {split_limit} C branches{statement}; it runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
+                "the implicit tail split at more than {split_limit} C branches{statement}; it runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} {{ true => {{ ... }} false => {{ ... }} }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
             )));
         }
         if *steps == limit {
@@ -3186,7 +3186,7 @@ impl<'a> Proof<'a> {
                 String::new()
             } else {
                 format!(
-                    " after splitting at {splits} C branches; it runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
+                    " after splitting at {splits} C branches; it runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} {{ true => {{ ... }} false => {{ ... }} }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
                 )
             };
             return Err(self.step_error(format!(

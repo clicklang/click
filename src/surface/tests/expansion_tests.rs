@@ -1833,7 +1833,7 @@ fn selected_tactic_batch_removes_all_sites_in_a_dropped_arm() {
         "flag.c",
         "int32 flag(int32 x) { if (x > 0) { return 1; } return 0; }",
     )];
-    let source = "verifying \"flag.c\"; int32 flag(int32 x) { requires x <= 0; ensures result == 0; } by { branch { step(); solve(); solve(); } else {} step(); solve(); }";
+    let source = "verifying \"flag.c\"; int32 flag(int32 x) { requires x <= 0; ensures result == 0; } by { branch { true => { step(); solve(); solve(); } false => {} } step(); solve(); }";
     verify_c_sources(source, &c).unwrap();
     let sites = c_smart_tactic_source_sites(source, &c).unwrap();
     let positions = sites[..2]
@@ -4532,13 +4532,19 @@ int32 early(int32 x) {
     ensures result == 0 or result == 1;
 } by {
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     solve();
 }
@@ -5546,7 +5552,7 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
                 unfold(allocated_cell(owner));
                 // Declare both pointers, save the old cell, and allocate its replacement.
                 step(); step(); step(); step();
-                branch { step(); } else { }
+                branch { true => { step(); } false => { } }
                 step_until(function.exit);
                 fold(allocated_cell(owner));
                 solve();
@@ -7030,11 +7036,14 @@ fn selected_pure_case_split_solve_expands_by_removal() {
                 ensures result >= 0;
             } by {
                 branch {
-                    step_until(function.exit);
-                    normalize();
-                } else {
-                    step_until(function.exit);
-                    normalize();
+                    true => {
+                        step_until(function.exit);
+                        normalize();
+                    }
+                    false => {
+                        step_until(function.exit);
+                        normalize();
+                    }
                 }
                 solve();
             }
@@ -7089,7 +7098,7 @@ fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
                 requires x <= 0;
                 ensures result == 0;
             } by {
-                branch { step(); solve(); } else {}
+                branch { true => { step(); solve(); } false => {} }
                 step();
                 solve();
             }
@@ -7116,7 +7125,10 @@ fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
     let expanded = expand_c_tactic_source_at(click_source, &sources, line, column)
         .expect("a smart tactic on a dropped C path should expand");
     assert!(!expanded.contains("step(); solve();"), "{expanded}");
-    assert!(expanded.contains("branch { step();"), "{expanded}");
+    assert!(
+        expanded.contains("branch { true => { step();"),
+        "{expanded}"
+    );
     verify_c_sources(&expanded, &sources)
         .expect("removing the dropped arm's closer should still verify");
 }
@@ -7341,14 +7353,14 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_branch_arm() {
         } by {\n\
         \x20   step();\n\
         \x20   step();\n\
-        \x20   branch {\n\
+        \x20   branch { true => {\n\
         \x20       have c != 0 by {\n\
         \x20           have c == c by solve();\n\
         \x20           solve();\n\
         \x20       }\n\
         \x20       step();\n\
         \x20       solve();\n\
-        \x20   } else {}\n\
+        \x20   } false => {} }\n\
         \x20   step();\n\
         \x20   step();\n\
         \x20   solve();\n\
@@ -11465,19 +11477,22 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
             branch ensuring {
                 fact value == old(p[0]) or value == 0;
                 owns cell(p);
-            } then {
-                open(cell(p)) {
-                    step();
-                    have value == old(p[0]) or value == 0 by {
-                        have value == old(p[0]) by { normalize(); }
-                        known();
+            } {
+                true => {
+                    open(cell(p)) {
+                        step();
+                        have value == old(p[0]) or value == 0 by {
+                            have value == old(p[0]) by { normalize(); }
+                            known();
+                        }
                     }
                 }
-            } else {
-                step();
-                have value == old(p[0]) or value == 0 by {
-                    have value == 0 by { normalize(); }
-                    known();
+                false => {
+                    step();
+                    have value == old(p[0]) or value == 0 by {
+                        have value == 0 by { normalize(); }
+                        known();
+                    }
                 }
             }
             step();
@@ -11568,19 +11583,22 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
                     branch ensuring {
                         fact value == old(p[0]) or value == 0;
                         views p[0..1];
-                    } then {
-                        open(marker(flag)) {
-                            step();
-                            have value == old(p[0]) or value == 0 by {
-                                have value == old(p[0]) by { normalize(); }
-                                known();
+                    } {
+                        true => {
+                            open(marker(flag)) {
+                                step();
+                                have value == old(p[0]) or value == 0 by {
+                                    have value == old(p[0]) by { normalize(); }
+                                    known();
+                                }
                             }
                         }
-                    } else {
-                        step();
-                        have value == old(p[0]) or value == 0 by {
-                            have value == 0 by { normalize(); }
-                            known();
+                        false => {
+                            step();
+                            have value == old(p[0]) or value == 0 by {
+                                have value == 0 by { normalize(); }
+                                known();
+                            }
                         }
                     }
                 }
@@ -11661,16 +11679,19 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
             ensures result == x or result == 0;
         } by {
             branch {
-                if x >= 0 {
-                    step_until(function.exit);
-                    solve();
-                } else {
+                true => {
+                    if x >= 0 {
+                        step_until(function.exit);
+                        solve();
+                    } else {
+                        step_until(function.exit);
+                        solve();
+                    }
+                }
+                false => {
                     step_until(function.exit);
                     solve();
                 }
-            } else {
-                step_until(function.exit);
-                solve();
             }
         }
     "#;
@@ -11772,7 +11793,10 @@ fn branch_interface_retains_its_checked_abstract_join() {
         } by {
             branch ensuring {
                 fact x >= 0;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step();
             solve();
         }
@@ -11848,7 +11872,10 @@ fn branch_interface_retains_exact_unchanged_ownership() {
             branch ensuring {
                 fact y >= 0;
                 owns marker(x);
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step();
             solve();
         }
@@ -11915,7 +11942,10 @@ fn branch_interface_normalizes_an_entailed_owned_quantity_on_proof() {
             branch ensuring {
                 fact y >= 0;
                 owns marker(x);
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step();
             solve();
         }
@@ -11995,12 +12025,15 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
             step();
             branch ensuring {
                 fact lower <= upper;
-            } then {
-                step();
-                apply(ordered_is_less_equal(lower, upper));
-            } else {
-                step();
-                apply(ordered_is_less_equal(lower, upper));
+            } {
+                true => {
+                    step();
+                    apply(ordered_is_less_equal(lower, upper));
+                }
+                false => {
+                    step();
+                    apply(ordered_is_less_equal(lower, upper));
+                }
             }
             step();
             solve();
@@ -12070,7 +12103,10 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
             step();
             branch ensuring {
                 fact lower < upper;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             apply(ordered_is_less_equal(lower, upper));
             step();
             solve();
@@ -12143,7 +12179,10 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
             step();
             branch ensuring {
                 fact old(lower) < old(upper);
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             transport(old(lower) < old(upper), lower < upper);
             step();
             solve();
@@ -12224,7 +12263,10 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             branch ensuring {
                 fact selected > 0;
                 fact selected < 2147483647;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             have selected >= 0 by {
                 apply(positive_is_nonnegative(selected));
             }
@@ -12318,7 +12360,10 @@ fn branch_join_retains_linear_execute_on_its_common_successor() {
             branch ensuring {
                 fact selected > 0;
                 fact selected < 2147483647;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step_until(function.exit);
             solve();
         }
@@ -12392,7 +12437,10 @@ fn incremented_strict_lower_bound_retains_its_arithmetic_path() {
             branch ensuring {
                 fact selected > 0;
                 fact selected < 2147483647;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step_until(function.exit);
             solve();
         }
@@ -12442,7 +12490,10 @@ fn post_execution_have_anchors_strict_increment_arithmetic_premises() {
             branch ensuring {
                 fact selected > 0;
                 fact selected < 2147483647;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step_until(function.exit);
             have result > 0 by solve();
             solve();
@@ -12508,12 +12559,15 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
             branch ensuring {
                 fact p[0] == 7;
                 owns p[0..2];
-            } then {
-                step();
-                transport(old(p[0]) == 7, p[0] == 7);
-            } else {
-                step();
-                transport(old(p[0]) == 7, p[0] == 7);
+            } {
+                true => {
+                    step();
+                    transport(old(p[0]) == 7, p[0] == 7);
+                }
+                false => {
+                    step();
+                    transport(old(p[0]) == 7, p[0] == 7);
+                }
             }
             step();
             solve();
@@ -12582,15 +12636,18 @@ fn branch_arms_retain_nested_have_proofs() {
             step();
             branch ensuring {
                 fact selected >= 0;
-            } then {
-                step();
-                have selected == selected by {
-                    apply(int32_reflexive(selected));
+            } {
+                true => {
+                    step();
+                    have selected == selected by {
+                        apply(int32_reflexive(selected));
+                    }
                 }
-            } else {
-                step();
-                have selected == selected by {
-                    apply(int32_reflexive(selected));
+                false => {
+                    step();
+                    have selected == selected by {
+                        apply(int32_reflexive(selected));
+                    }
                 }
             }
             step();
@@ -12657,9 +12714,12 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
             ensures result == 1 or result == 2;
         } by {
             branch {
-                step_until(function.exit);
-            } else {
-                step_until(function.exit);
+                true => {
+                    step_until(function.exit);
+                }
+                false => {
+                    step_until(function.exit);
+                }
             }
             solve();
         }
@@ -13063,7 +13123,10 @@ fn decided_branch_interface_retains_the_surviving_checked_state() {
         } by {
             branch ensuring {
                 fact x == 1;
-            } then { step(); } else { step(); }
+            } {
+                true => { step(); }
+                false => { step(); }
+            }
             step();
             solve();
         }
@@ -13122,7 +13185,10 @@ fn open_scope_retains_its_checked_branch_interface() {
             open(marker(x)) {
                 branch ensuring {
                     fact x >= 0;
-                } then { step(); } else { step(); }
+                } {
+                    true => { step(); }
+                    false => { step(); }
+                }
                 step();
             }
             solve();
@@ -13189,7 +13255,10 @@ fn open_scope_retains_its_checked_execution_branch() {
         } by {
             open(marker(x)) {
                 branch {
-                } else {
+                    true => {
+                    }
+                    false => {
+                    }
                 }
                 step();
             }
@@ -13256,7 +13325,7 @@ fn open_scope_retains_a_decided_execution_branch_and_its_continuation() {
             ensures result == 1;
         } by {
             open(marker(x)) {
-                branch { step(); } else { step(); }
+                branch { true => { step(); } false => { step(); } }
                 step();
             }
             solve();
@@ -13914,22 +13983,25 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                     branch ensuring {
                         fact p[j] <= p[j + 1];
                         fact all_le_range(p, 0, j, p[j + 1]);
-                    } then {
-                        step();
-                        step();
-                        step();
-                        have defined(j + 1) by { solve(); }
-                        have p[j] <= p[j + 1] by { solve(); }
-                        have all_le_range(p, 0, j, p[j + 1]) by {
-                            unfold(all_le_range(p, 0, j, p[j + 1]));
-                            solve();
+                    } {
+                        true => {
+                            step();
+                            step();
+                            step();
+                            have defined(j + 1) by { solve(); }
+                            have p[j] <= p[j + 1] by { solve(); }
+                            have all_le_range(p, 0, j, p[j + 1]) by {
+                                unfold(all_le_range(p, 0, j, p[j + 1]));
+                                solve();
+                            }
                         }
-                    } else {
-                        have defined(j + 1) by { solve(); }
-                        have p[j] <= p[j + 1] by { solve(); }
-                        have all_le_range(p, 0, j, p[j + 1]) by {
-                            unfold(all_le_range(p, 0, j, p[j + 1]));
-                            solve();
+                        false => {
+                            have defined(j + 1) by { solve(); }
+                            have p[j] <= p[j + 1] by { solve(); }
+                            have all_le_range(p, 0, j, p[j + 1]) by {
+                                unfold(all_le_range(p, 0, j, p[j + 1]));
+                                solve();
+                            }
                         }
                     }
                     step();
@@ -19090,8 +19162,8 @@ fn whole_claim_expansion_routes_return_closers_only_to_checked_branches() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let tail = "branch { step(); solve(); } else {}\n    step(); solve();";
-    let original_branch = "branch { step(); solve(); } else { step(); solve(); }";
+    let tail = "branch { true => { step(); solve(); } false => {} }\n    step(); solve();";
+    let original_branch = "branch { true => { step(); solve(); } false => { step(); solve(); } }";
     for (case, source) in [
         ("then only", original.clone()),
         (
@@ -19157,8 +19229,11 @@ int32 f(int32 n) {
     ensures result == 5;
 } by {
     branch {
-        branch { step(); solve(); } else { step(); solve(); }
-    } else { step(); solve(); }
+        true => {
+            branch { true => { step(); solve(); } false => { step(); solve(); } }
+        }
+        false => { step(); solve(); }
+    }
 }
 "#;
     verify_c_sources(source, &[("nested.c", c)]).unwrap();
@@ -20091,7 +20166,7 @@ int32 f(int32* p, int32 x, int32 y) {
     ensures result > 0;
 } by {
     open(cell(p)) {
-        branch { step_until(function.exit); } else { step_until(function.exit); }
+        branch { true => { step_until(function.exit); } false => { step_until(function.exit); } }
     }
     solve();
 }
@@ -20783,16 +20858,19 @@ fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
         "split.c",
         "int32 split(int32 x) { if (x > 0) { x = 1; } else { x = 2; } return 0; }",
     )];
-    for head in ["branch", "branch ensuring { fact x >= 1; } then"] {
+    for head in ["branch", "branch ensuring { fact x >= 1; }"] {
         let source = format!(
             "verifying \"split.c\";
             int32 split(int32 x) {{ ensures result == 0; }} by {{
                 {head} {{
-                    step();
-                    have x >= 1 by {{ solve(); }}
-                }} else {{
-                    step();
-                    have x >= 1 by {{ solve(); }}
+                    false => {{
+                        step();
+                        have x == 2 by {{ solve(); }}
+                    }},
+                    true => {{
+                        step();
+                        have x == 1 by {{ solve(); }}
+                    }}
                 }}
                 step();
                 solve();

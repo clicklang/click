@@ -37,10 +37,13 @@ int32 advance_owned_selected_pointer(
         step();
         branch ensuring {
             owns selected[0..1];
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         step();
         step();

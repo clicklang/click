@@ -1181,7 +1181,10 @@ preserve by {
     branch ensuring {
         fact t >= 0;
         fact t <= 100;
-    } then { step(); } else { step(); }
+    } {
+        true => { step(); }
+        false => { step(); }
+    }
     step();
 }
 ```

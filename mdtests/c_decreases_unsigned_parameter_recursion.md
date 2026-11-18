@@ -25,9 +25,12 @@ uint32 gcd(uint32 a, uint32 b) {
     ensures result >= 0u32;
 } by {
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
     have a % b < b by {
         apply(integer::uint32_remainder_less_than_divisor(a, b)) using {
             b != 0u32;
