@@ -1692,12 +1692,14 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
             point: SpecPoint::Current,
             pointer: Box::new(q.clone()),
             value_type: ProgramType::Int32,
+            exact: false,
         },
         operator: ComparisonOperator::Equal,
         right: SpecExpression::MemoryLoad {
             point: SpecPoint::Current,
             pointer: Box::new(q),
             value_type: ProgramType::Int32,
+            exact: false,
         },
     };
     let helper = program_function(

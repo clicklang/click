@@ -2931,6 +2931,9 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
         | ContractExpression::MethodCall { .. } => Err(ClickError::new(
             "declared resource arguments currently support current-state C expressions only",
         )),
+        ContractExpression::Exact(_) => Err(ClickError::new(
+            "a declared resource argument is a C expression and has no `exact` read; read the place as ordinary C",
+        )),
         ContractExpression::Let { body, .. } => {
             // `apply_contract_lets_to_expression` already substituted every
             // referenced value into the body; the wrapper only preserves

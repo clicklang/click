@@ -176,6 +176,7 @@ const BUILTIN_CALL_FORMS: &[&str] = &[
     "byte_offset",
     "contains",
     "defined",
+    "exact",
     "memory",
     "object",
     "old",

@@ -913,6 +913,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
             ProgramType::UInt64Pointer,
         )))),
         value_type: ProgramType::UInt64,
+        exact: false,
     };
     let spec = SpecProposition::Comparison {
         left: load.clone(),

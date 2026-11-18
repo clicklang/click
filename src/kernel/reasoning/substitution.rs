@@ -7776,12 +7776,14 @@ fn substitute_pointer_variable_in_spec_expression(
             point: memory,
             pointer,
             value_type,
+            exact,
         } => SpecExpression::MemoryLoad {
             point: substitute_pointer_variable_in_spec_point(memory, from, to),
             pointer: Box::new(substitute_pointer_variable_in_spec_expression(
                 pointer, from, to,
             )),
             value_type: *value_type,
+            exact: *exact,
         },
     }
 }

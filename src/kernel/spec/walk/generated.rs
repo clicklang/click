@@ -200,6 +200,7 @@ impl Gen {
                 point: self.memory(),
                 pointer: Box::new(self.pointer(d)),
                 value_type: ProgramType::Int32,
+                exact: false,
             },
             13 => SpecExpression::AggregateFieldValue {
                 parameter: "s".into(),

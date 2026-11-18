@@ -30,6 +30,7 @@ fn read_at(elements: SpecExpression) -> SpecExpression {
             byte_width: 4,
         }),
         value_type: ProgramType::Int32,
+        exact: false,
     }
 }
 
@@ -254,6 +255,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                             byte_width: 4,
                         }),
                         value_type: ProgramType::Int32,
+                        exact: false,
                     },
                     int(1),
                     int(0),
@@ -276,6 +278,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                             byte_width: 1,
                         }),
                         value_type: ProgramType::UInt8,
+                        exact: false,
                     },
                     int(1),
                     int(0),
@@ -927,6 +930,7 @@ fn byte_fold_summary_checks_the_read_type_and_stride() {
             byte_width: width,
         }),
         value_type,
+        exact: false,
     };
     for (width, value_type, accepted) in [
         (1, ProgramType::UInt8, true),
@@ -967,6 +971,7 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
             byte_width: 1,
         }),
         value_type: ProgramType::UInt8,
+        exact: false,
     };
     register_fold_read_definition(FoldReadDefinition::new(
         "byte_sum",

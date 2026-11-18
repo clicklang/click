@@ -211,6 +211,7 @@ impl ConstructorTypes {
             }
             ContractExpression::Let { body, .. } => self.pending(body),
             ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => self.pending(inner),
@@ -237,6 +238,7 @@ impl ConstructorTypes {
                 crate::kernel::BindingName::Named(name),
             )) => self.variables.borrow().get(name).cloned().flatten(),
             ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => self.known_type(inner),
@@ -418,6 +420,7 @@ impl ConstructorTypes {
             }
             ContractExpression::Let { body, .. } => self.push_expected(body, expected),
             ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => self.push_expected(inner, expected),
