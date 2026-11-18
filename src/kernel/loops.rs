@@ -2439,6 +2439,7 @@ fn join_loop_exits(
         .collect::<Vec<_>>();
     let unchanged = || vec![LoopExitRestatement::default(); exits.len()];
     let invariant_state_unchanged = states[1..].iter().all(|other| **other == exit_state);
+    let mut join_requirements = Vec::new();
     let (exit_state, restatements, mismatch) = if invariant_state_unchanged {
         (exit_state, unchanged(), None)
     } else {
@@ -2458,6 +2459,7 @@ fn join_loop_exits(
             &facts,
             &contexts,
             assumptions,
+            &mut join_requirements,
             variables,
             budget,
         ) {
@@ -2481,6 +2483,8 @@ fn join_loop_exits(
                     "loop exits reach different states, so they have no common successor: {mismatch}"
                 )),
         );
+    } else {
+        obligations.extend(join_requirements);
     }
     // Only name invariants whose source still denotes this successor. A
     // changed-state break can leave old head facts in the intersection; those
@@ -2586,6 +2590,7 @@ fn abstract_loop_exit_states(
     exit_facts: &[&ExecutionFacts],
     retained_contexts: &[Option<PureFactContext>],
     assumptions: &PureFactContext,
+    join_requirements: &mut Vec<ProofObligation>,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
 ) -> Result<(ExecutionState, Vec<LoopExitRestatement>), String> {
@@ -2661,6 +2666,7 @@ fn abstract_loop_exit_states(
         assumptions,
         &contexts,
         &mut restatements,
+        join_requirements,
         variables,
         budget,
     )?;
@@ -3700,6 +3706,7 @@ fn abstract_loop_exit_memory(
     assumptions: &PureFactContext,
     contexts: &[PureFactContext],
     restatements: &mut [LoopExitRestatement],
+    join_requirements: &mut Vec<ProofObligation>,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
 ) -> Result<BTreeSet<Address>, String> {
@@ -3761,11 +3768,18 @@ fn abstract_loop_exit_memory(
         }
         havoced.push((pointer, fresh));
     }
-    if let Some(ledger) = successor.loan_ledger() {
+    if let Some(ledger) = successor
+        .loan_ledger()
+        .filter(|ledger| ledger.has_active_memory_loans())
+    {
+        // Use the cells this join is about to abstract and the common exit
+        // ledger retained in the successor. The resulting conditions are
+        // prerequisites of the join, independent of its pinning equations.
         for pointer in dropped
             .iter()
             .chain(havoced.iter().map(|(pointer, _)| pointer))
         {
+            crate::instrumentation::record_deterministic_work(1);
             let byte_width = memory
                 .cells
                 .get(pointer)
@@ -3780,15 +3794,11 @@ fn abstract_loop_exit_memory(
                 MachineTerm::constant(byte_width),
                 1,
             );
-            if ledger
-                .permits_memory_access_with_assumptions(&range, assumptions)
-                .is_err()
-            {
-                return Err(format!(
-                    "the cell in `{}` that the exits abstract is under an active stable-view loan",
-                    pointer.base
-                ));
-            }
+            join_requirements.extend(loop_loan_separation(
+                ledger,
+                &range,
+                "loop exit join separation",
+            ));
         }
     }
     let mut abstracted = BTreeSet::new();
@@ -8813,13 +8823,20 @@ fn loop_head_loan_requirements(
     };
     Ok(ranges
         .iter()
-        .filter_map(|range| ledger.memory_access_requirement(range))
-        .map(|requirement| {
-            ProofObligation::verification_condition(requirement)
-                .with_statement_entry_required(true)
-                .with_context("loop head write separation")
-        })
+        .filter_map(|range| loop_loan_separation(ledger, range, "loop head write separation"))
         .collect())
+}
+
+fn loop_loan_separation(
+    ledger: &super::loans::LoanLedger,
+    range: &MemoryRange,
+    context: &'static str,
+) -> Option<ProofObligation> {
+    ledger.memory_access_requirement(range).map(|requirement| {
+        ProofObligation::verification_condition(requirement)
+            .with_statement_entry_required(true)
+            .with_context(context)
+    })
 }
 
 pub(super) fn statement_may_write_memory(

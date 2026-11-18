@@ -220,9 +220,11 @@ events repeat the same check.
 
 A loop head with a checked write set requires separation from the
 active loan footprint. An explicit proof can state this fact with `have`
-before `loop`. Its invariant and exit facts
-are consequences of the transition. An unnamed write set still
-requires a conservative check.
+before `loop`. A memory-writing loop with active loans needs a usable write
+bound. When several exits join, any memory cell the successor drops or
+abstracts also needs separation from the shared exit loan footprint. Its
+proof belongs at loop entry, where it cannot depend on the joined state's
+fresh values or exit equations.
 
 Direct scalar assignments to address-taken locals and stores through their
 addresses require separation from the ledger's live memory footprint,
