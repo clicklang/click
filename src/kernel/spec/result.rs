@@ -348,10 +348,60 @@ impl SpecValue {
                 held,
             )));
         }
-        Ok(bool_comparison_proposition(&left, op, &right)
+        let proposition = bool_comparison_proposition(&left, op, &right)
             .transpose()?
-            .or_else(|| program_value_comparison_proposition(&left, op, &right)))
+            .or_else(|| program_value_comparison_proposition(&left, op, &right));
+        // Lowering is structural: when the native constructor decides a
+        // comparison of two machine words of one format, such as
+        // `address(p) + 3u64 == address(p) + 3u64`, keep the comparison;
+        // checking decides it.
+        if let Some(Proposition::ConditionIs(condition, _)) = &proposition
+            && matches!(condition.native_compat(), ConditionTerm::Constant(_))
+            && let Some(retained) = retained_word_comparison(&left, op, &right)
+        {
+            return Ok(Some(retained));
+        }
+        Ok(proposition)
     }
+}
+
+/// The undecided native comparison of two machine words of one 32- or
+/// 64-bit format, as logical lowering builds it.
+fn retained_word_comparison(
+    left: &ProgramValue,
+    op: ComparisonOperator,
+    right: &ProgramValue,
+) -> Option<Proposition> {
+    let word = |value: &ProgramValue| -> Option<(MachineIntegerType, MachineTerm)> {
+        Some(match value.numeric_value() {
+            ProgramValue::Int32(term) => (MachineIntegerType::Int32, term.clone()),
+            ProgramValue::UInt32(term) => (MachineIntegerType::UInt32, term.clone()),
+            ProgramValue::Int64(term) => (MachineIntegerType::Int64, term.clone()),
+            ProgramValue::UInt64(term) => (MachineIntegerType::UInt64, term.clone()),
+            _ => return None,
+        })
+    };
+    let ((format, left), (right_format, right)) = (word(left)?, word(right)?);
+    if format != right_format {
+        return None;
+    }
+    let relation = match op {
+        ComparisonOperator::Equal | ComparisonOperator::NotEqual => CompareRelation::Equal,
+        ComparisonOperator::LessThan => CompareRelation::LessThan,
+        ComparisonOperator::LessEqual => CompareRelation::LessEqual,
+        ComparisonOperator::GreaterThan => CompareRelation::GreaterThan,
+        ComparisonOperator::GreaterEqual => CompareRelation::GreaterEqual,
+    };
+    let condition = crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+        format,
+        relation,
+        [
+            crate::kernel::MachineOperandView::Legacy(&left),
+            crate::kernel::MachineOperandView::Legacy(&right),
+        ],
+    );
+    (!matches!(condition, ConditionTerm::Constant(_)))
+        .then(|| Proposition::condition_is(condition, op != ComparisonOperator::NotEqual))
 }
 
 /// The existing float predicate producer folds literal arithmetic before

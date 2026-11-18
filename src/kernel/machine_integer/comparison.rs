@@ -237,7 +237,7 @@ fn logical_comparison(
     in_conditional: bool,
 ) -> ConditionTerm {
     retained_comparison_for_operand_views(format, relation, operands, in_conditional)
-        .unwrap_or_else(|| condition_for_operand_views(format, relation, operands))
+        .unwrap_or_else(|| condition_for_operand_views_in(format, relation, operands, true))
 }
 
 fn retained_comparison_for_operand_views(
@@ -274,6 +274,16 @@ fn retained_comparison_for_operand_views(
             right.or_else(|| comparison_leaf_operand(operands[1]))?,
         ]
     };
+    Some(retained_compare(format, relation, left, right))
+}
+
+/// The native comparison of two retained operands, without deciding it.
+fn retained_compare(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    left: MachineTerm,
+    right: MachineTerm,
+) -> ConditionTerm {
     // Native 32-bit comparisons read sign-free words; their format carries
     // the signedness. Keep the same operand representation as exact rewriting.
     let [left, right] = if format.format().bits() == 32 {
@@ -290,12 +300,12 @@ fn retained_comparison_for_operand_views(
         } else {
             format
         };
-    Some(ConditionTerm::Compare {
+    ConditionTerm::Compare {
         format,
         relation,
         left: Box::new(left),
         right: Box::new(right),
-    })
+    }
 }
 
 /// Whether logical lowering retained a comparison containing a bounded machine
@@ -517,6 +527,20 @@ pub(crate) fn condition_for_operand_views(
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> ConditionTerm {
+    condition_for_operand_views_in(format, relation, operands, false)
+}
+
+/// [`condition_for_operand_views`]. Under logical lowering (`structural`)
+/// a comparison of two atoms the native constructor would decide, because
+/// they are the same atom or literal arithmetic, keeps its comparison:
+/// lowering `address(p) + 3u64 == address(p) + 3u64` or `(0 + 1) == 2`
+/// does not compute its truth; checking does.
+fn condition_for_operand_views_in(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    operands: [crate::kernel::MachineOperandView<'_>; 2],
+    structural: bool,
+) -> ConditionTerm {
     use crate::kernel::{CompareRelation as R, MachineOperandView as V};
     // Calls and pointer addresses remain native comparison atoms, as before producer migration.
     // The root reading retains numeric argument handles; it does not export
@@ -608,7 +632,15 @@ pub(crate) fn condition_for_operand_views(
             .unwrap_or(operands[index])
     });
     if let [V::Legacy(left), V::Legacy(right)] = operands {
-        return ConditionTerm::machine_compare(format, relation, left.clone(), right.clone());
+        let condition =
+            ConditionTerm::machine_compare(format, relation, left.clone(), right.clone());
+        if structural
+            && matches!(condition, ConditionTerm::Constant(_))
+            && matches!(format.format().bits(), 32 | 64)
+        {
+            return retained_compare(format, relation, left.clone(), right.clone());
+        }
+        return condition;
     }
     let [left, right] = operands.map(|operand| {
         if let Some(literal) = operand.literal() {
