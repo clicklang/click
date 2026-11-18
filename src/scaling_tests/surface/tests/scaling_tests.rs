@@ -8182,15 +8182,14 @@ fn explicit_byte_view_narrowing_rejects_missing_authority_and_bounds() {
 }
 
 /// Explicit framing must refuse locally even as unrelated scalar premises grow.
-/// The mdtest pins one refusal; this checks that its context-dependent memo does
-/// not turn extra facts into repeated frame searches. Keep the multi-run recheck
-/// out of the gate, whose single fixture covers the behavior.
+/// The mdtest pins one refusal. Check that looking up the selected separation
+/// stays bounded as the proof accumulates premises.
 #[test]
 #[ignore = "nightly: 6s for four explicit frame refusals"]
 fn explicit_frame_refusal_scales_with_unrelated_facts() {
     let mdtest = crate::cli::parse_mdtest(
-        std::path::Path::new("explicit_transport_failure_is_prompt.md"),
-        include_str!("../../../../mdtests/explicit_transport_failure_is_prompt.md"),
+        std::path::Path::new("explicit_preserve_failure_is_prompt.md"),
+        include_str!("../../../../mdtests/explicit_preserve_failure_is_prompt.md"),
     )
     .unwrap();
     let mut samples = Vec::new();
@@ -8233,7 +8232,9 @@ fn explicit_frame_refusal_scales_with_unrelated_facts() {
         });
         let error = result.expect_err("a missing frame is still refused");
         assert!(
-            error.message().contains("found no frame evidence"),
+            error
+                .message()
+                .contains("preserve separation is not exactly available"),
             "{size}: {error:?}"
         );
         samples.push(sample);
@@ -8242,11 +8243,11 @@ fn explicit_frame_refusal_scales_with_unrelated_facts() {
         "explicit frame refusal with unrelated facts",
         &samples,
     );
-    // The selected transport pays only a fixed amount per added premise.
+    // The selected preservation check pays only a fixed amount per added premise.
     // Whole-run totals also include shared frontend initialization.
     for pair in samples.windows(2) {
-        let before = pair[0].named_work["control tactic `have`"];
-        let after = pair[1].named_work["control tactic `have`"];
+        let before = pair[0].named_work["simple tactic `have`"];
+        let after = pair[1].named_work["simple tactic `have`"];
         assert!(
             after <= before + 6 * (pair[1].size - pair[0].size),
             "{samples:?}"
