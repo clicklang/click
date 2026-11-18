@@ -390,10 +390,8 @@ fn local_scalar_array_tail_fill_replaces_values_independent_of_length_and_other_
             .store(prefix.clone(), short(42))
             .store(last.clone(), short(7));
         for index in 0..unrelated {
-            memory = memory.with_uninitialized_object(
-                pointer(&format!("local:other-{index}"), 0),
-                2,
-            );
+            memory =
+                memory.with_uninitialized_object(pointer(&format!("local:other-{index}"), 0), 2);
         }
         let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
             memory
@@ -408,14 +406,8 @@ fn local_scalar_array_tail_fill_replaces_values_independent_of_length_and_other_
                 )
                 .unwrap()
         });
-        assert_eq!(
-            memory.load(&prefix),
-            ExpressionOutcome::Value(short(42))
-        );
-        assert_eq!(
-            memory.load(&last),
-            ExpressionOutcome::Value(short(0))
-        );
+        assert_eq!(memory.load(&prefix), ExpressionOutcome::Value(short(42)));
+        assert_eq!(memory.load(&last), ExpressionOutcome::Value(short(0)));
         assert_eq!(memory.cells.runs_in_block(&prefix.base).count(), 1);
         work
     });
