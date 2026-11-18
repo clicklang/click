@@ -1230,6 +1230,11 @@ resource-field proof selections, fact stability and quality passed again.
 The range parent PR's eight pushed commits were verified upstream before
 integration. Full nightly was not run.
 
+After integrating upstream `cc0f851400`, the address-comparison change is
+preserved alongside stored operand readers. All 81 affected checks, the indexed
+proof selection, fact stability and quality passed. A first filter spelling
+matched no fixtures; the corrected `indexed` selection passed.
+
 ### 10p5 Publication and conditional mutex protocol values (in progress)
 
 Publication observations use `StoredProgramValue`, which retains native input
@@ -1258,6 +1263,12 @@ publication proof selection passed. Mutex proofs passed 215/216;
 revision, at the same `fold(control(p), ...)` quantity bound. It uses neither
 migrated protocol producer. Fact stability recorded 88 refusals and no changed
 terms or paths. Final quality passed. No syntax or proof rule is changed.
+
+After integrating upstream `cc0f851400` and the iterated descriptor parent,
+all 400 affected protocol/substitution/collection checks, publication fixtures,
+fact stability and quality passed again. The earlier 690 focused checks,
+1,927 regular scaling cases and 215 passing mutex fixtures remain the full
+slice validation; the identical parent failure above is not counted as a pass.
 
 ## Chunk 3: machine-valued pure-function results
 
