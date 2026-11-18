@@ -1332,7 +1332,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
 #[test]
 fn return_exchange_keeps_the_published_body_state() {
     use crate::kernel::{
-        PointerValue, ResourceFieldSchema, ResourceFieldType, ResourceInstance, SpecPoint,
+        Pointer, ResourceFieldSchema, ResourceFieldType, ResourceInstance, SpecPoint,
     };
     let pointer = Address::symbolic(Variable(810_000));
     let schema = ResourceFieldSchema::new(vec![(
@@ -1356,10 +1356,11 @@ fn return_exchange_keeps_the_published_body_state() {
         vec![],
         vec![SpecProposition::Comparison {
             left: SpecExpression::MemoryLoad {
-                memory: SpecPoint::Current,
-                pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-                    PointerValue::new(pointer.clone(), ProgramType::Int32Pointer),
-                ))),
+                point: SpecPoint::Current,
+                pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+                    pointer.clone(),
+                    ProgramType::Int32Pointer,
+                )))),
                 value_type: ProgramType::Int32,
             },
             operator: ComparisonOperator::Equal,
@@ -2671,17 +2672,18 @@ fn branch_split_obligations_require_evidence_on_each_named_arm() {
 
 #[test]
 fn interface_logical_read_does_not_establish_validity() {
-    use crate::kernel::{PointerValue, SpecPoint};
+    use crate::kernel::{Pointer, SpecPoint};
     let state = ExecutionState::new();
     let pointer = crate::kernel::Address {
         base: "interface_cell".into(),
         offset: AddressOffset::Constant(0),
     };
     let load = SpecExpression::MemoryLoad {
-        memory: SpecPoint::Current,
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            PointerValue::new(pointer, ProgramType::Int32Pointer),
-        ))),
+        point: SpecPoint::Current,
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            pointer,
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
     };
     let spec = SpecProposition::Comparison {
@@ -3068,7 +3070,7 @@ fn named_pointer_cell_requires_its_complete_read_and_provenance() {
     };
     for wrong in [
         ProgramValue::typed_pointer(
-            pointer.pointer().offset_by_bytes(4),
+            pointer.address().offset_by_bytes(4),
             ProgramType::Int32Pointer,
         ),
         ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer),

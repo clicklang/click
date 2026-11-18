@@ -2,7 +2,7 @@
 //! plans selecting those rules for ordinary proof expansion.
 use super::super::{
     Address, AddressBase, AddressOffset, ComparisonOperator, ConditionTerm, FloatClassification,
-    FloatCondition, MachineTerm, PointerValue, Proposition, SignedDefinedWidth,
+    FloatCondition, MachineTerm, Pointer, Proposition, SignedDefinedWidth,
 };
 
 use crate::kernel::binary_term;
@@ -1192,7 +1192,7 @@ fn pointer_translation(
     goal: &Proposition,
 ) -> bool {
     if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = goal {
-        let same_domain = |a: &PointerValue, b: &PointerValue| {
+        let same_domain = |a: &Pointer, b: &Pointer| {
             a.provenance() == b.provenance()
                 && a.bounds() == b.bounds()
                 && a.bounds_are_known() == b.bounds_are_known()
@@ -1430,6 +1430,40 @@ fn offset_difference(goal: &AddressOffset, premise: &AddressOffset) -> Option<i1
     }
     terms.retain(|_, coefficient| *coefficient != 0);
     terms.is_empty().then_some(constant)
+}
+
+/// Literal discovery over one explicit unsigned expression. The charged walk
+/// precedes the legacy constant recognizers; no fact or memory state is read.
+pub(crate) fn unsigned_word_constant_for_discovery(
+    value: crate::kernel::MachineOperandView<'_>,
+) -> Option<u64> {
+    let word = Word(value);
+    if !word_view::charge(word) {
+        return None;
+    }
+    word_view::constants(&[word])
+        .get(&word.key())
+        .copied()
+        .flatten()
+}
+
+/// A bounded discovery hint over two explicit pointers, with no fact context.
+/// The caller still constructs its ordinary address identity and offset law.
+pub(crate) fn constant_pointer_byte_difference(left: &Address, right: &Address) -> Option<i128> {
+    if !charge_pointer(left)
+        || !charge_pointer(right)
+        || !address_base_equal(&left.base, &right.base)
+    {
+        return None;
+    }
+    offset_difference(&left.offset, &right.offset)
+}
+
+/// Goal-local alignment of null, heap, global and static addresses. This
+/// reads only the named block's registration and the written byte offset;
+/// symbolic offsets and facts about other pointers are deliberately excluded.
+pub(crate) fn intrinsic_pointer_alignment(result: &Proposition) -> bool {
+    pointer_alignment(None, result)
 }
 
 fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> bool {
@@ -2539,37 +2573,66 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
     if !charge_bitvector(finite_expression) {
         return false;
     }
-    let Proposition::ConditionIs(condition, expected) = result else {
+    let Some((condition, left, right)) = finite_float_comparison(result) else {
         return false;
     };
-    let (operator, left, right, width) = match condition {
+    let width = if matches!(condition, ConditionTerm::Float32(_)) {
+        32
+    } else {
+        64
+    };
+    charge_bitvector(left)
+        && charge_bitvector(right)
+        && bitvector_equal(left, right)
+        && width == finite_width
+        && bitvector_equal(left, finite_expression)
+}
+
+/// Extract the operands when the comparison has the polarity it would have
+/// on equal finite operands.
+fn finite_float_comparison(
+    result: &Proposition,
+) -> Option<(&ConditionTerm, &MachineTerm, &MachineTerm)> {
+    let Proposition::ConditionIs(condition, expected) = result else {
+        return None;
+    };
+    let (operator, left, right) = match condition {
         ConditionTerm::Float32(FloatCondition::Comparison {
             operator,
             left,
             right,
-        }) => (*operator, left.as_ref(), right.as_ref(), 32),
-        ConditionTerm::Float64(FloatCondition::Comparison {
+        })
+        | ConditionTerm::Float64(FloatCondition::Comparison {
             operator,
             left,
             right,
-        }) => (*operator, left.as_ref(), right.as_ref(), 64),
-        _ => return false,
+        }) => (*operator, left.as_ref(), right.as_ref()),
+        _ => return None,
     };
-    if !charge_bitvector(left) || !charge_bitvector(right) {
-        return false;
-    }
-    let same_result = bitvector_equal(left, right);
-    let same_finite = bitvector_equal(left, finite_expression);
-    if width != finite_width || !same_result || !same_finite {
-        return false;
-    }
     let reflexive = matches!(
         operator,
         ComparisonOperator::Equal
             | ComparisonOperator::LessEqual
             | ComparisonOperator::GreaterEqual
     );
-    *expected == reflexive
+    (*expected == reflexive).then_some((condition, left, right))
+}
+
+pub(super) fn finite_float_reflexivity_premise(result: &Proposition) -> Option<Proposition> {
+    let (condition, operand, other) = finite_float_comparison(result)?;
+    if operand != other {
+        return None;
+    }
+    let finite = match condition {
+        ConditionTerm::Float32(_) => {
+            ConditionTerm::float32_classification(operand.clone(), FloatClassification::Finite)
+        }
+        ConditionTerm::Float64(_) => {
+            ConditionTerm::float64_classification(operand.clone(), FloatClassification::Finite)
+        }
+        _ => unreachable!("finite reflexivity only selects float comparisons"),
+    };
+    Some(Proposition::ConditionIs(finite, true))
 }
 
 #[cfg(test)]

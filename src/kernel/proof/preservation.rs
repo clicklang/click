@@ -152,12 +152,16 @@ fn preserve_definedness(
     if bytes != value_type.byte_width() {
         return None;
     }
-    let defined = |memory: &SymbolicMemory| Proposition::MemoryReadDefined {
+    let defined = |point: &ProgramPoint, memory: &SymbolicMemory| Proposition::MemoryReadDefined {
+        at: point.id(),
         memory: memory.clone(),
         pointer: pointer.clone(),
         value_type,
     };
-    Some((defined(&footprint.before), defined(&footprint.after)))
+    Some((
+        defined(&footprint.before_point, &footprint.before),
+        defined(&footprint.after_point, &footprint.after),
+    ))
 }
 
 // Resource field values are retained by the persistent resource contexts.
@@ -184,50 +188,52 @@ fn preserve_field(
     let a = after.fields().get(field.index)?;
     let b = before.fields().get(field.index)?;
     let condition = match (a, b) {
-        (AlgebraicValue::Algebraic(a), AlgebraicValue::Algebraic(b))
-            if a.algebraic_type == b.algebraic_type =>
-        {
+        (
+            crate::kernel::ResourceFieldValue::Algebraic(a),
+            crate::kernel::ResourceFieldValue::Algebraic(b),
+        ) if a.algebraic_type == b.algebraic_type => {
             return Some(if a == b {
                 Proposition::ConditionIs(ConditionTerm::Constant(true), true)
             } else {
                 Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()))
             });
         }
-        (AlgebraicValue::Integer(a), AlgebraicValue::Integer(b)) => {
-            ConditionTerm::integer_equal(a.clone(), b.clone())
-        }
         (
-            AlgebraicValue::Program(ProgramValue::Parameter(a)),
-            AlgebraicValue::Program(ProgramValue::Parameter(b)),
+            crate::kernel::ResourceFieldValue::Integer(a),
+            crate::kernel::ResourceFieldValue::Integer(b),
+        ) => ConditionTerm::integer_equal(a.clone(), b.clone()),
+        (
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(b)),
         ) if a.algebraic_type == b.algebraic_type => {
             ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
         }
         (
-            AlgebraicValue::Program(ProgramValue::Pointer(a)),
-            AlgebraicValue::Program(ProgramValue::Pointer(b)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(b)),
         ) if a.program_type() == b.program_type() => {
             ConditionTerm::logical_pointer_value_equal(a.clone(), b.clone())
         }
         (
-            AlgebraicValue::Program(ProgramValue::Int32(a)),
-            AlgebraicValue::Program(ProgramValue::Int32(b)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(b)),
         ) => ConditionTerm::equal(a.clone(), b.clone()),
         // An 8-bit field value is native: its equality is at its own format.
         (
-            AlgebraicValue::Program(ProgramValue::UInt8(a)),
-            AlgebraicValue::Program(ProgramValue::UInt8(b)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt8(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt8(b)),
         ) => integer_equality(MachineIntegerType::UInt8, a.clone(), b.clone())?,
         (
-            AlgebraicValue::Program(ProgramValue::UInt32(a)),
-            AlgebraicValue::Program(ProgramValue::UInt32(b)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt32(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt32(b)),
         ) => ConditionTerm::uint32_equal(a.clone(), b.clone()),
         (
-            AlgebraicValue::Program(ProgramValue::Int64(a)),
-            AlgebraicValue::Program(ProgramValue::Int64(b)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Int64(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Int64(b)),
         ) => integer_equality(MachineIntegerType::Int64, a.clone(), b.clone())?,
         (
-            AlgebraicValue::Program(ProgramValue::UInt64(a)),
-            AlgebraicValue::Program(ProgramValue::UInt64(b)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt64(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt64(b)),
         ) => integer_equality(MachineIntegerType::UInt64, a.clone(), b.clone())?,
         _ => return None,
     };
@@ -276,7 +282,7 @@ fn observation_equality(
             ConditionTerm::logical_pointer_value_equal(a, b)
         }
         (ReadType::PointerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone())
+            ConditionTerm::pointer_equal(a.address().clone(), b.address().clone())
         }
         (ReadType::Abstract, ProgramValue::Parameter(a), ProgramValue::Parameter(b))
             if a.algebraic_type == b.algebraic_type =>
@@ -402,11 +408,13 @@ mod tests {
             ))),
         };
         let old = Proposition::MemoryReadDefined {
+            at: before.program_point().id(),
             memory: before.memory().clone(),
             pointer: pointer.clone(),
             value_type: ty,
         };
         let goal = Proposition::MemoryReadDefined {
+            at: after.program_point().id(),
             memory: after.memory().clone(),
             pointer,
             value_type: ty,
@@ -467,9 +475,10 @@ mod tests {
                     .contains("footprint entry")
             );
             assert!(preservation.apply(|p| p == &old).is_err());
-            for corruption in 0..3 {
+            for corruption in 0..4 {
                 let mut bad = goal.clone();
                 let Proposition::MemoryReadDefined {
+                    at,
                     memory,
                     pointer,
                     value_type,
@@ -480,6 +489,12 @@ mod tests {
                 match corruption {
                     0 => *memory = SymbolicMemory::new(),
                     1 => *pointer = Address::symbolic(Variable(8_499_000)),
+                    2 => {
+                        *at = ExecutionState::new()
+                            .with_memory(memory.clone())
+                            .program_point()
+                            .id()
+                    }
                     _ => {
                         *value_type = if ty == ProgramType::UInt8 {
                             ProgramType::Int32

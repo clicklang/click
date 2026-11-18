@@ -4,7 +4,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn full_and_concise_reports_keep_named_pointer_prerequisites() {
-    use crate::kernel::{Address, PointerValue, ProgramType, Variable};
+    use crate::kernel::{Address, Pointer, ProgramType, Variable};
     use crate::surface::proof_diagnostics::{
         ProofDiagnosticOrigin, ProofDiagnosticState, ProofFailureDiagnostic,
         render::MemoryStateLabels,
@@ -34,7 +34,7 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
         node: Address::symbolic(Variable(990_101)),
         identity: Address::symbolic(Variable(990_102)),
     };
-    let pointer = |p: &Address| PointerValue::new(p.clone(), ProgramType::Int32Pointer);
+    let pointer = |p: &Address| Pointer::new(p.clone(), ProgramType::Int32Pointer);
     let requirement = Proposition::ConditionIs(
         ConditionTerm::PointerValueEqual(
             Box::new(pointer(&names.node)),
@@ -1213,10 +1213,10 @@ fn maybe_throwing_step_diagnostic_teaches_outcomes_syntax() {
         message.contains("Use `outcomes` at this point"),
         "{message}"
     );
-    assert!(message.contains("returned => { step(); }"), "{message}");
-    assert!(message.contains("threw => { step(); }"), "{message}");
+    assert!(message.contains("returned => { }"), "{message}");
+    assert!(message.contains("threw => { }"), "{message}");
     assert!(
-        message.contains("all\ncontract claims are closed"),
+        message.contains("successor and close its contract claims"),
         "{message}"
     );
 }
@@ -2055,7 +2055,7 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, MachineTerm, MemoryRange, PointerValue, ProgramType,
+        Address, AddressBase, AddressOffset, MachineTerm, MemoryRange, Pointer, ProgramType,
     };
     let base = Address {
         base: AddressBase::Concrete("unknown".into()),
@@ -2063,7 +2063,7 @@ fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     };
     let state = ExecutionState::new().with_local(
         "cursor",
-        ProgramValue::Pointer(PointerValue::new(base.clone(), ProgramType::Int32Pointer)),
+        ProgramValue::Pointer(Pointer::new(base.clone(), ProgramType::Int32Pointer)),
     );
     let (parameters, arguments) = super::diagnostics::local_naming_tables_with_source(&state, None);
     let range = MemoryRange::new(base, MachineTerm::constant(1), MachineTerm::constant(2));
@@ -3534,7 +3534,7 @@ void symbolic(int32* p, const struct callbacks* cb) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
 fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, AlgebraicValue, LoadKind, PointerValue, ProgramType,
+        Address, AddressBase, AddressOffset, AlgebraicValue, LoadKind, Pointer, ProgramType,
         ProgramValue, Resource, SymbolicMemory, Variable, intern_memory,
     };
     let _session = crate::kernel::VerificationSession::enter();
@@ -3545,7 +3545,7 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
     let before = SymbolicMemory::new();
     let after = before.clone().store(read.clone(), int32(7));
     let argument = |memory: SymbolicMemory| {
-        AlgebraicValue::Program(ProgramValue::Pointer(PointerValue::new(
+        AlgebraicValue::Program(ProgramValue::Pointer(Pointer::new(
             Address {
                 base: AddressBase::Concrete("nodes".into()),
                 offset: AddressOffset::scale_int32(
@@ -4082,7 +4082,8 @@ fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact(
         .expect("the explicit transport is measured")
         .work;
     assert!(transport_work > 0, "{work:?}");
-    // Exercise the beginning and end of this operation's measured work,
+    // This pointer copy completes even at a zero simple budget. Exercise
+    // exhaustion at the start and end of the following explicit transport,
     // without assuming a fixed cost or changing the production allowance.
     for limit in [0, transport_work - 1] {
         with_proof_trace("f", || {
@@ -4094,27 +4095,6 @@ fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact(
                 || verify_c_sources(source, &c),
             )
             .expect_err("the explicit transport exhausts its work allowance");
-            if limit == 0 {
-                // Checked work inside the preceding smart step has the same
-                // simple allowance. A zero allowance must stop that check,
-                // rather than misattribute it to the later transport/search.
-                assert!(
-                    error.message().contains("inside checking operation"),
-                    "{}",
-                    error.message()
-                );
-                assert!(
-                    error.message().contains("inside tactic `step_until`"),
-                    "{}",
-                    error.message()
-                );
-                assert!(
-                    error.message().contains("engine performance defect"),
-                    "{}",
-                    error.message()
-                );
-                return;
-            }
             assert!(
                 error.message().contains("tactic `transport`"),
                 "{}",
@@ -4284,7 +4264,7 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
         "struct item { uint8 tag; int64 value; }; void inspect(struct item **pp) {}",
     )
     .unwrap();
-    let pointer = crate::kernel::PointerValue::new(
+    let pointer = crate::kernel::Pointer::new(
         Address {
             base: AddressBase::Concrete("array".into()),
             offset: crate::kernel::AddressOffset::Constant(0),

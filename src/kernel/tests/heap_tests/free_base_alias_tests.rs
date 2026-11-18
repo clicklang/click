@@ -33,8 +33,8 @@ fn free_uses_the_owned_base_and_retires_every_proven_alias() {
     let alias = Address::symbolic(Variable(973_001));
     let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
-            PointerValue::new(alias.clone(), ProgramType::Int32Pointer),
-            PointerValue::new(base.clone(), ProgramType::Int32Pointer),
+            Pointer::new(alias.clone(), ProgramType::Int32Pointer),
+            Pointer::new(base.clone(), ProgramType::Int32Pointer),
         ),
         true,
     ));
@@ -114,8 +114,8 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
     let pending = Address::symbolic(Variable(973_022));
     let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
-            PointerValue::new(alias.clone(), ProgramType::Int32Pointer),
-            PointerValue::new(base.clone(), ProgramType::Int32Pointer),
+            Pointer::new(alias.clone(), ProgramType::Int32Pointer),
+            Pointer::new(base.clone(), ProgramType::Int32Pointer),
         ),
         true,
     ));
@@ -124,11 +124,14 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
         .unwrap()
         .with_pending_heap_reallocation(
             pending,
-            base.clone(),
-            AllocationSize::int32(4),
-            None,
-            vec![],
-            vec![],
+            PendingReallocation {
+                old_pointer: base.clone(),
+                old_bytes: AllocationSize::int32(4),
+                retirement_separation: None,
+                zeroed_prefix: None,
+                copied_cells: vec![],
+                initialized_prefix: vec![],
+            },
         );
     let state = ExecutionState::new()
         .with_memory(memory)

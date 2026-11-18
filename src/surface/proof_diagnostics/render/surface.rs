@@ -610,6 +610,36 @@ impl Printer<'_> {
                 Some(atom(format!("<{place} is writable ({byte_width} bytes)>")))
             }
             Proposition::MemoryReadDefined {
+                at: Some(id),
+                pointer,
+                ..
+            } => {
+                let (point, naming) = self.labels.definedness_point_context(*id);
+                let Some(point) = point else {
+                    return Some(atom(format!("defined({})", self.place_at(pointer, depth))));
+                };
+                let place = naming
+                    .as_deref()
+                    .and_then(|(parameters, arguments)| {
+                        crate::surface::diagnostics::diagnostic_source_cell(
+                            pointer,
+                            ParameterBinding::new(parameters, arguments),
+                        )
+                    })
+                    .or_else(|| {
+                        if !self.source_mode() {
+                            return None;
+                        }
+                        if let Some(place) = naming.as_deref().and_then(|tables| {
+                            self.parameter_relative_pointer(pointer, depth, tables)
+                        }) {
+                            return Some(dereference(place));
+                        }
+                        Some(format!("*{}", self.labels.placeholder_pointer(pointer)))
+                    })?;
+                Some(atom(format!("at({point}, defined({place}))")))
+            }
+            Proposition::MemoryReadDefined {
                 memory, pointer, ..
             } => {
                 let place = self.place_read_in(memory, |printer| {
@@ -959,7 +989,7 @@ impl Printer<'_> {
             }
             ConditionTerm::BoolLoad(memory, pointer) => {
                 let read = self.load(
-                    memory.as_ref(),
+                    memory.memory(),
                     pointer,
                     crate::kernel::LoadKind::UInt8,
                     depth,
@@ -1981,7 +2011,9 @@ impl Printer<'_> {
         // An address past a pointer parameter by a term the structural
         // spellings cannot name, such as a quantifier binder, is an element
         // of that parameter, `&dst[k]`, or a byte offset from it.
-        if let Some(spelled) = self.parameter_relative_pointer(pointer, depth) {
+        if let Some(tables) = tables.as_deref()
+            && let Some(spelled) = self.parameter_relative_pointer(pointer, depth, tables)
+        {
             return Some(spelled);
         }
         // An address inside an allocation a local held is spelled from that
@@ -2133,7 +2165,7 @@ impl Printer<'_> {
                 else {
                     return None;
                 };
-                if !parameter.is_reference() || base.pointer() != pointer {
+                if !parameter.is_reference() || base.address() != pointer {
                     return None;
                 }
                 let referent = parameter.name();
@@ -2170,32 +2202,38 @@ impl Printer<'_> {
 
     /// `pointer` as an element of, or a byte offset from, a pointer
     /// parameter whose value is `pointer` less one added offset term.
-    fn parameter_relative_pointer(&mut self, pointer: &Address, depth: usize) -> Option<Spelled> {
+    fn parameter_relative_pointer(
+        &mut self,
+        pointer: &Address,
+        depth: usize,
+        tables: &NamingTables,
+    ) -> Option<Spelled> {
         let AddressOffset::Add(base_offset, extra) = &pointer.offset else {
             return None;
         };
-        let tables = self.labels.naming.clone()?;
-        let name = tables
-            .0
-            .iter()
-            .zip(&tables.1)
-            .find_map(|(parameter, value)| match value {
-                crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(
-                    base,
-                )) if base.pointer().base == pointer.base
-                    && base.pointer().offset == **base_offset
-                    && parameter.name().len() <= 256 =>
-                {
-                    Some(parameter.name().to_string())
-                }
-                _ => None,
-            })?;
-        let width = self.named_element_width(&name);
+        let parameter =
+            tables
+                .0
+                .iter()
+                .zip(&tables.1)
+                .find_map(|(parameter, value)| match value {
+                    crate::kernel::ProgramExpression::Value(
+                        crate::kernel::ProgramValue::Pointer(base),
+                    ) if base.address().base == pointer.base
+                        && base.address().offset == **base_offset
+                        && parameter.name().len() <= 256 =>
+                    {
+                        Some(parameter)
+                    }
+                    _ => None,
+                })?;
+        let name = parameter.name();
+        let width = crate::surface::diagnostics::diagnostic_parameter_element_width(parameter);
         let index = match extra.as_ref() {
             AddressOffset::Int32Scaled { value, byte_width }
             | AddressOffset::Int64Scaled {
                 value, byte_width, ..
-            } if Some(*byte_width) == width => {
+            } if *byte_width == width && width > 0 => {
                 self.bitvector(value.structural_value(), None, depth + 1)
             }
             _ => None,
@@ -2219,7 +2257,7 @@ impl Printer<'_> {
             .find_map(|(parameter, value)| match value {
                 crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(
                     pointer,
-                )) if pointer.pointer() == base => {
+                )) if pointer.address() == base => {
                     Some(crate::surface::diagnostics::diagnostic_parameter_element_width(parameter))
                 }
                 _ => None,
@@ -2338,7 +2376,10 @@ impl Printer<'_> {
             }
             Resource::Instance(instance) => {
                 let application = self.resource_arguments(instance.name(), instance.arguments());
-                match self.hidden_record(instance.schema().fields(), instance.fields()) {
+                match self.hidden_record(
+                    instance.schema().fields(),
+                    &instance.fields().native_values(),
+                ) {
                     Some(record) => format!("{application} {record}"),
                     None => application,
                 }
@@ -2480,17 +2521,17 @@ impl Printer<'_> {
             ProgramValue::Float32(value) | ProgramValue::Float64(value) => {
                 self.bitvector(value, None, depth)
             }
-            ProgramValue::Pointer(pointer) => self.pointer(pointer.pointer(), depth),
+            ProgramValue::Pointer(pointer) => self.pointer(pointer.address(), depth),
         }
     }
 
     fn exact_pointer_value(
         &self,
-        pointer: &crate::kernel::PointerValue,
+        pointer: &crate::kernel::Pointer,
         naming: &NamingTables,
     ) -> Option<String> {
         if self.mode == Mode::ExactIdentity
-            && crate::surface::proof_trace::pointer_definition(pointer.pointer()).is_some()
+            && crate::surface::proof_trace::pointer_definition(pointer.address()).is_some()
         {
             return None;
         }
@@ -2545,7 +2586,7 @@ impl Printer<'_> {
                     }));
                 }
                 self.place_read_in(memory, |printer| {
-                    printer.pointer(pointer.pointer(), depth + 1)
+                    printer.pointer(pointer.address(), depth + 1)
                 })
             }
             PureFunctionArgument::ArrayRef { .. } => self.placeholder(|_| "<array>".into()),
@@ -2591,7 +2632,10 @@ impl Printer<'_> {
             AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
                 self.call(name, arguments, depth + 1)
             }
-            AlgebraicTermNode::MemoryLoad { memory, pointer } => self.bitvector(
+            AlgebraicTermNode::MemoryLoad {
+                point: memory,
+                pointer,
+            } => self.bitvector(
                 &AlgebraicTermNode::memory_load_carrier(memory, pointer),
                 None,
                 depth + 1,
@@ -2934,9 +2978,7 @@ fn typed_literal(text: String, suffix: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{
-        AddressBase, LoadKind, PointerValue, ProgramType, ProgramValue, SharedMemory,
-    };
+    use crate::kernel::{AddressBase, LoadKind, Pointer, ProgramType, ProgramValue, SharedMemory};
 
     fn equality(value: MachineTerm) -> Proposition {
         Proposition::ConditionIs(
@@ -3232,8 +3274,51 @@ mod tests {
     }
 
     #[test]
+    fn definedness_distinguishes_points_with_identical_memory() {
+        use crate::surface::{ProgramPointSelector, RecordedStates};
+
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Address::symbolic(Variable(7));
+        let pointer_value =
+            ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::Int32Pointer));
+        let before = ExecutionState::new()
+            .with_local("before_ptr", pointer_value.clone())
+            .with_memory(SymbolicMemory::new());
+        let current = ExecutionState::new()
+            .with_local("current_ptr", pointer_value)
+            .with_memory(before.memory().clone());
+        assert!(before.memory().same_storage_roots(current.memory()));
+        assert!(before.observation_point_id().is_some());
+        assert!(current.observation_point_id().is_some());
+        assert_ne!(
+            before.observation_point_id(),
+            current.observation_point_id()
+        );
+
+        let mut recorded = RecordedStates::new();
+        recorded.insert(ProgramPointSelector::Mark("before".into()), before.clone());
+        let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &current);
+        labels.recorded_states(&recorded);
+        let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {
+            at: state.observation_point_id(),
+            memory: before.memory().clone(),
+            pointer: pointer.clone(),
+            value_type: ProgramType::Int32,
+        };
+        let historical = source(&defined_at(&before), &mut labels);
+        assert!(
+            historical.starts_with("at(before, defined("),
+            "{historical}"
+        );
+        assert!(historical.contains("before_ptr"), "{historical}");
+        let now = source(&defined_at(&current), &mut labels);
+        assert!(now.starts_with("defined("), "{now}");
+        assert!(now.contains("current_ptr"), "{now}");
+    }
+
+    #[test]
     fn predicate_array_arguments_keep_their_individual_states() {
-        let pointer = ProgramValue::Pointer(PointerValue::new(
+        let pointer = ProgramValue::Pointer(Pointer::new(
             Address {
                 base: AddressBase::Concrete("global:cells".into()),
                 offset: AddressOffset::Constant(0),
@@ -3278,7 +3363,7 @@ mod tests {
     #[test]
     fn reserved_predicates_print_the_click_spelling_that_lowers_to_them() {
         let cell = |name: &str| {
-            ProgramValue::Pointer(PointerValue::new(
+            ProgramValue::Pointer(Pointer::new(
                 Address {
                     base: AddressBase::Concrete(format!("global:{name}")),
                     offset: AddressOffset::Constant(0),
@@ -3343,10 +3428,7 @@ mod tests {
             base: AddressBase::Concrete("global:cells".into()),
             offset: AddressOffset::Constant(0),
         };
-        let base = ProgramValue::Pointer(PointerValue::new(
-            pointer.clone(),
-            ProgramType::Int32Pointer,
-        ));
+        let base = ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::Int32Pointer));
         let before = ExecutionState::new()
             .with_local("cells", base.clone())
             .with_memory(SymbolicMemory::new().with_block("global:cells", 4));
@@ -3404,7 +3486,7 @@ mod tests {
         labels.source_state(&before, "pre".into());
         labels.source_result(&ProgramValue::Int32(MachineTerm::Variable(index)));
         // An allocation no local holds is the returned pointer.
-        labels.source_result(&ProgramValue::Pointer(PointerValue::new(
+        labels.source_result(&ProgramValue::Pointer(Pointer::new(
             heap.clone(),
             ProgramType::Int32Pointer,
         )));
@@ -3453,8 +3535,8 @@ mod tests {
 mod resource_tests {
     use super::*;
     use crate::kernel::{
-        AddressBase, AlgebraicType, ExecutionState, LoadKind, PointerValue, ProgramType,
-        ProgramValue, SharedMemory,
+        AddressBase, AlgebraicType, ExecutionState, LoadKind, Pointer, ProgramType, ProgramValue,
+        SharedMemory,
     };
 
     #[test]
@@ -3466,10 +3548,7 @@ mod resource_tests {
         let before = ExecutionState::new()
             .with_local(
                 "cells",
-                ProgramValue::Pointer(PointerValue::new(
-                    pointer.clone(),
-                    ProgramType::Int32Pointer,
-                )),
+                ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::Int32Pointer)),
             )
             .with_memory(SymbolicMemory::new().with_block("global:cells", 4));
         let after = before

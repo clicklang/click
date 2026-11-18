@@ -287,7 +287,7 @@ impl Drop for LocalStructLayoutScope {
 /// written, the pointer's value here, and the struct layout at that value.
 struct StructOwner {
     base: ProgramExpression,
-    pointer: crate::kernel::PointerValue,
+    pointer: crate::kernel::Pointer,
     layout: crate::languages::interface::RecordLayout,
 }
 
@@ -377,7 +377,7 @@ fn owner_field_pointer(base: &ProgramExpression, offset_bytes: u32) -> ProgramEx
 struct NamedRangeBase {
     lowered: ProgramExpression,
     surface: ContractExpression,
-    pointer: crate::kernel::PointerValue,
+    pointer: crate::kernel::Pointer,
     width: u32,
 }
 
@@ -729,7 +729,7 @@ fn synthesize_recorded_held_value_local(
     pointer: &Address,
 ) -> Option<ContractExpression> {
     let crate::kernel::AlgebraicTermNode::MemoryLoad {
-        memory,
+        point: memory,
         pointer: address,
     } = &term.node
     else {
@@ -737,7 +737,9 @@ fn synthesize_recorded_held_value_local(
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let (selector, recorded) = slot.as_ref()?.point_reading_load(memory, address)?;
+        let (selector, recorded) = slot
+            .as_ref()?
+            .point_reading_load(memory.shared_memory(), address)?;
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(synthesize_held_value_local(term, pointer, recorded)?),
@@ -781,6 +783,15 @@ fn synthesize_state_local(term: &MachineTerm) -> Option<ContractExpression> {
                 crate::kernel::MachineIntegerType::from_program_type(value.program_type()).is_some()
             })
         })?;
+        if let Some(result) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
+            slot.borrow().as_ref()?.call_capture_expression(
+                name,
+                state.locals().get(name)?,
+                Some(selector),
+            )
+        }) {
+            return Some(result);
+        }
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(if crate::surface::is_click_value_name(name) {
@@ -800,7 +811,15 @@ fn synthesize_state_local(term: &MachineTerm) -> Option<ContractExpression> {
 fn synthesize_recorded_local(term: &MachineTerm) -> Option<ContractExpression> {
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let (selector, name, _) = slot.as_ref()?.point_naming_integer(term)?;
+        let points = slot.as_ref()?;
+        let (selector, name, state) = points.point_naming_integer(term)?;
+        if let Some(result) = state
+            .locals()
+            .get(name)
+            .and_then(|value| points.call_capture_expression(name, value, Some(selector)))
+        {
+            return Some(result);
+        }
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(if crate::surface::is_click_value_name(name) {
@@ -1315,7 +1334,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::StaticObject { .. }))
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.address().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Value(value.clone()),
@@ -1339,7 +1358,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     }
     match value {
         ProgramValue::Pointer(pointer) => synthesize_surface_pointer_expression(
-            pointer.pointer(),
+            pointer.address(),
             parameter_binding,
             state,
             &BTreeMap::new(),
@@ -1617,7 +1636,7 @@ fn synthesized_surface_matches_proposition(
     let array_refs = array_refs_for_parameters(
         parameter_binding.parameters,
         &parameter_values,
-        state.memory(),
+        &state.program_point(),
     );
     let (values, array_refs) = contract_environment_at_state(&parameter_values, &array_refs, state);
     let pointer_element_widths =
@@ -1831,7 +1850,7 @@ fn synthesize_exact_external_zero_based_byte_range(
                 ProgramExpression::Variable(name) => state.locals().get(name)?.pointer()?,
                 _ => return None,
             };
-            (pointer.pointer() == base && pointer.program_type().pointee_type()?.byte_width() == 1)
+            (pointer.address() == base && pointer.program_type().pointee_type()?.byte_width() == 1)
                 .then(|| crate::surface::surface_parameter_binding(parameter.binding_name()))
         });
     let Some(name) = matches.next() else {
@@ -2037,25 +2056,25 @@ fn synthesize_external_symbolic_element_range(
                 .byte_width()
                 != 1
                 || named_base.program_type().pointee_type()?.byte_width() != 1
-                || named_base.pointer().base != AddressBase::ExternalArgument
+                || named_base.address().base != AddressBase::ExternalArgument
                 || base.base != AddressBase::ExternalArgument
             {
                 return None;
             }
             let index = match &base.offset {
                 AddressOffset::Add(left, right)
-                    if left.as_ref() == &named_base.pointer().offset =>
+                    if left.as_ref() == &named_base.address().offset =>
                 {
                     int32_scaled_value(right, 1)?
                 }
                 AddressOffset::Add(left, right)
-                    if right.as_ref() == &named_base.pointer().offset =>
+                    if right.as_ref() == &named_base.address().offset =>
                 {
                     int32_scaled_value(left, 1)?
                 }
                 // `bytes` itself can be at offset zero, in which case the
                 // canonical pointer offset drops the zero-valued add.
-                _ if named_base.pointer().offset == AddressOffset::Constant(0) => {
+                _ if named_base.address().offset == AddressOffset::Constant(0) => {
                     int32_scaled_value(&base.offset, 1)?
                 }
                 _ => return None,
@@ -2154,7 +2173,7 @@ fn int32_scaled_value(offset: &AddressOffset, width: i64) -> Option<MachineTerm>
 fn named_pointer_bases<'a>(
     parameter_binding: ParameterBinding<'a>,
     state: Option<&'a ExecutionState>,
-) -> impl Iterator<Item = (crate::kernel::BindingName, crate::kernel::PointerValue, u32)> + 'a {
+) -> impl Iterator<Item = (crate::kernel::BindingName, crate::kernel::Pointer, u32)> + 'a {
     parameter_binding
         .parameters
         .iter()
@@ -2619,13 +2638,53 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let Proposition::MemoryReadDefined {
+        at,
         memory,
         pointer,
         value_type,
     } = proposition
     {
+        let matches_point = |candidate: &ExecutionState| match at {
+            Some(id) => candidate.observation_point_id() == Some(*id),
+            None => candidate.memory() == memory,
+        };
+        let historical = if matches_point(state) {
+            None
+        } else {
+            Some(
+                SYNTHESIS_ENTRY_STATE
+                    .with(|slot| {
+                        let slot = slot.borrow();
+                        let entry = slot.as_ref().filter(|entry| matches_point(entry))?;
+                        Some((
+                            ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                                region: CodeRegionRef::Function,
+                                kind: ProgramPointKind::Entry,
+                            }),
+                            entry.clone(),
+                        ))
+                    })
+                    .or_else(|| {
+                        SYNTHESIS_REFERENCE_STATE.with(|slot| {
+                            let slot = slot.borrow();
+                            let (retained, selector) = slot.as_ref()?;
+                            matches_point(retained).then(|| (selector.clone(), retained.clone()))
+                        })
+                    })
+                    .or_else(|| {
+                        SYNTHESIS_RECORDED_POINTS.with(|slot| {
+                            let slot = slot.borrow();
+                            let points = slot.as_ref()?;
+                            let selector = points.point_name((*at)?)?;
+                            let recorded = points.get_exact(selector)?;
+                            matches_point(recorded).then(|| (selector.clone(), recorded.clone()))
+                        })
+                    })?,
+            )
+        };
+        let read_state = historical.as_ref().map_or(state, |(_, state)| state);
         let pointer =
-            synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
+            synthesize_surface_pointer(pointer, parameter_binding, read_state, bound_variables)?;
         let validity = ClickProposition::Defined {
             expression: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
                 pointer: Box::new(pointer),
@@ -2636,29 +2695,12 @@ fn synthesize_surface_atomic_proposition(
                 source: crate::kernel::ExpressionLoadSource::none(),
             }),
         };
-        if state.memory() == memory {
-            return Some(validity);
-        }
-        let at_entry = SYNTHESIS_ENTRY_STATE.with(|slot| {
-            slot.borrow()
-                .as_ref()
-                .is_some_and(|entry| entry.memory() == memory)
-        });
-        let selector = if at_entry {
-            ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Function,
-                kind: ProgramPointKind::Entry,
-            })
-        } else {
-            SYNTHESIS_REFERENCE_STATE.with(|slot| {
-                let slot = slot.borrow();
-                let (retained_state, selector) = slot.as_ref()?;
-                (retained_state.memory() == memory).then(|| selector.clone())
-            })?
-        };
-        return Some(ClickProposition::At {
-            selector,
-            proposition: Box::new(validity),
+        return Some(match historical {
+            Some((selector, _)) => ClickProposition::At {
+                selector,
+                proposition: Box::new(validity),
+            },
+            None => validity,
         });
     }
     if let Proposition::MemoryLoadable {
@@ -3141,6 +3183,14 @@ fn synthesize_surface_atomic_proposition(
             ..
         }
     );
+    let unsigned_word_equality = matches!(
+        condition,
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt32,
+            relation: CompareRelation::Equal,
+            ..
+        }
+    );
     let operand = |term: &MachineTerm| {
         // Wide comparisons retain signedness at each read and operation.
         // Reconstruct their shared operands rather than defaulting a Bits64
@@ -3183,7 +3233,28 @@ fn synthesize_surface_atomic_proposition(
         } else {
             synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?
         };
-        if signed_order
+        // A bare arithmetic expression in a reparsed equality can become Integer arithmetic.
+        // Give the generated uint32 word expression an explicit machine context.
+        if unsigned_word_equality
+            && matches!(
+                term,
+                MachineTerm::Binary {
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    op: MachineBinaryOp::Add
+                        | MachineBinaryOp::Subtract
+                        | MachineBinaryOp::Multiply,
+                    ..
+                }
+            )
+            && matches!(
+                expression,
+                ContractExpression::Add(..)
+                    | ContractExpression::Subtract(..)
+                    | ContractExpression::Multiply(..)
+            )
+        {
+            synthesize_uint32_operand(expression)
+        } else if signed_order
             && (bitvector_spells_uint32(term, parameter_binding, state, bound_variables)
                 || matches!(
                     expression,
@@ -3266,7 +3337,7 @@ fn raise_call_argument(
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelTermNode as Node;
     match term.node() {
-        Node::PointerValue(value)
+        Node::Pointer(value)
         | Node::PointerRead { value, .. }
         | Node::PointerArithmetic { value, .. }
         | Node::PointerCall { value, .. } => Some(SurfaceTerm::ProgramExpression(
@@ -3532,7 +3603,8 @@ fn raise_algebraic_read(
     else {
         return None;
     };
-    let (memory, address) = read.parts();
+    let (point, address) = read.parts();
+    let memory = point.shared_memory();
     let same_address = |pointer: &Address| address.syntax_equal(&SharedAddress::import(pointer));
     if let Some((parameter, _)) = parameter_binding
         .parameters
@@ -3540,7 +3612,7 @@ fn raise_algebraic_read(
         .zip(parameter_binding.arguments)
         .find(|(_, argument)| {
             matches!(argument, ProgramExpression::Value(ProgramValue::Pointer(value))
-                if same_address(value.pointer()))
+                if same_address(value.address()))
         })
     {
         return Some(SurfaceTerm::ProgramExpression(ProgramExpression::Load(
@@ -3558,14 +3630,16 @@ fn raise_algebraic_read(
             return None;
         };
         let AlgebraicTermNode::MemoryLoad {
-            memory: held_memory,
+            point: held_memory,
             pointer,
         } = &held.node
         else {
             return None;
         };
-        (ty == &held.algebraic_type && memory == held_memory && same_address(pointer))
-            .then(|| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())))
+        (ty == &held.algebraic_type
+            && memory == held_memory.shared_memory()
+            && same_address(pointer))
+        .then(|| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())))
     };
     held_at(state).or_else(|| {
         SYNTHESIS_RECORDED_POINTS.with(|slot| {
@@ -3645,7 +3719,7 @@ fn raise_constructor_field(
 }
 
 fn raise_constructor_pointer(
-    pointer: &crate::kernel::PointerValue,
+    pointer: &crate::kernel::Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -3713,6 +3787,34 @@ fn raise_integer_operation(
     })
 }
 
+// A printed comparison operand or conditional arm can reparse arithmetic as
+// Integer. Keep the machine context of the bounded unsigned operation there.
+fn spell_wrapping_uint64_operand(
+    term: &crate::kernel::KernelTerm,
+    expression: SurfaceTerm,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::KernelTermNode as Node;
+    if let Node::MachineBinary {
+        format: MachineIntegerType::UInt64,
+        operator: MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply,
+        arguments,
+    } = term.node()
+        && matches!(
+            arguments.each_ref().map(|child| child.node()),
+            [Node::Variable(_), Node::MachineLiteral(_)]
+                | [Node::MachineLiteral(_), Node::Variable(_)]
+        )
+        && matches!(
+            expression,
+            SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..) | SurfaceTerm::Multiply(..)
+        )
+    {
+        synthesize_observation_operand(expression, ProgramType::UInt64)
+    } else {
+        Some(expression)
+    }
+}
+
 fn raise_kernel_term_dispatch(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -3728,7 +3830,7 @@ fn raise_kernel_term_dispatch(
             | Node::MachineCast { .. }
             | Node::MachineIf { .. }
     ) && let Some(named) =
-        synthesize_named_integer_local(state.locals().names_holding_kernel_integer(term))
+        synthesize_named_integer_local(state, state.locals().names_holding_kernel_integer(term))
     {
         return Some(named);
     }
@@ -3811,11 +3913,14 @@ fn raise_kernel_term_dispatch(
             }
         }
         Node::BoolLiteral(value) => bool_literal(*value),
-        Node::BoolIf { arguments } | Node::MachineIf { arguments } => SurfaceTerm::If {
-            condition: Box::new(bool_truth(recurse(&arguments[0])?)),
-            then_branch: Box::new(recurse(&arguments[1])?),
-            else_branch: Box::new(recurse(&arguments[2])?),
-        },
+        Node::BoolIf { arguments } | Node::MachineIf { arguments } => {
+            let arm = |term| spell_wrapping_uint64_operand(term, recurse(term)?);
+            SurfaceTerm::If {
+                condition: Box::new(bool_truth(recurse(&arguments[0])?)),
+                then_branch: Box::new(arm(&arguments[1])?),
+                else_branch: Box::new(arm(&arguments[2])?),
+            }
+        }
         Node::BoolEqual { arguments } => proposition_bool_value(ClickProposition::Comparison {
             left: recurse(&arguments[0])?,
             operator: ComparisonOperator::Equal,
@@ -3856,7 +3961,7 @@ fn raise_kernel_term_dispatch(
                         .is_some_and(|value| value.uint64_as_const().is_some())
                 });
             let operand = |term| {
-                let expression = recurse(term)?;
+                let expression = spell_wrapping_uint64_operand(term, recurse(term)?)?;
                 if unsigned_literal {
                     Some(expression)
                 } else {
@@ -3953,15 +4058,15 @@ fn raise_kernel_term_dispatch(
         }
         Node::ProgramParameter { .. } => unreachable!("parameter envelope was peeled"),
         Node::PointerCall { call, .. } => recurse(call)?,
-        Node::ArrayReference {
-            memory, pointer, ..
-        } => synthesize_at_memory(memory, state, |selected| {
-            raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
-        })?,
+        Node::ArrayReference { point, pointer, .. } => {
+            synthesize_at_memory(point.shared_memory(), state, |selected| {
+                raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
+            })?
+        }
 
         Node::PointerRead { value, .. }
         | Node::PointerArithmetic { value, .. }
-        | Node::PointerValue(value) => {
+        | Node::Pointer(value) => {
             if let Some(name) = pointer_names::shared_name(value) {
                 SurfaceTerm::ProgramExpression(ProgramExpression::Variable((name).into()))
             } else {
@@ -4230,9 +4335,11 @@ fn synthesize_unsigned_comparison(
                     })
             })
             .map(|name| {
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    surface_local_name(name),
-                ))
+                synthesize_call_capture(state, name).unwrap_or_else(|| {
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        surface_local_name(name),
+                    ))
+                })
             })
             .or_else(|| {
                 let expression =
@@ -4593,6 +4700,16 @@ fn registered_load_in_state(variable: &Variable, state: &ExecutionState) -> Opti
     scalar_read_in_state(&read, state)
 }
 
+/// Whether entry/current synthesis is looking at one actual program point.
+/// A later point can have equal memory, and two absent IDs prove nothing.
+fn synthesis_states_share_program_point(entry: &ExecutionState, state: &ExecutionState) -> bool {
+    std::ptr::eq(entry, state)
+        || entry
+            .program_point()
+            .id()
+            .is_some_and(|point| state.program_point().id() == Some(point))
+}
+
 fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<MachineTerm> {
     let MachineTerm::MemoryLoad(_, pointer, kind) = read else {
         return None;
@@ -4690,7 +4807,7 @@ fn synthesize_population_entry_count(
         return None;
     };
     let anchor = synthesize_surface_pointer_expression(
-        anchor.pointer(),
+        anchor.address(),
         parameter_binding,
         state,
         &BTreeMap::new(),
@@ -4716,10 +4833,37 @@ fn synthesize_population_entry_count(
     )))
 }
 
+fn synthesize_call_capture(
+    state: &ExecutionState,
+    name: &crate::kernel::BindingName,
+) -> Option<ContractExpression> {
+    if !name
+        .local_id()
+        .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+    {
+        return None;
+    }
+    SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        let points = slot.as_ref()?;
+        let value = state.locals().get(name)?;
+        points
+            .call_capture_expression(name, value, None)
+            .or_else(|| {
+                let selector = points.point_name(state.program_point_id()?)?;
+                points.call_capture_expression(name, value, Some(selector))
+            })
+    })
+}
+
 fn synthesize_named_integer_local<'a>(
+    state: &ExecutionState,
     mut holders: impl Iterator<Item = &'a crate::kernel::BindingName>,
 ) -> Option<SurfaceTerm> {
     if let Some(name) = holders.next() {
+        if let Some(result) = synthesize_call_capture(state, name) {
+            return Some(result);
+        }
         return Some(if crate::surface::is_click_value_name(name) {
             ContractExpression::ProgramBinding(name.to_string())
         } else {
@@ -4818,7 +4962,8 @@ fn synthesize_surface_bitvector(
             ProgramExpression::Value(ProgramValue::UInt32(term.clone())),
         ));
     }
-    if let Some(named) = synthesize_named_integer_local(state.locals().names_holding_integer(term))
+    if let Some(named) =
+        synthesize_named_integer_local(state, state.locals().names_holding_integer(term))
     {
         return Some(named);
     }
@@ -5071,7 +5216,7 @@ fn synthesize_surface_bitvector(
             let old = SYNTHESIS_ENTRY_STATE
                 .with(|slot| slot.borrow().clone())
                 .and_then(|entry| {
-                    if entry.memory() == state.memory() {
+                    if synthesis_states_share_program_point(&entry, state) {
                         return None;
                     }
                     let load = scalar_read_in_state(&read, &entry)?;
@@ -5967,7 +6112,7 @@ fn synthesize_local_indexed_load(
     let _frame = SurfaceSynthesisFrame::enter("local-index")?;
     state.locals().object_values().find_map(|(name, value)| {
         let view = value.pointer()?;
-        let base = view.pointer();
+        let base = view.address();
         // `local[index]` is the C spelling only when the local is the base
         // the address was formed from: the address is the local's own offset
         // plus an index. Two unrelated pointers into one symbolic block (a
@@ -6663,7 +6808,7 @@ fn state_call_result(
 /// Keep this at the value-comparison boundary: resource addresses retain
 /// their existing source places and frontend layout information.
 fn synthesize_pointer_equality_operand(
-    value: &crate::kernel::PointerValue,
+    value: &crate::kernel::Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -6737,7 +6882,7 @@ fn synthesize_pointer_equality_operand(
         });
     }
     synthesize_pointer_equality_address(
-        value.pointer(),
+        value.address(),
         value.program_type(),
         parameter_binding,
         state,
@@ -6808,11 +6953,16 @@ fn synthesize_surface_pointer_expression(
     if let Some(pointer) =
         synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)
     {
+        if let ProgramExpression::Variable(name) = &pointer
+            && let Some(result) = synthesize_call_capture(state, name)
+        {
+            return Some(result);
+        }
         return Some(ContractExpression::ProgramExpression(pointer));
     }
     if let Some(result) = state_call_result(
         state,
-        |value| matches!(value, ProgramValue::Pointer(held) if held.pointer() == pointer),
+        |value| matches!(value, ProgramValue::Pointer(held) if held.address() == pointer),
     ) {
         return Some(result);
     }
@@ -6869,6 +7019,17 @@ fn synthesize_recorded_pointer_expression(
     candidates.into_iter().find_map(|(selector, state)| {
         let expression =
             synthesize_surface_pointer(pointer, parameter_binding, &state, bound_variables)?;
+        if let ProgramExpression::Variable(name) = &expression
+            && let Some(result) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
+                slot.borrow().as_ref()?.call_capture_expression(
+                    name,
+                    state.locals().get(name)?,
+                    Some(&selector),
+                )
+            })
+        {
+            return Some(result);
+        }
         Some(ContractExpression::At {
             selector,
             expression: Box::new(ContractExpression::ProgramExpression(expression)),
@@ -6897,12 +7058,12 @@ fn synthesize_entry_pointer_expression(
 /// state, or failing that the state state as `at(<selector>, ..)`,
 /// registers that read.
 fn synthesize_loaded_pointer_value(
-    pointer: &crate::kernel::PointerValue,
+    pointer: &crate::kernel::Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
     let at_state = |state: &ExecutionState| {
-        let address = pointer_read_address_in_state(pointer.pointer(), state)?;
+        let address = pointer_read_address_in_state(pointer.address(), state)?;
         synthesize_struct_field_load(&address, pointer.program_type(), parameter_binding, state)
     };
     at_state(state)
@@ -6916,7 +7077,7 @@ fn synthesize_loaded_pointer_value(
             })
         })
         .or_else(|| {
-            let (selector, recorded) = recorded_point_of_pointer_read(pointer.pointer(), state)?;
+            let (selector, recorded) = recorded_point_of_pointer_read(pointer.address(), state)?;
             Some(ContractExpression::At {
                 selector,
                 expression: Box::new(at_state(&recorded)?),
@@ -6965,7 +7126,7 @@ fn synthesize_scalar_model_field(
         let instance = state.resource_instance_at_path(origin.identity, &[])?;
         matches!(
             instance.fields().get(origin.field_index),
-            Some(AlgebraicValue::Program(crate::kernel::integer_c_value!(MachineTerm::Variable(held)))) if *held == variable
+            Some(crate::kernel::ResourceFieldValue::Program(crate::kernel::integer_c_value!(MachineTerm::Variable(held)))) if *held == variable
         )
         .then_some(())?;
         // The field's declared C type, as the parser's elaboration records it.
@@ -7218,8 +7379,8 @@ fn synthesize_surface_algebraic(
                 let instance = state.resource_instance_at_path(origin.identity, &[])?;
                 let held = instance.fields().get(origin.field_index)?;
                 let exact = match held {
-                    crate::kernel::AlgebraicValue::Algebraic(value) => value == term,
-                    crate::kernel::AlgebraicValue::Program(ProgramValue::Parameter(value)) => {
+                    crate::kernel::ResourceFieldValue::Algebraic(value) => value == term,
+                    crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(value)) => {
                         value.as_ref() == term
                     }
                     _ => false,
@@ -7264,7 +7425,7 @@ fn synthesize_surface_algebraic(
             .zip(parameter_binding.arguments)
             .find(|(_, argument)| {
                 matches!(argument, ProgramExpression::Value(ProgramValue::Pointer(value))
-                    if value.pointer() == pointer.as_ref())
+                    if value.address() == pointer.as_ref())
             })
             .map(|(parameter, _)| {
                 ContractExpression::ProgramExpression(ProgramExpression::Load(Box::new(

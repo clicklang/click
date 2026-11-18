@@ -711,7 +711,7 @@ fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
 fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
     let _session = VerificationSession::enter();
     let pointer = |id| {
-        PointerValue::new(
+        Pointer::new(
             Address {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::scale_int32(var(id), 4),

@@ -1084,7 +1084,12 @@ impl<'a> Proof<'a> {
                             checked_haves: outcome_evidence.checked_haves,
                             call_routes: if outcome_evidence.call_routes.is_empty() {
                                 call_edges
-                                    .map(|edges| vec![edges[path_index]])
+                                    .map(|edges| {
+                                        vec![CallOutcomeEdge::from_payloads(
+                                            edges[path_index],
+                                            &execution.presentation.terminal_call_payloads,
+                                        )]
+                                    })
                                     .unwrap_or_default()
                             } else {
                                 outcome_evidence.call_routes

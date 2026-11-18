@@ -58,15 +58,23 @@ fn float_read_construction_keeps_growing_shared_addresses_and_states() {
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let root = KernelTerm::float_read(format, memory.clone(), address.clone());
+                let root = KernelTerm::float_read(
+                    format,
+                    crate::kernel::ProgramPoint::at(&memory),
+                    address.clone(),
+                );
                 let KernelTermNode::FloatRead(read) = root.node() else {
                     panic!("read")
                 };
-                assert_eq!(read.parts().0.arena_id(), memory.arena_id());
+                assert_eq!(read.parts().0.shared_memory().arena_id(), memory.arena_id());
                 assert_eq!(read.parts().1, &address);
                 assert_eq!(
                     root,
-                    KernelTerm::float_read(format, memory.clone(), address.clone())
+                    KernelTerm::float_read(
+                        format,
+                        crate::kernel::ProgramPoint::at(&memory),
+                        address.clone()
+                    )
                 );
             });
             assert!(work <= 16, "size={size}, work={work}");

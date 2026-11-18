@@ -3821,7 +3821,7 @@ impl ConditionTerm {
         }
     }
 
-    pub(crate) fn pointer_value_equal(left: PointerValue, right: PointerValue) -> Self {
+    pub(crate) fn pointer_value_equal(left: Pointer, right: Pointer) -> Self {
         if (left.provenance() == right.provenance()
             && left.bounds() == right.bounds()
             && left.bounds_are_known() == right.bounds_are_known()
@@ -3834,15 +3834,15 @@ impl ConditionTerm {
             // use the same uint64 classes as its original word. Keep this
             // reduction out of raw pointer equality, which provenance checks
             // also use: numbers alone must never supply a pointer domain.
-            if left.pointer().integer_address_bits().is_some()
-                || right.pointer().integer_address_bits().is_some()
+            if left.address().integer_address_bits().is_some()
+                || right.address().integer_address_bits().is_some()
             {
                 return Self::uint64_equal(
-                    MachineTerm::pointer_address(left.pointer().clone()),
-                    MachineTerm::pointer_address(right.pointer().clone()),
+                    MachineTerm::pointer_address(left.address().clone()),
+                    MachineTerm::pointer_address(right.address().clone()),
                 );
             }
-            Self::pointer_equal(left.pointer().clone(), right.pointer().clone())
+            Self::pointer_equal(left.address().clone(), right.address().clone())
         } else {
             // Whether two pointers are equal does not depend on the `const`
             // of the expressions that named them, and one proposition must
@@ -3859,7 +3859,7 @@ impl ConditionTerm {
     /// checking decides it by [`Self::reflexive_value`]. Like
     /// [`Self::pointer_value_equal`], it does not depend on the `const` of
     /// the expression that named the value.
-    pub(crate) fn reflexive_pointer_value_equal(value: &PointerValue) -> Self {
+    pub(crate) fn reflexive_pointer_value_equal(value: &Pointer) -> Self {
         let value = value.clone().with_pointee_constant(false);
         Self::PointerValueEqual(Box::new(value.clone()), Box::new(value))
     }
@@ -3869,7 +3869,7 @@ impl ConditionTerm {
     /// ([`Self::reflexive_pointer_value_equal`]), any other pair is
     /// [`Self::pointer_value_equal`]. A producer whose result must match a
     /// lowered goal, such as `preserve`, builds it the same way.
-    pub(crate) fn logical_pointer_value_equal(left: PointerValue, right: PointerValue) -> Self {
+    pub(crate) fn logical_pointer_value_equal(left: Pointer, right: Pointer) -> Self {
         if left == right && !left.is_null() {
             Self::reflexive_pointer_value_equal(&left)
         } else {
@@ -4367,7 +4367,7 @@ impl ProgramType {
                     || (pointer.program_type().pointer_types_compatible(target)
                         && if target.is_function_pointer() {
                             pointer.base.is_function()
-                                || pointer.pointer().as_loaded_value().is_some()
+                                || pointer.address().as_loaded_value().is_some()
                         } else {
                             !pointer.base.is_function()
                         })
@@ -4533,7 +4533,7 @@ impl ProgramValue {
         }
         Self::PointerInteger(PointerIntegerValue {
             numeric: Box::new(self),
-            pointer: Box::new(PointerValue::new(identity, ProgramType::VoidPointer)),
+            pointer: Box::new(Pointer::new(identity, ProgramType::VoidPointer)),
             kind: PointerIntegerKind::Word { changed_bits: 0 },
         })
     }
@@ -4551,7 +4551,7 @@ impl ProgramValue {
     }
 
     pub(crate) fn typed_pointer(pointer: Address, program_type: ProgramType) -> Self {
-        Self::Pointer(PointerValue::new(pointer, program_type))
+        Self::Pointer(Pointer::new(pointer, program_type))
     }
 
     pub(crate) fn typed_pointer_with_pointee_constant(
@@ -4559,9 +4559,7 @@ impl ProgramValue {
         program_type: ProgramType,
         pointee_constant: bool,
     ) -> Self {
-        Self::Pointer(
-            PointerValue::new(pointer, program_type).with_pointee_constant(pointee_constant),
-        )
+        Self::Pointer(Pointer::new(pointer, program_type).with_pointee_constant(pointee_constant))
     }
 
     pub(crate) fn retag_pointer(self, program_type: ProgramType) -> Self {
@@ -4581,7 +4579,7 @@ impl ProgramValue {
     }
 
     /// Records the class of the object a pointer value designates; see
-    /// [`PointerValue::with_object_class`].
+    /// [`Pointer::with_object_class`].
     pub(crate) fn with_pointer_object_class(
         self,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -4753,7 +4751,7 @@ impl LValue {
 
     /// The lvalue reached through `pointer`, which keeps its bounds and the
     /// class of the object it designates.
-    pub(in crate::kernel) fn with_bounds_of(mut self, pointer: &PointerValue) -> Self {
+    pub(in crate::kernel) fn with_bounds_of(mut self, pointer: &Pointer) -> Self {
         self.bounds = pointer.bounds().cloned().map(std::sync::Arc::new);
         self.provenance = Some(std::sync::Arc::new(pointer.provenance().clone()));
         self.bounds_known = pointer.bounds_are_known();
@@ -4982,7 +4980,7 @@ impl Address {
     pub(crate) fn canonical_loaded_value(memory: &SharedMemory, address: &Address) -> Self {
         // A cell holding a complete stored pointer reads as that pointer.
         if let Some(ProgramValue::Pointer(stored)) = memory.memory().known_value(address) {
-            return stored.pointer().clone();
+            return stored.address().clone();
         }
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(memory),
@@ -5038,7 +5036,7 @@ impl Address {
     /// is that read.
     pub(crate) fn version_read(memory: &SharedMemory, address: &Address) -> Self {
         match Self::version_read_value(memory, address) {
-            Ok(held) => held.pointer().clone(),
+            Ok(held) => held.address().clone(),
             Err(read) => read,
         }
     }
@@ -5050,7 +5048,7 @@ impl Address {
     pub(crate) fn version_read_value(
         memory: &SharedMemory,
         address: &Address,
-    ) -> Result<PointerValue, Self> {
+    ) -> Result<Pointer, Self> {
         let source = memory.unchanged_bytes_source();
         let canonical = crate::kernel::memory_history::canonical_value_load_memory(
             &source,
@@ -5061,11 +5059,11 @@ impl Address {
         // as the load variable of its word, reads as that read.
         let own_read = |held: &SharedMemory| match held.memory().known_value(address) {
             Some(ProgramValue::Pointer(stored))
-                if stored.pointer().as_loaded_value().is_some_and(|read| {
+                if stored.address().as_loaded_value().is_some_and(|read| {
                     read.defining_address == *address
                         && read.displacement == AddressOffset::Constant(0)
                 }) || matches!(
-                    stored.pointer(),
+                    stored.address(),
                     Address {
                         base: AddressBase::Symbolic(variable),
                         offset: AddressOffset::Constant(0),

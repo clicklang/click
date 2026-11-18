@@ -270,12 +270,12 @@ impl<'a> BooleanOperandView<'a> {
         std::borrow::Cow::Owned(KernelTermExport::condition(root).expect("Boolean operand"))
     }
 
-    pub(crate) fn read(self) -> Option<(SharedMemory, SharedAddress)> {
+    pub(crate) fn read(self) -> Option<(ProgramPoint, SharedAddress)> {
         if let Self::Shared(root) = self
             && let KernelTermNode::BoolRead(read) = root.node()
         {
-            let (memory, address) = read.parts();
-            return Some((memory.clone(), address.clone()));
+            let (point, address) = read.parts();
+            return Some((point.clone(), address.clone()));
         }
         let ConditionTerm::BoolLoad(memory, address) = self.native_leaf()? else {
             return None;
@@ -681,8 +681,8 @@ impl KernelTermExport {
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
             Node::BoolRead(read) => {
-                let (memory, address) = read.parts();
-                Old::BoolLoad(memory.clone(), Box::new(address.export()?))
+                let (point, address) = read.parts();
+                Old::BoolLoad(point.clone(), Box::new(address.export()?))
             }
             Node::BoolOverflow {
                 format,
@@ -939,7 +939,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let source = ConditionTerm::BoolEqual(
             Box::new(ConditionTerm::BoolLoad(
-                memory.clone(),
+                crate::kernel::ProgramPoint::at(&memory.clone()),
                 Box::new(Address::symbolic(from)),
             )),
             Box::new(ConditionTerm::Constant(true)),
@@ -954,7 +954,10 @@ mod tests {
         assert_eq!(
             restored,
             ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::BoolLoad(memory, Box::new(pointer))),
+                Box::new(ConditionTerm::BoolLoad(
+                    crate::kernel::ProgramPoint::at(&memory),
+                    Box::new(pointer)
+                )),
                 Box::new(ConditionTerm::Constant(true)),
             )
         );

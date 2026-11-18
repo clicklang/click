@@ -224,11 +224,16 @@ impl Metadata<'_> {
             CppExpression::ObserverCall {
                 callee,
                 arguments,
+                returned_member,
                 span,
                 ..
             } => {
                 self.callee(callee)?;
                 self.arguments(arguments)?;
+                if let Some(member) = returned_member {
+                    self.value_type(&member.reference_type)?;
+                    self.field(&member.field)?;
+                }
                 span
             }
             CppExpression::RuntimeConstantEvaluation { span, .. }
@@ -630,12 +635,18 @@ impl Metadata<'_> {
                 CppStatement::CallStore {
                     callee,
                     arguments,
+                    value_type,
+                    field,
                     value,
                     span,
                     ..
                 } => {
                     self.callee(callee)?;
                     self.arguments(arguments)?;
+                    self.value_type(value_type)?;
+                    if let Some(field) = field {
+                        self.field(field)?;
+                    }
                     self.expression(value)?;
                     span
                 }

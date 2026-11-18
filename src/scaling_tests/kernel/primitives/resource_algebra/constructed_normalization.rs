@@ -47,3 +47,37 @@ fn constructed_normalization_bounds_neighbours_and_ignores_alias_classes() {
         }
     }
 }
+
+#[test]
+fn singleton_normalization_retains_occurrences_without_alias_discovery() {
+    let mut samples = Vec::new();
+    for count in [4_u64, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let p = Address::symbolic(Variable(8_963_000));
+        let facts = (0..count).fold(PureFactContext::new(), |facts, i| {
+            facts.assume_condition(
+                ConditionTerm::pointer_equal(p.clone(), Address::symbolic(Variable(8_963_100 + i))),
+                true,
+            )
+        });
+        let owner = ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
+        let context =
+            ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner.clone());
+        let occurrence = context.unique_owned_occurrence_for_fact(&owner).unwrap().0;
+        let (normalized, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let _fast = crate::kernel::search::FastOperationScope::enter(
+                "singleton ownership normalization",
+            );
+            context.normalized(&facts)
+        });
+        assert_eq!(
+            normalized.owned_fact_for_occurrence(occurrence),
+            Some(&owner)
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "singleton aliases: {samples:?}"
+    );
+}

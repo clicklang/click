@@ -182,7 +182,7 @@ fn aggregate_copy_builds_one_loan_obligation_without_visiting_aliases_or_loans()
                 panic!("expected a separation obligation");
             };
             let expected = Resource::Memory(MemoryRange::from_pointer_value(
-                &PointerValue::new(target.clone(), ProgramType::UInt8Pointer),
+                &Pointer::new(target.clone(), ProgramType::UInt8Pointer),
                 0u32.into(),
                 layout.size_bytes().into(),
                 1,

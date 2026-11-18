@@ -1085,11 +1085,11 @@ fn materialized_load_is_unchanged(
         // Object and function pointers share the exact structural descriptor;
         // the remaining branches adapt legacy registered names and offsets.
         ProgramValue::Pointer(pointer_value)
-            if pointer_value.pointer().as_loaded_value().is_some() =>
+            if pointer_value.address().as_loaded_value().is_some() =>
         {
-            crate::kernel::equality_graph::logical_pointer_read_term(pointer_value.pointer())
+            crate::kernel::equality_graph::logical_pointer_read_term(pointer_value.address())
         }
-        ProgramValue::Pointer(pointer_value) => match pointer_value.pointer() {
+        ProgramValue::Pointer(pointer_value) => match pointer_value.address() {
             Address {
                 base: AddressBase::FunctionSymbolic(variable),
                 offset: AddressOffset::Constant(0),
@@ -1308,11 +1308,7 @@ fn prepare_function_claim_path(
         &entry_state,
         &assumptions,
     );
-    let Ok(resource_facts) = entry_resources.observable_facts(&assumptions) else {
-        return Err("the entry resource context is not observable"
-            .to_string()
-            .into());
-    };
+    let resource_facts = entry_resources.observable_facts_assuming_valid(&assumptions);
     entry_state = entry_state.with_resource_context(entry_resources.clone());
     let facts = definition_facts
         .into_iter()
@@ -1586,6 +1582,7 @@ fn prepare_closing_path(
             value,
             function,
         )
+        .map_err(|error| error.to_string())?
     };
     let mut claim_exit_state = raw_exit_state.clone();
     claim_exit_state.set_memory(exit_memory.clone());
@@ -1608,11 +1605,7 @@ fn prepare_closing_path(
         &claim_exit_state,
         &assumptions,
     );
-    let Ok(post_resource_facts) = post_resources.observable_facts(&assumptions) else {
-        return Err("the exit resource context is not observable"
-            .to_string()
-            .into());
-    };
+    let post_resource_facts = post_resources.observable_facts_assuming_valid(&assumptions);
     let mut assumptions = assumptions_with_propositions(&assumptions, &post_resource_facts);
     let mut post_state = entry_state.clone().with_memory(exit_memory);
     post_state = post_state.with_resource_context(post_resources.clone());
@@ -2504,7 +2497,7 @@ fn contract_view_of_entry(
             entry_state.locals.set_aggregate_object_at(
                 parameter.name().to_string(),
                 layout.clone(),
-                argument.pointer().clone(),
+                argument.address().clone(),
             );
         }
     }
@@ -2599,7 +2592,8 @@ impl<'a> FunctionEnsureGoalContext<'a> {
             return_state,
             value,
             function,
-        );
+        )
+        .ok()?;
         let claim_return_state = return_state.clone().with_memory(exit_memory.clone());
         let post_resources =
             crate::kernel::functions::expand_all_composite_resource_facts_at_state(
@@ -3201,7 +3195,7 @@ mod checked_proposition_index_tests {
         let context = PureFactContext::new().assume_proposition(route.clone());
         let pointer = Address::symbolic(Variable(71_031));
         let equation = ExecutionPureFact::logical_read_equation(
-            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer),
+            Pointer::new(pointer.clone(), ProgramType::Int32Pointer),
             Address::loaded_value(&intern_memory(SymbolicMemory::new()), &pointer),
         );
         let mut paths = vec![
@@ -3551,7 +3545,7 @@ mod materialized_function_load_tests {
             unreachable!()
         };
         let displaced = ProgramValue::typed_pointer(
-            pointer_value.pointer().offset_by_bytes(1),
+            pointer_value.address().offset_by_bytes(1),
             pointer_value.program_type(),
         );
         assert!(!materialized_load_is_unchanged(
@@ -3772,7 +3766,7 @@ mod retained_contract_input_tests {
     #[test]
     fn contract_input_preparation_preserves_roots_and_native_binding_rules() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(996801)),
             ProgramType::Int32Pointer,
         );

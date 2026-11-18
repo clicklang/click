@@ -68,6 +68,80 @@ fn local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow() {
     );
 }
 
+fn lend_memory(
+    ledger: &LoanLedger,
+    lender: LoanParticipantId,
+    borrower: LoanParticipantId,
+    range: MemoryRange,
+) -> LoanOpening {
+    let owner = ResourceFact::own_memory(range);
+    let support = ResourceContext::new()
+        .unchecked_with_fact(owner.clone())
+        .unique_owned_occurrence_for_fact(&owner)
+        .unwrap()
+        .0;
+    ledger.lend(lender, borrower, support, owner).unwrap()
+}
+
+#[test]
+fn automatic_storage_retirement_uses_the_retained_backing_identity() {
+    let slot = SymbolicMemory::local_lifetime_pointer(1, "buffer");
+    let other = SymbolicMemory::local_lifetime_pointer(2, "buffer");
+    let bound = MachineTerm::Variable(Variable(91));
+    let symbolic = MemoryRange::new(Address::symbolic(Variable(90)), 0u32.into(), bound.clone())
+        .with_provenance(Arc::new(slot.clone()));
+    let ledger = LoanLedger::new();
+    let lender = ledger.fresh_participant().unwrap();
+    let borrower = ledger.fresh_participant().unwrap();
+    let empty = lend_memory(
+        &ledger,
+        lender,
+        borrower,
+        symbolic.with_bounds(symbolic.base().clone(), bound.clone(), bound),
+    );
+    let ledger = ledger.apply(&empty.transition).unwrap();
+    assert!(
+        ledger
+            .automatic_storage_retirement_refusal(&slot.base, &16u32.into())
+            .is_none()
+    );
+
+    let opening = lend_memory(&ledger, lender, borrower, symbolic.clone());
+    let ledger = ledger.apply(&opening.transition).unwrap();
+    let refusal = ledger
+        .automatic_storage_retirement_refusal(&slot.base, &16u32.into())
+        .expect("the symbolic spelling retains the automatic object's identity");
+    assert_eq!(refusal.category(), LoanRefusalCategory::ActiveDependency);
+    assert_eq!(
+        refusal.subject().conflicting_resource_fact(),
+        Some(&ResourceFact::view_memory(symbolic)),
+    );
+    assert!(
+        ledger
+            .automatic_storage_retirement_refusal(&other.base, &16u32.into())
+            .is_none()
+    );
+    let returned = ledger
+        .transfer(opening.root_share, borrower, lender)
+        .unwrap();
+    let closing = ledger.apply(&returned).unwrap();
+    let ended = closing
+        .apply(&closing.end(opening.scope, lender).unwrap())
+        .unwrap();
+    assert!(
+        ended
+            .automatic_storage_retirement_refusal(&slot.base, &16u32.into())
+            .is_none()
+    );
+    assert!(
+        ledger
+            .automatic_storage_retirement_refusal(&slot.base, &16u32.into())
+            .is_some()
+    );
+    assert!(ledger.invariant_holds());
+    assert!(ended.invariant_holds());
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/loans/local_storage_tests.rs");

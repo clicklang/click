@@ -4,9 +4,9 @@ A fact `balanced(Node(left, right)) == 1` says the definition took the way to
 its `1`. When the definition reaches `1` only through `if balanced(left) == 1`,
 the fact forces that condition. The implicit closer proves it as a proof would by hand:
 `if` the condition holds it is the goal; otherwise it splits on each condition
-met before it, and at each end unfolds the definition at the constructor,
-normalizes with the conditions taken to a constant other than `1`, and
-contradicts the fact. A fact over a value that a connected equation names as
+met before it, and at each end unfolds the definition at the constructor and
+proves that the call equals the selected branch's constant. It rewrites the
+value comparison with that equation and contradicts the fact. A fact over a value that a connected equation names as
 a constructor, `balanced(tree) == 1` beside `tree == Node(..)`, is first
 restated over the constructor by rewriting with that equation.
 

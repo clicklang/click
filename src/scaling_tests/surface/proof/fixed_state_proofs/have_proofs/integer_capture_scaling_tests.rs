@@ -12,7 +12,7 @@ fn integer_argument_state_selection_scales_with_referenced_names() {
             "used",
             ProgramValue::UInt32(crate::kernel::MachineTerm::constant(7)),
         );
-        let mut values = BTreeMap::new();
+        let mut values = ProgramValueBindings::new();
         for index in 0..size {
             let name = format!("unrelated_{index}");
             let value = ProgramValue::UInt32(crate::kernel::MachineTerm::constant(index));
@@ -53,7 +53,7 @@ fn proposition_state_selection_scales_with_referenced_names() {
     };
     for size in [16, 64, 256, 1024] {
         let mut state = ExecutionState::new().with_local("used", crate::kernel::int32(7));
-        let mut values = BTreeMap::new();
+        let mut values = ProgramValueBindings::new();
         for index in 0..size {
             let name = format!("unrelated_{index}");
             let value = crate::kernel::int32(index);

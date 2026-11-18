@@ -266,6 +266,7 @@ pub struct CallbackInterface {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordLayout {
+    pub(super) bit_field_bytes: Option<crate::kernel::BitFieldBytes>,
     pub(super) fields: BTreeMap<String, RecordField>,
     /// Declared embedded-object paths, indexed by byte offset and nominal type.
     pub(super) embedded_structs: BTreeMap<(u32, String), String>,
@@ -1153,6 +1154,7 @@ impl RecordLayout {
             fields: named_fields,
             aggregate_fields,
             aggregate_unions: Vec::new(),
+            bit_field_bytes: None,
             size_bytes,
             alignment_bytes,
             class: None,
@@ -1216,6 +1218,7 @@ impl RecordLayout {
                 })
                 .collect(),
         )
+        .with_bit_field_bytes(self.bit_field_bytes.clone())
     }
 
     pub(super) fn aggregate_fields(&self) -> &[RecordScalarField] {

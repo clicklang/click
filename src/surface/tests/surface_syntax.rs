@@ -71,14 +71,14 @@ fn integer_solve_expansion_rechecks_without_smart_search() {
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
         if parameters.contains("y: Integer") {
-            assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
             assert!(expanded.contains("le_antisymmetric"), "{expanded}");
         } else {
-            assert!(expanded.contains("normalize();"), "{expanded}");
+            assert!(expanded.contains("known();"), "{expanded}");
+            assert!(!expanded.contains("normalize("), "{expanded}");
         }
         assert!(!expanded.contains("solve"), "{expanded}");
         let rechecked = source.replace(&format!("by {{ {proof} }}"), &expanded);
-        verify_click_theorems(&rechecked)
+        without_implicit_solve(|| verify_click_theorems(&rechecked))
             .unwrap_or_else(|error| panic!("{rechecked}: {}", error.message()));
     }
 }
@@ -469,7 +469,7 @@ fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
 
     let mut proof_body = String::from("normalize();");
     for _ in 0..=parser::STRUCTURAL_NESTING_LIMIT {
-        proof_body = format!("both {{ {proof_body} }} and {{ normalize(); }}");
+        proof_body = format!("both {{ left => {{ {proof_body} }} right => {{ normalize(); }} }}");
     }
     let proof_error = parser::parse_file_items(&format!(
         "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {proof_body} }} }}"
@@ -660,7 +660,7 @@ fn surface_depths_survive_consumption(
     let mut proof_body = String::from("normalize();");
     for _ in 0..structural_depth - 2 {
         proof_goal.push_str(" and 0 == 0");
-        proof_body = format!("both {{ {proof_body} }} and {{ normalize(); }}");
+        proof_body = format!("both {{ left => {{ {proof_body} }} right => {{ normalize(); }} }}");
     }
     let proof_source =
         format!("theorem at_limit_proof() {{ ensures {proof_goal} by {{ {proof_body} }} }}");
@@ -1216,7 +1216,7 @@ fn rejects_removed_fold_tactic_syntax() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_07")]
-fn parses_and_prints_arithmetic_certificates() {
+fn parses_and_prints_solve_using_premise_lists() {
     let source = r#"
         theorem arithmetic_forms(n: int32) {
             requires 1 < n;
@@ -1228,7 +1228,7 @@ fn parses_and_prints_arithmetic_certificates() {
             }
         }
     "#;
-    let file = parse(source).expect("arithmetic certificates should parse");
+    let file = parse(source).expect("`solve() using` premise lists should parse");
     let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
         panic!("expected an explicit theorem proof");
     };
@@ -1253,7 +1253,7 @@ fn parses_and_prints_arithmetic_certificates() {
     let reparsed = parse(&format!(
         "theorem arithmetic_forms(n: int32) {{ requires 1 < n; ensures 0 <= n - 2 by {{ {printed} }} }}"
     ))
-    .expect("printed arithmetic certificates should parse");
+    .expect("printed `solve() using` premise lists should parse");
     assert_eq!(
         reparsed.theorem_definitions()[0].ensures()[0].proof(),
         file.theorem_definitions()[0].ensures()[0].proof()
@@ -1279,7 +1279,6 @@ fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("compound arithmetic should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
 
     let rechecked_source = source.replace(
         "by {\n                solve() using {\n                    0 <= n;\n                    n <= 100;\n                }\n            }",
@@ -1299,29 +1298,48 @@ fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_11")]
-fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
+fn float_reflexive_smart_expansion_replays_as_known() {
     let source = r#"
         theorem finite_float_reflexive(value: float) {
             requires isfinite(value);
             ensures value == value by { solve(); }
         }
+        theorem finite_double_reflexive(value: double) {
+            requires isfinite(value);
+            ensures not(value < value) by { solve() using { isfinite(value); }; }
+        }
     "#;
     let verified = verify_click_theorems(source).expect("finite float reflexivity should verify");
-    let expanded = verified[0]
-        .expanded_proof_source()
-        .expect("float reflexivity should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert_eq!(
-        expanded.matches("isfinite(value);").count(),
-        1,
-        "{expanded}"
-    );
-    let rechecked = source.replace("by { solve(); }", &expanded);
+    let mut rechecked = source.to_owned();
+    for (theorem, original) in verified.iter().zip([
+        "by { solve(); }",
+        "by { solve() using { isfinite(value); }; }",
+    ]) {
+        let expanded = theorem
+            .expanded_proof_source()
+            .expect("float reflexivity should expand");
+        assert!(expanded.contains("known()"), "{expanded}");
+        for forbidden in ["normalize(", "solve("] {
+            assert!(!expanded.contains(forbidden), "{expanded}");
+        }
+        rechecked = rechecked.replace(original, &expanded);
+    }
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_click_theorems(&rechecked)
+        crate::surface::without_implicit_solve(|| verify_click_theorems(&rechecked))
     });
     result.expect("expanded float reflexivity should recheck");
     assert_eq!(planning, 0, "ordinary float recheck must not plan");
+
+    for source in [
+        "theorem missing(x: float) { ensures x == x by known(); }",
+        "theorem omitted(x: double) { requires isfinite(x); ensures x == x by { solve() using {}; } }",
+        "theorem other(x: float, y: float) { requires isfinite(y); ensures x == x by known(); }",
+        "theorem wrong(x: double) { requires isfinite(x); ensures x < x by known(); }",
+    ] {
+        crate::surface::parse(source).expect("refusal control should parse");
+        crate::surface::without_implicit_solve(|| verify_click_theorems(source))
+            .expect_err("reflexivity must require the matching premise and polarity");
+    }
 }
 
 #[test]
@@ -1338,10 +1356,9 @@ fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("smart arithmetic should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
-        expanded.contains("normalize"),
-        "ordinary interval normalization expected: {expanded}"
+        !expanded.contains("normalize("),
+        "signed interval expansion must use ordinary proof steps: {expanded}"
     );
     let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
     assert!(
@@ -1394,7 +1411,6 @@ fn integer_arithmetic_uses_checked_unified_certificate_without_replanning() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("Integer arithmetic should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     let rechecked = source.replace("by { solve() using { x == 1; } }", &expanded);
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
@@ -1424,7 +1440,6 @@ fn integer_arithmetic_using_proves_a_chain_longer_than_three_premises() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("the chain proof should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
     let rechecked = source.replace(
         "by {\n                solve() using { a <= b; b < c; c <= d; d <= e; }\n            }",
@@ -1477,7 +1492,6 @@ fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("definedness proof should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("defined"), "{expanded}");
     let rechecked = source.replace(
         "by {\n                solve() using {\n                    0 <= a;\n                    0 <= b;\n                    defined(a + b);\n                }\n            }",
@@ -1514,7 +1528,6 @@ fn signed_arithmetic_smart_planner_handles_deep_supported_terms_iteratively() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("deep arithmetic should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
     crate::surface::without_implicit_solve(|| verify_click_theorems(&rechecked))
         .expect("deep ordinary expansion should replay without search");
@@ -1610,7 +1623,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_13")]
-fn pure_solve_exposes_an_explicit_arithmetic_certificate() {
+fn pure_solve_exposes_explicit_arithmetic_steps() {
     let source = r#"
         theorem positive_is_nonnegative(x: int32) {
             requires 0 < x;
@@ -1620,7 +1633,6 @@ fn pure_solve_exposes_an_explicit_arithmetic_certificate() {
 
     let verified = verify_click_theorems(source).expect("solve theorem should verify");
     let expanded = verified[0].expanded_proof_source().unwrap();
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
 }
 
@@ -1820,7 +1832,7 @@ fn records_checked_surface_forms_for_lowered_propositions() {
         right: current_int(10),
     };
     let surface = ClickProposition::And(Box::new(left.clone()), Box::new(right.clone()));
-    let values = BTreeMap::from([(
+    let values = ProgramValueBindings::from([(
         "x".to_string(),
         ProgramValue::Int32(MachineTerm::Variable(Variable(42))),
     )]);
@@ -2232,7 +2244,7 @@ theorem reflexive_pair() {
     let explicit = r#"
 theorem reflexive_pair() {
     ensures 1 == 1 and 2 == 2 by {
-        both { normalize(); } and { normalize(); }
+        both { left => { normalize(); } right => { normalize(); } }
     }
 }
 "#;
@@ -4335,7 +4347,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, MachineTerm, MemoryRange, PointerValue, ProgramType,
+        Address, AddressBase, AddressOffset, MachineTerm, MemoryRange, Pointer, ProgramType,
     };
     let c_source = "struct cell { int32 a; int32 b; int32 c; }; struct outer { int32 head; struct cell inner; int32 tail; }; int32 read(struct outer* p) { return p->tail; }";
     let functions = syntax::parse_functions(c_source).unwrap();
@@ -4345,7 +4357,7 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
         offset: AddressOffset::Constant(0),
     };
     let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
-        PointerValue::new(base.clone(), ProgramType::Int32Pointer),
+        Pointer::new(base.clone(), ProgramType::Int32Pointer),
     ))];
     for (low, high, width, expected) in [
         (0, 2, 4, "{p->head, p->inner.a}"),
@@ -5225,7 +5237,7 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
         ));
     }
     let facts = crate::surface::verification::assumptions_from_propositions(&bounds);
-    let values = BTreeMap::from([
+    let values = ProgramValueBindings::from([
         ("hi".to_string(), ProgramValue::Int32(hi)),
         ("lo".to_string(), ProgramValue::Int32(lo)),
     ]);
@@ -5299,13 +5311,13 @@ test_batches! {
         parses_and_prints_structural_induction_arms,
         parses_and_prints_pure_function_unfold,
         rejects_removed_fold_tactic_syntax,
-        parses_and_prints_arithmetic_certificates,
+        parses_and_prints_solve_using_premise_lists,
     ],
     surface_syntax_batch_09: [
         signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal,
     ],
     surface_syntax_batch_11: [
-        float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks,
+        float_reflexive_smart_expansion_replays_as_known,
         signed_arithmetic_smart_planner_expands_to_ordinary_proof,
     ],
     surface_syntax_batch_12: [
@@ -5318,7 +5330,7 @@ test_batches! {
         signed_arithmetic_smart_planner_preserves_explicit_definedness,
         verifies_pure_theorem_definition,
         pure_bare_apply_builds_a_checked_proof_object_certificate,
-        pure_solve_exposes_an_explicit_arithmetic_certificate,
+        pure_solve_exposes_explicit_arithmetic_steps,
     ],
     surface_syntax_batch_14: [
         pure_solve_after_unfold_exposes_an_explicit_certificate,
@@ -5491,7 +5503,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
     let reparsed = file.theorem_definitions()[0].requires()[0]
         .theorem_proposition()
         .unwrap();
-    let values = BTreeMap::from([(
+    let values = ProgramValueBindings::from([(
         "i".to_string(),
         ProgramValue::Int32(MachineTerm::constant(7)),
     )]);

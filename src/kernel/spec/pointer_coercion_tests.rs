@@ -7,7 +7,7 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
     let class = crate::kernel::effective_type::CAccessClass::Struct(
         crate::kernel::effective_type::CStructClass::opaque("pair"),
     );
-    let opaque = PointerValue::new(base.clone(), ProgramType::Int32Pointer)
+    let opaque = Pointer::new(base.clone(), ProgramType::Int32Pointer)
         .with_pointee_constant(true)
         .with_pointee_volatile(true)
         .with_object_class(Some(class.clone()));
@@ -150,7 +150,7 @@ fn native_pointer_word_round_trip_does_not_promote_declared_class_to_evidence() 
     let class = crate::kernel::effective_type::CAccessClass::Struct(
         crate::kernel::effective_type::CStructClass::opaque("node"),
     );
-    let source = PointerValue::new(
+    let source = Pointer::new(
         Address::symbolic(Variable(998_805)),
         ProgramType::Int32Pointer,
     )

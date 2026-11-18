@@ -862,8 +862,8 @@ fn call_passes_witness_child(
             else {
                 continue 'children;
             };
-            let expected = expected.pointer();
-            let actual = actual.pointer();
+            let expected = expected.address();
+            let actual = actual.address();
             if expected != actual
                 && assumptions.decide(&ConditionTerm::pointer_equal(
                     actual.clone(),
@@ -4335,7 +4335,7 @@ fn value_function_address(value: &ProgramValue) -> Option<&str> {
     let ProgramValue::Pointer(pointer) = value else {
         return None;
     };
-    match &pointer.pointer().base {
+    match &pointer.address().base {
         AddressBase::Function(name) => Some(name),
         _ => None,
     }
@@ -5337,10 +5337,11 @@ mod ranking_member_tests {
     /// component is read at, not a state the surface named.
     fn current_load(cell: &Address) -> SpecExpression {
         SpecExpression::MemoryLoad {
-            memory: SpecPoint::Current,
-            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-                PointerValue::new(cell.clone(), ProgramType::Int32Pointer),
-            ))),
+            point: SpecPoint::Current,
+            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+                cell.clone(),
+                ProgramType::Int32Pointer,
+            )))),
             value_type: ProgramType::Int32,
         }
     }

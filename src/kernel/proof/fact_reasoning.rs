@@ -516,6 +516,7 @@ fn normalize_condition_selection(
         memory,
         pointer,
         value_type,
+        ..
     } = goal
         && crate::kernel::memory_history::read_is_of_a_recorded_store(
             memory,
@@ -811,7 +812,7 @@ pub(crate) enum ForallInstantiationError {
 pub(crate) enum InstanceArgument {
     Machine(MachineTerm),
     Integer(IntegerTerm),
-    Pointer(PointerValue),
+    Pointer(Pointer),
 }
 
 pub(crate) fn discharge_instantiated_guards(

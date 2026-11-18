@@ -369,11 +369,11 @@ mod tests {
         );
         let equality = assumptions.assume_condition(
             crate::kernel::ConditionTerm::PointerValueEqual(
-                Box::new(crate::kernel::PointerValue::new(
+                Box::new(crate::kernel::Pointer::new(
                     Address::symbolic(Variable(70)),
                     ProgramType::Int32Pointer,
                 )),
-                Box::new(crate::kernel::PointerValue::new(
+                Box::new(crate::kernel::Pointer::new(
                     other,
                     ProgramType::Int32Pointer,
                 )),

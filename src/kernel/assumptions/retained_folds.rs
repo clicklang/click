@@ -492,7 +492,7 @@ mod boolean_read_tests {
         let current = SymbolicMemory::new().with_block("bool-index", 4);
         let memory = crate::kernel::intern_memory(current.clone());
         let source = ConditionTerm::BoolLoad(
-            memory.clone(),
+            crate::kernel::ProgramPoint::at(&memory.clone()),
             Box::new(Address {
                 base: AddressBase::Symbolic(Variable(999360)),
                 offset: AddressOffset::scaled_int32_node(

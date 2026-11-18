@@ -56,6 +56,9 @@ impl MemoryStateLabels {
                         self.pointer_value_name(&address)
                     );
                 }
+                if let Some(name) = self.source_name_for(*variable) {
+                    return name.to_string();
+                }
                 format!(
                     "<{}; source binding unavailable>",
                     self.legend_symbol(*variable)
@@ -176,6 +179,12 @@ impl MemoryStateLabels {
                     self.legend_offset(&pointer.offset, 4)
                 );
             }
+            block @ AddressBase::StaticObject { .. } => {
+                return format!(
+                    "object `{block}` + {}",
+                    self.legend_offset(&pointer.offset, 4)
+                );
+            }
             AddressBase::Function(name) => {
                 return format!(
                     "function `{}` + {}",
@@ -195,19 +204,24 @@ impl MemoryStateLabels {
         if let Some(name) = self.pointer_sources.get(pointer) {
             return name.clone();
         }
-        // A field of a named pointer: `g + 16 bytes`, not the named pointer's
-        // own construction spelled out with an anonymous symbol.
+        if let Some(name) = self.state_pointer_name(pointer) {
+            return name.to_string();
+        }
+        // A displacement from a named pointer keeps that pointer's complete
+        // address, including a symbolic base offset such as a parameter's.
         if let AddressOffset::Add(left, right) = &pointer.offset {
             for (stem, shift) in [(left, right), (right, left)] {
-                let AddressOffset::Constant(bytes) = shift.as_ref() else {
-                    continue;
-                };
                 let stem = Address {
                     base: pointer.base.clone(),
                     offset: stem.as_ref().clone(),
                 };
-                if let Some(name) = self.pointer_sources.get(&stem) {
-                    return format!("{name} + {bytes} bytes");
+                if let Some(name) = self
+                    .pointer_sources
+                    .get(&stem)
+                    .or_else(|| self.recorded_pointers.get(&stem))
+                    .cloned()
+                {
+                    return format!("{name} + {}", self.legend_offset(shift, 4));
                 }
             }
         }
@@ -240,7 +254,7 @@ impl MemoryStateLabels {
 
     fn legend_value(&mut self, value: &ProgramValue) -> String {
         match value {
-            ProgramValue::Pointer(pointer) => self.pointer_value_name(pointer.pointer()),
+            ProgramValue::Pointer(pointer) => self.pointer_value_name(pointer.address()),
             ProgramValue::Int32(bits)
             | ProgramValue::UInt32(bits)
             | ProgramValue::Int64(bits)
@@ -402,6 +416,12 @@ impl MemoryStateLabels {
                 let address = self.pointer_value_name(pointer);
                 let value = self.legend_value(value.native());
                 format!("store {value} at address {address}")
+            }
+            MemoryDerivation::RepresentationWrite { pointer, bytes, .. } => {
+                let address = self.pointer_value_name(pointer);
+                format!(
+                    "write a bit-field representation at address {address} spanning {bytes} bytes"
+                )
             }
             MemoryDerivation::BranchJoin { incoming, .. } => {
                 let inputs = incoming
@@ -594,6 +614,87 @@ mod tests {
     }
 
     #[test]
+    fn pointer_legend_keeps_named_bases_and_symbolic_displacements() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(986_420)), 1),
+        };
+        let index = MachineTerm::Variable(Variable(986_421));
+        for (offset, expected) in [
+            (AddressOffset::Constant(16), "16 bytes"),
+            (AddressOffset::Variable(Variable(986_421)), "(d) bytes"),
+            (
+                AddressOffset::scaled_int32_node(index.clone(), 4),
+                "int32(d) * 4 bytes",
+            ),
+            (
+                AddressOffset::scaled_int64_node(index.clone(), 8, false),
+                "int64(d) * 8 bytes",
+            ),
+            (
+                AddressOffset::scaled_int64_node(index, 1, true),
+                "uint64(d) * 1 bytes",
+            ),
+        ] {
+            for (left, right) in [
+                (base.offset.clone(), offset.clone()),
+                (offset.clone(), base.offset.clone()),
+            ] {
+                let pointer = Address {
+                    base: base.base.clone(),
+                    offset: AddressOffset::Add(Box::new(left), Box::new(right)),
+                };
+                let mut labels = MemoryStateLabels::default();
+                labels.immutable_pointer_name(&base, "b");
+                labels.source_name(Variable(986_421), "d".into());
+                labels.pointer_value_name(&pointer);
+                let text = labels.trace_legend();
+                assert!(
+                    text.contains(&format!("value#1 = b + {expected}")),
+                    "{text}"
+                );
+                assert!(!text.contains("source binding unavailable"), "{text}");
+            }
+        }
+    }
+
+    #[test]
+    fn pointer_legend_keeps_recorded_names_separate_from_current_values() {
+        let before = Address {
+            base: AddressBase::Symbolic(Variable(986_422)),
+            offset: AddressOffset::Constant(0),
+        };
+        let current = Address {
+            base: before.base.clone(),
+            offset: AddressOffset::Constant(4),
+        };
+        let shifted = Address {
+            base: before.base.clone(),
+            offset: AddressOffset::Add(
+                Box::new(AddressOffset::Constant(0)),
+                Box::new(AddressOffset::Variable(Variable(986_423))),
+            ),
+        };
+        let mut labels = MemoryStateLabels::default();
+        labels.immutable_pointer_name(&current, "v");
+        labels.fallback_pointer_name(&before, "at(before, v)".into());
+        labels.source_name(Variable(986_423), "d".into());
+        for pointer in [&before, &current, &shifted] {
+            labels.pointer_value_name(pointer);
+        }
+        let text = labels.trace_legend();
+        assert!(text.contains("value#1 = at(before, v)\n"), "{text}");
+        assert!(text.contains("value#2 = v\n"), "{text}");
+        assert!(
+            text.contains("value#3 = at(before, v) + (d) bytes"),
+            "{text}"
+        );
+        assert!(!text.contains("source binding unavailable"), "{text}");
+        assert_eq!(text, labels.trace_legend());
+    }
+
+    #[test]
     fn pure_pointer_legend_distinguishes_typed_model_arguments_and_offsets() {
         let mut labels = MemoryStateLabels::default();
         for (id, name) in [(986_410, "left"), (986_411, "right")] {
@@ -636,7 +737,7 @@ mod tests {
                 "select",
                 vec![PureFunctionArgument::ArrayRef {
                     memory,
-                    pointer: ProgramValue::Pointer(crate::kernel::PointerValue::new(
+                    pointer: ProgramValue::Pointer(crate::kernel::Pointer::new(
                         base.clone(),
                         crate::kernel::ProgramType::Int32Pointer,
                     )),

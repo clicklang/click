@@ -15,9 +15,9 @@ pub(in crate::kernel) struct InputData {
         crate::kernel::pointer_provenance::ValueClasses<Address>,
     pub(in crate::kernel) bounds_graph: crate::kernel::pointer_provenance::ValueClasses<Address>,
     pub(in crate::kernel) pointer_value_classes:
-        crate::kernel::pointer_provenance::ValueClasses<PointerValue>,
+        crate::kernel::pointer_provenance::ValueClasses<Pointer>,
     pub(in crate::kernel) pointer_value_equalities:
-        crate::persistent::PersistentSet<(PointerValue, PointerValue)>,
+        crate::persistent::PersistentSet<(Pointer, Pointer)>,
 
     /// Conservative source-dependency selectors for parameter-store shortcuts.
     /// These record syntax, not equality classes or permission authority.
@@ -56,6 +56,7 @@ pub(in crate::kernel) struct InputData {
     /// `condition_facts`, like every other index above, so asking what one
     /// pointer is proved equal to is a keyed lookup rather than a scan of
     /// every pointer comparison the path happens to hold.
+    pub(in crate::kernel) local_pointer_aliases: crate::persistent::PersistentSet<ConditionTerm>,
     pub(in crate::kernel) address_base_aliases: crate::persistent::PersistentMap<
         Address,
         crate::persistent::PersistentMap<Address, ConditionTerm>,

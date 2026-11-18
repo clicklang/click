@@ -67,7 +67,7 @@ void *fill_range(void *argument) {
 
         initialize by {
             have job->begin <= index and index <= job->end by {
-                both { normalize(); } and { known(); }
+                both { left => { normalize(); } right => { known(); } }
             }
             have forall (k: int32) { job->begin <= k and k < index implies job->output[k] == job->value } by {
                 intro();

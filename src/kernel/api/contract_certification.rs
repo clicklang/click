@@ -458,6 +458,7 @@ pub fn execution_state_justifies_loadability_obligation(
             memory,
             pointer,
             value_type,
+            ..
         } => {
             if assumptions.proves_exact(obligation) {
                 return true;
@@ -1539,7 +1540,7 @@ fn program_function_contract_entry_facts(
                     return Err("array reference entry argument is not a pointer value".into());
                 };
                 if let Some(coverage) = pointer.opaque_coverage_fact(&MemoryRange::new_wide(
-                    pointer.pointer().clone(),
+                    pointer.address().clone(),
                     MachineTerm::uint64_constant(0),
                     MachineTerm::uint64_constant(u64::from(bytes)),
                     1,
@@ -1581,7 +1582,7 @@ fn program_function_contract_entry_facts(
                 ),
             );
             if let Some(coverage) = pointer.opaque_coverage_fact(&MemoryRange::new_wide(
-                pointer.pointer().clone(),
+                pointer.address().clone(),
                 MachineTerm::uint64_constant(0),
                 length.clone(),
                 width,
@@ -2177,26 +2178,10 @@ fn program_function_contract_entry_facts(
             obligation.proposition().clone(),
         );
     }
-    let observable_facts = entry_resources
-        .observable_facts(&assumptions)
-        .map_err(|error| {
-            let detail = match error {
-                ResourceContextValidityError::UnsupportedOwnershipBoundary => {
-                    "ownership separation lacks indexed evidence"
-                }
-                ResourceContextValidityError::DuplicateOwnedResourceFact(_) => {
-                    "the same resource is owned twice"
-                }
-                ResourceContextValidityError::InvalidExclusiveAccess(_) => {
-                    "a field-bearing resource instance or mutex guard is not owned exclusively"
-                }
-                ResourceContextValidityError::OverlappingOwnedMemoryResources { .. } => {
-                    "two owned memory resources overlap"
-                }
-            };
-            format!("the contract entry resources are not a valid context: {detail}")
-        })?;
-    for proposition in observable_facts {
+    // Entry lowering and body construction already established this declared
+    // partition. Observation retains it without repeating ownership admission.
+    let partition_facts = entry_resources.observable_facts_assuming_valid(&assumptions);
+    for proposition in partition_facts {
         assumptions = entry_facts.assume(
             assumptions,
             ContractEntryFactOrigin::Observable,
@@ -3283,12 +3268,12 @@ pub(crate) fn condition_holds_by_memory_resolution(
             .contains_known(&Proposition::ConditionIs(condition.clone(), true))
             || (assumptions.pointer_provenance_match(left, right)
                 && (pointers_proven_equal_for_memory_resolution(
-                    left.pointer(),
-                    right.pointer(),
+                    left.address(),
+                    right.address(),
                     assumptions,
                 ) || crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
-                    left.pointer(),
-                    right.pointer(),
+                    left.address(),
+                    right.address(),
                     assumptions,
                 ))),
         (ConditionTerm::PointerEqual(left, right), true) => {

@@ -2553,8 +2553,8 @@ pub(in crate::kernel) fn program_values_proven_equal_for_memory_resolution(
         (ProgramValue::Pointer(left), ProgramValue::Pointer(right)) => {
             assumptions.pointer_provenance_match(left, right)
                 && pointers_proven_equal_for_memory_resolution(
-                    left.pointer(),
-                    right.pointer(),
+                    left.address(),
+                    right.address(),
                     assumptions,
                 )
         }
@@ -3508,6 +3508,11 @@ fn observable_heap_metadata_matches_for_load(
         candidates,
         left.heap.initialized.as_map(),
         right.heap.initialized.as_map(),
+        observable,
+    ) && observable_entries_match(
+        candidates,
+        left.heap.initialized.partial_map(),
+        right.heap.initialized.partial_map(),
         observable,
     ) && observable_elements_match(
         candidates,
@@ -5177,7 +5182,7 @@ fn materialized_cell_source(cell_pointer: &Address, value: &ProgramValue) -> Opt
         // pointer given a symbolic identity, or one loaded from another cell,
         // is a write and never qualifies.
         ProgramValue::Pointer(value) => {
-            let read = value.pointer().as_loaded_value()?;
+            let read = value.address().as_loaded_value()?;
             return (read.displacement == AddressOffset::Constant(0)
                 && read.defining_address == *cell_pointer)
                 .then_some(read.defining_memory);

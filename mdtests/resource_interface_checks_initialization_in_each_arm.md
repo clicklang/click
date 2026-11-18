@@ -30,5 +30,5 @@ void probe(int32 *p, int32 x) {
 ```
 
 ```expect
-fail: missing pure fact: defined
+fail: missing pure fact: at(function.entry, defined(p[0]))
 ```

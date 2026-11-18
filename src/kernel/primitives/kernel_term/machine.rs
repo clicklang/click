@@ -616,7 +616,23 @@ impl KernelTermImport {
             .iter()
             .enumerate()
             .map(|(index, argument)| {
-                if let Some(root) = application.common_argument(index) {
+                if self.exact_field_inputs {
+                    if matches!(argument, PureFunctionArgument::SharedMachine(_)) {
+                        // This is a typed input descriptor, not a boxed value
+                        // argument. Keep its existing shared operand and exact
+                        // envelope through native field storage/output.
+                        KernelTerm::legacy_at(
+                            argument.clone(),
+                            LegacyIdentity::ExactApplicationArgument {
+                                application: application.clone(),
+                                payload: application.payload_id(),
+                                index,
+                            },
+                        )
+                    } else {
+                        self.argument(argument)
+                    }
+                } else if let Some(root) = application.common_argument(index) {
                     root
                 } else {
                     KernelTerm::legacy_at(
@@ -822,10 +838,10 @@ impl KernelTermExport {
             Node::MachineLiteral(value) => value.legacy_term(),
             Node::Variable(variable) => Old::Variable(*variable),
             Node::MemoryLoad {
-                memory,
+                point,
                 address,
                 kind,
-            } => Old::MemoryLoad(ProgramPoint::at(memory), Box::new(address.export()?), *kind),
+            } => Old::MemoryLoad(point.clone(), Box::new(address.export()?), *kind),
             Node::BoolCast {
                 destination,
                 operand,

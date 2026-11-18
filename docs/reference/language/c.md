@@ -1369,6 +1369,74 @@ is arithmetic right shift with sign extension. This is implementation-defined
 in ISO C for negative signed values, but it is the behavior of the mainstream
 compilers Click is targeting.
 
+### Local integer bit-fields
+
+On x86-64, a standalone file-scope struct definition can mix modeled
+ordinary members with `int`, `signed int`, and `unsigned int` bit-fields. A bit-field that does not fit in the current 32-bit allocation
+word starts at the next word. An ordinary member starts at the first
+byte that satisfies its ABI alignment after the preceding member.
+An unnamed bit-field occupies bits but supplies no field value or initializer
+slot. An unnamed zero-width field advances placement to the next word boundary.
+Unnamed fields do not raise the record's alignment. Widths are decimal literals
+from 0 through 32, with zero reserved for unnamed fields.
+
+Local records support positional and designated literal initialization,
+including zero initialization of omitted named fields, or can start unwritten.
+`sizeof` uses the complete record layout, and `__builtin_offsetof` gives
+the offset of an ordinary addressable member.
+Reads promote narrow signed and unsigned fields to `int`. A 32-bit unsigned
+field retains type `unsigned int`. Signed values use the target's two's
+complement representation. Writes retain the assigned value's low bits up
+to the field width and preserve neighboring fields.
+
+`object.field` and `pointer->field` read fields. A fixed local pointer can be
+initialized by `struct tag *p = &object`, including a pointer to a const
+record. Member assignment accepts a side-effect-free arithmetic expression
+for ordinary scalar members and an integer expression for bit-fields.
+Ordinary members have addresses and can be operands of `sizeof`.
+Standalone `++`, `--`, `+=`, and `-=` statements read the old field, perform
+arithmetic after promotion, and store the result. Increment and decrement
+expressions used for their values are outside this subset.
+
+Copies between same-type local records, including `struct tag copy = object`
+and `*destination = *source`, transfer the named fields and their initialization
+state. Assigning a record with an unwritten field leaves that field unwritten
+in the destination. Typed assignment supplies no padding bits.
+
+A character pointer cast from the address of a local record observes that
+record's representation. A byte write initializes all eight bits of its
+destination and subsequent field reads see the new bits. A field write
+initializes only its own bits. Reading a whole byte requires all eight bits
+to have been written, including any padding bits it contains.
+
+The modeled `memcpy` transports values and initialization together. Copying
+a partially written record to a local record or character array retains the
+written fields and replaces initialization in the copied span, even when the
+destination was previously initialized. A copy with unwritten source bits
+requires exact source and destination offsets and an exact byte count. Use
+`sizeof(record)` or `sizeof(struct tag)` for the full representation.
+
+Typed field access through pointers still requires a fixed local alias.
+Pointer reassignment for such aliases, addresses or unevaluated operands
+of bit-fields, and combinations with `goto` are outside the subset.
+Packed or explicitly aligned struct definitions are unsupported.
+Local objects of mixed record type require modeled unqualified arithmetic
+scalar members. Layout queries also support modeled array, pointer, and
+embedded members.
+
+<!-- verified-example: mdtests/c_bit_field_neighbor.md -->
+<!-- verified-example: mdtests/c_bit_field_partial_initialization.md -->
+<!-- verified-example: mdtests/c_bit_field_pointer_and_promotion.md -->
+<!-- verified-example: mdtests/c_bit_field_assignment_through_pointers.md -->
+<!-- verified-example: mdtests/c_bit_field_byte_interop.md -->
+<!-- verified-example: mdtests/c_bit_field_memcpy_partial.md -->
+<!-- verified-example: mdtests/c_bit_field_memcpy_roundtrip.md -->
+<!-- verified-example: mdtests/c_bit_field_multiword_update_and_copy.md -->
+<!-- verified-example: mdtests/c_bit_field_multiword_memcpy.md -->
+<!-- verified-example: mdtests/c_bit_field_mixed_layout.md -->
+<!-- verified-example: mdtests/c_bit_field_mixed_composite_layout.md -->
+<!-- verified-example: mdtests/c_bit_field_unnamed_layout.md -->
+
 ### Block-scope struct compound literals
 
 A `(struct T){ initializer-list }` expression is an unnamed aggregate lvalue.
@@ -2530,7 +2598,9 @@ the array before its type is complete are rejected. Inferred automatic struct
 arrays, string initializers, and designated initializers are not supported.
 
 Scalar local arrays may have multiple fixed dimensions, such as
-`int32 matrix[3][4]`. Click lowers their storage in row-major order while
+`int32 matrix[3][4]`. A fixed dimension may also use `sizeof` of a supported
+type or object, as in the bit-field representation-copy example. Click
+lowers their storage in row-major order while
 retaining the declared element width and each declared dimension. An access
 such as `matrix[i][j]` therefore carries separate obligations for
 `0 <= i < 3` and `0 <= j < 4` before its flattened offset is formed; the

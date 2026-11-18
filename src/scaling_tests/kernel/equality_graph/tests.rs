@@ -730,7 +730,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
                 4,
             ))
         };
-        let source = read(&raw.pointer().offset_by_bytes(24));
+        let source = read(&raw.address().offset_by_bytes(24));
         let target = read(&model.offset_by_bytes(24));
         let expected = MachineTerm::constant(7);
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -753,7 +753,7 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
         let graph = EqualityGraph::default();
         let mut target = None;
         for id in 0..size {
-            let domain = crate::kernel::PointerValue::new(
+            let domain = crate::kernel::Pointer::new(
                 Address::symbolic(Variable(9_000_000 + id)),
                 crate::kernel::ProgramType::Int32Pointer,
             );

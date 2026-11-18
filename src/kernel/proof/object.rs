@@ -3443,9 +3443,9 @@ mod tests {
             ProofExecutionState<()>,
         >;
         let load = SpecExpression::MemoryLoad {
-            memory: SpecPoint::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-                crate::kernel::PointerValue::new(
+                crate::kernel::Pointer::new(
                     Address {
                         base: "unallocated".into(),
                         offset: AddressOffset::Constant(0),

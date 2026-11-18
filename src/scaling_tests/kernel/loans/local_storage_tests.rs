@@ -5,6 +5,47 @@
 use super::*;
 
 #[test]
+fn automatic_storage_retirement_lookup_scales_with_neither_loan_bucket() {
+    let selected = SymbolicMemory::local_pointer("selected");
+    let other = SymbolicMemory::local_pointer("other");
+    for same_block in [false, true] {
+        let samples = [4, 16, 64, 256].map(|count| {
+            let mut ledger = LoanLedger::new();
+            let lender = ledger.fresh_participant().unwrap();
+            let borrower = ledger.fresh_participant().unwrap();
+            for index in 0..count {
+                let base = if same_block {
+                    selected.clone()
+                } else {
+                    SymbolicMemory::local_lifetime_pointer(index, "unrelated")
+                };
+                let range =
+                    MemoryRange::new(base, 0u32.into(), MachineTerm::Variable(Variable(index)));
+                let opening = lend_memory(&ledger, lender, borrower, range);
+                ledger = ledger.apply(&opening.transition).unwrap();
+            }
+            let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let size = &16u32.into();
+                assert!(
+                    ledger
+                        .automatic_storage_retirement_refusal(&other.base, size)
+                        .is_none()
+                );
+                ledger
+                    .automatic_storage_retirement_refusal(&selected.base, size)
+                    .is_some()
+            });
+            assert_eq!(found, same_block);
+            work
+        });
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 24),
+            "{samples:?}"
+        );
+    }
+}
+
+#[test]
 fn local_view_work_tracks_the_explicit_delta_not_ambient_local_storage() {
     let assumptions = PureFactContext::new();
     let mut fixed = Vec::new();

@@ -5,6 +5,9 @@
 //! uses the shared kernel.
 
 use std::collections::{BTreeMap, BTreeSet};
+mod program_values;
+use crate::kernel::RetainedProgramValue;
+use program_values::ProgramValueBindings;
 use std::fmt;
 
 use crate::instrumentation::{self, TacticEvent, VerificationEvent};
@@ -2236,7 +2239,7 @@ pub struct ResourceInstanceBinding {
     identity: Variable,
     children: Vec<String>,
     schema: Option<crate::kernel::ResourceFieldSchema>,
-    fields: Option<crate::kernel::ResourceArguments>,
+    fields: Option<crate::kernel::ResourceFieldValues>,
     /// Present only on an explicit proof-side resource construction.
     fold_fields: Option<Vec<(String, ContractExpression)>>,
     /// Explicit child slot, surface name, and instance identity. Shared to
@@ -3441,7 +3444,7 @@ pub(crate) use binary_contract_expression;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickArrayRef {
-    memory: SymbolicMemory,
+    point: crate::kernel::ProgramPoint,
     pointer: Address,
     element_type: ProgramType,
 }
@@ -3452,13 +3455,13 @@ type ClickArrayRefs = BTreeMap<String, ClickArrayRef>;
 /// references, as `contract_environment_at_state` builds them.
 #[derive(Clone, Copy)]
 struct ContractEnvironment<'a> {
-    values: &'a BTreeMap<String, ProgramValue>,
+    values: &'a ProgramValueBindings,
     array_refs: &'a ClickArrayRefs,
     parameters: ParameterBinding<'a>,
 }
 
 impl<'a> ContractEnvironment<'a> {
-    fn new(values: &'a BTreeMap<String, ProgramValue>, array_refs: &'a ClickArrayRefs) -> Self {
+    fn new(values: &'a ProgramValueBindings, array_refs: &'a ClickArrayRefs) -> Self {
         Self {
             values,
             array_refs,
@@ -3521,18 +3524,22 @@ fn surface_parameter_binding(binding: &crate::kernel::BindingName) -> crate::ker
 }
 
 /// The identity of a symbolic model-field value, independent of its carrier.
-fn model_field_variable(value: &crate::kernel::AlgebraicValue) -> Option<crate::kernel::Variable> {
-    use crate::kernel::{AlgebraicTermNode, AlgebraicValue, MachineTerm};
-    match value {
-        AlgebraicValue::Algebraic(term) => match term.node {
+fn model_field_variable<'a>(
+    value: impl Into<crate::kernel::ResourceFieldValue<'a>>,
+) -> Option<crate::kernel::Variable> {
+    use crate::kernel::{AlgebraicTermNode, MachineTerm};
+    match value.into() {
+        crate::kernel::ResourceFieldValue::Algebraic(term) => match term.node {
             AlgebraicTermNode::Variable(variable) => Some(variable),
             _ => None,
         },
-        AlgebraicValue::Program(ProgramValue::Parameter(term)) => match term.node {
-            AlgebraicTermNode::Variable(variable) => Some(variable),
-            _ => None,
-        },
-        AlgebraicValue::Program(
+        crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(term)) => {
+            match term.node {
+                AlgebraicTermNode::Variable(variable) => Some(variable),
+                _ => None,
+            }
+        }
+        crate::kernel::ResourceFieldValue::Program(
             crate::kernel::integer_c_value!(MachineTerm::Variable(variable)),
         ) => Some(*variable),
         _ => None,
@@ -3565,11 +3572,17 @@ type ReadEventNames<T> =
 #[derive(Clone, Default)]
 struct RecordedHistoryMark(Option<std::sync::Arc<RecordedStateChange>>);
 
+type RecordedCallResults = crate::persistent::PersistentMap<usize, RetainedProgramValue>;
+
 /// Points one path recorded at a range of regions, with their call results.
 #[derive(Clone, Default)]
 struct RecordedRegionPoints {
-    retained_states: Vec<(ProgramPointSelector, ExecutionState)>,
-    call_results: Vec<(usize, ProgramValue)>,
+    retained_states: Vec<(
+        ProgramPointSelector,
+        ExecutionState,
+        Option<RecordedCallResults>,
+    )>,
+    call_results: Vec<(usize, RetainedProgramValue)>,
 }
 
 #[derive(Clone)]
@@ -3635,13 +3648,16 @@ struct RecordedStates {
     /// of later pointer reads or assignments to the result local.
     allocation_results: crate::persistent::PersistentMap<crate::kernel::Address, CodeRegionRef>,
     /// Values produced at call exits, independent of destination locals.
-    call_results: crate::persistent::PersistentMap<usize, ProgramValue>,
+    call_results: RecordedCallResults,
+    /// Capture-producing functions retain the call table at each citable
+    /// state. An `at` expression selects a table by its program point.
+    call_result_snapshots: imbl::OrdMap<ProgramPointSelector, RecordedCallResults>,
     /// The points inside a loop that left at several places, by the loop
     /// and its number of leaving paths: each path recorded the point at its
     /// own state, so after the loop the name has no one state.
     ambiguous_exit_points: crate::persistent::PersistentMap<ProgramPointSelector, (usize, usize)>,
     call_result_points: crate::persistent::PersistentMap<(u64, usize), ()>,
-    read_event_results: crate::persistent::PersistentMap<(usize, usize), ProgramValue>,
+    read_event_results: crate::persistent::PersistentMap<(usize, usize), RetainedProgramValue>,
     read_event_counts: crate::persistent::PersistentMap<usize, usize>,
     read_event_names: ReadEventNames<ProgramValue>,
     read_event_scalar_names: ReadEventNames<crate::kernel::MachineTerm>,
@@ -3655,7 +3671,7 @@ struct RecordedStates {
     pointer_call_results: crate::persistent::PersistentMap<crate::kernel::Address, usize>,
     /// Each exited loop's pass count, the head's `iterations`, which the
     /// facts past the loop state over: spelled `loop(i).iterations`.
-    loop_iterations: crate::persistent::PersistentMap<usize, crate::kernel::IntegerTerm>,
+    loop_iterations: crate::persistent::PersistentMap<usize, crate::kernel::KernelTerm>,
     /// The loop whose pass count each variable is: one lookup spells it.
     loop_iteration_variables: crate::persistent::PersistentMap<crate::kernel::Variable, usize>,
     /// The recorded point at which each scalar model-field value was first
@@ -3716,7 +3732,8 @@ impl Default for RecordedStates {
             value_points: crate::persistent::PersistentMap::default(),
             pointer_points: crate::persistent::PersistentMap::default(),
             allocation_results: crate::persistent::PersistentMap::default(),
-            call_results: crate::persistent::PersistentMap::default(),
+            call_results: RecordedCallResults::default(),
+            call_result_snapshots: imbl::OrdMap::new(),
             ambiguous_exit_points: crate::persistent::PersistentMap::default(),
             call_result_points: crate::persistent::PersistentMap::default(),
             read_event_results: Default::default(),
@@ -4063,7 +4080,7 @@ impl RecordedStates {
         for event in 0..self.read_event_counts.get(&index).copied().unwrap_or(0) {
             crate::instrumentation::record_deterministic_work(1);
             let key = (index, event);
-            if let Some(value) = self.read_event_results.get(&key).cloned() {
+            if let Some(value) = self.read_event_native(&key).cloned() {
                 self.read_event_results.remove(&key);
                 Self::remove_read_event_name(&mut self.read_event_names, &value, key);
                 match &value {
@@ -4073,7 +4090,7 @@ impl RecordedStates {
                     ProgramValue::Pointer(pointer) => {
                         Self::remove_read_event_name(
                             &mut self.read_event_pointer_names,
-                            pointer.pointer(),
+                            pointer.address(),
                             key,
                         );
                     }
@@ -4085,7 +4102,7 @@ impl RecordedStates {
         for value in values {
             crate::instrumentation::record_deterministic_work(1);
             let key = (index, count);
-            self.read_event_results.insert(key, value.clone());
+            self.read_event_results.insert(key, value.clone().into());
             Self::add_read_event_name(&mut self.read_event_names, value, key);
             match value {
                 ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
@@ -4094,7 +4111,7 @@ impl RecordedStates {
                 ProgramValue::Pointer(pointer) => {
                     Self::add_read_event_name(
                         &mut self.read_event_pointer_names,
-                        pointer.pointer(),
+                        pointer.address(),
                         key,
                     );
                 }
@@ -4111,8 +4128,7 @@ impl RecordedStates {
 
     fn read_event_values(&self, index: usize) -> impl Iterator<Item = &ProgramValue> {
         (0..self.read_event_counts.get(&index).copied().unwrap_or(0)).map(move |event| {
-            self.read_event_results
-                .get(&(index, event))
+            self.read_event_native(&(index, event))
                 .expect("recorded read")
         })
     }
@@ -4139,6 +4155,26 @@ impl RecordedStates {
     }
 
     fn region_result_value(&self, region: &CodeRegionRef) -> Result<ProgramValue, String> {
+        self.region_result_value_at(region, None)
+    }
+
+    fn call_results_at(&self, selector: &ProgramPointSelector) -> Option<&RecordedCallResults> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.call_result_snapshots
+            .get(&self.recorded_spelling(selector.clone()))
+    }
+
+    fn records_call_snapshots(&self) -> bool {
+        self.source_layout
+            .as_ref()
+            .is_some_and(lowering::SourceExecutionLayout::has_call_captures)
+    }
+
+    fn region_result_value_at(
+        &self,
+        region: &CodeRegionRef,
+        selector: Option<&ProgramPointSelector>,
+    ) -> Result<ProgramValue, String> {
         if let CodeRegionRef::Path(steps) = region
             && let Some((SourcePathStep::ReadEvent(event), parent)) = steps.split_last()
         {
@@ -4147,8 +4183,7 @@ impl RecordedStates {
                 _ => self.result_region_index(&CodeRegionRef::Path(parent.to_vec()))?,
             };
             return self
-                .read_event_results
-                .get(&(index, *event))
+                .read_event_native(&(index, *event))
                 .cloned()
                 .ok_or_else(|| {
                     format!(
@@ -4158,13 +4193,32 @@ impl RecordedStates {
                 });
         }
         let index = self.result_region_index(region)?;
-        if let Some(result) = self.call_results.get(&index) {
+        if let Some(selector) = selector
+            && self.records_call_snapshots()
+            && self
+                .source_layout
+                .as_ref()
+                .is_some_and(|layout| layout.call_number(index).is_some())
+        {
+            return self
+                .call_results_at(selector)
+                .and_then(|results| results.get(&index))
+                .map(RetainedProgramValue::native_compat)
+                .cloned()
+                .ok_or_else(|| {
+                    format!(
+                        "`{}.result` has no recorded non-void result at `{}`",
+                        diagnostics::describe_code_region_ref(region),
+                        diagnostics::describe_program_point_selector(selector)
+                    )
+                });
+        }
+        if let Some(result) = self.call_result_native(&index) {
             return Ok(result.clone());
         }
         if self.read_event_counts.get(&index) == Some(&1) {
             return Ok(self
-                .read_event_results
-                .get(&(index, 0))
+                .read_event_native(&(index, 0))
                 .expect("recorded read")
                 .clone());
         }
@@ -4212,9 +4266,11 @@ impl RecordedStates {
                 && seen.insert(entry.selector.clone())
                 && let Some(state) = self.get(&entry.selector)
             {
-                points
-                    .retained_states
-                    .push((entry.selector.clone(), state.clone()));
+                points.retained_states.push((
+                    entry.selector.clone(),
+                    state.clone(),
+                    self.call_result_snapshots.get(&entry.selector).cloned(),
+                ));
                 if *kind == ProgramPointKind::Exit
                     && let Some(value) = self.call_results.get(index)
                 {
@@ -4232,7 +4288,7 @@ impl RecordedStates {
     /// read of one is refused naming the paths.
     fn record_ambiguous_exit_points(&mut self, loop_index: usize, paths: &[RecordedRegionPoints]) {
         for points in paths {
-            for (selector, _) in &points.retained_states {
+            for (selector, _, _) in &points.retained_states {
                 crate::instrumentation::record_deterministic_work(1);
                 self.ambiguous_exit_points
                     .insert(selector.clone(), (loop_index, paths.len()));
@@ -4256,56 +4312,106 @@ impl RecordedStates {
     /// Records points another path recorded, as `recorded_since` returned
     /// them.
     fn record_region_points(&mut self, points: &RecordedRegionPoints) {
-        for (selector, state) in &points.retained_states {
+        for (selector, state, results) in &points.retained_states {
             self.insert(selector.clone(), state.clone());
+            self.set_call_result_snapshot(selector, results.clone());
         }
         for (index, value) in &points.call_results {
-            self.record_call_result(*index, Some(value.clone()));
+            self.record_retained_call_result(*index, Some(value.clone()));
         }
     }
 
+    fn set_call_result_snapshot(
+        &mut self,
+        selector: &ProgramPointSelector,
+        results: Option<RecordedCallResults>,
+    ) {
+        if let Some(results) = results {
+            self.call_result_snapshots.insert(selector.clone(), results);
+        } else {
+            self.call_result_snapshots.remove(selector);
+        }
+    }
+
+    /// Some transition certificates expose the return value separately
+    /// from the state recorded at the call's exit.
+    fn record_call_transition_result(&mut self, index: usize, value: RetainedProgramValue) {
+        if self.records_call_snapshots() {
+            let exit = ProgramPointSelector::from(ProgramPointRef {
+                region: CodeRegionRef::Region(index),
+                kind: ProgramPointKind::Exit,
+            });
+            if let Some(results) = self.call_result_snapshots.get_mut(&exit) {
+                results.insert(index, value.clone());
+            }
+        }
+        self.record_retained_call_result(index, Some(value));
+    }
+
     fn record_call_result(&mut self, index: usize, value: Option<ProgramValue>) {
+        self.record_retained_call_result(index, value.map(RetainedProgramValue::from));
+    }
+
+    fn call_result_native(&self, index: &usize) -> Option<&ProgramValue> {
+        self.call_results
+            .get(index)
+            .map(RetainedProgramValue::native_compat)
+    }
+
+    fn read_event_native(&self, key: &(usize, usize)) -> Option<&ProgramValue> {
+        self.read_event_results
+            .get(key)
+            .map(RetainedProgramValue::native_compat)
+    }
+
+    fn record_retained_call_result(&mut self, index: usize, value: Option<RetainedProgramValue>) {
         crate::instrumentation::record_deterministic_work(1);
         // A pointer-sized integer is named by its numeric value.
         if let Some(ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term)) = self
-            .call_results
-            .get(&index)
+            .call_result_native(&index)
             .map(ProgramValue::numeric_value)
         {
             self.call_result_points
                 .remove(&(crate::kernel::held_term_fingerprint(term), index));
         }
-        if let Some(ProgramValue::Parameter(term)) = self.call_results.get(&index)
+        if let Some(ProgramValue::Parameter(term)) = self
+            .call_results
+            .get(&index)
+            .map(RetainedProgramValue::native_compat)
             && self.algebraic_call_results.get(term.as_ref()) == Some(&index)
         {
             self.algebraic_call_results.remove(term.as_ref());
         }
-        if let Some(ProgramValue::Pointer(pointer)) = self.call_results.get(&index)
-            && self.pointer_call_results.get(pointer.pointer()) == Some(&index)
+        if let Some(ProgramValue::Pointer(pointer)) = self
+            .call_results
+            .get(&index)
+            .map(RetainedProgramValue::native_compat)
+            && self.pointer_call_results.get(pointer.address()) == Some(&index)
         {
-            self.pointer_call_results.remove(pointer.pointer());
+            self.pointer_call_results.remove(pointer.address());
         }
         self.call_results.remove(&index);
-        if let Some(value) = value.filter(|value| *value != ProgramValue::Void) {
+        if let Some(value) = value.filter(|value| value.native_compat() != &ProgramValue::Void) {
+            let native = value.native_compat();
             if let ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) =
-                value.numeric_value()
+                native.numeric_value()
             {
                 self.call_result_points
                     .insert((crate::kernel::held_term_fingerprint(term), index), ());
             }
             // The first call to produce an algebraic value names it.
-            if let ProgramValue::Parameter(term) = &value
+            if let ProgramValue::Parameter(term) = native
                 && self.algebraic_call_results.get(term.as_ref()).is_none()
             {
                 self.algebraic_call_results
                     .insert(term.as_ref().clone(), index);
             }
             // So does the first call to return a pointer.
-            if let ProgramValue::Pointer(pointer) = &value
-                && self.pointer_call_results.get(pointer.pointer()).is_none()
+            if let ProgramValue::Pointer(pointer) = native
+                && self.pointer_call_results.get(pointer.address()).is_none()
             {
                 self.pointer_call_results
-                    .insert(pointer.pointer().clone(), index);
+                    .insert(pointer.address().clone(), index);
             }
             self.call_results.insert(index, value);
         }
@@ -4313,20 +4419,30 @@ impl RecordedStates {
 
     /// Records the pass count `iterations` of loop `loop_index`'s head,
     /// which the facts of a path past the loop state over.
+    #[cfg(test)]
     pub(crate) fn record_loop_iterations(
         &mut self,
         loop_index: usize,
         iterations: &crate::kernel::IntegerTerm,
     ) {
-        if let Some(crate::kernel::IntegerTerm::Variable(prior)) =
-            self.loop_iterations.get(&loop_index)
+        let root = crate::kernel::KernelTermImport::default().integer(&iterations.clone().into());
+        self.record_loop_iterations_root(loop_index, root);
+    }
+
+    pub(crate) fn record_loop_iterations_root(
+        &mut self,
+        loop_index: usize,
+        iterations: crate::kernel::KernelTerm,
+    ) {
+        if let Some(prior) = self.loop_iterations.get(&loop_index)
+            && let crate::kernel::KernelTermNode::Variable(prior) = prior.node()
         {
             self.loop_iteration_variables.remove(prior);
         }
-        if let crate::kernel::IntegerTerm::Variable(variable) = iterations {
+        if let crate::kernel::KernelTermNode::Variable(variable) = iterations.node() {
             self.loop_iteration_variables.insert(*variable, loop_index);
         }
-        self.loop_iterations.insert(loop_index, iterations.clone());
+        self.loop_iterations.insert(loop_index, iterations);
     }
 
     /// The loop whose pass count `variable` is: one lookup.
@@ -4335,17 +4451,58 @@ impl RecordedStates {
         variable: crate::kernel::Variable,
     ) -> Option<usize> {
         let index = *self.loop_iteration_variables.get(&variable)?;
-        matches!(self.loop_iterations.get(&index), Some(crate::kernel::IntegerTerm::Variable(held)) if *held == variable)
+        matches!(self.loop_iterations.get(&index).map(|root| root.node()), Some(crate::kernel::KernelTermNode::Variable(held)) if *held == variable)
             .then_some(index)
     }
 
-    /// Each exited loop's pass count under its spelling, `loop(i).iterations`.
+    /// Selected diagnostic output; retained loop counts remain common roots.
     pub(crate) fn loop_iteration_bindings(
         &self,
-    ) -> impl Iterator<Item = (String, &crate::kernel::IntegerTerm)> {
-        self.loop_iterations
-            .iter()
-            .map(|(index, term)| (loop_iterations_spelling(*index), term))
+    ) -> impl Iterator<Item = (String, crate::kernel::IntegerTerm)> {
+        self.loop_iterations.iter().map(|(index, term)| {
+            (
+                loop_iterations_spelling(*index),
+                crate::kernel::KernelTermExport::default()
+                    .integer(term)
+                    .expect("recorded Integer output")
+                    .as_ref()
+                    .clone(),
+            )
+        })
+    }
+
+    /// A capture in a recorded state names the call result in that
+    /// snapshot. An unqualified capture names the path's current result.
+    fn call_capture_expression(
+        &self,
+        binding: &crate::kernel::BindingName,
+        value: &crate::kernel::StoredExecutionValue,
+        selector: Option<&ProgramPointSelector>,
+    ) -> Option<ContractExpression> {
+        if !binding
+            .local_id()
+            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+        {
+            return None;
+        }
+        let layout = self.source_layout.as_ref()?;
+        let (index, source) = layout.call_capture_source(binding)?;
+        let results = match selector {
+            Some(point) => self.call_results_at(point)?,
+            None => &self.call_results,
+        };
+        let recorded = results.get(&index)?.native_compat();
+        if recorded.program_type() != value.program_type() || recorded != value.native().as_ref() {
+            return None;
+        }
+        let expression = ContractExpression::RegionResult(source);
+        Some(match selector {
+            Some(selector) => ContractExpression::At {
+                selector: selector.clone(),
+                expression: Box::new(expression),
+            },
+            None => expression,
+        })
     }
 
     /// Each recorded call's result with the source spelling that names it,
@@ -4363,7 +4520,7 @@ impl RecordedStates {
                         "{}.result",
                         diagnostics::describe_code_region_ref(&CodeRegionRef::Path(steps))
                     ),
-                    value,
+                    value.native_compat(),
                 ))
             })
             .collect()
@@ -4376,7 +4533,7 @@ impl RecordedStates {
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.algebraic_call_results.get(term)?;
-        matches!(self.call_results.get(&index), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
+        matches!(self.call_result_native(&index), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
             .then_some(CodeRegionRef::Region(index))
     }
 
@@ -4388,7 +4545,7 @@ impl RecordedStates {
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.pointer_call_results.get(pointer)?;
-        matches!(self.call_results.get(&index), Some(ProgramValue::Pointer(held)) if held.pointer() == pointer)
+        matches!(self.call_result_native(&index), Some(ProgramValue::Pointer(held)) if held.address() == pointer)
             .then_some(CodeRegionRef::Region(index))
     }
 
@@ -4406,7 +4563,7 @@ impl RecordedStates {
                 return None;
             }
             crate::instrumentation::record_deterministic_work(1);
-            if matches!(self.call_results.get(index).map(ProgramValue::numeric_value), Some(ProgramValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
+            if matches!(self.call_result_native(index).map(ProgramValue::numeric_value), Some(ProgramValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
             {
                 return Some(CodeRegionRef::Region(*index));
             }
@@ -4712,7 +4869,7 @@ impl RecordedStates {
             state
                 .memory()
                 .fresh_allocation_identity(value)
-                .map(|value| value.pointer().clone())
+                .map(|value| value.address().clone())
         };
         let region = CodeRegionRef::Region(*index);
         if let Some(old) = prior.and_then(result)
@@ -4820,7 +4977,7 @@ impl RecordedStates {
             .insert(selector.clone(), self.effect_log.len());
         let prior = self.get(&selector).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), Some(&state));
-        if let Some(id) = state.program_point_id() {
+        if let Some(id) = state.observation_point_id() {
             self.point_names.insert(id, selector.clone());
         }
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
@@ -4840,13 +4997,17 @@ impl RecordedStates {
                     .and_then(|layout| match layout.call_number(*index) {
                         Some(call) => state
                             .step_result(call)
-                            .map(|value| value.clone().into_native()),
+                            .map(|value| RetainedProgramValue::from(value.clone().into_value())),
                         None => layout
                             .call_result_local(*index)
                             .and_then(|local| state.locals().get(local))
-                            .map(|value| value.clone().into_native()),
+                            .map(|value| RetainedProgramValue::from(value.clone().into_value())),
                     });
-            self.record_call_result(*index, result);
+            self.record_retained_call_result(*index, result);
+        }
+        if self.records_call_snapshots() {
+            self.call_result_snapshots
+                .insert(selector.clone(), self.call_results.clone());
         }
         self.record_value_points(&selector, &state);
         self.version = std::sync::Arc::new(RecordedStateVersion {
@@ -4894,6 +5055,7 @@ impl RecordedStates {
     fn remove<K: RecordedStateKey + ?Sized>(&mut self, key: &K) -> Option<ExecutionState> {
         let selector = self.recorded_spelling(key.to_selector());
         let prior = self.get(key).cloned();
+        self.call_result_snapshots.remove(&selector);
         self.update_allocation_result(&selector, prior.as_ref(), None);
         if let ProgramPointSelector::ProgramPoint(ProgramPointRef {
             region: CodeRegionRef::Region(index),
@@ -4980,13 +5142,29 @@ impl RecordedStates {
         // A pass count both arms left the loop with stays.
         for (index, iterations) in self.loop_iterations.iter() {
             if other.loop_iterations.get(index) == Some(iterations) {
-                common.record_loop_iterations(*index, iterations);
+                common.record_loop_iterations_root(*index, iterations.clone());
             }
         }
         for selector in changed {
             match (self.get(&selector), other.get(&selector)) {
                 (Some(left), Some(right)) if left == right => {
                     common.insert(selector.clone(), left.clone());
+                    if let (Some(left), Some(right)) = (
+                        self.call_result_snapshots.get(&selector),
+                        other.call_result_snapshots.get(&selector),
+                    ) {
+                        let mut results = left.clone();
+                        for (index, left, _) in left.diff(right) {
+                            if left.is_some() {
+                                results.remove(index);
+                            }
+                        }
+                        common
+                            .call_result_snapshots
+                            .insert(selector.clone(), results);
+                    } else {
+                        common.call_result_snapshots.remove(&selector);
+                    }
                     if let ProgramPointSelector::ProgramPoint(ProgramPointRef {
                         region: CodeRegionRef::Region(index),
                         kind: ProgramPointKind::Exit,
@@ -5071,6 +5249,10 @@ impl RecordedStates {
             let mut state = state.clone();
             if keep(selector, &mut state) {
                 retained.insert(selector.clone(), state);
+                retained.set_call_result_snapshot(
+                    selector,
+                    self.call_result_snapshots.get(selector).cloned(),
+                );
                 if let ProgramPointSelector::ProgramPoint(ProgramPointRef {
                     region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Exit,
@@ -5315,7 +5497,7 @@ fn recorded_state_entries<'a>(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecArrayRef {
-    memory: SpecPoint,
+    point: SpecPoint,
     pointer: SpecExpression,
     element_type: ProgramType,
 }
@@ -5326,15 +5508,15 @@ struct SpecElaborationContext {
     integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     algebraic_values: PersistentBinderMap<SpecAlgebraicExpression>,
     array_refs: PersistentBinderMap<SpecArrayRef>,
-    /// The memory a bound array name reads in, when its binding names a state
+    /// The point a bound array name reads at, when its binding names a state
     /// of its own. A theorem argument that names another state (`old(a)`,
     /// `at(mark, a)`) binds the parameter to that state's array reference, and
-    /// an array reference is a memory as well as a pointer; without this the
-    /// clause's indexing would read the application's current memory. Only a
+    /// an array reference is a point as well as a pointer; without this the
+    /// clause's indexing would read at the application's current point. Only a
     /// binding that names another state appears here, so an ordinary array
-    /// name keeps reading through `current_memory` and carries no state.
-    array_memories: PersistentBinderMap<SpecPoint>,
-    current_memory: SpecPoint,
+    /// name keeps reading at `current_point` and carries no state.
+    array_points: PersistentBinderMap<SpecPoint>,
+    current_point: SpecPoint,
     current_loop_entry: Option<usize>,
     function_contract: bool,
     /// The context is the function entry (`old(...)`), so a resource count
@@ -5344,6 +5526,7 @@ struct SpecElaborationContext {
     /// a resource count there is that state's population, which the spec
     /// form cannot name and the elaboration evaluates.
     reference_state: Option<ExecutionState>,
+    call_result_point: Option<ProgramPointSelector>,
     /// Bare `result` names the internal contract-return binding here;
     /// explicit C bindings keep their source identifier and value.
     contract_result_in_scope: bool,
@@ -5360,12 +5543,13 @@ impl Default for SpecElaborationContext {
             integer_values: PersistentBinderMap::default(),
             algebraic_values: PersistentBinderMap::default(),
             array_refs: PersistentBinderMap::default(),
-            array_memories: PersistentBinderMap::default(),
-            current_memory: SpecPoint::Current,
+            array_points: PersistentBinderMap::default(),
+            current_point: SpecPoint::Current,
             current_loop_entry: None,
             at_function_entry: false,
             function_contract: false,
             reference_state: None,
+            call_result_point: None,
             contract_result_in_scope: false,
             contract_result: None,
             checking_definedness: false,
@@ -5374,9 +5558,9 @@ impl Default for SpecElaborationContext {
 }
 
 impl SpecElaborationContext {
-    fn with_current_memory(current_memory: SpecPoint) -> Self {
+    fn with_current_point(current_point: SpecPoint) -> Self {
         Self {
-            current_memory,
+            current_point,
             ..Self::default()
         }
     }
@@ -5406,7 +5590,7 @@ impl SpecElaborationContext {
 
     fn old_state(
         &self,
-        entry_values: &BTreeMap<String, ProgramValue>,
+        entry_values: &ProgramValueBindings,
         entry: &crate::kernel::ProgramPoint,
     ) -> Result<Self, String> {
         if self.function_contract {
@@ -5415,12 +5599,13 @@ impl SpecElaborationContext {
                 integer_values: self.integer_values.clone(),
                 algebraic_values: self.algebraic_values.clone(),
                 array_refs: PersistentBinderMap::default(),
-                array_memories: PersistentBinderMap::default(),
-                current_memory: SpecPoint::FunctionEntry,
+                array_points: PersistentBinderMap::default(),
+                current_point: SpecPoint::FunctionEntry,
                 current_loop_entry: None,
                 function_contract: true,
                 at_function_entry: true,
                 reference_state: None,
+                call_result_point: None,
                 contract_result_in_scope: false,
                 contract_result: None,
                 checking_definedness: self.checking_definedness,
@@ -5450,12 +5635,13 @@ impl SpecElaborationContext {
             integer_values: self.integer_values.clone(),
             algebraic_values: self.algebraic_values.clone(),
             array_refs: PersistentBinderMap::default(),
-            array_memories: PersistentBinderMap::default(),
-            current_memory: SpecPoint::At(entry.clone()),
+            array_points: PersistentBinderMap::default(),
+            current_point: SpecPoint::At(entry.clone()),
             current_loop_entry: None,
             function_contract: false,
             at_function_entry: true,
             reference_state: None,
+            call_result_point: None,
             // The return value is a logical proof binding, like `let`.
             // Historical C reads still use their own entry bindings.
             contract_result_in_scope: self.contract_result_in_scope,
@@ -5634,7 +5820,7 @@ pub enum SourceProof {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertifiedStatementTransition {
     pub(crate) native_step: std::sync::Arc<crate::kernel::SymbolicExecutionPath>,
-    pub(crate) call_result: Option<ProgramValue>,
+    pub(crate) call_result: Option<RetainedProgramValue>,
     /// The call's by-value aggregate parameters as it bound them, recorded
     /// as the call region's parameter point (`R.parameter(name)`).
     pub(crate) call_parameters: Option<crate::kernel::CallParameters>,
@@ -5657,7 +5843,7 @@ pub struct CertifiedStatementTransition {
     pub(crate) loop_invariant_correspondence: Vec<(usize, Proposition)>,
     /// The loop head's pass count the facts state over, recorded so a proof
     /// past the loop spells it `loop(i).iterations`.
-    pub(crate) loop_iterations: Option<crate::kernel::IntegerTerm>,
+    pub(crate) loop_iterations: Option<crate::kernel::KernelTerm>,
     pub(crate) prerequisite_derivations: Vec<PropositionDerivation>,
     /// Exact entry-state facts consumed while planning this
     /// transition. Kept outside the kernel theorem so collecting certificate
@@ -6788,6 +6974,8 @@ pub struct ProofBranch {
 /// Explicit proof arms for the checked edge of one potentially throwing call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofCallOutcomes {
+    /// Optional proof names for the returned and thrown payloads, in that order.
+    pub payload_bindings: [Option<String>; 2],
     pub returned_tactics: Vec<ProofTactic>,
     pub threw_tactics: Vec<ProofTactic>,
 }
@@ -7419,7 +7607,7 @@ impl ParameterNaming {
                 BTreeMap::new(),
                 |mut sources, (index, argument)| {
                     if let ProgramExpression::Value(ProgramValue::Pointer(pointer)) = argument {
-                        sources.entry(pointer.pointer().clone()).or_insert(index);
+                        sources.entry(pointer.address().clone()).or_insert(index);
                     }
                     sources
                 },
@@ -7506,7 +7694,7 @@ impl<'a> SpecDefinitions<'a> {
         self
     }
 
-    fn pointer_element_width(&self, pointer: &crate::kernel::PointerValue) -> Result<u32, String> {
+    fn pointer_element_width(&self, pointer: &crate::kernel::Pointer) -> Result<u32, String> {
         if let Some(crate::kernel::effective_type::CAccessClass::Struct(class)) =
             pointer.object_class()
         {

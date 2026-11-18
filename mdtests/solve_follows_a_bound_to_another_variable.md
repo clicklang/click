@@ -4,7 +4,7 @@ In the loop body, `i + 1 <= 101` needs `i`'s bounds and then the bound on
 the variable they name: `i < n` from the guard, and `n <= 100` from the
 contract. solve's bound selection follows bounds from the goal's variables
 to the variables they name, up to a fixed number of variables, and closes
-the goal with one arithmetic certificate.
+the goal with one arithmetic step.
 
 ```c filename=solve_follows_a_bound_to_another_variable.c
 int32 count_to(int32 n) {

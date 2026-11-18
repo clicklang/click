@@ -4,7 +4,7 @@ use super::*;
 
 #[derive(Clone, Debug)]
 pub struct KernelMemoryRead {
-    memory: SharedMemory,
+    point: ProgramPoint,
     address: SharedAddress,
     observation: Option<SharedAddress>,
 }
@@ -12,9 +12,10 @@ impl PartialEq for KernelMemoryRead {
     fn eq(&self, other: &Self) -> bool {
         match (&self.observation, &other.observation) {
             (None, None) => {
-                self.memory.arena_id() == other.memory.arena_id() && self.address == other.address
+                self.point.shared_memory().arena_id() == other.point.shared_memory().arena_id()
+                    && self.address == other.address
             }
-            (Some(a), Some(b)) => self.memory == other.memory && a == b,
+            (Some(a), Some(b)) => self.point == other.point && a == b,
             _ => false,
         }
     }
@@ -24,28 +25,28 @@ impl Hash for KernelMemoryRead {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.observation.is_some().hash(state);
         if let Some(address) = &self.observation {
-            self.memory.hash(state);
+            self.point.hash(state);
             address.hash(state);
         } else {
-            self.memory.arena_id().hash(state);
+            self.point.shared_memory().arena_id().hash(state);
             self.address.hash(state);
         }
     }
 }
 impl KernelMemoryRead {
-    pub(crate) fn new(memory: SharedMemory, address: SharedAddress) -> Self {
+    pub(crate) fn new(point: ProgramPoint, address: SharedAddress) -> Self {
         Self {
-            memory,
+            point,
             address,
             observation: None,
         }
     }
-    pub(crate) fn parts(&self) -> (&SharedMemory, &SharedAddress) {
-        (&self.memory, &self.address)
+    pub(crate) fn parts(&self) -> (&ProgramPoint, &SharedAddress) {
+        (&self.point, &self.address)
     }
     pub(crate) fn observe(&self, address: SharedAddress) -> Self {
         Self {
-            memory: self.memory.clone(),
+            point: self.point.clone(),
             address: self.address.clone(),
             observation: Some(address),
         }
@@ -59,8 +60,8 @@ impl KernelTermImport {
         value: &MachineTerm,
     ) -> Option<KernelTerm> {
         match value {
-            MachineTerm::MemoryLoad(memory, address, kind) => {
-                KernelTerm::scalar_read_descriptor(format, memory.shared_memory(), address, *kind)
+            MachineTerm::MemoryLoad(point, address, kind) => {
+                KernelTerm::scalar_read_descriptor(format, point, address, *kind)
             }
             MachineTerm::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
                 self.machine_input_requires_export = true;
@@ -74,40 +75,40 @@ impl KernelTermImport {
 impl KernelTerm {
     /// Retain a pointer result only when its producer already retained a read
     /// definition. This reads term metadata, never hypotheses or stored values.
-    pub(crate) fn retained_pointer_read(value: &PointerValue) -> Option<Self> {
+    pub(crate) fn retained_pointer_read(value: &Pointer) -> Option<Self> {
         // Later arithmetic and ordinary pointer values belong to their own
         // producer slices. Do not clone or hash a growing displacement merely
         // to ask whether it is an undisplaced read atom.
-        if !matches!(value.pointer().offset, AddressOffset::Constant(0))
+        if !matches!(value.address().offset, AddressOffset::Constant(0))
             || !matches!(
-                value.pointer().base,
+                value.address().base,
                 AddressBase::LoadedPointer(_) | AddressBase::FunctionSymbolic(_)
             )
         {
             return None;
         }
-        let MachineTerm::MemoryLoad(memory, address, _) =
-            crate::kernel::equality_graph::logical_pointer_read_term(value.pointer())?
+        let MachineTerm::MemoryLoad(point, address, _) =
+            crate::kernel::equality_graph::logical_pointer_read_term(value.address())?
         else {
             return None;
         };
         Some(Self::shared_pointer_read(
             SharedPointerValue::import(value),
-            memory.into_shared_memory(),
+            point,
             SharedAddress::import(&address),
         ))
     }
 
     pub(crate) fn shared_pointer_read(
         value: SharedPointerValue,
-        memory: SharedMemory,
+        point: ProgramPoint,
         address: SharedAddress,
     ) -> Self {
         Self::intern(
             KernelType::Program(value.node().program_type),
             KernelTermNode::PointerRead {
                 value,
-                memory,
+                point,
                 address,
             },
         )
@@ -117,7 +118,7 @@ impl KernelTerm {
     /// interface. Never expands a surrounding shared arithmetic expression.
     pub(crate) fn machine_read_leaf(&self) -> Option<&MachineTerm> {
         let KernelTermNode::MemoryLoad {
-            memory,
+            point,
             address,
             kind,
         } = self.node()
@@ -126,7 +127,7 @@ impl KernelTerm {
         };
         Some(self.0.machine_leaf.get_or_init(|| {
             MachineTerm::MemoryLoad(
-                ProgramPoint::at(memory),
+                point.clone(),
                 Box::new(address.export().expect("retained read address")),
                 *kind,
             )
@@ -135,13 +136,13 @@ impl KernelTerm {
 
     pub(crate) fn scalar_read_descriptor(
         format: MachineIntegerType,
-        memory: &SharedMemory,
+        point: &ProgramPoint,
         address: &Address,
         kind: LoadKind,
     ) -> Option<Self> {
         let address = Self::scalar_read_address(address)?;
         Some(Self::shared_scalar_read_descriptor(
-            format, memory, &address, kind,
+            format, point, &address, kind,
         ))
     }
 
@@ -157,14 +158,14 @@ impl KernelTerm {
     /// memory selection, access evidence and value resolution stay with callers.
     pub(crate) fn shared_scalar_read_descriptor(
         format: MachineIntegerType,
-        memory: &SharedMemory,
+        point: &ProgramPoint,
         address: &SharedAddress,
         kind: LoadKind,
     ) -> Self {
         Self::intern(
             KernelType::Program(format.program_type()),
             KernelTermNode::MemoryLoad {
-                memory: memory.clone(),
+                point: point.clone(),
                 address: address.clone(),
                 kind,
             },
@@ -222,12 +223,13 @@ mod tests {
             let root = result.shared().expect("retained pointer read");
             let KernelTermNode::PointerRead {
                 value,
-                memory: retained_state,
+                point: retained_point,
                 address: cell,
             } = root.node()
             else {
                 panic!("pointer read root");
             };
+            let retained_state = retained_point.shared_memory();
             assert_eq!(root.ty(), &KernelType::Program(ty));
             assert_eq!(
                 retained_state.arena_id(),
@@ -260,13 +262,14 @@ mod tests {
         crate::kernel::eval::clear_load_variable_registry();
         crate::kernel::equality_graph::clear_logical_pointer_reads();
         let KernelTermNode::PointerRead {
-            memory: retained_state,
+            point: retained_point,
             address: cell,
             ..
         } = root.node()
         else {
             panic!("read root");
         };
+        let retained_state = retained_point.shared_memory();
         assert_eq!(retained_state.arena_id(), intern_memory(memory).arena_id());
         assert_eq!(cell, &SharedAddress::import(&address));
         assert!(matches!(
@@ -298,7 +301,7 @@ mod tests {
                 MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(address.clone()), kind);
             let term = KernelTermImport::default().machine(format, &native);
             assert!(
-                matches!(term.node(), KernelTermNode::MemoryLoad { memory: m, address: p, kind: k } if m == &memory && p == &SharedAddress::import(&address) && *k == kind)
+                matches!(term.node(), KernelTermNode::MemoryLoad { point: m, address: p, kind: k } if m.shared_memory() == &memory && p == &SharedAddress::import(&address) && *k == kind)
             );
             assert!(term.is_shared_machine_operand());
             crate::kernel::eval::clear_load_variable_registry();
@@ -317,7 +320,7 @@ mod tests {
     fn shared_read_addresses_preserve_call_payloads_ignored_by_logical_identity() {
         let _session = VerificationSession::enter();
         let memory = intern_memory(SymbolicMemory::new());
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1017200)),
             ProgramType::Int32Pointer,
         );
@@ -337,7 +340,7 @@ mod tests {
             };
             let root = KernelTerm::scalar_read_descriptor(
                 MachineIntegerType::Int32,
-                &memory,
+                &crate::kernel::ProgramPoint::at(&memory),
                 &address,
                 LoadKind::Int32,
             )

@@ -41,8 +41,8 @@ fn lower_name(
         BTreeMap::new(),
         BTreeMap::new(),
         state,
-        BTreeMap::new(),
-        BTreeMap::new(),
+        ProgramValueBindings::new(),
+        ProgramValueBindings::new(),
         None,
         &retained_states,
         SpecDefinitions::new(&predicates, &functions),
@@ -52,7 +52,7 @@ fn lower_name(
     lowerer.lower_program_binding_to_spec(
         name,
         &SpecElaborationContext {
-            current_memory: SpecPoint::At(state.program_point()),
+            current_point: SpecPoint::At(state.program_point()),
             at_function_entry: at_entry,
             ..Default::default()
         },
@@ -92,8 +92,8 @@ fn lower_recorded_input(state: &ExecutionState) -> (SpecExpression, usize) {
         BTreeMap::new(),
         BTreeMap::new(),
         state,
-        BTreeMap::from([("input".into(), caller_image.clone())]),
-        BTreeMap::from([("input".into(), caller_image)]),
+        ProgramValueBindings::from([("input".into(), caller_image.clone())]),
+        ProgramValueBindings::from([("input".into(), caller_image)]),
         None,
         &retained_states,
         SpecDefinitions::new(&predicates, &functions),

@@ -23,7 +23,8 @@ fn boolean_reads_keep_shared_indices_through_rewrites_and_observations() {
             .unwrap(),
         );
         let memory = intern_memory(SymbolicMemory::new());
-        let root = KernelTerm::boolean_read(memory.clone(), address.clone());
+        let root =
+            KernelTerm::boolean_read(crate::kernel::ProgramPoint::at(&memory), address.clone());
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(
@@ -72,8 +73,9 @@ fn boolean_reads_admit_states_without_comparing_unrelated_contents() {
         let second = intern_memory(memory);
         let address = SharedAddress::import(&Address::symbolic(Variable(999340)));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let a = KernelTerm::boolean_read(first, address.clone());
-            let b = KernelTerm::boolean_read(second, address);
+            let a =
+                KernelTerm::boolean_read(crate::kernel::ProgramPoint::at(&first), address.clone());
+            let b = KernelTerm::boolean_read(crate::kernel::ProgramPoint::at(&second), address);
             assert_ne!(a, b);
         });
         assert!(work <= 16, "size={size}, work={work}");

@@ -524,6 +524,7 @@ fn dynamic_body_fact_dependency(
                 }
             },
             Proposition::MemoryReadDefined {
+                at,
                 memory,
                 pointer,
                 value_type,
@@ -538,7 +539,12 @@ fn dynamic_body_fact_dependency(
                     binder,
                     selected,
                 )?;
-                if memory == state.memory() {
+                // The point identifies the observation even when two states
+                // share a memory view. Synthetic facts may have no point.
+                let is_current = at
+                    .and_then(|point| state.observation_point_id().map(|current| point == current))
+                    .unwrap_or_else(|| memory == state.memory());
+                if is_current {
                     check_load(
                         pointer.clone(),
                         value_type.byte_width(),
@@ -696,7 +702,8 @@ pub(in crate::surface) fn selected_resource_instance_arm(
         .fields()
         .iter()
         .position(|field| field.name() == matched.field)?;
-    let AlgebraicValue::Algebraic(model) = instance.fields().get(field_index)? else {
+    let crate::kernel::ResourceFieldValue::Algebraic(model) = instance.fields().get(field_index)?
+    else {
         return None;
     };
     let scopes = crate::surface::validation::resource_match_arm_scopes(
@@ -828,7 +835,7 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     click_function_environment: &ClickFunctionEnvironment,
     instance: &ResourceInstance,
     records: &[crate::kernel::ResourceBodyClauseRecord],
-    function_values: &BTreeMap<String, ProgramValue>,
+    function_values: &ProgramValueBindings,
     proof_bindings: Option<&[String]>,
 ) -> Result<Vec<ResourceClausePresentation>, ClickError> {
     let Some(first) = records.first() else {
@@ -1883,7 +1890,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         &ProgramValue::Int32(MachineTerm::constant(0)),
         available_pure_facts,
         spec_definitions,
-        false,
+        CompositeObservation::Explicit(&surface_substitutions),
         Some(function.composite_resource_definitions()),
     )
     .map_err(|message| {
@@ -1892,12 +1899,14 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             describe_resource_clause(resource)
         ))
     })?;
-    let fact_state = observation_pre_state.clone().with_memory(memory.clone());
+    let fact_state = observation_pre_state
+        .clone()
+        .with_memory_continuing(&observation_pre_state, memory.clone());
     let instantiated = if body_projected {
-        Some(crate::kernel::instantiate_composite_resource_facts(
+        Some(crate::kernel::instantiate_composite_resource_facts_at(
             &abstract_resource,
             function.composite_resource_definitions(),
-            &memory,
+            &fact_state.program_point(),
             &contained_resources,
             &assumptions,
         )
@@ -2068,7 +2077,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     }
     Ok((
         state
-            .with_memory(memory)
+            .with_memory_of(&fact_state)
             .with_resource_context_and_loan_dependencies(resources, dependency_bindings),
         abstract_resource,
     ))
@@ -2370,7 +2379,7 @@ fn project_held_resource_observable_facts(
         result,
         available_pure_facts,
         spec_definitions,
-        true,
+        CompositeObservation::Implicit,
         None,
     )
     .map(|(memory, _, _)| memory)
@@ -2508,6 +2517,11 @@ fn composite_resource_body_is_active_with_assumptions(
     })
 }
 
+enum CompositeObservation<'a> {
+    Explicit(&'a BTreeMap<String, ContractExpression>),
+    Implicit,
+}
+
 /// Applies the non-consuming observation law declared by a composite body.
 /// The kernel algebra handles the folded resource fact itself; Click owns this
 /// definitional layer because it requires source-level substitution and fact
@@ -2523,7 +2537,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
     result: &ProgramValue,
     available_pure_facts: &mut F,
     spec_definitions: SpecDefinitions<'_>,
-    lower_declared_source_facts: bool,
+    observation: CompositeObservation<'_>,
     compiled_definitions: Option<&[CompositeResourceDefinition]>,
 ) -> Result<(SymbolicMemory, ResourceContext, bool), String> {
     let Some(composite_body) = definition.composite_body() else {
@@ -2557,6 +2571,16 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         spec_definitions,
     )?
     else {
+        if let CompositeObservation::Explicit(substitutions) = observation {
+            let guard = composite_body
+                .condition()
+                .expect("only a guarded body can be undecided");
+            let guard = substitute_click_proposition(guard, substitutions)?;
+            return Err(format!(
+                "guard `{}` is undecided: prove it or its negation before observing the body",
+                describe_click_proposition(&guard)
+            ));
+        }
         return Ok((state.memory().clone(), ResourceContext::new(), false));
     };
     if !body_active {
@@ -2625,7 +2649,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         result,
         available_pure_facts,
         spec_definitions,
-        lower_declared_source_facts,
+        matches!(observation, CompositeObservation::Implicit),
     )?;
     Ok((memory, contained_resources, true))
 }
@@ -2864,6 +2888,11 @@ fn describe_resource_context_validity_error(
 ) -> String {
     match error {
         ResourceContextValidityError::UnsupportedOwnershipBoundary => error.to_string(),
+        ResourceContextValidityError::UnestablishedOwnedBoundary(required) => {
+            let mut labels = crate::surface::proof_diagnostics::render::MemoryStateLabels::naming(parameter_binding);
+            format!("symbolic ownership boundary needs an explicit proof of {}",
+                crate::surface::proof_diagnostics::render::render_proposition_labeled(&required, &mut labels))
+        }
         ResourceContextValidityError::InvalidExclusiveAccess(_) => {
             "field-bearing resource instances and mutex guards require exclusive ownership with quantity one".into()
         }
@@ -3670,30 +3699,67 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         }
     }
 
+    let preexisting_child_sources = unfolded_facts
+        .iter()
+        .filter_map(|child| {
+            state
+                .resources()
+                .first_exact_occurrence(child)
+                .map(|occurrence| (child.clone(), occurrence))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let viewed_body_is_exposed = opening_view
+        && unfolded_facts.iter().all(|child| {
+            let Some(occurrence) = preexisting_child_sources.get(child) else {
+                return false;
+            };
+            let existing = state.resources().loan_dependency(*occurrence);
+            match (borrowed_parent_binding.as_ref(), existing) {
+                (Some(parent), Some(existing)) => same_loan_authority(parent, existing),
+                (Some(_), None) => !state.resources().view_occurrence_is_principal(*occurrence),
+                (None, None) => true,
+                _ => false,
+            }
+        });
     let body_was_already_exposed = composite_body.condition().is_none()
+        && (already_unfolded || access == ResourceBodyAccess::Open || viewed_body_is_exposed)
         && unfolded_facts
             .iter()
-            .all(|fact| state.resources().contains_exact_representation(fact));
+            .all(|fact| preexisting_child_sources.contains_key(fact));
 
-    // Validate the projected ownership before assuming facts supplied by the
-    // same definition. A body may legitimately state separation that is
-    // needed to normalize symbolic children, but it must not use a
-    // contradictory separation claim to conceal a concretely overlapping
-    // pair. This is one validity pass over the complete projection, not one
-    // normalization per child.
-    if !already_unfolded && !body_was_already_exposed {
-        let projected = state
-            .resources()
-            .clone()
-            .unchecked_with_facts(unfolded_facts.clone());
-        if let Some(error) = projected.validity_error_ignoring_separation(&assumptions) {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `unfold({})` produced {}",
-                describe_resource_clause(resource),
-                describe_resource_context_validity_error(error, parameter_binding)
-            )));
-        }
-    }
+    // The held head supplies this separating body beside its residual frame.
+    // Construct its successor once, before assuming definition facts, so a
+    // contradictory body fact cannot conceal a directly known collision.
+    // This never revalidates or normalizes the unchanged caller frame.
+    let constructed_body = if !already_unfolded && !body_was_already_exposed {
+        let emitted = if borrowed_parent_binding.is_some()
+            || held_piece_binding.is_some()
+            || body_reads_counts
+            || access == ResourceBodyAccess::Open
+        {
+            unfolded_facts.clone()
+        } else {
+            crate::kernel::coalesce_written_resource_descriptions(
+                unfolded_facts.clone(),
+                &assumptions,
+            )
+        };
+        Some(
+            state
+                .resources()
+                .clone()
+                .install_established_partition(emitted, &assumptions)
+                .map_err(|error| {
+                    ClickError::new(format!(
+                        "`{claim_label}` tactic {tactic_index}: `unfold({})` produced {}",
+                        describe_resource_clause(resource),
+                        describe_resource_context_validity_error(error, parameter_binding)
+                    ))
+                })?,
+        )
+    } else {
+        None
+    };
 
     // An owned instance `open` keeps folded: the one owner whose own views
     // may support its body facts without a loan.
@@ -3824,56 +3890,12 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         available_pure_facts.insert(lowered_fact);
     }
 
-    // Keep exact identities for children that were already present.  Equal
-    // child facts may have different dependency state, so a later rewrite
-    // must validate those identities individually rather than selecting a
-    // binding by fact value.
-    let preexisting_unfolded_occurrences = unfolded_facts
-        .iter()
-        .filter(|fact| fact.is_view())
-        .flat_map(|fact| state.resources().occurrences_for_fact(fact))
-        .collect::<BTreeSet<_>>();
-
-    // Project the complete body in one checked composition. Composing each
-    // child separately renormalizes the same ambient resource context once
-    // per child, making one simple `unfold` depend on the accumulated proof
-    // history rather than the size of the resource body. The definition's
-    // pure facts are simultaneous consequences of the same composite law, so
-    // make them available while canonicalizing its children.
     let mut inserted_unfolded_occurrences = Vec::new();
-    if !already_unfolded && !body_was_already_exposed {
+    if let Some((resources, inserted)) = constructed_body {
         if borrowed_parent_binding.is_some() {
-            let resources = state
-                .resources()
-                .clone()
-                .try_compose_with_facts_delaying_normalization_with_occurrences(
-                    unfolded_facts.clone(),
-                    available_pure_facts.assumptions(),
-                )
-                .map_err(|error| {
-                    ClickError::new(format!(
-                        "`{claim_label}` tactic {tactic_index}: `unfold({})` produced {}",
-                        describe_resource_clause(resource),
-                        describe_resource_context_validity_error(error, parameter_binding)
-                    ))
-                })?;
-            inserted_unfolded_occurrences = resources.1;
-            state = state.with_resource_context(resources.0);
+            inserted_unfolded_occurrences = inserted;
+            state = state.with_resource_context(resources);
         } else if let Some(binding) = held_piece_binding.as_ref() {
-            let (resources, inserted) = state
-                .resources()
-                .clone()
-                .try_compose_with_facts_delaying_normalization_with_occurrences(
-                    unfolded_facts.clone(),
-                    available_pure_facts.assumptions(),
-                )
-                .map_err(|error| {
-                    ClickError::new(format!(
-                        "`{claim_label}` tactic {tactic_index}: `unfold({})` produced {}",
-                        describe_resource_clause(resource),
-                        describe_resource_context_validity_error(error, parameter_binding)
-                    ))
-                })?;
             let assumptions = available_pure_facts.assumptions().clone();
             let dependencies = inserted
                 .into_iter()
@@ -3885,49 +3907,10 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                             &assumptions,
                         )
                 })
-                // The binding keeps the loan's own description: that is what
-                // the ledger authorizes, and the piece's current spelling is
-                // related to it only through facts the ledger does not hold.
                 .map(|(_, occurrence)| (occurrence, binding.clone()))
                 .collect::<Vec<_>>();
             state = state.with_resource_context_and_loan_dependencies(resources, dependencies);
         } else {
-            // Population cleanup and member private body opening
-            // are certified as exact exchanges. Preserve adjacent framed
-            // ranges so nested opens have the same delta as the kernel law.
-            let resources = if body_reads_counts || (access == ResourceBodyAccess::Open) {
-                state
-                    .resources()
-                    .clone()
-                    .try_compose_with_facts_delaying_normalization(
-                        unfolded_facts.clone(),
-                        available_pure_facts.assumptions(),
-                    )
-            } else {
-                // Normalize only around the opened body: the buckets its
-                // children land in. Renormalizing the whole ambient context
-                // made each `unfold` cost every resource the proof holds.
-                state
-                    .resources()
-                    .clone()
-                    .try_compose_with_facts_delaying_normalization(
-                        unfolded_facts.clone(),
-                        available_pure_facts.assumptions(),
-                    )
-                    .map(|resources| {
-                        resources.normalized_around_facts(
-                            &unfolded_facts,
-                            available_pure_facts.assumptions(),
-                        )
-                    })
-            }
-            .map_err(|error| {
-                ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `unfold({})` produced {}",
-                    describe_resource_clause(resource),
-                    describe_resource_context_validity_error(error, parameter_binding)
-                ))
-            })?;
             state = state.with_resource_context(resources);
         }
     }
@@ -3937,10 +3920,9 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     // child.  An exclusive instance view has already been rejected above by
     // the resource-kind check and never enters this projection path.
     if let Some(binding) = borrowed_parent_binding {
-        let inserted_child_occurrences = inserted_unfolded_occurrences
+        let inserted_child_facts = inserted_unfolded_occurrences
             .iter()
-            .filter(|(child, _)| child.is_view())
-            .map(|(_, occurrence)| *occurrence)
+            .map(|(fact, _)| fact.clone())
             .collect::<BTreeSet<_>>();
         let mut dependencies = inserted_unfolded_occurrences
             .into_iter()
@@ -3956,40 +3938,28 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             })
             .collect::<Vec<_>>();
         for child in unfolded_facts.iter().filter(|fact| fact.is_view()) {
-            let child_occurrences = state.resources().occurrences_for_fact(child);
-            let mut found_destination = false;
-            for occurrence in child_occurrences {
-                if inserted_child_occurrences.contains(&occurrence) {
-                    found_destination = true;
-                    continue;
-                }
-                if !preexisting_unfolded_occurrences.contains(&occurrence) {
-                    continue;
-                }
-                found_destination = true;
-                let child_binding = state.resources().loan_dependency(occurrence);
-                if child_binding.is_none()
-                    && !state.resources().view_occurrence_is_principal(occurrence)
-                {
-                    dependencies.push((
-                        occurrence,
-                        crate::kernel::LoanViewBinding {
-                            viewed: child.clone(),
-                            ..binding.clone()
-                        },
-                    ));
-                } else if child_binding
-                    .as_ref()
-                    .is_none_or(|existing| !same_loan_authority(existing, &binding))
-                {
-                    return Err(ClickError::new(format!(
-                        "`{claim_label}` tactic {tactic_index}: `unfold` cannot reuse an unbound or differently bound child for a viewed composite"
-                    )));
-                }
+            // A fresh child is the destination of this exact parent. Equal
+            // ambient children retain their own dependencies and identities.
+            if inserted_child_facts.contains(child) {
+                continue;
             }
-            if !found_destination {
+            let occurrence = preexisting_child_sources.get(child).copied().ok_or_else(||
+                ClickError::new(format!("`{claim_label}` tactic {tactic_index}: `unfold` produced no exact destination for a viewed child")))?;
+            let child_binding = state.resources().loan_dependency(occurrence);
+            if child_binding.is_none()
+                && !state.resources().view_occurrence_is_principal(occurrence)
+            {
+                dependencies.push((
+                    occurrence,
+                    crate::kernel::LoanViewBinding {
+                        viewed: child.clone(),
+                        ..binding.clone()
+                    },
+                ));
+            } else if child_binding.is_none_or(|existing| !same_loan_authority(existing, &binding))
+            {
                 return Err(ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `unfold` produced no exact destination for a viewed child"
+                    "`{claim_label}` tactic {tactic_index}: `unfold` cannot reuse an unbound or differently bound child for a viewed composite"
                 )));
             }
         }
@@ -4122,7 +4092,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             let array_refs = array_refs_for_parameters(
                 parameter_binding.parameters,
                 &values,
-                guard_state.memory(),
+                &guard_state.program_point(),
             );
             let retained_states = RecordedStates::new();
             for argument in arguments {
@@ -5825,6 +5795,7 @@ void child_release(struct child* obj) {
                 .is_some()
         );
         let fact = Proposition::MemoryReadDefined {
+            at: None,
             memory: observed.memory().clone(),
             pointer: range.base().offset_by_bytes(4),
             value_type: ProgramType::Int32,
@@ -5911,6 +5882,36 @@ void child_release(struct child* obj) {
         check_dynamic_current_fact_dependencies(true, false);
     }
 
+    #[test]
+    fn dynamic_definedness_uses_the_observation_point_for_loan_dependencies() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let earlier = ExecutionState::new().with_memory(SymbolicMemory::new());
+        let current = earlier.clone().with_memory(earlier.memory().clone());
+        let earlier_point = earlier.observation_point_id().unwrap();
+        let current_point = current.observation_point_id().unwrap();
+        assert_ne!(earlier_point, current_point);
+        assert!(earlier.memory().same_storage_roots(current.memory()));
+
+        let assumptions = PureFactContext::new();
+        let no_views = DynamicViewDependencyIndex::new(&[], &[], &assumptions);
+        let dependency_at = |at| {
+            let fact = Proposition::MemoryReadDefined {
+                at,
+                memory: earlier.memory().clone(),
+                pointer: Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(0),
+                },
+                value_type: ProgramType::Int32,
+            };
+            dynamic_body_fact_dependency(&fact, &current, &assumptions, &no_views)
+        };
+
+        assert!(dependency_at(Some(earlier_point)).unwrap().is_none());
+        assert!(dependency_at(Some(current_point)).is_err());
+        assert!(dependency_at(None).is_err());
+    }
+
     /// A guarded universal read depends on a view of every cell its guard
     /// admits, not on the one symbolic cell `p[k]`, which no view contains.
     #[test]
@@ -5949,6 +5950,7 @@ void child_release(struct child* obj) {
             body: Box::new(Proposition::Implies(
                 Box::new(guard),
                 Box::new(Proposition::MemoryReadDefined {
+                    at: None,
                     memory: memory.clone(),
                     pointer: Address {
                         base: AddressBase::ExternalArgument,
@@ -6044,6 +6046,7 @@ void child_release(struct child* obj) {
         };
         let proposition = if definedness {
             Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: pointer.clone(),
                 value_type: crate::kernel::ProgramType::Int32,

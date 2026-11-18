@@ -2087,7 +2087,7 @@ fn held_address_base(binding: &LocalBinding) -> Option<&AddressBase> {
     let LocalBinding::Object { value, .. } = binding else {
         return None;
     };
-    Some(&value.pointer()?.pointer().base)
+    Some(&value.pointer()?.address().base)
 }
 
 /// The numeric value of a scalar of integer or truth type.
@@ -2373,7 +2373,7 @@ impl LocalEnvironment {
     pub(crate) fn pointer_objects_in_block<'a>(
         &'a self,
         block: &AddressBase,
-    ) -> impl Iterator<Item = (&'a BindingName, &'a PointerValue)> {
+    ) -> impl Iterator<Item = (&'a BindingName, &'a Pointer)> {
         self.pointer_objects_by_block
             .get(block)
             .into_iter()
@@ -3970,7 +3970,9 @@ impl SymbolicMemory {
             .insert(block.clone());
         // A later object is uninitialized until written; the tombstone
         // already refuses every access to this one.
-        if own.any_entry(memory.heap.initialized.as_map(), |_, _| true) {
+        if own.any_entry(memory.heap.initialized.as_map(), |_, _| true)
+            || own.any_entry(memory.heap.initialized.partial_map(), |_, _| true)
+        {
             std::sync::Arc::make_mut(&mut memory.heap)
                 .initialized
                 .forget_block(block);
@@ -4536,33 +4538,21 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn with_pending_heap_reallocation(
         mut self,
         base: Address,
-        old_pointer: Address,
-        old_bytes: AllocationSize,
-        zeroed_prefix: Option<MachineTerm>,
-        copied_cells: Vec<(AddressOffset, ProgramValue)>,
-        initialized_prefix: Vec<(i64, u32)>,
+        pending: PendingReallocation,
     ) -> Self {
         let diagnostic_base = self.clone();
+        let arguments = vec![
+            ProgramValue::pointer(base.clone()),
+            ProgramValue::pointer(pending.old_pointer.clone()),
+            pending.old_bytes.token_value(),
+        ];
         std::sync::Arc::make_mut(&mut self.heap)
             .pending_reallocations
-            .insert(
-                base.clone(),
-                PendingReallocation {
-                    old_pointer: old_pointer.clone(),
-                    old_bytes: old_bytes.clone(),
-                    zeroed_prefix,
-                    copied_cells,
-                    initialized_prefix,
-                },
-            );
+            .insert(base, pending);
         self.record_diagnostic_transform(
             "register pending reallocation",
             vec![diagnostic_base],
-            vec![
-                ProgramValue::pointer(base.clone()),
-                ProgramValue::pointer(old_pointer.clone()),
-                old_bytes.token_value(),
-            ],
+            arguments,
         );
         self
     }
@@ -4587,8 +4577,8 @@ impl SymbolicMemory {
     /// Name the success identity already reserved by this allocation producer.
     /// This is a value observation, not evidence that allocation succeeded or
     /// that the object is still live. No facts or memory history are consulted.
-    pub(crate) fn fresh_allocation_identity(&self, result: &PointerValue) -> Option<PointerValue> {
-        let base = result.pointer();
+    pub(crate) fn fresh_allocation_identity(&self, result: &Pointer) -> Option<Pointer> {
+        let base = result.address();
         match base.base {
             AddressBase::Heap(_) => Some(result.clone()),
             AddressBase::Symbolic(variable) if self.heap.pending_allocations.contains_key(base) => {
@@ -5376,6 +5366,7 @@ impl SymbolicMemory {
             Some((selected, runs)) => ForgetScope::Ordered {
                 candidates: &candidates,
                 selected,
+                cells_kept: &[],
                 runs: Some(runs),
             },
             None => ForgetScope::candidates(&candidates),
@@ -5452,7 +5443,14 @@ impl SymbolicMemory {
             offset: AddressOffset::Constant(offset),
         };
         let mut initialized = self.heap.initialized.clone();
-        initialized.forget(&copy.destination, copy.bytes);
+        initialized
+            .copy_exact_range_from(
+                &source_memory.heap.initialized,
+                &copy.source,
+                &copy.destination,
+                copy.bytes,
+            )
+            .expect("checked representation copy range");
         initialized.forget_symbolic_offsets(&copy.destination.base);
         let mut record = |start: i64, bytes| {
             let address = Address {
@@ -5461,13 +5459,6 @@ impl SymbolicMemory {
             };
             initialized.record(&address, bytes);
         };
-        for (start, bytes) in source_memory.heap.initialized.constant_runs_in_range(
-            &copy.source.base,
-            source_start,
-            source_end,
-        ) {
-            record(start, bytes);
-        }
         // A cell can establish initialization even if it has no separate
         // record, or if the copy cuts through it and cannot retain its type.
         let first = source_memory
@@ -5502,6 +5493,142 @@ impl SymbolicMemory {
             heap.uninitialized_objects
                 .insert(copy.destination.clone(), width);
         }
+    }
+
+    /// Commit a checked write that leaves a partial byte. No whole-byte
+    /// value may be published in the cell cache or on the memory edge.
+    pub(in crate::kernel) fn store_partial_byte(
+        mut self,
+        pointer: Address,
+        mask: u8,
+        value: ProgramValue,
+        assumptions: &PureFactContext,
+    ) -> Self {
+        let base = intern_derivation_base(&mut self);
+        if let Some((mut prepared, lost_knowledge)) =
+            self.prepare_store_cache(&pointer, 1, assumptions)
+        {
+            if lost_knowledge {
+                prepared.mark_forgotten_from(&base);
+            }
+            self = prepared;
+        }
+        Arc::make_mut(&mut self.heap)
+            .initialized
+            .set_partial(pointer.clone(), mask, Some(value));
+        record_memory_derivation(
+            &mut self,
+            MemoryDerivation::RepresentationWrite {
+                base,
+                pointer,
+                bytes: 1,
+            },
+        );
+        self
+    }
+
+    /// Copy the named fields of a local bit-field record from one snapshot.
+    /// Assignment carries the source members, including unwritten fields.
+    /// It does not guarantee that a source padding bit is copied.
+    pub(in crate::kernel) fn copy_local_bit_field_record(
+        mut self,
+        source: &Address,
+        destination: &Address,
+        bytes: u32,
+        field_bytes: &[(u32, std::num::NonZeroU8)],
+        fields: &[AggregateField],
+    ) -> Result<Self, UndefinedBehavior> {
+        if !source.base.is_local_block()
+            || !destination.base.is_local_block()
+            || !self.access_in_bounds(source, bytes)
+            || !self.access_in_bounds(destination, bytes)
+            || self.is_read_only_block(&destination.base)
+        {
+            return Err(UndefinedBehavior::InvalidMemory);
+        }
+        let snapshot = self.clone();
+        let base = intern_derivation_base(&mut self);
+        let context = PureFactContext::new();
+        if let Some((mut prepared, lost_knowledge)) =
+            self.prepare_store_cache(destination, bytes, &context)
+        {
+            if lost_knowledge {
+                prepared.mark_forgotten_from(&base);
+            }
+            self = prepared;
+        }
+        let initialized = &mut Arc::make_mut(&mut self.heap).initialized;
+        initialized.forget(destination, bytes);
+        initialized.forget_symbolic_offsets(&destination.base);
+        for &(offset, members) in field_bytes {
+            crate::instrumentation::record_deterministic_work(1);
+            let from = source.offset_by_bytes(offset);
+            let to = destination.offset_by_bytes(offset);
+            let full =
+                crate::kernel::eval::known_integer_byte(&snapshot, &from, Some(ByteOrder::Little));
+            let source_initialization = &snapshot.heap.initialized;
+            let mask = members.get()
+                & if full.is_some() {
+                    u8::MAX
+                } else {
+                    source_initialization.mask_at(&from)
+                };
+            let value = full.or_else(|| {
+                let ProgramValue::UInt8(value) =
+                    source_initialization.partial_byte(&from)?.value.as_ref()?
+                else {
+                    return None;
+                };
+                Some(value.clone())
+            });
+            match mask {
+                0 => {}
+                u8::MAX => {
+                    initialized.record(&to, 1);
+                    if let Some(value) = value {
+                        Arc::make_mut(&mut self.cells).insert(to, ProgramValue::UInt8(value));
+                    }
+                }
+                _ => {
+                    let value = value.map(|value| {
+                        ProgramValue::UInt8(crate::kernel::eval::mask_byte(value, mask))
+                    });
+                    initialized.set_partial(to, mask, value);
+                }
+            }
+        }
+        for field in fields {
+            let width = field.program_type().byte_width();
+            let from = source.offset_by_bytes(field.offset_bytes());
+            let to = destination.offset_by_bytes(field.offset_bytes());
+            initialized
+                .copy_exact_range_from(&snapshot.heap.initialized, &from, &to, width)
+                .expect("checked local member range");
+            let start = from.offset.as_const().expect("exact local member");
+            for (address, value) in snapshot
+                .cells
+                .concrete()
+                .range(from.clone()..from.offset_by_bytes(width))
+            {
+                crate::instrumentation::record_deterministic_work(1);
+                let offset = address.offset.as_const().expect("exact cell offset") - start;
+                let relative = u32::try_from(offset).expect("cell starts within the member");
+                if value.byte_width() <= width - relative {
+                    let target = to.offset_by_bytes(relative);
+                    initialized.record(&target, value.byte_width());
+                    Arc::make_mut(&mut self.cells).insert_retained(target, value.clone());
+                }
+            }
+        }
+        record_memory_derivation(
+            &mut self,
+            MemoryDerivation::RepresentationWrite {
+                base,
+                pointer: destination.clone(),
+                bytes,
+            },
+        );
+        Ok(self)
     }
 
     /// Checks that `self` is exactly the cell-and-marker result produced by a
@@ -5606,6 +5733,23 @@ impl SymbolicMemory {
         // a dropped value or the write set ([`SymbolicMemory::forget_cached_values`]).
         let mut expected = before.clone();
         expected.record_dropped_initialized_cells(&dropped_initialized);
+        if !before.heap.initialized.partial_map().is_empty() {
+            Arc::make_mut(&mut expected.heap)
+                .initialized
+                .forget_partial_values(Some((&candidates, &[])), |address, value| {
+                    matches!(
+                        call_havoc_keeps_cell(
+                            address,
+                            value,
+                            mutable_ranges,
+                            assumptions,
+                            kept,
+                            true
+                        ),
+                        CallHavocCellRule::Separate
+                    )
+                });
+        }
         expected.forget_zero_readings_under(
             dropped_initialized.iter().map(|(pointer, _)| &pointer.base),
         );
@@ -5869,8 +6013,8 @@ impl SymbolicMemory {
             .ok_or(RuntimeError::TypeMismatch)?;
         let state_copy = copy
             && matches!(&value, ProgramValue::Pointer(source) if
-            !source.pointer().base.is_local_block()
-            || self.cells.runs_in_block(&source.pointer().base)
+            !source.address().base.is_local_block()
+            || self.cells.runs_in_block(&source.address().base)
                 .any(|run| !matches!(run.value_mode(), RunValueMode::Constant(_))));
         if !base.base.is_local_block() || state_copy {
             return self.write_scalar_array_state(
@@ -5925,7 +6069,7 @@ impl SymbolicMemory {
             let ProgramValue::Pointer(pointer) = &value else {
                 return Err(RuntimeError::TypeMismatch);
             };
-            let pointer = pointer.pointer();
+            let pointer = pointer.address();
             if !valid_region(pointer)
                 || !self.run_can_stand_for_cells_at(pointer)
                 || (bytes != 0 && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
@@ -6167,7 +6311,7 @@ impl SymbolicMemory {
             let ProgramValue::Pointer(pointer) = value else {
                 return Err(RuntimeError::TypeMismatch);
             };
-            let pointer = pointer.pointer();
+            let pointer = pointer.address();
             if !valid(pointer)
                 || (pointer.base.is_local_block()
                     && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
@@ -6543,7 +6687,9 @@ impl SymbolicMemory {
         let base = intern_derivation_base(&mut self);
         // Cache invalidation is internal to this store, not a memory event.
         // Retain its original input, and never intern the intermediate cache.
-        if (invalidate_aliases || !self.union_cells.is_empty())
+        if (invalidate_aliases
+            || !self.union_cells.is_empty()
+            || !self.heap.initialized.partial_map().is_empty())
             && let Some((mut prepared, lost_knowledge)) =
                 self.prepare_store_cache(&pointer, value.byte_width(), context)
         {
@@ -6553,6 +6699,11 @@ impl SymbolicMemory {
             self = prepared;
         }
         std::sync::Arc::make_mut(&mut self.cells).insert_retained(pointer.clone(), value.clone());
+        if !self.heap.initialized.partial_map().is_empty() {
+            Arc::make_mut(&mut self.heap)
+                .initialized
+                .forget_masks(&pointer, value.byte_width());
+        }
         if (self.is_live_heap_address(&pointer, context)
             || !self.heap.uninitialized_objects.is_empty())
             && !self.heap.initialized.covers(&pointer, value.byte_width())
@@ -7169,6 +7320,7 @@ impl SymbolicMemory {
                     candidates,
                     selected,
                     runs,
+                    ..
                 } => cells.retain_selected_concrete_by(
                     selected,
                     candidates,
@@ -7216,12 +7368,33 @@ impl SymbolicMemory {
                 }
             }
         }
+        let forgot_partial = if self.heap.initialized.partial_map().is_empty() {
+            false
+        } else {
+            let candidates = match scope {
+                ForgetScope::Everywhere => None,
+                ForgetScope::Candidates {
+                    candidates,
+                    cells_kept,
+                }
+                | ForgetScope::Ordered {
+                    candidates,
+                    cells_kept,
+                    ..
+                } => Some((candidates, cells_kept)),
+            };
+            Arc::make_mut(&mut self.heap)
+                .initialized
+                .forget_partial_values(candidates, |address, value| {
+                    fate(address, CachedValue::Cell(value)) == CachedValueFate::Kept
+                })
+        };
         self.record_dropped_initialized_cells(&forgotten_cells);
         // A run's slots are cells too, dropped by `run_rule` as a whole run
         // without `fate` being asked; preserve their initialization evidence.
         self.record_dropped_initialized_run_slots(&dropped_run_slots);
         self.forget_zero_readings_under(forgotten_cells.iter().map(|(pointer, _)| &pointer.base));
-        !forgotten_cells.is_empty()
+        !forgotten_cells.is_empty() || forgot_partial
     }
 
     /// Drops the zero reading of every allocation that may hold a byte of
@@ -7636,6 +7809,7 @@ impl SymbolicMemory {
             Some(selected) => ForgetScope::Ordered {
                 candidates: &candidates,
                 selected,
+                cells_kept: &gap_kept,
                 runs: None,
             },
             None => ForgetScope::Candidates {
@@ -7657,6 +7831,7 @@ impl SymbolicMemory {
         // instead of stopping at an edge that records no write.
         if memory.cells.len() == self.cells.len()
             && memory.union_cells.len() == self.union_cells.len()
+            && !forgot_values
         {
             return None;
         }
@@ -8124,7 +8299,7 @@ impl SymbolicMemory {
         // cell, either of which already carries its definition.
         match Address::version_read_value(&retained_state, pointer) {
             Ok(held) => ProgramValue::Pointer(held.with_type(value_type)),
-            Err(value) => ProgramValue::Pointer(PointerValue::from_read(
+            Err(value) => ProgramValue::Pointer(Pointer::from_read(
                 value,
                 value_type,
                 &retained_state,
@@ -8153,7 +8328,7 @@ impl SymbolicMemory {
             &retained_state,
             pointer,
         );
-        ProgramValue::Pointer(PointerValue::from_read(
+        ProgramValue::Pointer(Pointer::from_read(
             value,
             value_type,
             &retained_state,
@@ -8818,7 +8993,8 @@ impl ExecutionState {
             .filter(|child| !projected.satisfies_fact(child, assumptions))
             .collect::<Vec<_>>();
         let projected = projected
-            .try_compose_with_facts_delaying_normalization(missing, assumptions)
+            .install_established_partition(missing, assumptions)
+            .map(|(context, _)| context)
             .map_err(|error| format!("control body ownership refused: {error}"))?;
         Ok((projected, count))
     }
@@ -8896,7 +9072,7 @@ impl ExecutionState {
             else {
                 return Err("control authority needs one pointer anchor".into());
             };
-            let anchor = pointer.pointer();
+            let anchor = pointer.address();
             let events = self
                 .population_effects
                 .creation
@@ -9066,7 +9242,7 @@ impl ExecutionState {
             else {
                 return Err("control authority needs one pointer anchor".into());
             };
-            let anchor = anchor_value.pointer().clone();
+            let anchor = anchor_value.address().clone();
             let ResourceFact::Own(Resource::Composite { arguments, .. }, _) = selected else {
                 return Err("Requires owns control resource".into());
             };
@@ -9099,7 +9275,7 @@ impl ExecutionState {
             let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named(parameter));
             let is_counter_load = |expression: &SpecExpression| {
                 let SpecExpression::MemoryLoad {
-                    memory: SpecPoint::Current,
+                    point: SpecPoint::Current,
                     pointer,
                     value_type: ProgramType::Int32,
                 } = expression
@@ -9345,7 +9521,7 @@ impl ExecutionState {
         else {
             return Err("authority requires one pointer anchor".into());
         };
-        let anchor = pointer.pointer();
+        let anchor = pointer.address();
         let events = self
             .population_effects
             .creation
@@ -9467,7 +9643,7 @@ impl ExecutionState {
         else {
             return Err("Requires an exact pointer-anchored authorized resource R(p)".into());
         };
-        let anchor = pointer.pointer();
+        let anchor = pointer.address();
         let imported_member_exchange =
             self.population_effects
                 .creation
@@ -9625,7 +9801,8 @@ impl ExecutionState {
                 .without_fact_incrementally(selected, assumptions)
                 .ok_or_else(|| format!("Requires owns {name}(p)"))?;
             resources
-                .try_compose_with_facts_delaying_normalization(body.iter().cloned(), assumptions)
+                .install_established_partition(body.iter().cloned(), assumptions)
+                .map(|(context, _)| context)
                 .map_err(|error| format!("member body ownership refused: {error}"))?
         };
         let exchange = if definition.has_fixed_exclusive_memory() {
@@ -9710,7 +9887,7 @@ impl ExecutionState {
             else {
                 return Ok(());
             };
-            events.member_created(&pointer.pointer().base, description.family())
+            events.member_created(&pointer.address().base, description.family())
         } else {
             return Ok(());
         };
@@ -9864,6 +10041,29 @@ impl ExecutionState {
         self
     }
 
+    /// Bind an existing producer for proof-side expression lowering through
+    /// the same local type/qualifier policy as `with_local`.
+    pub(crate) fn with_retained_local(
+        mut self,
+        name: impl Into<BindingName>,
+        value: ExecutionValue,
+    ) -> Self {
+        if let ExecutionValue::Native(value) = value {
+            return self.with_local(name, value);
+        }
+        let program_type = value.program_type();
+        self.locals.set_retained_typed_with_all_qualifiers(
+            name,
+            value,
+            program_type,
+            false,
+            false,
+            false,
+            false,
+        );
+        self
+    }
+
     pub fn with_memory(mut self, memory: SymbolicMemory) -> Self {
         self.set_memory(memory);
         self
@@ -10010,6 +10210,16 @@ impl ExecutionState {
         self.point.id()
     }
 
+    /// Point of an observation in this state, including a successor reached
+    /// by pending steps. A settled state already carries the ID.
+    pub(crate) fn observation_point_id(&self) -> Option<super::program_point::ProgramPointId> {
+        if self.memory.pending_steps.is_some() {
+            self.program_point().id()
+        } else {
+            self.program_point_id()
+        }
+    }
+
     /// Replace memory without the resource invalidation of
     /// [`Self::set_memory`], for a transition that has already accounted for
     /// it. It is still a transition, so the state moves to a new point.
@@ -10138,6 +10348,16 @@ impl ExecutionState {
         self.loan_ledger
             .as_ref()
             .and_then(|ledger| ledger.memory_access_refusal(range, assumptions, operation))
+    }
+
+    pub(in crate::kernel) fn automatic_storage_loan_refusal(
+        &self,
+        block: &AddressBase,
+    ) -> Option<RuntimeError> {
+        self.loan_ledger
+            .as_ref()?
+            .automatic_storage_retirement_refusal(block, self.memory.block_size(block)?)
+            .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
     }
 
     pub fn locals(&self) -> &LocalEnvironment {
@@ -10924,6 +11144,7 @@ pub(super) enum ForgetScope<'a> {
     Ordered {
         candidates: &'a AliasCandidates,
         selected: &'a [Address],
+        cells_kept: &'a [(Address, Address)],
         runs: Option<&'a [cell_store::RunKey]>,
     },
     /// Every cached value, for a transition that may have written anywhere.
@@ -11300,7 +11521,7 @@ mod local_variable_spelling_tests {
                 let scanned = locals
                     .object_values()
                     .filter_map(|(name, value)| {
-                        let pointer = value.pointer()?.pointer();
+                        let pointer = value.pointer()?.address();
                         (&pointer.base == block).then(|| (name, pointer.clone()))
                     })
                     .collect::<Vec<_>>();
@@ -11308,7 +11529,7 @@ mod local_variable_spelling_tests {
                     assert_eq!(
                         indexed
                             .pointer_objects_in_block(block)
-                            .map(|(name, pointer)| (name, pointer.pointer().clone()))
+                            .map(|(name, pointer)| (name, pointer.address().clone()))
                             .collect::<Vec<_>>(),
                         scanned
                     );

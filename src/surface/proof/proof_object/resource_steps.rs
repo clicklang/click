@@ -476,7 +476,7 @@ impl<'a> Proof<'a> {
             let array_refs = array_refs_for_parameters(
                 context.parsed_function.parameters(),
                 &values,
-                before.memory(),
+                &before.program_point(),
             );
             let (values, array_refs) = contract_environment_at_state(&values, &array_refs, before);
             let mut proposed = Vec::new();
@@ -1186,8 +1186,8 @@ impl<'a> Proof<'a> {
                     self.step_error(format!("unfold field binding `{name}` is already in scope"))
                 );
             }
-            match &instance.fields()[index] {
-                AlgebraicValue::Program(value) => {
+            match instance.fields().get(index).expect("checked field index") {
+                crate::kernel::ResourceFieldValue::Program(value) => {
                     locals.set_values(locals.values.with_inserted(
                         name.clone(),
                         ContractExpression::ProgramExpression(ProgramExpression::Value(
@@ -1196,7 +1196,8 @@ impl<'a> Proof<'a> {
                     ));
                 }
                 // Declaration expansion admits only C-typed field binders.
-                AlgebraicValue::Integer(_) | AlgebraicValue::Algebraic(_) => {
+                crate::kernel::ResourceFieldValue::Integer(_)
+                | crate::kernel::ResourceFieldValue::Algebraic(_) => {
                     return Err(self.step_error(format!(
                         "field `{slot}` of `{}` is not C-typed; an unfold pattern binds only C scalar and pointer fields",
                         instance.name()
@@ -1281,7 +1282,7 @@ impl<'a> Proof<'a> {
                 let array_refs = array_refs_for_parameters(
                     context.parameter_binding.parameters,
                     &values,
-                    context.fixed_state.state.memory(),
+                    &context.fixed_state.state.program_point(),
                 );
                 let (values, array_refs) =
                     contract_environment_at_state(&values, &array_refs, context.fixed_state.state);
@@ -1306,7 +1307,7 @@ impl<'a> Proof<'a> {
                 let array_refs = array_refs_for_parameters(
                     view.parameter_binding.parameters,
                     &values,
-                    view.fixed_state.state.memory(),
+                    &view.fixed_state.state.program_point(),
                 );
                 let (values, array_refs) =
                     contract_environment_at_state(&values, &array_refs, view.fixed_state.state);
@@ -1331,7 +1332,7 @@ impl<'a> Proof<'a> {
                 let array_refs = array_refs_for_parameters(
                     context.parsed_function.parameters(),
                     &values,
-                    execution.core.state.memory(),
+                    &execution.core.state.program_point(),
                 );
                 let (values, array_refs) =
                     contract_environment_at_state(&values, &array_refs, &execution.core.state);
@@ -1362,7 +1363,7 @@ impl<'a> Proof<'a> {
     fn apply_function_unfold_in_state(
         &self,
         application: &ClickFunctionApplication,
-        values: BTreeMap<String, ProgramValue>,
+        values: ProgramValueBindings,
         array_refs: ClickArrayRefs,
         algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
         integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,

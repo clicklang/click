@@ -1,5 +1,5 @@
 //! Value-origin equality. Address congruence must never enter this index.
-use super::PointerValue;
+use super::Pointer;
 use crate::persistent::{PersistentMap, PersistentSet};
 
 /// Persistent union by size. Insertion touches two root paths; a branch
@@ -112,12 +112,12 @@ impl<K: Ord + Clone> ValueClasses<K> {
     }
 }
 
-pub(super) fn prefer_pointer(left: &PointerValue, right: &PointerValue) -> PointerValue {
+pub(super) fn prefer_pointer(left: &Pointer, right: &Pointer) -> Pointer {
     // A contract supplies the provenance of an opaque incoming value. Its
     // explicit subobject boundary takes precedence over unknown bounds.
     if !left.bounds_are_known() && right.bounds_are_known()
-        || matches!(right.pointer().base, super::AddressBase::Function(_))
-            && !matches!(left.pointer().base, super::AddressBase::Function(_))
+        || matches!(right.address().base, super::AddressBase::Function(_))
+            && !matches!(left.address().base, super::AddressBase::Function(_))
     {
         // A complete-value class can expose a concrete callback target even
         // when both the structural read and the target have known root bounds.
@@ -129,6 +129,7 @@ pub(super) fn prefer_pointer(left: &PointerValue, right: &PointerValue) -> Point
 
 #[cfg(test)]
 mod tests {
+    use crate::kernel::assumptions::PointerDomain;
     use crate::kernel::*;
 
     #[test]
@@ -150,10 +151,10 @@ mod tests {
         assert!(!sibling.equal(&100, &500));
     }
 
-    fn value(id: u64) -> PointerValue {
-        PointerValue::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+    fn value(id: u64) -> Pointer {
+        Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
-    fn equality(a: &PointerValue, b: &PointerValue) -> Proposition {
+    fn equality(a: &Pointer, b: &Pointer) -> Proposition {
         Proposition::ConditionIs(
             ConditionTerm::PointerValueEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
@@ -164,7 +165,7 @@ mod tests {
         let a = MachineTerm::Variable(Variable(809_998));
         let b = MachineTerm::Variable(Variable(809_999));
         let pointer = |index| {
-            PointerValue::new(
+            Pointer::new(
                 Address {
                     base: AddressBase::ExternalArgument,
                     offset: AddressOffset::scale_int32(index, 4),
@@ -185,11 +186,11 @@ mod tests {
     #[test]
     fn a_proven_null_address_denotes_the_unique_null_value() {
         let pointer = value(810_000);
-        let null = PointerValue::new(Address::null(), ProgramType::Int32Pointer);
+        let null = Pointer::new(Address::null(), ProgramType::Int32Pointer);
         let empty = PureFactContext::new();
         assert!(!empty.pointer_provenance_match(&pointer, &null));
         let context = empty.assume_condition(
-            ConditionTerm::pointer_equal(pointer.pointer().clone(), Address::null()),
+            ConditionTerm::pointer_equal(pointer.address().clone(), Address::null()),
             true,
         );
         assert!(context.pointer_provenance_match(&pointer, &null));
@@ -205,16 +206,16 @@ mod tests {
         let a = value(810_001);
         let b = value(810_002);
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
+            ConditionTerm::pointer_equal(a.address().clone(), b.address().clone()),
             true,
         );
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::from_pointer_value(&b, 0u32.into(), 1u32.into(), 4),
         ));
-        assert!(context.pointers_known_equal(a.pointer(), b.pointer()));
-        assert!(resources.permits_memory_read(a.pointer(), 4, &context));
+        assert!(context.pointers_known_equal(a.address(), b.address()));
+        assert!(resources.permits_memory_read(a.address(), 4, &context));
         assert!(!resources.permits_designated_memory_read(
-            a.pointer(),
+            a.address(),
             Some(a.access_provenance()),
             4,
             &context
@@ -222,7 +223,7 @@ mod tests {
         assert!(
             resources
                 .designated_memory_write_range(
-                    a.pointer(),
+                    a.address(),
                     Some(a.access_provenance()),
                     4,
                     &context
@@ -231,14 +232,14 @@ mod tests {
         );
         let linked = context.clone().assume_proposition(equality(&a, &b));
         assert!(resources.permits_designated_memory_read(
-            a.pointer(),
+            a.address(),
             Some(a.access_provenance()),
             4,
             &linked
         ));
         assert!(
             resources
-                .designated_memory_write_range(a.pointer(), Some(a.access_provenance()), 4, &linked)
+                .designated_memory_write_range(a.address(), Some(a.access_provenance()), 4, &linked)
                 .is_some()
         );
     }
@@ -254,13 +255,13 @@ mod tests {
         ));
         assert!(context.provenance_equal(input.provenance(), parent.provenance()));
         assert!(!resources.permits_designated_memory_read(
-            input.pointer(),
+            input.address(),
             Some(input.access_provenance()),
             4,
             &context
         ));
         assert!(resources.permits_designated_memory_read(
-            byte_view.pointer(),
+            byte_view.address(),
             Some(byte_view.access_provenance()),
             4,
             &context
@@ -279,7 +280,7 @@ mod tests {
                 4,
             )))
             .normalized(&context);
-        let sibling = input.pointer().offset_by_bytes(4);
+        let sibling = input.address().offset_by_bytes(4);
         assert!(!split.permits_designated_memory_read(
             &sibling,
             Some(input.access_provenance()),
@@ -287,7 +288,7 @@ mod tests {
             &context
         ));
         let selected = byte_view.with_bounds(Some(SubobjectBounds {
-            start: input.pointer().clone(),
+            start: input.address().clone(),
             width: 4u32.into(),
         }));
         let selected_resources =
@@ -295,7 +296,7 @@ mod tests {
                 MemoryRange::from_pointer_value(&selected, 0u32.into(), 1u32.into(), 4),
             ));
         assert!(!selected_resources.permits_designated_memory_read(
-            input.pointer(),
+            input.address(),
             Some(input.access_provenance()),
             4,
             &context
@@ -323,21 +324,24 @@ mod tests {
     fn a_narrowed_read_does_not_narrow_its_enclosing_pointer() {
         let parent = value(824_001);
         let member = parent.clone().with_bounds(Some(SubobjectBounds {
-            start: parent.pointer().clone(),
+            start: parent.address().clone(),
             width: 4u32.into(),
         }));
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
         let cell = Address::symbolic(Variable(824_002));
         let read_address = Address::symbolic(Variable(824_003));
-        let read = PointerValue::from_read(
+        let read = Pointer::from_read(
             read_address,
             ProgramType::Int32Pointer,
             &retained_state,
             &cell,
         );
         let context = PureFactContext::new().assume_proposition(equality(&read, &member));
-        assert!(context.pointer_value_at_entry(&read).bounds().is_some());
-        assert!(context.pointer_value_at_entry(&parent).bounds().is_none());
+        assert!(matches!(
+            context.pointer_domain(&read),
+            PointerDomain::Selected(_)
+        ));
+        assert_eq!(context.pointer_domain(&parent), PointerDomain::Unknown);
         assert!(!context.contains_known(&equality(&parent, &member)));
         assert!(!context.pointer_provenance_match(&parent, &read));
     }
@@ -347,20 +351,20 @@ mod tests {
         let a = value(825_001);
         let b = value(825_002);
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
-        let x = PointerValue::from_read(
+        let x = Pointer::from_read(
             Address::symbolic(Variable(825_003)),
             ProgramType::Int32Pointer,
             &retained_state,
-            a.pointer(),
+            a.address(),
         );
-        let y = PointerValue::from_read(
+        let y = Pointer::from_read(
             Address::symbolic(Variable(825_004)),
             ProgramType::Int32Pointer,
             &retained_state,
-            b.pointer(),
+            b.address(),
         );
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
+            ConditionTerm::pointer_equal(a.address().clone(), b.address().clone()),
             true,
         );
         assert!(!context.provenance_equal(a.provenance(), b.provenance()));
@@ -380,12 +384,12 @@ mod tests {
             c.assume_proposition(f.clone())
         });
         let displaced = a.clone().with_address(
-            a.pointer()
+            a.address()
                 .offset_by_typed_elements(offset, 4, false, false),
         );
         let goal = equality(&displaced, &b);
         assert!(context.pointer_provenance_match(&displaced, &b));
-        assert!(context.pointers_known_equal(displaced.pointer(), b.pointer()));
+        assert!(context.pointers_known_equal(displaced.address(), b.address()));
         assert!(context.contains_known(&goal));
         let proof_facts = crate::kernel::proof::PureFactStore::from_ordered(&facts);
         assert!(

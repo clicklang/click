@@ -1350,41 +1350,58 @@ impl LoweringContext<'_> {
                 callee,
                 arguments,
                 value_type,
+                field,
+                compound_operator,
                 value,
                 ..
             } => {
-                let element = scalar::reference_element(value_type)
-                    .ok_or("unsupported C++ call store referent")?;
-                let element_type = element.kind.kernel_type();
-                // The right operand is read first; the call then yields the
-                // referent's address.
-                let stored = self.fresh_temporary(element_type)?;
+                let (stored_type, offset) = if let Some(field) = field {
+                    let (field_type, offset) =
+                        self.records.resolve_returned_field(value_type, field)?;
+                    (cpp_scalar_kernel_type(field_type)?, Some(offset))
+                } else {
+                    let element = scalar::reference_element(value_type)
+                        .ok_or("unsupported C++ call store referent")?;
+                    (element.kind.kernel_type(), None)
+                };
+                // C++17 sequences the right operand before the call.
+                let stored = self.fresh_temporary(stored_type)?;
                 let read = program_seq(
-                    program_declare(stored.clone(), element_type),
+                    program_declare(stored.clone(), stored_type),
                     program_assign(stored.clone(), self.lower_expression(value)?),
                 );
-                let target = self.call_name(callee, arguments)?;
-                let (prefix, arguments) = self.normalize_arguments(arguments)?;
-                let address = self.fresh_temporary(element_pointer_type(element)?)?;
+                let evaluation = self.normalize_scalar(ScalarInput::Call {
+                    callee,
+                    arguments,
+                    value_type,
+                    conversions: &[],
+                })?;
+                let pointer = match offset {
+                    Some(offset) => crate::kernel::program_expression::pointer_offset_bytes(
+                        evaluation.value,
+                        offset,
+                    ),
+                    None => evaluation.value,
+                };
+                let operand = crate::kernel::program_expression::variable(stored);
+                let value = match compound_operator {
+                    Some(operator) => {
+                        use super::CppCompoundAssignment;
+                        use crate::kernel::program_expression::{add, subtract};
+
+                        let previous = self.lower_typed_load(pointer.clone(), stored_type)?;
+                        match operator {
+                            CppCompoundAssignment::Add => add(previous, operand),
+                            CppCompoundAssignment::Subtract => subtract(previous, operand),
+                        }
+                    }
+                    None => operand,
+                };
                 Ok(program_seq(
                     read,
                     evaluate_then(
-                        prefix,
-                        program_seq(
-                            program_seq(
-                                program_declare(address.clone(), element_pointer_type(element)?),
-                                self.coerced(self.call_then_assign(
-                                    address.clone(),
-                                    target,
-                                    arguments,
-                                )),
-                            ),
-                            program_typed_store(
-                                crate::kernel::program_expression::variable(address),
-                                crate::kernel::program_expression::variable(stored),
-                                element_type,
-                            ),
-                        ),
+                        evaluation.prefix,
+                        program_typed_store(pointer, value, stored_type),
                     ),
                 ))
             }
@@ -2052,18 +2069,40 @@ impl LoweringContext<'_> {
             CppExpression::ObserverCall {
                 callee,
                 arguments,
-                value_type,
+                value_type: result_type,
+                returned_member,
                 ..
             } => {
                 if self.unwind_cleanups {
                     return Err("C++ expression observers currently require the normal-only exception profile".into());
                 }
-                return self.normalize_scalar(ScalarInput::Call {
+                let Some(member) = returned_member else {
+                    return self.normalize_scalar(ScalarInput::Call {
+                        callee,
+                        arguments,
+                        value_type: result_type,
+                        conversions: &[],
+                    });
+                };
+                let (field_type, offset) = self
+                    .records
+                    .resolve_returned_field(&member.reference_type, &member.field)?;
+                let pointee_constant = scalar::returns_constant_element(field_type);
+                let evaluation = self.normalize_scalar(ScalarInput::Call {
                     callee,
                     arguments,
-                    value_type,
+                    value_type: &member.reference_type,
                     conversions: &[],
-                });
+                })?;
+                let pointer = crate::kernel::program_expression::pointer_offset_bytes(
+                    evaluation.value,
+                    offset,
+                );
+                (
+                    evaluation.prefix,
+                    self.lower_qualified_typed_load(pointer, value_type, pointee_constant)?,
+                    evaluation.may_throw,
+                )
             }
             CppExpression::LogicalNot { value, .. } => {
                 let input = self.normalize_expression(value)?;
@@ -2650,13 +2689,9 @@ impl LoweringContext<'_> {
             // The byte-array lvalue denotes the complete record footprint.
             // Checked address formation validates it without reading fields.
             let bytes = self.record_layout(name)?.size_bytes();
-            (
-                ProgramExpression::Subobject {
-                    pointer: Box::new(pointer),
-                    width: bytes,
-                },
-                ProgramType::UInt8Array(bytes),
-            )
+            // The array lvalue checks the whole footprint without selecting
+            // a new subobject. Keep the source pointer's designation/bounds.
+            (pointer, ProgramType::UInt8Array(bytes))
         } else {
             (pointer, ProgramType::Int32)
         };
@@ -2889,7 +2924,10 @@ fn lower_binary_value(
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<ProgramType, String> {
-    if scalar::record_pointee(value_type).is_some() {
+    if scalar::record_pointee(value_type).is_some()
+        || matches!(value_type, CppType::LvalueReference { .. })
+            && scalar::record_referent(value_type).is_some()
+    {
         return Ok(ProgramType::Int32Pointer);
     }
     if let CppType::Pointer { pointee } = value_type {

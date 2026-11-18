@@ -13,9 +13,9 @@ pub(super) fn composite_names_pointer_base(composite: &ResourceFact, pointer: &A
         let AlgebraicValue::Program(ProgramValue::Pointer(argument)) = argument else {
             return false;
         };
-        argument.pointer() == pointer
+        argument.address() == pointer
             || pointer
-                .shared_element_index_from_base_with_width(argument.pointer(), 1)
+                .shared_element_index_from_base_with_width(argument.address(), 1)
                 .is_some()
     })
 }
@@ -156,9 +156,13 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
             let (children, _) = state
                 .checked_authority_wrapper_body(&composite, definition, assumptions)
                 .ok()?;
-            let child_context = ResourceContext::new()
-                .try_compose_with_facts(children.clone(), assumptions)
-                .ok()?;
+            let child_context = ResourceContext::new_with_equalities(assumptions)
+                .install_established_partition(
+                    coalesce_written_resource_descriptions(children.clone(), assumptions),
+                    assumptions,
+                )
+                .ok()?
+                .0;
             let mut relations = vec![Proposition::ResourceComposition(child_context)];
             for child in children {
                 if let Some(owned) = child.owned_resource() {
@@ -335,11 +339,9 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 {
                     population_state.resources = population_state
                         .resources
-                        .try_compose_with_facts_delaying_normalization(
-                            [body_resource],
-                            &evaluation_assumptions,
-                        )
-                        .ok()?;
+                        .install_established_partition([body_resource], &evaluation_assumptions)
+                        .ok()?
+                        .0;
                 }
             }
         }
@@ -504,9 +506,13 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
         // separation. Publishing one carrier lets certification answer
         // member-pair queries on demand instead of materializing O(N^2)
         // `ResourceSeparate` propositions.
-        let child_context = ResourceContext::new()
-            .try_compose_with_facts(child_facts, assumptions)
-            .ok()?;
+        let child_context = ResourceContext::new_with_equalities(assumptions)
+            .install_established_partition(
+                coalesce_written_resource_descriptions(child_facts, assumptions),
+                assumptions,
+            )
+            .ok()?
+            .0;
         propositions.push(Proposition::ResourceComposition(child_context));
     }
     for child in &children {
@@ -650,6 +656,23 @@ pub(crate) fn instantiate_composite_resource_facts(
     )
 }
 
+/// Instantiate the definition in a frame at the selected observation point.
+pub(crate) fn instantiate_composite_resource_facts_at(
+    composite: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    at: &ProgramPoint,
+    resources: &ResourceContext,
+    assumptions: &PureFactContext,
+) -> Option<InstantiatedCompositeResourceFacts> {
+    instantiate_composite_resource_facts_in_state(
+        composite,
+        definitions,
+        ExecutionState::at_point(at),
+        resources,
+        assumptions,
+    )
+}
+
 /// Private member invariants may read only their own body, even when the
 /// ambient proof owns other memory. Otherwise opening one member after an
 /// unrelated write could publish a false current invariant.
@@ -659,28 +682,25 @@ pub(crate) fn instantiate_private_member_body_facts(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
-    let memory = state.memory();
     let definitions = std::slice::from_ref(definition);
     let singleton = ResourceContext::new().unchecked_with_fact(composite.clone());
     let body = expand_composite_resource_fact(
         &singleton,
         composite,
         definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
+        &state.program_point(),
         assumptions,
     )?;
-    // Keep the current verification model and population state, but bind only
-    // this definition's parameters. Mutating a cloned caller-local map would
-    // copy the whole frame for every member fact instantiation.
+    // Keep the caller's observation point and population state. Bind only this
+    // definition's parameters and use only the private body as read authority.
     let mut fact_state = state.clone();
     fact_state.locals = LocalEnvironment::new();
-    instantiate_composite_resource_facts_with_state(
+    instantiate_composite_resource_facts_in_state(
         composite,
         definitions,
-        memory,
+        fact_state,
         &body,
         &assumptions.clone().require_owned_expression_loads(),
-        Some(&fact_state),
     )
 }
 
@@ -692,6 +712,26 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
     assumptions: &PureFactContext,
     population_state: Option<&ExecutionState>,
 ) -> Option<InstantiatedCompositeResourceFacts> {
+    let state = population_state
+        .cloned()
+        .unwrap_or_else(ExecutionState::new)
+        .with_memory(memory.clone());
+    instantiate_composite_resource_facts_in_state(
+        composite,
+        definitions,
+        state,
+        resources,
+        assumptions,
+    )
+}
+
+fn instantiate_composite_resource_facts_in_state(
+    composite: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    state: ExecutionState,
+    resources: &ResourceContext,
+    assumptions: &PureFactContext,
+) -> Option<InstantiatedCompositeResourceFacts> {
     let Resource::Composite { name, arguments } = composite.resource() else {
         return None;
     };
@@ -701,11 +741,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
     if definition.parameters().len() != arguments.len() {
         return None;
     }
-    let mut state = population_state
-        .cloned()
-        .unwrap_or_else(ExecutionState::new)
-        .with_memory(memory.clone())
-        .with_resource_context(resources.clone());
+    let mut state = state.with_resource_context(resources.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
         if parameter.program_type() != argument.program_type() {
@@ -787,7 +823,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
                 };
                 memory_states_proven_equal_at_pointer(
                     obligation_memory,
-                    memory,
+                    state.memory(),
                     base,
                     &fact_assumptions,
                 ) && bytes.as_const().is_some_and(|bytes| {

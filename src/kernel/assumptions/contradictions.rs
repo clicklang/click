@@ -136,7 +136,7 @@ impl Contradictions {
             // Full pointer equality entails address equality, while its
             // negation makes no claim about addresses.
             let address =
-                ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone());
+                ConditionTerm::pointer_equal(left.address().clone(), right.address().clone());
             self.adjust_polarity(canonical_contradiction_condition(&address), true);
         }
         let observation =

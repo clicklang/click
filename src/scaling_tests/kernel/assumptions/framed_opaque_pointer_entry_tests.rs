@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::assumptions::PointerDomain;
 
 #[test]
 fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
@@ -10,12 +11,12 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
         };
         let base = SymbolicMemory::new();
         let raw = Address::symbolic(Variable(995_080));
-        let previous = PointerValue::new(
+        let previous = Pointer::new(
             Address::loaded_value(&intern_memory_ref(&base), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw.clone());
-        let alias = PointerValue::new(
+        let alias = Pointer::new(
             Address::symbolic(Variable(995_081)),
             ProgramType::Int32Pointer,
         );
@@ -29,15 +30,14 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
                 ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
         }
-        let current = PointerValue::new(
+        let current = Pointer::new(
             Address::loaded_value(&intern_memory_ref(&memory), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw);
-        let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.known_value_of_framed_pointer_read(&current)
-        });
-        assert!(value.is_none());
+        let (value, work) =
+            crate::instrumentation::measure_deterministic_work(|| context.pointer_domain(&current));
+        assert_eq!(value, PointerDomain::Unknown);
         work
     });
     assert!(
@@ -52,7 +52,7 @@ fn provenance_misses_do_not_enumerate_direct_alias_stars() {
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = |id| Address::symbolic(Variable(963_000 + id));
-        let value = |id| PointerValue::new(pointer(id), ProgramType::Int32Pointer);
+        let value = |id| Pointer::new(pointer(id), ProgramType::Int32Pointer);
         let mut facts = PureFactContext::new();
         for index in 1..=size {
             facts = facts.assume_condition(
@@ -84,7 +84,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Address::symbolic(Variable(964_000));
         let raw = Address::symbolic(Variable(964_001));
-        let alias = PointerValue::new(
+        let alias = Pointer::new(
             Address::symbolic(Variable(964_002)),
             ProgramType::Int32Pointer,
         );
@@ -94,7 +94,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
                 field.offset_by_bytes(8),
                 ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
-            let source = PointerValue::new(
+            let source = Pointer::new(
                 Address::loaded_value(&intern_memory_ref(&memory), &field),
                 ProgramType::Int32Pointer,
             )
@@ -104,14 +104,14 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
                 true,
             );
         }
-        let current = PointerValue::new(
+        let current = Pointer::new(
             Address::loaded_value(&intern_memory_ref(&SymbolicMemory::new()), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
-                assert!(facts.known_value_of_framed_pointer_read(&current).is_none());
+                assert_eq!(facts.pointer_domain(&current), PointerDomain::Unknown);
             }
         });
         samples.push(work);

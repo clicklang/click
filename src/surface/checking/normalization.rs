@@ -190,8 +190,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
         // literals, which lowering retains.
         condition @ (ConditionTerm::Compare { .. }
         | ConditionTerm::BoolEqual(..)
-        | ConditionTerm::PointerEqual(..)
-        | ConditionTerm::PointerValueEqual(..))
+        | ConditionTerm::PointerEqual(..))
             if let Some(value) =
                 crate::kernel::machine_integer::comparison::fact_free_condition_value(condition) =>
         {

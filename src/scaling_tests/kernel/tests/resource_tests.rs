@@ -582,7 +582,7 @@ fn instance_fold_preserves_memory_pieces_without_scanning_unrelated_resources() 
     let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap() else {
         unreachable!()
     };
-    let pointer = value.pointer().clone();
+    let pointer = value.address().clone();
     let pieces = (0..3)
         .map(|i| {
             ResourceFact::own_memory(MemoryRange::new(
@@ -1154,8 +1154,8 @@ fn nonexact_composite_entailment_ignores_unrelated_instances_of_the_shape() {
             .unchecked_with_facts((0..size).map(|index| boxed(object(index))));
         let assumptions = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_value_equal(
-                PointerValue::new(alias.clone(), ProgramType::Int32Pointer),
-                PointerValue::new(object(size - 1), ProgramType::Int32Pointer),
+                Pointer::new(alias.clone(), ProgramType::Int32Pointer),
+                Pointer::new(object(size - 1), ProgramType::Int32Pointer),
             ),
             true,
         );
@@ -1783,6 +1783,24 @@ fn unrelated_origin_does_not_disable_owned_interval_neighbors() {
                 (owned(995_500, 0), false),
                 (owned(995_500, 8 * (size - 1) as i64), false),
             ] {
+                // The unrelated symbolic origin could meet the newly added
+                // interval. Establish its actual frame boundary explicitly.
+                let assumptions = if accepted {
+                    match context
+                        .clone()
+                        .try_compose_into_valid_context_delaying_normalization(
+                            [required.clone()],
+                            &assumptions,
+                        ) {
+                        Err(ResourceContextValidityError::UnestablishedOwnedBoundary(required)) => {
+                            assumptions.clone().assume_proposition(*required)
+                        }
+                        Ok(_) => assumptions.clone(),
+                        Err(error) => panic!("unexpected boundary conflict: {error:?}"),
+                    }
+                } else {
+                    assumptions.clone()
+                };
                 for _ in 0..3 {
                     let (result, units) =
                         crate::instrumentation::measure_deterministic_work(|| {
@@ -3907,14 +3925,14 @@ fn explicit_constant_fold_stops_at_a_gap_and_joins_mixed_width_pieces() {
             let piece = |start: u32, end: u32, width: u32| {
                 let range = if native && width == 4 {
                     MemoryRange::new_wide(
-                        value.pointer().clone(),
+                        value.address().clone(),
                         MachineTerm::uint64_constant(u64::from(start)),
                         MachineTerm::uint64_constant(u64::from(end)),
                         width,
                     )
                 } else {
                     MemoryRange::new_with_element_width(
-                        value.pointer().clone(),
+                        value.address().clone(),
                         start.into(),
                         end.into(),
                         width,
@@ -4009,7 +4027,7 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
             };
             let piece = |start, end| {
                 ResourceFact::own_memory(MemoryRange::new_wide(
-                    value.pointer().clone(),
+                    value.address().clone(),
                     MachineTerm::uint64_constant(start),
                     MachineTerm::uint64_constant(end),
                     4,
@@ -4323,7 +4341,7 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
             };
             let piece = |start: u64, end: MachineTerm| {
                 ResourceFact::own_memory(MemoryRange::new_wide(
-                    value.pointer().clone(),
+                    value.address().clone(),
                     MachineTerm::uint64_constant(start),
                     end,
                     4,
@@ -4423,7 +4441,7 @@ fn symbolic_offset_fold_stops_at_first_gap() {
             };
             let piece = |start: u64, end: u64| {
                 ResourceFact::own_memory(MemoryRange::new_wide(
-                    value.pointer().clone(),
+                    value.address().clone(),
                     shifted(start),
                     shifted(end),
                     4,
@@ -4522,7 +4540,7 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
             };
             let piece = |start: u32, end: u32| {
                 ResourceFact::own_memory(MemoryRange::new(
-                    value.pointer().clone(),
+                    value.address().clone(),
                     shifted(start),
                     shifted(end),
                 ))
@@ -4546,7 +4564,7 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
             );
             let first = if case == "rebased" {
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(
-                    value.pointer().offset_by_elements(endpoint.clone(), 4),
+                    value.address().offset_by_elements(endpoint.clone(), 4),
                     0u32.into(),
                     1u32.into(),
                     4,

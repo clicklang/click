@@ -1431,6 +1431,15 @@ statement the yielding outcome's own binding (`MirStatement::RangeNext`
 with `payload: Some(i)` and `option: None`), and the `Option` and its
 temporary are gone.
 
+A slice or array iterator's `next` is split the same way, each outcome
+`MirStatement::SharedArrayNext` with `taken` set by the header's
+`SharedArrayHasNext`. `temporaries::bind_slice_payloads` makes the `Some`
+arm's first statement, `x = SharedArrayOptionElement(opt)`, the yielding
+outcome's `payload: Some(x)`, or leaves no payload when the arm binds nothing
+(`Some(_)`). The unreachable tag test, the `Option` and its temporary go,
+and the yielding outcome lowers to the binding and the advance, the other to
+nothing.
+
 A crate's own `Iterator::next` returns its `Option` through a call step.
 `user_iterators::test_user_next_results` turns the `match` on it into
 `MirTerminator::If` on `Expression::VariantIs`. `temporaries::call_steps`
@@ -1463,7 +1472,11 @@ unchanging value back at every read, in any block: a literal, a copy of a
 parameter the body never writes, moves or borrows, or a reference borrowing a
 place rooted at a local, whose address rustc keeps for the borrow's life. A
 reborrow `&mut *t` of such a borrow is the borrow itself, and `*&p` is `p`;
-each value is resolved once, so a chain of reborrows costs its length.
+each value is resolved once, so a chain of reborrows costs its length. A
+shared borrow of a shared slice local is that slice, as `split_at` and
+`chunks_exact` read it; the length or a conversion of an unchanging value is
+unchanging; and a shared borrow of a reference or slice parameter does not
+change it.
 
 `temporaries::remove_unused` removes a temporary the body never names apart
 from its storage markers and its writes of pure values, and a `()` temporary
@@ -2040,7 +2053,7 @@ the loop VC needs the invariant.
 `SpecElaborationContext` in `src/surface.rs` is the bridge from Surface
 Click into Kernel Click. It records scalar spec bindings, Click array refs,
 and the memory used for C-fragment reads. The surface's contract environment
-carries array refs as `ClickArrayRef { memory, pointer, element_type }`, and
+carries array refs as `ClickArrayRef { point, pointer, element_type }`, and
 elaboration types indexing by them so `uint8[]` indexing scales by one byte
 and returns `uint8`; spec lowering mirrors this with typed `SpecArrayRef`,
 typed `SpecExpression::MemoryLoad`, and byte-width

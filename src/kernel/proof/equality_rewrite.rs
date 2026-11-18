@@ -1269,7 +1269,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         return rewrite_atomic_proposition_by_exact_equality(
             goal,
             &Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()),
+                ConditionTerm::pointer_equal(left.address().clone(), right.address().clone()),
                 true,
             ),
         );
@@ -1355,8 +1355,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
     ) -> AlgebraicTerm {
         let node = match &term.node {
             AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
-            AlgebraicTermNode::MemoryLoad { memory, pointer } => AlgebraicTermNode::MemoryLoad {
-                memory: memory.clone(),
+            AlgebraicTermNode::MemoryLoad {
+                point: memory,
+                pointer,
+            } => AlgebraicTermNode::MemoryLoad {
+                point: memory.clone(),
                 pointer: Box::new(rewrite_pointer(pointer)),
             },
             AlgebraicTermNode::Constructor { variant, fields } => AlgebraicTermNode::Constructor {
@@ -2557,10 +2560,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
             child: Box::new(rewrite_resource_term(child)),
         },
         Proposition::MemoryReadDefined {
+            at,
             memory,
             pointer,
             value_type,
         } => Proposition::MemoryReadDefined {
+            at: *at,
             memory: memory.clone(),
             pointer: Address {
                 base: pointer.base.clone(),
@@ -4344,10 +4349,10 @@ mod numeric_address_annotation_tests {
                 .proposition(),
             &equality,
         );
-        let left = PointerValue::new(p.clone(), ProgramType::Int32Pointer)
+        let left = Pointer::new(p.clone(), ProgramType::Int32Pointer)
             .with_bounds(Some(SubobjectBounds::constant(p, 4)));
         for width in [4, 8] {
-            let right = PointerValue::new(q.clone(), ProgramType::Int32Pointer)
+            let right = Pointer::new(q.clone(), ProgramType::Int32Pointer)
                 .with_bounds(Some(SubobjectBounds::constant(q.clone(), width)));
             assert!(!facts.assumptions().pointer_provenance_match(&left, &right));
         }

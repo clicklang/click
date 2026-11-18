@@ -840,7 +840,7 @@ fn checks_population_authority_exchange(
     else {
         return Err("population authority rewrite requires one pointer anchor".into());
     };
-    let anchor = pointer.pointer();
+    let anchor = pointer.address();
     let imported_retirement = !establish
         && anchor.base == crate::kernel::AddressBase::ExternalArgument
         && before
@@ -1055,7 +1055,7 @@ fn checks_population_member_exchange(
     else {
         return Err("population member rewrite requires one pointer anchor".into());
     };
-    let anchor = pointer.pointer();
+    let anchor = pointer.address();
     let imported_member_exchange =
         before
             .population_effects
@@ -1608,13 +1608,11 @@ impl CheckedResourceRewrite {
                     .without_fact_incrementally(selected, assumptions)
                     .ok_or("authority control cannot consume its folded resource")?
             };
-            base.try_compose_with_facts_delaying_normalization(
-                children.iter().cloned(),
-                assumptions,
-            )
-            .map_err(|error| {
-                format!("authority control body overlaps existing ownership: {error}")
-            })?
+            base.install_established_partition(children.iter().cloned(), assumptions)
+                .map(|(context, _)| context)
+                .map_err(|error| {
+                    format!("authority control body overlaps existing ownership: {error}")
+                })?
         } else {
             let mut base = before_state.resources().clone();
             for child in &children {
@@ -1625,13 +1623,11 @@ impl CheckedResourceRewrite {
             if before_folded {
                 base
             } else {
-                base.try_compose_with_facts_delaying_normalization(
-                    std::iter::once(selected.clone()),
-                    assumptions,
-                )
-                .map_err(|error| {
-                    format!("authority control duplicates its folded resource: {error}")
-                })?
+                base.install_established_partition(std::iter::once(selected.clone()), assumptions)
+                    .map(|(context, _)| context)
+                    .map_err(|error| {
+                        format!("authority control duplicates its folded resource: {error}")
+                    })?
             }
         };
         if !after_state
@@ -1841,10 +1837,8 @@ impl CheckedResourceRewrite {
                 .clone()
                 .without_fact_incrementally(selected, assumptions)
                 .ok_or("transfer wrapper is missing its folded resource")?
-                .try_compose_with_facts_delaying_normalization(
-                    expanded.facts().iter().cloned(),
-                    assumptions,
-                )
+                .install_established_partition(expanded.facts().iter().cloned(), assumptions)
+                .map(|(context, _)| context)
                 .map_err(|error| format!("transfer wrapper overlaps existing children: {error}"))?
         } else {
             let mut resources = before_state.resources().clone();
@@ -1854,10 +1848,8 @@ impl CheckedResourceRewrite {
                     .ok_or("transfer wrapper is missing an existing child")?;
             }
             resources
-                .try_compose_with_facts_delaying_normalization(
-                    std::iter::once(selected.clone()),
-                    assumptions,
-                )
+                .install_established_partition(std::iter::once(selected.clone()), assumptions)
+                .map(|(context, _)| context)
                 .map_err(|error| {
                     format!("transfer wrapper duplicates its folded resource: {error}")
                 })?
@@ -2370,10 +2362,8 @@ impl CheckedResourceRewrite {
                     before_state
                         .resources()
                         .clone()
-                        .try_compose_with_facts_delaying_normalization(
-                            children.iter().cloned(),
-                            assumptions,
-                        )
+                        .install_established_partition(children.iter().cloned(), assumptions)
+                        .map(|(context, _)| context)
                         .map_err(|error| {
                             format!("member body access duplicates private ownership: {error}")
                         })?
@@ -2945,6 +2935,7 @@ impl CheckedResourceObservation {
             .unwrap_or(observed);
         let projects_body =
             observed.is_view() || observed.has_proven_positive_quantity(assumptions);
+        let observed_at = after_state.program_point();
         let (children, raw_children) = if !projects_body {
             (Vec::new(), Vec::new())
         } else {
@@ -2956,7 +2947,7 @@ impl CheckedResourceObservation {
                     &temporary,
                     &definition_authority,
                     function.composite_resource_definitions(),
-                    &after_state.program_point(),
+                    &observed_at,
                     assumptions,
                 )
                 .ok_or("the observed composite body could not be instantiated")?;
@@ -3020,7 +3011,7 @@ impl CheckedResourceObservation {
                 crate::kernel::functions::evaluate_composite_resource_relation_propositions(
                     &relation_authority,
                     function.composite_resource_definitions(),
-                    &after_state.program_point(),
+                    &observed_at,
                     assumptions,
                 )
         {
@@ -3038,16 +3029,16 @@ impl CheckedResourceObservation {
             allowed.extend(propositions);
         }
         if projects_body
-            && let Some(propositions) =
-                crate::kernel::functions::evaluate_composite_resource_fact_propositions(
+            && let Some(instantiated) =
+                crate::kernel::functions::instantiate_composite_resource_facts_at(
                     observation_authority,
                     function.composite_resource_definitions(),
-                    after_state.memory(),
+                    &observed_at,
                     &child_context,
                     assumptions,
                 )
         {
-            allowed.extend(propositions);
+            allowed.extend(instantiated.propositions);
         }
         allowed.extend(
             derivations
@@ -4325,11 +4316,9 @@ fn interface_join_resources(
         .cloned()
         .collect::<Vec<_>>();
     let expected_resources = common_resources
-        .try_compose_into_valid_context_delaying_normalization(
-            additions.iter().cloned(),
-            successor_facts.assumptions(),
-        )
+        .install_established_partition(additions.iter().cloned(), successor_facts.assumptions())
         .map_err(|_| "the interface resources do not form a valid successor context")?
+        .0
         .normalized_around_facts(&additions, successor_facts.assumptions());
     Ok(InterfaceJoinResources {
         arm_interface_resources,
@@ -5398,7 +5387,7 @@ fn interface_resources_guard_heap_frees(
             if resource
                 .allocation_size()
                 .is_some_and(|(candidate_base, candidate_bytes)| {
-                    candidate_base.pointer() == base && &candidate_bytes == bytes
+                    candidate_base.address() == base && &candidate_bytes == bytes
                 })
             {
                 return true;
@@ -5418,7 +5407,7 @@ fn interface_resources_guard_heap_frees(
                 expanded.facts().iter().any(|fact| {
                     fact.allocation_size()
                         .is_some_and(|(candidate_base, candidate_bytes)| {
-                            candidate_base.pointer() == base && &candidate_bytes == bytes
+                            candidate_base.address() == base && &candidate_bytes == bytes
                         })
                 })
             })
@@ -9617,8 +9606,24 @@ impl ExecutionProofCore {
                 .map_or(&no_assumptions, |entry| entry.assumptions());
             let theorem_assumptions =
                 crate::kernel::api::proof_evidence_assumptions(theorem, entry_assumptions);
-            *reached =
-                crate::kernel::resolve_pending_heap_allocations(&reached, &theorem_assumptions);
+            *reached = crate::kernel::resolve_pending_heap_allocations_with(
+                &reached,
+                &theorem_assumptions,
+                |obligation| {
+                    // The condition theorem decides the outcome. Retirement
+                    // evidence is a separate premise in the checked context.
+                    let premise = obligation.proposition();
+                    if context.states_required_goal(premise) {
+                        return Ok(());
+                    }
+                    Err(EvidenceRefusal {
+                        reason: "successful realloc requires separation from its call-entry loans",
+                        expected: None,
+                        proved: None,
+                        premise: Some(premise.clone()),
+                    })
+                },
+            )?;
         }
         if let Some(pending) = &reached.pending_thread_create {
             let no_assumptions = PureFactContext::new();
@@ -10207,7 +10212,7 @@ impl ExecutionProofCore {
                 .is_some_and(|field| {
                     matches!(
                         field,
-                        crate::kernel::AlgebraicValue::Algebraic(model) if model == value
+                        crate::kernel::ResourceFieldValue::Algebraic(model) if model == value
                     )
                 })
             {
@@ -10229,7 +10234,7 @@ impl ExecutionProofCore {
             if !instance.fields().iter().any(|field| {
                 matches!(
                     field,
-                    crate::kernel::AlgebraicValue::Algebraic(model)
+                    crate::kernel::ResourceFieldValue::Algebraic(model)
                         if model.node == crate::kernel::AlgebraicTermNode::Variable(variable)
                 )
             }) {
@@ -11404,7 +11409,8 @@ impl ExecutionProofCore {
         let resources = after_state
             .resources()
             .clone()
-            .try_compose_with_facts_delaying_normalization(frame, before_facts.assumptions())
+            .install_established_partition(frame, before_facts.assumptions())
+            .map(|(context, _)| context)
             .map_err(|error| {
                 format!("return resource exchange changed its retained frame: {error}")
             })?;

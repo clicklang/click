@@ -1143,12 +1143,12 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
     let AlgebraicValue::Program(ProgramValue::Pointer(parent)) = &instance.arguments()[0] else {
         unreachable!()
     };
-    let stored = PointerValue::new(Address::symbolic(Variable(559)), ProgramType::Int32Pointer);
+    let stored = Pointer::new(Address::symbolic(Variable(559)), ProgramType::Int32Pointer);
     let state = state.with_memory(SymbolicMemory::new().store(
-        parent.pointer().clone(),
+        parent.address().clone(),
         ProgramValue::Pointer(stored.clone()),
     ));
-    let observed = Address::loaded_value(&intern_memory(state.memory().clone()), parent.pointer());
+    let observed = Address::loaded_value(&intern_memory(state.memory().clone()), parent.address());
     let equation = ExecutionPureFact::logical_read_equation(stored, observed)
         .proposition()
         .clone();
@@ -1334,7 +1334,7 @@ fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
     let ProgramValue::Pointer(pointer) = instance.arguments()[0].as_program_value().unwrap() else {
         panic!("fixture pointer");
     };
-    let guard = ConditionTerm::pointer_equal(pointer.pointer().clone(), Address::null());
+    let guard = ConditionTerm::pointer_equal(pointer.address().clone(), Address::null());
     let unknown = PureFactContext::new();
     assert!(rewrite_resource_instance(&state, &instance, &definition, &unknown, true).is_err());
     for is_null in [false, true] {
@@ -1572,7 +1572,10 @@ fn resource_instances_validate_fields_without_expanding_symbolic_values() {
     let ty = resource_index_type("Mark", vec![]);
     let model = resource_index_variable(&ty, 1);
     let instance = field_instance(2, model.clone(), 3);
-    assert_eq!(instance.fields()[0], AlgebraicValue::Algebraic(model));
+    assert_eq!(
+        instance.fields().get(0).unwrap().into_native(),
+        AlgebraicValue::Algebraic(model)
+    );
     let make = |schema, fields| {
         ResourceInstance::new(
             Variable(2),
@@ -1614,7 +1617,7 @@ fn resource_instances_validate_fields_without_expanding_symbolic_values() {
         .is_none()
     );
     let copy = instance.clone();
-    assert!(std::sync::Arc::ptr_eq(&instance.fields, &copy.fields));
+    assert!(instance.fields.shares_storage_with(&copy.fields));
     assert!(std::sync::Arc::ptr_eq(&instance.arguments, &copy.arguments));
 }
 
@@ -3621,8 +3624,8 @@ fn composite_resource_arguments_respect_proven_pointer_equality() {
     });
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::PointerValueEqual(
-            Box::new(PointerValue::new(left_pointer, ProgramType::Int32Pointer)),
-            Box::new(PointerValue::new(right_pointer, ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(left_pointer, ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(right_pointer, ProgramType::Int32Pointer)),
         ),
         true,
     );
@@ -5210,7 +5213,7 @@ fn v11_unbound_owner_observation_composite_still_expands() {
 }
 
 #[test]
-fn v11_composite_expansion_refuses_equal_ambient_child_without_destination() {
+fn v11_composite_expansion_emits_a_destination_beside_an_equal_ambient_child() {
     let definition = CompositeResourceDefinition::new(
         "v11_box",
         Vec::new(),
@@ -5233,8 +5236,11 @@ fn v11_composite_expansion_refuses_equal_ambient_child_without_destination() {
     let support = ResourceFact::own_token("v11_expansion_support".into(), Vec::new());
     let parent = ResourceFact::view_composite("v11_box".into(), Vec::new());
     let child = ResourceFact::view_token("v11_child".into(), Vec::new());
-    let resources =
-        ResourceContext::new().unchecked_with_facts([support.clone(), parent.clone(), child]);
+    let resources = ResourceContext::new().unchecked_with_facts([
+        support.clone(),
+        parent.clone(),
+        child.clone(),
+    ]);
     let support_occurrence = resources.owned_occurrences_for_fact(&support)[0];
     let parent_occurrence = resources.occurrences_for_fact(&parent)[0];
     let ledger = LoanLedger::new();
@@ -5251,16 +5257,36 @@ fn v11_composite_expansion_refuses_equal_ambient_child_without_destination() {
         viewed: parent,
         hold: None,
     };
-    let resources = resources.with_loan_dependency(parent_occurrence, binding);
+    let ambient = resources.occurrences_for_fact(&child)[0];
+    let resources = resources.with_loan_dependency(parent_occurrence, binding.clone());
+    let expanded = crate::kernel::functions::expand_composite_resource_fact_with_children(
+        &resources,
+        &ResourceFact::view_composite("v11_box".into(), Vec::new()),
+        &[definition],
+        &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
+        &PureFactContext::new(),
+    )
+    .expect("a fresh emitted child retains the exact parent binding")
+    .0;
+    assert_eq!(expanded.view_fact_for_occurrence(ambient), Some(&child));
+    assert!(expanded.loan_dependency(ambient).is_none());
+    let children = expanded.occurrences_for_fact(&child);
+    assert_eq!(children.len(), 2);
+    let emitted = *children
+        .iter()
+        .find(|occurrence| **occurrence != ambient)
+        .unwrap();
+    assert_eq!(
+        expanded.loan_dependency(emitted),
+        Some(&LoanViewBinding {
+            viewed: child,
+            ..binding
+        })
+    );
     assert!(
-        crate::kernel::functions::expand_composite_resource_fact_with_children(
-            &resources,
-            &ResourceFact::view_composite("v11_box".into(), Vec::new()),
-            &[definition],
-            &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
-            &PureFactContext::new(),
-        )
-        .is_none()
+        expanded
+            .view_fact_for_occurrence(parent_occurrence)
+            .is_none()
     );
 }
 
@@ -7365,15 +7391,15 @@ fn translated_owner_coordinates_keep_native_span_and_symbolic_origin() {
     );
     // An unrelated symbolic origin is not the same address merely because
     // its block and constant displacement match.
-    assert!(
+    assert!(matches!(
         context
             .clone()
             .try_compose_into_valid_context_delaying_normalization(
                 [owned(995_404, 0, start, start + 1)],
                 &assumptions
-            )
-            .is_ok()
-    );
+            ),
+        Err(ResourceContextValidityError::UnestablishedOwnedBoundary(_))
+    ));
     assert!(
         context
             .try_compose_into_valid_context_delaying_normalization(
@@ -7408,10 +7434,17 @@ fn owned_root_neighbors_keep_alias_and_duplicate_refusals() {
         owned(q.clone(), 5, 6),
     ]);
     let required = owned(p.clone(), 5, 6);
+    let Err(ResourceContextValidityError::UnestablishedOwnedBoundary(goal)) = context
+        .clone()
+        .try_compose_into_valid_context_delaying_normalization([required.clone()], &assumptions)
+    else {
+        panic!("unrelated p and q need their boundary stated");
+    };
+    let stated = assumptions.clone().assume_proposition(*goal);
     assert!(
         context
             .clone()
-            .try_compose_into_valid_context_delaying_normalization([required.clone()], &assumptions)
+            .try_compose_into_valid_context_delaying_normalization([required.clone()], &stated)
             .is_ok()
     );
     assert!(
@@ -7419,7 +7452,7 @@ fn owned_root_neighbors_keep_alias_and_duplicate_refusals() {
             .clone()
             .try_compose_into_valid_context_delaying_normalization(
                 [required.clone(), required.clone()],
-                &assumptions
+                &stated
             )
             .is_err()
     );
@@ -7514,14 +7547,13 @@ fn owned_root_neighbors_require_complete_coordinate_coverage() {
                 .is_err()
         );
         let child = context.clone().without_exact_representation(&held).unwrap();
-        assert!(
-            child
-                .try_compose_into_valid_context_delaying_normalization(
-                    [required.clone()],
-                    &assumptions
-                )
-                .is_ok()
-        );
+        assert!(matches!(
+            child.try_compose_into_valid_context_delaying_normalization(
+                [required.clone()],
+                &assumptions
+            ),
+            Err(ResourceContextValidityError::UnestablishedOwnedBoundary(_))
+        ));
         assert!(
             context
                 .try_compose_into_valid_context_delaying_normalization([required], &assumptions)

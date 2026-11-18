@@ -46,6 +46,37 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return search_input.driver().apply_step(ProofStep::Known);
         }
         if let Some(premises) = &premises
+            && let Some(closed) = attempt::candidate_outcome(
+                Self::try_bounded_cast_identity_using(search_input, premises),
+            )?
+            .flatten()
+        {
+            return Ok(closed);
+        }
+        if let Some(closed) =
+            Self::try_pointer_translation_using(search_input, premises.as_deref().unwrap_or(&[]))?
+        {
+            return Ok(closed);
+        }
+        if let Some(closed) =
+            Self::try_widened_unsigned_sum_using(search_input, premises.as_deref().unwrap_or(&[]))?
+        {
+            return Ok(closed);
+        }
+        if let Some(premises) = &premises
+            && let Some(closed) = Self::try_address_words_using(search_input, premises)?
+        {
+            return Ok(closed);
+        }
+        if let Some(premises) = &premises
+            && let Some(closed) = Self::try_quotient_shift_using(search_input, premises)?
+        {
+            return Ok(closed);
+        }
+        if let Some(closed) = Self::try_integer_algebra(search_input)? {
+            return Ok(closed);
+        }
+        if let Some(premises) = &premises
             && let Some(closed) = Self::try_conditional_bridge_using(search_input, premises)?
         {
             return Ok(closed);
@@ -276,6 +307,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_arithmetic_using");
+        if let Some(closed) = Self::try_quotient_shift_using(search_input, premises)? {
+            return Ok(closed);
+        }
         if let Some(closed) = Self::try_conditional_bridge_using(search_input, premises)? {
             return Ok(closed);
         }
@@ -325,27 +359,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
     }
 
-    fn try_signed_interval_using(
+    pub(in crate::surface::proof) fn try_signed_interval_using(
         search_input: &Proof<'a>,
         premises: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_signed_interval_using");
-        if Self::known_bridge_using(search_input, premises)? {
-            return search_input.driver().apply_step(ProofStep::Known).map(Some);
-        }
-        if let Some(closed) = Self::try_machine_bridge_using(search_input, premises)? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = Self::try_division_bound_using(search_input, premises)? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = Self::try_multiply_order_using(search_input, premises)? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = Self::try_product_bound_using(search_input, premises)? {
-            return Ok(Some(closed));
-        }
         let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
         else {
             return Ok(None);
@@ -365,19 +384,21 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         }
         let kernels = pairs.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
-        if crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-            goal,
-            &kernels,
-            &crate::kernel::proof::PureFactStore::from_ordered(&kernels),
-        )
-        .is_ok()
+        if signed_intervals::has_retained_read_source(surface_goal)
+            && crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                goal,
+                &kernels,
+                &crate::kernel::proof::PureFactStore::from_ordered(&kernels),
+            )
+            .is_ok()
         {
-            let closed = search_input
+            return search_input
                 .driver()
-                .apply_step(ProofStep::NormalizeUsing(premises.to_vec()))?;
-            if closed.focused_discharged() {
-                return Ok(Some(closed));
-            }
+                .apply_step(ProofStep::NormalizeUsing(premises.to_vec()))
+                .map(Some);
+        }
+        if let Some(closed) = Self::try_interval_fact_using(search_input, premises)? {
+            return Ok(Some(closed));
         }
         let Some(plan) =
             plan_arithmetic(ArithmeticEngine::SignedInt32WithWeakening, goal, &kernels)
@@ -2638,6 +2659,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             scope.succeed();
             return Ok(Some(proof));
         }
+        if let Some(proof) =
+            attempt::candidate_outcome(Self::try_bounded_cast_identity_closure(search_input))?
+                .flatten()
+        {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
+        if let Some(proof) = Self::try_pointer_translation_closure(search_input)? {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
+        if let Some(goal) = search_input.surface_goal() {
+            for premises in quotient_shifts::guard_candidates(goal) {
+                if let Some(proof) = Self::try_quotient_shift_using(search_input, &premises)? {
+                    scope.succeed();
+                    return Ok(Some(proof));
+                }
+            }
+        }
+        if let Some(proof) = Self::try_integer_algebra(search_input)? {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
         if let Some(proof) = super::super::program_termination::try_closure(search_input)? {
             scope.succeed();
             return Ok(Some(proof));
@@ -3404,11 +3448,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }) {
             return Self::apply_normalization_closure(search_input, Some(Vec::new())).map(Some);
         }
-        if let Some(proof) =
-            crate::kernel::search::ProofSearch::try_goal_conditional_normalization(search_input)
-        {
-            return Ok(Some(proof));
-        }
+        let pointer_congruence_fallback =
+            match Self::try_goal_conditional_normalization(search_input) {
+                Some(proof)
+                    if matches!(
+                        search_input.goal(),
+                        Some(Proposition::ConditionIs(
+                            ConditionTerm::PointerEqual(..) | ConditionTerm::PointerValueEqual(..),
+                            true
+                        ))
+                    ) && proof.ends_in_empty_normalize_using() =>
+                {
+                    Some(proof)
+                }
+                Some(proof) => return Ok(Some(proof)),
+                None => None,
+            };
         // Close an indexed equality rewrite before deriving a longer
         // arithmetic proof of the same fact. Connected chains still wait
         // until selected arithmetic has had the goal.
@@ -3430,6 +3485,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             std::ops::ControlFlow::Break(None) => false,
             std::ops::ControlFlow::Continue(()) => true,
         };
+        let rewrite_chain = |allow_unfold| {
+            crate::instrumentation::measure_operation(
+                "surface",
+                "solve closure",
+                "solve closure: goal equality rewrite",
+                || Self::try_connected_goal_equality_chain_closure(search_input, allow_unfold),
+            )
+        };
+        // Preserve the graph check for equalities the indexed rewrite
+        // candidates cannot reconstruct as ordinary proof steps.
+        if let Some(fallback) = pointer_congruence_fallback {
+            let rewritten = if chain_rewrites {
+                rewrite_chain(false)?
+            } else {
+                None
+            };
+            return Ok(rewritten.or(Some(fallback)));
+        }
         if let Some(surface_goal) = search_input.surface_goal()
             && let Some(proof) =
                 crate::kernel::search::ProofSearch::try_selected_unchanged_load_forall_goal(
@@ -3695,19 +3768,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(proof));
         }
-        if chain_rewrites
-            && let Some(rewritten) = crate::instrumentation::measure_operation(
-                "surface",
-                "solve closure",
-                "solve closure: goal equality rewrite",
-                || {
-                    crate::kernel::search::ProofSearch::try_connected_goal_equality_chain_closure(
-                        search_input,
-                        allow_function_unfold,
-                    )
-                },
-            )?
-        {
+        if chain_rewrites && let Some(rewritten) = rewrite_chain(allow_function_unfold)? {
             return Ok(Some(rewritten));
         }
         // Indexed rewrite planning uses Option for an ordinary candidate
@@ -3787,7 +3848,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(enumerated));
         }
         // A pure goal that its own signed bounds already decide gets the one
-        // checked arithmetic certificate, not a case split over those same
+        // checked arithmetic step, not a case split over those same
         // bounds. The certificate reads the goal's own bound buckets and
         // emits a single leaf, while the split searches for a pivot and then
         // owes a proof on each arm — including a dead arm closed only by a
@@ -4491,6 +4552,56 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_goal_conditional_normalization");
+        // Select guards by exact indexed lookup from the written expression.
+        // After ordinary arm rewrites, ambient solve can select the arithmetic
+        // bounds of the newly exposed operands. Restricted solve instead keeps
+        // its original explicit source list throughout the same rewrite prefix.
+        if let Some(ClickProposition::Comparison { left, right, .. }) = search_input
+            .surface_goal()
+            .and_then(integer_composition::canonical_surface)
+        {
+            let mathematical = search_input
+                .goal()
+                .is_some_and(|goal| integer_affine_claim(goal).is_some());
+            let mut remaining = 4096;
+            let candidates = machine_bridges::conditional_candidates(
+                &left,
+                &right,
+                mathematical,
+                &mut remaining,
+            )
+            .ok()?;
+            let mut selected = Vec::new();
+            for (expression, _) in candidates {
+                let ContractExpression::If { condition, .. } = expression else {
+                    unreachable!("conditional candidate");
+                };
+                for guard in [
+                    condition.as_ref().clone(),
+                    ClickProposition::Not(condition.clone()),
+                ] {
+                    let kernel = search_input
+                        .lower_cited_surface_proposition(&guard, "conditional goal guard")
+                        .ok()?;
+                    if search_input.facts().pure_known_available(&kernel)
+                        || crate::surface::planning::solve::computes_with_known(&kernel)
+                    {
+                        selected.push(guard);
+                    }
+                }
+            }
+            if !selected.is_empty()
+                && let Ok(Some((rewritten, _))) =
+                    Self::rewrite_conditional_arms_using(search_input, &selected)
+            {
+                if rewritten.focused_discharged() {
+                    return Some(rewritten);
+                }
+                if let Some(closed) = Self::try_solve_closure(&rewritten).ok().flatten() {
+                    return Some(closed);
+                }
+            }
+        }
         // The trusted ambient graph may close an equality without any
         // explicit condition premise. Emit the existing simple checker with
         // an empty input list; no fact search or extra theorem premise is
@@ -9063,7 +9174,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// Specialization can expose an arithmetic consequence without changing
-    /// any read. Keep that consequence as ordinary arithmetic certificates,
+    /// any read. Keep that consequence as ordinary arithmetic steps,
     /// rather than asking legacy transport to rediscover it. This runs only
     /// in search; checking the emitted steps never enters arithmetic planning.
     fn try_universal_steps_with_arithmetic(
@@ -10127,6 +10238,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_solve_closure_before_arithmetic");
+        if let Ok(Some(closed)) = Self::try_pointer_translation_using(search_input, surfaces) {
+            return Some(closed);
+        }
+        if let Ok(Some(closed)) = Self::try_widened_unsigned_sum_using(search_input, surfaces) {
+            return Some(closed);
+        }
+        if let Ok(Some(closed)) = Self::try_address_words_using(search_input, surfaces) {
+            return Some(closed);
+        }
+        if let Ok(Some(closed)) = Self::try_quotient_shift_using(search_input, surfaces) {
+            return Some(closed);
+        }
         if let Ok(Some(closed)) = Self::try_conditional_bridge_using(search_input, surfaces) {
             return Some(closed);
         }
@@ -10265,6 +10388,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         let goal = proof.goal()?;
+        if matches!(
+            goal,
+            Proposition::ConditionIs(ConditionTerm::Float32(_) | ConditionTerm::Float64(_), _)
+        ) && Self::known_bridge_using(&proof, surfaces).ok() == Some(true)
+        {
+            return proof
+                .driver()
+                .apply_step(ProofStep::Known)
+                .ok()
+                .filter(Proof::is_complete);
+        }
         let premise_pairs = surfaces
             .iter()
             .map(|surface| {
@@ -10358,13 +10492,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                 .is_some();
         let typed_first = signed_order || arithmetic_domain;
+        // Give memory-independent word observations the ordinary interval
+        // emitter before compatibility normalization. Keep retained reads and
+        // history on their existing paths, and do not broaden the speculative
+        // typed-derivation search along with this priority change.
+        let scalar_observation = proof
+            .surface_goal()
+            .is_some_and(|surface| !signed_intervals::has_retained_read_source(surface))
+            && !surfaces
+                .iter()
+                .any(signed_intervals::has_retained_read_source)
+            && crate::kernel::proof::integer_arithmetic::integer_affine_machine_values(goal)
+                .iter()
+                .any(|value| value.ty().format().bits() == 32);
+        let interval_first = typed_first || scalar_observation;
         if arithmetic_domain
             && let Ok(Some(closed)) =
                 Self::try_restricted_signed_definedness_closure(&proof, &premise_pairs)
         {
             return Some(closed);
         }
-        if typed_first && let Ok(Some(closed)) = Self::try_signed_interval_using(&proof, surfaces) {
+        if interval_first
+            && let Ok(Some(closed)) = Self::try_signed_interval_using(&proof, surfaces)
+        {
             return Some(closed);
         }
         if typed_first && let Some(closed) = try_typed_derivation() {
@@ -10394,13 +10544,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &crate::kernel::proof::PureFactStore::from_ordered(&restricted),
                 )
                 .is_ok()
-                && let Ok(closed) = crate::kernel::search::ProofSearch::apply_normalization_closure(
-                    &proof,
-                    Some(conditions),
-                )
-                && closed.is_complete()
             {
-                return Some(closed);
+                // Only a successful selected discovery hint gives an Integer
+                // observation this extra typed route. A failed goal must keep
+                // its original bounded search and diagnostic behavior.
+                if !interval_first
+                    && let Ok(Some(closed)) = Self::try_signed_interval_using(&proof, surfaces)
+                {
+                    return Some(closed);
+                }
+                if let Ok(closed) = Self::apply_normalization_closure(&proof, Some(conditions))
+                    && closed.is_complete()
+                {
+                    return Some(closed);
+                }
             }
         }
         if let Ok(Some(closed)) = Self::try_integer_composition_using(&proof, surfaces) {

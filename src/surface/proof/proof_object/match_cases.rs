@@ -203,6 +203,18 @@ impl<'a> Proof<'a> {
         self.with_kernel_state(self.state.with_locals(locals))
     }
 
+    pub(in crate::surface::proof) fn scope_call_payload(
+        &self,
+        scope: Option<&PersistentBinderMap<ContractExpression>>,
+        name: &str,
+        value: StoredExecutionValue,
+    ) -> PersistentBinderMap<ContractExpression> {
+        scope.unwrap_or(&self.state.locals().values).with_inserted(
+            name.to_owned(),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value.into_native())),
+        )
+    }
+
     /// The constructor each written arm of `source` stands for, by index in
     /// the scrutinee's datatype. Every constructor has exactly one arm, with
     /// one fresh binder per field.
@@ -362,7 +374,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
-            state.memory(),
+            &state.program_point(),
         );
         capture_fixed_state_algebraic_value(
             &expression,
@@ -482,7 +494,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
-            execution.core.state.memory(),
+            &execution.core.state.program_point(),
         );
         // A Rust `match` of a local that is no parameter, such as a call's
         // result, splits the algebraic value the local holds here, the one

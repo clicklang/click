@@ -391,7 +391,7 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
             let samples = [2, 4, 8, 16].map(|depth| {
                 let mut body = "have 0 == 0 by { normalize(); } normalize();".to_string();
                 for _ in 0..depth {
-                    body = format!("both {{ {body} }} and {{ normalize(); }}");
+                    body = format!("both {{ left => {{ {body} }} right => {{ normalize(); }} }}");
                 }
                 let source = format!("theorem nested() {{ ensures 0 == 0 by {{ {body} }} }}");
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2105,6 +2105,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
 
     let memory = SymbolicMemory::new().with_block("goal", 64);
     let read_defined = |pointer: Address| Proposition::MemoryReadDefined {
+        at: None,
         memory: memory.clone(),
         pointer,
         value_type: ProgramType::Int32,
@@ -6181,6 +6182,7 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
 /// The closers `solve() using` tries before arithmetic cost an unsigned chain
 /// more than a signed one, so the two chains' peaks are not compared.
 #[test]
+#[ignore = "nightly: signed and unsigned order-chain scaling across eight complete proofs"]
 fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
     for (value_type, bound) in [("int32", "4"), ("uint32", "4u32")] {
         let samples = [8usize, 16, 24, 32].map(|edges| {
@@ -8180,15 +8182,14 @@ fn explicit_byte_view_narrowing_rejects_missing_authority_and_bounds() {
 }
 
 /// Explicit framing must refuse locally even as unrelated scalar premises grow.
-/// The mdtest pins one refusal; this checks that its context-dependent memo does
-/// not turn extra facts into repeated frame searches. Keep the multi-run recheck
-/// out of the gate, whose single fixture covers the behavior.
+/// The mdtest pins one refusal. Check that looking up the selected separation
+/// stays bounded as the proof accumulates premises.
 #[test]
 #[ignore = "nightly: 6s for four explicit frame refusals"]
 fn explicit_frame_refusal_scales_with_unrelated_facts() {
     let mdtest = crate::cli::parse_mdtest(
-        std::path::Path::new("explicit_transport_failure_is_prompt.md"),
-        include_str!("../../../../mdtests/explicit_transport_failure_is_prompt.md"),
+        std::path::Path::new("explicit_preserve_failure_is_prompt.md"),
+        include_str!("../../../../mdtests/explicit_preserve_failure_is_prompt.md"),
     )
     .unwrap();
     let mut samples = Vec::new();
@@ -8231,7 +8232,9 @@ fn explicit_frame_refusal_scales_with_unrelated_facts() {
         });
         let error = result.expect_err("a missing frame is still refused");
         assert!(
-            error.message().contains("found no frame evidence"),
+            error
+                .message()
+                .contains("preserve separation is not exactly available"),
             "{size}: {error:?}"
         );
         samples.push(sample);
@@ -8240,11 +8243,11 @@ fn explicit_frame_refusal_scales_with_unrelated_facts() {
         "explicit frame refusal with unrelated facts",
         &samples,
     );
-    // The selected transport pays only a fixed amount per added premise.
+    // The selected preservation check pays only a fixed amount per added premise.
     // Whole-run totals also include shared frontend initialization.
     for pair in samples.windows(2) {
-        let before = pair[0].named_work["control tactic `have`"];
-        let after = pair[1].named_work["control tactic `have`"];
+        let before = pair[0].named_work["simple tactic `have`"];
+        let after = pair[1].named_work["simple tactic `have`"];
         assert!(
             after <= before + 6 * (pair[1].size - pair[0].size),
             "{samples:?}"
@@ -9227,10 +9230,21 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
 /// adds
 /// (`context_rebuild_entries` with the split minus without it).
 #[test]
+#[ignore = "nightly: proof-if context scaling compares eight complete loop proofs"]
 fn proof_if_split_ignores_earlier_unrelated_facts() {
     fn rebuild_entries(size: usize, split: bool) -> usize {
+        // Establish the shared lower bound once; each distinct earlier fact
+        // then needs one explicit transitivity application instead of a new
+        // arithmetic search. Keep i symbolic so these remain distinct facts.
         let haves = (1..=size)
-            .map(|k| format!("            have i >= 0 - {k} by solve();\n"))
+            .map(|k| {
+                format!(
+                    "            have i >= 0 - {k} by {{\n\
+                     \x20               apply(click::integer::le_transitive(0 - {k}, 0, to_integer(i))) using {{\n\
+                     \x20                   0 - {k} <= 0; 0 <= to_integer(i);\n\
+                     \x20               }};\n            }}\n"
+                )
+            })
             .collect::<String>();
         // Arms that each close the iteration have no continuation to rejoin,
         // so the split is taken rather than tried as a straight-line join.
@@ -9242,11 +9256,32 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
             ""
         };
         let click_source = format!(
-            "verifying \"split.c\";\n\n\
-             int32 count_once(int32 flag) {{\n    ensures result == 1;\n}} by {{\n    \
-             step();\n    step();\n    loop {{\n        decreases 1 - i;\n        invariant i >= 0;\n        \
-             invariant i <= 1;\n        initialize by solve();\n        preserve by {{\n            \
-             step();\n{haves}{close}        }}\n    }}\n    step();\n    solve();\n}}\n"
+            r#"verifying "split.c";
+int32 count_once(int32 flag) {{
+    ensures result == 1;
+}} by {{
+    step();
+    step();
+    loop {{
+        decreases 1 - i;
+        invariant i >= 0;
+        invariant i <= 1;
+        initialize by {{ normalize(); }}
+        preserve by {{
+            mark before_increment;
+            step();
+            have 0 <= to_integer(i) by {{
+                solve() using {{
+                    at(before_increment, i) >= 0;
+                    at(before_increment, i) <= 1;
+                }};
+            }}
+{haves}{close}        }}
+    }}
+    step();
+    solve();
+}}
+"#
         );
         let c_source = "int32 count_once(int32 flag) {\n    int32 i;\n    i = 0;\n    \
                         while (i < 1) { i = i + 1; }\n    return i;\n}\n";
@@ -11106,6 +11141,7 @@ fn nested_call_results_scale_with_the_statements_that_read_them() {
 }
 
 #[test]
+#[ignore = "nightly: 5.6s selected-guard context scaling audit"]
 fn ordinary_fold_unfold_checks_only_selected_guards() {
     let mut samples = Vec::new();
     for size in [4, 16, 64, 256] {
@@ -11185,4 +11221,32 @@ fn exceptional_borrowed_memory_is_indexed_in_unrelated_context() {
         frontier[0] > 0 && frontier.iter().all(|work| *work == frontier[0]),
         "call frontier {frontier:?}"
     );
+}
+
+#[test]
+fn recorded_call_snapshots_read_one_point_and_one_call() {
+    for count in [8, 128, 1024] {
+        let mut points = RecordedStates::new();
+        let selected = ProgramPointSelector::Mark("saved".into());
+        for region in 0..count {
+            points.record_call_result(region, Some(crate::kernel::int32(region as u32)));
+        }
+        points.set_call_result_snapshot(&selected, Some(points.call_results.clone()));
+        // Grow both the number of snapshots and the number of times the
+        // selected call ran without changing its earlier snapshot.
+        for run in 0..count {
+            points.record_call_result(0, Some(crate::kernel::int32(1 + run as u32)));
+            let point = ProgramPointSelector::Mark(format!("run_{run}"));
+            points.set_call_result_snapshot(&point, Some(points.call_results.clone()));
+        }
+        assert_eq!(points.call_result_snapshots.len(), count + 1);
+        let (saved, work) = crate::instrumentation::measure_deterministic_work(|| {
+            points.call_results_at(&selected).unwrap().get(&0).cloned()
+        });
+        assert_eq!(
+            saved.map(RetainedProgramValue::into_native_compat),
+            Some(crate::kernel::int32(0))
+        );
+        assert_eq!(work, 1, "{count} calls and snapshots");
+    }
 }

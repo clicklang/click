@@ -16,7 +16,7 @@ fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
         .with_memory(memory.clone());
     let ensure = SpecProposition::Comparison {
         left: SpecExpression::MemoryLoad {
-            memory: SpecPoint::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::PointerOffset {
                 pointer: Box::new(SpecExpression::ProgramExpression(
                     crate::kernel::program_expression::variable("data"),

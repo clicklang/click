@@ -398,7 +398,7 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
         node: SpecAlgebraicExpressionNode::Constructor {
             variant: "Box".into(),
             fields: vec![SpecAlgebraicValue::Program(SpecExpression::MemoryLoad {
-                memory: SpecPoint::At(ProgramPoint::of_memory(&memory)),
+                point: SpecPoint::At(ProgramPoint::of_memory(&memory)),
                 pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
                     address.clone(),
                     ProgramType::Int64PointerPointer,
@@ -1138,7 +1138,7 @@ fn algebraic_read_result_preserves_native_state_and_type() {
     let native = AlgebraicTerm {
         algebraic_type: ty.clone(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: intern_memory(SymbolicMemory::new()),
+            point: crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
             pointer: Box::new(Address::symbolic(Variable(999749))),
         },
     };

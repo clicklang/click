@@ -558,8 +558,30 @@ a mutable alias need ownership, and const aliases continue to observe writes
 through a separately authorized mutable alias. Ending a reference binding does
 not destroy its backing object. Pointer-based binding checks the complete
 record's live byte footprint without reading or initializing its fields.
-Record-reference call results, rvalue references and temporary lifetime
-extension remain outside this slice. A record-reference name shared with a
+
+Struct/class lvalue-reference results use `Widget&` or `const Widget&` in
+sidecar heads. `result.field` reads the returned record and `&result` names
+its address. Functions may return an existing reference or supported object
+lvalue, a nested record member, a record-pointer dereference, or forward a
+matching reference-result call. Reference locals bind matching direct call
+results as well as existing object lvalues. These calls preserve record
+identity, const qualification, subobject bounds and backing authority; the
+returned address grants no ownership or initialization. A dangling address
+under an alias-only claim does not promise live backing; later accesses still
+check storage lifetime and permissions.
+
+A direct integer field read such as `return outer.get().value;` uses the
+expression observer rules, including a nonthrowing getter with a read-only
+contract. A simple assignment such as `outer.get().value = outer.first;`
+evaluates the right operand before calling the getter. The store requires
+writable authority for the selected field and a mutable record reference.
+Both forms evaluate the getter once. Compound assignments with `+=` and
+`-=` also support direct same-width signed integer fields on a returned
+record reference. Click reads the selected field after the call, checks
+signed overflow, and stores through the same returned reference. Rvalue
+references and temporary lifetime extension remain outside this slice.
+
+A record-reference name shared with a
 different record layout or a non-reference object in another scope is refused,
 rather than assigning its proof fields an ambiguous layout.
 
@@ -593,7 +615,7 @@ currently by-value `bool` or signed/unsigned 32/64/128-bit integers, native elem
 `int*`, `unsigned int*` or `unsigned char*` (also pointers to const elements), one `const` signed-64 reference, and mutable or const references
 to supported simple record types with distinct proof-facing names. Selected functions return `int`,
 signed/unsigned 64/128-bit integers, `unsigned int`, `unsigned char`, `bool`, mutable `int*`, `unsigned int*` or `unsigned char*`,
-native element references, or `void`.
+native element references, supported record references, or `void`.
 
 Free and ordinary member functions also admit mutable by-value simple-record
 parameters with trivial copying and destruction, without base subobjects.

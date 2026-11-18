@@ -192,7 +192,7 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
         {
             return Ok(value.clone());
         }
-        Ok(SharedPointerValue::new(KernelPointerValue {
+        Ok(SharedPointerValue::new(KernelPointer {
             address,
             provenance,
             bounds_owner,

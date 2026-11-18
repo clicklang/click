@@ -241,11 +241,12 @@ impl PureFactContext {
                 return false;
             };
             let exact = Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: pointer.clone(),
                 value_type,
             };
-            if facts.contains(&exact) {
+            if facts.contains_key(&exact) {
                 return true;
             }
             // Allocation bookkeeping and local cleanup have one adjacent
@@ -263,11 +264,12 @@ impl PureFactContext {
             {
                 let before = step.base();
                 let premise = Proposition::MemoryReadDefined {
+                    at: None,
                     memory: before.as_ref().clone(),
                     pointer: candidate.clone(),
                     value_type,
                 };
-                if facts.contains(&premise)
+                if facts.contains_key(&premise)
                     && !candidate.blocks_proven_distinct(pointer)
                     && self.pointers_known_equal(candidate, pointer)
                     && crate::kernel::memory_history::typed_read_has_same_memory_source(
@@ -287,10 +289,11 @@ impl PureFactContext {
                 return false;
             }
             let Some(Proposition::MemoryReadDefined {
+                at: None,
                 memory: before,
                 pointer: source,
                 ..
-            }) = facts.iter().next()
+            }) = facts.keys().next()
             else {
                 return false;
             };
@@ -4799,7 +4802,7 @@ impl PureFactContext {
     /// classes select candidates; only full bounds identity admits evidence.
     pub(in crate::kernel) fn opaque_pointer_covers(
         &self,
-        value: &PointerValue,
+        value: &Pointer,
         position: &Address,
         bytes: u32,
     ) -> bool {
@@ -4817,14 +4820,14 @@ impl PureFactContext {
                 else {
                     return false;
                 };
-                if !self.bounds_owners_equal(origin, source.pointer()) {
+                if !self.bounds_owners_equal(origin, source.address()) {
                     return false;
                 }
                 let covered = if let Some(range) = SubobjectBounds::covered_wide_range(fact) {
                     let contains = |pointer| {
                         crate::kernel::primitives::pointer_formation_in_range(
                             pointer,
-                            value.pointer(),
+                            value.address(),
                             &range,
                             self,
                         )
@@ -4844,7 +4847,7 @@ impl PureFactContext {
                         };
                         contains(position, bytes)
                             && (bytes > 0
-                                || contains(value.pointer(), 0)
+                                || contains(value.address(), 0)
                                 || contains(position, 1)
                                 || self.decide(&ConditionTerm::signed_less_than(
                                     MachineTerm::constant(0),
@@ -6226,7 +6229,7 @@ mod shallow_composition_separation_tests {
         let boxed = |variable: u64| Resource::Composite {
             name: "boxed".into(),
             arguments: vec![crate::kernel::AlgebraicValue::Program(
-                crate::kernel::ProgramValue::Pointer(crate::kernel::PointerValue::new(
+                crate::kernel::ProgramValue::Pointer(crate::kernel::Pointer::new(
                     symbolic(variable),
                     crate::kernel::ProgramType::Int32Pointer,
                 )),

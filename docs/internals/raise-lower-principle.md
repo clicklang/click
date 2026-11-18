@@ -57,7 +57,12 @@ checked. Each one costs completeness, expansion, or a readable report.
   value. A non-void call's result is `<region>.result`, including calls whose
   source discards the return value. The checked call transition retains the
   exact returned value, and its exit records it by region in
-  `RecordedStates::call_results`. Lowering reads that value directly;
+  `RecordedStates::call_results`. Stored call results and named theorem bindings
+  retain their `ExecutionValue` producer in immutable `RetainedProgramValue`
+  carriers: existing shared roots survive region, state and argument handoffs;
+  explicit native inputs retain their syntax contract. Selected compatibility
+  readers borrow native output through the existing root-owned cache. No
+  ambient binding map is exported. Lowering reads the selected value directly;
   integer and Boolean synthesis uses a reverse term index, and algebraic
   synthesis (a Rust enum a call returned) an index from the value to the
   first call that returned it (`algebraic_call_results`). Replacing or removing
@@ -101,7 +106,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   `iterations` (kernel placeholder `LOOP_ITERATIONS_VARIABLE`, bound per phase
   by `LoopIterationsScope`), and each path past the loop carries it on its
   correspondence metadata to the exit, which records it by loop in
-  `RecordedStates::loop_iterations` with a reverse index from the variable:
+  `RecordedStates::loop_iterations` as an Integer root, with a reverse index from the variable:
   it is raised `loop(i).iterations` in one lookup.
   Recorded points index each integer value, and each pointer's block, by the
   point and the local it was first given to (`RecordedStates::value_points`
@@ -449,18 +454,21 @@ Machine conditionals with closed 32/64-bit order guards, closed 64-bit equality
 guards, or same-variable 32/64-bit comparison guards retain their `if` node and
 guard during logical lowering. Their arm domains remain guarded, including
 unselected reads and invalid shifts. Checking selects the arm when needed.
-The comparison boundary recognizes conditionals guarded by a Boolean variable
-or a 32/64-bit comparison over literal/variable operands or one bitwise
-operation over those leaves, with literal/variable
-arms or one bitwise operation (`&`, `|`, `^`, `~`) over literal/variable arm operands,
-as fixed-size native atoms. Standalone comparisons use the same bounded
-bitwise operands. Even intrinsically decided bitwise guards retain their
-conditional; checking selects the arm. Bitwise recognition reads only the operation and
-its immediate leaves. Negated Boolean variables use the same guard
-with swapped arms. It retains the comparison family without exporting arithmetic
-DAGs or selecting an arm from ambient facts. Other result families retain their existing
-selected-arm behavior; literal Boolean and closed 32-bit equality guards keep
-their normal forms.
+The comparison boundary recognizes fixed-size native conditionals. The guard can
+be a Boolean variable or a 32/64-bit comparison, and the comparison operands and
+arms can be literal or variable leaves, one bitwise operation (`&`, `|`, `^`, `~`)
+over such leaves, a right shift or unsigned left shift by an in-range literal
+count, or an unsigned sum, difference, or product over a variable and a literal. The
+comparison or conditional result type can identify a `uint32` operation whose
+node carries the shared 32-bit word encoding.
+Standalone comparisons also recognize the bounded bitwise and shift operands.
+Even intrinsically decided guards in these forms retain their conditional;
+checking selects the arm. The
+reader inspects only the operator and its immediate leaves. Negated Boolean
+variables use the same guard with swapped arms. This preserves the comparison
+family without exporting arithmetic DAGs or using ambient facts to select an arm.
+Other result families retain their existing selected-arm behavior; literal Boolean
+and closed 32-bit equality guards keep their normal forms.
 
 Checked rewriting reconstructs native 32-bit comparisons with word-form literal
 operands, matching logical lowering even when selecting a conditional's unsigned
