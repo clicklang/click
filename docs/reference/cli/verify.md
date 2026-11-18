@@ -179,7 +179,7 @@ claim's remaining goal, or a refused C statement's requirement at the
 statement's pre-state, such as a call precondition, the condition that rules
 out a signed overflow, or a missing resource. A statement's goal is followed by
 a `help:` line naming the explicit form that proves it; see
-[Tracing a failed proof](../../concepts/tracing.md). Premises that are
+[Repairing a failed proof](../../concepts/tracing.md). Premises that are
 verifier bookkeeping no proof can cite are counted rather than listed.
 The ordinary error prints facts, goals, and rejected requirements in Click or
 C syntax, with each constant in its checked type (`-56` for an `int32`,

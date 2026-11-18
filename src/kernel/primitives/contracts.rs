@@ -1632,6 +1632,15 @@ impl ProgramFunction {
         self.contract_interface.parameters()
     }
 
+    pub(crate) fn extend_parameters(
+        &mut self,
+        parameters: impl IntoIterator<Item = ProgramParameter>,
+    ) {
+        let interface = Arc::make_mut(&mut self.contract_interface);
+        interface.parameters.extend(parameters);
+        interface.refresh_object_types();
+    }
+
     pub(crate) fn pop_parameter(&mut self) -> Option<ProgramParameter> {
         Arc::make_mut(&mut self.contract_interface).parameters.pop()
     }
@@ -2015,6 +2024,74 @@ impl CompositeResourceDefinition {
                     && direct(&segment.base, &parameter)
                     && direct(&segment.start, &parameter)
                     && direct(&segment.end, &parameter)
+            })
+    }
+
+    /// Every resource ingredient is determined by the head's typed pointer
+    /// and stays in its allocation. A load, witness or opaque child would
+    /// require inspecting the body at the call's memory state.
+    pub(in crate::kernel) fn confines_retirement_to_argument_block(
+        &self,
+        argument_type: ProgramType,
+    ) -> bool {
+        let [parameter] = self.parameters.as_slice() else {
+            return false;
+        };
+        let rooted = |expression: &ProgramExpression| matches!(expression, ProgramExpression::Variable(name) if name == parameter.binding_name());
+        let literal = |expression: &ProgramExpression| match expression {
+            ProgramExpression::Value(ProgramValue::Int32(term)) => term.as_const().is_some(),
+            ProgramExpression::Value(ProgramValue::UInt64(term)) => {
+                term.uint64_as_const().is_some()
+            }
+            _ => false,
+        };
+        parameter.program_type() == argument_type
+            && self.witnesses.is_empty()
+            && self.condition.is_none()
+            && self.matched.is_none()
+            && self.instance_schema.is_none()
+            && self.resource_parameters.is_empty()
+            && self.children.is_empty()
+            && !self.is_recursive()
+            && !self.is_sealed()
+            && !self.is_authorized()
+            && self.contains.iter().all(|child| {
+                if child.access() != ResourceAccessMode::Own
+                    || child.quantity() != &ResourceQuantity::One
+                    || child.guard().is_some()
+                    || child.state_source() != ResourceStateSource::Current
+                    || !child.resource_arguments().is_empty()
+                {
+                    return false;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                match child.term() {
+                    ResourceTerm::Memory(segment) => {
+                        segment.guard.is_none()
+                            && rooted(&segment.base)
+                            && literal(&segment.start)
+                            && literal(&segment.end)
+                    }
+                    ResourceTerm::Token {
+                        name,
+                        arguments,
+                        argument_state_sources,
+                        parameter_types,
+                    } => {
+                        let [pointer, size] = arguments.as_slice() else {
+                            return false;
+                        };
+                        let ProgramExpression::Value(size_value) = size else {
+                            return false;
+                        };
+                        name == ResourceFact::ALLOCATION_RESOURCE_NAME
+                            && rooted(pointer)
+                            && literal(size)
+                            && argument_state_sources == &[ResourceStateSource::Current; 2]
+                            && parameter_types == &[argument_type, size_value.program_type()]
+                    }
+                    _ => false,
+                }
             })
     }
 

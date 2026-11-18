@@ -20019,6 +20019,72 @@ fn cpp_native_interface_record_copy_checks_every_source_field_offline() {
     }
 }
 
+#[test]
+#[ignore = "nightly: C++ by-value record witness proof and replay"]
+fn cpp_by_value_record_carries_a_contract_value() {
+    let project = Project::with_fixture(
+        "by-value.cpp",
+        "probe",
+        r#"struct View { int* data; unsigned long count; };
+unsigned long shorten(View value) noexcept {
+    unsigned long original = value.count;
+    value.count = 0;
+    return original;
+}
+unsigned long probe(const View& source) noexcept { return shorten(source); }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = r#"verifying "by-value.cpp";
+abstract resource view_state(s: const struct View*) { field count: uint64; }
+uint64 shorten(struct View value) {
+    let count: uint64;
+    requires value.count == count;
+    ensures result == count;
+}
+uint64 probe(const struct View& source) {
+    owns state: view_state(&source);
+    views source.data;
+    views source.count;
+    requires source.count == state.count;
+    ensures result == old(state.count);
+    ensures source.count == old(source.count);
+    ensures source.data == old(source.data);
+    ensures state.count == old(state.count);
+} by {
+    step(shorten, { count: old(source.count) });
+}
+"#;
+    let sidecar = project.directory.join("by-value.click");
+    fs::write(&sidecar, proof).unwrap();
+    let parsed = read_click_project(&sidecar, proof).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &parsed,
+        &ProgramInputs::program(&import),
+        "probe.contract",
+    )
+    .unwrap();
+    verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
+
+    let invalid = proof.replace("count: old(source.count)", "count: 0u64");
+    let sidecar = project.directory.join("wrong-value.click");
+    fs::write(&sidecar, &invalid).unwrap();
+    let parsed = read_click_project(&sidecar, &invalid).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import)
+        .expect_err("a different count does not describe the copied value");
+    assert!(error.message().contains("precondition"), "{error:?}");
+
+    project.write_config("shorten");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let (callee, _) = proof.split_once("uint64 probe(").unwrap();
+    fs::write(&sidecar, callee).unwrap();
+    let parsed = read_click_project(&sidecar, callee).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+}
+
 const RECORD_TEMPORARY_ARGUMENT_SOURCE: &str = r#"
 struct Value {
     int value;

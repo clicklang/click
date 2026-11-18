@@ -81,6 +81,81 @@ fn continuity_refuses_allocation_sizes_of_different_formats() {
 }
 
 #[test]
+fn preserved_fold_can_continue_an_allocation_loaded_from_another_block() {
+    use crate::kernel::program_expression::{int32_literal, typed_load, variable};
+
+    let slot_type = ProgramType::Int32PointerPointer;
+    let function = program_function(
+        ProgramType::Void,
+        "unused",
+        vec![],
+        program_return(program_void_value()),
+    )
+    .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
+        "descriptor",
+        vec![program_parameter("slot", slot_type)],
+        None,
+        false,
+        vec![
+            ResourceSpec::owned_memory(
+                MemorySegment::new(variable("slot"), int32_literal(0), int32_literal(1))
+                    .with_element_width(ProgramType::Int32Pointer.byte_width()),
+            ),
+            ResourceSpec::token(
+                ResourceAccessMode::Own,
+                ResourceFact::ALLOCATION_RESOURCE_NAME.into(),
+                vec![
+                    typed_load(variable("slot"), ProgramType::Int32Pointer),
+                    int32_literal(4),
+                ],
+                vec![ProgramType::Int32Pointer, ProgramType::Int32],
+            ),
+        ],
+        vec![],
+    )]);
+    let heap = |id| Address {
+        base: AddressBase::Heap(id),
+        offset: AddressOffset::Constant(0),
+    };
+    let consumed = heap(934_000);
+    let slot = heap(934_001);
+    let bytes = MachineTerm::constant(4);
+    let memory = SymbolicMemory::new()
+        .with_heap_allocation_claim(consumed.clone(), AllocationSize::int32(bytes.clone()))
+        .expect("live input allocation")
+        .with_heap_allocation_claim(
+            slot.clone(),
+            AllocationSize::int32(MachineTerm::constant(
+                ProgramType::Int32Pointer.byte_width(),
+            )),
+        )
+        .expect("live descriptor")
+        .store(slot.clone(), ProgramValue::pointer(consumed.clone()));
+    let state = ExecutionState::new().with_memory(memory.clone());
+    let input = ResourceContext::new()
+        .unchecked_with_fact(ResourceFact::own_allocation(consumed.clone(), bytes));
+    let kept = ResourceContext::new().unchecked_with_fact(ResourceFact::own_composite(
+        "descriptor".into(),
+        vec![ProgramValue::typed_pointer(slot, slot_type)],
+    ));
+    let result = apply_verified_heap_allocation_delta(
+        memory.clone(),
+        &memory,
+        &input,
+        &kept,
+        &ResourceContext::new(),
+        function.contract_interface(),
+        &PureFactContext::new(),
+        None,
+        &state,
+        &state,
+    )
+    .expect("the kept descriptor still supplies the input allocation");
+    assert!(result.retired_allocations.is_empty());
+    assert!(result.memory.live_heap_block_size(&consumed).is_some());
+}
+
+#[test]
 fn contract_retirement_invalidates_creation_history_even_with_replacement() {
     let base = Address {
         base: AddressBase::Heap(930_100),
