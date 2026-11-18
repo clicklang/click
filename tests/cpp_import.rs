@@ -9562,6 +9562,92 @@ int32 collision(int32 __click_cpp_nested_value_0, int32 __click_cpp_nested_value
 }
 
 #[test]
+#[ignore = "nightly: imported runtime default and explicit override with proof replay"]
+fn runtime_default_arguments_evaluate_the_helper_only_when_omitted() {
+    let cpp = r#"#include "defaults.h"
+int default_limit() noexcept { return 100; }
+int limit(int value) noexcept { return value; }
+int omitted() noexcept { return limit(); }
+int overridden() noexcept { return limit(7); }
+"#;
+    for (selected, result, expected_calls) in [
+        ("omitted", 100, &["default_limit", "limit"][..]),
+        ("overridden", 7, &["limit"][..]),
+    ] {
+        let mut project = Project::with_fixture("default-use.cpp", selected, cpp);
+        fs::write(
+            project.directory.join("defaults.h"),
+            "int default_limit() noexcept; int limit(int value = default_limit()) noexcept;",
+        )
+        .unwrap();
+        if selected == "omitted" {
+            project.dependencies.push("defaults.h".into());
+        }
+        project.write_config(selected);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let [CppStatement::ReturnCall { arguments, .. }] =
+            import.export().functions[0].body.as_slice()
+        else {
+            panic!("expected a return call to limit");
+        };
+        match (selected, arguments.as_slice()) {
+            ("omitted", [CppCallArgument::Call { callee, span, .. }]) => {
+                assert_eq!(span.file, "default-use.cpp");
+                assert_eq!(span.start_line, 4);
+                assert_eq!(callee.span, *span);
+                assert!(
+                    import
+                        .export()
+                        .dependencies
+                        .iter()
+                        .any(|name| name == "defaults.h")
+                );
+            }
+            ("overridden", [CppCallArgument::Value { .. }]) => {
+                assert!(import.export().dependencies.is_empty());
+            }
+            _ => panic!("expected the selected argument form"),
+        }
+
+        let lowered = lower_import(&import).unwrap();
+        let mut pending = vec![lowered.kernel_function().body()];
+        let mut calls = Vec::new();
+        while let Some(statement) = pending.pop() {
+            match statement {
+                ProgramStatement::Seq(body) => pending.extend(body.iter().rev().map(AsRef::as_ref)),
+                ProgramStatement::CallResult { function_name, .. } => {
+                    calls.push(
+                        click::surface::source_display_name(function_name)
+                            .unwrap_or_else(|| function_name.clone()),
+                    );
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(calls, expected_calls);
+        let mut source = String::from(
+            "verifying \"default-use.cpp\";\nint32 limit(int32 value) { ensures result == value; }\n",
+        );
+        if selected == "omitted" {
+            source.push_str("int32 default_limit() { ensures result == 100; }\n");
+        }
+        source.push_str(&format!(
+            "int32 {selected}() {{ ensures result == {result}; }}\n"
+        ));
+        check_selected_claim_certificate(&project, &import, &source);
+    }
+
+    let ambiguous = Project::with_fixture(
+        "ambiguous.cpp",
+        "run",
+        "int next() noexcept { return 1; } int pair(int a, int b = next()) noexcept { return a; } int run() noexcept { return pair(next()); }",
+    );
+    let error = refresh_import(&ambiguous.config()).unwrap_err();
+    assert!(error.contains("preserve evaluation order"), "{error}");
+}
+
+#[test]
 fn nested_return_calls_reject_unspecified_order_conversions_and_cycles() {
     for (cpp, diagnostic) in [
         (
