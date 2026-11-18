@@ -61,6 +61,8 @@ type Key = (u64, u32, usize, usize);
 thread_local! {
     /// Sets walked fact by fact, for the scaling regression.
     static WALKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static FOOTPRINT_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static FOOTPRINT_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -223,8 +225,12 @@ impl CanonicalFactSet {
     /// cached footprint; queries never force this construction.
     pub(in crate::kernel) fn prepare_footprint(&self) {
         fn prepare(node: &Arc<Node>) -> super::Resource {
+            #[cfg(test)]
+            FOOTPRINT_VISITS.with(|visits| visits.set(visits.get() + 1));
             node.footprint
                 .get_or_init(|| {
+                    #[cfg(test)]
+                    FOOTPRINT_BUILDS.with(|builds| builds.set(builds.get() + 1));
                     let combine = |a, b| match (a, b) {
                         (super::Resource::Emp, b) => b,
                         (a, super::Resource::Emp) => a,
@@ -428,4 +434,9 @@ impl std::fmt::Debug for CanonicalFactSet {
             .field("len", &self.len())
             .finish()
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/primitives/canonical_fact_set.rs");
 }
