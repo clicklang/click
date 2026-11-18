@@ -169,7 +169,7 @@ pub enum KernelTermNode {
         kind: LoadKind,
     },
     /// Complete formed pointer value with prepared address and metadata children.
-    PointerValue(SharedPointerValue),
+    Pointer(SharedPointerValue),
     /// A pointer argument with the point its array is read at.
     ArrayReference {
         point: ProgramPoint,

@@ -88,7 +88,7 @@ impl KernelTerm {
             return None;
         }
         let MachineTerm::MemoryLoad(point, address, _) =
-            crate::kernel::equality_graph::logical_pointer_read_term(value.pointer())?
+            crate::kernel::equality_graph::logical_pointer_read_term(value.address())?
         else {
             return None;
         };
