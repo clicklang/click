@@ -388,8 +388,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let kernels = pairs.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
         let retained = signed_intervals::has_retained_read_source(surface_goal);
         let addition = retained && signed_intervals::is_int32_addition_obligation(goal);
-        let ordinary = || Self::try_interval_fact_using(search_input, premises);
-        if addition && let Some(closed) = attempt::candidate_outcome(ordinary())?.flatten() {
+        if addition
+            && let Some(closed) =
+                attempt::candidate_outcome(Self::try_int32_addition_using(search_input, premises))?
+                    .flatten()
+        {
             return Ok(Some(closed));
         }
         if retained {
@@ -410,7 +413,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return search_input.driver().apply_step(step).map(Some);
             }
         }
-        if !addition && let Some(closed) = ordinary()? {
+        if let Some(closed) = Self::try_interval_fact_using(search_input, premises)? {
             return Ok(Some(closed));
         }
         let Some(plan) =

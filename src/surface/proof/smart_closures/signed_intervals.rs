@@ -259,6 +259,158 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         proof.driver().apply_step(ProofStep::Known).map(Some)
     }
 
+    /// Use one endpoint per operand, then weaken the summed endpoint.
+    /// All nonliteral endpoints come from the checked selected premises.
+    pub(in crate::surface::proof) fn try_int32_addition_using(
+        input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_int32_addition_using");
+        use super::super::wide_arithmetic::have;
+        use crate::kernel::IntegerTerm;
+        let Some((goal, true)) = input.goal().and_then(Proposition::condition_native) else {
+            return Ok(None);
+        };
+        if matches!(goal, ConditionTerm::IntegerEqual(..)) {
+            return if Self::known_bridge_using(input, premises)? {
+                input.driver().apply_step(ProofStep::Known).map(Some)
+            } else {
+                Ok(None)
+            };
+        }
+        let (left, right) = match goal {
+            ConditionTerm::IntegerLessEqual(left, right) => (left, right),
+            ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
+            _ => return Ok(None),
+        };
+        let Some(ClickProposition::Comparison {
+            left: written_left,
+            right: written_right,
+            ..
+        }) = input
+            .surface_goal()
+            .and_then(integer_composition::canonical_surface)
+        else {
+            return Ok(None);
+        };
+        let lower = left.as_const().is_some();
+        let (sum, written_sum, limit) = if lower {
+            (right, written_right, i64::from(i32::MIN))
+        } else {
+            (left, written_left, i64::from(i32::MAX))
+        };
+        let (IntegerTerm::Add(a, b), ContractExpression::Add(written_a, written_b)) =
+            (sum.as_ref(), &written_sum)
+        else {
+            return Ok(None);
+        };
+        let operands = [a, b];
+        let literal = |term: &IntegerTerm| {
+            term.as_const().and_then(ToPrimitive::to_i32).or_else(|| {
+                let IntegerTerm::Machine(value) = term else {
+                    return None;
+                };
+                value
+                    .ty()
+                    .constant_from_term(&value.operand_view().literal()?)?
+                    .to_integer()
+                    .to_i32()
+            })
+        };
+        let mut endpoints = operands.map(|operand| literal(operand));
+        for source in premises {
+            let premise = input.lower_cited_surface_proposition(source, "addition bound")?;
+            if !input.facts().listed_premise_available(&premise, &[], false) {
+                return Ok(None);
+            }
+            let readings =
+                crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+                    &premise,
+                );
+            for premise in std::iter::once(&premise).chain(&readings) {
+                let (lo, hi) = match premise.condition_native() {
+                    Some((ConditionTerm::IntegerLessEqual(lo, hi), true))
+                    | Some((ConditionTerm::IntegerGreaterEqual(hi, lo), true)) => (lo, hi),
+                    _ => continue,
+                };
+                let (value, endpoint) = if lower { (hi, lo) } else { (lo, hi) };
+                let Some(endpoint) = literal(endpoint) else {
+                    continue;
+                };
+                for (operand, slot) in operands.iter().zip(&mut endpoints) {
+                    if operand.value_read() == value.value_read()
+                        && slot.is_none_or(|old| {
+                            if lower {
+                                endpoint > old
+                            } else {
+                                endpoint < old
+                            }
+                        })
+                    {
+                        *slot = Some(endpoint);
+                    }
+                }
+            }
+        }
+        let [Some(a), Some(b)] = endpoints else {
+            return Ok(None);
+        };
+        let total = i64::from(a) + i64::from(b);
+        if (lower && total < limit) || (!lower && total > limit) {
+            return Ok(None);
+        }
+        let typed =
+            |value| super::super::surface_synthesis::integer_typed_expression(number(value));
+        let endpoint_a = typed(i64::from(a));
+        let endpoint_b = typed(i64::from(b));
+        let (a, b, c, d) = if lower {
+            (
+                endpoint_a.clone(),
+                (**written_a).clone(),
+                endpoint_b.clone(),
+                (**written_b).clone(),
+            )
+        } else {
+            (
+                (**written_a).clone(),
+                endpoint_a.clone(),
+                (**written_b).clone(),
+                endpoint_b.clone(),
+            )
+        };
+        let sources = vec![le(a.clone(), b.clone()), le(c.clone(), d.clone())];
+        let summed = add(endpoint_a, endpoint_b);
+        let limit = typed(limit);
+        let (first, middle, last) = if lower {
+            (limit, summed, written_sum)
+        } else {
+            (written_sum, summed, limit)
+        };
+        let before = le(first.clone(), middle.clone());
+        let after = le(middle.clone(), last.clone());
+        let (combined, weakened) = if lower {
+            (after.clone(), before.clone())
+        } else {
+            (before.clone(), after.clone())
+        };
+        let proof = input.driver().apply_step(have(
+            combined,
+            vec![apply("add_le", vec![a, b, c, d], sources)],
+        ))?;
+        let proof = proof
+            .driver()
+            .apply_step(have(weakened, vec![ProofStep::Known]))?;
+        proof
+            .driver()
+            .apply_step(apply(
+                "le_transitive",
+                vec![first, middle, last],
+                vec![before, after],
+            ))
+            .map(Some)
+    }
+
     /// Close one selected interval obligation through ordinary emitters only.
     /// This never re-enters signed interval planning or its compatibility rule.
     pub(in crate::surface::proof) fn try_interval_fact_using(
@@ -383,8 +535,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .body()
                 .goal()
                 .is_some_and(is_int32_addition_obligation);
-        let ordinary = || scope.driver().try_interval_fact_using(premises);
-        if addition && let Some(closed) = attempt::candidate_outcome(ordinary())?.flatten() {
+        let driver = scope.driver();
+        if addition
+            && let Some(closed) =
+                attempt::candidate_outcome(driver.try_int32_addition_using(premises))?.flatten()
+        {
             return Ok(Some(closed.join()?));
         }
         if retained
@@ -406,13 +561,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 } else {
                     ProofStep::NormalizeUsing(premises.to_vec())
                 };
-                attempt::candidate_outcome(scope.driver().apply_step(step))?
+                attempt::candidate_outcome(driver.apply_step(step))?
             }
             && closed.is_complete()
         {
             return Ok(Some(closed.join()?));
         }
-        if !addition && let Some(closed) = ordinary()? {
+        if let Some(closed) = driver.try_interval_fact_using(premises)? {
             return Ok(Some(closed.join()?));
         }
         // A visible initialized read is not necessarily a stored pure fact.
