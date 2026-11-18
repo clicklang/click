@@ -187,7 +187,7 @@ mod tests {
             panic!("two constructors")
         };
         assert!(
-            matches!(empty.as_ref(), Proposition::Equal(_, Term::Algebraic(AlgebraicTerm { node: AlgebraicTermNode::Constructor { variant, fields }, .. })) if variant == "Empty" && fields.is_empty())
+            matches!(&(empty.as_ref()), Proposition::Equal(_, term_source_0 @ Term::Algebraic(_)) if matches!((term_source_0.algebraic_native(),), (Some(AlgebraicTerm { node: AlgebraicTermNode::Constructor { variant, fields }, .. }),) if variant == "Empty" && fields.is_empty()))
         );
         let mut body = node.as_ref();
         let mut binders = BTreeSet::new();
@@ -484,7 +484,7 @@ mod tests {
                     left
                 };
                 assert!(
-                    matches!(arm, Proposition::Equal(_, Term::Algebraic(AlgebraicTerm { node: AlgebraicTermNode::Constructor { variant, fields }, .. })) if variant == &format!("V{i}") && fields.is_empty())
+                    matches!(&(arm), Proposition::Equal(_, term_source_0 @ Term::Algebraic(_)) if matches!((term_source_0.algebraic_native(),), (Some(AlgebraicTerm { node: AlgebraicTermNode::Constructor { variant, fields }, .. }),) if variant == &format!("V{i}") && fields.is_empty()))
                 );
             }
         }
