@@ -305,8 +305,10 @@ fn charon_chunk_metadata_work_is_independent_of_input_length() {
         verified.unwrap();
         samples.push(work);
     }
+    // Empty input can skip work. Use the smallest nonempty case to bound
+    // every sample, including the empty case.
     assert!(
-        samples.iter().all(|work| *work <= samples[0] + 64),
+        samples.iter().all(|work| *work <= samples[1] + 64),
         "{samples:?}"
     );
 }
