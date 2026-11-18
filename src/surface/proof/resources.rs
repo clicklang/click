@@ -1,4 +1,9 @@
 use super::*;
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/surface/proof/resources/observation_partition_tests.rs");
+}
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
 use crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision;
@@ -1447,12 +1452,7 @@ pub(super) fn project_initial_resource_facts(
 ) -> Result<PureFactList, ClickError> {
     let result = ProgramValue::Int32(MachineTerm::constant(0));
     let mut facts = ProofResourcePureFacts::new(available_pure_facts.fact_store());
-    append_state_resource_context_observable_facts_with_store(
-        parameter_binding,
-        state,
-        &mut facts,
-        &format!("`{claim_label}` setup"),
-    )?;
+    append_state_resource_context_observable_facts_with_store(state, &mut facts);
     project_folded_resource_observable_facts_with_store(
         resource_environment,
         parameter_binding,
@@ -1483,12 +1483,7 @@ pub(super) fn project_outcome_resource_facts(
         return Ok(available_pure_facts);
     };
     let mut facts = ProofResourcePureFacts::new(available_pure_facts);
-    append_state_resource_context_observable_facts_with_store(
-        parameter_binding,
-        state,
-        &mut facts,
-        &format!("`{claim_label}` path {path_index}"),
-    )?;
+    append_state_resource_context_observable_facts_with_store(state, &mut facts);
     project_folded_resource_observable_facts_with_store(
         resource_environment,
         parameter_binding,
@@ -1507,24 +1502,17 @@ pub(super) fn project_outcome_resource_facts(
 }
 
 fn append_state_resource_context_observable_facts_with_store<F: ResourcePureFacts>(
-    parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     available_pure_facts: &mut F,
-    context: &str,
-) -> Result<(), ClickError> {
-    let facts = state
+) {
+    // Entry admission and subsequent proof operations construct the partition.
+    // Observe its retained composition, without admitting the held owners again.
+    for fact in state
         .resources()
-        .observable_facts(available_pure_facts.assumptions())
-        .map_err(|error| {
-            ClickError::new(format!(
-                "{context}: {}",
-                describe_resource_context_validity_error(error, parameter_binding)
-            ))
-        })?;
-    for fact in facts {
+        .observable_facts_assuming_valid(available_pure_facts.assumptions())
+    {
         available_pure_facts.insert(fact);
     }
-    Ok(())
 }
 
 fn project_folded_resource_observable_facts_with_store(
@@ -4010,15 +3998,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         available_pure_facts,
     );
 
-    append_state_resource_context_observable_facts_with_store(
-        parameter_binding,
-        &state,
-        available_pure_facts,
-        &format!(
-            "`{claim_label}` tactic {tactic_index}: `unfold({})`",
-            describe_resource_clause(resource)
-        ),
-    )?;
+    append_state_resource_context_observable_facts_with_store(&state, available_pure_facts);
 
     // `unfold` changes the proof representation of the final visible unit;
     // it does not itself perform the function contract's logical consumption.
