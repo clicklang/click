@@ -6754,7 +6754,7 @@ private:
                (external ? "external" : "axiomatic") + " slice");
       return std::nullopt;
     }
-    if (!prototype->isNothrow()) {
+    if (external && !prototype->isNothrow()) {
       fail(declaration->getLocation(),
            kind + " `" + declaration->getQualifiedNameAsString() +
                "` must be noexcept; throwing contracts are not modeled");
@@ -6840,7 +6840,7 @@ private:
     result["function_kind"] = std::move(function_kind);
     result["return_type"] = std::move(*return_type);
     result["parameters"] = std::move(parameters);
-    result["declared_noexcept"] = true;
+    result["declared_noexcept"] = prototype->isNothrow();
     result["span"] = span(declaration->getSourceRange());
     result["body"] = llvm::json::Array();
     if (external)

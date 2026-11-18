@@ -297,3 +297,37 @@ void probe(std::span<int>& dst, const std::span<int>& src) {
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+#[ignore = "nightly: pinned libc++ span constructor proof and replay"]
+fn libcxx_span_constructor_uses_the_catalogs_nonthrowing_contract() {
+    let (root, import) = libcxx_fixture(
+        "constructed-span",
+        "#include <span>\nunsigned long probe(int* p, unsigned long n) noexcept { std::span<int> s(p, n); return s.size(); }\n",
+        &["libcxx/include/c++/v1/span"],
+    );
+    let constructor = import
+        .export()
+        .reachable_functions
+        .iter()
+        .find(|function| {
+            matches!(
+                function.function_kind,
+                click::languages::cpp::CppFunctionKind::Constructor { .. }
+            )
+        })
+        .expect("span constructor");
+    assert!(!constructor.declared_noexcept);
+    assert!(constructor.body.is_empty());
+    let sidecar = "uint64 probe(int32* p, uint64 n) { ensures result == n; }";
+    check(
+        &root,
+        &import,
+        sidecar,
+        &[(
+            sidecar.replace("result == n", "result != n"),
+            "unclosed goal",
+        )],
+    );
+    fs::remove_dir_all(root).unwrap();
+}

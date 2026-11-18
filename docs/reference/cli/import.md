@@ -2523,7 +2523,9 @@ contract:
   unsigned long std::span<T, N>::size() const { ensures result == N; }`.
   The dynamic pointer/count constructor is also a library interface,
   `template<class T> extern std::span<T>::span<T *>(T* first, unsigned long count)`.
-  It consumes unwritten descriptor storage, produces it initialized and
+  Its Click contract has no exceptional outcome, including on standard
+  libraries that omit `noexcept` on this overload. It consumes unwritten
+  descriptor storage, produces it initialized and
   establishes the data pointer and count, without granting backing authority.
   Static-extent constructors and iterator-pair overloads are outside that model.
   `library/cpp/array.click` states `std::array<T, N>`, whose element
@@ -2554,7 +2556,8 @@ contract:
   For example, `extern int* ministd::identity(int* p)` names its parameter
   `p`, and `extern int ministd::Box::get() const` has an implicit `this`
   (`tests/cpp_import.rs`, `axiomatic_*`).
-- A standard function must be `noexcept`; throwing contracts are not modeled.
+- This slice admits a standard function when its declaration is `noexcept`
+  or a matching Click catalog contract establishes that it cannot throw.
   One returning a record by value constructs it in the caller's destination.
 
 A sidecar writes a standard type as C++ does,

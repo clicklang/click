@@ -489,6 +489,14 @@ impl CppFunction {
         self.axiom.is_some() || self.external
     }
 
+    pub(super) fn has_nonthrowing_interface(&self) -> bool {
+        self.declared_noexcept
+            || self
+                .axiom
+                .as_ref()
+                .is_some_and(super::standard_library::has_nonthrowing_contract)
+    }
+
     pub(crate) fn is_pure_virtual(&self) -> bool {
         self.virtual_method
             .as_ref()
@@ -2700,10 +2708,20 @@ impl CppFunction {
     }
 
     fn validate_axiom(&self, records: &RecordIndex<'_>) -> Result<(), String> {
-        if !self.body.is_empty() || !self.declared_noexcept {
+        if !self.body.is_empty() {
             return Err(format!(
-                "C++ standard-library axiom `{}` must be a noexcept interface without a body",
+                "C++ standard-library axiom `{}` must be an interface without a body",
                 self.name
+            ));
+        }
+        if !self.has_nonthrowing_interface() {
+            let name = &self
+                .axiom
+                .as_ref()
+                .expect("validated as an axiom")
+                .qualified_name;
+            return Err(format!(
+                "C++ standard-library function `{name}` must be noexcept or have a nonthrowing catalog contract"
             ));
         }
         match &self.function_kind {
