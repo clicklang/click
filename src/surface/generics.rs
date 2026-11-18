@@ -40,7 +40,7 @@ fn bind_type_argument(
     if let Some(previous) = substitution.get(name) {
         if previous != &actual {
             return Err(format!(
-                "type parameter `{name}` is all {} and {}",
+                "type parameter `{name}` is both {} and {}",
                 previous.describe(),
                 actual.describe()
             ));

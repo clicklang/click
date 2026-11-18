@@ -1196,7 +1196,7 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
         split.focus_branch(ids[1]).unwrap().surface_goal(),
         Some(&body_surface)
     );
-    let marker = split.checkpoint();
+    let marker = split.conjunction_checkpoint(ids).unwrap();
     let left = split
         .focus_branch(ids[0])
         .unwrap()
