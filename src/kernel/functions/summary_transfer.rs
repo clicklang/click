@@ -586,6 +586,7 @@ fn post_program_expression(expression: &SpecExpression) -> Option<ProgramExpress
             point: SpecPoint::Current,
             pointer,
             value_type,
+            exact: false,
         } => ProgramExpression::TypedLoad {
             pointer: Box::new(post_program_expression(pointer)?),
             value_type: *value_type,

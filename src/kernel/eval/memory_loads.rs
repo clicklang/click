@@ -279,6 +279,60 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     paths
 }
 
+/// The value of Surface `exact(place)` (`design/exact-reads.md`): the read
+/// of the `value_type` cell at `pointer` named by `memory` itself. Unlike
+/// [`evaluate_logical_memory_load_paths`], it runs no version walk and
+/// returns no value the cell holds, and it consults no facts, so the term
+/// depends only on the memory and the address (fact-stable). A pointer
+/// read's address, provenance and bounds owner are the same exact read
+/// ([`Pointer::from_read`]). It adds no facts and grants no access.
+pub(in crate::kernel) fn evaluate_exact_logical_memory_load_paths(
+    memory: &SymbolicMemory,
+    pointer: Address,
+    value_type: ProgramType,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+) -> Vec<ExpressionPath> {
+    let outcome = match exact_logical_read_value(memory, &pointer, value_type) {
+        Some(value) => ExpressionOutcome::Value(value),
+        None => ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
+            pointer,
+            value_type,
+            stored: None,
+        }),
+    };
+    vec![ExpressionPath {
+        outcome,
+        facts,
+        obligations,
+    }]
+}
+
+/// [`evaluate_exact_logical_memory_load_paths`]'s value: the exact read
+/// constructor evaluation uses for a cell of `memory`, for the integer and
+/// pointer cells whose ordinary reads name their version.
+pub(in crate::kernel) fn exact_logical_read_value(
+    memory: &SymbolicMemory,
+    pointer: &Address,
+    value_type: ProgramType,
+) -> Option<ProgramValue> {
+    if !logical_read_names_its_version(value_type) {
+        return None;
+    }
+    if value_type.is_pointer() {
+        record_load_access_width(memory, pointer, value_type.byte_width());
+        let state = crate::kernel::intern_memory_ref(memory);
+        // `Pointer::from_read` names its provenance by the unchanged-bytes
+        // source of `state`; the address names the same read.
+        let read = Address::loaded_value(&state.unchanged_bytes_source(), pointer);
+        return Some(ProgramValue::Pointer(Pointer::from_read(
+            read, value_type, &state, pointer,
+        )));
+    }
+    symbolic_load_value(memory, pointer, value_type)
+        .map(|value| complete_loaded_word(value, memory, pointer))
+}
+
 fn evaluate_logical_memory_load_paths_unbridged(
     memory: &SymbolicMemory,
     pointer: Address,

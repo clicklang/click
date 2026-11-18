@@ -97,3 +97,22 @@ fn charon_enumerated_loops_bind_their_index_and_element_without_an_option() {
     }
     assert!(bound > 0);
 }
+
+#[test]
+#[ignore = "nightly: expand and replay an enumerated slice proof"]
+fn charon_enumerated_slice_count_expands_and_replays() {
+    let prepared = prepared_enumeration();
+    let claim = "last_index.contract";
+    let expanded =
+        click::surface::expand_program_prepared_claim_source_by_label(SIDECAR, &prepared, claim)
+            .unwrap();
+    assert_ne!(expanded, SIDECAR);
+    assert!(!expanded.contains("<enumeration count>"), "{expanded}");
+    assert!(!expanded.contains("_count"), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+    .unwrap();
+}

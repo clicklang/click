@@ -161,6 +161,7 @@ fn collect_signed_surface_terms<'a>(
             ContractExpression::CUnary { operand: inner, .. }
             | ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             }
@@ -4104,6 +4105,19 @@ fn same_canonical_word_comparison(left: &Proposition, right: &Proposition) -> bo
     al == bl && ar == br || equality && al == br && ar == bl
 }
 
+// Null comparisons may lower with the null operand on the other side.
+// Both operands must name the same canonical addresses at the same polarity.
+fn same_reversed_address_comparison(left: &Proposition, right: &Proposition) -> bool {
+    let (
+        Some((ConditionTerm::AddressEqual(left_a, left_b), left_value)),
+        Some((ConditionTerm::AddressEqual(right_a, right_b), right_value)),
+    ) = (left.condition_native(), right.condition_native())
+    else {
+        return false;
+    };
+    left_value == right_value && left_a == right_b && left_b == right_a
+}
+
 pub(super) fn propositions_match_after_canonical_loads(
     left: &Proposition,
     right: &Proposition,
@@ -4143,6 +4157,7 @@ pub(super) fn propositions_match_after_canonical_loads(
                 let right = crate::kernel::canonical_condition_fact(right);
                 if !propositions_are_alpha_equal(&left, &right)
                     && !same_canonical_word_comparison(&left, &right)
+                    && !same_reversed_address_comparison(&left, &right)
                 {
                     return false;
                 }

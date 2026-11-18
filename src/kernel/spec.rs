@@ -4806,6 +4806,9 @@ mod sequence_term_tests;
 #[cfg(test)]
 mod algebraic_term_tests;
 
+#[cfg(test)]
+mod exact_read_tests;
+
 fn lower_spec_float_classification_proposition_at_state_in(
     scope: SpecScope<'_>,
     expression: &SpecExpression,
@@ -5939,10 +5942,16 @@ fn lower_spec_predicate_proposition_at_state_in(
             };
             let [
                 Term::ExecutionState(_),
-                Term::ProgramValue(ProgramValue::Pointer(left)),
-                Term::ProgramValue(ProgramValue::Pointer(right)),
+                term_source_0 @ Term::ProgramValue(_),
+                term_source_1 @ Term::ProgramValue(_),
             ] = arguments.as_slice()
             else {
+                return Ok(Vec::new());
+            };
+            let (Some(ProgramValue::Pointer(left)), Some(ProgramValue::Pointer(right))) = (
+                term_source_0.program_value_native(),
+                term_source_1.program_value_native(),
+            ) else {
                 return Ok(Vec::new());
             };
             if !left.program_type().is_object_pointer() || !right.program_type().is_object_pointer()
@@ -6713,6 +6722,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         point: SpecPoint::Current,
                         pointer: pointer.clone(),
                         value_type: *value_type,
+                        exact: false,
                     },
                     assumptions,
                     budget,
@@ -6736,6 +6746,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     point: SpecPoint::At(selected.program_point()),
                     pointer: Box::new(pointer),
                     value_type: *value_type,
+                    exact: false,
                 },
                 assumptions,
                 budget,
@@ -7122,6 +7133,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         ProgramType::ParameterPointer(parameter),
                     ))),
                     value_type,
+                    exact: false,
                 },
                 assumptions,
                 budget,
@@ -7751,6 +7763,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             point: memory,
             pointer,
             value_type,
+            exact,
         } => {
             let mut paths = Vec::new();
             let entry_projection =
@@ -7819,7 +7832,17 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         value_type: *value_type,
                     }));
                 }
-                paths.extend(spec_value_paths_in(
+                // `exact(place)` names the read by the selected state itself;
+                // an ordinary read names its version point.
+                let read_paths = if *exact {
+                    crate::kernel::eval::evaluate_exact_logical_memory_load_paths(
+                        memory_view,
+                        pointer,
+                        *value_type,
+                        pointer_path.facts,
+                        obligations,
+                    )
+                } else {
                     crate::kernel::eval::evaluate_logical_memory_load_paths(
                         memory_view,
                         pointer,
@@ -7827,9 +7850,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         pointer_path.facts,
                         obligations,
                         assumptions,
-                    ),
-                    budget,
-                ));
+                    )
+                };
+                paths.extend(spec_value_paths_in(read_paths, budget));
             }
             paths
         }

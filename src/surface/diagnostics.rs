@@ -127,6 +127,7 @@ struct PlaceScope {
     /// An expansion scope's function: whether its signature is written in
     /// Rust syntax, and its slice parameters (`enter_rust_spelling`).
     rust_spelling: Option<Option<std::rc::Rc<[String]>>>,
+    rust_loop_iterators: Option<rust_spelling::RustLoopIterators>,
 }
 
 thread_local! {
@@ -262,6 +263,7 @@ impl ParameterPlaceScope {
                         .rust_slice_parameters()
                         .map(std::rc::Rc::<[String]>::from),
                 ),
+                rust_loop_iterators: Some(block.signature().rust_loop_iterators().clone()),
             })
         });
         Self(())
@@ -693,7 +695,10 @@ pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, 
         return None;
     };
     let contract = crate::kernel::FunctionContract::surface_name_from_predicate(name)?;
-    let [_, Term::ProgramValue(ProgramValue::Pointer(pointer))] = arguments.as_slice() else {
+    let [_, term_source_0 @ Term::ProgramValue(_)] = arguments.as_slice() else {
+        return None;
+    };
+    let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),) else {
         return None;
     };
     let Address {
@@ -6092,6 +6097,7 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
         ProgramExpression::Variable(name) => name
             .named()
             .and_then(rust_variable_spelling)
+            .or_else(|| rust_spelling::rust_enumerate_count_spelling(name))
             .unwrap_or_else(|| name.to_string()),
         ProgramExpression::FunctionAddress(name) => format!("&{name}"),
         ProgramExpression::StepResult {
@@ -7445,6 +7451,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             selector,
             expression,
         } => describe_program_point_expression(Some(selector), expression),
+        ContractExpression::Exact(place) => {
+            format!("exact({})", describe_contract_expression(place))
+        }
         ContractExpression::Negate(expression) => {
             format!("-{}", describe_contract_expression(expression))
         }

@@ -82,6 +82,7 @@ enum LocalBindingKind {
     Source,
     Temporary,
     LoopEscape,
+    EnumerateCount,
 }
 
 #[derive(Debug)]
@@ -141,6 +142,24 @@ impl LocalBindingId {
             array_shape: OnceLock::new(),
             struct_name: OnceLock::new(),
         }))
+    }
+
+    pub(crate) fn enumerate_count(owner: LocalFunctionId, ordinal: u32) -> Self {
+        Self(Arc::new(LocalDeclaration {
+            owner,
+            parameter: false,
+            kind: LocalBindingKind::EnumerateCount,
+            ordinal,
+            scope_depth: 0,
+            spelling: None,
+            program_type: OnceLock::from(ProgramType::UInt64),
+            array_shape: OnceLock::new(),
+            struct_name: OnceLock::new(),
+        }))
+    }
+
+    pub(crate) fn is_enumerate_count(&self) -> bool {
+        self.0.kind == LocalBindingKind::EnumerateCount
     }
 
     pub fn is_temporary(&self) -> bool {
@@ -238,6 +257,7 @@ impl Hash for LocalBindingId {
             }
             LocalBindingKind::Temporary => (&self.0.owner, 2u8, self.0.ordinal).hash(state),
             LocalBindingKind::LoopEscape => (&self.0.owner, 3u8, self.0.ordinal).hash(state),
+            LocalBindingKind::EnumerateCount => (&self.0.owner, 4u8, self.0.ordinal).hash(state),
         }
     }
 }
@@ -271,6 +291,9 @@ impl std::fmt::Display for CanonicalLocalBinding<'_> {
         }
         if id.0.kind == LocalBindingKind::LoopEscape {
             return f.write_str("<loop escape>");
+        }
+        if id.is_enumerate_count() {
+            return f.write_str("<enumeration count>");
         }
         if let Some(source) = id.source() {
             write!(f, "{source:?}::")?;

@@ -2349,7 +2349,8 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         crate::surface::validation::describe_interface_type(*parameter_type)
                     )));
                 }
-                resource_values.push(value);
+                resource_values
+                    .push(value.resource_argument_at_type(parameter_type.to_kernel_type()));
             }
             if name == "mutex_guard" {
                 let [ProgramValue::Pointer(mutex)] = resource_values.as_slice() else {
@@ -2930,6 +2931,9 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
         | ContractExpression::Call { .. }
         | ContractExpression::MethodCall { .. } => Err(ClickError::new(
             "declared resource arguments currently support current-state C expressions only",
+        )),
+        ContractExpression::Exact(_) => Err(ClickError::new(
+            "a declared resource argument is a C expression and has no `exact` read; read the place as ordinary C",
         )),
         ContractExpression::Let { body, .. } => {
             // `apply_contract_lets_to_expression` already substituted every

@@ -195,7 +195,7 @@ impl IteratedMemory {
 
     /// The memory range spanned by every element of `lo..hi`, when the
     /// elements tile it without gaps (`end_offset - start_offset ==
-    /// stride`). This is the range `gather` consumes and `scatter` produces.
+    /// stride`). This is the range whole-clause folding consumes and unfolding produces.
     pub(crate) fn covering_range(&self) -> Option<MemoryRange> {
         (i64::from(self.end_offset) - i64::from(self.start_offset) == i64::from(self.stride)).then(
             || {

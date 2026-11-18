@@ -748,6 +748,7 @@ pub(super) fn syntactic_expression_type(
             crate::kernel::BindingName::Named(name),
         )) => variables.get(name).cloned(),
         ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => syntactic_expression_type(inner, variables),
@@ -1380,6 +1381,7 @@ fn instantiate_expression(
             ContractExpression::SequenceConcat(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
         ContractExpression::Old(inner) => ContractExpression::Old(Box::new(recurse(inner)?)),
+        ContractExpression::Exact(inner) => ContractExpression::Exact(Box::new(recurse(inner)?)),
         ContractExpression::At {
             selector,
             expression,

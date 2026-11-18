@@ -216,8 +216,8 @@ const NIGHTLY: &[&str] = &[
     "interior_pointer_pieces_rejoin_after_an_external_call.md",                // 0.7s
     "iterated_ownership_allocate_one.md",                                      // 0.6s
     "iterated_ownership_claim_loop.md",                                        // 1.1s
-    "iterated_ownership_gather_fresh_heap_map.md",                             // 0.7s
-    "iterated_ownership_gather_scatter.md",                                    // 1.4s
+    "iterated_ownership_fold_fresh_heap_map.md",                               // 0.7s
+    "iterated_ownership_whole_clause.md",                                      // 1.4s
     "iterated_ownership_release_loop.md",                                      // 1.4s
     "iterated_ownership_released_cells_feed_an_external_claim.md",             // 1.4s
     "iterated_ownership_run_scan_crosses_its_locals_ending.md",                // 1.1s

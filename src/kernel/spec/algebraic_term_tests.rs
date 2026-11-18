@@ -404,6 +404,7 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
                     ProgramType::Int64PointerPointer,
                 ))),
                 value_type: ProgramType::Int64Pointer,
+                exact: false,
             })],
         },
     };

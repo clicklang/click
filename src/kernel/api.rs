@@ -7644,10 +7644,13 @@ pub(crate) fn prove_program_function_contract_refinement(
     // parameters were fixed to.
     let [
         state @ Term::ExecutionState(_),
-        Term::ProgramValue(ProgramValue::Pointer(pointer)),
+        term_source_0 @ Term::ProgramValue(_),
         values @ ..,
     ] = arguments.as_slice()
     else {
+        return None;
+    };
+    let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),) else {
         return None;
     };
     if name != &context.contract.predicate_name()
@@ -7785,10 +7788,13 @@ pub(crate) fn prove_executed_contract_refinement(
     };
     let [
         state @ Term::ExecutionState(_),
-        Term::ProgramValue(ProgramValue::Pointer(pointer)),
+        term_source_0 @ Term::ProgramValue(_),
         ..,
     ] = arguments.as_slice()
     else {
+        return None;
+    };
+    let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),) else {
         return None;
     };
     let AddressBase::FunctionSymbolic(variable) = pointer.address().base else {
@@ -7957,10 +7963,13 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     };
     let [
         Term::ExecutionState(_),
-        Term::ProgramValue(ProgramValue::Pointer(pointer)),
+        term_source_0 @ Term::ProgramValue(_),
         ..,
     ] = arguments.as_slice()
     else {
+        return None;
+    };
+    let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),) else {
         return None;
     };
     if pointer.address().base != AddressBase::Function(callee_name.to_string()) {

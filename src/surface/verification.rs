@@ -3577,6 +3577,9 @@ pub enum ModelFamily {
     Allocator,
     /// The contract the C front end writes for one `snprintf` format.
     Snprintf,
+    /// The contract the C front end writes for a literal `printf` or `fprintf`.
+    Printf,
+    Fprintf,
     /// A C++ standard-library catalog contract.
     CppStd,
     /// A Rust core-method contract.
@@ -3589,11 +3592,13 @@ pub enum ModelFamily {
 impl ModelFamily {
     /// Every family a function's assumptions can belong to; the thread
     /// runtime, which a whole verification assumes, is reported apart.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 9] = [
         Self::Extern,
         Self::CLibrary,
         Self::Allocator,
         Self::Snprintf,
+        Self::Printf,
+        Self::Fprintf,
         Self::CppStd,
         Self::RustCore,
         Self::Primitive,
@@ -3606,6 +3611,8 @@ impl ModelFamily {
             Self::CLibrary => "C library",
             Self::Allocator => "allocator",
             Self::Snprintf => "snprintf",
+            Self::Printf => "printf",
+            Self::Fprintf => "fprintf",
             Self::CppStd => "C++ std",
             Self::RustCore => "Rust core",
             Self::Primitive => "primitive",
@@ -3626,7 +3633,9 @@ impl ModelAssumption {
     /// format, `"%s"`, and any other by its name.
     pub fn display(&self) -> String {
         match crate::languages::c::formatted_output::function_format(&self.name) {
-            Some(format) => format!("\"{}\"", String::from_utf8_lossy(&format).escape_default()),
+            Some((_, format)) => {
+                format!("\"{}\"", String::from_utf8_lossy(&format).escape_default())
+            }
             None => self.name.clone(),
         }
     }
@@ -3661,10 +3670,15 @@ fn program_assumptions_parsed(
                 } else {
                     ModelFamily::CLibrary
                 }
-            } else if name
-                .starts_with(crate::languages::c::formatted_output::FORMATTED_OUTPUT_PREFIX)
+            } else if let Some((function, _)) =
+                crate::languages::c::formatted_output::function_format(name)
             {
-                ModelFamily::Snprintf
+                use crate::languages::c::formatted_output::FormattedOutput;
+                match function {
+                    FormattedOutput::Snprintf => ModelFamily::Snprintf,
+                    FormattedOutput::Printf => ModelFamily::Printf,
+                    FormattedOutput::Fprintf => ModelFamily::Fprintf,
+                }
             } else if library_models.is_some_and(|models| models.contains(name)) {
                 frontend_family
             } else {
@@ -5038,30 +5052,30 @@ fn record_never_address_taken_locals(
     }
 }
 
-/// A prepared declaration whose parameters the import knows only by
-/// position, a Rust `extern` block item, named by its sidecar `extern fn`
-/// head. Its types stay the declaration's, which the head is checked against.
+/// Names a prepared declaration's positional parameters from its sidecar
+/// contract. The head is still checked against the imported types.
 fn named_by_extern_head(
-    file: &ClickFile,
+    blocks: &BTreeMap<&str, &FunctionBlock>,
     function: &crate::languages::interface::ImportedFunction,
+    language: crate::languages::SourceLanguage,
 ) -> Result<crate::languages::interface::ImportedFunction, ClickError> {
     if !function.has_positional_parameters() {
         return Ok(function.clone());
     }
-    let Some(block) = file
-        .function_blocks()
-        .iter()
-        .find(|block| block.signature().name() == function.source_name())
-    else {
+    let Some(block) = blocks.get(function.source_name()) else {
         return Ok(function.clone());
     };
     if !block.is_external() {
-        return Err(ClickError::new(format!(
-            "`{}` is declared in an `extern` block and has no body to verify; state its contract with `extern fn`",
-            block.signature().name()
-        ))
-        .with_kind(ClickErrorKind::Type)
-        .at_declaration(block.signature().name()));
+        let reason = if language == crate::languages::SourceLanguage::Rust {
+            "is declared in an `extern` block and has no body to verify; state its contract with `extern fn`"
+        } else {
+            "is an external declaration and has no body to verify; state its contract with `extern`"
+        };
+        return Err(
+            ClickError::new(format!("`{}` {reason}", block.signature().name()))
+                .with_kind(ClickErrorKind::Type)
+                .at_declaration(block.signature().name()),
+        );
     }
     // A head of another arity keeps the declaration's positions, and the
     // signature check reports the difference.
@@ -5149,6 +5163,10 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
                 import.language()
             )));
         }
+        let mut blocks = BTreeMap::new();
+        for block in file.function_blocks() {
+            blocks.entry(block.signature().name()).or_insert(block);
+        }
         return execution
             .functions
             .iter()
@@ -5157,7 +5175,7 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
                     function.name().to_string(),
                     (
                         import.source_of(function.name()).to_string(),
-                        named_by_extern_head(file, function)?,
+                        named_by_extern_head(&blocks, function, import.language())?,
                     ),
                 ))
             })

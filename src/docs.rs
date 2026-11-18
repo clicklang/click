@@ -473,7 +473,7 @@ mod tests {
         assert!(
             lookup("tracing")
                 .unwrap()
-                .starts_with("# Tracing a failed proof")
+                .starts_with("# Repairing a failed proof")
         );
         assert!(lookup("start").is_ok());
         assert!(lookup("concepts/tracing").is_ok());
@@ -529,11 +529,11 @@ mod tests {
         let pages = pages();
         assert_eq!(
             rewrite_links(
-                "see [Tracing a failed proof](tracing.md#outcomes) and [x](https://x.org)",
+                "see [Repairing a failed proof](tracing.md#outcomes) and [x](https://x.org)",
                 "concepts",
                 &pages
             ),
-            "see Tracing a failed proof (`click docs tracing`) and [x](https://x.org)"
+            "see Repairing a failed proof (`click docs tracing`) and [x](https://x.org)"
         );
         assert_eq!(
             rewrite_links("[verify](../reference/cli/verify.md)", "concepts", &pages),

@@ -583,3 +583,103 @@ fn common_integer_comparisons_keep_operands_and_native_fact_shape() {
         );
     }
 }
+
+/// `exact(place)` lowers the place as an ordinary read and names only its
+/// outermost read by the state in scope (`design/exact-reads.md`): the
+/// reads that compute the place's address stay ordinary, and wrapping an
+/// inner read makes that read exact too. A place that is not a memory read
+/// is refused rather than read as itself.
+#[test]
+fn an_exact_read_marks_only_its_outermost_read() {
+    let state = ExecutionState::new();
+    let retained_states = RecordedStates::new();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let pp = ProgramValue::typed_pointer(
+        Address::symbolic(Variable(914_101)),
+        ProgramType::Int32PointerPointer,
+    );
+    let bindings = ProgramValueBindings::from([("pp".into(), pp.clone()), ("x".into(), int32(4))]);
+    let (mut lowerer, context) = fixed_state_elaboration(
+        BTreeMap::new(),
+        BTreeMap::new(),
+        &state,
+        bindings.clone(),
+        bindings,
+        None,
+        &retained_states,
+        SpecDefinitions::new(&predicates, &functions),
+        BTreeSet::new(),
+        BTreeMap::new(),
+    );
+    let zero = || Box::new(ProgramExpression::Value(int32(0)));
+    // `pp[0]` and `pp[0][0]`, as C places.
+    let inner =
+        ProgramExpression::Index(Box::new(ProgramExpression::Variable("pp".into())), zero());
+    let outer = ProgramExpression::Index(Box::new(inner.clone()), zero());
+    let place = |expression: &ProgramExpression| {
+        Box::new(ContractExpression::ProgramExpression(expression.clone()))
+    };
+    let mut lower = |expression: ContractExpression| {
+        lowerer.lower_contract_expression_to_spec(&expression, &context)
+    };
+    // Returns the read's `exact` flag and, for a read through a pointer read,
+    // that inner read's flag.
+    fn flags(read: &SpecExpression) -> (bool, Option<bool>) {
+        let SpecExpression::MemoryLoad { pointer, exact, .. } = read else {
+            panic!("a memory read: {read:?}")
+        };
+        let inner = match pointer.as_ref() {
+            SpecExpression::PointerOffset { pointer, .. } => match pointer.as_ref() {
+                SpecExpression::MemoryLoad { exact, .. } => Some(*exact),
+                _ => None,
+            },
+            _ => None,
+        };
+        (*exact, inner)
+    }
+    let ordinary = lower(*place(&inner)).unwrap();
+    let exact = lower(ContractExpression::Exact(place(&inner))).unwrap();
+    assert_eq!(flags(&ordinary), (false, None));
+    assert_eq!(flags(&exact), (true, None));
+    // Apart from naming, the exact read is the ordinary one.
+    let unmarked = match exact.clone() {
+        SpecExpression::MemoryLoad {
+            point,
+            pointer,
+            value_type,
+            ..
+        } => SpecExpression::MemoryLoad {
+            point,
+            pointer,
+            value_type,
+            exact: false,
+        },
+        _ => unreachable!(),
+    };
+    assert_eq!(unmarked, ordinary);
+
+    // `exact(pp[0][0])`: the address read `pp[0]` stays ordinary.
+    let outermost = lower(ContractExpression::Exact(place(&outer))).unwrap();
+    assert_eq!(flags(&outermost), (true, Some(false)));
+    assert_eq!(flags(&lower(*place(&outer)).unwrap()), (false, Some(false)));
+    // `exact(exact(pp[0])[0])` makes both reads exact.
+    let both = lower(ContractExpression::Exact(Box::new(
+        ContractExpression::Index(
+            Box::new(ContractExpression::Exact(place(&inner))),
+            Box::new(ContractExpression::IntegerLiteral("0".into())),
+        ),
+    )))
+    .unwrap();
+    assert_eq!(flags(&both), (true, Some(true)));
+
+    // A parameter's value is not a memory read.
+    let refused = lower(ContractExpression::Exact(Box::new(
+        ContractExpression::Binding("x".into()),
+    )))
+    .unwrap_err();
+    assert!(
+        refused.contains("`exact` takes a memory read, such as `p[i]` or `h->next`"),
+        "{refused}"
+    );
+}

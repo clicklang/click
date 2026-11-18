@@ -1210,6 +1210,7 @@ pub(crate) struct CheckedResourceFact {
 pub(crate) struct FunctionMemoryEffectProjection {
     ranges: Vec<MemoryRange>,
     evidence_facts: ExecutionFacts,
+    has_exact_write_ranges: bool,
     /// The owned requirement each projected range came out of, for the ranges
     /// a checked resource transition produced. An explicit effect segment
     /// names no requirement and appears here not at all; the call site reads
@@ -3472,7 +3473,9 @@ fn execute_verified_function_applications_with_suspension(
         {
             match representation_copy_initialization(
                 &entry_state.memory,
-                &argument_values,
+                argument_values
+                    .native_values()
+                    .expect("representation copy arguments"),
                 effect,
                 &transfer.borrowed_inputs,
                 &effective_assumptions,
@@ -3548,7 +3551,9 @@ fn execute_verified_function_applications_with_suspension(
         let memory = if let Some(effect) = application.representation_copy {
             transfer_representation_copy_cells(
                 &entry_state.memory,
-                &argument_values,
+                argument_values
+                    .native_values()
+                    .expect("representation copy arguments"),
                 memory,
                 effect,
             )
@@ -3588,14 +3593,16 @@ fn execute_verified_function_applications_with_suspension(
             // The function's own proof still checks its actual returned value.
             let result = symbolic_contract_result(interface, result_identity)
                 .with_pointer_object_class(interface.return_object_type_guarantee.clone());
-            let arguments = argument_values
-                .iter()
-                .cloned()
-                .map(PureFunctionArgument::Value)
-                .collect::<Vec<_>>();
-            let (all_null, evidence) =
-                super::spec::pure_pointer_result_class(application.pointer_result, &arguments);
             if let ProgramValue::Pointer(mut pointer) = result {
+                let arguments = argument_values
+                    .native_values()
+                    .unwrap_or_default()
+                    .iter()
+                    .cloned()
+                    .map(PureFunctionArgument::Value)
+                    .collect::<Vec<_>>();
+                let (all_null, evidence) =
+                    super::spec::pure_pointer_result_class(application.pointer_result, &arguments);
                 if all_null {
                     pointer.replace_pointer(Address::null());
                 }
@@ -4842,7 +4849,7 @@ fn execute_verified_function_applications_with_suspension(
                 super::threads::WorkerCompletion::checked(
                     plan,
                     output_resources,
-                    post_state.memory.clone(),
+                    &post_state,
                     worker_effects,
                     facts,
                     post_state.mutex_ledger.clone(),
@@ -5233,7 +5240,7 @@ fn exceptional_direct_function_path(
     interface: &FunctionContractInterface,
     evidence: Option<&ProgramFunction>,
     framed_rule: Option<FramedCallRule<'_>>,
-    argument_values: &[ProgramValue],
+    argument_values: &VerifiedCallArguments,
     entry_state: &ExecutionState,
     entry_contract_state: &ExecutionState,
     transfer: &FunctionResourceTransfer,
@@ -5388,7 +5395,7 @@ struct PreparedVerifiedFunctionCall<'a> {
     /// explicit even when it is the concrete function's own interface, so
     /// callback and ordinary calls cannot silently grow separate evaluators.
     interface: &'a FunctionContractInterface,
-    argument_values: Vec<ProgramValue>,
+    argument_values: VerifiedCallArguments,
     entry_state: ExecutionState,
     entry_contract_state: ExecutionState,
     transfer: FunctionResourceTransfer,
@@ -5569,6 +5576,86 @@ fn checked_contract_control_read_state(
     Ok(state.clone().with_resource_context(resources))
 }
 
+fn prepare_native_contract_arguments(
+    caller_state: &ExecutionState,
+    name: &str,
+    interface: &FunctionContractInterface,
+    arguments_path: &ArgumentsPath<ExecutionValue>,
+    assumptions: &PureFactContext,
+) -> Result<(VerifiedCallArguments, Vec<ProofObligation>), FunctionPath> {
+    let native_arguments = arguments_path
+        .values
+        .iter()
+        .map(|value| value.native().into_owned())
+        .collect::<Vec<_>>();
+    if let Some(undefined_behavior) =
+        freed_pointer_argument_conversion(caller_state, interface, &native_arguments, assumptions)
+    {
+        return Err(FunctionPath::new(
+            FunctionOutcome::UndefinedBehavior(undefined_behavior),
+            arguments_path.facts.clone(),
+            arguments_path.obligations.clone(),
+        ));
+    }
+    if let Some(refusal) = incompatible_pointer_argument(
+        caller_state,
+        name,
+        interface,
+        &native_arguments,
+        assumptions,
+    ) {
+        return Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(refusal),
+            arguments_path.facts.clone(),
+            arguments_path.obligations.clone(),
+        ));
+    }
+    let Some((mut argument_values, argument_obligations)) = coerce_contract_arguments(
+        interface,
+        &native_arguments,
+        &arguments_path.obligations,
+        assumptions,
+    ) else {
+        return Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
+                contract_argument_binding_error(interface, name, &native_arguments),
+            )),
+            arguments_path.facts.clone(),
+            arguments_path.obligations.clone(),
+        ));
+    };
+    if let Some(outcome) = aggregate_argument_read_refusal(
+        caller_state,
+        interface.parameters(),
+        &argument_values,
+        assumptions,
+    ) {
+        return Err(FunctionPath::new(
+            outcome,
+            arguments_path.facts.clone(),
+            argument_obligations,
+        ));
+    }
+    if let Some(refusal) = crate::kernel::object_types::check_requirements(
+        name,
+        interface.parameters(),
+        interface.object_type_requirements(),
+        &mut argument_values,
+        caller_state.memory(),
+        assumptions,
+    ) {
+        return Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(refusal),
+            arguments_path.facts.clone(),
+            argument_obligations,
+        ));
+    }
+    Ok((
+        VerifiedCallArguments::Native(argument_values),
+        argument_obligations,
+    ))
+}
+
 fn prepare_verified_function_call<'a>(
     caller_state: &ExecutionState,
     application: FunctionContractApplication<'a>,
@@ -5623,80 +5710,52 @@ fn prepare_verified_function_call<'a>(
         &arguments_path.facts,
         &arguments_path.obligations,
     );
-    let native_arguments = arguments_path
-        .values
-        .iter()
-        .map(|value| value.native().into_owned())
-        .collect::<Vec<_>>();
-    if let Some(undefined_behavior) = freed_pointer_argument_conversion(
-        caller_state,
-        contract_interface,
-        &native_arguments,
-        &path_assumptions,
-    ) {
-        return Ok(Err(FunctionPath::new(
-            FunctionOutcome::UndefinedBehavior(undefined_behavior),
-            arguments_path.facts,
-            arguments_path.obligations,
-        )));
-    }
-    if let Some(refusal) = incompatible_pointer_argument(
-        caller_state,
+    let argument_timing = crate::instrumentation::OperationTiming::new(
         application.name,
-        contract_interface,
-        &native_arguments,
-        &path_assumptions,
-    ) {
-        return Ok(Err(FunctionPath::new(
-            FunctionOutcome::RuntimeError(refusal),
-            arguments_path.facts,
-            arguments_path.obligations,
-        )));
-    }
-    let Some((mut argument_values, argument_obligations)) = coerce_contract_arguments(
-        contract_interface,
-        &native_arguments,
-        &arguments_path.obligations,
-        &path_assumptions,
-    ) else {
-        return Ok(Err(FunctionPath::new(
-            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
-                contract_argument_binding_error(
-                    contract_interface,
-                    application.name,
-                    &native_arguments,
-                ),
-            )),
-            arguments_path.facts,
-            arguments_path.obligations,
-        )));
+        "verified function rule application",
+        "verified call argument preparation",
+    );
+    let parameters = contract_interface.parameters();
+    // Exact shared words need no conversion or pointer/aggregate checks.
+    // Keep the native route for interfaces with native argument consumers.
+    let retains_words = !parameters.is_empty()
+        && application.representation_copy.is_none()
+        && application.pointer_result.is_none()
+        && contract_interface
+            .object_type_requirements()
+            .range(0..parameters.len())
+            .next()
+            .is_none()
+        && parameters.len() == arguments_path.values.len()
+        && parameters
+            .iter()
+            .zip(&arguments_path.values)
+            .all(|(parameter, value)| {
+                parameter.aggregate_layout().is_none()
+                    && parameter.program_type() == ProgramType::UInt32
+                    && value.program_type() == ProgramType::UInt32
+                    && value
+                        .shared()
+                        .is_some_and(KernelTerm::is_shared_machine_operand)
+            });
+    crate::instrumentation::record_deterministic_work(parameters.len());
+    let (argument_values, argument_obligations) = if retains_words {
+        (
+            VerifiedCallArguments::BoundWords,
+            arguments_path.obligations.clone(),
+        )
+    } else {
+        match prepare_native_contract_arguments(
+            caller_state,
+            application.name,
+            contract_interface,
+            &arguments_path,
+            &path_assumptions,
+        ) {
+            Ok(prepared) => prepared,
+            Err(failure) => return Ok(Err(failure)),
+        }
     };
-    if let Some(outcome) = aggregate_argument_read_refusal(
-        caller_state,
-        contract_interface.parameters(),
-        &argument_values,
-        &path_assumptions,
-    ) {
-        return Ok(Err(FunctionPath::new(
-            outcome,
-            arguments_path.facts,
-            argument_obligations,
-        )));
-    }
-    if let Some(refusal) = crate::kernel::object_types::check_requirements(
-        application.name,
-        contract_interface.parameters(),
-        contract_interface.object_type_requirements(),
-        &mut argument_values,
-        caller_state.memory(),
-        &path_assumptions,
-    ) {
-        return Ok(Err(FunctionPath::new(
-            FunctionOutcome::RuntimeError(refusal),
-            arguments_path.facts,
-            argument_obligations,
-        )));
-    }
     let Some(mut entry_state) = bind_contract_arguments(
         caller_state,
         contract_interface,
@@ -5709,13 +5768,14 @@ fn prepare_verified_function_call<'a>(
                 contract_argument_binding_error(
                     contract_interface,
                     application.name,
-                    &argument_values,
+                    argument_values.native_values().unwrap_or_default(),
                 ),
             )),
             arguments_path.facts,
             argument_obligations,
         )));
     };
+    drop(argument_timing);
     // A named contract's value parameters take the values its fact fixed,
     // as the call parameters take the call's arguments. A function's own
     // contract value parameters, `let n: uint64;`, take the values the
@@ -6769,6 +6829,7 @@ fn prepare_verified_function_call<'a>(
         )));
     }
     let projection_range_sources = projection.range_sources;
+    let has_exact_write_ranges = projection.has_exact_write_ranges;
     {
         // Compare the effects against the complete checked view frontier, not
         // just the views whose requirement is a plain memory range. A
@@ -6883,16 +6944,6 @@ fn prepare_verified_function_call<'a>(
                 );
         }
     }
-    let has_exact_write_ranges = if contract_interface.resource_derived_mutable_frame() {
-        projection_range_sources
-            .iter()
-            .all(|(_, source)| source.memory_own_range().is_some())
-    } else {
-        contract_interface
-            .contract_mutable()
-            .iter()
-            .all(|segment| segment.guard().is_none())
-    };
     transfer.memory_effects = mutable_ranges.clone();
     // A resource-derived call is authorized by exactly these checked inputs,
     // borrowed and consumed alike: its write set is projected from them
@@ -7418,17 +7469,16 @@ fn call_value_arguments(
             )?;
         }
         // The step that gives the value names the function as the sidecar
-        // writes it: a formatted-output function as `snprintf`, a
-        // translation-unit-local helper without its suffix.
-        let written =
-            if crate::languages::c::formatted_output::describe_function(function).is_some() {
-                "snprintf"
-            } else {
+        // writes it: the C name of a formatted-output function or the
+        // unqualified spelling of a translation-unit-local helper.
+        let written = crate::languages::c::formatted_output::function_format(function)
+            .map(|(output, _)| output.source_name())
+            .unwrap_or_else(|| {
                 ["#inline:", "#file-static:"]
                     .iter()
                     .find_map(|suffix| function.split_once(suffix).map(|(source, _)| source))
                     .unwrap_or(function)
-            };
+            });
         match found.as_slice() {
             [value] => values.push(value.clone()),
             [] => {
@@ -7523,9 +7573,13 @@ fn function_contract_requirement_is_proven(
             };
             let [
                 Term::ExecutionState(_),
-                Term::ProgramValue(ProgramValue::Pointer(pointer)),
+                term_source_0 @ Term::ProgramValue(_),
                 values @ ..,
             ] = arguments.as_slice()
+            else {
+                return Ok(false);
+            };
+            let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),)
             else {
                 return Ok(false);
             };
@@ -7967,7 +8021,9 @@ pub(super) fn checked_owned_memory_ranges(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<Vec<MemoryRange>> {
-    OwnedFootprintDerivation::new(definitions, state, assumptions).derive(fact)
+    OwnedFootprintDerivation::new(definitions, state, assumptions)
+        .derive(fact)
+        .map(|footprint| footprint.ranges)
 }
 
 /// Project storage dependencies once at an independent contract entry. The
@@ -7992,6 +8048,7 @@ pub(super) fn assumed_mutex_input_reservations(
         ranges.extend(
             derivation
                 .derive(fact)
+                .map(|footprint| footprint.ranges)
                 .unwrap_or_else(|| vec![MemoryRange::unnamed_footprint()]),
         );
         let mut guards = OwnedFootprintDerivation::new(
@@ -8004,6 +8061,7 @@ pub(super) fn assumed_mutex_input_reservations(
         guard_ranges.extend(
             guards
                 .derive(fact)
+                .map(|footprint| footprint.ranges)
                 .unwrap_or_else(|| vec![MemoryRange::unnamed_footprint()]),
         );
     }
@@ -8466,12 +8524,18 @@ struct OwnedFootprintDerivation<'a> {
     assumptions: &'a PureFactContext,
     evaluation_assumptions: PureFactContext,
     ranges: Vec<MemoryRange>,
+    exact: bool,
     reaches_unnamed: bool,
     undefined_family: bool,
     work: usize,
     /// What remains to visit. The descent is a worklist rather than a
     /// recursion, so a long chain of families costs heap, not stack.
     pending: Vec<OwnedFootprintTask<'a>>,
+}
+
+struct OwnedMemoryFootprint {
+    ranges: Vec<MemoryRange>,
+    exact: bool,
 }
 
 /// One pending visit of [`OwnedFootprintDerivation`].
@@ -8504,6 +8568,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 .allow_symbolic_contract_loads()
                 .prefer_symbolic_external_loads(),
             ranges: Vec::new(),
+            exact: false,
             reaches_unnamed: false,
             undefined_family: false,
             work: 0,
@@ -8514,7 +8579,14 @@ impl<'a> OwnedFootprintDerivation<'a> {
     /// The footprint of `fact`, owned by the holder. `None` when a family
     /// it reaches has no definition in the set: the interface is malformed
     /// and the transition that needs the footprint is refused.
-    fn derive(mut self, fact: &ResourceFact) -> Option<Vec<MemoryRange>> {
+    fn derive(mut self, fact: &ResourceFact) -> Option<OwnedMemoryFootprint> {
+        self.exact = match fact {
+            ResourceFact::Own(Resource::Memory(_), _) => true,
+            ResourceFact::Own(Resource::Composite { .. }, quantity) => {
+                quantity.as_const() == Some(1)
+            }
+            _ => false,
+        };
         self.pending.push(OwnedFootprintTask::Fact(fact.clone()));
         while let Some(task) = self.pending.pop() {
             // Past the bound the footprint is unnamed memory, which covers
@@ -8545,7 +8617,10 @@ impl<'a> OwnedFootprintDerivation<'a> {
             if self.reaches_unnamed {
                 self.ranges.push(MemoryRange::unnamed_footprint());
             }
-            return Some(self.ranges);
+            return Some(OwnedMemoryFootprint {
+                ranges: self.ranges,
+                exact: false,
+            });
         }
         // This is the footprint of the selected held/assumed head, including
         // conservative unions of match arms, not admission of new ownership.
@@ -8566,7 +8641,10 @@ impl<'a> OwnedFootprintDerivation<'a> {
         }
         ranges.sort();
         ranges.dedup();
-        Some(ranges)
+        Some(OwnedMemoryFootprint {
+            ranges,
+            exact: self.exact && !self.reaches_unnamed,
+        })
     }
 
     /// Charges one unit; past the bound the footprint is unnamed.
@@ -8718,6 +8796,11 @@ impl<'a> OwnedFootprintDerivation<'a> {
         if !self.enters(definition) {
             return;
         }
+        self.exact &= definition.condition.is_none()
+            && definition.witnesses.is_empty()
+            && definition.resource_parameters.is_empty()
+            && !definition.authorized
+            && !definition.is_sealed();
         if definition.instance_schema.is_some() || definition.matched.is_some() {
             self.reaches_unnamed = true;
             return;
@@ -8910,6 +8993,11 @@ impl<'a> OwnedFootprintDerivation<'a> {
             return;
         }
         for spec in contains {
+            // A flat body contributes exactly its unconditional memory
+            // clauses. Other terms may project a conservative span or child.
+            self.exact &= matches!(spec.term(), ResourceTerm::Memory(segment) if segment.guard().is_none())
+                && spec.guard().is_none()
+                && spec.resource_arguments().is_empty();
             // Abstract tokens own no memory, regardless of their quantity.
             // Footprint discovery need not prove that quantity nonnegative;
             // the actual resource exchange still checks it. A population
@@ -9070,6 +9158,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     let mut ranges = BTreeSet::new();
     let mut evidence_facts = Vec::new();
     let mut range_sources = Vec::new();
+    let mut has_exact_write_ranges = true;
     if let Some(resources) = transition_resources {
         for checked in resources {
             // Borrowing is a boundary role, not an access-mode rewrite:
@@ -9078,12 +9167,12 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
             if !checked.fact.is_own() {
                 continue;
             }
-            let Some(expanded) = checked_owned_memory_ranges(
-                &checked.fact,
+            let Some(footprint) = OwnedFootprintDerivation::new(
                 interface.composite_resource_definitions(),
                 entry,
                 assumptions,
-            ) else {
+            )
+            .derive(&checked.fact) else {
                 if !interface.resource_derived_mutable_frame() {
                     continue;
                 }
@@ -9091,7 +9180,8 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
                     "could not expand the checked resource transition".to_string()
                 ));
             };
-            for range in expanded {
+            has_exact_write_ranges &= footprint.exact || footprint.ranges.is_empty();
+            for range in footprint.ranges {
                 // Every byte of the expansion belongs to this one requirement,
                 // whatever depth it came from, so the requirement is the
                 // source recorded for each of its ranges.
@@ -9108,7 +9198,9 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     // modular-call source.  Functions without resource clauses retain their
     // explicit effect segments here.
     let explicit_segments = if !interface.resource_derived_mutable_frame() {
-        interface.contract_mutable()
+        let segments = interface.contract_mutable();
+        has_exact_write_ranges = segments.iter().all(|segment| segment.guard().is_none());
+        segments
     } else {
         &[]
     };
@@ -9127,6 +9219,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     Ok(Ok(FunctionMemoryEffectProjection {
         ranges: ranges.into_iter().collect(),
         evidence_facts: evidence_facts.into(),
+        has_exact_write_ranges,
         range_sources,
     }))
 }
@@ -9832,6 +9925,33 @@ fn lent_owned_memory_covers_allocation(
         .is_some()
 }
 
+/// Project only the preserved facts that can affect retirement of these
+/// nominal heap blocks. A fully held direct body supplies its own partition,
+/// and its typed pointer determines the block of every exposed ingredient.
+/// The mixed, indirect and cached cases still need the stateful projection.
+fn preserved_heap_retirement_frontier<'a>(
+    preserved: &ResourceContext,
+    interface: &FunctionContractInterface,
+    consumed: impl Iterator<Item = &'a AddressBase>,
+) -> Option<ResourceContext> {
+    let (name, argument_type) = preserved.heap_anchored_retirement_family()?;
+    if !interface
+        .composite_resource_definition(name)?
+        .confines_retirement_to_argument_block(argument_type)
+    {
+        return None;
+    }
+    let blocks = consumed.collect::<BTreeSet<_>>();
+    if !blocks
+        .iter()
+        .all(|block| matches!(block, AddressBase::Heap(_)))
+    {
+        return None;
+    }
+
+    preserved.heap_retirement_frontier(blocks)
+}
+
 fn apply_verified_heap_allocation_delta(
     mut memory: SymbolicMemory,
     entry_memory: &SymbolicMemory,
@@ -9853,6 +9973,9 @@ fn apply_verified_heap_allocation_delta(
     // is not the allocation the caller handed over.
     let expand_allocations =
         |resources: &ResourceContext, state: &ExecutionState, memory: &SymbolicMemory| {
+            if !resources.has_folded_composites() {
+                return Some(resources.clone());
+            }
             let projection_state = state
                 .clone()
                 .with_memory(memory.clone())
@@ -9882,28 +10005,31 @@ fn apply_verified_heap_allocation_delta(
             assumptions.assume_proposition(fact)
         });
     let input_allocations = input
-        .facts()
-        .iter()
+        .owned_allocation_tokens()
         .filter_map(|fact| {
             fact.allocation_size()
                 .map(|(pointer, bytes)| (fact, pointer, bytes))
         })
         .collect::<Vec<_>>();
-    // The caller's untouched resources are expanded only when the callee
-    // consumed an allocation: they are what may still expose it, continue
-    // it, or be left stale by its retirement. A call that consumes none
-    // (an allocator, or a call on unrelated memory) never asks them, so it
-    // costs nothing in the live objects the caller keeps; expanding them
-    // anyway made every call linear in them.
-    //
-    // Returned projections describe the successor allocation. They decide
-    // whether an input allocation continues, but they are not resources that
-    // survived from the caller and therefore cannot be stale after the old
-    // allocation is freed.
+    // A call may retire a consumed allocation, so inspect the frame for
+    // resources it would leave stale or tokens that continue it. Returned
+    // projections affect continuity, but cannot be stale caller resources.
     let preserved = if input_allocations.is_empty() {
         ResourceContext::new()
     } else {
-        expand_allocations(preserved_caller_resources, mutex_state, &memory).ok_or_else(|| {
+        let frontier = preserved_heap_retirement_frontier(
+            preserved_caller_resources,
+            interface,
+            input_allocations
+                .iter()
+                .map(|(_, pointer, _)| &pointer.address().base),
+        );
+        expand_allocations(
+            frontier.as_ref().unwrap_or(preserved_caller_resources),
+            mutex_state,
+            &memory,
+        )
+        .ok_or_else(|| {
             VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
                 "could not inspect preserved caller allocation effects at call".to_string(),
             ))
@@ -9915,21 +10041,17 @@ fn apply_verified_heap_allocation_delta(
     // missed candidate would assert a free the contract never promised.
     // The call's own returned tokens, as the contract states them; a token
     // inside a returned composite is not one the caller holds directly.
-    let returned_tokens = output_resources
-        .facts()
-        .iter()
-        .filter(|fact| fact.allocation().is_some())
-        .collect::<Vec<_>>();
     let output_allocations = output
-        .facts()
-        .iter()
-        .chain(preserved.facts())
+        .owned_allocation_tokens()
+        .chain(preserved.owned_allocation_tokens())
         .filter_map(|fact| {
             fact.allocation_size().map(|(base, bytes)| {
                 (
                     base.address().clone(),
                     bytes,
-                    returned_tokens.contains(&fact).then_some(fact),
+                    output_resources
+                        .contains_exact_representation(fact)
+                        .then_some(fact),
                 )
             })
         })
@@ -10102,7 +10224,7 @@ fn apply_verified_heap_allocation_delta(
     // Only what the call returns can be a new allocation. An allocation one
     // of the caller's untouched resources exposes was the caller's before
     // the call, so this call has nothing to claim for it.
-    for fact in output.facts() {
+    for fact in output.owned_allocation_tokens() {
         if let Some(coverage) = fact.allocation_bounds_fact(&allocation_assumptions) {
             effects.push(ExecutionPureFact::new(coverage));
         }
@@ -12120,9 +12242,8 @@ fn prepare_contract_resource_transfer_unexplained(
     // planner's exclusive reservation asks for one owned entry that directly
     // entails the whole requirement, which no representative can supply for a
     // symbolic or non-unit constant quantity, so such a requirement takes the
-    // definitional route. A token population protects no memory, so the
-    // ledger has nothing to say about it; a population whose body owns memory
-    // is still checked against the active loans after planning.
+    // definitional route. Any body this route supplies still needs admission
+    // to the callee's partition, since these pieces were outside the reservation.
     let population_quantity_requirements = if purpose.lends() {
         checked_required_resources
             .iter()
@@ -12142,20 +12263,26 @@ fn prepare_contract_resource_transfer_unexplained(
     // the composite folded, so the expansion is not empty and the requirement
     // keeps its entry. The caller residual is still consumed definitionally
     // below.
+    let mut checked_owned_bodies = BTreeSet::new();
     let definitionally_empty_owned = if purpose.lends() {
         checked_required_resources
             .iter()
             .filter(|requirement| {
                 requirement.fact.is_own()
                     && matches!(requirement.fact.resource(), Resource::Composite { .. })
-                    && expand_all_composite_resource_facts(
-                        &ResourceContext::new_with_equalities(assumptions)
-                            .unchecked_with_fact(requirement.fact.clone()),
-                        interface.composite_resource_definitions(),
-                        &callee_state.program_point(),
-                        assumptions,
-                    )
-                    .is_some_and(|expanded| expanded.facts().is_empty())
+                    && {
+                        let body = expand_all_composite_resource_facts(
+                            &ResourceContext::new_with_equalities(assumptions)
+                                .unchecked_with_fact(requirement.fact.clone()),
+                            interface.composite_resource_definitions(),
+                            &callee_state.program_point(),
+                            assumptions,
+                        );
+                        if body.is_some() {
+                            checked_owned_bodies.insert(requirement.fact.clone());
+                        }
+                        body.is_some_and(|expanded| expanded.is_empty())
+                    }
             })
             .cloned()
             .collect::<Vec<_>>()
@@ -12502,113 +12629,70 @@ fn prepare_contract_resource_transfer_unexplained(
     } else {
         None
     };
-    // Excluding a counted-population requirement from the exclusive
-    // reservation costs nothing for a token population, whose units protect
-    // no bytes. A population whose body owns memory is a different matter:
-    // its units carry write authority over that storage into the callee, so
-    // it is checked against the loans this plan and the caller hold, exactly
-    // as a direct owned transfer of those bytes would be.
-    if let Some(plan) = &stable_view_plan {
-        for requirement in &population_quantity_requirements {
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(requirement.fact.clone());
-            let body = match evaluate_resource_population_body_resources(
-                &singleton,
-                callee_state,
-                interface.composite_resource_definitions(),
-                assumptions,
-                budget,
-                false,
-            )? {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(error)),
-            };
-            let body = expand_all_composite_resource_facts(
-                &body,
-                interface.composite_resource_definitions(),
-                &callee_state.program_point(),
-                assumptions,
-            )
-            .unwrap_or(body);
-            for fact in body.facts().iter().filter(|fact| fact.is_own()) {
-                let Some(range) = fact.memory_range() else {
-                    continue;
+    // Only a function's own certification can request the representation
+    // reached by a proof-only entry prefix. Compare its size before reading
+    // any heads, so a larger caller frame is never materialized for this.
+    let has_explicit_representation = preserve_explicit_representation
+        && (caller_state.resources().fact_count() != required_resources.fact_count()
+            || caller_state
+                .resources()
+                .composite_facts()
+                .filter_map(resource_fact_composite_head)
+                .ne(required_resources
+                    .composite_facts()
+                    .filter_map(resource_fact_composite_head)));
+
+    // An exact reservation of direct bodies already supplies the callee's
+    // partition. Keep canonical validation for requirements the plan did
+    // not reserve and for bodies that can depend on state or ledger evidence.
+    let reservation_supplies_partition = stable_view_plan.as_ref().is_some_and(|plan| {
+        plan.callee_resources
+            .contains_exact_facts_of(&required_resources)
+            && required_resources.composite_facts().all(|fact| {
+                let Resource::Composite { name, .. } = fact.resource() else {
+                    unreachable!("composite index")
                 };
-                if let Some(diagnostic) = plan.ledger.memory_access_refusal(
-                    range,
-                    assumptions,
-                    LoanRefusalOperation::Plan,
-                ) {
-                    return Ok(Err(RuntimeError::LoanRefusal(Box::new(diagnostic))));
-                }
-            }
-        }
-    }
-    let canonical_resources = {
+                checked_owned_bodies.contains(fact)
+                    && interface
+                        .composite_resource_definition(name)
+                        .is_some_and(CompositeResourceDefinition::has_argument_direct_body)
+            })
+    });
+    let canonical_resources = if reservation_supplies_partition {
+        None
+    } else {
         let canonical_state = caller_state
             .clone()
             .with_resource_context(required_resources.clone());
-        expand_all_composite_resource_facts_at_state(
+        let Some(canonical) = expand_all_composite_resource_facts_at_state(
             &required_resources,
             interface.composite_resource_definitions(),
             &canonical_state,
             assumptions,
-        )
+        ) else {
+            return Ok(Err(RuntimeError::FunctionContract(format!(
+                "could not expand required composite resources before call ({})",
+                bounded_contract_resource_frontier(&required_resources)
+            ))));
+        };
+        Some(canonical)
     };
-    let Some(canonical_resources) = canonical_resources else {
-        return Ok(Err(RuntimeError::FunctionContract(format!(
-            "could not expand required composite resources before call ({})",
-            bounded_contract_resource_frontier(&required_resources)
-        ))));
-    };
-    let population_body_resources = match evaluate_resource_population_body_resources(
-        &required_resources,
-        callee_state,
-        interface.composite_resource_definitions(),
-        assumptions,
-        budget,
-        false,
-    )? {
-        Ok(resources) => resources,
-        Err(error) => return Ok(Err(error)),
-    };
-    let required_composite_heads = required_resources
-        .facts()
-        .iter()
-        .filter_map(resource_fact_composite_head)
-        .collect::<Vec<_>>();
-    let caller_composite_heads = caller_state
-        .resources()
-        .facts()
-        .iter()
-        .filter_map(resource_fact_composite_head)
-        .collect::<Vec<_>>();
-    let has_explicit_representation = caller_state.resources().facts().len()
-        != required_resources.facts().len()
-        || caller_composite_heads != required_composite_heads;
     let mut callee_resources = if let Some(plan) = &stable_view_plan {
         plan.callee_resources.clone()
-    } else if preserve_explicit_representation && has_explicit_representation {
-        // Proof execution may have opened exactly the recursive branches needed
-        // by the body with `observe` or `unfold`. Independent certification
-        // must execute from that same definitionally equivalent form.
-        // The transfer checks below still consume every declared requirement,
-        // so this cannot weaken the function contract or affect ordinary
-        // calls, which always use the canonical boundary.
+    } else if has_explicit_representation {
+        // Independent certification executes with the same definitionally
+        // equivalent representation the proof reached. The transfer below
+        // still consumes every declared requirement.
         caller_state.resources().clone()
     } else {
-        canonical_resources
+        canonical_resources.expect("unreserved requirements were projected")
     };
     for empty_view in &empty_composite_views {
         // The head names a resource the callee may state; its checked body is
         // empty, so composing it adds a description and no authority.
         if !callee_resources.satisfies_fact(&empty_view.fact, assumptions) {
-            callee_resources = match callee_resources
-                .try_compose_with_fact(empty_view.fact.clone(), assumptions)
-            {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-            };
+            callee_resources =
+                callee_resources.insert_prepared_call_view(empty_view.fact.clone(), assumptions);
         }
     }
     for requirement in &population_quantity_requirements {
@@ -12660,34 +12744,15 @@ fn prepare_contract_resource_transfer_unexplained(
             }));
         }
         if !callee_resources.satisfies_fact(&intrinsic_view.fact, assumptions) {
-            callee_resources = match callee_resources
-                .try_compose_with_fact(intrinsic_view.fact.clone(), assumptions)
-            {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-            };
+            callee_resources = callee_resources
+                .insert_prepared_call_view(intrinsic_view.fact.clone(), assumptions);
         }
     }
-    for body_resource in population_body_resources.facts() {
-        // The population owns its body even while that body is absent from
-        // the caller's explicit proof context. Contract execution opens the
-        // body internally after the required population unit has established
-        // authority; surface proofs still need scoped `open` to use it.
-        if !callee_resources.satisfies_fact(body_resource, assumptions) {
-            callee_resources = match callee_resources
-                .try_compose_with_facts_delaying_normalization([body_resource.clone()], assumptions)
-            {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-            };
-        }
-    }
-    if preserve_explicit_representation && has_explicit_representation {
+    if has_explicit_representation {
         let viewed_composites = caller_state
             .resources()
-            .facts()
-            .iter()
-            .filter(|fact| matches!(fact, ResourceFact::View(Resource::Composite { .. })))
+            .composite_facts()
+            .filter(|fact| fact.is_view())
             .cloned()
             .collect::<Vec<_>>();
         for composite in viewed_composites {
@@ -20301,7 +20366,7 @@ fn evaluate_function_declared_resource_spec(
         }
         // Logical resource indices observe numbers; they do not store C
         // representation records or carry those records through loop models.
-        values.push(match value {
+        values.push(match value.resource_argument_at_type(*parameter_type) {
             ProgramValue::PointerInteger(word) => *word.numeric,
             value => value,
         });
@@ -20410,16 +20475,67 @@ fn unreturned_allocation_obligation(
     function: &ProgramFunction,
     assumptions: &PureFactContext,
 ) -> Result<Option<(ResourceFact, Option<ResourceFact>)>, RuntimeError> {
-    let Some(actual) = expand_all_composite_resource_facts_at_state(
-        actual_state.resources(),
-        function.composite_resource_definitions(),
-        actual_state,
-        assumptions,
-    ) else {
-        return Err(RuntimeError::FunctionContract(
-            "could not inspect allocation obligations at function return".to_string(),
-        ));
+    let Some(actual) = project_exit_allocations(actual_state, function, assumptions)? else {
+        return Ok(None);
     };
+    unreturned_allocation_from_projection(
+        actual_state,
+        &actual,
+        returned_resources,
+        function,
+        assumptions,
+    )
+}
+
+fn could_hold_packaged_allocation(state: &ExecutionState, function: &ProgramFunction) -> bool {
+    state.resources().has_owned_composites()
+        && function
+            .composite_resource_definitions()
+            .iter()
+            .any(|definition| {
+                definition.contains().iter().any(|resource| {
+                    resource.family() == ResourceFamily::Token
+                        && resource.declared_name() == Some(ResourceFact::ALLOCATION_RESOURCE_NAME)
+                })
+            })
+}
+
+/// Skip allocation projection when neither a token nor a folded owner can
+/// supply one. A caller that needs to inspect its declared outputs retains
+/// the resulting partition for the escape check.
+fn project_exit_allocations(
+    state: &ExecutionState,
+    function: &ProgramFunction,
+    assumptions: &PureFactContext,
+) -> Result<Option<ResourceContext>, RuntimeError> {
+    if !state.resources().has_owned_composites() && !state.resources().has_owned_allocation_tokens()
+    {
+        return Ok(None);
+    }
+    if !state.resources().has_folded_composites() {
+        return Ok(Some(state.resources().clone()));
+    }
+    let actual = expand_all_composite_resource_facts_at_state(
+        state.resources(),
+        function.composite_resource_definitions(),
+        state,
+        assumptions,
+    )
+    .ok_or_else(|| {
+        RuntimeError::FunctionContract(
+            "could not inspect allocation obligations at function return".to_string(),
+        )
+    })?;
+    Ok(actual.has_owned_allocation_tokens().then_some(actual))
+}
+
+fn unreturned_allocation_from_projection(
+    actual_state: &ExecutionState,
+    actual: &ResourceContext,
+    returned_resources: &ResourceContext,
+    function: &ProgramFunction,
+    assumptions: &PureFactContext,
+) -> Result<Option<(ResourceFact, Option<ResourceFact>)>, RuntimeError> {
     let mut checked_return_frontier = returned_resources.clone();
     {
         for fact in returned_resources.facts() {
@@ -20546,9 +20662,7 @@ fn unreturned_allocation_obligation(
         .clone()
         .unchecked_with_facts(population_bodies.facts().iter().cloned());
     let allocation = actual
-        .facts()
-        .iter()
-        .filter(|fact| fact.allocation().is_some())
+        .owned_allocation_tokens()
         .find(|allocation| {
             returned_resources
                 .cached_support_exposing_fact(allocation, assumptions)
@@ -20871,42 +20985,18 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
     if function.return_type() != ProgramType::Void {
         set_function_result(&mut output_state, function, value.clone());
     }
-    let function_can_package_allocation =
-        function
-            .composite_resource_definitions()
-            .iter()
-            .any(|definition| {
-                definition.contains().iter().any(|resource| {
-                    resource.family() == ResourceFamily::Token
-                        && resource.declared_name() == Some(ResourceFact::ALLOCATION_RESOURCE_NAME)
-                })
-            });
-    if !function_can_package_allocation
-        && !output_state
-            .resources()
-            .facts()
-            .iter()
-            .any(|fact| fact.allocation().is_some())
+    if output_state
+        .resources()
+        .owned_allocation_tokens()
+        .next()
+        .is_none()
+        && !could_hold_packaged_allocation(&output_state, function)
     {
         return Ok(None);
     }
-    let Some(actual_resources) = expand_all_composite_resource_facts_at_state(
-        output_state.resources(),
-        function.composite_resource_definitions(),
-        &output_state,
-        assumptions,
-    ) else {
-        return Err(RuntimeError::FunctionContract(
-            "could not inspect allocation obligations at function return".to_string(),
-        ));
+    let Some(actual) = project_exit_allocations(&output_state, function, assumptions)? else {
+        return Ok(None);
     };
-    if !actual_resources
-        .facts()
-        .iter()
-        .any(|fact| fact.allocation().is_some())
-    {
-        return Ok(None);
-    }
     // The checked resource result lists `produces` clauses. Owned borrowed
     // inputs are returned separately by the contract, and may contain the
     // allocation (for example inside an authority-backed control).
@@ -20936,8 +21026,13 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
                 .filter(|fact| !returned_resources.satisfies_fact(fact, assumptions)),
         )
     };
-    let Some((allocation, holder)) =
-        unreturned_allocation_obligation(&output_state, &returned, function, assumptions)?
+    let Some((allocation, holder)) = unreturned_allocation_from_projection(
+        &output_state,
+        &actual,
+        &returned,
+        function,
+        assumptions,
+    )?
     else {
         return Ok(None);
     };
@@ -20955,42 +21050,16 @@ pub(crate) fn unreturned_allocation_at_function_exit(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<Option<crate::kernel::proof::LiveAllocationObligation>, RuntimeError>> {
-    let function_can_package_allocation =
-        function
-            .composite_resource_definitions()
-            .iter()
-            .any(|definition| {
-                definition.contains().iter().any(|resource| {
-                    resource.family() == ResourceFamily::Token
-                        && resource.declared_name() == Some(ResourceFact::ALLOCATION_RESOURCE_NAME)
-                })
-            });
-    if !function_can_package_allocation
-        && !state
-            .resources()
-            .facts()
-            .iter()
-            .any(|fact| fact.allocation().is_some())
+    if !state.resources().has_owned_allocation_tokens()
+        && !could_hold_packaged_allocation(state, function)
     {
         return Ok(Ok(None));
     }
-    let Some(actual_resources) = expand_all_composite_resource_facts_at_state(
-        state.resources(),
-        function.composite_resource_definitions(),
-        state,
-        assumptions,
-    ) else {
-        return Ok(Err(RuntimeError::FunctionContract(
-            "could not inspect allocation obligations at function exit".to_string(),
-        )));
+    let actual = match project_exit_allocations(state, function, assumptions) {
+        Ok(Some(actual)) => actual,
+        Ok(None) => return Ok(Ok(None)),
+        Err(error) => return Ok(Err(error)),
     };
-    if !actual_resources
-        .facts()
-        .iter()
-        .any(|fact| fact.allocation().is_some())
-    {
-        return Ok(Ok(None));
-    }
     let Some(argument_values) = arguments
         .iter()
         .map(|argument| match argument {
@@ -21033,8 +21102,9 @@ pub(crate) fn unreturned_allocation_at_function_exit(
         Ok(resources) => resources,
         Err(error) => return Ok(Err(error)),
     };
-    match unreturned_allocation_obligation(
+    match unreturned_allocation_from_projection(
         &output_state,
+        &actual,
         &returned_resources,
         function,
         assumptions,

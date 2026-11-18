@@ -159,7 +159,10 @@ mod memory_equality_index;
 mod sequence_values;
 pub use sequence_values::{SequenceValues, SequenceValuesIter};
 mod descriptor_values;
-pub use descriptor_values::{StoredConditionTerm, StoredMachineTerm, StoredProgramValue};
+pub use descriptor_values::{
+    StoredAlgebraicTerm, StoredConditionTerm, StoredIntegerTerm, StoredMachineTerm,
+    StoredProgramValue,
+};
 mod resource_fields;
 pub(crate) use resource_fields::StoredResourceField;
 pub use resource_fields::{ResourceFieldValue, ResourceFieldValues};
@@ -2476,10 +2479,16 @@ impl SubobjectBounds {
             .ok()?;
         let [
             _,
-            Term::ProgramValue(ProgramValue::Pointer(from)),
-            Term::ProgramValue(ProgramValue::Pointer(to)),
+            term_source_0 @ Term::ProgramValue(_),
+            term_source_1 @ Term::ProgramValue(_),
         ] = arguments.as_slice()
         else {
+            return None;
+        };
+        let (Some(ProgramValue::Pointer(from)), Some(ProgramValue::Pointer(to))) = (
+            term_source_0.program_value_native(),
+            term_source_1.program_value_native(),
+        ) else {
             return None;
         };
         let count = to
@@ -2500,10 +2509,22 @@ impl SubobjectBounds {
             .filter(|width| *width > 0)?;
         let [
             _,
-            Term::ProgramValue(ProgramValue::Pointer(base)),
-            Term::ProgramValue(ProgramValue::UInt64(start)),
-            Term::ProgramValue(ProgramValue::UInt64(end)),
+            term_source_0 @ Term::ProgramValue(_),
+            term_source_1 @ Term::ProgramValue(_),
+            term_source_2 @ Term::ProgramValue(_),
         ] = arguments.as_slice()
+        else {
+            return None;
+        };
+        let (
+            Some(ProgramValue::Pointer(base)),
+            Some(ProgramValue::UInt64(start)),
+            Some(ProgramValue::UInt64(end)),
+        ) = (
+            term_source_0.program_value_native(),
+            term_source_1.program_value_native(),
+            term_source_2.program_value_native(),
+        )
         else {
             return None;
         };
@@ -4247,6 +4268,10 @@ pub enum SpecExpression {
         point: SpecPoint,
         pointer: Box<SpecExpression>,
         value_type: ProgramType,
+        /// Surface `exact(place)`: the read named by the selected state's own
+        /// memory, with no version walk (`design/exact-reads.md`). An ordinary
+        /// read (`false`) names the cell's version point.
+        exact: bool,
     },
     /// A field of a by-value parameter, not a dereference of a C pointer.
     /// Its logical value remains available after the parameter storage ends.
@@ -11159,6 +11184,8 @@ pub(super) struct ResourceContextIndex {
     /// non-memory members a composition is listed under
     /// (`CompositionMemberIndex`).
     pub(super) owned_non_memory_facts: HashedOrdMap<ResourceFact, ()>,
+    /// Exact occurrences of owning allocation tokens, in resource order.
+    pub(super) owned_allocation_tokens: ResourceEntryIds,
     pub(super) owned_memory_ranges: HashedOrdMap<MemoryRange, ()>,
     pub(super) owned_memory_range_counts: PersistentMap<MemoryRange, usize>,
     owned_count: usize,
@@ -11194,6 +11221,10 @@ pub(super) struct ResourceContextIndex {
     /// (`memory_state::CallKeptRanges::range_holding`).
     pub(super) owned_composites_by_pointer_argument: PersistentMap<Address, ResourceEntryIds>,
     pub(super) owned_composites_by_argument_block: PersistentMap<AddressBase, ResourceEntryIds>,
+    /// Owned unit heads with exactly one argument, a nominal heap pointer.
+    /// The count for a typed family can cover its whole shape without
+    /// enumerating the occurrences the caller kept.
+    heap_anchored_composite_counts: PersistentMap<(String, ProgramType), usize>,
     /// The owned folded composites with their multiplicity, content-hashed,
     /// so a kept set's identity can name them in constant work.
     pub(super) owned_composite_facts: HashedOrdMap<ResourceFact, usize>,
@@ -13210,6 +13241,101 @@ pub enum Term {
     // a deep pure proposition does not spend stack on unused C variants.
     Memory(SymbolicMemory),
     ExecutionState(Box<ExecutionState>),
+}
+
+impl Term {
+    /// Consume an owned payload without cloning its native expression prefix.
+    pub(crate) fn into_program_value_native(self) -> Option<ProgramValue> {
+        match self {
+            Self::ProgramValue(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    /// Selected native payload views. Storage and producers retain their own
+    /// carriers; structural consumers name the compatibility reading explicitly.
+    pub(crate) fn condition_native(&self) -> Option<&ConditionTerm> {
+        match self {
+            Self::Condition(value) => Some(value),
+            _ => None,
+        }
+    }
+    pub(crate) fn bitvector_native(&self) -> Option<&MachineTerm> {
+        match self {
+            Self::Bitvector32(value) => Some(value),
+            _ => None,
+        }
+    }
+    pub(crate) fn integer_native(&self) -> Option<&IntegerTerm> {
+        match self {
+            Self::Integer(value) => Some(value),
+            _ => None,
+        }
+    }
+    pub(crate) fn program_value_native(&self) -> Option<&ProgramValue> {
+        match self {
+            Self::ProgramValue(value) => Some(value),
+            _ => None,
+        }
+    }
+    pub(crate) fn algebraic_native(&self) -> Option<&AlgebraicTerm> {
+        match self {
+            Self::Algebraic(value) => Some(value),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod term_payload_view_tests {
+    use super::*;
+
+    #[test]
+    fn owned_program_value_extraction_moves_native_address_prefixes() {
+        for size in [16, 64, 256] {
+            let mut offset = AddressOffset::Constant(0);
+            for index in 0..size {
+                offset = AddressOffset::Add(
+                    Box::new(offset),
+                    Box::new(AddressOffset::Variable(Variable(991300 + index))),
+                );
+            }
+            let value = ProgramValue::pointer(Address {
+                base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
+                    "owned_native_pointer_result".into(),
+                    Vec::new(),
+                )),
+                offset,
+            });
+            let ProgramValue::Pointer(pointer) = &value else {
+                unreachable!()
+            };
+            let AddressOffset::Add(left, right) = &pointer.address().offset else {
+                unreachable!()
+            };
+            let allocations = [
+                std::ptr::from_ref(left.as_ref()),
+                std::ptr::from_ref(right.as_ref()),
+            ];
+            let Some(ProgramValue::Pointer(pointer)) =
+                Term::ProgramValue(value).into_program_value_native()
+            else {
+                unreachable!()
+            };
+            let address = pointer.into_pointer();
+            let AddressOffset::Add(left, right) = &address.offset else {
+                unreachable!()
+            };
+            assert_eq!(
+                [
+                    std::ptr::from_ref(left.as_ref()),
+                    std::ptr::from_ref(right.as_ref())
+                ],
+                allocations,
+                "the owned result's address nodes must move, size={size}",
+            );
+        }
+    }
 }
 
 /// The source name of a universal's binder, carried for diagnostics only.

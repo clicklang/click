@@ -129,6 +129,7 @@ fn composite_entry_and_return_publish_definedness_at_their_selected_points() {
             point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::ProgramExpression(variable("p"))),
             value_type: ProgramType::Int32,
+            exact: false,
         })],
     )]);
     let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {

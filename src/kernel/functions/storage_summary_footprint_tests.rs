@@ -19,6 +19,7 @@ fn outside(owned: Vec<MemoryRange>, required: MemoryRange) -> Vec<StorageWriteOu
     let projection = FunctionMemoryEffectProjection {
         ranges: owned,
         evidence_facts: ExecutionFacts::new(),
+        has_exact_write_ranges: true,
         range_sources: Vec::new(),
     };
     storage_writes_outside_owned_footprint(

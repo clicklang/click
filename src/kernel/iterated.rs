@@ -27,12 +27,12 @@ pub(crate) enum IteratedStep {
         template: IteratedMemory,
         index: MachineTerm,
     },
-    /// `gather(resource)`: form `template` (a hole-free fact) from the
+    /// `fold(resource[..])`: form `template` (a hole-free fact) from the
     /// covering owned range when every guard is known true, or from nothing
     /// when every guard is known false.
-    Gather { template: IteratedMemory },
-    /// `scatter(resource)`: the converse of `gather`.
-    Scatter { template: IteratedMemory },
+    FoldClause { template: IteratedMemory },
+    /// `unfold(resource[..])`: the converse of `fold(resource[..])`.
+    UnfoldClause { template: IteratedMemory },
 }
 
 /// Decides one condition from the fact context: `Some(true)`, `Some(false)`,
@@ -128,7 +128,7 @@ fn guard_holds_for(
     Some(equal == iterated.guard().holds_when_equal())
 }
 
-/// The logical guard value in this state. Gathering ownership does not
+/// The logical guard value in this state. Folding the clause does not
 /// execute a C read: it needs the guard's truth, while the surrounding rule
 /// separately requires ownership of the guard range. A logical value fact
 /// never establishes that a subsequent C load is initialized.
@@ -386,9 +386,11 @@ pub(crate) fn apply_iterated_step(
                 _ => fold_slot(state, current, iterated, index, assumptions),
             }
         }
-        IteratedStep::Gather { template } => {
+        IteratedStep::FoldClause { template } => {
             if !template.holes().is_empty() {
-                return Err("a gathered iterated fact has no elements taken out".to_string());
+                return Err(
+                    "folding the whole clause requires a template with no open slots".to_string(),
+                );
             }
             // The guard is read against cells this context owns, exactly as
             // a declaration's guard reads cells its own body owns; otherwise
@@ -398,13 +400,14 @@ pub(crate) fn apply_iterated_step(
                 assumptions,
             ) {
                 return Err(
-                    "gathering needs ownership of every guard cell of the range".to_string()
+                    "folding the whole clause needs ownership of every guard cell of the range"
+                        .to_string(),
                 );
             }
             match every_guard(state, template, assumptions)? {
                 Some(true) => {
                     let covering = template.covering_range().ok_or_else(|| {
-                        "the elements do not tile one range, so they cannot be gathered from one"
+                        "the elements do not tile one range"
                             .to_string()
                     })?;
                     let resources = state
@@ -412,7 +415,7 @@ pub(crate) fn apply_iterated_step(
                         .clone()
                         .without_fact_incrementally(&ResourceFact::own_memory(covering), assumptions)
                         .ok_or_else(|| {
-                            "gathering needs ownership of every element's cells".to_string()
+                            "folding the whole clause needs ownership of every element's cells".to_string()
                         })?;
                     Ok(state.clone().with_resource_context(resources.unchecked_with_fact(
                         ResourceFact::own(Resource::iterated(template.clone())),
@@ -424,18 +427,18 @@ pub(crate) fn apply_iterated_step(
                     )),
                 )),
                 None => Err(
-                    "gathering needs every guard known: a fact `forall (k: int32) { lo <= k and k < hi implies guard }` or its negation"
+                    "folding the whole clause needs every guard known: a fact `forall (k: int32) { lo <= k and k < hi implies guard }` or its negation"
                         .to_string(),
                 ),
             }
         }
-        IteratedStep::Scatter { template } => Ok(state.clone().with_resource_context(
-            prepare_iterated_scatter(state, template, assumptions)?.install(),
+        IteratedStep::UnfoldClause { template } => Ok(state.clone().with_resource_context(
+            prepare_iterated_clause_unfold(state, template, assumptions)?.install(),
         )),
     }
 }
 
-/// The checked scatter producer retains the exact residual frame. Installation
+/// The checked whole-clause unfold retains the exact residual frame. Installation
 /// consumes that construction; it neither repeats guard reasoning nor admits a
 /// newly described range beside an independently supplied frame.
 struct ConstructedIteratedExposure {
@@ -454,7 +457,7 @@ impl ConstructedIteratedExposure {
     }
 }
 
-fn prepare_iterated_scatter(
+fn prepare_iterated_clause_unfold(
     state: &ExecutionState,
     template: &IteratedMemory,
     assumptions: &PureFactContext,
@@ -465,18 +468,19 @@ fn prepare_iterated_scatter(
         .clone()
         .without_fact_incrementally(&required, assumptions)
         .ok_or_else(|| {
-            "scattering needs the iterated ownership fact with no element taken out".to_string()
+            "unfolding the whole clause needs the iterated ownership fact with no element taken out"
+                .to_string()
         })?;
     let range = match every_guard(state, template, assumptions)? {
         Some(true) => Some(template.covering_range().ok_or_else(||
-            "the elements do not tile one range, so they cannot be scattered into one".to_string())?),
+            "the elements do not tile one range".to_string())?),
         Some(false) => None,
-        None => return Err("scattering needs every guard known: a fact `forall (k: int32) { lo <= k and k < hi implies guard }` or its negation".to_string()),
+        None => return Err("unfolding the whole clause needs every guard known: a fact `forall (k: int32) { lo <= k and k < hi implies guard }` or its negation".to_string()),
     };
     Ok(ConstructedIteratedExposure { frame, range })
 }
 
-/// The reserved identity of the arbitrary index `gather` and `scatter`
+/// The reserved identity of the arbitrary index whole-clause folding and unfolding
 /// instantiate the range's guard at. It is bound only inside the one
 /// hypothetical fact context those checks build.
 const ITERATED_GUARD_INDEX: Variable = Variable(u64::MAX - 0x6974_6572);

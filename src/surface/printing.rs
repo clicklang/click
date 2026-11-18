@@ -1349,25 +1349,19 @@ pub(in crate::surface) fn format_resource_call(resource: &ResourceClause) -> Str
 
 /// Write one iterated-ownership tactic.
 pub(in crate::surface) fn describe_iterated_tactic(tactic: &IteratedTactic) -> String {
-    format!(
-        "{}({})",
-        tactic.name(),
-        match tactic {
-            IteratedTactic::UnfoldSlot(slot) | IteratedTactic::FoldSlot(slot) => {
-                let resource = format_resource_target(&slot.resource);
-                let target = match &slot.point {
-                    Some(point) => {
-                        format!("at({}, {resource})", describe_program_point_selector(point))
-                    }
-                    None => resource,
-                };
-                format!("{target}[{}]", describe_contract_expression(&slot.index))
-            }
-            IteratedTactic::Gather(resource) | IteratedTactic::Scatter(resource) => {
-                format_resource_target(resource)
-            }
-        }
-    )
+    let target = match tactic {
+        IteratedTactic::Unfold(target) | IteratedTactic::Fold(target) => target,
+    };
+    let resource = format_resource_target(&target.resource);
+    let selection = match &target.point {
+        Some(point) => format!("at({}, {resource})", describe_program_point_selector(point)),
+        None => resource,
+    };
+    let index = target
+        .index
+        .as_ref()
+        .map_or_else(|| "..".to_string(), describe_contract_expression);
+    format!("{}({selection}[{index}])", tactic.name())
 }
 
 pub(in crate::surface) fn format_resource_target(resource: &ResourceClause) -> String {

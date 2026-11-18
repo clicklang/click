@@ -231,7 +231,7 @@ maintainer's. Agents do not create or edit files there.
 - Reproduce stale timing claims before acting on them; slow-but-passing
   is a reportable finding, not a resting state.
 - Fix small reproduced defects in the thread that found them. Defects found
-  through the tracing skill workflow go to GitHub issues after user approval,
+  through the proof-repair skill go to GitHub issues after user approval,
   including during internal development. Other internally discovered defects
   filed for later live in `bugs/` and user-approved roadmap items in `roadmap/`;
   both need the user's agreement before filing. Defects reported by Click's
