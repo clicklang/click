@@ -1713,6 +1713,19 @@ pub(super) fn prepare_call_outcome_split(
     }))
 }
 
+/// The checked value of a call whose result is used by the program.
+pub(super) fn checked_returned_call_value(
+    statement: &ProgramStatement,
+    state: &ExecutionState,
+) -> Option<StoredExecutionValue> {
+    match statement {
+        ProgramStatement::CallConstruct { target, .. } => state.locals().get(target),
+        ProgramStatement::CallResult { call, .. } => state.step_result(*call),
+        _ => None,
+    }
+    .cloned()
+}
+
 /// Record one of the two transitions retained by
 /// [`prepare_call_outcome_split`].  This is intentionally a recorder, not an
 /// evaluator: the theorem, outcome, facts, and loan evidence all come from
@@ -2298,6 +2311,7 @@ fn execute_step_from_frontier_position_selecting_path(
         transitions.retain(|transition| transition.path_facts.contains(selected_path_fact));
     }
     let mut call_outcome_edges = None;
+    let mut terminal_call_payloads = [None, None];
     // A direct call can have one continuing normal outcome and one terminal
     // throw. An int32 try/catch can similarly have one continuing normal
     // outcome and one terminal handler return. If the only continuation is a
@@ -2380,7 +2394,10 @@ fn execute_step_from_frontier_position_selecting_path(
                     == 1)
         {
             if let ProgramStatement::TryCatchInt32 {
-                try_body, handler, ..
+                try_body,
+                binding,
+                handler,
+                ..
             } = &step_statement
                 && matches!(
                     try_body.as_ref(),
@@ -2392,9 +2409,18 @@ fn execute_step_from_frontier_position_selecting_path(
             {
                 let edges = transitions
                     .iter()
-                    .map(|transition| match transition.outcome {
-                        StatementOutcome::Normal(_) => Some(true),
-                        StatementOutcome::Return { .. } => Some(false),
+                    .map(|transition| match &transition.outcome {
+                        StatementOutcome::Normal(state) => {
+                            terminal_call_payloads[0] =
+                                checked_returned_call_value(try_body, state);
+                            Some(true)
+                        }
+                        StatementOutcome::Return { state, .. } => {
+                            // The exact handler is one return. Its checked
+                            // state still holds the untouched catch binding.
+                            terminal_call_payloads[1] = state.locals().get(binding).cloned();
+                            Some(false)
+                        }
                         _ => None,
                     })
                     .collect::<Option<Vec<_>>>();
@@ -2416,9 +2442,16 @@ fn execute_step_from_frontier_position_selecting_path(
                 // kernel's first-statement path order, as for try/catch above.
                 let edges = transitions
                     .iter()
-                    .map(|transition| match transition.outcome {
-                        StatementOutcome::Normal(_) => Some(true),
-                        StatementOutcome::Throw { .. } => Some(false),
+                    .map(|transition| match &transition.outcome {
+                        StatementOutcome::Normal(state) => {
+                            terminal_call_payloads[0] =
+                                checked_returned_call_value(&step_statement, state);
+                            Some(true)
+                        }
+                        StatementOutcome::Throw { value, .. } => {
+                            terminal_call_payloads[1] = Some(value.clone());
+                            Some(false)
+                        }
                         _ => None,
                     })
                     .collect::<Option<Vec<_>>>();
@@ -2612,6 +2645,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 completed_outcomes,
             );
         execution.presentation.call_outcome_edges = call_outcome_edges;
+        execution.presentation.terminal_call_payloads = terminal_call_payloads;
         if let (Some(loop_index), Some(exit_state)) = (loop_index, loop_return_exit_state) {
             record_loop_program_state(
                 &mut execution.presentation.recorded_states,
@@ -2670,7 +2704,7 @@ fn execute_step_from_frontier_position_selecting_path(
         // `if`: each is its own proof arm, so one linear step cannot take
         // both.
         return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached `{}`, which may throw; its returned and threw successors are separate proof arms. Write `outcomes {{ returned => {{ step(); ... }} threw => {{ step(); ... }} }}` here, or end the script here and let its implicit tail split it",
+            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached `{}`, which may throw; its returned and threw successors are separate proof arms. Write `outcomes {{ returned => {{ ... }} threw => {{ ... }} }}` here, or end the script here and let its implicit tail split it",
             describe_statement_head(&step_statement)
         )));
     }

@@ -245,6 +245,10 @@ alias as a new object or granting memory authority. Binding through a record
 pointer uses checked address formation on a byte-array lvalue of the complete
 record size, followed by the adapter's existing record-pointer representation.
 The address rule validates storage without reading the array or its fields.
+Record-reference results retain their nominal layout in the existing pointer
+result metadata and keep the separate reference-result flag and pointee const.
+Calls carry the referent's address; they do not use aggregate-result copying.
+Signature checking compares the written reference result's nominal record.
 Automatic destructor cleanup emits the existing storage-lifetime-end operation
 after the destructor returns, so an alias cannot keep a scoped record alive.
 

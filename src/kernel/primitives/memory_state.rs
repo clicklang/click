@@ -8969,7 +8969,8 @@ impl ExecutionState {
             .filter(|child| !projected.satisfies_fact(child, assumptions))
             .collect::<Vec<_>>();
         let projected = projected
-            .try_compose_with_facts_delaying_normalization(missing, assumptions)
+            .install_established_partition(missing, assumptions)
+            .map(|(context, _)| context)
             .map_err(|error| format!("control body ownership refused: {error}"))?;
         Ok((projected, count))
     }
@@ -9776,7 +9777,8 @@ impl ExecutionState {
                 .without_fact_incrementally(selected, assumptions)
                 .ok_or_else(|| format!("Requires owns {name}(p)"))?;
             resources
-                .try_compose_with_facts_delaying_normalization(body.iter().cloned(), assumptions)
+                .install_established_partition(body.iter().cloned(), assumptions)
+                .map(|(context, _)| context)
                 .map_err(|error| format!("member body ownership refused: {error}"))?
         };
         let exchange = if definition.has_fixed_exclusive_memory() {
@@ -10159,6 +10161,16 @@ impl ExecutionState {
     /// memory.
     pub(crate) fn program_point_id(&self) -> Option<super::program_point::ProgramPointId> {
         self.point.id()
+    }
+
+    /// Point of an observation in this state, including a successor reached
+    /// by pending steps. A settled state already carries the ID.
+    pub(crate) fn observation_point_id(&self) -> Option<super::program_point::ProgramPointId> {
+        if self.memory.pending_steps.is_some() {
+            self.program_point().id()
+        } else {
+            self.program_point_id()
+        }
     }
 
     /// Replace memory without the resource invalidation of

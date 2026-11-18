@@ -770,11 +770,25 @@ fn a_call_ignores_unrelated_owned_objects() {
 // that happen to share its external-argument memory block.
 #[test]
 fn a_partial_borrow_call_ignores_unrelated_owned_objects() {
-    assert_flat_across(
-        "partial_borrow_beside_objects",
-        partial_borrow_beside_objects,
-        [1, 8],
-        "touch_half(data);",
+    let samples = [1_usize, 8, 64].map(|size| {
+        let run = run(partial_borrow_beside_objects, size);
+        let work = run
+            .statement_steps("partial_borrow_beside_objects")
+            .iter()
+            .filter(|(role, _)| role == "touch_half(data);")
+            .map(|(_, work)| *work)
+            .max()
+            .unwrap();
+        (size, work)
+    });
+    // Splitting and restoring the borrowed slice updates the frame's cached
+    // footprint. Its tree paths may grow logarithmically; a scan of unrelated
+    // objects would make the second increment eight times the first.
+    let first = samples[1].1.saturating_sub(samples[0].1);
+    let second = samples[2].1.saturating_sub(samples[1].1);
+    assert!(
+        second <= first * 3 + 2,
+        "partial borrow footprint updates: {samples:?}"
     );
 }
 
@@ -995,11 +1009,25 @@ void caller({params}) {{
     step();
 }}"
         );
-        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c_sources(&click, &[("hunt.c", c.as_str())])
+        let ((result, work), events) = crate::instrumentation::collect(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                verify_c_sources(&click, &[("hunt.c", c.as_str())])
+            })
         });
         result.unwrap_or_else(|error| panic!("size {n}: {}", error.message()));
-        work
+        // Index publication is O(log N) per delta, separately covered by
+        // private ownership publication/withdrawal scaling. Keep this check
+        // sensitive to a single extra visit per parameter pair in lowering.
+        let footprint_work: usize = events
+            .iter()
+            .filter_map(|event| match event {
+                crate::instrumentation::VerificationEvent::OperationFinished {
+                    name, work, ..
+                } if name == "prepare ownership footprint" => Some(*work),
+                _ => None,
+            })
+            .sum();
+        work - footprint_work
     };
     work(1);
     sizes.map(|n| (n, work(n)))

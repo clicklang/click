@@ -7204,6 +7204,15 @@ pub(in crate::surface) fn check_signature(
         )).with_kind(ClickErrorKind::Type));
     }
 
+    if signature.returns_reference()
+        && signature.return_struct_name.as_deref() != parsed_function.return_pointer_struct_name()
+    {
+        return Err(ClickError::new(format!(
+            "signature mismatch for `{}` in `{source_path}`: reference result must retain its nominal record type",
+            signature.name()
+        )).with_kind(ClickErrorKind::Type));
+    }
+
     if signature.return_pointee_is_constant() != parsed_function.return_pointee_is_constant() {
         return Err(ClickError::new(format!(
             "signature mismatch for `{}` in `{source_path}`: .click return pointee const is {}, C return pointee const is {}",
