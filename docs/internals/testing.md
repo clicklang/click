@@ -44,7 +44,7 @@ are in `bugs/README.md` and `roadmap/README.md`.
 A smart tactic that promptly reports that it did not find a proof is not one of
 these tooling failures. Smart search is heuristic and incomplete. Continue
 with a smaller search or explicit relevant simple tactics, following the
-[tracing procedure](../concepts/tracing.md).
+[proof repair procedure](../concepts/tracing.md).
 Investigate sooner if search misses its budget, produces an unusable diagnostic,
 reports success without verifiable expansion, behaves unstably, or exposes a
 missing simple proof operation.
