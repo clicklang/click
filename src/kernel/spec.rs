@@ -5939,10 +5939,16 @@ fn lower_spec_predicate_proposition_at_state_in(
             };
             let [
                 Term::ExecutionState(_),
-                Term::ProgramValue(ProgramValue::Pointer(left)),
-                Term::ProgramValue(ProgramValue::Pointer(right)),
+                term_source_0 @ Term::ProgramValue(_),
+                term_source_1 @ Term::ProgramValue(_),
             ] = arguments.as_slice()
             else {
+                return Ok(Vec::new());
+            };
+            let (Some(ProgramValue::Pointer(left)), Some(ProgramValue::Pointer(right))) = (
+                term_source_0.program_value_native(),
+                term_source_1.program_value_native(),
+            ) else {
                 return Ok(Vec::new());
             };
             if !left.program_type().is_object_pointer() || !right.program_type().is_object_pointer()

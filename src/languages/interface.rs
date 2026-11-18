@@ -563,7 +563,11 @@ impl ImportedFunction {
         }
         let mut named = self.clone();
         for (parameter, name) in named.parameters.iter_mut().zip(names) {
-            parameter.name = (name.to_string()).into();
+            parameter.name = if parameter.name.reference_referent().is_some() {
+                crate::kernel::BindingName::reference_carrier(name)
+            } else {
+                name.to_string().into()
+            };
         }
         named.positional_parameters = false;
         Some(named)
@@ -1840,6 +1844,7 @@ pub(super) fn declared_pointer_locals(
 pub struct RustLoopIterator {
     pub local: String,
     pub kind: RustIteratorKind,
+    pub(crate) count_binding: Option<crate::kernel::BindingName>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -1848,7 +1853,7 @@ pub enum RustIteratorKind {
     /// covers, `_ptr` and `_len`, which a proof reads as `iter.as_slice()`
     /// and `iter.len()`.
     Slice,
-    /// `Enumerate<Iter<T>>`: the slice iterator's fields and `_count`,
+    /// `Enumerate<Iter<T>>`: the slice iterator's fields and its count,
     /// which a proof reads as `iter.count`.
     Enumerate,
     /// `ChunksExact<u8>`: its fields `_v`, `_v_len`, `_rem`, `_rem_len`

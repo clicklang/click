@@ -6902,19 +6902,26 @@ fn statement_states_support_complete_loadability_propositions() {
                 have at(region(0).entry, viewable(p[0..2])) by {
                     known();
                 }
-                transport(
-                    at(region(0).entry, viewable(p[0..2])),
-                    viewable(p[0..2])
-                ) using {
-                    at(region(0).entry, viewable(p[0..2]));
+                have viewable(p[0..2]) by {
+                    observe(p[0..2]);
                 }
                 step_until(function.exit);
                 solve();
             }
         "#;
 
-    verify_c_sources(click_source, &[("state_loadable.c", c_source)])
-        .expect("a complete viewability proposition should lower and transport from a state");
+    let sources = [("state_loadable.c", c_source)];
+    let verified = verify_c_sources(click_source, &sources)
+        .expect("the entry view and the current observation should both check");
+    let expanded =
+        expand_checked_grouped_claim(click_source, &verified, "store_second_return_first")
+            .expect("the complete viewability proof should expand");
+    assert!(expanded.contains("observe(p[0..2]);"), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("store_second_return_first.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the expanded viewability proof should replay");
 }
 
 #[test]
@@ -17769,6 +17776,18 @@ fn retained_int32_addition_expands_with_ordinary_bounds() {
     for (bound, tactic) in bounds {
         assert_eq!(tactic.trim(), "known();", "{bound}\n{tactic}\n{expanded}");
     }
+    for goal in [
+        "have 0 <= to_integer((at(region(4).entry, i) as int32)) by {",
+        "have to_integer((at(region(4).entry, i) as int32)) <= 1 by {",
+    ] {
+        assert!(
+            expanded
+                .lines()
+                .zip(expanded.lines().skip(1))
+                .any(|(line, tactic)| line.trim() == goal && tactic.trim() == "known();"),
+            "the exact cited bound should close with known: {goal}\n{expanded}"
+        );
+    }
     let increment = " + to_integer((1 as int32)))";
     let mut sum_bounds = 0;
     let mut identities = 0;
@@ -24030,6 +24049,27 @@ fn integer_fold_zero_contribution_expansion_replays_without_search() {
 }
 
 #[test]
+fn whole_iterated_clause_expands_and_rechecks() {
+    let (source, sources) = mdtest_sources("mdtests/iterated_ownership_whole_clause.md");
+    let sources = sources
+        .iter()
+        .map(|(name, body)| (name.as_str(), body.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "init_cells.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("fold(arena_cells(data, occupied, capacity)[..]);")
+            && expanded
+                .contains("unfold(at(clause_args, arena_cells(data, occupied, capacity))[..]);"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("init_cells.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn indexed_iterated_ownership_expands_and_rechecks() {
     let (source, sources) = mdtest_sources("mdtests/indexed_iterated_ownership.md");
     let sources = sources
@@ -24058,6 +24098,20 @@ fn indexed_iterated_ownership_expands_and_rechecks() {
         error
             .report()
             .contains("selected iterated ownership fact is not held"),
+        "{}",
+        error.report()
+    );
+
+    let open_slot = source.replace(
+        "fold(at(opened, arena_slots(data, free_slots, capacity))[i]);",
+        "unfold(at(opened, arena_slots(data, free_slots, capacity))[..]);",
+    );
+    assert_ne!(open_slot, source);
+    let error = verify_c_sources(&open_slot, &sources).unwrap_err();
+    assert!(
+        error.report().contains(
+            "unfolding the whole clause needs the iterated ownership fact with no element taken out"
+        ),
         "{}",
         error.report()
     );

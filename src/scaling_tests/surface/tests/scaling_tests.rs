@@ -4709,17 +4709,22 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
 /// The callee sees one by-value argument, even when the caller has built
 /// a long arithmetic expression for that value before the call.
 #[test]
-fn call_ensure_lowering_keeps_the_computed_argument_shared() {
+fn call_preparation_and_ensures_keep_the_computed_argument_shared() {
     use crate::instrumentation::VerificationEvent;
 
-    let mut lowering_work = Vec::new();
-    for depth in [4, 16, 48] {
+    const PREPARATION: &str = "verified call argument preparation";
+    const LOWERING: &str = "verified call ensure lowering";
+    let mut samples = Vec::new();
+    for (depth, unrelated) in [(4, 0), (16, 0), (48, 0), (4, 32)] {
+        let unrelated_locals = (0..unrelated)
+            .map(|index| format!("    uint32 local{index} = x;\n"))
+            .collect::<String>();
         let updates = "    x = x * 3u + 1u;\n".repeat(depth);
-        let steps = "    step();\n".repeat(depth);
+        let steps = "    step();\n".repeat(depth + 2 * unrelated);
         let c = format!(
-            "extern uint32 echo(uint32 value);\nuint32 caller(uint32 x) {{\n{updates}    return echo(x);\n}}"
+            "extern uint32 echo(uint32 value);\nuint32 caller(uint32 x) {{\n{unrelated_locals}{updates}    return echo(x);\n}}"
         );
-        let postcondition = format!("r == at(statement({depth}).entry, x)");
+        let postcondition = format!("r == at(statement({}).entry, x)", depth + unrelated);
         let click = format!(
             "verifying \"echo.c\";\n\
              extern uint32 echo(uint32 value) {{ ensures result == old(value); }}\n\
@@ -4731,9 +4736,12 @@ fn call_ensure_lowering_keeps_the_computed_argument_shared() {
         let sources = [("echo.c", c.as_str())];
         let (verified, events) =
             crate::instrumentation::collect(|| verify_c_sources(&click, &sources));
-        verified.unwrap_or_else(|error| panic!("depth {depth}: {}", error.report()));
+        verified.unwrap_or_else(|error| {
+            panic!("depth {depth}, unrelated {unrelated}: {}", error.report())
+        });
 
-        let mut final_lowerings = Vec::new();
+        let mut preparation = None;
+        let mut lowering = None;
         for event in events {
             if let VerificationEvent::OperationFinished {
                 function,
@@ -4743,18 +4751,20 @@ fn call_ensure_lowering_keeps_the_computed_argument_shared() {
             } = event
                 && function == "echo"
             {
-                assert_ne!(name, "verified call provisional ensure lowering");
-                if name == "verified call ensure lowering" {
-                    final_lowerings.push(work);
+                match name.as_str() {
+                    PREPARATION => preparation = Some(preparation.unwrap_or(0).max(work)),
+                    LOWERING => lowering = Some(lowering.unwrap_or(0).max(work)),
+                    "verified call provisional ensure lowering" => {
+                        panic!("a resource-free call does not need provisional ensures")
+                    }
+                    _ => {}
                 }
             }
         }
-        lowering_work.push(
-            final_lowerings
-                .into_iter()
-                .max()
-                .expect("the call's ensure was lowered"),
-        );
+        samples.push((
+            preparation.expect("the call's argument was prepared"),
+            lowering.expect("the call's ensure was lowered"),
+        ));
 
         if depth == 48 {
             let wrong = click.replace(&postcondition, "r == old(x)");
@@ -4762,10 +4772,10 @@ fn call_ensure_lowering_keeps_the_computed_argument_shared() {
         }
     }
     assert!(
-        lowering_work
-            .iter()
-            .all(|work| *work <= lowering_work[0] + 32),
-        "call ensure lowering grew with argument depth: {lowering_work:?}"
+        samples.iter().all(|&(preparation, lowering)| {
+            preparation <= samples[0].0 + 16 && lowering <= samples[0].1 + 32
+        }),
+        "call argument preparation or ensure lowering grew with argument depth or unrelated locals: {samples:?}"
     );
 }
 

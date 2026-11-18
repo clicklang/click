@@ -1416,17 +1416,17 @@ While the fact is unfolded, every operation preserves its denotation:
   after, the element is held outright and the fact claims nothing there.
 - Indexed `fold` requires a hole at the index and its guard known true, consumes the
   element, and removes the hole.
-- `gather` and `scatter` require every guard decided one way by a quantified
+- Whole-clause `fold` and `unfold` require every guard decided one way by a quantified
   fact, which the kernel instantiates once at a reserved arbitrary index under
   the range hypotheses. With every guard true the fact is the covering range;
-  with every guard false it is empty. `gather` also requires the guard cells
+  with every guard false it is empty. Whole-clause `fold` also requires the guard cells
   to be owned, so the formed fact is as stable as a declared one. The guard
   cell at the arbitrary index is read as a C load; a never-written heap cell
   has no value until a fact establishes one, so when that read fails the
   quantified fact is first instantiated at the cell's load and the cell read
   again under the result. The second read still decides initialization; this
-  is what lets an initializer gather over a map it has just allocated and
-  zeroed in a loop (`mdtests/iterated_ownership_gather_fresh_heap_map.md`).
+  is what lets an initializer form the clause over a map it has just allocated and
+  zeroed in a loop (`mdtests/iterated_ownership_fold_fresh_heap_map.md`).
 
 ### The guard-store rule
 

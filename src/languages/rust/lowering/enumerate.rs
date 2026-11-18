@@ -1,5 +1,5 @@
 //! An enumerated slice iterator is `core`'s `Enumerate { iter, count }`:
-//! the slice iterator's fields and `<it>_count`, how many elements it has
+//! the slice iterator's fields and its count, how many elements it has
 //! yielded. Its `next` yields the slice iterator's element with the index
 //! `count`, then counts it. Its `Option` holds the yielded element's address
 //! and `<option>_index`.
@@ -11,27 +11,40 @@ impl Context<'_> {
         name: &str,
         element: &Type,
         option: bool,
+        owner: &LocalFunctionId,
+        ordinal: u32,
     ) -> Result<ProgramStatement, String> {
         let storage = self.shared_array_storage(name, element, option)?;
-        if !self.enumerated.insert(name.into()) {
-            return Err("enumerated iterator identity collision".into());
-        }
-        let field = format!("{name}_{}", if option { "index" } else { "count" });
-        if !self.locals.insert(field.clone()) {
-            return Err("enumerated iterator identity collision".into());
-        }
+        let field = if option {
+            let index = format!("{name}_index");
+            if !self.locals.insert(index.clone()) {
+                return Err("enumerated iterator identity collision".into());
+            }
+            self.binding(&index)
+        } else {
+            LocalBindingId::enumerate_count(owner.clone(), ordinal).into()
+        };
+        self.enumerate_fields.insert(name.into(), field.clone());
         Ok(program_seq(
             storage,
-            program_declare(self.binding(&field), ProgramType::UInt64),
+            program_declare(field, ProgramType::UInt64),
         ))
     }
 
-    fn enumerated_iterator(&self, name: &str) -> Result<(), String> {
-        if self.enumerated.contains(name) && self.shared_array_iterators.contains_key(name) {
-            Ok(())
-        } else {
-            Err("unknown enumerated iterator".into())
-        }
+    pub(super) fn enumerate_count(&self, name: &str) -> Result<BindingName, String> {
+        self.enumerate_fields
+            .get(name)
+            .filter(|_| self.shared_array_iterators.contains_key(name))
+            .cloned()
+            .ok_or_else(|| "unknown enumerated iterator".into())
+    }
+
+    fn enumerate_index(&self, name: &str) -> Result<BindingName, String> {
+        self.enumerate_fields
+            .get(name)
+            .filter(|_| self.shared_array_options.contains_key(name))
+            .cloned()
+            .ok_or_else(|| "unknown enumerated iterator Option".into())
     }
 
     /// `target = source.enumerate()`: the slice iterator, which has yielded
@@ -41,16 +54,13 @@ impl Context<'_> {
         target: &str,
         source: &str,
     ) -> Result<ProgramStatement, String> {
-        self.enumerated_iterator(target)?;
-        if self.enumerated.contains(source) {
+        let count = self.enumerate_count(target)?;
+        if self.enumerate_fields.contains_key(source) {
             return Err("enumerate requires a slice iterator".into());
         }
         Ok(program_seq(
             self.shared_array_move(target, source)?,
-            program_assign(
-                self.binding(&format!("{target}_count")),
-                crate::kernel::program_expression::uint64_literal(0),
-            ),
+            program_assign(count, crate::kernel::program_expression::uint64_literal(0)),
         ))
     }
 
@@ -59,15 +69,13 @@ impl Context<'_> {
         target: &str,
         source: &str,
     ) -> Result<ProgramStatement, String> {
-        self.enumerated_iterator(target)?;
-        self.enumerated_iterator(source)?;
+        let target_count = self.enumerate_count(target)?;
+        let source_count = self.enumerate_count(source)?;
         Ok(program_seq(
             self.shared_array_move(target, source)?,
             program_assign(
-                self.binding(&format!("{target}_count")),
-                crate::kernel::program_expression::variable(
-                    self.binding(&format!("{source}_count")),
-                ),
+                target_count,
+                crate::kernel::program_expression::variable(source_count),
             ),
         ))
     }
@@ -87,26 +95,19 @@ impl Context<'_> {
         element: Option<&str>,
         taken: Option<bool>,
     ) -> Result<ProgramStatement, String> {
-        self.enumerated_iterator(iterator)?;
         use crate::kernel::program_expression::{add, uint64_literal, variable};
-        let count = format!("{iterator}_count");
+        let count = self.enumerate_count(iterator)?;
         let Some(option) = option else {
             if taken == Some(false) {
                 return Ok(program_skip());
             }
             let mut some = program_skip();
             if let Some(index) = index {
-                some = program_seq(
-                    some,
-                    self.bind_local(index, variable(self.binding(&count)))?,
-                );
+                some = program_seq(some, self.bind_local(index, variable(count.clone()))?);
             }
             some = program_seq(
                 some,
-                program_assign(
-                    self.binding(&count),
-                    add(variable(self.binding(&count)), uint64_literal(1)),
-                ),
+                program_assign(count.clone(), add(variable(count), uint64_literal(1))),
             );
             if let Some(element) = element {
                 some = program_seq(
@@ -120,18 +121,10 @@ impl Context<'_> {
                 None => program_if(self.shared_array_has_next(iterator)?, some, program_skip()),
             });
         };
-        if !self.enumerated.contains(option) || !self.shared_array_options.contains_key(option) {
-            return Err("unknown enumerated iterator Option".into());
-        }
+        let index = self.enumerate_index(option)?;
         let yielded = program_seq(
-            program_assign(
-                self.binding(&format!("{option}_index")),
-                variable(self.binding(&count)),
-            ),
-            program_assign(
-                self.binding(&count),
-                add(variable(self.binding(&count)), uint64_literal(1)),
-            ),
+            program_assign(index, variable(count.clone())),
+            program_assign(count.clone(), add(variable(count), uint64_literal(1))),
         );
         self.shared_array_next_with(iterator, option, yielded)
     }
@@ -141,9 +134,7 @@ impl Context<'_> {
         &self,
         option: &str,
     ) -> Result<(ProgramStatement, ProgramExpression), String> {
-        if !self.enumerated.contains(option) || !self.shared_array_options.contains_key(option) {
-            return Err("unknown enumerated iterator Option".into());
-        }
+        let index = self.enumerate_index(option)?;
         Ok((
             program_assert(crate::kernel::program_expression::equal(
                 crate::kernel::program_expression::variable(
@@ -151,7 +142,44 @@ impl Context<'_> {
                 ),
                 crate::kernel::program_expression::int32_literal(1),
             )),
-            crate::kernel::program_expression::variable(self.binding(&format!("{option}_index"))),
+            crate::kernel::program_expression::variable(index),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::languages::rust::schema::Place;
+
+    #[test]
+    fn enumerate_count_and_a_source_local_have_distinct_bindings() {
+        let mut export = crate::languages::rust::charon::decode(
+            include_bytes!(
+                "../../../../design/charon-trial/enumerate/.click/enumerate/enumerate.rs.ullbc"
+            ),
+            "enumerate.rs",
+            include_bytes!("../../../../design/charon-trial/enumerate/enumerate.rs"),
+        )
+        .unwrap();
+        let function = export
+            .functions
+            .iter_mut()
+            .find(|f| f.name == "last_index")
+            .unwrap();
+        let mir = function.mir.as_mut().unwrap();
+        let iterator = mir
+            .locals
+            .iter()
+            .find(|local| matches!(local.value_type, Type::EnumerateIterator { .. }))
+            .unwrap();
+        mir.locals.push(Place {
+            name: format!("{}_count", iterator.name),
+            value_type: Type::Usize,
+            span: iterator.span.clone(),
+        });
+
+        // The source local used to hit the generated count's collision check.
+        super::super::lower(&export).unwrap();
     }
 }

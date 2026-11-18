@@ -1,13 +1,13 @@
-# Iterated ownership refuses to gather while a guard is unknown
+# Iterated ownership refuses whole-clause folding while a guard is unknown
 
-`gather` forms an iterated fact from the range its elements cover, which is
+Whole-clause `fold` forms an iterated fact from the range its elements cover, which is
 sound only when every guard of the range is known: all true, so the fact
 holds every element, or all false, so it holds none. Here the occupancy map
 was never written, so nothing says which cells are free, and the step is
 refused. The accepted form zeroes the map first, as in
-[`iterated_ownership_gather_scatter.md`](iterated_ownership_gather_scatter.md).
+[`iterated_ownership_whole_clause.md`](iterated_ownership_whole_clause.md).
 
-```c filename=iterated_ownership_rejects_gather_unknown_guards.c
+```c filename=iterated_ownership_rejects_whole_fold_unknown_guards.c
 void adopt(int32* data, int32* occupied, int32 capacity) {}
 ```
 
@@ -21,7 +21,7 @@ resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     }
 }
 
-verifying "iterated_ownership_rejects_gather_unknown_guards.c";
+verifying "iterated_ownership_rejects_whole_fold_unknown_guards.c";
 
 void adopt(int32* data, int32* occupied, int32 capacity) {
     requires 0 <= capacity;
@@ -29,11 +29,11 @@ void adopt(int32* data, int32* occupied, int32 capacity) {
     consumes data[0..capacity];
     produces arena_cells(data, occupied, capacity);
 } by {
-    gather(arena_cells(data, occupied, capacity));
+    fold(arena_cells(data, occupied, capacity)[..]);
     fold(arena_cells(data, occupied, capacity));
 }
 ```
 
 ```expect
-fail: gathering needs every guard known
+fail: folding the whole clause needs every guard known
 ```
