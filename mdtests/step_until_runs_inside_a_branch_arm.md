@@ -22,11 +22,14 @@ int32 clamp(int32 x) {
     ensures result <= 10;
 } by {
     branch {
-        step_until(function.exit);
-        have result == 10;
-    } else {
-        step_until(function.exit);
-        have result == x;
+        true => {
+            step_until(function.exit);
+            have result == 10;
+        }
+        false => {
+            step_until(function.exit);
+            have result == x;
+        }
     }
 }
 ```

@@ -27,11 +27,14 @@ int32 advance_nested_join(int32 x) {
         branch ensuring {
             fact y >= 0;
             fact y < 2147483647;
-        } then {
-            step();
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+                step();
+            }
+            false => {
+                step();
+            }
         }
         step();
         step();

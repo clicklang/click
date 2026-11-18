@@ -734,15 +734,16 @@ fn tactic_line_disambiguation_uses_columns_only_for_shared_lines() {
 
 #[test]
 fn trace_target_selects_only_the_arm_containing_its_source_position() {
-    let source = "void f() {} by {\n  branch { step(); } else { step(); }\n  step();\n}\n";
+    let source =
+        "void f() {} by {\n  branch { false => { step(); }, true => { step(); } }\n  step();\n}\n";
     let branch = position_at_offset(source, source.find("branch").unwrap());
     let then_step = position_at_offset(
         source,
-        source.find("branch { step").unwrap() + "branch { ".len(),
+        source.find("true => { step").unwrap() + "true => { ".len(),
     );
     let else_step = position_at_offset(
         source,
-        source.find("else { step").unwrap() + "else { ".len(),
+        source.find("false => { step").unwrap() + "false => { ".len(),
     );
     let continuation = position_at_offset(source, source.rfind("step();").unwrap());
     let index = ProofSourceIndex::new(source).unwrap();
@@ -1397,10 +1398,13 @@ int32 increment_selected(int32 x) {
         branch ensuring {
             fact y >= 0;
             fact y < 2147483647;
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         step();
         step();
@@ -1451,10 +1455,13 @@ int32 positive_after_branch(int32 x) {
         branch ensuring {
             fact y >= 0;
             fact y < 2147483647;
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         step();
         step();
@@ -1500,7 +1507,7 @@ verifying "same.c";
 int32 same_after_branch(int32 x, int32 flag) {
     ensures result == x by {
         step();
-        branch { step(); } else { step(); }
+        branch { true => { step(); } false => { step(); } }
         step();
         solve();
     }
@@ -1542,9 +1549,12 @@ verifying "returning.c";
 int32 clamp_nonnegative(int32 x) {
     ensures result >= 0 by {
         branch {
-            step();
-            solve();
-        } else {}
+            true => {
+                step();
+                solve();
+            }
+            false => {}
+        }
         step();
         solve();
     }
@@ -1594,11 +1604,17 @@ int32 nested_nonnegative(int32 x, int32 flag) {
         step();
         branch ensuring {
             fact y >= 0;
-        } then {
-            branch ensuring {
-                fact y >= 0;
-            } then { step(); } else { step(); }
-        } else { step(); }
+        } {
+            true => {
+                branch ensuring {
+                    fact y >= 0;
+                } {
+                    true => { step(); }
+                    false => { step(); }
+                }
+            }
+            false => { step(); }
+        }
         step();
         solve();
     }
@@ -3585,7 +3601,7 @@ fn a_parsed_source_index_holds_only_proof_blocks() {
 
 #[test]
 fn trace_source_index_preserves_nested_locations_and_containment() {
-    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  both { left => { normalize(); } right => { solve(); } }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } then { step(); } else { solve(); }\n  normalize();\n}\n";
+    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  both { left => { normalize(); } right => { solve(); } }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } { true => { step(); } false => { solve(); } }\n  normalize();\n}\n";
     let index = ProofSourceIndex::new(source).unwrap();
     // A `branch` shares its line only with its own arms' tactics, which are
     // inside it, so the line names it alone.

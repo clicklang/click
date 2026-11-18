@@ -31,9 +31,11 @@ int h(uint8 raw[]) {
     step();
     step();
     branch {
-        step();
-        normalize();
-    } else {
+        true => {
+            step();
+            normalize();
+        }
+        false => {}
     }
     step() {
         requires separate(memory((dst as (uint8 *))[0..4]), memory(raw[0..4])) by { normalize(); }

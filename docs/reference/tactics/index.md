@@ -49,7 +49,7 @@ remains supported.
   [Execution](#execution).
 - `step_until(target)`: run to one statement, loop, or `function.exit`
   without splitting. See [Execution](#execution).
-- `branch { ... } else { ... }`: prove each arm of the C `if` at the
+- `branch { true => { ... } false => { ... } }`: prove each arm of the C `if` at the
   frontier. See [Execution](#execution).
 - `loop { ... }`: prove a C loop from its invariants, which the back edge
   closes member by member with `solve()`. See [Execution](#execution) and
@@ -347,7 +347,7 @@ the one execution transition that fails.
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
 | `let { result: name } = step()` | simple | Specialized | Bind a checked assignment, call, or scalar step result. | [Reference](#binding-a-statement-result) |
 | `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
-| `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
+| `branch [ensuring { ... }] { true => { ... } false => { ... } }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
 | `step(callee, { binder: instance })` | simple | Specialized | Map a call's instance binders and value parameters, and name what it produces. | [Reference](#calls-with-binder-maps) |
@@ -715,12 +715,11 @@ site.
 
 ### Source branches
 
-**Form:** `branch [ensuring { ... } then] { ... } else { ... }`
+**Form:** `branch [ensuring { ... }] { true => { ... } false => { ... } }`
 
-A plain `branch` starts its first arm directly with `{`. With an `ensuring`
-interface, `then` separates that interface from the first arm. The same rule
-applies to a proof `if`; `then` is required with the interface and refused
-without it.
+The `true` and `false` labels select the two outcomes of the C condition.
+Write both arms in either order. An arm body may be empty, and commas
+between arms are optional. An `ensuring` interface goes before the arm block.
 
 **Core.** At a C `if` frontier, prove every feasible arm and join nonreturning
 arms into one continuation. Arms that end in one state join as they are. Arms

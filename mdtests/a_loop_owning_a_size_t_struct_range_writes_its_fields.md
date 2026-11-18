@@ -42,9 +42,12 @@ int32 fill(size_t n) {
     step();
     step();
     branch {
-        step_until(function.exit);
-        solve();
-    } else {}
+        true => {
+            step_until(function.exit);
+            solve();
+        }
+        false => {}
+    }
     step_until(loop(0));
     loop {
         decreases n - i;

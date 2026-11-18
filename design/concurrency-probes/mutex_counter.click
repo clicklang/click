@@ -104,31 +104,40 @@ int32 increment_twice(struct mutex_counter* counter) {
     let state = fold(counter_control(counter), { done: 0, slack: 2 });
     let { lifetime: lifetime } = step(pthread_mutex_init, { state: state });
     branch {
-        unfold(state);
-        unfold(credit(counter));
-        unfold(credit(counter));
-        step();
-        solve();
-    } else {}
+        true => {
+            unfold(state);
+            unfold(credit(counter));
+            unfold(credit(counter));
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        unfold(state);
-        unfold(credit(counter));
-        unfold(credit(counter));
-        step();
-        solve();
-    } else {}
+        true => {
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            unfold(state);
+            unfold(credit(counter));
+            unfold(credit(counter));
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step();
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        unfold(state);
-        unfold(contribution(counter));
-        unfold(credit(counter));
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            unfold(state);
+            unfold(contribution(counter));
+            unfold(credit(counter));
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     step(pthread_mutex_destroy, { lifetime: lifetime });

@@ -36,7 +36,7 @@ int32 run(void* p) {
 } by {
     step();
     step();
-    branch { unfold(ticket(p)); step(); solve(); } else {}
+    branch { true => { unfold(ticket(p)); step(); solve(); } false => {} }
     step();
     step();
     step();

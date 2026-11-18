@@ -34,10 +34,13 @@ int32 put(struct pair* p, int32 x) {
 } by {
     branch ensuring {
         fact 1 == 1;
-    } then {
-        step();
-    } else {
-        step();
+    } {
+        true => {
+            step();
+        }
+        false => {
+            step();
+        }
     }
     step();
     solve();

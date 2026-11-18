@@ -2067,7 +2067,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
         "{preserve}",
         r#"preserve by {
                         step();
-                        branch ensuring { fact parity >= 0 and parity <= 1; } then { step(); } else { step(); }
+                        branch ensuring { fact parity >= 0 and parity <= 1; } { true => { step(); } false => { step(); } }
                     }"#,
     );
     let sources = [("flip_to_n.c", c_source)];
@@ -2088,7 +2088,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
         "{preserve}",
         r#"preserve by {
                         step();
-                        branch ensuring { fact parity >= 0 and parity <= 1; } then { step(); } else { step(); }
+                        branch ensuring { fact parity >= 0 and parity <= 1; } { true => { step(); } false => { step(); } }
                     }"#,
     );
     let broken = broken.replace(
@@ -2181,7 +2181,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
             }
             match marker() {
                 Marker::Active => {
-                    branch { step(); } else { step(); }
+                    branch { true => { step(); } false => { step(); } }
                     loop {
                         decreases 2 - to_integer(x);
                         invariant x >= 1;
@@ -2510,10 +2510,13 @@ int32 f(int32 n) {
     ensures result == n or result == 7;
 } by {
     branch {
-        step(); step();
-        loop { decreases n-i; invariant i >= 0; invariant i <= n; }
-        step(); have result == n by solve(); solve();
-    } else { step(); solve(); }
+        true => {
+            step(); step();
+            loop { decreases n-i; invariant i >= 0; invariant i <= n; }
+            step(); have result == n by solve(); solve();
+        }
+        false => { step(); solve(); }
+    }
 }
 "#;
     let sources = [("branch.c", c)];

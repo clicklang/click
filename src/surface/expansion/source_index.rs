@@ -141,22 +141,21 @@ impl ProofSourceIndex {
         };
         match self.tokens[range.start].text.as_str() {
             "have" | "open" => result.body = parsed.child_blocks(range).first().copied(),
-            kind @ ("if" | "branch") => {
+            "if" => {
                 result.arms = parsed
-                    .two_arms(range, kind)
-                    .map(|arms| arms.to_vec())
-                    .unwrap_or_default();
-            }
-            "both" => {
-                result.arms = parsed
-                    .both_arms(&self.tokens, range)
+                    .two_arms(range, "if")
                     .map(|arms| arms.to_vec())
                     .unwrap_or_default();
             }
             "cases" | "match" => result.arms = parsed.child_blocks(range),
-            "outcomes" => {
+            kind @ ("both" | "branch" | "outcomes") => {
+                let labels = match kind {
+                    "both" => ["left", "right"],
+                    "branch" => ["true", "false"],
+                    _ => ["returned", "threw"],
+                };
                 result.arms = parsed
-                    .outcomes_arms(&self.tokens, range)
+                    .labeled_arms(&self.tokens, range, labels)
                     .map(|arms| arms.to_vec())
                     .unwrap_or_default();
             }

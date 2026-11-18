@@ -78,7 +78,7 @@ int32 run() {
     step();
     step();
     step();
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     step();
     fold(authority(reference(obj)));
     fold(reference(obj));
@@ -87,28 +87,34 @@ int32 run() {
     let { lifetime: lifetime } = step(pthread_mutex_init, { state: control });
     step();
     branch {
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        unfold(control);
-        unfold(reference(obj));
-        unfold(reference(obj));
-        have count(reference(obj)) == 0 by solve();
-        unfold(authority(reference(obj)));
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            unfold(control);
+            unfold(reference(obj));
+            unfold(reference(obj));
+            have count(reference(obj)) == 0 by solve();
+            unfold(authority(reference(obj)));
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step();
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        unfold(control);
-        unfold(reference(obj));
-        have count(reference(obj)) == 0 by solve();
-        unfold(authority(reference(obj)));
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            unfold(control);
+            unfold(reference(obj));
+            have count(reference(obj)) == 0 by solve();
+            unfold(authority(reference(obj)));
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     unfold(control);
     let control = fold(control(obj), { refs: obj->refs });

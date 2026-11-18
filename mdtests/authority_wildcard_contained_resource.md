@@ -47,7 +47,7 @@ void release(int32* pool, int32* p) {
 } by { unfold(slot(pool, p)); step_until(function.exit); solve(); }
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { step_until(function.exit); solve(); } else {}
+    branch { true => { step_until(function.exit); solve(); } false => {} }
     step(); step();
     fold(authority(cell(&pool, _)));
     fold(cell(&pool, p));

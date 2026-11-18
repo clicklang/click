@@ -44,7 +44,7 @@ int32 run() {
 } by {
     step();
     step();
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     step();
     step();
     fold(authority(ticket(b)));

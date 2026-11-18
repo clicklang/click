@@ -23,9 +23,12 @@ int32 sign(int32 x) {
     ensures result == 0 or result == 1;
 } by {
     branch {
-        step_until(function.exit);
-    } else {
-        step_until(function.exit);
+        true => {
+            step_until(function.exit);
+        }
+        false => {
+            step_until(function.exit);
+        }
     }
 }
 ```

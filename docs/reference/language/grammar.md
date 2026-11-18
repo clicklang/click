@@ -785,11 +785,12 @@ operand that originally supplied its type context.
 
 ## Proof syntax
 
-Binary proof splits follow one rule: `then` appears exactly when there is an
-`ensuring` interface. Write `if P { ... } else { ... }` or
-`branch { ... } else { ... }` without an interface, and
-`if P ensuring { ... } then { ... } else { ... }` or
-`branch ensuring { ... } then { ... } else { ... }` with one.
+Write `if P { ... } else { ... }` or
+`if P ensuring { ... } then { ... } else { ... }`.
+A C `branch` has labeled arms in a block:
+`branch { true => { ... } false => { ... } }`.
+Its optional join interface precedes that block:
+`branch ensuring { ... } { true => { ... } false => { ... } }`.
 
 A proof is omitted, written as a single tactic call such as `by solve();`, or
 written as a `by { ... }` block of tactic statements. Tactic

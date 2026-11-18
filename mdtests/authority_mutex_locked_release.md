@@ -59,7 +59,7 @@ int32 run() {
 } by {
     step();
     step();
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     step();
     fold(authority(reference(obj)));
     fold(reference(obj));

@@ -54,9 +54,12 @@ int32 retain_original(struct buffer* owner, int32 flag) {
     step_until(statement(3));
     observe(buffer(owner));
     branch {
-        step();
-    } else {
-        step();
+        true => {
+            step();
+        }
+        false => {
+            step();
+        }
     }
 }
 ```

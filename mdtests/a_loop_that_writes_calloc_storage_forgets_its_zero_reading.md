@@ -41,10 +41,13 @@ int32 f() {
     step();
     branch ensuring {
         fact 1 == 1;
-    } then {
-        step();
-        solve();
-    } else {
+    } {
+        true => {
+            step();
+            solve();
+        }
+        false => {
+        }
     }
     step();
     loop {

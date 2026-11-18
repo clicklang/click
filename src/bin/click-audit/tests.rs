@@ -1020,7 +1020,7 @@ int32 flag(int32 x) {
     requires x <= 0;
     ensures result == 0;
 } by {
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     step();
     solve();
 }

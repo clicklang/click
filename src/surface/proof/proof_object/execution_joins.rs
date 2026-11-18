@@ -1503,7 +1503,7 @@ impl<'a> Proof<'a> {
         } else {
             None
         };
-        let (surface_condition, empty_source_arms) = if call_outcomes {
+        let (surface_condition, empty_source_arms, direct_returns) = if call_outcomes {
             (
                 ClickProposition::Comparison {
                     left: ContractExpression::ProgramExpression(ProgramExpression::Value(
@@ -1515,9 +1515,10 @@ impl<'a> Proof<'a> {
                     )),
                 },
                 [false, false],
+                false,
             )
         } else if let Some(condition) = &proof_case_condition {
-            (condition.proposition().clone(), [false, false])
+            (condition.proposition().clone(), [false, false], false)
         } else {
             let (_, current_state, statement, _) = next_top_level_statement_from_frontier_position(
                 parent_execution.view(context),
@@ -1554,10 +1555,12 @@ impl<'a> Proof<'a> {
                     matches!(then_branch.as_ref(), ProgramStatement::Skip),
                     matches!(else_branch.as_ref(), ProgramStatement::Skip),
                 ],
+                matches!(then_branch.as_ref(), ProgramStatement::Return(_))
+                    && matches!(else_branch.as_ref(), ProgramStatement::Return(_)),
             )
         };
-        // A C branch and a proof `if` write their arms as an `if`; `cases`
-        // writes its own.
+        // Outcome routing uses the C condition even when the terminal
+        // certificate is written as a `branch`.
         let split_condition = proof_case_condition
             .clone()
             .unwrap_or_else(|| ProofCaseCondition::If(surface_condition.clone()));
@@ -1578,13 +1581,22 @@ impl<'a> Proof<'a> {
             }
         }
 
+        // Keep the logical encoding for nested or falling-through C arms:
+        // replay as a written branch would impose a bounded arm and its
+        // recursive region checker on those scripts.
+        let replay_as_branch = direct_returns
+            && parent_execution.core.frontier.region == ExecutionRegionKind::Function;
         let terminal_certificate = |body: &ProofCertificate, empty_source_arm: bool| {
-            let entry_steps = 1 + usize::from(empty_source_arm);
-            let mut steps = Vec::with_capacity(entry_steps + body.steps().len());
-            steps.push(ProofStep::Step);
-            steps.resize_with(entry_steps, || ProofStep::Step);
+            let entry_steps = 1 + u8::from(empty_source_arm);
+            let mut steps = Vec::with_capacity(usize::from(entry_steps) + body.steps().len());
+            steps.resize_with(usize::from(entry_steps), || ProofStep::Step);
             steps.extend_from_slice(body.steps());
-            ProofCertificate::from_steps(steps)
+            let certificate = ProofCertificate::from_steps(steps)?;
+            Ok::<_, ClickError>(if replay_as_branch {
+                certificate.with_checked_branch_entry_steps(entry_steps)
+            } else {
+                certificate
+            })
         };
         let then_proof = if proof_case_split || call_outcomes {
             arms[0].certificate.clone()
@@ -3163,7 +3175,7 @@ impl<'a> Proof<'a> {
                 .current_statement_index()?
                 .map_or_else(String::new, |index| format!(" at region({index})"));
             return Err(self.step_error(format!(
-                "the implicit tail split at more than {split_limit} C branches{statement}; it runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
+                "the implicit tail split at more than {split_limit} C branches{statement}; it runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} {{ true => {{ ... }} false => {{ ... }} }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
             )));
         }
         if *steps == limit {
@@ -3174,7 +3186,7 @@ impl<'a> Proof<'a> {
                 String::new()
             } else {
                 format!(
-                    " after splitting at {splits} C branches; it runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
+                    " after splitting at {splits} C branches; it runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} {{ true => {{ ... }} false => {{ ... }} }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
                 )
             };
             return Err(self.step_error(format!(

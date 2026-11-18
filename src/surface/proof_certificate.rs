@@ -20,6 +20,8 @@ pub struct ProofCertificate {
     pub(super) steps: std::sync::Arc<Vec<ProofStep>>,
     // Presentation only: the checked C split proved this arm unreachable.
     pub(super) pruned_execution_arm: bool,
+    // Synthetic entry steps for replay when this arm is written under a proof `if`.
+    checked_branch_entry_steps: Option<u8>,
 }
 
 impl PartialEq for ProofCertificate {
@@ -211,6 +213,7 @@ impl ProofCertificate {
         validate_certificate_tactics(tactics, &mut Vec::new())?;
         Ok(Self {
             pruned_execution_arm: false,
+            checked_branch_entry_steps: None,
             steps: std::sync::Arc::new(
                 tactics
                     .iter()
@@ -225,6 +228,7 @@ impl ProofCertificate {
         Self {
             steps: std::sync::Arc::new(Vec::new()),
             pruned_execution_arm: true,
+            checked_branch_entry_steps: None,
         }
     }
 
@@ -274,6 +278,7 @@ impl ProofCertificate {
         })?;
         let certificate = Self {
             pruned_execution_arm: false,
+            checked_branch_entry_steps: None,
             steps: std::sync::Arc::new(steps),
         };
         if certificate.contains_arithmetic_using() {
@@ -306,13 +311,23 @@ impl ProofCertificate {
     pub(super) fn from_validated_steps(steps: Vec<ProofStep>) -> Self {
         Self {
             pruned_execution_arm: false,
+            checked_branch_entry_steps: None,
             steps: std::sync::Arc::new(steps),
         }
     }
 
+    pub(super) fn with_checked_branch_entry_steps(mut self, count: u8) -> Self {
+        self.checked_branch_entry_steps = Some(count);
+        self
+    }
+
     pub fn to_proof_tactics(&self) -> Vec<ProofTactic> {
-        let mut tactics = Vec::with_capacity(self.steps.len());
-        for step in self.steps.iter() {
+        Self::steps_to_proof_tactics(self.steps())
+    }
+
+    fn steps_to_proof_tactics(steps: &[ProofStep]) -> Vec<ProofTactic> {
+        let mut tactics = Vec::with_capacity(steps.len());
+        for step in steps {
             // A loop's back edge closes as a function's exit does: a bundle
             // closed member by member, `have m by { ... }` for each and then
             // the bundle from those facts, is written as those `have`s, and
@@ -470,6 +485,7 @@ impl ProofCertificate {
         };
         Self {
             pruned_execution_arm: false,
+            checked_branch_entry_steps: None,
             steps: std::sync::Arc::new(
                 tactics
                     .iter()
@@ -911,6 +927,26 @@ impl ProofStep {
                 tactics: proof.to_proof_tactics(),
                 deferred_tail: *deferred_tail,
             }),
+            Self::If {
+                ensuring,
+                then_proof,
+                else_proof,
+                ..
+            } if let (Some(then_entry), Some(else_entry)) = (
+                then_proof.checked_branch_entry_steps,
+                else_proof.checked_branch_entry_steps,
+            ) =>
+            {
+                ProofTactic::Branch(ProofBranch {
+                    ensuring: ensuring.clone(),
+                    then_tactics: ProofCertificate::steps_to_proof_tactics(
+                        &then_proof.steps()[usize::from(then_entry)..],
+                    ),
+                    else_tactics: ProofCertificate::steps_to_proof_tactics(
+                        &else_proof.steps()[usize::from(else_entry)..],
+                    ),
+                })
+            }
             Self::If {
                 condition,
                 ensuring,

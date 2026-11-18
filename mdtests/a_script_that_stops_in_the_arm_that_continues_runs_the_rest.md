@@ -29,18 +29,24 @@ int32 clamp(int32 x) {
     ensures result <= 10;
 } by {
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
 }
 
 int32 clamp_again(int32 x) {
     ensures result <= 10;
 } by {
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
     have x <= 10;
 }
 ```

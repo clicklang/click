@@ -20,10 +20,13 @@ int32 advance_missing_fact(int32 x) {
         step();
         branch ensuring {
             fact y == x;
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         step();
         solve();

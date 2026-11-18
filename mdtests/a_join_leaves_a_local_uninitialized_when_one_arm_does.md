@@ -27,8 +27,11 @@ int32 maybe(int32 x) {
 } by {
     step();
     branch {
-        step();
-    } else {
+        true => {
+            step();
+        }
+        false => {
+        }
     }
     step();
     solve();

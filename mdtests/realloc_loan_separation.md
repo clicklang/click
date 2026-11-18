@@ -34,19 +34,25 @@ uint8* resize(int32* q) {
     step();
     step();
     branch {
-        step();
-        fold(resized(result));
-        solve();
-    } else {}
+        true => {
+            step();
+            fold(resized(result));
+            solve();
+        }
+        false => {}
+    }
     have separate(memory(p[0..16]), memory(*q)) by { solve(); }
     step();
     step();
     step();
     branch {
-        step();
-        fold(resized(result));
-        solve();
-    } else {}
+        true => {
+            step();
+            fold(resized(result));
+            solve();
+        }
+        false => {}
+    }
     step();
     fold(resized(result));
 }

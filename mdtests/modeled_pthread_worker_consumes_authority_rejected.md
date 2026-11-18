@@ -32,7 +32,7 @@ int32 run(void* p) {
 } by {
     step();
     step();
-    branch { unfold(authority(ticket(p))); step(); solve(); } else {}
+    branch { true => { unfold(authority(ticket(p))); step(); solve(); } false => {} }
     step();
     step();
     solve();

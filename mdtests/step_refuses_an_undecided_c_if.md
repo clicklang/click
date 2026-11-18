@@ -3,7 +3,7 @@
 `step()` takes one statement into one successor. At a C `if` it enters the
 arm the proof context decides; here nothing bounds `x`, so both condition
 paths are feasible and the step is refused, naming the condition each path
-assumes. `branch { ... } else { ... }` or a proof `if` on the condition proves
+assumes. `branch { true => { ... } false => { ... } }` or a proof `if` on the condition proves
 both arms; `simple_statement_step_branch_requires_exact_fact.md` shows a
 context that decides the same kind of condition.
 

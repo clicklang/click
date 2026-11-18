@@ -28,10 +28,13 @@ int32 frontier_local_statement_facts(int32 flag) {
         step();
         branch ensuring {
             fact y >= 0;
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         have y >= 0 by {
             solve();

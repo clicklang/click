@@ -58,7 +58,7 @@ int32 count_run(int32 n) {
         preserve by {
             mark iteration;
             if i < 2 {
-                branch { step(); } else { contradiction(not (i < 2)); }
+                branch { true => { step(); } false => { contradiction(not (i < 2)); } }
                 step();
                 have 0 <= i and i <= n;
                 have 0 <= run and run <= i;
@@ -102,7 +102,7 @@ int32 count_run(int32 n) {
                         i < n;
                     };
                 }
-                branch { contradiction(i < 2); } else { step(); }
+                branch { true => { contradiction(i < 2); } false => { step(); } }
                 step();
                 have 0 <= i and i <= n;
                 have 0 <= run and run <= i;
