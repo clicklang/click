@@ -401,14 +401,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let proof = proof
             .driver()
             .apply_step(have(weakened, vec![ProofStep::Known]))?;
-        proof
-            .driver()
-            .apply_step(apply(
-                "le_transitive",
-                vec![first, middle, last],
-                vec![before, after],
-            ))
-            .map(Some)
+        let proof = proof.driver().apply_step(apply(
+            "le_transitive",
+            vec![first, middle, last],
+            vec![before, after],
+        ))?;
+        if proof.focused_discharged() {
+            Ok(Some(proof))
+        } else {
+            // The law publishes <= even when the written goal uses >=.
+            proof.driver().apply_step(ProofStep::Known).map(Some)
+        }
     }
 
     /// Close one selected interval obligation through ordinary emitters only.
