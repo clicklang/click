@@ -4964,6 +4964,22 @@ impl Address {
         }
     }
 
+    /// The read of the pointer cell at `address` in `memory`, identified by
+    /// its version point: the term a Click read of that place lowers to.
+    /// Two reads of an unchanged cell in different memories are this same
+    /// term. Unlike [`Self::canonical_loaded_value`], a stored pointer does
+    /// not replace the read.
+    pub(crate) fn canonical_read(memory: &SharedMemory, address: &Address) -> Self {
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(memory),
+            Box::new(address.clone()),
+            LoadKind::Int32,
+        );
+        named_pointer_read(
+            canonical_pointer_read(&read).expect("a memory load has a canonical read"),
+        )
+    }
+
     /// The pointer read of `address` in `memory`, named at the canonical
     /// read of that cell, as a direct lowering of the same place names it.
     pub(crate) fn canonical_loaded_value(memory: &SharedMemory, address: &Address) -> Self {
