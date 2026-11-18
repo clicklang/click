@@ -136,6 +136,7 @@ impl LifetimePlan {
                 | CppStatement::ReturnAggregateCall { cleanups, .. }
                 | CppStatement::ReturnRecord { cleanups, .. }
                 | CppStatement::Return { cleanups, .. }
+                | CppStatement::ReturnVoid { cleanups, .. }
                 | CppStatement::ReturnCall { cleanups, .. } => {
                     if !state.matches_exit(cleanups, 0) {
                         return Err(format!(

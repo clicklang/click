@@ -73,9 +73,7 @@ impl Context<'_> {
         slice: &E,
         size: &E,
     ) -> Result<ProgramStatement, String> {
-        if !super::shared_slice_local(slice)
-            .is_some_and(|name| self.slices.get(name).is_some_and(|(_, shared)| *shared))
-        {
+        if !self.shared_byte_slice(slice) {
             return Err("chunks_exact requires a shared byte-slice local".into());
         }
         if !self.mir_chunk_iterators.contains(iterator) {

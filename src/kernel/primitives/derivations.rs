@@ -1319,7 +1319,6 @@ impl BitvectorEqualityDerivationStep {
     }
 }
 
-#[cfg(test)]
 impl PureFactContext {
     pub(crate) fn shares_persistent_storage_with(&self, other: &Self) -> bool {
         self.condition_facts
