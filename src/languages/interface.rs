@@ -563,7 +563,11 @@ impl ImportedFunction {
         }
         let mut named = self.clone();
         for (parameter, name) in named.parameters.iter_mut().zip(names) {
-            parameter.name = (name.to_string()).into();
+            parameter.name = if parameter.name.reference_referent().is_some() {
+                crate::kernel::BindingName::reference_carrier(name)
+            } else {
+                name.to_string().into()
+            };
         }
         named.positional_parameters = false;
         Some(named)

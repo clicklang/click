@@ -385,7 +385,11 @@ fn prepare_functions(
                         .as_ref()
                         .and_then(super::standard_library::library_generic)
                 });
-            Ok(function_interface(source, kernel, layouts)?
+            let mut imported = function_interface(source, kernel, layouts)?;
+            if source.axiom.is_some() && generic.is_none() {
+                imported = imported.with_positional_parameters();
+            }
+            Ok(imported
                 .with_generic_instance(generic)
                 .with_trait_interface(interface)
                 .with_read_only_contract(observers.contains(&source.declaration_id))
@@ -579,7 +583,7 @@ fn function_interface(
             .with_struct_return(name.clone(), layout.clone())
             .with_aggregate_return_mode(lowered.contract_interface().aggregate_return_mode());
     }
-    Ok(interface.with_nonthrowing_contract(source.declared_noexcept))
+    Ok(interface.with_nonthrowing_contract(source.has_nonthrowing_interface()))
 }
 
 /// The signature of a function-pointer type in proof types, as a C
