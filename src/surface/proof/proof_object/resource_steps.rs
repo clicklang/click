@@ -1239,8 +1239,7 @@ impl<'a> Proof<'a> {
             referenced_names
                 .iter()
                 .filter_map(|name| {
-                    self.local_algebraic_values()
-                        .get(name)
+                    self.known_algebraic_value(name)
                         .or_else(|| inherited.get(name))
                         .cloned()
                         .map(|value| (name.clone(), value))
@@ -1265,9 +1264,7 @@ impl<'a> Proof<'a> {
                     context.theorem_context.values.clone(),
                     context.theorem_context.array_refs.clone(),
                     local_algebraic_values(
-                        context
-                            .structural_induction_setup
-                            .as_ref()
+                        self.structural_induction_setup()
                             .map(|setup| setup.algebraic_values.clone())
                             .unwrap_or_default(),
                     ),

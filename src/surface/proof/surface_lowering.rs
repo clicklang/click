@@ -176,6 +176,7 @@ fn integer_values_for_surface_proposition(
     proposition: &ClickProposition,
     theorem_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     local_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+    retained_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
 ) -> PersistentBinderMap<crate::kernel::SpecIntegerExpression> {
     let mut referenced = BinderSet::new();
     collect_click_proposition_referenced_binders(proposition, &mut referenced);
@@ -183,6 +184,7 @@ fn integer_values_for_surface_proposition(
     for name in referenced {
         if let Some(value) = local_values
             .get(&name)
+            .or_else(|| retained_values.get(&name))
             .or_else(|| theorem_values.get(&name))
         {
             values = values.with_inserted(name, value.clone());
@@ -195,6 +197,7 @@ fn algebraic_values_for_surface_proposition(
     proposition: &ClickProposition,
     theorem_values: &BTreeMap<String, crate::kernel::SpecAlgebraicExpression>,
     local_values: &PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
+    retained_values: &PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
 ) -> BTreeMap<String, crate::kernel::SpecAlgebraicExpression> {
     let mut referenced = BTreeSet::new();
     collect_click_proposition_referenced_names(proposition, &mut referenced);
@@ -203,6 +206,7 @@ fn algebraic_values_for_surface_proposition(
         .filter_map(|name| {
             local_values
                 .get(&name)
+                .or_else(|| retained_values.get(&name))
                 .or_else(|| theorem_values.get(&name))
                 .cloned()
                 .map(|value| (name, value))
@@ -233,17 +237,17 @@ impl<'a> Proof<'a> {
                 let empty_algebraic_values = BTreeMap::new();
                 let algebraic_values = algebraic_values_for_surface_proposition(
                     surface,
-                    context
-                        .structural_induction_setup
-                        .as_ref()
+                    self.structural_induction_setup()
                         .map(|setup| &setup.algebraic_values)
                         .unwrap_or(&empty_algebraic_values),
                     self.local_algebraic_values(),
+                    self.retained_match_algebraic_values(),
                 );
                 let integer_values = integer_values_for_surface_proposition(
                     surface,
                     &context.theorem_context.integer_values,
                     &self.local_integer_values(),
+                    self.retained_match_integer_values(),
                 );
                 // The premises in scope at this point of the proof: the
                 // theorem's `requires` and every fact already proved, exactly
@@ -275,6 +279,7 @@ impl<'a> Proof<'a> {
                     &surface,
                     &BTreeMap::new(),
                     self.local_algebraic_values(),
+                    self.retained_match_algebraic_values(),
                 );
                 if !proposition_contains_old_expression(&surface)
                     && let Some(recorded) = context
@@ -310,6 +315,7 @@ impl<'a> Proof<'a> {
                     &surface,
                     &BTreeMap::new(),
                     self.local_algebraic_values(),
+                    self.retained_match_algebraic_values(),
                 );
                 // An available historical fact is not the meaning of a
                 // current-state expression with the same spelling: an entry
@@ -358,6 +364,7 @@ impl<'a> Proof<'a> {
                     &surface,
                     &BTreeMap::new(),
                     self.local_algebraic_values(),
+                    self.retained_match_algebraic_values(),
                 );
                 let pre_state =
                     context.old_reference_state(&execution.core.frontier, &execution.core.state);
@@ -419,17 +426,17 @@ impl<'a> Proof<'a> {
                 let empty_algebraic_values = BTreeMap::new();
                 let algebraic_values = algebraic_values_for_surface_proposition(
                     surface,
-                    context
-                        .structural_induction_setup
-                        .as_ref()
+                    self.structural_induction_setup()
                         .map(|setup| &setup.algebraic_values)
                         .unwrap_or(&empty_algebraic_values),
                     self.local_algebraic_values(),
+                    self.retained_match_algebraic_values(),
                 );
                 let integer_values = integer_values_for_surface_proposition(
                     surface,
                     &context.theorem_context.integer_values,
                     &self.local_integer_values(),
+                    self.retained_match_integer_values(),
                 );
                 lower_pure_theorem_proposition_recording_introductions(
                     context.claim_label,
@@ -455,6 +462,7 @@ impl<'a> Proof<'a> {
                     &surface,
                     &BTreeMap::new(),
                     self.local_algebraic_values(),
+                    self.retained_match_algebraic_values(),
                 );
                 lower_fixed_state_proposition_with_algebraic_values(
                     &surface,
@@ -478,6 +486,7 @@ impl<'a> Proof<'a> {
                     &surface,
                     &BTreeMap::new(),
                     self.local_algebraic_values(),
+                    self.retained_match_algebraic_values(),
                 );
                 lower_fixed_state_proposition_with_algebraic_values(
                     &surface,
@@ -501,6 +510,7 @@ impl<'a> Proof<'a> {
                     &surface,
                     &BTreeMap::new(),
                     self.local_algebraic_values(),
+                    self.retained_match_algebraic_values(),
                 );
                 let pre_state =
                     context.old_reference_state(&execution.core.frontier, &execution.core.state);
@@ -602,12 +612,11 @@ impl<'a> Proof<'a> {
                 );
                 let algebraic_values = algebraic_values_for_surface_proposition(
                     &surface,
-                    context
-                        .structural_induction_setup
-                        .as_ref()
+                    self.structural_induction_setup()
                         .map(|setup| &setup.algebraic_values)
                         .unwrap_or(&empty_algebraic_values),
                     self.local_algebraic_values(),
+                    self.retained_match_algebraic_values(),
                 );
                 // A newly stated pure goal's evaluation conditions are
                 // discharged against the premises in scope where it is
@@ -644,6 +653,7 @@ impl<'a> Proof<'a> {
                         &surface,
                         &BTreeMap::new(),
                         self.local_algebraic_values(),
+                        self.retained_match_algebraic_values(),
                     ),
                     &self.local_integer_values(),
                 )
@@ -671,6 +681,7 @@ impl<'a> Proof<'a> {
                         &surface,
                         &BTreeMap::new(),
                         self.local_algebraic_values(),
+                        self.retained_match_algebraic_values(),
                     ),
                     &self.local_integer_values(),
                 )
@@ -725,7 +736,7 @@ impl<'a> Proof<'a> {
                 goal_bindings.is_some_and(|bindings| bindings.get(&name).is_some())
                     || self.local_binding(&name).is_some()
                     || self.local_integer_values().get(&name).is_some()
-                    || self.local_algebraic_values().get(&name).is_some()
+                    || self.known_algebraic_value(&name).is_some()
             });
             crate::instrumentation::record_deterministic_work(1);
             if !rebound
@@ -782,7 +793,7 @@ impl<'a> Proof<'a> {
                     .or_else(|| match self.context.as_ref() {
                         ProofContext::Pure(context)
                             if self.local_integer_values().get(&name).is_none()
-                                && self.local_algebraic_values().get(&name).is_none() =>
+                                && self.known_algebraic_value(&name).is_none() =>
                         {
                             context
                                 .theorem_context
@@ -889,7 +900,7 @@ impl<'a> Proof<'a> {
                     .or_else(|| match self.context.as_ref() {
                         ProofContext::Pure(context)
                             if self.local_integer_values().get(&name).is_none()
-                                && self.local_algebraic_values().get(&name).is_none() =>
+                                && self.known_algebraic_value(&name).is_none() =>
                             name.written().and_then(|name| context.theorem_context.declaration_bindings.get(name)),
                         _ => None,
                     })
