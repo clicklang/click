@@ -1125,7 +1125,8 @@ and constant-work handoffs of growing Integer DAGs and algebraic children.
 All 1,915 regular scaling cases passed (two isolated and 1,913 remaining).
 The resource-field proof selection, fact stability (zero changed terms/paths)
 and quality checks passed; validation script exit is zero. PR delivery follows
-10p1. Full nightly was not run.
+10p1. After integrating upstream `3557c0453`, all 413 affected checks and
+quality passed again. Full nightly was not run.
 
 ## Chunk 3: machine-valued pure-function results
 
