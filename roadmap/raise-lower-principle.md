@@ -1225,6 +1225,11 @@ Fact stability recorded zero changed terms/paths; quality passed. Full nightly
 was not run. The preceding pre-integration 589 focused/1,920 scaling checks also
 passed. Temporary reader/producer isolation experiments were reverted in 10p3.
 
+After merging upstream `a4094e114`, all 590 focused checks, indexed and
+resource-field proof selections, fact stability and quality passed again.
+The range parent PR's eight pushed commits were verified upstream before
+integration. Full nightly was not run.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
