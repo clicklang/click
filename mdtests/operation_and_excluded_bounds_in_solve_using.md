@@ -1,4 +1,4 @@
-# An arithmetic certificate cites operation and excluded bounds
+# `solve() using` cites operation and excluded bounds
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
 stated explicitly in `solve() using { ... }`.

@@ -594,6 +594,49 @@ fn charon_iteration_project() -> Project {
     fs::write(p.root.join("borrow.click"), CHARON_ITERATION_SIDECAR).unwrap();
     p
 }
+/// An array or slice iterator's `next` binds the loop variable itself, as a
+/// range's does, or only advances when a `Some(_)` arm binds nothing: the
+/// `Option` MIR returns, its tag test, and the temporary that holds it are
+/// gone wherever only the element is read.
+#[test]
+fn charon_array_loops_bind_their_variable_without_an_option() {
+    use click::languages::rust::schema::{MirStatement, Type};
+    let p = charon_iteration_project();
+    let prepared = p.prepared().unwrap();
+    let mut nexts = 0;
+    let mut bound = 0;
+    for function in &prepared.export().functions {
+        let Some(mir) = &function.mir else { continue };
+        assert!(
+            !mir.locals
+                .iter()
+                .any(|local| matches!(local.value_type, Type::SharedArrayOption { .. })),
+            "{}",
+            function.name
+        );
+        for statement in mir.blocks.iter().flat_map(|block| &block.statements) {
+            if let MirStatement::SharedArrayNext {
+                option,
+                payload,
+                taken,
+                ..
+            } = statement
+            {
+                nexts += 1;
+                assert_eq!(option, &None, "{}: {statement:?}", function.name);
+                // A `Some(_)` arm binds nothing, so only a yielding `next`
+                // may bind a value.
+                assert!(
+                    payload.is_none() || *taken == Some(true),
+                    "{}: {statement:?}",
+                    function.name
+                );
+                bound += usize::from(payload.is_some());
+            }
+        }
+    }
+    assert!(nexts > 0 && bound > 0);
+}
 #[test]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn charon_shared_iteration_checks_order_moves_empty_arrays_and_read_authority() {

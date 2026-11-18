@@ -339,11 +339,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let premises = atomic.as_slice();
         let scope = proof.driver().open_have(target.clone())?;
         if (has_retained_read_source(&target) || premises.iter().any(has_retained_read_source))
-            && let Some(closed) = attempt::candidate_outcome(
-                scope
-                    .driver()
-                    .apply_step(ProofStep::NormalizeUsing(premises.to_vec())),
-            )?
+            && let Some(closed) = {
+                // An exact type range can be computed even when its operand
+                // is written at a program point. Use the goal-local check
+                // before the history and retained-read compatibility rule.
+                let step = if premises.is_empty()
+                    && scope
+                        .body()
+                        .goal()
+                        .is_some_and(crate::surface::planning::solve::computes_with_known)
+                {
+                    ProofStep::Known
+                } else {
+                    ProofStep::NormalizeUsing(premises.to_vec())
+                };
+                attempt::candidate_outcome(scope.driver().apply_step(step))?
+            }
             && closed.is_complete()
         {
             return Ok(Some(closed.join()?));
@@ -1044,10 +1055,6 @@ mod tests {
         );
         let expanded = expand_c_claim_source_by_label(&source, &[], "migrated.ensures_0")
             .unwrap_or_else(|e| panic!("{}", e.message()));
-        assert!(
-            !expanded.contains("arithmetic_certificate"),
-            "{source}\n{expanded}"
-        );
         assert!(!expanded.contains("solve("), "{expanded}");
         assert!(!expanded.contains("normalize("), "{source}\n{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[]))
@@ -1192,7 +1199,6 @@ by {step(); have defined(pool->capacity - 1) by solve();}
             )
             .unwrap();
         }
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[("read.c", c)]))
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
     }
@@ -1233,7 +1239,6 @@ by {step(); have defined(pool->capacity - 1) by solve();}
             crate::surface::ContractProofClaim::Grouped,
         )
         .unwrap_or_else(|error| panic!("{}", error.message()));
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[("bump.c", c)]))
             .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
     }

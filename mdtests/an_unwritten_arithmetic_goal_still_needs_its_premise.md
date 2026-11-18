@@ -1,6 +1,6 @@
 # An unwritten arithmetic goal still needs its premise
 
-The companion of `an_arithmetic_certificate_spells_a_goal_an_unfold_left_unwritten.md`
+The companion of `arithmetic_raises_a_goal_an_unfold_left_unwritten.md`
 without the `using` premise relating `chain_size(Chain::Link(at, v, rest))` to
 `chain_size(rest)`. The goal does not hold on its own, so `solve() using {}` refuses
 it.

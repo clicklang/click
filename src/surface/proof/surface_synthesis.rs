@@ -3231,20 +3231,24 @@ fn synthesize_surface_atomic_proposition(
         } else {
             synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?
         };
-        // A bare sum in a reparsed equality can become Integer arithmetic.
+        // A bare arithmetic expression in a reparsed equality can become Integer arithmetic.
         // Give the generated uint32 word expression an explicit machine context.
         if unsigned_word_equality
             && matches!(
                 term,
                 MachineTerm::Binary {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    op: MachineBinaryOp::Add | MachineBinaryOp::Subtract,
+                    op: MachineBinaryOp::Add
+                        | MachineBinaryOp::Subtract
+                        | MachineBinaryOp::Multiply,
                     ..
                 }
             )
             && matches!(
                 expression,
-                ContractExpression::Add(..) | ContractExpression::Subtract(..)
+                ContractExpression::Add(..)
+                    | ContractExpression::Subtract(..)
+                    | ContractExpression::Multiply(..)
             )
         {
             synthesize_uint32_operand(expression)
@@ -3788,7 +3792,7 @@ fn spell_wrapping_uint64_operand(
     use crate::kernel::KernelTermNode as Node;
     if let Node::MachineBinary {
         format: MachineIntegerType::UInt64,
-        operator: MachineBinaryOp::Add | MachineBinaryOp::Subtract,
+        operator: MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply,
         arguments,
     } = term.node()
         && matches!(
@@ -3796,7 +3800,10 @@ fn spell_wrapping_uint64_operand(
             [Node::Variable(_), Node::MachineLiteral(_)]
                 | [Node::MachineLiteral(_), Node::Variable(_)]
         )
-        && matches!(expression, SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..))
+        && matches!(
+            expression,
+            SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..) | SurfaceTerm::Multiply(..)
+        )
     {
         synthesize_observation_operand(expression, ProgramType::UInt64)
     } else {

@@ -610,7 +610,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five pushed commits verified on upstream. |
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four pushed commits verified on upstream. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
-| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Published as [PR #3213](https://github.com/clicklang/click/pull/3213), with auto-merge requested. Local validation and final 648-check upstream integration passed; merge pending. |
+| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Planned; family split may be needed. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
@@ -1064,7 +1064,7 @@ not a change to proof rules or snapshot architecture.
 
 | Subslice | Owning stores | Status |
 | --- | --- | --- |
-| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Implemented; 437 focused checks, all 1,909 regular scaling cases, selected sequence proofs, fact stability and quality passed. PR follows 10o. |
+| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Published as [PR #3217](https://github.com/clicklang/click/pull/3217), with auto-merge requested; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b covers argument stores. |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
@@ -1101,7 +1101,8 @@ scaling cases passed (two isolated and 1,907 remaining), as did the sequence
 proof selection and quality. The selected fact-stability recording reported
 zero changed terms/paths (no refusals). Validation script exit is zero. Full
 nightly was not run. After integrating upstream `306a1fec0`, all 437 affected
-checks passed again. PR delivery follows 10o.
+checks passed again. [PR #3217](https://github.com/clicklang/click/pull/3217)
+has auto-merge requested.
 
 ### 10p2a Integer and algebraic resource fields
 
