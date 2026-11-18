@@ -105,7 +105,7 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
             MachineTerm::unsigned_shift_left(bits, MachineTerm::constant(8 * byte)),
         );
     }
-    Some(Proposition::ConditionIs(
+    Some(Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,

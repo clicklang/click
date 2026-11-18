@@ -208,8 +208,8 @@ int32 id(int32 x) {
 
     #[test]
     fn a_term_that_differs_from_its_fact_free_lowering_is_reported() {
-        let decided = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
-        let written = Proposition::ConditionIs(
+        let decided = Proposition::condition_is(ConditionTerm::Constant(true), true);
+        let written = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

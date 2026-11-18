@@ -23,16 +23,17 @@ fn is_word32_equality(goal: &Proposition) -> bool {
     let Proposition::ConditionIs(condition, true) = goal else {
         return false;
     };
-    crate::kernel::machine_integer::comparison::structural_comparison_view(condition).is_some_and(
-        |view| {
-            !view.negated
-                && view.relation == CompareRelation::Equal
-                && matches!(
-                    view.format,
-                    MachineIntegerType::Int32 | MachineIntegerType::UInt32
-                )
-        },
+    crate::kernel::machine_integer::comparison::structural_comparison_view(
+        condition.native_compat(),
     )
+    .is_some_and(|view| {
+        !view.negated
+            && view.relation == CompareRelation::Equal
+            && matches!(
+                view.format,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32
+            )
+    })
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
@@ -216,7 +217,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 if let Some((ConditionTerm::IntegerNotEqual(left, right), _)) =
                     condition_source_0.condition_native() =>
             {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::IntegerEqual(left.clone(), right.clone()),
                     true,
                 )
@@ -241,7 +242,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     ..
                 }), _)) = condition_source_0.condition_native() =>
             {
-                Proposition::ConditionIs(condition.clone(), true)
+                Proposition::condition_is(condition.clone(), true)
             }
             _ => return None,
         };
@@ -2146,15 +2147,15 @@ mod retained_match_policy_tests {
             right: Box::new(MachineTerm::constant(1)),
         };
         for condition in [common, written] {
-            assert!(is_word32_equality(&Proposition::ConditionIs(
+            assert!(is_word32_equality(&Proposition::condition_is(
                 condition.clone(),
                 true
             )));
-            assert!(!is_word32_equality(&Proposition::ConditionIs(
+            assert!(!is_word32_equality(&Proposition::condition_is(
                 condition, false
             )));
         }
-        assert!(!is_word32_equality(&Proposition::ConditionIs(
+        assert!(!is_word32_equality(&Proposition::condition_is(
             ConditionTerm::IntegerEqual(
                 crate::kernel::IntegerTerm::Variable(crate::kernel::Variable(991989)).into(),
                 crate::kernel::IntegerTerm::constant_i64(1).into()

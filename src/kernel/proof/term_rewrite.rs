@@ -1407,7 +1407,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 collect_integer_substitution_term_variables(right, carriers);
             }
             Proposition::ConditionIs(condition, _) => {
-                collect_condition_carriers(condition, carriers);
+                collect_condition_carriers(condition.native_compat(), carriers);
             }
             // Loadability obligations produced while lowering a symbolic array
             // read carry the selected pointer and byte-count terms directly.  The
@@ -1642,7 +1642,7 @@ fn exhausted_term(term: &Term) -> Term {
 }
 
 fn exhausted_proposition() -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+    Proposition::condition_is(ConditionTerm::Constant(false), true)
 }
 
 struct IntegerVariableRewrite<'a> {
@@ -3493,11 +3493,11 @@ impl<'a> TermRewrite<'a> {
                 Proposition::Equal(left, right)
             }
             Proposition::ConditionIs(condition, value) => {
-                self.reserve_condition_variables_once(condition);
+                self.reserve_condition_variables_once(condition.native_compat());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
-                let condition = self.condition(condition);
+                let condition = self.condition(condition.native_compat());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
@@ -9011,7 +9011,7 @@ mod comparison_read_batch_tests {
                 (CompareRelation::LessThan, 4, true),
                 (CompareRelation::LessThan, 3, false),
             ] {
-                let input = Proposition::ConditionIs(
+                let input = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format,
                         relation,
@@ -9022,7 +9022,7 @@ mod comparison_read_batch_tests {
                 );
                 assert_eq!(
                     TermRewrite::comparison_read_batch(&input, [(read.clone(), three.clone())]),
-                    Some(Proposition::ConditionIs(
+                    Some(Proposition::condition_is(
                         ConditionTerm::Constant(expected),
                         true
                     )),

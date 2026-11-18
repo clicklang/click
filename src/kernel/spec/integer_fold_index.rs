@@ -24,14 +24,14 @@ impl IntegerFoldIndexResult {
                 (
                     Sort::Integer,
                     Proposition::And(
-                        Box::new(Proposition::ConditionIs(
+                        Box::new(Proposition::condition_is(
                             ConditionTerm::integer_greater_equal(
                                 item.clone(),
                                 start.as_ref().clone(),
                             ),
                             true,
                         )),
-                        Box::new(Proposition::ConditionIs(
+                        Box::new(Proposition::condition_is(
                             ConditionTerm::integer_less_than(item, end.as_ref().clone()),
                             true,
                         )),
@@ -70,8 +70,8 @@ impl IntegerFoldIndexResult {
                         Sort::ProgramInteger(format)
                     },
                     Proposition::And(
-                        Box::new(Proposition::ConditionIs(lower, true)),
-                        Box::new(Proposition::ConditionIs(upper, true)),
+                        Box::new(Proposition::condition_is(lower, true)),
+                        Box::new(Proposition::condition_is(upper, true)),
                     ),
                 )
             }

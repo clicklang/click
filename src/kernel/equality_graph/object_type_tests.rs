@@ -23,7 +23,7 @@ fn source(name: &str, pointer: &Address) -> Proposition {
     }
 }
 fn equal(a: &Address, b: &Address) -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::address_equal(a.clone(), b.clone()), true)
+    Proposition::condition_is(ConditionTerm::address_equal(a.clone(), b.clone()), true)
 }
 fn can_type(context: &PureFactContext, pointer: &Address) -> bool {
     crate::kernel::spec::refine_object_pointer_argument(
@@ -47,7 +47,7 @@ fn model_source(pointer: &Address, condition: bool) -> Proposition {
         },
     };
     if condition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::AlgebraicEqual(Box::new(variable), Box::new(constructor)),
             true,
         )
@@ -143,7 +143,7 @@ fn model_type_support_needs_its_model_source() {
         let unmodeled = PureFactContext::new().assume_proposition(equal(&p, &q));
         assert!(!can_type(&unmodeled, &q));
         if let Proposition::ConditionIs(condition, _) = model {
-            context = context.assume_proposition(Proposition::ConditionIs(condition, false));
+            context = context.assume_proposition(Proposition::condition_is(condition, false));
             assert!(context.is_inconsistent());
             assert!(can_type(&context, &q));
         }
@@ -238,7 +238,7 @@ fn checked_pointer_value_equalities_retain_their_scoped_type_receipts() {
     else {
         unreachable!()
     };
-    let equality = Proposition::ConditionIs(
+    let equality = Proposition::condition_is(
         ConditionTerm::PointerEqual(Box::new(p_value), Box::new(q_value)),
         true,
     );

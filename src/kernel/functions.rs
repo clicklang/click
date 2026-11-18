@@ -5414,7 +5414,7 @@ fn source_load_state_for_proposition(
         }
         match item {
             Work::Proposition(Proposition::ConditionIs(condition, _)) => {
-                work.push(Work::Condition(condition));
+                work.push(Work::Condition(condition.native_compat()));
             }
             Work::Proposition(Proposition::And(left, right))
             | Work::Proposition(Proposition::Or(left, right))
@@ -6375,7 +6375,8 @@ fn prepare_verified_function_call<'a>(
                                 path_assumptions.proves_exact(&requirement_path.proposition)
                                     || path_assumptions
                                         .has_matching_condition_fact_for_memory_resolution(
-                                            condition, *value,
+                                            condition.native_compat(),
+                                            *value,
                                         )
                             }
                             Proposition::ResourceSeparate { .. }
@@ -6500,7 +6501,7 @@ fn prepare_verified_function_call<'a>(
                 )));
             }
             None => {
-                let guard = Proposition::ConditionIs(order, true);
+                let guard = Proposition::condition_is(order, true);
                 if required_obligation_is_exactly_discharged(&guard_context, &guard) {
                     super::assumptions::record_consulted_premises(&guard_context, &guard);
                 } else {
@@ -7454,7 +7455,10 @@ fn separation_requirement_parts_are_established(
         }
         Proposition::ConditionIs(condition, value) => {
             required_obligation_is_exactly_discharged(assumptions, proposition)
-                || assumptions.has_matching_condition_fact_for_memory_resolution(condition, *value)
+                || assumptions.has_matching_condition_fact_for_memory_resolution(
+                    condition.native_compat(),
+                    *value,
+                )
         }
         Proposition::ResourceSeparate { .. } if proposition.memory_separation().is_some() => {
             let (left, right) = proposition
@@ -8220,7 +8224,9 @@ fn matched_instance_body_ownership(
     let premises = clauses
         .into_iter()
         .filter_map(|clause| match clause.proposition {
-            Proposition::ConditionIs(condition, value) => Some((condition, value)),
+            Proposition::ConditionIs(condition, value) => {
+                Some((condition.native_compat().clone(), value))
+            }
             _ => None,
         })
         .collect();
@@ -9520,7 +9526,7 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                             _,
                         )) = condition_source_0.condition_native() =>
                     {
-                        Some(Proposition::ConditionIs(
+                        Some(Proposition::condition_is(
                             ConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessThan,
@@ -9541,7 +9547,7 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                             _,
                         )) = condition_source_0.condition_native() =>
                     {
-                        Some(Proposition::ConditionIs(
+                        Some(Proposition::condition_is(
                             ConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessEqual,
@@ -9562,7 +9568,7 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                             _,
                         )) = condition_source_0.condition_native() =>
                     {
-                        Some(Proposition::ConditionIs(
+                        Some(Proposition::condition_is(
                             ConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::GreaterThan,
@@ -9583,7 +9589,7 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                             _,
                         )) = condition_source_0.condition_native() =>
                     {
-                        Some(Proposition::ConditionIs(
+                        Some(Proposition::condition_is(
                             ConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::GreaterEqual,
@@ -9703,7 +9709,7 @@ fn allocation_continuity(
         // consumer must settle.
         if required_obligation_is_exactly_discharged(
             assumptions,
-            &Proposition::ConditionIs(condition.clone(), false),
+            &Proposition::condition_is(condition.clone(), false),
         ) {
             AllocationContinuity::Inconsistent
         } else {
@@ -11270,7 +11276,7 @@ fn string_literal_fact_value(
                 Some(true)
             } else if let Proposition::ConditionIs(condition, value) = &leaf
                 && crate::kernel::proof::fact_reasoning::normalizes_context_free(
-                    &Proposition::ConditionIs(condition.clone(), !value),
+                    &Proposition::condition_is(condition.clone(), !value),
                 )
             {
                 Some(false)
@@ -14403,7 +14409,7 @@ fn is_pure_undefined_behavior_condition(proposition: &Proposition) -> bool {
         return false;
     };
     matches!(
-        condition,
+        condition.native_compat(),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
@@ -14527,10 +14533,10 @@ fn lower_selected_resource_body_clauses(
         if let Proposition::ConditionIs(condition, truth) = &path.proposition
             && let Some(condition) =
                 crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(
-                    condition,
+                    condition.native_compat(),
                 )
         {
-            path.proposition = Proposition::ConditionIs(condition, *truth);
+            path.proposition = Proposition::condition_is(condition, *truth);
         }
         // An undischarged pure undefined-behavior condition (unchecked
         // arithmetic) is exposed alongside the body fact instead of
@@ -14649,7 +14655,7 @@ fn resource_body_fact_is_established(
         for endpoint in endpoints {
             for (alias, evidence) in established.exact_uint64_equalities(&endpoint) {
                 crate::instrumentation::record_deterministic_work(1);
-                let equality = Proposition::ConditionIs(
+                let equality = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
@@ -14658,7 +14664,7 @@ fn resource_body_fact_is_established(
                     },
                     true,
                 );
-                let evidence = Proposition::ConditionIs(evidence.clone(), true);
+                let evidence = Proposition::condition_is(evidence.clone(), true);
                 if let Ok(candidate) =
                     crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality(
                         proposition,
@@ -14697,7 +14703,7 @@ fn resource_body_fact_is_established(
     // two loads denote one value when the states are proven to agree at
     // its address.
     if let Proposition::ConditionIs(condition, value) = proposition
-        && established.proves_algebraic_condition_modulo_states(condition, *value)
+        && established.proves_algebraic_condition_modulo_states(condition.native_compat(), *value)
     {
         return true;
     }
@@ -15261,7 +15267,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             let ProgramValue::Int32(quantity) = value else {
                 return Err("instance body quantity must have type int32".into());
             };
-            let fact = Proposition::ConditionIs(
+            let fact = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
@@ -15956,7 +15962,10 @@ pub(super) fn loop_instance_guard(
         Ok(_) => return Err("loop guard requires a mutex pointer".into()),
         Err(message) => return Err(message.into()),
     };
-    Ok(Some((pointer.address().clone(), held.clone())))
+    Ok(Some((
+        pointer.address().clone(),
+        (held.clone()).native_compat().clone(),
+    )))
 }
 
 pub(in crate::kernel) fn instance_body_guard_case(
@@ -16287,7 +16296,7 @@ fn construct_composite_resource_body_with_source(
 fn negated_contract_proposition(proposition: &Proposition) -> Proposition {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(condition.clone(), !value)
+            Proposition::condition_is(condition.clone(), !value)
         }
         Proposition::Not(body) => body.as_ref().clone(),
         proposition => Proposition::Not(Box::new(proposition.clone())),
@@ -16365,15 +16374,15 @@ pub(crate) fn evaluate_guarded_contract_condition_with_loop_entry(
     let assumptions = &guard_assumptions;
     let proves_body_condition = |proposition: &Proposition| match proposition {
         Proposition::ConditionIs(condition, value) => {
-            assumptions.proves_condition_exact(condition, *value)
-                || assumptions.decide(condition) == Some(*value)
+            assumptions.proves_condition_exact(condition.native_compat(), *value)
+                || assumptions.decide(condition.native_compat()) == Some(*value)
                 || assumptions.proves_atomic_without_search(proposition)
         }
         Proposition::Not(body) => match body.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                assumptions.proves_condition_exact(condition, !*value)
-                    || assumptions.decide(condition) == Some(!*value)
-                    || assumptions.proves_atomic_without_search(&Proposition::ConditionIs(
+                assumptions.proves_condition_exact(condition.native_compat(), !*value)
+                    || assumptions.decide(condition.native_compat()) == Some(!*value)
+                    || assumptions.proves_atomic_without_search(&Proposition::condition_is(
                         condition.clone(),
                         !*value,
                     ))
@@ -18335,7 +18344,7 @@ fn resource_clause_memory_views(
 fn refutation_of_body_fact(proposition: &Proposition) -> Option<Proposition> {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            Some(Proposition::ConditionIs(condition.clone(), !value))
+            Some(Proposition::condition_is(condition.clone(), !value))
         }
         _ => None,
     }
@@ -20022,7 +20031,7 @@ pub(crate) fn quantified_resource_requirement_assumptions(
             Ok(quantity) => quantity,
             Err(error) => return Ok(Err(error)),
         };
-        propositions.push(Proposition::ConditionIs(
+        propositions.push(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,

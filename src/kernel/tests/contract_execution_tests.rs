@@ -20,7 +20,7 @@ fn completed_candidate_forks_share_source_state_and_all_path_storage() {
             .map(|_| {
                 let facts = (0..fact_count)
                     .map(|index| {
-                        ExecutionPureFact::new(Proposition::ConditionIs(
+                        ExecutionPureFact::new(Proposition::condition_is(
                             ConditionTerm::signed_less_than(
                                 MachineTerm::Variable(Variable(950_000 + index)),
                                 MachineTerm::constant(0),
@@ -82,7 +82,7 @@ fn terminal_candidate_publications_retain_records_and_payloads() {
             vec![],
             program_return(crate::kernel::program_expression::int32_literal(0)),
         );
-        let proposition = Proposition::ConditionIs(
+        let proposition = Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::Variable(Variable(970_000)),
                 MachineTerm::constant(0),
@@ -149,7 +149,7 @@ fn terminal_candidate_publications_retain_records_and_payloads() {
 #[test]
 fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
     let state = ExecutionState::new();
-    let public = ExecutionPureFact::certified(Proposition::ConditionIs(
+    let public = ExecutionPureFact::certified(Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(971_000)),
             MachineTerm::constant(0),
@@ -184,7 +184,7 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
     let delta = retained.facts().clone();
     std::sync::Arc::make_mut(&mut retained.data).completion_delta = Some(delta);
     let source = &retained;
-    let new_public = ExecutionPureFact::new(Proposition::ConditionIs(
+    let new_public = ExecutionPureFact::new(Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(971_001)),
             MachineTerm::constant(1),
@@ -921,7 +921,7 @@ fn symbolic_execution_reports_branch_facts() {
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition.clone(), true)),
+            Box::new(Proposition::condition_is(condition.clone(), true)),
             Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(program_max_body()),
@@ -944,7 +944,7 @@ fn symbolic_execution_reports_branch_facts() {
     assert_eq!(
         execution.paths()[1].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition, false)),
+            Box::new(Proposition::condition_is(condition, false)),
             Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(program_max_body()),
@@ -1056,7 +1056,7 @@ fn symbolic_execution_uses_no_overflow_fact() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(no_overflow, false)),
+            Box::new(Proposition::condition_is(no_overflow, false)),
             Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
@@ -1108,7 +1108,7 @@ fn symbolic_add_uses_exact_intervals_to_rule_out_overflow() {
 
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::equal(
                 binary_node!(
                     Int32,
@@ -1144,7 +1144,7 @@ fn symbolic_increment_uses_int_max_bound_to_rule_out_overflow() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(x_lt_int_max, true)),
+            Box::new(Proposition::condition_is(x_lt_int_max, true)),
             Box::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
@@ -1437,8 +1437,8 @@ fn missing_memory_load_is_native_undefined_behavior() {
 
 #[test]
 fn function_execution_theorem_retains_non_assumable_verification_conditions() {
-    let verification_condition = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
-    let conclusion = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    let verification_condition = Proposition::condition_is(ConditionTerm::Constant(false), true);
+    let conclusion = Proposition::condition_is(ConditionTerm::Constant(true), true);
     let theorem = Theorem::new(wrap_proof_facts(
         conclusion,
         &PureFactContext::new(),
@@ -1572,7 +1572,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
     };
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -1840,7 +1840,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
     );
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::address_equal(result.address().clone(), argument),
             true,
         )
@@ -2192,7 +2192,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 };
                 assert!(crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
-                    &Proposition::ConditionIs(
+                    &Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
@@ -2204,7 +2204,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 ));
                 assert!(!crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
-                    &Proposition::ConditionIs(
+                    &Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
@@ -2233,7 +2233,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 };
                 assert!(crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
-                    &Proposition::ConditionIs(
+                    &Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
@@ -2245,7 +2245,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 ));
                 assert!(!crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
-                    &Proposition::ConditionIs(
+                    &Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
@@ -2349,7 +2349,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         );
         assert!(crate::kernel::search::ProofSearch::proves(
             &(assumptions),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -2361,7 +2361,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         ));
         assert!(!crate::kernel::search::ProofSearch::proves(
             &(assumptions),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -2488,7 +2488,7 @@ fn bool_cast_range_is_rule_c1_of_the_cast() {
     let flag = ConditionTerm::Variable(Variable(1));
     let cast = MachineTerm::bool_cast(MachineIntegerType::Int32, flag.clone());
     let equals = |constant| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::equal(cast.clone(), MachineTerm::constant(constant)),
             true,
         )
@@ -2873,7 +2873,7 @@ fn completion_accepts_a_case_arm_recorded_after_the_return() {
     };
     let (candidates, function, trace) = early_return_inputs(returning);
     let root = crate::kernel::proof::PureFactStore::default();
-    let then_fact = Proposition::ConditionIs(
+    let then_fact = Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(1_000_050)),
             MachineTerm::constant(5),
@@ -3609,9 +3609,9 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     use crate::kernel::api::completion_key;
     let x = MachineTerm::Variable(Variable(1));
     let y = MachineTerm::Variable(Variable(2));
-    let truth = |value: bool| Proposition::ConditionIs(ConditionTerm::Constant(value), true);
+    let truth = |value: bool| Proposition::condition_is(ConditionTerm::Constant(value), true);
     let equal = |left: &MachineTerm, right: &MachineTerm, value: bool| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3628,7 +3628,7 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     assert_eq!(completion_key(&equal(&x, &x, false)), truth(false));
     // A constant condition folds to the canonical truth value.
     assert_eq!(
-        completion_key(&Proposition::ConditionIs(
+        completion_key(&Proposition::condition_is(
             ConditionTerm::Constant(false),
             false
         )),
@@ -3636,7 +3636,7 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     );
     // Negating a constant stays in the canonical truth form.
     assert_eq!(
-        completion_key(&Proposition::Not(Box::new(Proposition::ConditionIs(
+        completion_key(&Proposition::Not(Box::new(Proposition::condition_is(
             ConditionTerm::Constant(false),
             true,
         )))),
@@ -3650,7 +3650,7 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     // Constant premises and conjuncts disappear.
     assert_eq!(
         completion_key(&Proposition::Implies(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::Constant(false),
                 false
             )),
@@ -4403,7 +4403,7 @@ fn path_exists_at_program_point(
         name: "path".into(),
         var: Variable(binder),
         sort: Sort::Algebraic(ty.clone()),
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::ClickFunctionApplication {
                     name: "walk".into(),
@@ -4503,7 +4503,7 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
     // A future freshening rule must not assume a reserved numeric range alone
     // makes its first identity absent from an arbitrary kernel fact context.
     let would_be_witness = Variable(1 << 44);
-    let assumed = Proposition::ConditionIs(
+    let assumed = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -4516,7 +4516,7 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
         name: Default::default(),
         var: binder,
         sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -4560,7 +4560,7 @@ fn conditional_path_universal(
             name: Default::default(),
             var: Variable(binder + 1),
             sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 ConditionTerm::equal(MachineTerm::Variable(Variable(binder + 1)), 0.into()),
                 true,
             )),
@@ -4806,7 +4806,7 @@ fn cloned_functions_and_specifications_share_their_contracts() {
         (0..8)
             .map(|index| ProgramExpression::Value(int32(index)))
             .collect(),
-        vec![Proposition::ConditionIs(ConditionTerm::Constant(true), true); 8],
+        vec![Proposition::condition_is(ConditionTerm::Constant(true), true); 8],
         FunctionOutcome::Return {
             value: int32(0).into(),
             state: Box::new(ExecutionState::new()),

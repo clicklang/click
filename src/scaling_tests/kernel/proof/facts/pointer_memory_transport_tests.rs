@@ -21,7 +21,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
         ProgramType::Int32Pointer,
     );
     let fact = |pointer| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::PointerEqual(Box::new(pointer), Box::new(rhs.clone())),
             true,
         )
@@ -43,7 +43,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     for size in [4u64, 16, 64, 256] {
         let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
         for index in 0..size {
-            facts = facts.with_fact(Proposition::ConditionIs(
+            facts = facts.with_fact(Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::Variable(Variable(992_100 + index)),
                     MachineTerm::constant(7),
@@ -56,7 +56,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
                 start: cell.clone(),
                 width: MachineTerm::constant(u32::try_from(index + 1).unwrap()),
             }));
-            facts = facts.with_fact(Proposition::ConditionIs(
+            facts = facts.with_fact(Proposition::condition_is(
                 ConditionTerm::PointerEqual(Box::new(selected.clone()), Box::new(selected)),
                 true,
             ));

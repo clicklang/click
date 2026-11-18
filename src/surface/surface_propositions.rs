@@ -1390,7 +1390,7 @@ mod store_source_tests {
             LoadKind::UInt32,
         );
         let equation = |word| {
-            Arc::new(Proposition::ConditionIs(
+            Arc::new(Proposition::condition_is(
                 ConditionTerm::uint32_equal(read.clone(), MachineTerm::constant(word)),
                 true,
             ))

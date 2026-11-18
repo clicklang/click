@@ -693,7 +693,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         )
     };
     let fact = |memory: &SymbolicMemory| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -718,7 +718,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
     );
     assert_eq!(version_mismatch(&fact(&entry), &fact(&entry)), None);
 
-    let other = Proposition::ConditionIs(
+    let other = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -1083,7 +1083,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     assert_eq!(after.known_value(&cell), None, "the store dropped the cell");
     let after = intern_memory(after);
     let index_is_zero = |value| {
-        PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::equal(index.clone(), MachineTerm::constant(0)),
             value,
         ))
@@ -1119,14 +1119,14 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     else {
         panic!("complete int32 observations");
     };
-    let source = Proposition::ConditionIs(ConditionTerm::equal(old, three.clone()), true);
+    let source = Proposition::condition_is(ConditionTerm::equal(old, three.clone()), true);
     assert!(crate::kernel::eval::holds_by_read_over_write(&source));
     let premises = [source, equality];
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
     let condition = ConditionTerm::equal(new, three);
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-            &Proposition::ConditionIs(condition.clone(), true),
+            &Proposition::condition_is(condition.clone(), true),
             &premises,
             &facts,
         )
@@ -1135,7 +1135,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     );
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-            &Proposition::ConditionIs(condition, false),
+            &Proposition::condition_is(condition, false),
             &premises,
             &facts,
         )
@@ -1492,7 +1492,7 @@ fn structural_read_dependencies_keep_the_observed_point_and_exact_width() {
         &origin,
         "selection should cross the unrelated store"
     );
-    let fact = Proposition::ConditionIs(ConditionTerm::equal(read.clone(), 0u32.into()), true);
+    let fact = Proposition::condition_is(ConditionTerm::equal(read.clone(), 0u32.into()), true);
     let reads = reads_of_proposition(&fact);
     assert_eq!(reads.len(), 1);
     assert_eq!(reads[0].resource, OwnedResource::Cell { pointer, bytes: 4 });

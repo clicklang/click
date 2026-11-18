@@ -39,7 +39,7 @@ fn class_candidates_follow_merges_and_removals_without_leaking_to_siblings() {
     let facts = PureFactContext::new();
     let resources = ResourceContext::new().unchecked_with_fact(held.clone());
     resources.synchronize_memory_equalities(&facts);
-    let extended = facts.clone().assume_proposition(Proposition::ConditionIs(
+    let extended = facts.clone().assume_proposition(Proposition::condition_is(
         ConditionTerm::pointer_equal(
             Pointer::new(base, ProgramType::Int32Pointer),
             Pointer::new(alias, ProgramType::Int32Pointer),

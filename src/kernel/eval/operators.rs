@@ -106,7 +106,7 @@ fn add_arithmetic_branch_fact(
                     *format, op, left, right,
                 ))
             }
-            OverflowOperation::ShiftLeft => Some(Proposition::ConditionIs(
+            OverflowOperation::ShiftLeft => Some(Proposition::condition_is(
                 ConditionTerm::signed_shift_result_fits(*format, *left.clone(), *right.clone()),
                 true,
             )),
@@ -1167,7 +1167,7 @@ fn apply_program_int128_multiply(
     let observed = IntegerTerm::from_machine(destination, term.clone()).expect("typed wide result");
     let definition = ConditionTerm::integer_equal(observed, product);
     if definition != ConditionTerm::Constant(true) {
-        facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+        facts.push(ExecutionPureFact::certified(Proposition::condition_is(
             definition, true,
         )));
     }
@@ -1332,23 +1332,23 @@ fn apply_program_int128_division_like(
             (Some(false), _) | (_, Some(false)) => (None, None, Some(false)),
             (Some(true), Some(true)) => (None, None, Some(true)),
             (Some(true), None) => (
-                Some(Proposition::ConditionIs(minus_one.clone(), false)),
-                Some(Proposition::ConditionIs(minus_one, true)),
+                Some(Proposition::condition_is(minus_one.clone(), false)),
+                Some(Proposition::condition_is(minus_one, true)),
                 None,
             ),
             (None, Some(true)) => (
-                Some(Proposition::ConditionIs(min.clone(), false)),
-                Some(Proposition::ConditionIs(min, true)),
+                Some(Proposition::condition_is(min.clone(), false)),
+                Some(Proposition::condition_is(min, true)),
                 None,
             ),
             (None, None) => (
                 Some(Proposition::Or(
-                    Box::new(Proposition::ConditionIs(min.clone(), false)),
-                    Box::new(Proposition::ConditionIs(minus_one.clone(), false)),
+                    Box::new(Proposition::condition_is(min.clone(), false)),
+                    Box::new(Proposition::condition_is(minus_one.clone(), false)),
                 )),
                 Some(Proposition::And(
-                    Box::new(Proposition::ConditionIs(min, true)),
-                    Box::new(Proposition::ConditionIs(minus_one, true)),
+                    Box::new(Proposition::condition_is(min, true)),
+                    Box::new(Proposition::condition_is(minus_one, true)),
                 )),
                 None,
             ),
@@ -1358,27 +1358,27 @@ fn apply_program_int128_division_like(
             // Keep the complete contract guard available even when a known
             // operand simplified the path guard to a single condition.
             let equality_safe = Proposition::Or(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::integer_equal(
                         left.clone(),
                         IntegerTerm::constant(i128::MIN.into()),
                     ),
                     false,
                 )),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1)),
                     false,
                 )),
             );
             let inequality_safe = Proposition::Or(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::integer_not_equal(
                         left.clone(),
                         IntegerTerm::constant(i128::MIN.into()),
                     ),
                     true,
                 )),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(-1)),
                     true,
                 )),
@@ -1449,7 +1449,7 @@ fn apply_program_int128_division_like(
     let observed = IntegerTerm::from_machine(destination, term.clone()).expect("typed wide result");
     let definition = ConditionTerm::integer_equal(observed, result);
     if definition != ConditionTerm::Constant(true) {
-        facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+        facts.push(ExecutionPureFact::certified(Proposition::condition_is(
             definition, true,
         )));
     }
@@ -1734,7 +1734,7 @@ pub(in crate::kernel) fn apply_program_bitwise_binary(
             (ScalarWidth::UInt64, BitwiseOperation::And)
         ) && let Some(equation) = bounded_uint64_tag_equation(&value, assumptions)
         {
-            facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
+            facts.push(ExecutionPureFact::new(Proposition::condition_is(
                 equation, true,
             )));
         }
@@ -2114,16 +2114,16 @@ pub(in crate::kernel) fn pointer_same_object_proposition(
     right: &Address,
 ) -> Proposition {
     Proposition::And(
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             pointer_object_is_null_condition(left),
             false,
         )),
         Box::new(Proposition::And(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 pointer_object_is_null_condition(right),
                 false,
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 pointer_object_identity_condition(left, right),
                 true,
             )),
@@ -2580,7 +2580,7 @@ fn pointer_offset_by_elements_paths(
         (true, false) => MachineTerm::int64_constant(0),
         (false, _) => MachineTerm::constant(0),
     };
-    let zero = Proposition::ConditionIs(
+    let zero = Proposition::condition_is(
         if wide {
             ConditionTerm::int64_equal(offset.clone(), zero_term)
         } else {
@@ -2596,7 +2596,7 @@ fn pointer_offset_by_elements_paths(
         context.proves_exact(&zero)
             || context.contains_known(&zero)
             || matches!(&zero, Proposition::ConditionIs(condition, value)
-                if PureFactContext::decide_intrinsically(condition) == Some(*value))
+                if PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value))
             || (wide && context.wide_constant_from_equalities(&offset) == Some(0))
     };
     let displaces = !(zero_is_known(assumptions)
@@ -2613,7 +2613,7 @@ fn pointer_offset_by_elements_paths(
     // Only a literal zero offset spells the result as the pointer itself;
     // an offset the facts prove zero keeps its written displacement.
     let literally_zero = matches!(&zero, Proposition::ConditionIs(condition, value)
-        if PureFactContext::decide_intrinsically(condition) == Some(*value));
+        if PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value));
     let result = if literally_zero {
         pointer.clone()
     } else {
@@ -2962,7 +2962,10 @@ fn exact_offset_operation(
         let Proposition::ConditionIs(condition, value) = bound else {
             unreachable!("ordinary range bound");
         };
-        guards.push(PointerFormationGuard { condition, value });
+        guards.push(PointerFormationGuard {
+            condition: condition.native_compat().clone(),
+            value,
+        });
     }
     let op = match operation {
         Operation::Add => MachineBinaryOp::Add,
@@ -4234,7 +4237,7 @@ fn apply_program_uint32_division_like(
         MachineTerm::constant(0),
     );
     obligations.push(
-        ProofObligation::verification_condition(Proposition::ConditionIs(zero, false))
+        ProofObligation::verification_condition(Proposition::condition_is(zero, false))
             .with_context("unsigned division requires a nonzero divisor"),
     );
     vec![ExpressionPath {

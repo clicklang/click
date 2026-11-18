@@ -111,7 +111,7 @@ pub(crate) fn operation_bound(
         }
         Division::Remainder => return None,
     };
-    Some(Proposition::ConditionIs(condition, true))
+    Some(Proposition::condition_is(condition, true))
 }
 
 #[cfg(test)]
@@ -125,7 +125,7 @@ mod tests {
     }
 
     fn less_equal(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::integer_less_equal(left, right), true)
+        Proposition::condition_is(ConditionTerm::integer_less_equal(left, right), true)
     }
 
     fn scaled(divisor: i64, value: &SharedMachineIntegerTerm) -> IntegerTerm {

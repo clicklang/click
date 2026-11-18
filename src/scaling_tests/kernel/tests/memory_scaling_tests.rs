@@ -1813,7 +1813,7 @@ fn a_kept_range_base_equality_is_proved_once_per_fact_set() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut assumptions = PureFactContext::new();
         for index in 0..size as u64 {
-            assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
+            assumptions = assumptions.assume_proposition(Proposition::condition_is(
                 ConditionTerm::address_equal(
                     external_object(2 * index + 1),
                     external_object(2 * index + 2),
@@ -1854,7 +1854,7 @@ fn an_aliased_field_inside_a_range_is_not_searched_for_a_separation() {
     let mut samples = Vec::new();
     for size in HEAP_SIZES {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        let mut assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(external_object(OBJECT), external_object(ALIAS)),
             true,
         ));
@@ -2967,11 +2967,11 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
                 } else {
                     &previous
                 };
-                let source = Proposition::ConditionIs(
+                let source = Proposition::condition_is(
                     ConditionTerm::pointer_equal(reference.clone(), reference.clone()),
                     true,
                 );
-                let target = Proposition::ConditionIs(
+                let target = Proposition::condition_is(
                     ConditionTerm::pointer_equal(current.clone(), reference.clone()),
                     true,
                 );
@@ -2986,7 +2986,7 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
                     facts = facts.clone().assume_proposition(target);
                 }
                 if compose {
-                    let composed = Proposition::ConditionIs(
+                    let composed = Proposition::condition_is(
                         ConditionTerm::pointer_equal(current.clone(), original.clone()),
                         true,
                     );

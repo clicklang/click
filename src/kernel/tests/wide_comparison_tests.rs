@@ -154,7 +154,7 @@ fn wide_comparison_symbolic_paths_retain_exact_true_and_false_guards() {
                 );
                 assert!(
                     path.facts.iter().any(|fact| fact.proposition()
-                        == &Proposition::ConditionIs(guard.clone(), truth))
+                        == &Proposition::condition_is(guard.clone(), truth))
                 );
                 let context = PureFactContext::new().assume_condition(guard.clone(), truth);
                 let known = paths(&expression, &context);

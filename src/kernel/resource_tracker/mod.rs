@@ -1392,7 +1392,9 @@ pub(crate) fn reads_of_proposition(fact: &Proposition) -> Vec<ResourceRead> {
 
 fn collect_proposition_reads(fact: &Proposition, reads: &mut Vec<ResourceRead>) {
     match fact {
-        Proposition::ConditionIs(condition, _) => collect_condition_reads(condition, reads),
+        Proposition::ConditionIs(condition, _) => {
+            collect_condition_reads(condition.native_compat(), reads)
+        }
         Proposition::Equal(left, right) => {
             collect_term_reads(left, reads);
             collect_term_reads(right, reads);

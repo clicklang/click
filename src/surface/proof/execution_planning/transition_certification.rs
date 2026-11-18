@@ -1326,7 +1326,7 @@ mod condition_transition_tests {
             panic!("unsigned field");
         };
         assert!(crate::kernel::proposition_mentions_scalar_read(
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     relation: crate::kernel::CompareRelation::Equal,

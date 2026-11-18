@@ -109,7 +109,7 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
         .expect("a folded control supplies the field read");
     assert_eq!(guards.len(), quantities);
     assert!(guards.iter().all(|guard| guard
-        == &Proposition::ConditionIs(
+        == &Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,

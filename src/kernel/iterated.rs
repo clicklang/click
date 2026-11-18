@@ -498,11 +498,11 @@ fn every_guard(
     let index = MachineTerm::Variable(ITERATED_GUARD_INDEX);
     let hypotheses = assumptions
         .clone()
-        .assume_proposition(Proposition::ConditionIs(
+        .assume_proposition(Proposition::condition_is(
             ConditionTerm::signed_less_equal(iterated.lower().clone(), index.clone()),
             true,
         ))
-        .assume_proposition(Proposition::ConditionIs(
+        .assume_proposition(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -516,11 +516,11 @@ fn every_guard(
         return Ok(Some(value));
     }
     let antecedent = Proposition::And(
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             ConditionTerm::signed_less_equal(iterated.lower().clone(), index.clone()),
             true,
         )),
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             ConditionTerm::signed_less_than(index, iterated.upper().clone()),
             true,
         )),

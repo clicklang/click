@@ -98,7 +98,7 @@ fn model_argument_guard_work(prepare: bool) {
         let root = Proof::for_pure_goal(
             "argument guard scaling",
             &requires,
-            Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(false), true),
+            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true),
             &context,
             definitions,
             &theorems,

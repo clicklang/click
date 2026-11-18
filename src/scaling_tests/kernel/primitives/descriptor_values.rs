@@ -165,3 +165,32 @@ fn loadability_count_storage_shares_growing_machine_operands() {
         }
     }
 }
+
+#[test]
+fn condition_proposition_storage_clones_growing_logical_dags_without_exports() {
+    let mut baseline = None;
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelTerm::variable(KernelType::Bool, Variable(10993715));
+        for _ in 0..size {
+            root = KernelTerm::boolean_equal_raw([root.clone(), root]);
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let proposition = Proposition::condition_is(
+                StoredConditionTerm::from_root(root.clone()).unwrap(),
+                false,
+            );
+            for _ in 0..32 {
+                let Proposition::ConditionIs(value, truth) = proposition.clone() else {
+                    unreachable!();
+                };
+                assert_eq!(value.root(), Some(&root));
+                assert!(!truth);
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!root.has_cached_native_argument());
+        assert_eq!(work, *baseline.get_or_insert(work), "size={size}");
+    }
+}

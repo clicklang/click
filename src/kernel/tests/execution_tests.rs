@@ -822,7 +822,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition.clone(), true)),
+            Box::new(Proposition::condition_is(condition.clone(), true)),
             Box::new(Proposition::ProgramFunctionVerifies {
                 state: Box::new(state.clone()),
                 function: Box::new(function.clone()),
@@ -846,7 +846,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
     assert_eq!(
         execution.paths()[1].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition, false)),
+            Box::new(Proposition::condition_is(condition, false)),
             Box::new(Proposition::ProgramFunctionVerifies {
                 state: Box::new(state.clone()),
                 function: Box::new(function),
@@ -2472,7 +2472,7 @@ fn loop_entry_goals_preserve_guarded_judgments() {
 
 /// `a != 0` as the kernel spells a short-circuit guard operand's fact.
 fn guard_operand_fact(variable: u64, nonzero: bool) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,

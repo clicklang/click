@@ -175,7 +175,7 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
         };
         let (zero, one) = (constant(0)?, constant(1)?);
         let compare = |relation, constant: &MachineTerm| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::machine_compare(*to, relation, cast.clone(), constant.clone()),
                 true,
             )
@@ -207,7 +207,7 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
         (MachineTerm::constant(0), MachineTerm::constant(1))
     };
     let equals = |constant: &MachineTerm| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             if wide {
                 if to.format().is_signed() {
                     ConditionTerm::int64_equal(cast.clone(), constant.clone())
@@ -225,11 +225,11 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
         return Some(vec![disjunction]);
     }
     Some(vec![
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::signed_greater_equal(cast.clone(), zero),
             true,
         ),
-        Proposition::ConditionIs(ConditionTerm::signed_less_equal(cast.clone(), one), true),
+        Proposition::condition_is(ConditionTerm::signed_less_equal(cast.clone(), one), true),
         disjunction,
     ])
 }
@@ -344,7 +344,10 @@ pub fn program_condition_facts_match_for_transport(
         return false;
     };
     source_value == target_value
-        && assumptions.condition_matches(source_condition, target_condition)
+        && assumptions.condition_matches(
+            source_condition.native_compat(),
+            target_condition.native_compat(),
+        )
 }
 
 /// The `transport` rule for one bare condition: `context` states it, it
@@ -355,10 +358,10 @@ fn condition_target_reaches(context: &PureFactContext, target: &Proposition) -> 
         return false;
     };
     context.proves_exact(target)
-        || contract_certification::condition_holds_by_memory_resolution(context, condition, *value)
+        || contract_certification::condition_holds_by_memory_resolution(context, condition.native_compat(), *value)
         || contract_certification::condition_holds_by_instantiated_fact(
             context,
-            condition,
+            condition.native_compat(),
             *value,
             &|premise| transport_premise_holds(context, premise),
         )
@@ -807,8 +810,8 @@ mod loop_exit_sharing_tests {
             MachineTerm::Variable(Variable(9_901_100)),
             MachineTerm::constant(0),
         );
-        let before = Proposition::ConditionIs(condition.clone(), true);
-        let after = Proposition::ConditionIs(condition, false);
+        let before = Proposition::condition_is(condition.clone(), true);
+        let after = Proposition::condition_is(condition, false);
         let ambient = PureFactStore::from_ordered(std::slice::from_ref(&before));
         let path = PureFactStore::from_ordered(std::slice::from_ref(&after));
         let exit = LoopFinalExitCandidate::from_store(ExecutionState::new(), &path);
@@ -4536,7 +4539,7 @@ pub fn proposition_and(left: Proposition, right: Proposition) -> Proposition {
 
 pub fn proposition_and_all(mut propositions: Vec<Proposition>) -> Proposition {
     if propositions.is_empty() {
-        return Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        return Proposition::condition_is(ConditionTerm::Constant(true), true);
     }
     while propositions.len() > 1 {
         let mut next = Vec::with_capacity(propositions.len().div_ceil(2));
@@ -4574,7 +4577,11 @@ pub fn forall_instantiation_candidate_values(
     };
     let mut candidates = match target {
         Proposition::ConditionIs(condition, _) => {
-            PureFactContext::guided_forall_condition_candidates(*var, body, condition)
+            PureFactContext::guided_forall_condition_candidates(
+                *var,
+                body,
+                condition.native_compat(),
+            )
         }
         _ => BTreeSet::new(),
     };
@@ -4607,9 +4614,13 @@ pub fn forall_guided_instantiation_candidate_values(
     };
     match target {
         Proposition::ConditionIs(condition, _) => {
-            PureFactContext::guided_forall_condition_candidates(*var, body, condition)
-                .into_iter()
-                .collect()
+            PureFactContext::guided_forall_condition_candidates(
+                *var,
+                body,
+                condition.native_compat(),
+            )
+            .into_iter()
+            .collect()
         }
         _ => Vec::new(),
     }
@@ -6490,7 +6501,7 @@ pub fn checked_owned_resource_count_lower_bound(
         };
         value.clone()
     };
-    let conclusion = Proposition::ConditionIs(
+    let conclusion = Proposition::condition_is(
         crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
             MachineIntegerType::Int32,
             CompareRelation::LessEqual,
@@ -6503,7 +6514,7 @@ pub fn checked_owned_resource_count_lower_bound(
     );
     {
         let reversed =
-            Proposition::ConditionIs(ConditionTerm::signed_greater_equal(count, quantity), true);
+            Proposition::condition_is(ConditionTerm::signed_greater_equal(count, quantity), true);
         if !proposition_holds_without_facts(&conclusion)
             && !PureFactContext::settles_exactly(&checked_facts, &conclusion)
             && !checked_facts.proves_exact(&reversed)
@@ -6526,7 +6537,7 @@ pub fn prove_owned_resource_quantity_nonnegative(
         return None;
     }
     let quantity = owned.owned_quantity_term()?.clone();
-    let conclusion = Proposition::ConditionIs(
+    let conclusion = Proposition::condition_is(
         crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
             MachineIntegerType::Int32,
             CompareRelation::LessEqual,
@@ -6575,7 +6586,7 @@ pub fn prove_program_max_lt_returns_right(a: Variable, b: Variable) -> Option<Th
         forall_int32(
             b,
             Proposition::Implies(
-                Box::new(Proposition::ConditionIs(condition, true)),
+                Box::new(Proposition::condition_is(condition, true)),
                 Box::new(Proposition::ProgramStatementVerifies {
                     state: Box::new(state),
                     statement: Box::new(program_max_body()),
@@ -6611,7 +6622,7 @@ pub fn prove_program_max_not_lt_returns_left(a: Variable, b: Variable) -> Option
         forall_int32(
             b,
             Proposition::Implies(
-                Box::new(Proposition::ConditionIs(condition, false)),
+                Box::new(Proposition::condition_is(condition, false)),
                 Box::new(Proposition::ProgramStatementVerifies {
                     state: Box::new(state),
                     statement: Box::new(program_max_body()),
@@ -6625,15 +6636,15 @@ pub fn prove_program_max_not_lt_returns_left(a: Variable, b: Variable) -> Option
 /// Two signed int32 values are equal when the first is no greater than the
 /// second and is not strictly less than it.
 pub fn prove_int32_le_antisymmetric(left: MachineTerm, right: MachineTerm) -> Theorem {
-    let le_premise = Proposition::ConditionIs(
+    let le_premise = Proposition::condition_is(
         ConditionTerm::signed_less_equal(left.clone(), right.clone()),
         true,
     );
-    let reverse_le_premise = Proposition::ConditionIs(
+    let reverse_le_premise = Proposition::condition_is(
         ConditionTerm::signed_less_equal(right.clone(), left.clone()),
         true,
     );
-    let conclusion = Proposition::ConditionIs(
+    let conclusion = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -6698,11 +6709,11 @@ pub fn prove_population_member_count_zero(
             .collect(),
     )?;
     Some(implication(
-        [Proposition::ConditionIs(
+        [Proposition::condition_is(
             ConditionTerm::equal(total, MachineTerm::constant(0)),
             true,
         )],
-        Proposition::ConditionIs(ConditionTerm::equal(member, MachineTerm::constant(0)), true),
+        Proposition::condition_is(ConditionTerm::equal(member, MachineTerm::constant(0)), true),
     ))
 }
 
@@ -6797,8 +6808,8 @@ pub fn prove_integer_range_fold_empty(
     };
     let fold = IntegerTerm::range_fold(index, initial.clone(), accumulator, item, body);
     implication(
-        [Proposition::ConditionIs(guard, true)],
-        Proposition::ConditionIs(
+        [Proposition::condition_is(guard, true)],
+        Proposition::condition_is(
             ConditionTerm::IntegerEqual(fold.into(), initial.into()),
             true,
         ),
@@ -6848,8 +6859,8 @@ pub fn prove_integer_range_fold_append(
             (
                 extended,
                 Proposition::And(
-                    Box::new(Proposition::ConditionIs(guard, true)),
-                    Box::new(Proposition::ConditionIs(safe, true)),
+                    Box::new(Proposition::condition_is(guard, true)),
+                    Box::new(Proposition::condition_is(safe, true)),
                 ),
                 item_value,
             )
@@ -6887,8 +6898,8 @@ pub fn prove_integer_range_fold_append(
             (
                 extended,
                 Proposition::And(
-                    Box::new(Proposition::ConditionIs(guard, true)),
-                    Box::new(Proposition::ConditionIs(safe, true)),
+                    Box::new(Proposition::condition_is(guard, true)),
+                    Box::new(Proposition::condition_is(safe, true)),
                 ),
                 item_value,
             )
@@ -6903,7 +6914,7 @@ pub fn prove_integer_range_fold_append(
             };
             (
                 extended,
-                Proposition::ConditionIs(guard, true),
+                Proposition::condition_is(guard, true),
                 end.as_ref().clone(),
             )
         }
@@ -6924,7 +6935,7 @@ pub fn prove_integer_range_fold_append(
         IntegerTerm::range_fold(extended, original_initial, accumulator, item, body);
     Some(implication(
         [guard],
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerEqual(extended_fold.into(), stepped.into()),
             true,
         ),
@@ -7095,8 +7106,8 @@ pub fn substitute_integer_term_in_proposition(
         memo: &mut std::collections::HashMap<u64, SharedIntegerTerm>,
     ) -> Proposition {
         match proposition {
-            Proposition::ConditionIs(condition, expected) => Proposition::ConditionIs(
-                walk_condition(condition, from, to, changed, memo),
+            Proposition::ConditionIs(condition, expected) => Proposition::condition_is(
+                walk_condition(condition.native_compat(), from, to, changed, memo),
                 *expected,
             ),
             Proposition::And(left, right) => Proposition::And(
@@ -7270,7 +7281,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
         item,
         body.clone(),
     );
-    let whole_is_fold = Proposition::ConditionIs(
+    let whole_is_fold = Proposition::condition_is(
         ConditionTerm::IntegerEqual(whole.clone().into(), fold.clone().into()),
         true,
     );
@@ -7284,7 +7295,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
                 Box::new(whole_is_fold),
                 Box::new(guard.as_ref().clone()),
             )],
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::IntegerEqual(whole.into(), initial.into()),
                 true,
             ),
@@ -7321,7 +7332,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
     }
     let prior_fold =
         IntegerTerm::range_fold(predecessor_index, initial, accumulator, item, body.clone());
-    let prior_is_fold = Proposition::ConditionIs(
+    let prior_is_fold = Proposition::condition_is(
         ConditionTerm::IntegerEqual(prior.clone().into(), prior_fold.into()),
         true,
     );
@@ -7344,7 +7355,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
             )),
             Box::new(guard.as_ref().clone()),
         )],
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerEqual(whole.into(), stepped.into()),
             true,
         ),
@@ -8101,7 +8112,7 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
         if &rewritten_left == left.as_ref() && &rewritten_right == right.as_ref() {
             return None;
         }
-        goal = Proposition::ConditionIs(
+        goal = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -8136,11 +8147,11 @@ fn prove_uint32_integer_division_bridge(
     };
     let dividend = observe(left.clone());
     let divisor = observe(right.clone());
-    let native_nonzero = Proposition::ConditionIs(
+    let native_nonzero = Proposition::condition_is(
         ConditionTerm::equal(right.clone(), MachineTerm::constant(0)),
         false,
     );
-    let integer_nonzero = Proposition::ConditionIs(
+    let integer_nonzero = Proposition::condition_is(
         ConditionTerm::integer_not_equal(divisor.clone(), IntegerTerm::constant_i64(0)),
         true,
     );
@@ -8155,7 +8166,7 @@ fn prove_uint32_integer_division_bridge(
             IntegerTerm::TruncatingQuotient(dividend.into(), divisor.into()),
         )
     };
-    let conclusion = Proposition::ConditionIs(
+    let conclusion = Proposition::condition_is(
         ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
         true,
     );
@@ -8249,10 +8260,10 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
     );
     Some(implication(
         [
-            Proposition::ConditionIs(low_bound, true),
-            Proposition::ConditionIs(high_bound, true),
+            Proposition::condition_is(low_bound, true),
+            Proposition::condition_is(high_bound, true),
         ],
-        Proposition::ConditionIs(ConditionTerm::integer_equal(observe(packed)?, exact), true),
+        Proposition::condition_is(ConditionTerm::integer_equal(observe(packed)?, exact), true),
     ))
 }
 
@@ -8307,16 +8318,16 @@ fn prove_uint32_unpack_uint16_word(
     let exact = if high_word { high.clone() } else { low.clone() };
     implication(
         [
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::unsigned_less_equal(low, MachineTerm::constant(65535)),
                 true,
             ),
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::unsigned_less_equal(high, MachineTerm::constant(65535)),
                 true,
             ),
         ],
-        Proposition::ConditionIs(ConditionTerm::uint32_equal(extracted, exact), true),
+        Proposition::condition_is(ConditionTerm::uint32_equal(extracted, exact), true),
     )
 }
 
@@ -8340,16 +8351,16 @@ fn prove_uint64_unpack_uint16_word(
     let exact = if high_word { high.clone() } else { low.clone() };
     implication(
         [
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::uint64_less_equal(low, MachineTerm::uint64_constant(65535)),
                 true,
             ),
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::uint64_less_equal(high, MachineTerm::uint64_constant(65535)),
                 true,
             ),
         ],
-        Proposition::ConditionIs(ConditionTerm::uint64_equal(extracted, exact), true),
+        Proposition::condition_is(ConditionTerm::uint64_equal(extracted, exact), true),
     )
 }
 
@@ -8386,11 +8397,11 @@ pub fn prove_uint64_integer_bridge(
     };
     let a = observe(left.clone());
     let b = observe(right.clone());
-    let native_nonzero = Proposition::ConditionIs(
+    let native_nonzero = Proposition::condition_is(
         ConditionTerm::uint64_equal(right.clone(), MachineTerm::uint64_constant(0)),
         false,
     );
-    let integer_nonzero = Proposition::ConditionIs(
+    let integer_nonzero = Proposition::condition_is(
         ConditionTerm::integer_not_equal(b.clone(), IntegerTerm::constant_i64(0)),
         true,
     );
@@ -8415,7 +8426,7 @@ pub fn prove_uint64_integer_bridge(
             IntegerTerm::TruncatingRemainder(a.into(), b.into()),
         )
     };
-    let conclusion = Proposition::ConditionIs(
+    let conclusion = Proposition::condition_is(
         ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
         true,
     );
@@ -8432,7 +8443,7 @@ pub fn prove_int32_remainder_to_integer(left: MachineTerm, right: MachineTerm) -
     };
     let native_defined =
         Proposition::signed_division_defined(MachineIntegerType::Int32, &left, &right);
-    let integer_nonzero = Proposition::ConditionIs(
+    let integer_nonzero = Proposition::condition_is(
         ConditionTerm::integer_not_equal(observe(right.clone()), IntegerTerm::constant_i64(0)),
         true,
     );
@@ -8440,7 +8451,7 @@ pub fn prove_int32_remainder_to_integer(left: MachineTerm, right: MachineTerm) -
     let machine = binary_node!(Int32, Remainder, left.into(), right.into());
     implication(
         [native_defined, integer_nonzero],
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
             true,
         ),
@@ -8462,8 +8473,8 @@ fn implication<const N: usize>(premises: [Proposition; N], conclusion: Propositi
 #[cfg(test)]
 fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theorem {
     implication(
-        [Proposition::ConditionIs(premise, true)],
-        Proposition::ConditionIs(conclusion, true),
+        [Proposition::condition_is(premise, true)],
+        Proposition::condition_is(conclusion, true),
     )
 }
 
@@ -8475,10 +8486,10 @@ fn uint32_transitivity(
 ) -> Theorem {
     implication(
         [
-            Proposition::ConditionIs(first, true),
-            Proposition::ConditionIs(second, true),
+            Proposition::condition_is(first, true),
+            Proposition::condition_is(second, true),
         ],
-        Proposition::ConditionIs(conclusion, true),
+        Proposition::condition_is(conclusion, true),
     )
 }
 

@@ -65,11 +65,11 @@ fn a_specification_condition_folds_only_when_it_is_constant() {
 
     for (condition, expected) in [(constant_true, true), (constant_false, false)] {
         assert_eq!(
-            constant_spec_condition_value(&Proposition::ConditionIs(condition.clone(), true)),
+            constant_spec_condition_value(&Proposition::condition_is(condition.clone(), true)),
             Some(expected)
         );
         assert_eq!(
-            constant_spec_condition_value(&Proposition::ConditionIs(condition, false)),
+            constant_spec_condition_value(&Proposition::condition_is(condition, false)),
             Some(!expected)
         );
     }
@@ -80,7 +80,7 @@ fn a_specification_condition_folds_only_when_it_is_constant() {
     assert_eq!(knows_the_condition.decide(&ambient), Some(true));
     for value in [true, false] {
         assert_eq!(
-            constant_spec_condition_value(&Proposition::ConditionIs(ambient.clone(), value)),
+            constant_spec_condition_value(&Proposition::condition_is(ambient.clone(), value)),
             None
         );
     }
@@ -141,7 +141,7 @@ fn checked_wide_to_int_narrowing_requires_each_representability_bound() {
             for (obligation, bound) in obligations.iter().zip(&bounds[provided..]) {
                 assert_eq!(
                     obligation.proposition(),
-                    &Proposition::ConditionIs(bound.clone(), true)
+                    &Proposition::condition_is(bound.clone(), true)
                 );
             }
         }
@@ -186,7 +186,7 @@ fn wide_to_int_narrowing_checks_signed_and_unsigned_boundaries() {
                 panic!("narrowing owes an explicit range comparison");
             };
             assert_eq!(
-                PureFactContext::decide_intrinsically(condition),
+                PureFactContext::decide_intrinsically(condition.native_compat()),
                 Some(false)
             );
             assert!(obligation.context().unwrap().starts_with("int32 narrowing"));
@@ -214,7 +214,7 @@ fn wide_to_int_narrowing_checks_signed_and_unsigned_boundaries() {
                 panic!("narrowing owes an explicit range comparison");
             };
             assert_eq!(
-                PureFactContext::decide_intrinsically(condition),
+                PureFactContext::decide_intrinsically(condition.native_compat()),
                 Some(false)
             );
             assert_eq!(obligation.context(), Some("int32 narrowing upper bound"));
@@ -238,7 +238,7 @@ fn wide_equality_bounds_keep_width_sign_and_exact_premises() {
         );
     assert_eq!(facts.decide(&signed_bound), Some(true));
     assert_eq!(facts.decide(&unsigned_bound), Some(false));
-    let narrowed = Proposition::ConditionIs(
+    let narrowed = Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::uint32_from_64(x.clone()),
             MachineTerm::constant(u32::MAX),
@@ -261,7 +261,7 @@ fn wide_equality_bounds_keep_width_sign_and_exact_premises() {
     let narrow_facts = PureFactContext::new()
         .assume_condition(ConditionTerm::equal(x, MachineTerm::constant(0)), true);
     assert_eq!(narrow_facts.decide(&unsigned_bound), None);
-    let proposition = Proposition::ConditionIs(signed_bound, true);
+    let proposition = Proposition::condition_is(signed_bound, true);
     let derivation =
         crate::kernel::search::ProofSearch::derive_atomic_proposition(&(facts), &proposition)
             .unwrap();
@@ -1636,7 +1636,7 @@ fn spec_pointer_equality_lowers_to_a_pure_fact() {
             ComparisonOperator::Equal,
             &ProgramValue::pointer(right.clone()),
         ),
-        Some(Proposition::ConditionIs(equality.clone(), true)),
+        Some(Proposition::condition_is(equality.clone(), true)),
     );
     assert_eq!(
         program_value_comparison_proposition(
@@ -1644,7 +1644,7 @@ fn spec_pointer_equality_lowers_to_a_pure_fact() {
             ComparisonOperator::NotEqual,
             &ProgramValue::pointer(right),
         ),
-        Some(Proposition::ConditionIs(equality, false)),
+        Some(Proposition::condition_is(equality, false)),
     );
     assert_eq!(
         program_value_comparison_proposition(
@@ -1720,7 +1720,7 @@ fn spec_pointer_order_lowers_same_block_offsets() {
             ComparisonOperator::LessThan,
             &ProgramValue::pointer(right),
         ),
-        Some(Proposition::ConditionIs(
+        Some(Proposition::condition_is(
             ConditionTerm::Constant(true),
             true,
         )),
@@ -3464,7 +3464,7 @@ fn interval_arithmetic_uses_lower_bound_for_incremented_values() {
     );
     assert!(!crate::kernel::search::ProofSearch::proves(
         &(lower_only),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::signed_greater_equal(incremented.clone(), MachineTerm::constant(1),),
             true,
         )
@@ -3478,14 +3478,14 @@ fn interval_arithmetic_uses_lower_bound_for_incremented_values() {
     );
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::signed_greater_equal(incremented.clone(), MachineTerm::constant(1),),
             true,
         )
     ));
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::signed_greater_than(incremented, MachineTerm::constant(0)),
             true,
         )
@@ -3511,7 +3511,7 @@ fn nonnegative_successor_requires_no_overflow_evidence() {
     assert!(
         crate::kernel::search::ProofSearch::derive_solve_proposition(
             &(assumptions),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::signed_greater_equal(successor, MachineTerm::constant(0),),
                 true,
             )
@@ -3908,7 +3908,7 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
                 panic!("narrowing owes an explicit range comparison");
             };
             assert_eq!(
-                PureFactContext::decide_intrinsically(condition),
+                PureFactContext::decide_intrinsically(condition.native_compat()),
                 Some(false)
             );
             assert!(obligation.context().unwrap().starts_with("int8 narrowing"));
@@ -3949,7 +3949,7 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
         assert_eq!(
             crate::kernel::eval::checked_narrowing_identity(&int32(value.clone()), &checked),
             vec![
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::integer_equal(
                         IntegerTerm::from_machine(
                             crate::kernel::MachineIntegerType::Int8,
@@ -3964,7 +3964,7 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
                     ),
                     true,
                 ),
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::equal(
                         MachineTerm::machine_integer_cast(
                             crate::kernel::MachineIntegerType::Int8,
@@ -4139,11 +4139,11 @@ fn exact_signed_mirror_normalization_checks_state_address_and_selected_premise()
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
-    let premise = Proposition::ConditionIs(
+    let premise = Proposition::condition_is(
         ConditionTerm::signed_less_than(MachineTerm::constant(1), load.clone()),
         true,
     );
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::signed_greater_than(load, MachineTerm::constant(1)),
         true,
     );
@@ -4175,7 +4175,7 @@ fn exact_signed_mirror_normalization_checks_state_address_and_selected_premise()
             Box::new(address),
             crate::kernel::LoadKind::Int32,
         );
-        let bad = Proposition::ConditionIs(
+        let bad = Proposition::condition_is(
             ConditionTerm::signed_greater_than(unrelated, MachineTerm::constant(1)),
             true,
         );
@@ -5052,7 +5052,7 @@ fn unsigned_division_reports_its_domain_even_when_already_known() {
             );
             assert_eq!(
                 paths[0].obligations[0].proposition(),
-                &Proposition::ConditionIs(zero.clone(), false)
+                &Proposition::condition_is(zero.clone(), false)
             );
         }
     }

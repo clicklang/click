@@ -40,7 +40,7 @@ fn fold_resource_quantity_activity(
     }
     let zero = holds_by_lookup_or_decision(
         assumptions,
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -52,7 +52,7 @@ fn fold_resource_quantity_activity(
     );
     let positive = holds_by_lookup_or_decision(
         assumptions,
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
@@ -458,7 +458,7 @@ fn dynamic_body_fact_dependency(
     ) -> Result<(), String> {
         match proposition {
             Proposition::ConditionIs(condition, _) => walk_term(
-                &Term::Condition(condition.clone()),
+                &Term::Condition((condition.clone()).native_compat().clone()),
                 state,
                 assumptions,
                 temporary_views,
@@ -1829,7 +1829,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         let positive = quantity.as_const().is_some_and(|value| value > 0)
             || holds_by_lookup_or_decision(
                 &assumptions,
-                &Proposition::ConditionIs(
+                &Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
@@ -2417,7 +2417,7 @@ fn owned_quantity_is_positive(quantity: &MachineTerm, assumptions: &PureFactCont
     quantity.as_const().is_some_and(|value| (value as i32) > 0)
         || holds_by_lookup_or_decision(
             assumptions,
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
@@ -2470,13 +2470,13 @@ fn try_select_composite_resource_body(
     })?;
     let proves_condition = |proposition: &Proposition| match proposition {
         Proposition::ConditionIs(condition, value) => {
-            assumptions.proves_condition_exact(condition, *value)
-                || assumptions.decide(condition) == Some(*value)
+            assumptions.proves_condition_exact(condition.native_compat(), *value)
+                || assumptions.decide(condition.native_compat()) == Some(*value)
         }
         Proposition::Not(body) => match body.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                assumptions.proves_condition_exact(condition, !*value)
-                    || assumptions.decide(condition) == Some(!*value)
+                assumptions.proves_condition_exact(condition.native_compat(), !*value)
+                    || assumptions.decide(condition.native_compat()) == Some(!*value)
             }
             _ => false,
         },
@@ -2487,7 +2487,7 @@ fn try_select_composite_resource_body(
     }
     let negated = match &lowered {
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(condition.clone(), !value)
+            Proposition::condition_is(condition.clone(), !value)
         }
         Proposition::Not(body) => body.as_ref().clone(),
         proposition => Proposition::Not(Box::new(proposition.clone())),
@@ -3293,11 +3293,13 @@ fn decided_by_kernel_condition_decision(
             decided_by_kernel_condition_decision(assumptions, left)
                 && decided_by_kernel_condition_decision(assumptions, right)
         }
-        Proposition::ConditionIs(condition, value) => assumptions.decide(condition) == Some(*value),
+        Proposition::ConditionIs(condition, value) => {
+            assumptions.decide(condition.native_compat()) == Some(*value)
+        }
         Proposition::Not(body) => matches!(
             body.as_ref(),
             Proposition::ConditionIs(condition, value)
-                if assumptions.decide(condition) == Some(!*value)
+                if assumptions.decide(condition.native_compat()) == Some(!*value)
         ),
         _ => false,
     }
@@ -3543,7 +3545,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         // A constant quantity is decided by reading it, as `fold` reads its
         // own; only a symbolic one needs a fact about it.
         let final_by_constant = quantity.as_const() == Some(1);
-        let final_unit = Proposition::ConditionIs(
+        let final_unit = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -5924,7 +5926,7 @@ void child_release(struct child* obj) {
         let index = Variable(2_000_000);
         let index_term = || Box::new(MachineTerm::Variable(index));
         let below = |end: u32| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -5934,7 +5936,7 @@ void child_release(struct child* obj) {
                 true,
             )
         };
-        let at_least_zero = Proposition::ConditionIs(
+        let at_least_zero = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -6052,14 +6054,14 @@ void child_release(struct child* obj) {
                 value_type: crate::kernel::ProgramType::Int32,
             }
         } else {
-            Proposition::ConditionIs(condition, true)
+            Proposition::condition_is(condition, true)
         };
         let span = if symbolic_range {
             MachineTerm::Variable(Variable(2_000_017))
         } else {
             MachineTerm::constant(1)
         };
-        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

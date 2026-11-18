@@ -673,7 +673,7 @@ pub(crate) fn signed_definedness_operands(
     let Proposition::ConditionIs(condition, false) = proposition else {
         return None;
     };
-    match condition {
+    match condition.native_compat() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
@@ -745,7 +745,7 @@ fn signed_constant_bound_on_key(
     let Proposition::ConditionIs(condition, value) = premise else {
         return None;
     };
-    let view = comparison_view(condition, *value)?;
+    let view = comparison_view(condition.native_compat(), *value)?;
     let format = match width {
         SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
         SignedDefinedWidth::Int64 => MachineIntegerType::Int64,
@@ -906,7 +906,7 @@ fn scalar_bounds(premises: &[&Proposition]) -> Option<BTreeMap<MachineTerm, (i64
         let Proposition::ConditionIs(condition, true) = premise else {
             return None;
         };
-        let (left, right, strict) = match condition {
+        let (left, right, strict) = match condition.native_compat() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -991,7 +991,7 @@ fn unsigned64_order(proposition: &Proposition) -> Option<(&MachineTerm, &Machine
     let Proposition::ConditionIs(condition, true) = proposition else {
         return None;
     };
-    Some(match condition {
+    Some(match condition.native_compat() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
@@ -1075,7 +1075,7 @@ fn integer_rule_holds(
     let native = match result {
         Proposition::Not(inner) => match inner.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                negated = Proposition::ConditionIs(condition.clone(), !value);
+                negated = Proposition::condition_is(condition.clone(), !value);
                 &negated
             }
             _ => result,
@@ -1175,7 +1175,7 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
     }
     if let Proposition::ConditionIs(condition, truth) = goal
         && matches!(
-            condition,
+            condition.native_compat(),
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::LessEqual,
@@ -1190,7 +1190,7 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
             }
             context = context.assume_proposition(premise.clone());
         }
-        return context.decide_widened_sum_bound(condition) == Some(*truth);
+        return context.decide_widened_sum_bound(condition.native_compat()) == Some(*truth);
     }
     false
 }
@@ -1482,7 +1482,8 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
     let Proposition::ConditionIs(condition, expected) = result else {
         return false;
     };
-    let Some((goal_pointer, goal_alignment)) = checked_pointer_alignment(condition) else {
+    let Some((goal_pointer, goal_alignment)) = checked_pointer_alignment(condition.native_compat())
+    else {
         return false;
     };
     if !charge_pointer(goal_pointer) {
@@ -1492,7 +1493,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         let Proposition::ConditionIs(condition, true) = proposition else {
             return None;
         };
-        checked_pointer_alignment(condition)
+        checked_pointer_alignment(condition.native_compat())
     });
     if premise.is_some() && premise_alignment.is_none() {
         return false;
@@ -2415,7 +2416,9 @@ fn word_comparison(
     let Proposition::ConditionIs(condition, truth) = proposition else {
         return None;
     };
-    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
+        condition.native_compat(),
+    )?;
     if !matches!(
         view.format,
         MachineIntegerType::Int64 | MachineIntegerType::UInt64
@@ -2457,7 +2460,8 @@ fn pointer_word_equality(
         let Proposition::ConditionIs(condition, true) = premise else {
             return false;
         };
-        let Some((pointer, alignment)) = checked_pointer_alignment(condition) else {
+        let Some((pointer, alignment)) = checked_pointer_alignment(condition.native_compat())
+        else {
             return false;
         };
         if !charge_pointer(pointer) {
@@ -2526,7 +2530,7 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
         let Proposition::ConditionIs(condition, true) = premise else {
             return false;
         };
-        if checked_pointer_alignment(condition).is_none() {
+        if checked_pointer_alignment(condition.native_compat()).is_none() {
             return false;
         }
     }
@@ -2536,7 +2540,8 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
             let Proposition::ConditionIs(condition, true) = premise else {
                 unreachable!("alignment premises were checked above");
             };
-            checked_pointer_alignment(condition).expect("alignment premises were checked above")
+            checked_pointer_alignment(condition.native_compat())
+                .expect("alignment premises were checked above")
         })
         .collect::<Vec<_>>();
     let alignment_index = AlignmentIndex::new(&alignments);
@@ -2571,7 +2576,7 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
     let Proposition::ConditionIs(finite_condition, true) = finite else {
         return false;
     };
-    let (finite_expression, finite_width) = match finite_condition {
+    let (finite_expression, finite_width) = match finite_condition.native_compat() {
         ConditionTerm::Float32(FloatCondition::Classification {
             value: expression,
             classification: FloatClassification::Finite,
@@ -2608,7 +2613,7 @@ fn finite_float_comparison(
     let Proposition::ConditionIs(condition, expected) = result else {
         return None;
     };
-    let (operator, left, right) = match condition {
+    let (operator, left, right) = match condition.native_compat() {
         ConditionTerm::Float32(FloatCondition::Comparison {
             operator,
             left,
@@ -2627,7 +2632,7 @@ fn finite_float_comparison(
             | ComparisonOperator::LessEqual
             | ComparisonOperator::GreaterEqual
     );
-    (*expected == reflexive).then_some((condition, left, right))
+    (*expected == reflexive).then_some((condition.native_compat(), left, right))
 }
 
 pub(super) fn finite_float_reflexivity_premise(result: &Proposition) -> Option<Proposition> {
@@ -2644,7 +2649,7 @@ pub(super) fn finite_float_reflexivity_premise(result: &Proposition) -> Option<P
         }
         _ => unreachable!("finite reflexivity only selects float comparisons"),
     };
-    Some(Proposition::ConditionIs(finite, true))
+    Some(Proposition::condition_is(finite, true))
 }
 
 #[cfg(test)]
@@ -2719,7 +2724,7 @@ mod tests {
                 OverflowOperation::Multiply,
                 OverflowOperation::Divide,
             ] {
-                let legacy = Proposition::ConditionIs(
+                let legacy = Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format,
                         op,
@@ -2809,7 +2814,7 @@ mod tests {
                             } else {
                                 (term.clone(), literal.clone())
                             };
-                            let premise = Proposition::ConditionIs(
+                            let premise = Proposition::condition_is(
                                 ConditionTerm::Compare {
                                     format,
                                     relation,
@@ -2987,7 +2992,7 @@ mod tests {
             left: Box::new(MachineTerm::Variable(crate::kernel::Variable(1))),
             right: Box::new(MachineTerm::uint64_constant(1)),
         };
-        let bound = Proposition::ConditionIs(
+        let bound = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -3022,7 +3027,7 @@ mod tests {
                 MachineOperandView::Legacy(word),
             )
         });
-        let relation = Proposition::ConditionIs(
+        let relation = Proposition::condition_is(
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 MachineIntegerType::UInt64,
                 CompareRelation::Equal,
@@ -3030,8 +3035,8 @@ mod tests {
             ),
             true,
         );
-        let alignment = Proposition::ConditionIs(ConditionTerm::pointer_aligned(next, 8), true);
-        let goal = Proposition::ConditionIs(
+        let alignment = Proposition::condition_is(ConditionTerm::pointer_aligned(next, 8), true);
+        let goal = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 address,
                 MachineTerm::uint64_bitwise_and(raw, MachineTerm::uint64_constant(!1)),

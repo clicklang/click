@@ -653,7 +653,7 @@ mod tests {
             };
             let query = ConditionTerm::signed_less_than(converted, MachineTerm::constant(0));
             assert!(shared_equivalents(&PureFactContext::new(), &query).is_none());
-            let source = Proposition::ConditionIs(
+            let source = Proposition::condition_is(
                 ConditionTerm::unsigned_less_equal(operand, MachineTerm::constant(max)),
                 true,
             );

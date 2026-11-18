@@ -118,7 +118,7 @@ fn a_program_expression_form_lists_the_premises_it_consulted() {
     let expression = ProgramExpression::Variable(("index".to_string()).into());
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::ConditionIs(
+        .assume_proposition(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -169,7 +169,7 @@ fn an_overflow_guard_names_its_operation_without_wrapping_parentheses() {
     let expression = ProgramExpression::Variable(("index".to_string()).into());
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
-        &unproved(Proposition::ConditionIs(
+        &unproved(Proposition::condition_is(
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
@@ -196,7 +196,7 @@ fn established_conditions_are_named_beside_the_missing_one() {
     let (values, state) = indexed_pointer_site();
     let expression = ProgramExpression::Variable(("index".to_string()).into());
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
-    let guard = Proposition::ConditionIs(
+    let guard = Proposition::condition_is(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
@@ -244,7 +244,7 @@ fn every_refusal_says_no_span_is_available() {
     let expression = ProgramExpression::Variable(("index".to_string()).into());
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
-        &unproved(Proposition::ConditionIs(
+        &unproved(Proposition::condition_is(
             ConditionTerm::Constant(false),
             true,
         )),
@@ -381,7 +381,7 @@ fn a_conditional_fold_body_quotes_the_condition_it_carried_out() {
     let message = describe_dropped_fold_body(
         &crate::kernel::DroppedFoldBody {
             body_paths: 1,
-            unavailable_body_fact: Some(Proposition::ConditionIs(
+            unavailable_body_fact: Some(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -441,7 +441,7 @@ mod scaling_tests {
 
 #[test]
 fn quantified_reflexive_domain_guard_needs_no_search_or_ambient_fact() {
-    let premise = Proposition::ConditionIs(
+    let premise = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -471,7 +471,7 @@ fn quantified_reflexive_domain_guard_needs_no_search_or_ambient_fact() {
         &PureFactContext::new(),
         &integer_guard
     ));
-    let falsehood = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+    let falsehood = Proposition::condition_is(ConditionTerm::Constant(false), true);
     assert!(!established_condition(
         &PureFactContext::new(),
         &guard(falsehood.clone())

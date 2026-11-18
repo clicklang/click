@@ -197,7 +197,7 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
         },
         _ => return None,
     };
-    let (left, right) = match condition {
+    let (left, right) = match condition.native_compat() {
         crate::kernel::ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessThan,
@@ -1503,7 +1503,7 @@ impl<'a> Proof<'a> {
         }
         match context.theorem_context.values.get(parameter) {
             Some(ProgramValue::Int32(current)) => {
-                let nonnegative = Proposition::ConditionIs(
+                let nonnegative = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
@@ -1850,7 +1850,7 @@ fn describe_known_goal(goal: &Proposition) -> &'static str {
         Proposition::ForAll { .. } => "a universal proposition",
         Proposition::Exists { .. } => "an existential proposition",
         Proposition::MemoryLoadable { .. } => "a memory-viewability fact",
-        Proposition::ConditionIs(condition, _) => match condition {
+        Proposition::ConditionIs(condition, _) => match condition.native_compat() {
             ConditionTerm::IntegerLessThan(..) => "an Integer less-than fact",
             ConditionTerm::IntegerLessEqual(..) => "an Integer less-or-equal fact",
             ConditionTerm::IntegerGreaterThan(..) => "an Integer greater-than fact",

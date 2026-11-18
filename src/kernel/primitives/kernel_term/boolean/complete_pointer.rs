@@ -340,7 +340,7 @@ mod tests {
                     );
                     let expected =
                         crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
-                            &Proposition::ConditionIs(source.clone(), true),
+                            &Proposition::condition_is(source.clone(), true),
                             Variable(999101),
                             &to,
                         );

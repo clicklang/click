@@ -1511,6 +1511,21 @@ and zero changed terms. Coverage includes the historical algebraic pointer-field
 regression corrected in 10q3b1. The condition-storage switch and retained
 producer handoffs remain separate required slices.
 
+### 10q3c Condition output storage (in progress)
+
+`ConditionIs` owns the existing exact condition carrier. Native constructors
+preserve their original syntax; retained inputs forward one logical Bool root.
+`condition_is` names construction separately from structural patterns. Native
+checking, rewriting, diagnostics and DTO consumers select their existing
+compatibility views explicitly. Collection and machine/pointer substitution
+visit retained conditions directly with the existing common-term operations.
+There is no implicit dereference, cross-representation equality or additional
+native expression cache.
+
+Validation is in progress. The separate 10q3d producer handoffs and 10q4
+expression-bearing `Term` outputs remain required; storage support alone does
+not close either boundary.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

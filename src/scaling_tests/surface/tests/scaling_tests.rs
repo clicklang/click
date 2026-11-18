@@ -1876,7 +1876,7 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
     use crate::kernel::{ConditionTerm, MachineTerm, Proposition, Variable};
 
     let less = |left: u64, right: u64| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -1889,7 +1889,7 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
     let context = |links: usize, unrelated: usize, broken: Option<usize>, reversed: bool| {
         let mut available = Vec::new();
         for index in 0..unrelated {
-            available.push(Proposition::ConditionIs(
+            available.push(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -2141,7 +2141,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             "a read defined at an alias",
             vec![
                 read_defined(address.clone()),
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::address_equal(alias.clone(), address),
                     true,
                 ),
@@ -4403,7 +4403,7 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
     use crate::kernel::{ConditionTerm, MachineTerm, Proposition, PureFactContext, Variable};
 
     let equal = |variable: u64, value: u32| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -4424,7 +4424,7 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
                     Box::new(equal(variable, 1)),
                 ));
             }
-            let goal = Proposition::ConditionIs(
+            let goal = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -4506,7 +4506,7 @@ fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
                     Box::new(is(variable, "Black")),
                 ));
             }
-            let goal = Proposition::ConditionIs(
+            let goal = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -6845,7 +6845,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
         wide: false,
     };
     let equal = |left: u64, right: u64| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -6867,7 +6867,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
             "a non-null source without other non-null objects",
             vec![
                 loadable(Address::symbolic(Variable(470_002)), 16),
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::address_equal(
                         Address::symbolic(Variable(470_002)),
                         Address::null(),
@@ -6899,7 +6899,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                 for index in 0..unrelated as u64 {
                     context = context
                         .assume_proposition(equal(471_000 + 2 * index, 471_001 + 2 * index))
-                        .assume_proposition(Proposition::ConditionIs(
+                        .assume_proposition(Proposition::condition_is(
                             ConditionTerm::address_equal(
                                 Address::symbolic(Variable(475_000 + index)),
                                 Address::null(),
@@ -6994,7 +6994,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
         offset: AddressOffset::Constant(0),
     };
     let index = MachineTerm::Variable(Variable(490_000));
-    let equality = Proposition::ConditionIs(
+    let equality = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -7017,7 +7017,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
                 },
                 ProgramValue::Int32(value.clone()),
             );
-            context = context.assume_proposition(Proposition::ConditionIs(
+            context = context.assume_proposition(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -7097,7 +7097,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         )
     };
     let equal = |left: MachineTerm, right: MachineTerm| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -7108,7 +7108,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         )
     };
     let less = |left: MachineTerm, right: MachineTerm, holds: bool| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,

@@ -44,7 +44,7 @@ impl StatementAssignSource {
         if parent.address() != child.address() || parent.program_type() != child.program_type() {
             return None;
         }
-        let mut fact = ExecutionPureFact::certified(Proposition::ConditionIs(
+        let mut fact = ExecutionPureFact::certified(Proposition::condition_is(
             ConditionTerm::AddressEqual(
                 Box::new(parent.address().clone()),
                 Box::new(child.address().clone()),
@@ -344,7 +344,7 @@ mod tests {
         );
         assert!(
             !fact
-                .with_proposition(Proposition::ConditionIs(
+                .with_proposition(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,

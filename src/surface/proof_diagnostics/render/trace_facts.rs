@@ -173,7 +173,7 @@ mod tests {
         ));
         let facts = [
             (
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
@@ -190,7 +190,7 @@ mod tests {
                 "read<Bits64>",
             ),
             (
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -205,7 +205,7 @@ mod tests {
                 "rb_root_black(",
             ),
             (
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::AddressEqual(Box::new(p.clone()), Box::new(Address::null())),
                     false,
                 ),
@@ -216,7 +216,7 @@ mod tests {
                 ":Tree",
             ),
             (
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::AddressOffsetEqual(
                         Box::new(p.offset.clone()),
                         Box::new(AddressOffset::Constant(16)),
@@ -362,7 +362,7 @@ mod extended_state_tests {
     #[test]
     fn trace_labels_retain_late_state_identities_without_more_structural_comparisons() {
         let mut labels = MemoryStateLabels::default();
-        let fact = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let fact = Proposition::condition_is(ConditionTerm::Constant(true), true);
         render_trace_fact_labeled(&fact, &mut labels);
         let memories: Vec<_> = (0..64)
             .map(|i| SymbolicMemory::new().with_block(format!("late_{i}"), 8))

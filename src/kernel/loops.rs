@@ -1787,7 +1787,7 @@ fn condition_path_is_ruled_out(
         let Proposition::ConditionIs(condition, value) = fact.proposition() else {
             return false;
         };
-        condition_value_is_proven(assumptions, condition, !value)
+        condition_value_is_proven(assumptions, condition.native_compat(), !value)
     })
 }
 
@@ -2139,14 +2139,14 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
             .iter()
             .filter(|fact| match fact {
                 Proposition::ConditionIs(condition, value) => {
-                    !earlier.contains(&(condition, !*value))
+                    !earlier.contains(&(condition.native_compat(), !*value))
                 }
                 _ => true,
             })
             .collect::<Vec<_>>();
         for fact in own.iter() {
             if let Proposition::ConditionIs(condition, value) = fact {
-                earlier.insert((condition, *value));
+                earlier.insert((condition.native_compat(), *value));
             }
         }
         let mut own = if narrowed.is_empty() {
@@ -2826,10 +2826,10 @@ fn indexed_loop_exit_load_equality(
     else {
         return None;
     };
-    if let Some(answer) = context.exact_condition_value(&condition) {
+    if let Some(answer) = context.exact_condition_value((&condition).native_compat()) {
         return Some(answer == expected);
     }
-    match &condition {
+    match (&condition).native_compat() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -3055,7 +3055,7 @@ fn equation_states_nothing(equation: &Proposition) -> bool {
     match equation {
         Proposition::Equal(left, right) => left == right,
         Proposition::ConditionIs(condition, value) => {
-            PureFactContext::decide_intrinsically(condition) == Some(*value)
+            PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value)
         }
         _ => false,
     }
@@ -8300,7 +8300,7 @@ fn assume_invariant_checks_explained(
     // that is never negative.
     let _iterations = crate::kernel::spec::LoopIterationsScope::enter(iterations.clone());
     let mut head_facts = prefix_facts.persistent_facts();
-    head_facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
+    head_facts.push(ExecutionPureFact::new(Proposition::condition_is(
         ConditionTerm::IntegerLessEqual(
             IntegerTerm::constant(0.into()).into(),
             iterations.clone().into(),

@@ -1001,8 +1001,8 @@ mod tests {
         assert_ne!(left, right, "exercise distinct producer IDs");
         let exports = KernelTermExport::machine_export_count();
         assert!(conditions_equal(&left, &right));
-        let left = Proposition::ConditionIs(left, true);
-        let right = Proposition::ConditionIs(right, true);
+        let left = Proposition::condition_is(left, true);
+        let right = Proposition::condition_is(right, true);
         assert!(propositions_alpha_equivalent(&left, &right));
         let lines = crate::kernel::fact_stability::capture(|| {
             crate::kernel::fact_stability::compare(

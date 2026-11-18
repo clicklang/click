@@ -53,7 +53,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
                     _,
                 )) = condition_source_0.condition_native() =>
             {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: *format,
                         relation: CompareRelation::Equal,
@@ -74,7 +74,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
                     _,
                 )) = condition_source_0.condition_native() =>
             {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
@@ -88,7 +88,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
                 if let Some((ConditionTerm::PointerEqual(left, right), _)) =
                     condition_source_0.condition_native() =>
             {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::PointerEqual(right.clone(), left.clone()),
                     true,
                 )
@@ -97,7 +97,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
                 if let Some((ConditionTerm::AddressEqual(left, right), _)) =
                     condition_source_0.condition_native() =>
             {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::AddressEqual(right.clone(), left.clone()),
                     true,
                 )
@@ -106,7 +106,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
                 if let Some((ConditionTerm::AddressOffsetEqual(left, right), _)) =
                     condition_source_0.condition_native() =>
             {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::AddressOffsetEqual(right.clone(), left.clone()),
                     true,
                 )

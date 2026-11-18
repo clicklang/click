@@ -455,18 +455,18 @@ mod tests {
     }
 
     fn le(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::integer_less_equal(left, right), true)
+        Proposition::condition_is(ConditionTerm::integer_less_equal(left, right), true)
     }
 
     fn lt(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerLessThan(left.into(), right.into()),
             true,
         )
     }
 
     fn eq(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::integer_equal(left, right), true)
+        Proposition::condition_is(ConditionTerm::integer_equal(left, right), true)
     }
 
     fn c(value: i64) -> IntegerTerm {
@@ -481,7 +481,7 @@ mod tests {
     }
 
     fn ne(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerNotEqual(left.into(), right.into()),
             true,
         )

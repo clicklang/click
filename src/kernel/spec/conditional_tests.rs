@@ -15,7 +15,7 @@ fn variable(format: MachineIntegerType, id: u64) -> SpecValue {
 }
 fn join(condition: &ConditionTerm, left: &SpecValue, right: &SpecValue) -> SpecValue {
     SpecValue::conditional(
-        &Proposition::ConditionIs(condition.clone(), true),
+        &Proposition::condition_is(condition.clone(), true),
         left,
         right,
         true,
@@ -49,7 +49,7 @@ fn conditional_arms_keep_shared_identity_and_native_observations() {
         let right = variable(format, 998101);
         let guard = ConditionTerm::Variable(Variable(998102));
         let native = conditional_spec_value(
-            &Proposition::ConditionIs(guard.clone(), true),
+            &Proposition::condition_is(guard.clone(), true),
             left.clone().into_native(),
             right.clone().into_native(),
         )
@@ -100,7 +100,7 @@ fn conditional_join_preserves_mixed_word_rules_and_bool_refusals() {
     let result = join(&guard, &left, &right);
     assert_eq!(result.program_type(), ProgramType::UInt32);
     let expected = conditional_spec_value(
-        &Proposition::ConditionIs(guard.clone(), true),
+        &Proposition::condition_is(guard.clone(), true),
         left.clone().into_native(),
         right.clone().into_native(),
     )
@@ -112,7 +112,7 @@ fn conditional_join_preserves_mixed_word_rules_and_bool_refusals() {
     )));
     assert!(matches!(
         SpecValue::conditional(
-            &Proposition::ConditionIs(guard, true),
+            &Proposition::condition_is(guard, true),
             &boolean,
             &left,
             true
@@ -222,11 +222,11 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
         current = TermRewrite::for_integer_exact(&from, &to).integer(&current);
         assert_eq!(current, source);
     }
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::integer_less_equal(IntegerTerm::constant(1.into()), source),
         true,
     );
-    let unrelated = Proposition::ConditionIs(
+    let unrelated = Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(998207)),
             MachineTerm::constant(99),
@@ -255,7 +255,7 @@ fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
     let other_payload = SpecValue::Native(ProgramValue::Pointer(
         pointer.clone().with_pointee_constant(false),
     ));
-    let condition = Proposition::ConditionIs(ConditionTerm::Variable(Variable(1026101)), true);
+    let condition = Proposition::condition_is(ConditionTerm::Variable(Variable(1026101)), true);
     for left in [native.clone(), shared.clone()] {
         for right in [
             other_payload.clone(),

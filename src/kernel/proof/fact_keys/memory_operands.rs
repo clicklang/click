@@ -432,12 +432,12 @@ mod tests {
             CompareRelation::LessThan,
             CompareRelation::LessEqual,
         ] {
-            let native = Proposition::ConditionIs(
+            let native = Proposition::condition_is(
                 ConditionTerm::machine_compare(format, relation, native.clone(), limit.clone()),
                 true,
             );
             let exports = KernelTermExport::machine_export_count();
-            let shared = Proposition::ConditionIs(
+            let shared = Proposition::condition_is(
                 condition_for_operand_views(
                     format,
                     relation,

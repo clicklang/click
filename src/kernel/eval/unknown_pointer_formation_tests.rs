@@ -62,7 +62,7 @@ fn formation_requires_the_original_domain_and_includes_one_past() {
         true,
     );
     assert!(!permits(&p, 4, &numeric, &resources));
-    let equality = Proposition::ConditionIs(
+    let equality = Proposition::condition_is(
         ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(q.clone())),
         true,
     );
@@ -112,7 +112,7 @@ fn member_coverage_does_not_follow_numeric_aliases() {
     let numeric = aliased.clone().assume_proposition(coverage);
     let empty = ResourceContext::new();
     assert!(!permits(&p, 8, &numeric, &empty));
-    let equality = Proposition::ConditionIs(
+    let equality = Proposition::condition_is(
         ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(q.clone())),
         true,
     );
@@ -372,7 +372,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
             (false, _) => MachineTerm::constant(n as u32),
         };
         let equal = |a, b| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 if wide {
                     ConditionTerm::int64_equal(a, b)
                 } else {

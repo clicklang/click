@@ -232,11 +232,11 @@ fn initialized_range_order_collection_does_not_enumerate_elements() {
         let var = Variable(9_200_100);
         let index = MachineTerm::Variable(var);
         let guard = Proposition::And(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
                 true,
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::signed_less_than(index.clone(), MachineTerm::constant(size)),
                 true,
             )),

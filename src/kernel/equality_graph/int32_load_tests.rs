@@ -356,7 +356,7 @@ fn a_late_zero_index_alias_transfers_an_admitted_read_order() {
     let target = ConditionTerm::signed_less_than(next, direct);
     let root = PureFactContext::new().assume_condition(known, true);
     assert_eq!(root.decide(&target), None);
-    let zero = Proposition::ConditionIs(ConditionTerm::equal(index, 0u32.into()), true);
+    let zero = Proposition::condition_is(ConditionTerm::equal(index, 0u32.into()), true);
     let equal = root.assume_proposition(zero.clone());
     assert_eq!(equal.decide(&target), Some(true));
     assert_eq!(

@@ -917,7 +917,7 @@ fn inactive_instance_quantity_does_not_imply_nonnegativity() {
     let (opened, facts) =
         rewrite_resource_instance(&folded, &instance, &definition, &assumptions, true).unwrap();
     assert!(opened.resources().is_empty());
-    assert!(!facts.contains(&Proposition::ConditionIs(
+    assert!(!facts.contains(&Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
@@ -1166,8 +1166,12 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
     };
     let context = PureFactContext::new();
     let sibling = context.clone();
-    let before = context.equality_graph.knows_condition(condition, *truth);
-    let sibling_before = sibling.equality_graph.knows_condition(condition, *truth);
+    let before = context
+        .equality_graph
+        .knows_condition(condition.native_compat(), *truth);
+    let sibling_before = sibling
+        .equality_graph
+        .knows_condition(condition.native_compat(), *truth);
     let mut invalid = definition.clone();
     invalid.matched.as_mut().unwrap().arms[1].children[0].field_bindings =
         vec![ResourceChildField::Parent(999)];
@@ -1184,7 +1188,9 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
         .is_err()
     );
     assert_eq!(
-        context.equality_graph.knows_condition(condition, *truth),
+        context
+            .equality_graph
+            .knows_condition(condition.native_compat(), *truth),
         before,
         "a refused exchange must not publish its scratch read evidence"
     );
@@ -1199,11 +1205,15 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
     )
     .unwrap();
     assert!(
-        context.equality_graph.knows_condition(condition, *truth),
+        context
+            .equality_graph
+            .knows_condition(condition.native_compat(), *truth),
         "the checked read definition must leave the temporary opening context"
     );
     assert_eq!(
-        sibling.equality_graph.knows_condition(condition, *truth),
+        sibling
+            .equality_graph
+            .knows_condition(condition.native_compat(), *truth),
         sibling_before,
         "checked read evidence stays in the selected proof context"
     );
@@ -2143,7 +2153,7 @@ fn symbolic_resource_indices_preserve_types_equality_and_linear_transfer() {
         for equality in [
             Proposition::Equal(Term::Algebraic(m.clone()), Term::Algebraic(n.clone())),
             Proposition::Equal(Term::Algebraic(n.clone()), Term::Algebraic(m.clone())),
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::AlgebraicEqual(Box::new(m.clone()), Box::new(n.clone())),
                 true,
             ),
@@ -2292,7 +2302,7 @@ fn unrelated_token_context(size: usize) -> ResourceContext {
 }
 
 fn equality(left: MachineTerm, right: MachineTerm) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -4132,7 +4142,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
             .is_err(),
         "folding must require the free field equality rather than reducing it to 7 == 7"
     );
-    let valid_fold_assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
+    let valid_fold_assumptions = assumptions.assume_proposition(Proposition::condition_is(
         ConditionTerm::IntegerEqual(
             IntegerTerm::var(binding).into(),
             IntegerTerm::constant_i64(7).into(),
@@ -5662,7 +5672,7 @@ fn distinct_heap_allocations_never_merge_under_contradictory_assumptions() {
     let alloc_c = ResourceFact::own_allocation(c.clone(), 16u32);
     // A contradictory `false`-is-true fact must not let normalization merge
     // distinct heap authorities. Heap identities are unique by construction.
-    let poisoned = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let poisoned = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::Constant(false),
         true,
     ));

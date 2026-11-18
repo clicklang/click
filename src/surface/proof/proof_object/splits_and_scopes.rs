@@ -1125,7 +1125,7 @@ impl<'a> Proof<'a> {
                 && matches!(
                     &body_kernel,
                     Proposition::ConditionIs(condition, true)
-                        if condition.pointer_offset_sides().is_some()
+                        if condition.native_compat().pointer_offset_sides().is_some()
                 )
             {
                 body_facts = body_facts.with_selected_load_equality_bridge(&body_kernel);

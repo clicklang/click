@@ -15,9 +15,9 @@ fn pending_status_resolution_scales_with_explicit_intervening_work() {
         right: Box::new(MachineTerm::constant(0)),
     };
     let success_assumptions =
-        PureFactContext::new().assume_proposition(Proposition::ConditionIs(zero.clone(), true));
+        PureFactContext::new().assume_proposition(Proposition::condition_is(zero.clone(), true));
     let failure_assumptions =
-        PureFactContext::new().assume_proposition(Proposition::ConditionIs(zero, false));
+        PureFactContext::new().assume_proposition(Proposition::condition_is(zero, false));
     let base = parent(1);
     let mut samples = Vec::new();
     for size in [8usize, 16, 32, 64] {

@@ -273,7 +273,7 @@ pub(super) fn instantiation_guard_tactics(
         atomic_conjuncts(guard, &mut conjuncts);
         conjuncts.iter().all(|guard| available.iter().any(|fact| fact == guard)
             || matches!(guard, Proposition::ConditionIs(condition, expected)
-                if crate::kernel::proof::fact_reasoning::trivial_condition_value(condition) == Some(*expected)))
+                if crate::kernel::proof::fact_reasoning::trivial_condition_value(condition.native_compat()) == Some(*expected)))
     };
     let mut remaining = instance;
     while let Proposition::Implies(guard, conclusion) = remaining {
@@ -2433,7 +2433,7 @@ fn negated_signed_order_parts(
         Proposition::ConditionIs(condition, false) => condition,
         _ => return None,
     };
-    match condition {
+    match condition.native_compat() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -2547,7 +2547,7 @@ pub(super) fn spell_signed_goal(
         });
     }
     match goal {
-        Proposition::ConditionIs(condition, true) => match condition {
+        Proposition::ConditionIs(condition, true) => match condition.native_compat() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -2729,7 +2729,7 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor(
         .int32_equal_one_predecessor_is_nonnegative_path()
         .or_else(|| derivation.int32_equal_one_predecessor_strictly_decreases_path())?;
     let value = one_le_predecessor_value(goal)?;
-    let one_le_kernel = Proposition::ConditionIs(
+    let one_le_kernel = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
@@ -2755,7 +2755,7 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor(
             .iter()
             .find(|(kernel, _)| kernel == step.premise())?;
         let oriented_surface = orient_surface_bitvector_equality(step, surface)?;
-        let oriented_kernel = Proposition::ConditionIs(
+        let oriented_kernel = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2798,7 +2798,7 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor_is_zero(
             .iter()
             .find(|(kernel, _)| kernel == step.premise())?;
         let oriented_surface = orient_surface_bitvector_equality(step, surface)?;
-        let oriented_kernel = Proposition::ConditionIs(
+        let oriented_kernel = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2864,7 +2864,7 @@ pub(super) fn plan_recorded_signed_order_path(
             },
             right: surface_upper.clone(),
         };
-        let kernel_target = Proposition::ConditionIs(
+        let kernel_target = Proposition::condition_is(
             if strict {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
@@ -2901,7 +2901,9 @@ fn orient_surface_bitvector_equality(
     let Proposition::ConditionIs(condition, true) = step.premise() else {
         return None;
     };
-    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
+        condition.native_compat(),
+    )?;
     if view.negated
         || view.relation != CompareRelation::Equal
         || !matches!(
@@ -2991,7 +2993,7 @@ pub(super) fn plan_recorded_bitvector_equality_path(
             .iter()
             .find(|(kernel, _)| kernel == step.premise())?;
         let oriented_surface = orient_surface_bitvector_equality(step, surface)?;
-        let oriented_kernel = Proposition::ConditionIs(
+        let oriented_kernel = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3090,7 +3092,7 @@ pub(super) fn plan_recorded_load_address_congruence(
         }
         for (step, (_, surface)) in path.iter().zip(pairs) {
             let oriented_surface = orient_surface_bitvector_equality(step, surface)?;
-            let oriented_kernel = Proposition::ConditionIs(
+            let oriented_kernel = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -3335,7 +3337,7 @@ pub(super) fn plan_explicit_le_transitive_constant_lower(
         {
             continue;
         }
-        let constant_leg = Proposition::ConditionIs(
+        let constant_leg = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -3390,7 +3392,7 @@ fn plan_explicit_implies_refuted_antecedent(
             .iter()
             .find(|(kernel, _)| match antecedent.as_ref() {
                 Proposition::ConditionIs(condition, expected) => {
-                    kernel == &Proposition::ConditionIs(condition.clone(), !expected)
+                    kernel == &Proposition::condition_is(condition.clone(), !expected)
                 }
                 Proposition::Not(inner) => kernel == inner.as_ref(),
                 _ => false,
@@ -4367,7 +4369,7 @@ pub(super) fn plan_explicit_predecessor_upper_bound(
         let Some((surface_value, _)) = surface_nonstrict_parts(bound_surface) else {
             continue;
         };
-        let nonnegative_kernel = Proposition::ConditionIs(
+        let nonnegative_kernel = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -4639,7 +4641,7 @@ pub(super) fn plan_pointer_advanced_load_equality(
         }
         let (source_index, target_index) =
             pointer_array_index_pair(&fact_array_pointer.offset, &right_pointer.offset)?;
-        let index_goal = Proposition::ConditionIs(
+        let index_goal = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -4851,7 +4853,7 @@ pub(super) fn plan_explicit_successor_le_implies_lt(
         {
             continue;
         }
-        let no_overflow = Proposition::ConditionIs(
+        let no_overflow = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -4889,7 +4891,7 @@ pub(super) fn plan_explicit_increment_preserves_order(
             if upper_value != value {
                 continue;
             }
-            let expected = Proposition::ConditionIs(
+            let expected = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -5455,7 +5457,7 @@ mod shared_goal_spelling_tests {
             ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
         let one = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1)));
         let pairs = vec![(
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -5479,14 +5481,14 @@ mod shared_goal_spelling_tests {
             } else {
                 IntegerTerm::Add(left, right)
             };
-            let upper = Proposition::ConditionIs(
+            let upper = Proposition::condition_is(
                 ConditionTerm::IntegerLessEqual(
                     exact.clone().into(),
                     IntegerTerm::constant(i32::MAX.into()).into(),
                 ),
                 true,
             );
-            let lower = Proposition::ConditionIs(
+            let lower = Proposition::condition_is(
                 ConditionTerm::IntegerGreaterEqual(
                     exact.into(),
                     IntegerTerm::constant(i32::MIN.into()).into(),

@@ -540,7 +540,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     )> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_unsigned_strict_fact");
-        let less = Proposition::ConditionIs(
+        let less = Proposition::condition_is(
             ConditionTerm::unsigned_less_than(lower.clone(), upper.clone()),
             true,
         );
@@ -548,7 +548,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let (lower, upper) = surface_strict_parts(&surface)?;
             return Some((search_input.clone(), surface, lower, upper));
         }
-        let greater = Proposition::ConditionIs(
+        let greater = Proposition::condition_is(
             ConditionTerm::unsigned_greater_than(upper.clone(), lower.clone()),
             true,
         );
@@ -626,7 +626,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if proof.goal().is_some()
                 && proof
                     .facts()
-                    .holds_contradiction_fact(&Proposition::ConditionIs(
+                    .holds_contradiction_fact(&Proposition::condition_is(
                         ConditionTerm::Constant(false),
                         true,
                     ))
@@ -1232,7 +1232,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return false;
         };
         let assumptions = search_input.facts().assumptions();
-        if let ConditionTerm::IntegerEqual(left, right) = condition {
+        if let ConditionTerm::IntegerEqual(left, right) = condition.native_compat() {
             if !*wanted {
                 return false;
             }
@@ -1254,11 +1254,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 |left: &crate::kernel::SharedIntegerTerm,
                  right: &crate::kernel::SharedIntegerTerm| {
                     left == right
-                        || search_input.facts().contains(&Proposition::ConditionIs(
+                        || search_input.facts().contains(&Proposition::condition_is(
                             ConditionTerm::IntegerEqual(left.clone(), right.clone()),
                             true,
                         ))
-                        || search_input.facts().contains(&Proposition::ConditionIs(
+                        || search_input.facts().contains(&Proposition::condition_is(
                             ConditionTerm::IntegerEqual(right.clone(), left.clone()),
                             true,
                         ))
@@ -1307,7 +1307,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let _scope = crate::kernel::assumptions::PureFactContextIdScope::enter(assumptions);
             return !assumptions.is_inconsistent();
         }
-        let (left, right) = match condition {
+        let (left, right) = match condition.native_compat() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -1324,7 +1324,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         if *wanted
             && matches!(
-                condition,
+                condition.native_compat(),
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
@@ -1348,7 +1348,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             let same_value = |left: &MachineTerm, right: &MachineTerm| {
                 left == right
-                    || search_input.facts().contains(&Proposition::ConditionIs(
+                    || search_input.facts().contains(&Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
@@ -1357,7 +1357,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         },
                         true,
                     ))
-                    || search_input.facts().contains(&Proposition::ConditionIs(
+                    || search_input.facts().contains(&Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
@@ -1387,7 +1387,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(Proposition::ConditionIs(condition, wanted)) = search_input.goal() else {
             return false;
         };
-        let (left, right) = match condition {
+        let (left, right) = match condition.native_compat() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -1408,14 +1408,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // facts: like the goal `false`, only a refutation of the context
         // proves it, which the strategies after this one search for.
         if !literal(left) && !literal(right)
-            || crate::kernel::machine_integer::comparison::closed_condition_value(condition)
-                .is_some()
+            || crate::kernel::machine_integer::comparison::closed_condition_value(
+                condition.native_compat(),
+            )
+            .is_some()
         {
             return false;
         }
         !assumptions.is_inconsistent()
             && assumptions
-                .decide(condition)
+                .decide(condition.native_compat())
                 .is_some_and(|known| known != *wanted)
     }
 
@@ -2813,7 +2815,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if let Some((ConditionTerm::IntegerNotEqual(left, right), _)) =
                         condition_source_0.condition_native() =>
                 {
-                    Some(Proposition::ConditionIs(
+                    Some(Proposition::condition_is(
                         ConditionTerm::IntegerEqual(left.clone(), right.clone()),
                         true,
                     ))
@@ -2828,7 +2830,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         _,
                     )) = condition_source_0.condition_native() =>
                 {
-                    Some(Proposition::ConditionIs(condition.clone(), true))
+                    Some(Proposition::condition_is(condition.clone(), true))
                 }
                 _ => None,
             }
@@ -4210,7 +4212,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             _ => return None,
         };
         let available = |condition: ConditionTerm| {
-            let fact = Proposition::ConditionIs(condition, true);
+            let fact = Proposition::condition_is(condition, true);
             std::iter::once(fact.clone())
                 .chain(crate::surface::proof::order_claim_forms(&fact))
                 .find(|form| search_input.facts().contains(form))
@@ -4350,7 +4352,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     left: Box::new(left),
                     right: Box::new(right),
                 };
-                let fact = Proposition::ConditionIs(condition, true);
+                let fact = Proposition::condition_is(condition, true);
                 let mut found = false;
                 for form in std::iter::once(fact.clone()).chain(condition_polarity_forms(&fact)) {
                     if search_input.facts().contains(&form) {
@@ -4391,7 +4393,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             }
                         )
                 })
-                .map(|(condition, _)| Proposition::ConditionIs(condition.clone(), true))
+                .map(|(condition, _)| Proposition::condition_is(condition.clone(), true))
                 // A load's defining equation only names that same value.
                 // It adds no arithmetic relation, and following its memory
                 // term would pull unrelated address variables into the search.
@@ -4711,7 +4713,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut selected = BTreeSet::new();
         for condition in guards {
             for value in [true, false] {
-                let fact = Proposition::ConditionIs(condition.clone(), value);
+                let fact = Proposition::condition_is(condition.clone(), value);
                 if !search_input.facts().contains(&fact)
                     && !condition_polarity_forms(&fact)
                         .iter()
@@ -5181,7 +5183,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             right: Box::new(right),
                         }
                     };
-                    let fact = Proposition::ConditionIs(condition, true);
+                    let fact = Proposition::condition_is(condition, true);
                     for bound in
                         std::iter::once(fact.clone()).chain(condition_polarity_forms(&fact))
                     {
@@ -5215,7 +5217,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         &bound,
                     )
                 })?;
-                let split_kernel = Proposition::ConditionIs(
+                let split_kernel = Proposition::condition_is(
                     crate::kernel::machine_integer::comparison::condition_for_operand_views(
                         MachineIntegerType::Int32,
                         CompareRelation::LessThan,
@@ -7004,7 +7006,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let opposite = match introduced {
             Proposition::ConditionIs(condition, value) => {
-                Proposition::ConditionIs(condition.clone(), !value)
+                Proposition::condition_is(condition.clone(), !value)
             }
             Proposition::Not(body) => body.as_ref().clone(),
             proposition => Proposition::Not(Box::new(proposition.clone())),
@@ -7405,7 +7407,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             }
             let (left, right) = (Box::new(endpoint), Box::new(other));
-            let fact = Proposition::ConditionIs(
+            let fact = Proposition::condition_is(
                 if strict {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -7542,7 +7544,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // forms when present; do not invent spellings by searching history.
         if (is_reflexive_pointer_equality(kernel)
             || matches!(kernel, Proposition::ConditionIs(condition, value)
-                if crate::kernel::is_store_fact(condition, *value)))
+                if crate::kernel::is_store_fact(condition.native_compat(), *value)))
             && surface_facts.surfaces(kernel).next().is_none()
             && search_input
                 .local_surface_facts()
@@ -8283,7 +8285,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 proof
                     .facts()
-                    .load_equalities_mentioning(&Proposition::ConditionIs(
+                    .load_equalities_mentioning(&Proposition::condition_is(
                         ConditionTerm::AddressOffsetEqual(
                             Box::new(left.clone()),
                             Box::new(right.clone()),
@@ -8529,7 +8531,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Proposition::ConditionIs(term, polarity) = premise else {
                 continue;
             };
-            let bound = match (term, polarity, lower_bound) {
+            let bound = match (term.native_compat(), polarity, lower_bound) {
                 (
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -8720,7 +8722,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if !reversals {
                 return None;
             }
-            let surface = surface_fact(&Proposition::ConditionIs(condition, true))?;
+            let surface = surface_fact(&Proposition::condition_is(condition, true))?;
             let (lower, upper) = match operator {
                 ComparisonOperator::LessThan | ComparisonOperator::GreaterThan => {
                     surface_strict_parts(&surface)?
@@ -8898,7 +8900,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if amount.as_ref() != &MachineTerm::constant(1) {
             return None;
         }
-        let upper_kernel = Proposition::ConditionIs(
+        let upper_kernel = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -9018,7 +9020,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let refuted = |disjunct: &Proposition| {
             let negated = match disjunct {
                 Proposition::ConditionIs(condition, value) => {
-                    Proposition::ConditionIs(condition.clone(), !value)
+                    Proposition::condition_is(condition.clone(), !value)
                 }
                 other => Proposition::Not(Box::new(other.clone())),
             };

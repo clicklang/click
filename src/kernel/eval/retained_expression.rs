@@ -421,7 +421,7 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                     && let Some(equation) =
                         crate::kernel::spec::bitwise_tag_equation(root, assumptions)
                 {
-                    facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
+                    facts.push(ExecutionPureFact::new(Proposition::condition_is(
                         equation, true,
                     )));
                 }

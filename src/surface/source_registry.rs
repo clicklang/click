@@ -672,7 +672,7 @@ mod tests {
     fn principal_facts(count: usize) -> Vec<Proposition> {
         (0..count)
             .map(|index| {
-                Proposition::ConditionIs(ConditionTerm::Variable(Variable(index as u64)), true)
+                Proposition::condition_is(ConditionTerm::Variable(Variable(index as u64)), true)
             })
             .collect()
     }

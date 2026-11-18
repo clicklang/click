@@ -175,7 +175,7 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
         let (product, _) =
             product_and_bounds(MachineIntegerType::Int128, MachineIntegerType::Int128);
         let definition =
-            Proposition::ConditionIs(ConditionTerm::integer_equal(observed, product), true);
+            Proposition::condition_is(ConditionTerm::integer_equal(observed, product), true);
         assert!(
             normal
                 .facts
@@ -193,9 +193,11 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
         );
         for bound in &bounds[provided..] {
             assert!(
-                normal.facts.iter().any(
-                    |fact| fact.proposition() == &Proposition::ConditionIs(bound.clone(), true)
-                )
+                normal
+                    .facts
+                    .iter()
+                    .any(|fact| fact.proposition()
+                        == &Proposition::condition_is(bound.clone(), true))
             );
         }
         assert!(

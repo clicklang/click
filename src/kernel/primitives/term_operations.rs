@@ -5934,7 +5934,9 @@ pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool
         {
             PureFactContext::decide_intrinsically(condition) == Some(*value)
         }
-        Proposition::ConditionIs(condition, value) => condition.reflexive_value() == Some(*value),
+        Proposition::ConditionIs(condition, value) => {
+            condition.native_compat().reflexive_value() == Some(*value)
+        }
         _ => false,
     }
 }
@@ -5992,7 +5994,7 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
             None
         }
     };
-    let truth = match condition {
+    let truth = match condition.native_compat() {
         ConditionTerm::Compare {
             format,
             relation,
@@ -6016,7 +6018,7 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
         | ConditionTerm::IntegerLessEqual(left, right)
         | ConditionTerm::IntegerGreaterThan(left, right)
         | ConditionTerm::IntegerGreaterEqual(left, right) => {
-            let relation = match condition {
+            let relation = match condition.native_compat() {
                 ConditionTerm::IntegerLessThan(..) => R::LessThan,
                 ConditionTerm::IntegerLessEqual(..) => R::LessEqual,
                 ConditionTerm::IntegerGreaterThan(..) => R::GreaterThan,
@@ -6059,7 +6061,7 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
-    let mirrored = match condition {
+    let mirrored = match condition.native_compat() {
         ConditionTerm::IntegerEqual(left, right) => {
             ConditionTerm::IntegerEqual(right.clone(), left.clone())
         }
@@ -6102,7 +6104,7 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
         }
         _ => return None,
     };
-    Some(Proposition::ConditionIs(mirrored, *value))
+    Some(Proposition::condition_is(mirrored, *value))
 }
 
 /// The one availability rule for a premise a `using` list names, over the
@@ -6133,7 +6135,7 @@ fn listed_premise_holds_with(
         // symbolic operands from cached shape flags and uses only the named
         // expression's shared DAG, never the available-fact collection.
         || matches!(premise, Proposition::ConditionIs(condition, expected)
-            if crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(condition)
+            if crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(condition.native_compat())
                 == Some(*expected))
         || holds_by_format_range(premise)
         || available(premise)
@@ -6172,11 +6174,11 @@ mod integer_equality_citation_tests {
                 ),
             };
             assert!(listed_premise_holds(
-                &Proposition::ConditionIs(condition.clone(), true),
+                &Proposition::condition_is(condition.clone(), true),
                 |_| false
             ));
             assert!(!listed_premise_holds(
-                &Proposition::ConditionIs(condition, false),
+                &Proposition::condition_is(condition, false),
                 |_| false
             ));
         }
@@ -6188,11 +6190,11 @@ mod integer_equality_citation_tests {
         let sum: SharedIntegerTerm = IntegerTerm::Add(zero.clone(), zero.clone()).into();
         let equality = ConditionTerm::IntegerEqual(zero.clone(), sum);
         assert!(listed_premise_holds(
-            &Proposition::ConditionIs(equality.clone(), true),
+            &Proposition::condition_is(equality.clone(), true),
             |_| false
         ));
         assert!(!listed_premise_holds(
-            &Proposition::ConditionIs(equality, false),
+            &Proposition::condition_is(equality, false),
             |_| false
         ));
         let symbolic = ConditionTerm::IntegerEqual(
@@ -6200,7 +6202,7 @@ mod integer_equality_citation_tests {
             IntegerTerm::Variable(Variable(931_001)).into(),
         );
         assert!(!listed_premise_holds(
-            &Proposition::ConditionIs(symbolic, true),
+            &Proposition::condition_is(symbolic, true),
             |_| false
         ));
         let undefined = ConditionTerm::IntegerEqual(
@@ -6212,7 +6214,7 @@ mod integer_equality_citation_tests {
             zero,
         );
         assert!(!listed_premise_holds(
-            &Proposition::ConditionIs(undefined, true),
+            &Proposition::condition_is(undefined, true),
             |_| false
         ));
     }
@@ -6222,24 +6224,24 @@ mod integer_equality_citation_tests {
         let left: SharedIntegerTerm = IntegerTerm::Variable(Variable(931_011)).into();
         let right: SharedIntegerTerm = IntegerTerm::Variable(Variable(931_012)).into();
         for polarity in [true, false] {
-            let source = Proposition::ConditionIs(
+            let source = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(left.clone(), right.clone()),
                 polarity,
             );
-            let target = Proposition::ConditionIs(
+            let target = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(right.clone(), left.clone()),
                 polarity,
             );
             assert_eq!(mirrored_equality(&source), Some(target.clone()));
             assert_eq!(mirrored_equality(&target), Some(source.clone()));
             assert!(listed_premise_holds(&target, |fact| fact == &source));
-            let wrong_polarity = Proposition::ConditionIs(
+            let wrong_polarity = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(right.clone(), left.clone()),
                 !polarity,
             );
             assert!(!listed_premise_holds(&wrong_polarity, |fact| fact == &source));
         }
-        let ordered = Proposition::ConditionIs(ConditionTerm::IntegerLessThan(left, right), true);
+        let ordered = Proposition::condition_is(ConditionTerm::IntegerLessThan(left, right), true);
         assert!(mirrored_equality(&ordered).is_none());
     }
 }
@@ -6253,7 +6255,7 @@ mod connective_walk_tests {
     #[test]
     fn a_decided_connective_does_not_ask_its_right_side() {
         let side = |name: u64| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::signed_less_than(
                     MachineTerm::Variable(Variable(name)),
                     MachineTerm::constant(0),
@@ -6414,7 +6416,7 @@ mod format_range_premise_tests {
     }
 
     fn holds(relation: CompareRelation, left: MachineTerm, bound: i32) -> bool {
-        holds_by_format_range(&Proposition::ConditionIs(
+        holds_by_format_range(&Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,
@@ -6446,7 +6448,7 @@ mod format_range_premise_tests {
                     .unwrap()
                     .into();
             let at_least = |bound: i64| {
-                holds_by_format_range(&Proposition::ConditionIs(
+                holds_by_format_range(&Proposition::condition_is(
                     ConditionTerm::IntegerLessEqual(
                         IntegerTerm::constant_i64(bound).into(),
                         observed.clone(),
@@ -6551,7 +6553,7 @@ mod format_range_premise_tests {
                         };
                         for truth in [true, false] {
                             assert_eq!(
-                                holds_by_format_range(&Proposition::ConditionIs(
+                                holds_by_format_range(&Proposition::condition_is(
                                     condition.clone(),
                                     truth
                                 )),

@@ -76,7 +76,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
             } else {
                 match proposition {
                     Proposition::ConditionIs(condition, value) => {
-                        Proposition::ConditionIs(condition, !value)
+                        Proposition::condition_is(condition, !value)
                     }
                     Proposition::Not(body) => *body,
                     proposition => Proposition::Not(Box::new(proposition)),

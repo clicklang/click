@@ -738,7 +738,7 @@ mod handle_tests {
                 ConditionTerm::uint64_equal(native.clone(), MachineTerm::uint64_constant(number));
             assert_eq!(PureFactContext::new().decide(&equality), None);
             let stated = PureFactContext::new()
-                .assume_proposition(Proposition::ConditionIs(equality.clone(), true));
+                .assume_proposition(Proposition::condition_is(equality.clone(), true));
             assert_eq!(stated.decide(&equality), Some(true));
             assert_eq!(
                 ThreadHandle::from_program_value(&ProgramValue::UInt64(
@@ -761,7 +761,7 @@ mod handle_tests {
         let alias = MachineTerm::Variable(Variable(1008891));
         let value = ProgramValue::UInt64(alias.clone());
         let equality = |handle| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::uint64_equal(alias.clone(), MachineTerm::ThreadHandle(handle)),
                 true,
             )

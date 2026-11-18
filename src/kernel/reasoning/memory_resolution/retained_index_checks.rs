@@ -94,7 +94,7 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
     let _session = VerificationSession::enter();
     let ty = MachineIntegerType::Int32;
     let value = retained_index(ty, 994510);
-    let fact = Proposition::ConditionIs(equality(&value, ty, &MachineTerm::constant(7)), true);
+    let fact = Proposition::condition_is(equality(&value, ty, &MachineTerm::constant(7)), true);
     let parent = PureFactContext::new();
     let context = parent.clone().assume_proposition(fact.clone());
     let pointer = |width| Address {
@@ -108,7 +108,7 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
     let native_source =
         ConditionTerm::equal(value.structural_value().clone(), MachineTerm::constant(7));
     let native_context = parent.clone().assume_condition(native_source, true);
-    let false_context = parent.clone().assume_proposition(Proposition::ConditionIs(
+    let false_context = parent.clone().assume_proposition(Proposition::condition_is(
         equality(&value, ty, &MachineTerm::constant(7)),
         false,
     ));

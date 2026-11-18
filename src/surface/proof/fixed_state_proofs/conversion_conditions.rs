@@ -218,9 +218,9 @@ fn spell_condition(
     }
     let ordinary_query =
         crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(condition)
-            .map(|query| Proposition::ConditionIs(query, false));
+            .map(|query| Proposition::condition_is(query, false));
     if let Proposition::ConditionIs(condition, false) = ordinary_query.as_ref().unwrap_or(condition)
-        && let Some(operation) = overflowing_operation(condition)
+        && let Some(operation) = overflowing_operation(condition.native_compat())
         && let Some(operation) = site.spell_term(&operation)
     {
         return SpelledCondition {
@@ -232,7 +232,7 @@ fn spell_condition(
         };
     }
     if let Proposition::ConditionIs(condition, true) = condition
-        && let Some((side, value, bound)) = conversion_bound(condition, labels)
+        && let Some((side, value, bound)) = conversion_bound(condition.native_compat(), labels)
     {
         // The bound remains actionable even when this lowering supplied no
         // exact source names for the converted Integer value.
