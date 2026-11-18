@@ -463,3 +463,17 @@ The augmented `__rb_change_child` proof retains the ancestor's packed tag and
 its typed parent cast, the sibling and root links, and the replaced child's
 cached size and parent cast across the store. The produced link uses the
 entry size, which the contract separately proves equals the exit size.
+
+## Stopping after insertion color flips
+
+All three proofs in `rbtree_size_insert_flip_boundary.click` verify at
+default limits. The proof retains the focus node's typed parent and child
+links through initialization, then carries the root link through the
+recolor-to-black and black-parent exits. The stopping contracts return the
+tree at the entry root pointer and prove that the root pointer is unchanged.
+The arbitrary-length flip-chain proof and full-directory audit remain open.
+
+All three proofs in `rbtree_size_insert_context_stop.click` also verify for
+a black parent on either side of the focused subtree. The proof states the
+parent equality for each concrete context and keeps the ancestor path folded
+through the read-only test. Its contracts prove the same unchanged root link.

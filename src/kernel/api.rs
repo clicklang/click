@@ -5229,7 +5229,10 @@ fn symbolic_execution_statement_execution_with_loop_rule(
                     natural_exit_target: Some(exit_target),
                     ..
                 }, StatementOutcome::Jump { target, .. }) if target == exit_target
-            )) && path.obligations.iter().all(ProofObligation::is_assumable)
+            )) && path
+                .obligations
+                .iter()
+                .all(|obligation| obligation.is_assumable() || obligation.statement_entry_required)
         }))
     .then(|| VerifiedLoopRule {
         symbolic_entry_state: state.clone(),
@@ -5240,9 +5243,9 @@ fn symbolic_execution_statement_execution_with_loop_rule(
         composite_resource_definitions: Vec::new(),
         // The rule records the anchor its own body was stepped under. A
         // self-call in that body raised the descent obligations exactly when
-        // this is set, and the rule was only formed because every obligation
-        // on its paths was discharged or assumable, so this is the kernel's
-        // own note of what the summary already paid for.
+        // this is set. Every body obligation has already been discharged
+        // or was assumable. The application still owes any retained
+        // statement-entry conditions.
         recursion_anchor: environment.recursion_anchor_handle(),
         variable_index: Default::default(),
     });

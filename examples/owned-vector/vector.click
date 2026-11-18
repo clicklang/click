@@ -118,6 +118,19 @@ int32 vector_copy(
 } by {
     step();
     step();
+    have contains(memory(dst[0..dst_capacity]), memory(dst[0..length])) by {
+        apply(separation::contains_subrange(dst, 0, dst_capacity, 0, length)) using {
+            0 <= 0; 0 <= length; length <= dst_capacity;
+        };
+    }
+    have contains(memory(src[0..src_capacity]), memory(src[0..src_capacity])) by { normalize(); }
+    have separate(memory(dst[0..length]), memory(src[0..src_capacity])) by {
+        apply(separation::separate_restrict(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]), memory(dst[0..length]), memory(src[0..src_capacity]))) using {
+            separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]));
+            contains(memory(dst[0..dst_capacity]), memory(dst[0..length]));
+            contains(memory(src[0..src_capacity]), memory(src[0..src_capacity]));
+        };
+    }
     loop {
         decreases length - i;
         invariant forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) };

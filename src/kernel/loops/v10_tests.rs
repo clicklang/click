@@ -24,16 +24,28 @@ fn loop_havoc_requires_a_checked_set_disjoint_from_active_loans() {
     let opening = ledger.lend(owner, owner, support, escrow).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
 
-    let assumptions = PureFactContext::new();
-    assert!(validate_loop_havoc_stable_loans(&ledger, None, &assumptions).is_err());
+    assert!(loop_head_loan_requirements(&ledger, None).is_err());
     assert!(
-        validate_loop_havoc_stable_loans(&ledger, Some(&[memory_range(0, 1)]), &assumptions)
-            .is_err()
+        loop_head_loan_requirements(&ledger, Some(&[MemoryRange::unnamed_footprint()])).is_err()
     );
-    assert!(
-        validate_loop_havoc_stable_loans(&ledger, Some(&[memory_range(2, 3)]), &assumptions)
-            .is_ok()
-    );
+    let requirements =
+        loop_head_loan_requirements(&ledger, Some(&[memory_range(0, 1), memory_range(2, 3)]))
+            .unwrap();
+    assert_eq!(requirements.len(), 2);
+    for (requirement, range) in requirements
+        .iter()
+        .zip([memory_range(0, 1), memory_range(2, 3)])
+    {
+        assert!(requirement.requires_statement_entry());
+        assert!(!requirement.is_assumable());
+        assert_eq!(
+            requirement.proposition(),
+            &Proposition::ResourceSeparate {
+                left: Box::new(Resource::Memory(range)),
+                right: Box::new(Resource::Memory(memory_range(0, 1))),
+            },
+        );
+    }
 }
 
 #[test]
