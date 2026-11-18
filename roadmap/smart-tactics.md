@@ -195,18 +195,16 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 5 | 12 |
+| `mdtests/` | 4 | 11 |
 | `examples/` | 16 | 105 |
 | `library/` | 0 | 0 |
-| Total | 21 | 117 |
+| Total | 20 | 116 |
 
-The remaining mdtest with a failure expectation must retain its semantic
-refusal during migration. Positive fixtures also supply exact input text
-to expansion/mutation tests; migrate those inputs together with their tests,
-rather than replacing a smart test input with an already-expanded proof. Positive fixtures also need full-file verification:
-selected-tactic expansion verifies a prefix, so it does not establish that the
-rewritten proof's remaining suffix closes. Remaining groups include historical
-initializedness, computed range bounds, loop frames, and call preservation.
+Positive fixtures also supply exact input text to expansion and mutation tests.
+Migrate those inputs together with their tests and keep the smart proof inputs.
+Verify the full file as well, because selected-tactic expansion checks only a
+prefix. Remaining groups include historical initializedness, computed range
+bounds, loop frames, and call preservation.
 The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
 ### Remaining PR-sized chunks
@@ -226,7 +224,6 @@ pattern is understood but the complete family has not yet been validated.
 | 13 | Named-root aliased-pointer baseline diagnosis/repair | Uncertain |
 | 14 | Named-root fixture migration after baseline repair | Medium |
 | 15 | Remaining fold, resource-observation, count mdtests | Medium |
-| 16 | Remaining negative mdtests, preserving semantic refusals | Medium |
 | 17 | Red-black insertion baseline diagnosis/repair | Uncertain |
 | 18 | Insertion: field and parent-link preservation | Medium |
 | 19 | Insertion: inner/double rotations | Medium |
