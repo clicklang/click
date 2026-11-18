@@ -14,7 +14,7 @@ fn nested(bytes: &[u8]) -> usize {
         decreases iter.v.len();
         views bytes[0u64..8u64];
         invariant bytes.len() == 8u64;
-        invariant tail_len == 0u64;
+        invariant tail.len() == 0u64;
         invariant iter.chunk_size == 4u64;
         invariant iter.v.len() <= 8u64;
         invariant iter.v == bytes + (8u64 - iter.v.len());

@@ -19,7 +19,7 @@ fn walk(bytes: &[u8]) -> usize {
     loop {
         decreases iter.v.len();
         views bytes[0..bytes.len()];
-        invariant tail_len == bytes.len() % 4u64;
+        invariant tail.len() == bytes.len() % 4u64;
         invariant iter.chunk_size == 4u64;
         invariant iter.v.len() <= bytes.len() - bytes.len() % 4u64;
         invariant iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
