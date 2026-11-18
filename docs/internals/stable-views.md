@@ -187,7 +187,11 @@ from owned pieces is
 (`mdtests/a_local_char_array_lends_its_c_string_view.md`,
 `mdtests/a_local_char_array_view_names_the_fact_its_bytes_lack.md`). Cross-clause conflicts (an owned clause overlapping a
 viewed one, or an owned piece inside a viewed frontier) are refused at
-planning as proven overlaps.
+planning as proven overlaps. For a composite lend, the planner checks the
+selected body frontier against the original entry partition, which still
+indexes the owners removed by reservation. The check visits the explicit
+frontier and uses indexed boundary queries. An undecided boundary retains
+its ordinary separation obligation.
 
 A declared mutable effect is a consequence of the transferred authority.
 Each effect range is compared with the full checked view frontier; an effect

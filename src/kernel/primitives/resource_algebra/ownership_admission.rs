@@ -133,9 +133,9 @@ impl ResourceContext {
 }
 
 impl ResourceContext {
-    /// Check only the new boundary of an already constructed return body.
+    /// Check a definition-checked frontier against an existing partition.
     /// Unsupported geometry returns its explicit separation requirement.
-    pub(in crate::kernel) fn returned_boundary_conflict(
+    pub(in crate::kernel) fn checked_frontier_boundary_conflict(
         &self,
         frontier: &[ResourceFact],
         assumptions: &PureFactContext,
@@ -244,7 +244,7 @@ impl ResourceContext {
         frontier: &[ResourceFact],
         assumptions: &PureFactContext,
     ) -> FlatBodyAdmission {
-        match self.returned_boundary_conflict(frontier, assumptions) {
+        match self.checked_frontier_boundary_conflict(frontier, assumptions) {
             Ok(None) => FlatBodyAdmission::Admitted,
             Ok(Some((piece, held))) => FlatBodyAdmission::Conflict {
                 piece: Box::new(piece),

@@ -10376,9 +10376,9 @@ impl ResourceFamilyAlgebra for MemoryResourceAlgebra {
     /// out of the caller residual, so the two cannot coexist. That is
     /// enforced where the binding is visible, not here: the planner refuses
     /// an `owns` requirement inside a lent range (its exclusive reservations
-    /// are taken before any view is planned, and the composite lend composes
-    /// them back beside the frontier), and the ledger refuses a write or a
-    /// retire through a lent range.
+    /// are taken before any view is planned, and the composite lend checks
+    /// the frontier beside the original entry partition). The ledger refuses
+    /// writes and retirement through a lent range.
     ///
     /// An **unbound** viewed description beside its owner is an observation
     /// of that ownership (`owner_observation_core`) or intrinsic read

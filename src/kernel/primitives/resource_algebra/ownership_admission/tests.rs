@@ -119,13 +119,13 @@ fn returned_boundary_names_exclusive_conflicts_without_installing_children() {
     let parent = ResourceContext::new().unchecked_with_fact(held.clone());
     assert_eq!(
         parent
-            .returned_boundary_conflict(std::slice::from_ref(&held), &facts)
+            .checked_frontier_boundary_conflict(std::slice::from_ref(&held), &facts)
             .unwrap(),
         Some((held.clone(), held.clone())),
     );
     assert!(
         ResourceContext::new()
-            .returned_boundary_conflict(std::slice::from_ref(&held), &facts)
+            .checked_frontier_boundary_conflict(std::slice::from_ref(&held), &facts)
             .unwrap()
             .is_none()
     );
@@ -139,13 +139,13 @@ fn cold_return_boundary_keeps_the_aliased_held_fact_and_parent_partition() {
     let piece = owner(at(0), 0, 4);
     let parent = ResourceContext::new().unchecked_with_fact(owner(at(1), 4, 8));
     assert!(matches!(
-        parent.returned_boundary_conflict(std::slice::from_ref(&piece), &facts),
+        parent.checked_frontier_boundary_conflict(std::slice::from_ref(&piece), &facts),
         Ok(None)
     ));
     parent.synchronize_memory_equalities(&facts);
     assert!(
         parent
-            .returned_boundary_conflict(std::slice::from_ref(&piece), &facts)
+            .checked_frontier_boundary_conflict(std::slice::from_ref(&piece), &facts)
             .unwrap()
             .is_none()
     );
@@ -153,13 +153,13 @@ fn cold_return_boundary_keeps_the_aliased_held_fact_and_parent_partition() {
     let branch = parent.clone().unchecked_with_fact(held.clone());
     assert_eq!(
         branch
-            .returned_boundary_conflict(std::slice::from_ref(&piece), &facts)
+            .checked_frontier_boundary_conflict(std::slice::from_ref(&piece), &facts)
             .unwrap(),
         Some((piece.clone(), held))
     );
     assert!(
         parent
-            .returned_boundary_conflict(&[piece], &facts)
+            .checked_frontier_boundary_conflict(&[piece], &facts)
             .unwrap()
             .is_none()
     );
