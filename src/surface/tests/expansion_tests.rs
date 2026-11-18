@@ -9334,7 +9334,7 @@ fn restricted_solve_expands_increment_order_to_ordinary_arithmetic() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
-fn restricted_solve_rewrites_a_named_successor_before_increment_order() {
+fn restricted_solve_expands_named_successor_order() {
     let c_source = r#"
         int32 named_successor(int32 value) {
             int32 successor;
@@ -9373,8 +9373,8 @@ fn restricted_solve_rewrites_a_named_successor_before_increment_order() {
         line,
         column,
     )
-    .expect("named successor order should lower to an explicit rewrite and increment rule");
-    assert!(expanded.contains("at(function.entry, value)"), "{expanded}");
+    .expect("named successor order should expand to explicit arithmetic");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
     assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c_sources(&expanded, &[("named_successor.c", c_source)])
         .expect("named successor certificate should check");
@@ -17793,6 +17793,14 @@ fn retained_int32_addition_expands_with_ordinary_bounds() {
             "the exact cited bound should close with known: {goal}\n{expanded}"
         );
     }
+    assert!(
+        expanded.contains("apply(click::integer::lt_le_predecessor("),
+        "the native strict upper bound should use Integer discreteness: {expanded}"
+    );
+    assert!(
+        !expanded.contains("normalize() using"),
+        "all retained interval bounds in this fixture should be ordinary: {expanded}"
+    );
     let increment = " + to_integer((1 as int32)))";
     let mut sum_bounds = 0;
     let mut identities = 0;
@@ -22843,7 +22851,7 @@ test_batches! {
     expansion_batch_44: [
         restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic,
         restricted_solve_expands_increment_order_to_ordinary_arithmetic,
-        restricted_solve_rewrites_a_named_successor_before_increment_order,
+        restricted_solve_expands_named_successor_order,
         restricted_solve_expands_adjacent_order_to_ordinary_arithmetic,
     ],
     expansion_batch_45: [

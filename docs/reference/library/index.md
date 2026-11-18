@@ -6784,6 +6784,25 @@ theorem subtract_right_order(a: Integer, b: Integer, c: Integer) {
 }
 ```
 
+### `integer::lt_le_predecessor`
+
+```click
+theorem lt_le_predecessor(a: Integer, b: Integer) {
+    requires a < b;
+    ensures a <= b - 1 by {
+        have a + 1 <= b by {
+            apply(integer::lt_step_le(a, b)) using { a < b; };
+        }
+        have (a + 1) - 1 <= b - 1 by {
+            apply(integer::subtract_right_order(a + 1, b, 1)) using { a + 1 <= b; };
+        }
+        have a == (a + 1) - 1 by { known(); }
+        rewrite(a, (a + 1) - 1);
+        known();
+    }
+}
+```
+
 ### `integer::subtract_left_order`
 
 ```click

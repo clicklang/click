@@ -2109,6 +2109,13 @@ theorem check_subtract_le(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 }
 
+theorem check_lt_le_predecessor(a: Integer, b: Integer) {
+    requires a < b;
+    ensures a <= b - 1 by {
+        apply(integer::lt_le_predecessor(a, b)) using { a < b; };
+    }
+}
+
 theorem check_subtract_right_order(a: Integer, b: Integer, c: Integer) {
     requires a <= b;
         ensures a - c <= b - c by {
