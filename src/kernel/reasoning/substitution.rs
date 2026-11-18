@@ -27,6 +27,26 @@ trait VariableSubstitution {
     fn condition(&self, condition: &ConditionTerm) -> ConditionTerm;
     fn program_value(&self, value: &ProgramValue) -> ProgramValue;
     fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue;
+    /// Native program-value storage applies its existing typed literal
+    /// constructor after substitution. Keep that carrier without exporting a
+    /// common expression; only an atomic literal crosses this boundary.
+    fn stored_program_value(&self, value: &ExecutionValue) -> ExecutionValue {
+        let rewritten = self.expression_value(value);
+        if let Some(root) = rewritten.shared()
+            && let KernelTermNode::MachineLiteral(literal) = root.node()
+            && let Some(format) = MachineIntegerType::from_program_type(rewritten.program_type())
+        {
+            let raw = literal.value_at(format);
+            let normalized = self.program_value(&raw);
+            if normalized != raw {
+                return KernelTermImport::default()
+                    .argument(&PureFunctionArgument::Value(normalized))
+                    .into();
+            }
+        }
+        rewritten
+    }
+
     fn program_expression(&self, expression: &ProgramExpression) -> ProgramExpression;
     fn memory(&self, memory: &SymbolicMemory) -> SymbolicMemory;
     fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm;
@@ -719,7 +739,7 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                             StoredResourceField::Input(walk_algebraic_value(&value, s))
                         }
                         StoredResourceField::Program(value) => {
-                            StoredResourceField::from_program(s.expression_value(value.value()))
+                            StoredResourceField::from_program(s.stored_program_value(value.value()))
                         }
                     }
                 }));

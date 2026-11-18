@@ -396,39 +396,54 @@ mod tests {
 
     #[test]
     fn substitution_keeps_program_field_roots_for_changed_and_unchanged_values() {
-        let _session = VerificationSession::enter();
-        let variable = Variable(10993307);
-        let fields = ResourceFieldValues::from_minted(vec![AlgebraicValue::Program(
-            ProgramValue::Int32(MachineTerm::Variable(variable)),
-        )]);
-        let root = fields.program_value(0).unwrap().shared().unwrap().clone();
-        let proposition = Proposition::ResourceViewable {
-            memory: SymbolicMemory::new(),
-            resource: Box::new(Resource::Instance(instance(fields, ProgramType::Int32))),
-        };
-        for (from, expected) in [
-            (
-                Variable(10993308),
-                ProgramValue::Int32(MachineTerm::Variable(variable)),
-            ),
-            (variable, ProgramValue::Int32(MachineTerm::constant(7))),
+        for ty in [
+            ProgramType::Int8,
+            ProgramType::UInt8,
+            ProgramType::Int16,
+            ProgramType::UInt16,
+            ProgramType::Int32,
+            ProgramType::UInt32,
         ] {
-            let mapped = crate::kernel::substitute_int32_variable_in_proposition(
-                &proposition,
-                from,
-                MachineTerm::constant(7),
-            );
-            let Proposition::ResourceViewable { resource, .. } = mapped else {
-                unreachable!()
+            let _session = VerificationSession::enter();
+            let wrap = |bits| match ty {
+                ProgramType::Int8 => crate::kernel::int8(bits),
+                ProgramType::UInt8 => crate::kernel::uint8(bits),
+                ProgramType::Int16 => crate::kernel::int16(bits),
+                ProgramType::UInt16 => crate::kernel::uint16(bits),
+                ProgramType::Int32 => crate::kernel::int32(bits),
+                ProgramType::UInt32 => crate::kernel::uint32(bits),
+                _ => unreachable!(),
             };
-            let Resource::Instance(value) = *resource else {
-                unreachable!()
+            let variable = Variable(10993307);
+            let fields = ResourceFieldValues::from_minted(vec![AlgebraicValue::Program(wrap(
+                MachineTerm::Variable(variable),
+            ))]);
+            let root = fields.program_value(0).unwrap().shared().unwrap().clone();
+            let proposition = Proposition::ResourceViewable {
+                memory: SymbolicMemory::new(),
+                resource: Box::new(Resource::Instance(instance(fields, ty))),
             };
-            let result = value.fields().program_value(0).unwrap();
-            assert!(result.shared().is_some());
-            assert_eq!(result.native().as_ref(), &expected);
-            if from != variable {
-                assert_eq!(result.shared(), Some(&root));
+            for (from, expected) in [
+                (Variable(10993308), wrap(MachineTerm::Variable(variable))),
+                (variable, wrap(MachineTerm::constant(7))),
+            ] {
+                let mapped = crate::kernel::substitute_int32_variable_in_proposition(
+                    &proposition,
+                    from,
+                    MachineTerm::constant(7),
+                );
+                let Proposition::ResourceViewable { resource, .. } = mapped else {
+                    unreachable!()
+                };
+                let Resource::Instance(value) = *resource else {
+                    unreachable!()
+                };
+                let result = value.fields().program_value(0).unwrap();
+                assert!(result.shared().is_some());
+                assert_eq!(result.native().as_ref(), &expected, "{ty:?}");
+                if from != variable {
+                    assert_eq!(result.shared(), Some(&root));
+                }
             }
         }
     }
