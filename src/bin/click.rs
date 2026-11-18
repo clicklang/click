@@ -434,6 +434,75 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    // Refuse an explicit false fact after the original loop's two updates,
+    // so the name regression stays negative when pointer reasoning improves.
+    #[test]
+    fn verify_trace_keeps_pointer_parameter_and_recorded_local_names() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("spell.c"),
+            r#"unsigned long spell(const unsigned char *b, unsigned long n) {
+    const unsigned char *v = b;
+    unsigned long vl = n;
+    while (4 <= vl) {
+        v = v + 4;
+        vl = vl - 4;
+    }
+    return vl;
+}
+"#,
+        )
+        .unwrap();
+        let sidecar = directory.path().join("spell.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "spell.c";
+uint64 spell(const uint8* b, uint64 n) {
+    views b[0u64..n];
+    ensures result < 4u64;
+} by {
+    step_until(loop(0));
+    loop {
+        decreases vl;
+        views b[0u64..n];
+        invariant vl <= n;
+        invariant v == b + (n - vl);
+        preserve by {
+            if 4u64 <= vl {
+                step();
+                step();
+                have false by known();
+            } else {
+                step();
+            }
+        }
+    }
+    step_until(function.exit);
+}
+"#,
+        )
+        .unwrap();
+        let trace = entry(vec![
+            "verify".into(),
+            "--trace-proof".into(),
+            "spell".into(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(
+            trace.contains("`known` requires the current goal as an available semantic fact"),
+            "{trace}"
+        );
+        assert!(trace.contains("\ngoal: false\n"), "{trace}");
+        assert!(trace.contains(" = b + uint64("), "{trace}");
+        assert!(
+            trace.contains(" = at(statement(2).statement(0).entry, v)"),
+            "{trace}"
+        );
+        assert!(!trace.contains("external argument address base"), "{trace}");
+        assert!(!trace.contains("<symbol "), "{trace}");
+    }
+
     /// Every refused statement names its goal: the requirement it could not
     /// establish at its pre-state, in source names, with the explicit form
     /// that proves it. A refused call precondition, and an overflow that the
