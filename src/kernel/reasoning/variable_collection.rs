@@ -1670,7 +1670,7 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
             }
         }
         Resource::ConditionalMutexGuard(carrier) => {
-            collect_condition_bitvector_variables(&carrier.held, variables)
+            collect_condition_bitvector_variables(carrier.condition(), variables)
         }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
@@ -1684,7 +1684,7 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
                 .visit_values(|v| collect_algebraic_value_bitvector_variables(v, variables));
             collect_pointer_bitvector_variables(&right.flag, variables);
             if let Some(value) = &right.observed {
-                collect_program_value_bitvector_variables(value, variables);
+                collect_expression_value_bitvector_variables(value.value(), variables);
             }
         }
         Resource::Instance(instance) => {

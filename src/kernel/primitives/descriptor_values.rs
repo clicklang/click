@@ -149,3 +149,182 @@ mod tests {
         }
     }
 }
+
+/// Exact program payload storage for protocol values and native output DTOs.
+#[derive(Clone)]
+pub struct StoredProgramValue(RetainedProgramValue);
+impl From<ProgramValue> for StoredProgramValue {
+    fn from(value: ProgramValue) -> Self {
+        Self(value.into())
+    }
+}
+impl From<ExecutionValue> for StoredProgramValue {
+    fn from(value: ExecutionValue) -> Self {
+        Self(
+            crate::kernel::StoredExecutionValue::from(value)
+                .into_value()
+                .into(),
+        )
+    }
+}
+impl StoredProgramValue {
+    pub(crate) fn value(&self) -> &ExecutionValue {
+        self.0.value()
+    }
+    pub(crate) fn root(&self) -> Option<&KernelTerm> {
+        self.0.root()
+    }
+    pub(crate) fn native_compat(&self) -> &ProgramValue {
+        self.0.native_compat()
+    }
+}
+
+/// A native condition input or one retained logical Bool root. Native output
+/// reuses the root's existing Boolean argument slot rather than another cache.
+#[derive(Clone)]
+pub struct StoredConditionTerm(StoredCondition);
+#[derive(Clone)]
+enum StoredCondition {
+    Input(Arc<ConditionTerm>),
+    Shared(KernelTerm),
+}
+impl From<ConditionTerm> for StoredConditionTerm {
+    fn from(value: ConditionTerm) -> Self {
+        Self(StoredCondition::Input(Arc::new(value)))
+    }
+}
+impl StoredConditionTerm {
+    pub(crate) fn from_root(root: KernelTerm) -> Option<Self> {
+        (root.ty() == &KernelType::Bool).then(|| Self(StoredCondition::Shared(root)))
+    }
+    /// Already-evaluated scalar conditions produced by the loop guard checker.
+    pub(crate) fn from_minted(value: ConditionTerm) -> Self {
+        Self::from_root(KernelTermImport::for_exact_field_inputs().condition(&value))
+            .expect("logical condition")
+    }
+    pub(crate) fn root(&self) -> Option<&KernelTerm> {
+        match &self.0 {
+            StoredCondition::Input(_) => None,
+            StoredCondition::Shared(root) => Some(root),
+        }
+    }
+    pub(crate) fn native_compat(&self) -> &ConditionTerm {
+        match &self.0 {
+            StoredCondition::Input(value) => value,
+            StoredCondition::Shared(root) => {
+                if let KernelTermNode::BoolLiteral(value) = root.node() {
+                    return if *value {
+                        &ConditionTerm::Constant(true)
+                    } else {
+                        &ConditionTerm::Constant(false)
+                    };
+                }
+                let ProgramValue::Bool(MachineTerm::BoolCast { value, .. }) =
+                    root.boolean_native().expect("logical Bool output")
+                else {
+                    unreachable!("condition output");
+                };
+                value
+            }
+        }
+    }
+}
+
+macro_rules! native_descriptor_identity {
+    ($carrier:ty) => {
+        impl std::fmt::Debug for $carrier {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.native_compat().fmt(f) }
+        }
+        impl PartialEq for $carrier {
+            fn eq(&self, other: &Self) -> bool {
+                matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b) || self.native_compat() == other.native_compat()
+            }
+        }
+        impl Eq for $carrier {}
+        impl PartialOrd for $carrier {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
+        }
+        impl Ord for $carrier {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                if matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b) { std::cmp::Ordering::Equal }
+                else { self.native_compat().cmp(other.native_compat()) }
+            }
+        }
+        impl std::hash::Hash for $carrier {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.native_compat().hash(state); }
+        }
+    };
+}
+native_descriptor_identity!(StoredProgramValue);
+native_descriptor_identity!(StoredConditionTerm);
+
+#[cfg(test)]
+mod protocol_value_tests {
+    use super::*;
+    use std::hash::{Hash, Hasher};
+    fn hash(value: &impl Hash) -> u64 {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        value.hash(&mut h);
+        h.finish()
+    }
+    #[test]
+    fn protocol_native_values_keep_exact_identity_and_scalar_conditions_round_trip() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let values = [
+            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
+            ProgramValue::Bool(MachineTerm::constant(2)),
+            ProgramValue::Float32(MachineTerm::uint32_constant(0x7fc00123)),
+            ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
+        ];
+        for value in &values {
+            let stored = StoredProgramValue::from(value.clone());
+            assert_eq!(hash(&stored), hash(value));
+            assert_eq!(format!("{stored:?}"), format!("{value:?}"));
+            for other in &values {
+                let other_stored = StoredProgramValue::from(other.clone());
+                assert_eq!(stored == other_stored, value == other);
+                assert_eq!(stored.cmp(&other_stored), value.cmp(other));
+            }
+        }
+        let conditions = [
+            ConditionTerm::Constant(false),
+            ConditionTerm::Constant(true),
+            ConditionTerm::Variable(Variable(10993642)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(MachineTerm::Variable(Variable(10993643))),
+                right: Box::new(MachineTerm::constant(1)),
+            },
+            ConditionTerm::BoolEqual(
+                Box::new(ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(MachineTerm::Variable(Variable(10993644))),
+                    right: Box::new(MachineTerm::uint32_constant(1)),
+                }),
+                Box::new(ConditionTerm::Constant(false)),
+            ),
+        ];
+        for value in &conditions {
+            for stored in [
+                StoredConditionTerm::from(value.clone()),
+                StoredConditionTerm::from_minted(value.clone()),
+            ] {
+                assert_eq!(stored.native_compat(), value);
+                assert_eq!(hash(&stored), hash(value));
+                assert_eq!(format!("{stored:?}"), format!("{value:?}"));
+                for other in &conditions {
+                    let other_stored = StoredConditionTerm::from(other.clone());
+                    assert_eq!(stored == other_stored, value == other);
+                    assert_eq!(stored.cmp(&other_stored), value.cmp(other));
+                }
+            }
+        }
+    }
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/primitives/descriptor_values.rs");
+    }
+}

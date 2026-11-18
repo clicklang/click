@@ -1068,7 +1068,7 @@ not a change to proof rules or snapshot architecture.
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b landed in [PR #3233](https://github.com/clicklang/click/pull/3233), with all six pushed commits verified upstream; it implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Implemented locally; final 525 focused checks, all 1,919 regular scaling cases, 14 wide-range/allocation proofs, fact stability and quality passed. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Implemented locally; current-upstream 590 focused checks, all 1,926 regular scaling cases, indexed/resource-field proofs, fact stability and quality passed; one isolated proof has identical upstream failure. |
-| 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
+| 10p5 | `PublicationRight::observed`, `ConditionalMutexGuard::held`, and the matching `MutexEntry::ConditionalLoop` condition. Preserve channel/acquisition identities and protocol rules. | Common carriers and producer handoffs implemented locally; two producer regressions confirmed red; 690 focused checks, all 1,927 regular scaling cases and publication proofs passed; mutex proofs passed 215/216 with one identical parent failure. |
 | 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
 
 `MemorySegment` source expressions and declared `ResourceQuantity` expressions
@@ -1217,6 +1217,35 @@ checker limits remain unchanged; it is not counted as a passing check.
 Fact stability recorded zero changed terms/paths; quality passed. Full nightly
 was not run. The preceding pre-integration 589 focused/1,920 scaling checks also
 passed. Temporary reader/producer isolation experiments were reverted in 10p3.
+
+### 10p5 Publication and conditional mutex protocol values (in progress)
+
+Publication observations use `StoredProgramValue`, which retains native input
+or an existing common program root with exact native identity/order/hash/debug.
+Acquire-load observations store the freshly minted variable root while their
+legacy result DTO keeps its original value and variable identity. Shared value
+collectors and substitution use existing retained-value operations.
+
+Conditional guard heads and their matching conditional ledger entries use one
+`StoredConditionTerm`. Native constructor inputs keep exact syntax; checked
+scalar loop conditions import structurally through the existing exact-input
+mode and share one root across the two stores. Selected native condition reads
+reuse the existing Boolean argument slot; literal conditions borrow static
+literal outputs. No enclosing native condition cache is added. Protocol
+materialization and native output/rewriting remain explicit boundaries; native
+rewrites keep the callback's exact result. Channel, resource, initialization
+and acquisition identities and the checked protocol transitions are unchanged.
+
+Both actual producer regressions were red: the acquire observation and the
+conditional guard/ledger pair still held native inputs. The other 28 checks,
+including native identity, scalar condition round-trips and constant-work
+clones over growing machine/Boolean DAGs, passed. The two producer handoffs are
+implemented. All 690 focused checks, all 1,927 regular scaling cases and the
+publication proof selection passed. Mutex proofs passed 215/216;
+`population_conservation_local_mutex.md` fails identically on the parent
+revision, at the same `fold(control(p), ...)` quantity bound. It uses neither
+migrated protocol producer. Fact stability recorded 88 refusals and no changed
+terms or paths. No syntax or proof rule is changed.
 
 ## Chunk 3: machine-valued pure-function results
 
