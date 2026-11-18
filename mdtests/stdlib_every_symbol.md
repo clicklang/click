@@ -150,6 +150,8 @@ import click::permutation;
 import click::c::string;
 import click::bytes;
 import click::c::stdio;
+import click::rust::option;
+import click::rust::result;
 import click::rust::i8;
 import click::rust::i16;
 import click::rust::i32;

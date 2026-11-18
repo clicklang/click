@@ -170,6 +170,9 @@ pub(super) fn lower(
                     &local.name,
                     element,
                     matches!(local.value_type, Type::SharedArrayOption { .. }),
+                    owner,
+                    u32::try_from(index - owned_parameter_count)
+                        .map_err(|_| "MIR local index exceeds u32")?,
                 )?,
             );
             continue;
@@ -1210,6 +1213,7 @@ fn loop_iterator(
             });
         if let Some(local) = user {
             return Some(RustLoopIterator {
+                slice_fields: None,
                 local,
                 kind: K::User,
                 count_binding: None,
@@ -1250,6 +1254,10 @@ fn loop_iterator(
                 _ => return None,
             };
             Some(RustLoopIterator {
+                slice_fields: cx
+                    .shared_array_iterators
+                    .get(local)
+                    .map(|iter| iter.fields.clone()),
                 local: local.clone(),
                 kind,
                 count_binding: if kind == K::Enumerate {

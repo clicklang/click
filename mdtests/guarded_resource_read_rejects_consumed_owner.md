@@ -1,7 +1,8 @@
 # A preserved child value grants no read after ownership is consumed
 
 The child value is preserved across the disjoint store to `root->value`.
-The proof then refolds and transfers the child resource to `consume_child`.
+The proof also separates the child's value from the borrowed pointer cell
+before refolding and transferring the resource to `consume_child`.
 Knowing its value before that call does not supply ownership for the final read.
 
 ```c filename=guarded.c
@@ -63,8 +64,10 @@ int32 f(struct cell* root) {
     have (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value) by {
         preserve(memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), statement(2));
     }
+    have separate(memory((root->base.left as (void *) as (struct cell *))->value), memory(root->base.left)) by { solve(); }
     let restored = fold(child_value(root->base.left), { number: old(child.number) });
-    step(); step(); solve();
+    step() by { known(); }
+    step(); solve();
 }
 ```
 

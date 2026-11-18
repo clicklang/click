@@ -509,8 +509,17 @@ pub(crate) fn rust_iterator_method(
         // A slice iterator is the slice it still covers: `iter.as_slice()`
         // reads as a slice parameter does, its data, and `iter.len()` is
         // its length. An enumeration also counts what it has yielded.
-        (K::Slice | K::Enumerate, "len()") => variable("len"),
-        (K::Slice | K::Enumerate, "as_slice()") => variable("ptr"),
+        (K::Slice | K::Enumerate, "len()" | "as_slice()") => {
+            let fields = iterator
+                .slice_fields
+                .as_ref()
+                .ok_or("missing slice iterator fields")?;
+            ProgramExpression::Variable(if accessor == "len()" {
+                fields.length.clone()
+            } else {
+                fields.pointer.clone()
+            })
+        }
         (K::Enumerate, "count") => ProgramExpression::Variable(
             iterator
                 .count_binding
@@ -578,25 +587,25 @@ pub(crate) fn rust_iterator_method(
 pub(crate) fn rust_iterator_spelling(
     iterators: &[Option<crate::languages::interface::RustLoopIterator>],
     current: Option<usize>,
-    name: &str,
+    name: &crate::kernel::BindingName,
 ) -> Option<String> {
-    iterators.iter().enumerate().find_map(|(index, iterator)| {
-        let iterator = iterator.as_ref()?;
+    let variable = ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone()));
+    let accessor_of = |iterator: &crate::languages::interface::RustLoopIterator| {
         rust_iterator_accessors(iterator.kind)
             .iter()
-            .find_map(|accessor| {
-                (rust_iterator_method(iterator, accessor).ok()?
-                    == ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                        (name.to_string()).into(),
-                    )))
-                .then(|| {
-                    if current == Some(index) {
-                        format!("iter.{accessor}")
-                    } else {
-                        format!("loop({index}).iter.{accessor}")
-                    }
-                })
+            .find(|accessor| {
+                rust_iterator_method(iterator, accessor).ok().as_ref() == Some(&variable)
             })
+    };
+    if let Some(index) = current
+        && let Some(Some(iterator)) = iterators.get(index)
+        && let Some(accessor) = accessor_of(iterator)
+    {
+        return Some(format!("iter.{accessor}"));
+    }
+    iterators.iter().enumerate().find_map(|(index, iterator)| {
+        let accessor = accessor_of(iterator.as_ref()?)?;
+        Some(format!("loop({index}).iter.{accessor}"))
     })
 }
 
@@ -728,6 +737,14 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/rust/usize.click",
         include_str!("../library/rust/usize.click"),
+    ),
+    (
+        "library/rust/option.click",
+        include_str!("../library/rust/option.click"),
+    ),
+    (
+        "library/rust/result.click",
+        include_str!("../library/rust/result.click"),
     ),
     (
         "library/rust/vec.click",

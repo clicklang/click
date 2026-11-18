@@ -204,9 +204,12 @@ be separate from the caller's pre-existing live loans. The proof uses the
 ranges selected at call entry. The standard-library `memcpy` uses its
 checked destination byte range for this obligation. Its source view still
 participates in the call's resource partition.
-A plain folded resource with a flat, unconditional memory body carries the
-exact owned ranges from that same call projection. Its view clauses add no
-write ranges.
+The call projection retains exact owned ranges from finite folded bodies,
+including nested ordinary owners and named children with known fields.
+A matched body contributes exact ranges when the projection selects its
+constructor. Undecided guards, unresolved arms, and unnamed memory keep a
+conservative footprint. The projection retains decisions for body guards
+and explicitly guarded write segments. A false guard contributes no range.
 Call retirement requires the full input allocation to be separate from the
 entry ledger, including loans opened by the call. This applies to a definite
 free and to an output that leaves the allocation's continuity undecided.
@@ -214,6 +217,14 @@ Scope exits, function returns and throws, and temporary cleanup check the
 ledger by automatic object identity. A live loan pins its backing object until the loan ends,
 including when its protected bytes have symbolic bounds. Retained proof
 events repeat the same check.
+
+A loop head with a checked write set requires separation from the
+active loan footprint. An explicit proof can state this fact with `have`
+before `loop`. A memory-writing loop with active loans needs a usable write
+bound. When several exits join, any memory cell the successor drops or
+abstracts also needs separation from the shared exit loan footprint. Its
+proof belongs at loop entry, where it cannot depend on the joined state's
+fresh values or exit equations.
 
 Direct scalar assignments to address-taken locals and stores through their
 addresses require separation from the ledger's live memory footprint,

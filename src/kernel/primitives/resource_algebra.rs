@@ -3355,6 +3355,24 @@ impl ResourceContext {
             })
     }
 
+    /// Select a sole folded owner naming this exact pointer argument.
+    /// An ambiguous bucket needs separate selection evidence.
+    pub(in crate::kernel) fn unique_owned_composite_with_pointer_argument(
+        &self,
+        pointer: &Address,
+    ) -> Option<&ResourceFact> {
+        crate::instrumentation::record_deterministic_work(1);
+        let entries = self
+            .storage
+            .index
+            .owned_composites_by_pointer_argument
+            .get(pointer)?;
+        if entries.len() != 1 {
+            return None;
+        }
+        Some(self.fact(*entries.iter().next().expect("one indexed owner")))
+    }
+
     /// The owned folded composites with a C pointer argument in `block`.
     pub(in crate::kernel) fn owned_composites_with_argument_block<'a>(
         &'a self,

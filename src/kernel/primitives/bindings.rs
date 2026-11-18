@@ -84,6 +84,8 @@ enum LocalBindingKind {
     PreparedArgument,
     LoopEscape,
     EnumerateCount,
+    SliceIteratorPointer,
+    SliceIteratorLength,
 }
 
 #[derive(Debug)]
@@ -167,8 +169,37 @@ impl LocalBindingId {
         }))
     }
 
-    pub(crate) fn is_enumerate_count(&self) -> bool {
-        self.0.kind == LocalBindingKind::EnumerateCount
+    pub(crate) fn slice_iterator_fields(
+        owner: LocalFunctionId,
+        ordinal: u32,
+        pointer_type: ProgramType,
+    ) -> [Self; 2] {
+        [
+            (LocalBindingKind::SliceIteratorPointer, pointer_type),
+            (LocalBindingKind::SliceIteratorLength, ProgramType::UInt64),
+        ]
+        .map(|(kind, ty)| {
+            Self(Arc::new(LocalDeclaration {
+                owner: owner.clone(),
+                parameter: false,
+                kind,
+                ordinal,
+                scope_depth: 0,
+                spelling: None,
+                program_type: OnceLock::from(ty),
+                array_shape: OnceLock::new(),
+                struct_name: OnceLock::new(),
+            }))
+        })
+    }
+
+    pub(crate) fn is_iterator_field(&self) -> bool {
+        matches!(
+            self.0.kind,
+            LocalBindingKind::EnumerateCount
+                | LocalBindingKind::SliceIteratorPointer
+                | LocalBindingKind::SliceIteratorLength
+        )
     }
 
     pub fn is_temporary(&self) -> bool {
@@ -275,6 +306,12 @@ impl Hash for LocalBindingId {
             LocalBindingKind::LoopEscape => (&self.0.owner, 3u8, self.0.ordinal).hash(state),
             LocalBindingKind::EnumerateCount => (&self.0.owner, 4u8, self.0.ordinal).hash(state),
             LocalBindingKind::PreparedArgument => (&self.0.owner, 5u8, self.0.ordinal).hash(state),
+            LocalBindingKind::SliceIteratorPointer => {
+                (&self.0.owner, 7u8, self.0.ordinal).hash(state)
+            }
+            LocalBindingKind::SliceIteratorLength => {
+                (&self.0.owner, 8u8, self.0.ordinal).hash(state)
+            }
         }
     }
 }
@@ -309,8 +346,21 @@ impl std::fmt::Display for CanonicalLocalBinding<'_> {
         if id.0.kind == LocalBindingKind::LoopEscape {
             return f.write_str("<loop escape>");
         }
-        if id.is_enumerate_count() {
-            return f.write_str("<enumeration count>");
+        let slice_field = match id.0.kind {
+            LocalBindingKind::EnumerateCount => return f.write_str("<enumeration count>"),
+            LocalBindingKind::SliceIteratorPointer => Some("pointer"),
+            LocalBindingKind::SliceIteratorLength => Some("length"),
+            _ => None,
+        };
+        if let Some(field) = slice_field {
+            // Include the declaration identity in symbolic storage diagnostics.
+            return write!(
+                f,
+                "<slice iterator {field} of {:?}::{}.local({})>",
+                id.source(),
+                id.function(),
+                id.ordinal()
+            );
         }
         if let Some(source) = id.source() {
             write!(f, "{source:?}::")?;
