@@ -5,8 +5,8 @@ use std::sync::{Mutex, OnceLock};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum Node {
-    Load(Box<MemoryErasedPointerKey>, LoadKind),
-    Address(Box<MemoryErasedPointerKey>),
+    Load(Box<MemoryErasedAddressKey>, LoadKind),
+    Address(Box<MemoryErasedAddressKey>),
     Binary(
         BitvectorBinaryOp,
         MemoryErasedBitvectorKey,
@@ -128,10 +128,10 @@ pub(super) fn written(term: &MachineTerm) -> MemoryErasedBitvectorKey {
     }
     let node = match term {
         MachineTerm::PointerAddress(pointer, _) => {
-            Node::Address(Box::new(memory_erased_pointer_key(pointer)))
+            Node::Address(Box::new(memory_erased_address_key(pointer)))
         }
         MachineTerm::MemoryLoad(_, pointer, kind) => {
-            Node::Load(Box::new(memory_erased_pointer_key(pointer)), *kind)
+            Node::Load(Box::new(memory_erased_address_key(pointer)), *kind)
         }
         MachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable) => {
             match (
@@ -139,7 +139,7 @@ pub(super) fn written(term: &MachineTerm) -> MemoryErasedBitvectorKey {
                 crate::kernel::registered_load_kind_for_variable(variable),
             ) {
                 (Some((_, pointer)), Some(kind)) => {
-                    Node::Load(Box::new(memory_erased_pointer_key(&pointer)), kind)
+                    Node::Load(Box::new(memory_erased_address_key(&pointer)), kind)
                 }
                 _ => Node::Exact(term.clone()),
             }
@@ -241,7 +241,7 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> MemoryEras
         };
         let key = if let Some((_, address, kind)) = view.read() {
             intern(Node::Load(
-                Box::new(memory_erased_pointer_key(address)),
+                Box::new(memory_erased_address_key(address)),
                 kind,
             ))
         } else if matches!(
