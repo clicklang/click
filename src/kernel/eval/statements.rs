@@ -794,7 +794,7 @@ fn write_program_lvalue_paths_for_initialization(
                     VolatileAccessKind::Write,
                     pointer,
                     value_type,
-                    value.clone().into_native(),
+                    value.clone(),
                 )?);
             }
             state.locals.set_retained_typed_with_all_qualifiers(
@@ -825,6 +825,14 @@ fn write_program_lvalue_paths_for_initialization(
                 .shared()
                 .filter(|root| root.pointer_payload().is_some())
                 .cloned();
+            // The bit-field producer computes a different, combined byte below.
+            // Ordinary writes keep their already-coerced execution operand.
+            let retained_volatile_value = (is_volatile
+                && !matches!(
+                    &lvalue_classes.0,
+                    Some(crate::kernel::effective_type::CAccessClass::BitFieldByte(_))
+                ))
+            .then(|| value.clone());
             let value = value.into_native();
             // The loan obligation names the evaluated source lvalue. Keep its
             // address before storage chooses an equivalent owner's coordinates.
@@ -1241,7 +1249,7 @@ fn write_program_lvalue_paths_for_initialization(
                     VolatileAccessKind::Write,
                     pointer,
                     value_type,
-                    value,
+                    retained_volatile_value.unwrap_or_else(|| value.into()),
                 )?);
             }
             Ok(vec![StatementExecutionPath::new(

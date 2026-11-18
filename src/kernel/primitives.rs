@@ -13320,7 +13320,7 @@ pub struct VolatileAccess {
     pub(crate) kind: VolatileAccessKind,
     pub(crate) pointer: Address,
     pub(crate) value_type: ProgramType,
-    pub(crate) value: ProgramValue,
+    pub(crate) value: StoredProgramValue,
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]

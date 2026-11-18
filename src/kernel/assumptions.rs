@@ -10256,7 +10256,18 @@ impl ExecutionPureFact {
         let Proposition::VolatileAccess(event) = self.proposition() else {
             return None;
         };
-        (event.kind == VolatileAccessKind::Read).then_some(&event.value)
+        (event.kind == VolatileAccessKind::Read).then(|| event.value.native_compat())
+    }
+
+    pub(crate) fn volatile_read_retained_result(&self) -> Option<&crate::kernel::ExecutionValue> {
+        crate::instrumentation::record_deterministic_work(1);
+        if !self.is_certified() {
+            return None;
+        }
+        let Proposition::VolatileAccess(event) = self.proposition() else {
+            return None;
+        };
+        (event.kind == VolatileAccessKind::Read).then(|| event.value.value())
     }
 
     /// Retain the exact typed producer's definition and checked cached value.

@@ -3342,7 +3342,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         VolatileAccessKind::Read,
                         pointer,
                         lvalue.value_type,
-                        value.clone().into_native(),
+                        value.clone(),
                     )?);
                 }
                 vec![ExecutionValuePath {
@@ -3585,13 +3585,12 @@ fn read_retained_lvalue_paths_without_ranges(
                 }
                 for path in &mut paths {
                     if let ExpressionOutcome::Value(value) = &path.outcome {
-                        let value = value.native().into_owned();
                         path.facts.push(volatile_access_fact(
                             budget,
                             VolatileAccessKind::Read,
                             pointer.clone(),
                             lvalue.value_type,
-                            value,
+                            value.clone(),
                         )?);
                     }
                 }

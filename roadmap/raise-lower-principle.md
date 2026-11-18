@@ -1313,7 +1313,8 @@ protocol, substitution and point checks passed, followed by quality.
 | --- | --- | --- |
 | 10q1 | `ProgramExpressionEvaluates` and `MemoryLoads` outcomes | Retain evaluated program roots; exact native outcome identity, errors and source/state DTOs remain unchanged. |
 | 10q2a | `VolatileAccess::value` | Retain captured value roots; nominal event identity and read/write authority remain unchanged. |
-| 10q2b | `MemoryLoadable::bytes` | Retain count roots; signed/wide count policy and native input formats remain unchanged. |
+| 10q2b1 | `MemoryLoadable::bytes` carrier, native constructors and consumers | Preserve exact native count syntax, width metadata and fact identity before switching producers. |
+| 10q2b2 | Range-to-loadability count producers | Retain range operand roots with the existing canonical subtraction/multiplication and wide spelling rules unchanged. |
 | 10q3 | `ConditionIs` logical payloads | Retain produced logical roots; native input syntax and existing comparison/fact/raising readers keep their exact contracts. |
 | 10q4 | Expression-bearing `Term` payloads in equality/predicate outputs | Retain numeric/program/algebraic roots at actual producer handoffs; preserve native term ordering, hashing, capture and proof admission. |
 
@@ -1344,7 +1345,8 @@ quality passed. Full nightly was not run.
 
 After integrating upstream `9c6b250ee`, including its memory-load changes,
 all 793 affected expression/wide-value/memory/collection checks and quality
-passed again. All twelve quantity-parent commits were verified upstream
+passed again. This landed in [PR #3271](https://github.com/clicklang/click/pull/3271);
+all ten pushed commits were verified upstream. All twelve quantity-parent commits were verified upstream
 before the clean primary advanced through Git.
 
 The native load-result-to-`Term::ProgramValue` reader in surface resource proofs
@@ -1353,6 +1355,38 @@ existing native-input policy; this slice preserves roots the memory already
 holds. Logical conditions and remaining term payloads retain their own slices.
 10q2 is split before implementation into independent volatile-value and
 loadability-count PRs; its original scope and proof rules are unchanged.
+
+### 10q2a Volatile-event values (in progress)
+
+`VolatileAccess::value` uses the exact program-value carrier. Native inputs
+retain their syntax; variable collection and substitution use retained values.
+Read-result certification, event identities, pointer/type metadata and access
+rules are unchanged. The existing native read-result getter remains explicit
+and materializes only read values, not writes. Native proof rewriting and
+rendering retain selected compatibility readers.
+
+The already-retained recorded read-event slot now accepts the event's retained
+value directly. Existing naming indices and native merge/replay interfaces
+keep their identity policy; no index or enclosing value cache is added.
+The actual volatile-local write regression was red while 207 other checks
+passed. Evaluator read/write handoffs now forward retained values. Ordinary
+memory writes retain the already-coerced input; bit-field writes preserve the
+actual newly combined native byte rather than substituting the incoming value.
+The local stack-memory compatibility conversion remains unchanged. Event
+capture/cloning is measured separately from that existing memory boundary;
+the actual write regression still checks producer-root retention.
+
+The initial assignment-wide scaler included the existing stack-memory export;
+the event capture/clone operation is now isolated, while the end-to-end write
+root assertion remains. All 209 focused checks passed. After parent integration,
+all 316 selected checks, all 1,937 regular scaling cases and all 5,621 regular
+proof fixtures passed. Fact stability recorded 121 refusals and zero changed
+terms/paths; quality passed. Full nightly was not run.
+
+After integrating upstream `2d5b4c37a` and its Rust frontend changes, all 245
+selected volatile, substitution, collection and frontend checks passed again,
+followed by quality. The outcome parent's ten pushed commits were verified
+upstream before the clean primary advanced through Git.
 
 ## Chunk 3: machine-valued pure-function results
 
