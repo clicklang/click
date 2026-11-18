@@ -1647,6 +1647,7 @@ impl LocalEnvironment {
                 layout,
                 slot,
                 constant,
+                proof_input_for: None,
             },
         );
     }
@@ -1988,6 +1989,18 @@ impl LocalEnvironment {
 
     pub(in crate::kernel) fn slots(&self) -> impl Iterator<Item = &Address> {
         self.slots.keys()
+    }
+
+    pub(in crate::kernel) fn is_proof_input_slot(&self, slot: &Address) -> bool {
+        self.name_for_slot(slot).is_some_and(|name| {
+            matches!(
+                self.bindings.get(name),
+                Some(LocalBinding::AggregateObject {
+                    proof_input_for: Some(_),
+                    ..
+                })
+            )
+        })
     }
 
     pub(crate) fn name_for_slot(&self, pointer: &Address) -> Option<&BindingName> {

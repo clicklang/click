@@ -829,6 +829,32 @@ pub(super) fn append_string_literal_loadable_facts(
     }
 }
 
+/// The only aggregate arguments whose constructor has already initialized
+/// the parameter object itself are frontend-created prepared destinations.
+/// Verify the address is the caller's live destination, so an ordinary
+/// by-value copy inside the callee cannot reuse its parameter.
+pub(super) fn is_prepared_aggregate_argument(
+    caller: &ExecutionState,
+    address: &Address,
+    layout: &AggregateLayout,
+) -> bool {
+    let Some(binding) = address.base.prepared_argument_binding() else {
+        return false;
+    };
+    let name = BindingName::from(binding.clone());
+    crate::instrumentation::record_deterministic_work(1);
+    caller.locals.slot(&name) == Some(address)
+        && caller.locals.aggregate_layout(&name) == Some(layout)
+        && caller.memory.has_block(&address.base)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AggregateArgumentBinding {
+    Call,
+    ProofEntry,
+    IntroduceProofInputs,
+}
+
 pub(in crate::kernel) fn bind_program_function_arguments(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
@@ -843,7 +869,13 @@ pub(super) fn bind_program_function_arguments_retained(
     values: &[ProgramValue],
     roots: &[ExecutionValue],
 ) -> Option<ExecutionState> {
-    bind_program_function_arguments_impl(caller_state, function, values, false, Some(roots))
+    bind_program_function_arguments_impl(
+        caller_state,
+        function,
+        values,
+        AggregateArgumentBinding::Call,
+        Some(roots),
+    )
 }
 
 /// [`bind_program_function_arguments`], except that with `input_aggregates` each
@@ -856,14 +888,19 @@ pub(in crate::kernel) fn bind_program_function_arguments_with(
     values: &[ProgramValue],
     input_aggregates: bool,
 ) -> Option<ExecutionState> {
-    bind_program_function_arguments_impl(caller_state, function, values, input_aggregates, None)
+    let binding = if input_aggregates {
+        AggregateArgumentBinding::IntroduceProofInputs
+    } else {
+        AggregateArgumentBinding::ProofEntry
+    };
+    bind_program_function_arguments_impl(caller_state, function, values, binding, None)
 }
 
 fn bind_program_function_arguments_impl(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     values: &[ProgramValue],
-    input_aggregates: bool,
+    aggregate_binding: AggregateArgumentBinding,
     roots: Option<&[ExecutionValue]>,
 ) -> Option<ExecutionState> {
     // Preserve the value-only representation for parameters whose addresses
@@ -958,13 +995,47 @@ fn bind_program_function_arguments_impl(
                 return None;
             }
             let source = pointer.address().clone();
+            if aggregate_binding == AggregateArgumentBinding::ProofEntry
+                && let Some(
+                    input @ LocalBinding::AggregateObject {
+                        layout: input_layout,
+                        slot,
+                        proof_input_for: Some(owner),
+                        ..
+                    },
+                ) = caller_state.locals.binding(parameter.binding_name())
+                && owner.as_ref() == function.name()
+                && slot == &source
+                && input_layout == layout
+                && caller_state.memory.has_block(&slot.base)
+            {
+                // Requirement lowering has already named this object's identity.
+                // Carry the existing binding so entry and exit use that identity.
+                callee_state
+                    .locals
+                    .insert_binding(parameter.binding_name().clone(), input.clone());
+                let owner = private_aggregate_storage_owner(source, layout);
+                if callee_state.resources.exact_count(&owner) == 0 {
+                    callee_state.resources =
+                        callee_state.resources.clone().unchecked_with_fact(owner);
+                }
+                continue;
+            }
+            if is_prepared_aggregate_argument(caller_state, &source, layout) {
+                callee_state.locals.set_aggregate_object_at(
+                    parameter.binding_name().clone(),
+                    layout.clone(),
+                    source,
+                );
+                continue;
+            }
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
             // A proof's input object holds its own entry values: each field
             // is the read of that field before the object is declared, so
             // the value has the parameter's own spelling and no other
             // object stands behind it.
-            let source = if input_aggregates {
+            let source = if aggregate_binding == AggregateArgumentBinding::IntroduceProofInputs {
                 slot.clone()
             } else {
                 register_aggregate_argument_source(&slot.base, &source);
@@ -1136,6 +1207,14 @@ pub(super) fn bind_contract_arguments(
                 return None;
             }
             let source = pointer.address().clone();
+            if is_prepared_aggregate_argument(caller_state, &source, layout) {
+                callee_state.locals.set_aggregate_object_at(
+                    parameter.binding_name().clone(),
+                    layout.clone(),
+                    source,
+                );
+                continue;
+            }
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
             callee_state.set_memory(copy_aggregate_fields(
