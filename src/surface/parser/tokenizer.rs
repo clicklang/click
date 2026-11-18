@@ -542,7 +542,7 @@ fn tokenize_byte_string(chars: &[char], mut index: usize) -> Result<(Vec<u8>, us
                 return Err(ClickError::new(if other.is_ascii() {
                     "unescaped control character in byte string literal"
                 } else {
-                    "byte string literals use ASCII source characters; write non-ASCII bytes with `\\xNN`"
+                    "byte string literals use ASCII source characters. Write non-ASCII bytes with `\\xNN`"
                 }));
             }
         };
