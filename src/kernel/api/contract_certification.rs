@@ -1763,6 +1763,18 @@ fn program_function_contract_entry_facts(
                 ));
             }
         };
+    let required_resources = crate::kernel::admit_declared_entry_resources(
+        required_resources,
+        &entry_state,
+        function.composite_resource_definitions(),
+        &assumptions,
+    )
+    .map_err(|error| {
+        format!(
+            "could not construct the contract entry partition: {}",
+            describe_certification_runtime_error(&error),
+        )
+    })?;
     // The entry partition: a transferred clause and a borrowed `views`
     // clause of this contract denote disjoint memory. The proof side spells
     // the same facts from the same clause list

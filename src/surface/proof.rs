@@ -2887,6 +2887,18 @@ fn evaluate_entry_resource_context(
                 )));
             }
         };
+    let evaluated = crate::kernel::admit_declared_entry_resources(
+        evaluated,
+        &evaluation_state,
+        &definitions,
+        &assumptions,
+    )
+    .map_err(|error| {
+        ClickError::new(format!(
+            "`{claim_label}` setup failed: {}",
+            crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
+        ))
+    })?;
     let state = state.with_resource_context(evaluated);
     // The entry partition (`kernel::contract_entry_partition_facts`): this
     // contract's transferred memory clauses are separate from its borrowed

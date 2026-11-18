@@ -17213,6 +17213,9 @@ pub(crate) fn evaluate_function_resource_context(
     .map(|result| result.map(|(context, _)| context))
 }
 
+mod entry_partition;
+pub(crate) use entry_partition::admit_declared_entry_resources;
+
 /// Evaluate a resource section once and retain the source metadata alongside
 /// each checked fact.  The ordinary context API below is a compatibility view
 /// for callers that only need algebraic containment; transition/effect code

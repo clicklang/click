@@ -1,3 +1,4 @@
+pub(crate) use super::functions::admit_declared_entry_resources;
 use super::functions::{
     apply_verified_contract_resource_transition,
     construct_program_function_resource as construct_c_function_resource_checked,
