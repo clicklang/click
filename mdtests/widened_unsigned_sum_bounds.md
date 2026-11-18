@@ -1,8 +1,8 @@
 # Unsigned operand bounds survive casts and widening
 
-A byte cast to unsigned retains its range. The checker combines indexed
-unsigned bounds with zero extension to prove a wide sum's upper bound,
-including a word in the upper half of `uint32`. The adjacent failing case
+A byte cast to unsigned retains its range. Solve expands the wide sum's
+upper bound into widening identities and ordinary Integer arithmetic using
+the selected unsigned bounds, including a word in the upper half of `uint32`. The adjacent failing case
 must not justify a bound one smaller than the maximum possible sum.
 
 ```c filename=widened_unsigned_sum_bounds.c
