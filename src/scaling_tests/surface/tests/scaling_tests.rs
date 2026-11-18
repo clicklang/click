@@ -11242,7 +11242,10 @@ fn recorded_call_snapshots_read_one_point_and_one_call() {
         let (saved, work) = crate::instrumentation::measure_deterministic_work(|| {
             points.call_results_at(&selected).unwrap().get(&0).cloned()
         });
-        assert_eq!(saved, Some(crate::kernel::int32(0)));
+        assert_eq!(
+            saved.map(RetainedProgramValue::into_native_compat),
+            Some(crate::kernel::int32(0))
+        );
         assert_eq!(work, 1, "{count} calls and snapshots");
     }
 }

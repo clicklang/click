@@ -493,7 +493,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         //
         // Each is named twice, exactly as a declared invariant is: once
         // re-read at iteration entry, where it shares the invariants' own
-        // spelling so one arithmetic certificate can pair the two, and once
+        // spelling so one arithmetic step can pair the two, and once
         // at the statement that branched, which is the spelling that still
         // holds when the body has since written the cells the condition read.
         // The closer keeps whichever lowers exactly and cites the fact once.

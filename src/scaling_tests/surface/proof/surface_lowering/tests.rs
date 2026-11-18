@@ -5,7 +5,7 @@ fn retained_pure_citations_use_singletons_without_scanning_related_or_unrelated_
     let theorems = TheoremEnvironment::new(&[]);
     let memory = SymbolicMemory::new();
     let value = MachineTerm::Variable(Variable(987_123));
-    let values = BTreeMap::from([("n".into(), ProgramValue::Int32(value))]);
+    let values = ProgramValueBindings::from([("n".into(), ProgramValue::Int32(value))]);
     let source = ClickProposition::Comparison {
         left: ContractExpression::ProgramExpression(ProgramExpression::Variable("n".into())),
         operator: ComparisonOperator::GreaterEqual,

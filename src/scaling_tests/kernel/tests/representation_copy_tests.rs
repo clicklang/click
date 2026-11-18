@@ -120,7 +120,7 @@ fn replacing_copy_initialization_visits_only_the_copied_runs() {
 }
 
 #[test]
-fn typed_bit_field_copy_work_tracks_named_bytes() {
+fn mixed_bit_field_copy_work_tracks_named_bytes() {
     let source = heap_pointer("local:bit-source");
     let destination = heap_pointer("local:bit-destination");
     let full_mask = std::num::NonZeroU8::MAX;
@@ -128,6 +128,11 @@ fn typed_bit_field_copy_work_tracks_named_bytes() {
     for words in [4u32, 16, 64] {
         let size = 4 * words;
         let masks: Vec<_> = (0..words).map(|index| (4 * index + 1, full_mask)).collect();
+        let scalars: Vec<_> = (0..words)
+            .map(|index| {
+                AggregateField::new(&format!("scalar{index}"), 4 * index + 2, ProgramType::UInt8)
+            })
+            .collect();
         let mut samples = Vec::new();
         for unrelated in [0, 64, 256] {
             let mut memory = SymbolicMemory::new()
@@ -140,8 +145,14 @@ fn typed_bit_field_copy_work_tracks_named_bytes() {
             for &(offset, _) in &masks {
                 memory = memory.store(source.offset_by_bytes(offset), crate::kernel::uint8(7));
             }
+            for field in &scalars {
+                memory = memory.store(
+                    source.offset_by_bytes(field.offset_bytes()),
+                    crate::kernel::uint8(8),
+                );
+            }
             let (copied, work) = crate::instrumentation::measure_deterministic_work(|| {
-                memory.copy_local_bit_field_record(&source, &destination, size, &masks)
+                memory.copy_local_bit_field_record(&source, &destination, size, &masks, &scalars)
             });
             let copied = copied.unwrap();
             for &(offset, _) in &masks {
@@ -151,6 +162,12 @@ fn typed_bit_field_copy_work_tracks_named_bytes() {
                 );
                 assert!(
                     !copied.has_initialized_bytes_at(&destination.offset_by_bytes(offset - 1), 1)
+                );
+            }
+            for field in &scalars {
+                assert_eq!(
+                    copied.known_value(&destination.offset_by_bytes(field.offset_bytes())),
+                    Some(crate::kernel::uint8(8))
                 );
             }
             samples.push(work);

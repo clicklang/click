@@ -700,7 +700,8 @@ fn certified_transitions_from_execution(
                 .unwrap_or_default();
             let loop_iterations = loop_rule
                 .as_ref()
-                .and_then(|rule| rule.loop_iterations(path_index).cloned());
+                .and_then(|rule| rule.loop_iterations(path_index))
+                .map(|term| crate::kernel::KernelTermImport::default().integer(&term.clone().into()));
             let mut successor_facts = pure_facts.clone();
             let statement_facts = path
                 .facts()
@@ -985,7 +986,7 @@ fn certified_transitions_from_execution(
                     generated_load_source_events_from_facts(&execution_facts);
                 return Ok(CertifiedStatementTransition {
                     native_step: Arc::new(path.clone()),
-                call_result: path.call_result().cloned().map(crate::kernel::StoredExecutionValue::into_native),
+                call_result: path.call_result().cloned().map(|value| RetainedProgramValue::from(value.into_value())),
                 call_parameters: path.call_parameters().cloned(),
                     theorem: path.theorem().clone(),
                     context: executed_under.clone(),
@@ -1010,7 +1011,7 @@ fn certified_transitions_from_execution(
                 generated_load_source_events_from_facts(&execution_facts);
             Ok(CertifiedStatementTransition {
                     native_step: Arc::new(path.clone()),
-                call_result: path.call_result().cloned().map(crate::kernel::StoredExecutionValue::into_native),
+                call_result: path.call_result().cloned().map(|value| RetainedProgramValue::from(value.into_value())),
                 call_parameters: path.call_parameters().cloned(),
                 theorem: path.theorem().clone(),
                 context: executed_under.clone(),

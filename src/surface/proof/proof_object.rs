@@ -1677,7 +1677,7 @@ pub(in crate::surface::proof) fn register_recorded_state_names(
     // Each exited loop's pass count, `loop(i).iterations`.
     for (name, iterations) in retained_states.loop_iteration_bindings() {
         if let crate::kernel::IntegerTerm::Variable(variable) = iterations {
-            labels.integer_source_name(*variable, name);
+            labels.integer_source_name(variable, name);
         }
     }
     // Each recorded call's result, `statement(0).call(f, 0).result`.
@@ -3406,6 +3406,13 @@ impl<'a> Proof<'a> {
     ) -> Result<Self, ClickError> {
         let kernel = self.lower_surface_goal(goal, "source contract clause")?;
         self.focus_fixed_state_goal_for_cell(kernel, Some(goal.clone()), None, Some(key))
+    }
+
+    pub(in crate::surface::proof) fn ends_in_empty_normalize_using(&self) -> bool {
+        matches!(
+            self.node.step.as_deref(),
+            Some(ProofStep::NormalizeUsing(premises)) if premises.is_empty()
+        )
     }
 
     pub(super) fn is_complete(&self) -> bool {

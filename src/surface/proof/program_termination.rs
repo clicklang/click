@@ -165,7 +165,7 @@ pub(in crate::surface) fn prove(
         diagnostic_names: Arc::from([]),
         declaration_bindings: BTreeMap::new(),
         memory: SymbolicMemory::new(),
-        values: BTreeMap::new(),
+        values: ProgramValueBindings::new(),
         integer_values: Default::default(),
         array_refs: Default::default(),
         requires: vec![],

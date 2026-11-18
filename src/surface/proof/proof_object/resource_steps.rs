@@ -1362,7 +1362,7 @@ impl<'a> Proof<'a> {
     fn apply_function_unfold_in_state(
         &self,
         application: &ClickFunctionApplication,
-        values: BTreeMap<String, ProgramValue>,
+        values: ProgramValueBindings,
         array_refs: ClickArrayRefs,
         algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
         integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,

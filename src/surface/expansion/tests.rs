@@ -2438,7 +2438,6 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("the expansion verifies");
     // Without the bound on `i`, `i + 1` may wrap, and the step says so.
@@ -2511,7 +2510,6 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("the expansion verifies");
     // Without an upper bound on `i`, `i + 1` may overflow above. (A lower

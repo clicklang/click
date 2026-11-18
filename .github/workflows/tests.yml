@@ -214,8 +214,9 @@ jobs:
           - { suite: unit, partition: '4/6' }
           - { suite: unit, partition: '5/6' }
           - { suite: unit, partition: '6/6' }
-          - { suite: rust, partition: '1/2' }
-          - { suite: rust, partition: '2/2' }
+          # The Rust import tests fit on one shard, with one Charon download
+          # and runtime restore for the suite.
+          - { suite: rust, partition: '1/1' }
           - { suite: mdtests, partition: '1/5' }
           - { suite: mdtests, partition: '2/5' }
           - { suite: mdtests, partition: '3/5' }

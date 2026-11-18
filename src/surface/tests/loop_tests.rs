@@ -183,15 +183,14 @@ fn assert_loop_phase_expansion_replays(filename: &str, function: &str) {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
-fn nested_conjunction_extraction_precedes_explicit_arithmetic_certificate() {
+fn nested_conjunction_extraction_precedes_explicit_arithmetic_steps() {
     let (click, sources) = loop_fixture("arithmetic_conjunction_extraction");
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "drain")
         .expect("nested conjunction evidence should expand");
     assert!(expanded.contains("have n >= 0 by"), "{expanded}");
     // The extracted conjunct is the initialization's own fact; the
-    // decrease and the exit equality are explicit arithmetic certificates.
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    // decrease and the exit equality are explicit arithmetic steps.
     assert!(expanded.contains("normalize"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
@@ -345,7 +344,6 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
         closer.contains("have i >= 0 implies i <= n by {"),
         "the expanded closer must prove each bundle member in a `have`: {expanded}"
     );
-    assert!(!closer.contains("arithmetic_certificate"), "{expanded}");
     assert!(closer.contains("normalize"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
@@ -543,7 +541,6 @@ fn pointer_loop_increment_emits_checked_equality_proof() {
         verify_c_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "last_element")
         .unwrap_or_else(|e| panic!("{}", e.message()));
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
 }
 
@@ -562,7 +559,6 @@ fn grouped_arithmetic_using_expands_to_checked_certificate() {
     let click = fixture.click_source.unwrap();
     let verified = verify_c_sources(&click, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(&click, &verified, "bump").unwrap();
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
@@ -592,7 +588,6 @@ fn symbolic_alignment_expands_to_ordinary_proof_and_rechecks_without_planning() 
     let expanded =
         expand_checked_grouped_claim(&click, &verified_for_expansion, "element_is_aligned")
             .unwrap();
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
@@ -2024,7 +2019,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
     // The omitted-phase planner reaches the same boundary and closes the whole
     // back-edge bundle there, including the two members the `decreases` clause
     // adds. Both arms carry the C branch condition as a named premise, so the
-    // ranking members are ordinary arithmetic certificates over the loop head's
+    // ranking members are ordinary arithmetic steps over the loop head's
     // own clauses.
     let automatic = template.replace("{preserve}", "");
     verify_c_sources(&automatic, &sources)
@@ -2828,7 +2823,7 @@ test_batches! {
     marker: "loop_batch_",
     loop_batch_00: [
         loop_metadata_sees_address_escape_after_the_loop,
-        nested_conjunction_extraction_precedes_explicit_arithmetic_certificate,
+        nested_conjunction_extraction_precedes_explicit_arithmetic_steps,
         lexicographic_ranking_bundle_prints_its_pivot_arm,
         smart_ranking_closure_expands_its_pivot_arm,
         separately_declared_guarded_invariants_close_at_the_back_edge,

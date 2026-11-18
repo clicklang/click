@@ -796,7 +796,7 @@ fn advance_execution_proof_statement(
                         recorded_states.record_region_points(points);
                     }
                     if let Some(iterations) = &transition.loop_iterations {
-                        recorded_states.record_loop_iterations(loop_index, iterations);
+                        recorded_states.record_loop_iterations_root(loop_index, iterations.clone());
                     }
                     if let Some(loop_clause) = environment
                         .function_block

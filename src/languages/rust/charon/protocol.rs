@@ -391,7 +391,11 @@ pub(super) fn split_next_branches(blocks: &mut Vec<out::MirBlock>) -> Result<(),
         };
         let (iterator, option, shared) = match &next {
             S::ChunkNext { iterator, option } => (iterator.clone(), option.clone(), false),
-            S::SharedArrayNext { iterator, option } => (iterator.clone(), option.clone(), true),
+            S::SharedArrayNext {
+                iterator,
+                option: Some(option),
+                ..
+            } => (iterator.clone(), option.clone(), true),
             S::EnumerateNext { iterator, option } => (iterator.clone(), option.clone(), true),
             S::RangeNext {
                 iterator,
@@ -424,11 +428,16 @@ pub(super) fn split_next_branches(blocks: &mut Vec<out::MirBlock>) -> Result<(),
         if predecessors[dispatch].as_slice() != [header] {
             return Err(unsupported("shared iterator next dispatch"));
         }
-        let targets = [*then_target, *else_target];
+        let targets = [(*then_target, true), (*else_target, false)];
         let first = blocks.len();
         let site = next_site(&blocks[header]);
-        for target in targets {
-            blocks.push(sited_next_block(site, next.clone(), target));
+        for (target, yields) in targets {
+            // The header's test decides whether a slice iterator yields.
+            let mut next = next.clone();
+            if let S::SharedArrayNext { taken, .. } = &mut next {
+                *taken = Some(yields);
+            }
+            blocks.push(sited_next_block(site, next, target));
         }
         blocks[header].statements.pop();
         blocks[header].terminator_site = site;

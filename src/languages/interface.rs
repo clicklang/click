@@ -1178,13 +1178,6 @@ impl RecordLayout {
     }
 
     pub(crate) fn to_kernel_aggregate_layout(&self) -> crate::kernel::AggregateLayout {
-        if let Some(bytes) = &self.bit_field_bytes {
-            return crate::kernel::AggregateLayout::bit_field_record(
-                self.size_bytes,
-                self.alignment_bytes,
-                bytes.clone(),
-            );
-        }
         crate::kernel::AggregateLayout::with_unions(
             self.size_bytes,
             self.alignment_bytes,
@@ -1225,6 +1218,7 @@ impl RecordLayout {
                 })
                 .collect(),
         )
+        .with_bit_field_bytes(self.bit_field_bytes.clone())
     }
 
     pub(super) fn aggregate_fields(&self) -> &[RecordScalarField] {
