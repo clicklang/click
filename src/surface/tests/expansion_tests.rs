@@ -3395,7 +3395,10 @@ theorem fixed_integer_witness(value: int32) {
     let fixed_expanded =
         expand_c_claim_source_by_label(fixed_witness, &[], "fixed_integer_witness.witness_fixed")
             .expect("fixed Integer witness should expand");
-    assert!(fixed_expanded.contains("all {"), "{fixed_expanded}");
+    assert!(
+        fixed_expanded.contains("all positional {"),
+        "{fixed_expanded}"
+    );
     verify_c_sources(&fixed_expanded, &[]).expect("expanded fixed Integer witness should recheck");
 
     let missing_definedness = r#"

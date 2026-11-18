@@ -1655,15 +1655,21 @@ fn expand_declared_resource_tactic(
                 .arms
                 .into_iter()
                 .map(|arm| {
+                    let proposition = expand_declared_resource_proposition(
+                        arm.proposition,
+                        resource_definitions,
+                    )?;
+                    let SourceProof::Script(tactics) = expand_declared_resource_proof_of(
+                        SourceProof::Script(arm.tactics),
+                        Some(&proposition),
+                        resource_definitions,
+                    )?
+                    else {
+                        unreachable!("expansion retains proof scripts");
+                    };
                     Ok(ProofAllArm {
-                        proposition: expand_declared_resource_proposition(
-                            arm.proposition,
-                            resource_definitions,
-                        )?,
-                        tactics: expand_declared_resource_script(
-                            arm.tactics,
-                            resource_definitions,
-                        )?,
+                        proposition,
+                        tactics,
                     })
                 })
                 .collect::<Result<_, ClickError>>()?,

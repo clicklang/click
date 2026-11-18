@@ -3623,7 +3623,7 @@ fn trace_source_index_preserves_nested_locations_and_containment() {
     // Each second arm's first tactic.
     for (kind, inner) in [
         ("if", "solve(); }\n  cases"),
-        ("cases", "normalize(); } }\n  both"),
+        ("cases", "normalize(); } }\n  all"),
         ("all", "solve(); } }\n  outcomes"),
     ] {
         let outer = position_at_offset(source, source.find(kind).unwrap());

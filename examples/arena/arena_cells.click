@@ -762,11 +762,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 normalize();
             }
             have 0 <= run_length and run_length <= count by {
-                all positional {
-                    left => {
+                all {
+                    0 <= run_length => {
                         normalize();
                     }
-                    right => {
+                    run_length <= count => {
                         solve() using { at(function.entry, 0) < at(function.entry, count); };
                     }
                 }
@@ -912,13 +912,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     solve() using { (to_integer(lo) + to_integer(run_length)) <= to_integer(i); to_integer(i) <= (to_integer(lo) + to_integer(run_length)); };
                 }
                 have 0 <= run_length and run_length <= count by {
-                    all positional {
-                        left => {
+                    all {
+                        0 <= run_length => {
                             solve() using { (at(region(13).entry, 0) as int32) <= (at(region(13).entry,
                                     run_length) as int32); (at(region(13).entry, run_length) as int32) <
                                     (at(region(13).entry, count) as int32); };
                         }
-                        right => {
+                        run_length <= count => {
                             known();
                         }
                     }
@@ -1054,11 +1054,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 have run.hi == i implies (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) implies 0 <= run_length and run_length <= count by {
                     intro();
                     intro();
-                    all positional {
-                        left => {
+                    all {
+                        0 <= run_length => {
                             normalize();
                         }
-                        right => {
+                        run_length <= count => {
                             solve() using { at(function.entry, 0) < at(function.entry, count); };
                         }
                     }

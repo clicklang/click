@@ -291,7 +291,7 @@ fn both_and_outcome_expands_and_rechecks() {
         expand_checked_grouped_claim(source, &verified_for_expansion, "identity").unwrap();
     assert!(expanded.contains("all {"), "{expanded}");
     assert!(
-        expanded.find("left => {").unwrap() < expanded.find("right => {").unwrap(),
+        expanded.find("result == x => {").unwrap() < expanded.find("result <= x => {").unwrap(),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).expect("expanded child proofs");
@@ -1509,7 +1509,7 @@ fn named_conjunct_proofs_check_shape_and_order() {
             "must name its conjunct in goal order",
         ),
         (
-            source.replace("x <= x => { normalize(); }", "x >= x => { normalize(); }"),
+            source.replace("x <= x => { normalize(); }", "x < x => { normalize(); }"),
             "must name its conjunct in goal order",
         ),
         (
