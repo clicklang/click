@@ -1979,10 +1979,8 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         if goal.generated_surface
             || !matches!(
                 goal.proposition(),
-                Proposition::ConditionIs(
-                    ConditionTerm::PointerValueEqual(..) | ConditionTerm::PointerEqual(..),
-                    _
-                )
+                Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), _)
+                    if left != right && left.address() == right.address()
             )
         {
             return None;
