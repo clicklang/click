@@ -61,8 +61,8 @@ fn loaded_fact_of_format(
         var: binder,
         sort: Sort::machine_integer(format),
         body: Box::new(Proposition::Implies(
-            Box::new(Proposition::ConditionIs(guard, true)),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(guard, true)),
+            Box::new(Proposition::condition_is(
                 ConditionTerm::equal(read, MachineTerm::constant(0)),
                 true,
             )),
@@ -133,7 +133,7 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
             }
             _ => {}
         }
-        **conclusion = Proposition::ConditionIs(condition, truth);
+        **conclusion = Proposition::condition_is(condition, truth);
         assert!(
             !quantified_binder_equivalent(&native, &different),
             "change {change}"

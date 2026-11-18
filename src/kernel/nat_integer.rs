@@ -62,7 +62,7 @@ fn observe(term: AlgebraicTerm) -> IntegerTerm {
 }
 
 fn nonnegative(term: IntegerTerm) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::integer_greater_equal(term, IntegerTerm::constant_i64(0)),
         true,
     )
@@ -170,7 +170,7 @@ mod tests {
         }
     }
     fn eq(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
+        Proposition::condition_is(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
     }
     fn algebraic_eq(a: AlgebraicTerm, b: AlgebraicTerm) -> Proposition {
         Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b))

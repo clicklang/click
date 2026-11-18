@@ -2332,7 +2332,7 @@ fn synthesize_surface_bool(
             .ok()
         }
         _ => proposition_bool_value(synthesize_surface_atomic_proposition(
-            &Proposition::ConditionIs(condition.clone(), true),
+            &Proposition::condition_is(condition.clone(), true),
             parameter_binding,
             state,
             bound_variables,
@@ -2733,7 +2733,7 @@ fn synthesize_surface_atomic_proposition(
     };
     // A closed `bool` comparison is spelled as written: `true == false`
     // lowers back to exactly this retained comparison.
-    if let ConditionTerm::BoolEqual(left, right) = condition
+    if let ConditionTerm::BoolEqual(left, right) = condition.native_compat()
         && let (ConditionTerm::Constant(left), ConditionTerm::Constant(right)) =
             (left.as_ref(), right.as_ref())
     {
@@ -2748,14 +2748,14 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if matches!(
-        condition,
+        condition.native_compat(),
         ConditionTerm::Variable(_)
             | ConditionTerm::BoolApplication(_)
             | ConditionTerm::BoolIf { .. }
             | ConditionTerm::BoolEqual(..)
     ) {
         let claim = bool_truth(synthesize_surface_bool(
-            condition,
+            condition.native_compat(),
             parameter_binding,
             state,
             bound_variables,
@@ -2772,7 +2772,7 @@ fn synthesize_surface_atomic_proposition(
             op @ (OverflowOperation::Add | OverflowOperation::Subtract | OverflowOperation::Multiply),
         left,
         right,
-    } = condition
+    } = condition.native_compat()
     {
         // Definedness names this operation, not a local that already holds
         // its result. `defined(result)` would lose the operation's domain.
@@ -2801,7 +2801,7 @@ fn synthesize_surface_atomic_proposition(
             defined
         });
     }
-    if let ConditionTerm::Constant(condition) = condition {
+    if let ConditionTerm::Constant(condition) = condition.native_compat() {
         // The `bool` literal lowers to exactly this constant condition. A
         // closed comparison such as `0 == 1` does not: lowering retains it.
         let literal = ClickProposition::Value(crate::surface::bool_literal(*condition));
@@ -2811,7 +2811,7 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(literal))
         });
     }
-    if let ConditionTerm::AddressOffsetEqual(left, right) = condition {
+    if let ConditionTerm::AddressOffsetEqual(left, right) = condition.native_compat() {
         return Some(ClickProposition::Comparison {
             left: synthesize_surface_pointer_offset(
                 left,
@@ -2832,7 +2832,7 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
-    if let ConditionTerm::PointerEqual(left, right) = condition {
+    if let ConditionTerm::PointerEqual(left, right) = condition.native_compat() {
         return Some(ClickProposition::Comparison {
             left: synthesize_pointer_equality_operand(
                 left,
@@ -2856,7 +2856,7 @@ fn synthesize_surface_atomic_proposition(
     // A pointer equality raises as contract `p == q`, which lowers to it; the
     // weaker `address(p) == address(q)` is the address-word equality a C
     // comparison states (`design/pointer-subobject-bounds.md`, Phase B).
-    if let ConditionTerm::AddressEqual(left, right) = condition {
+    if let ConditionTerm::AddressEqual(left, right) = condition.native_compat() {
         let pointer = synthesize_surface_pointer_expression;
         return Some(ClickProposition::Comparison {
             left: pointer(left, parameter_binding, state, bound_variables)?,
@@ -2868,9 +2868,12 @@ fn synthesize_surface_atomic_proposition(
             right: pointer(right, parameter_binding, state, bound_variables)?,
         });
     }
-    if let Some(comparison) =
-        synthesize_unsigned_comparison(condition, parameter_binding, state, bound_variables)
-    {
+    if let Some(comparison) = synthesize_unsigned_comparison(
+        condition.native_compat(),
+        parameter_binding,
+        state,
+        bound_variables,
+    ) {
         return Some(if *value {
             comparison
         } else {
@@ -2880,9 +2883,10 @@ fn synthesize_surface_atomic_proposition(
     // Arithmetic-producing comparisons keep machine Surface operands. Atomic
     // observations and casts still need explicit `to_integer`: re-lowering a
     // native atomic comparison would otherwise change its condition family.
-    if !matches!(condition, ConditionTerm::Compare { .. })
-        && let Some(view) =
-            crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+    if !matches!(condition.native_compat(), ConditionTerm::Compare { .. })
+        && let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
+            condition.native_compat(),
+        )
         && matches!(
             view.format,
             MachineIntegerType::Int32
@@ -2936,7 +2940,7 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
-    let integer_comparison = match condition {
+    let integer_comparison = match condition.native_compat() {
         ConditionTerm::IntegerLessThan(left, right) => {
             Some((left, ComparisonOperator::LessThan, right))
         }
@@ -2985,7 +2989,7 @@ fn synthesize_surface_atomic_proposition(
         relation,
         left,
         right,
-    } = condition
+    } = condition.native_compat()
     {
         // Symbolic observations retain their established Integer spelling.
         // A literal beside one such observation is recovered at that format.
@@ -3002,7 +3006,7 @@ fn synthesize_surface_atomic_proposition(
                 CompareRelation::Equal => ConditionTerm::IntegerEqual(l, r),
             };
             return synthesize_surface_atomic_proposition(
-                &Proposition::ConditionIs(integer, *value),
+                &Proposition::condition_is(integer, *value),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -3041,7 +3045,7 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
-    let (left, operator, right) = match condition {
+    let (left, operator, right) = match condition.native_compat() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -3133,7 +3137,7 @@ fn synthesize_surface_atomic_proposition(
     // cast compared signed) would make the spelled comparison unsigned, a
     // different fact, so it is written converted, as `u as int32 < 0`.
     let signed_order = matches!(
-        condition,
+        condition.native_compat(),
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan
@@ -3144,14 +3148,14 @@ fn synthesize_surface_atomic_proposition(
         }
     );
     let signed_word = matches!(
-        condition,
+        condition.native_compat(),
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             ..
         }
     );
     let unsigned_word_equality = matches!(
-        condition,
+        condition.native_compat(),
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -3166,7 +3170,7 @@ fn synthesize_surface_atomic_proposition(
             format: format @ (MachineIntegerType::Int64 | MachineIntegerType::UInt64),
             relation,
             ..
-        } = condition
+        } = condition.native_compat()
         {
             let root = crate::kernel::KernelTermImport::default().machine(*format, term);
             match root.node() {
@@ -5640,7 +5644,7 @@ fn synthesize_surface_bitvector(
             else_term,
         } => Some(ContractExpression::If {
             condition: Box::new(synthesize_surface_proposition_with_bound_variables(
-                &Proposition::ConditionIs((**condition).clone(), true),
+                &Proposition::condition_is((**condition).clone(), true),
                 parameter_binding,
                 state,
                 bound_variables,

@@ -9,7 +9,7 @@ fn free_retires_a_cached_interior_alias() {
         offset: AddressOffset::Constant(0),
     };
     let alias = Address::symbolic(Variable(945_001));
-    let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::address_equal(alias.clone(), base.offset_by_bytes(8)),
         true,
     ));
@@ -127,7 +127,7 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
         "fact-supported frames do not choose read names"
     );
     let equality =
-        Proposition::ConditionIs(ConditionTerm::pointer_equal(before_read, after_read), true);
+        Proposition::condition_is(ConditionTerm::pointer_equal(before_read, after_read), true);
     assert!(
         path.facts
             .iter()
@@ -140,7 +140,7 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
     assert!(
         !PureFactContext::new()
             .equality_graph
-            .knows_condition(condition, true),
+            .knows_condition(condition.native_compat(), true),
         "the graph needs the step's frame evidence"
     );
     let learned = path
@@ -149,12 +149,16 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
         .fold(PureFactContext::new(), |facts, fact| {
             facts.assume_proposition(fact.proposition().clone())
         });
-    assert!(learned.equality_graph.knows_condition(condition, true));
+    assert!(
+        learned
+            .equality_graph
+            .knows_condition(condition.native_compat(), true)
+    );
     assert!(
         !learned
             .restricted_to_facts(&[], &[])
             .equality_graph
-            .knows_condition(condition, true),
+            .knows_condition(condition.native_compat(), true),
         "restricting all facts must withdraw the graph's frame authority"
     );
 }
@@ -206,7 +210,7 @@ fn successful_heap_allocation_state() -> ExecutionState {
     let Some(ProgramValue::Pointer(pointer)) = local_native_output_221.as_deref() else {
         panic!("allocation should assign a pointer");
     };
-    let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
         false,
     ));
@@ -297,7 +301,7 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
     };
     let null = resolve_pending_heap_allocations(
         pending,
-        &PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        &PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
             true,
         )),
@@ -459,7 +463,7 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
     };
     let success = resolve_pending_heap_allocations(
         pending,
-        &PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        &PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
             false,
         )),
@@ -557,7 +561,7 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
     };
     let allocated = resolve_pending_heap_allocations(
         calloc_pending,
-        &PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        &PureFactContext::new().assume_proposition(Proposition::condition_is(
             pointer_is_null_condition(calloc_pointer.address().clone()),
             false,
         )),
@@ -609,7 +613,7 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
 
     let success = resolve_pending_heap_allocations(
         pending,
-        &PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        &PureFactContext::new().assume_proposition(Proposition::condition_is(
             pointer_is_null_condition(pending_pointer.address().clone()),
             false,
         )),
@@ -729,7 +733,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
 
     let failed = resolve_pending_heap_allocations(
         pending,
-        &PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        &PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
             true,
         )),
@@ -751,7 +755,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
 
     let succeeded = resolve_pending_heap_allocations(
         pending,
-        &PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        &PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
             false,
         )),
@@ -826,7 +830,7 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
     };
     let second = resolve_pending_heap_allocations(
         pending,
-        &PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        &PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
             false,
         )),
@@ -1641,7 +1645,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
     );
     assert!(pending.memory().live_heap_block_size(old_pointer).is_some());
 
-    let success_assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let success_assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         pointer_is_null_condition(pending_pointer.address().clone()),
         false,
     ));
@@ -1674,7 +1678,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
             .is_some_and(|(base, _)| base == old_pointer.address())
     }));
 
-    let failure_assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let failure_assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         pointer_is_null_condition(pending_pointer.address().clone()),
         true,
     ));
@@ -2163,7 +2167,7 @@ fn freeing_through_one_spelling_retires_the_equal_spelling_too() {
         base: AddressBase::Heap(921_002),
         offset: AddressOffset::Constant(0),
     };
-    let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::address_equal(alias.clone(), base.clone()),
         true,
     ));
@@ -2235,7 +2239,7 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
     };
     let success = resolve_pending_heap_allocations(
         pending,
-        &PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        &PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
             false,
         )),
@@ -2249,7 +2253,7 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
         base: AddressBase::Symbolic(Variable(922_100)),
         offset: AddressOffset::Constant(0),
     };
-    let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::address_equal(alias.clone(), base.clone()),
         true,
     ));
@@ -2307,7 +2311,7 @@ fn store_union_forgets_aliased_raw_cell() {
         base: AddressBase::Symbolic(Variable(922_000)),
         offset: AddressOffset::Constant(0),
     };
-    let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::address_equal(alias.clone(), base.clone()),
         true,
     ));
@@ -2318,7 +2322,7 @@ fn store_union_forgets_aliased_raw_cell() {
     assert_eq!(memory.known_value(&alias), None);
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::address_equal(alias.clone(), base.clone()),
             true,
         )
@@ -2353,7 +2357,7 @@ fn logical_heap_value_does_not_initialize_a_c_read() {
         panic!("logical read must have a value");
     };
     assert!(path.obligations.is_empty());
-    let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::equal(value.clone(), MachineTerm::constant(7)),
         true,
     ));
@@ -2448,7 +2452,7 @@ fn read_validity_transports_checked_aliases_without_crossing_writes_or_retiremen
     };
     let bare = PureFactContext::new().assume_proposition(validity);
     assert!(!bare.has_memory_read_defined_evidence(state.memory(), &alias, ProgramType::Int32));
-    let assumptions = bare.assume_proposition(Proposition::ConditionIs(
+    let assumptions = bare.assume_proposition(Proposition::condition_is(
         ConditionTerm::address_equal(alias.clone(), address.clone()),
         true,
     ));
@@ -2498,7 +2502,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
             pointer: field.clone(),
             value_type: ProgramType::Int32,
         })
-        .assume_proposition(Proposition::ConditionIs(
+        .assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         ));
@@ -2791,7 +2795,7 @@ fn size_t_heap_allocation_with_zeroed(
     let assumptions = facts
         .iter()
         .fold(PureFactContext::new(), |assumptions, fact| {
-            assumptions.assume_proposition(Proposition::ConditionIs(fact.clone(), true))
+            assumptions.assume_proposition(Proposition::condition_is(fact.clone(), true))
         });
     let paths = execute_execution_statement_paths(
         &state,
@@ -2819,7 +2823,7 @@ fn size_t_heap_allocation_with_zeroed(
             let Some(ProgramValue::Pointer(pointer)) = local_native_output_2513.as_deref() else {
                 panic!("allocation should assign a pointer");
             };
-            let not_null = assumptions.assume_proposition(Proposition::ConditionIs(
+            let not_null = assumptions.assume_proposition(Proposition::condition_is(
                 ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
                 false,
             ));
@@ -3007,7 +3011,7 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
     let assumptions = facts
         .iter()
         .fold(PureFactContext::new(), |assumptions, fact| {
-            assumptions.assume_proposition(Proposition::ConditionIs(fact.clone(), true))
+            assumptions.assume_proposition(Proposition::condition_is(fact.clone(), true))
         });
     let paths = execute_execution_statement_paths(
         &allocated,
@@ -3043,7 +3047,7 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
     };
     let success = resolve_pending_heap_allocations(
         pending,
-        &assumptions.assume_proposition(Proposition::ConditionIs(
+        &assumptions.assume_proposition(Proposition::condition_is(
             pointer_is_null_condition(pending_pointer.address().clone()),
             false,
         )),

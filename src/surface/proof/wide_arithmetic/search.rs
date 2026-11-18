@@ -187,7 +187,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // whose value is the other side, `next == i + 1u64` after
             // `next = i + 1`. It needs no bridge, since both observations
             // are one term, but the sum it names is still to be observed.
-            if kernel == Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+            if kernel == Proposition::condition_is(ConditionTerm::Constant(true), true)
                 && let Some((left, right, Relation::Equal, _)) = relation_parts(premise)
             {
                 for side in [

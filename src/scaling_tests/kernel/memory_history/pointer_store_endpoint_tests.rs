@@ -15,7 +15,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
     };
     let written = base(160_001).offset_by_bytes(8);
     let address = base(160_002).offset_by_bytes(8);
-    let alias = Proposition::ConditionIs(
+    let alias = Proposition::condition_is(
         ConditionTerm::address_equal(base(160_001), base(160_002)),
         true,
     );

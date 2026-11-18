@@ -248,7 +248,7 @@ mod certificate_tests {
                 Box::new(MachineTerm::constant(1))
             );
         }
-        let proposition = Proposition::ConditionIs(
+        let proposition = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -308,7 +308,7 @@ mod certificate_tests {
             name: Default::default(),
             var: Variable(7),
             sort: Sort::Bitvector32,
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -357,7 +357,7 @@ mod certificate_tests {
             base: "target".into(),
             offset: AddressOffset::Constant(0),
         };
-        let kernel = Proposition::ConditionIs(
+        let kernel = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

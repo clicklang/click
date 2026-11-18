@@ -911,7 +911,7 @@ mod call_havoc_local_retention_tests {
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         );
-        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(symbolic, local.clone()),
             true,
         ));
@@ -3033,7 +3033,7 @@ impl CallKeptRanges {
             self.premises
                 .iter()
                 .fold(assumptions.clone(), |facts, (condition, value)| {
-                    facts.assume_proposition(Proposition::ConditionIs(condition.clone(), *value))
+                    facts.assume_proposition(Proposition::condition_is(condition.clone(), *value))
                 }),
         )
     }
@@ -10902,7 +10902,7 @@ mod contract_retirement_tests {
             offset: AddressOffset::Constant(0),
         };
         let assumptions = aliases.iter().fold(PureFactContext::new(), |facts, alias| {
-            facts.assume_proposition(Proposition::ConditionIs(
+            facts.assume_proposition(Proposition::condition_is(
                 ConditionTerm::address_equal(alias.clone(), base.clone()),
                 true,
             ))
@@ -11062,7 +11062,7 @@ mod join_allocation_spelling_tests {
             base: AddressBase::Symbolic(Variable(924_005)),
             offset: AddressOffset::Constant(0),
         };
-        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(p.clone(), q.clone()),
             true,
         ));
@@ -11089,7 +11089,7 @@ mod join_allocation_spelling_tests {
             ConditionTerm::address_equal(p.clone(), q.clone()),
             ConditionTerm::Constant(false)
         );
-        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(p, q),
             true,
         ));

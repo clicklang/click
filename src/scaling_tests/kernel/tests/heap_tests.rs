@@ -21,7 +21,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
     let field_alias = alias.offset_by_bytes(4);
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
-        let mut unrelated = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        let mut unrelated = PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(alias.clone(), pointer.clone()),
             true,
         ));
@@ -662,7 +662,7 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
         let mut facts = PureFactContext::new();
         for index in 0..count {
             let alias = Address::symbolic(Variable(960_000 + index));
-            facts = facts.assume_proposition(Proposition::ConditionIs(
+            facts = facts.assume_proposition(Proposition::condition_is(
                 ConditionTerm::address_equal(alias, base.clone()),
                 true,
             ));

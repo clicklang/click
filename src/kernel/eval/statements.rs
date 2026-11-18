@@ -214,11 +214,11 @@ fn indexed_store_bounds(
         return None;
     }
     Some([
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::signed_less_equal(range.start().clone(), index.clone()),
             true,
         ),
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::signed_less_than(index.clone(), range.end().clone()),
             true,
         ),
@@ -3276,7 +3276,7 @@ fn execute_program_heap_free_paths(
                 unreachable!("a pointer version read has pointer type");
             };
             if before != after {
-                facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+                facts.push(ExecutionPureFact::certified(Proposition::condition_is(
                     ConditionTerm::pointer_equal(before, after),
                     true,
                 )));

@@ -28,7 +28,7 @@ fn pointer_relevance_visits_shared_prefixes_once() {
             CompareRelation::Equal,
             [View::Shared(&root), View::Shared(&root)],
         );
-        let proposition = Proposition::ConditionIs(condition, true);
+        let proposition = Proposition::condition_is(condition, true);
         let exports = KernelTermExport::machine_export_count();
         let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
             proposition_mentions_pointer(&proposition, &target)

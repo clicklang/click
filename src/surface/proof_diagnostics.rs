@@ -861,7 +861,7 @@ mod tests {
     #[test]
     fn rendering_is_the_boundary_that_visits_retained_context() {
         let state = Arc::new(CountingState {
-            goal: Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
@@ -888,7 +888,7 @@ mod tests {
         use crate::kernel::{
             ConditionTerm, IntegerTerm, MachineIntegerType, MachineTerm, Variable,
         };
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::integer_equal(
                 IntegerTerm::from_machine(
                     MachineIntegerType::Int32,
@@ -946,7 +946,7 @@ mod tests {
     #[test]
     fn click_error_lazily_caches_and_preserves_structured_context() {
         let state = Arc::new(CountingState {
-            goal: Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
@@ -1087,7 +1087,7 @@ mod tests {
     #[test]
     fn terminal_search_report_renders_unclosed_goal_lazily() {
         let state = Arc::new(CountingState {
-            goal: Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
             calls: AtomicUsize::new(0),
         });
         let diagnostic = Arc::new(ProofFailureDiagnostic {
@@ -1128,7 +1128,7 @@ mod tests {
         assert!(report.contains("goal: true"));
     }
     fn unspelled_test_fact(variable: crate::kernel::Variable) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             crate::kernel::ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,

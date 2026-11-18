@@ -21,10 +21,10 @@ fn numeric(a: &Address, b: &Address) -> ConditionTerm {
     )
 }
 fn different(a: &Address, b: &Address) -> Proposition {
-    Proposition::ConditionIs(numeric(a, b), false)
+    Proposition::condition_is(numeric(a, b), false)
 }
 fn alias(a: &Address, b: &Address) -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::address_equal(a.clone(), b.clone()), true)
+    Proposition::condition_is(ConditionTerm::address_equal(a.clone(), b.clone()), true)
 }
 
 #[test]
@@ -91,13 +91,13 @@ fn address_separation_preserves_scope_alias_and_exact_sources() {
 fn numeric_aliases_transfer_only_address_separation_not_pointer_identity() {
     let _session = VerificationSession::enter();
     let (a, b, c) = (pointer(30), pointer(31), pointer(32));
-    let equation = Proposition::ConditionIs(numeric(&b, &c), true);
+    let equation = Proposition::condition_is(numeric(&b, &c), true);
     let separated = PureFactContext::new().assume_proposition(separate(&a, &b));
     let context = separated.clone().assume_proposition(equation);
     assert!(context.contains_known(&different(&a, &c)));
     assert!(!context.contains_known(&alias(&b, &c)));
     assert!(!separated.contains_known(&different(&a, &c)));
-    let same = context.assume_proposition(Proposition::ConditionIs(numeric(&a, &c), true));
+    let same = context.assume_proposition(Proposition::condition_is(numeric(&a, &c), true));
     assert!(!same.addresses_separated_by_class(&numeric(&a, &c)));
 }
 
@@ -122,7 +122,7 @@ fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_sep
             .unchecked_with_fact(ResourceFact::view_memory(range(&a, 0, 1)))
             .unchecked_with_fact(ResourceFact::view_memory(range(&b, 0, 1))),
     );
-    let unequal = Proposition::ConditionIs(
+    let unequal = Proposition::condition_is(
         ConditionTerm::PointerEqual(
             Box::new(Pointer::new(a.clone(), ProgramType::Int32Pointer)),
             Box::new(Pointer::new(b.clone(), ProgramType::Int32Pointer)),

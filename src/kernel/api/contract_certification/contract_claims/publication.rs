@@ -212,7 +212,7 @@ mod tests {
             )],
             false,
         ));
-        let truth = Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true);
+        let truth = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
         let root = Root::root(
             (),
             ProofBranch::new(
@@ -317,7 +317,7 @@ mod tests {
     fn close_claim(root: &Root) -> Root {
         let claim = ContractClaimGoal {
             target: FunctionContractClaimTarget::EnsureProposition(0),
-            proposition: Proposition::ConditionIs(
+            proposition: Proposition::condition_is(
                 crate::kernel::ConditionTerm::Constant(true),
                 true,
             ),
@@ -408,7 +408,7 @@ mod tests {
         );
         let claim = ContractClaimGoal {
             target: FunctionContractClaimTarget::EnsureProposition(0),
-            proposition: Proposition::ConditionIs(
+            proposition: Proposition::condition_is(
                 crate::kernel::ConditionTerm::Constant(true),
                 true,
             ),

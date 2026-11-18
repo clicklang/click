@@ -6,7 +6,7 @@ use num_bigint::BigInt;
 use num_traits::Zero;
 
 fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
+    Proposition::condition_is(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
 }
 
 fn holds(p: &Proposition, available: &impl Fn(&Proposition) -> bool) -> bool {
@@ -65,7 +65,7 @@ fn integer_arm(
                 .any(|(truth, arm)| {
                     arm.as_ref() == other
                         && holds(
-                            &Proposition::ConditionIs(condition.as_ref().clone(), truth),
+                            &Proposition::condition_is(condition.as_ref().clone(), truth),
                             available,
                         )
                 });
@@ -86,7 +86,7 @@ fn integer_arm(
         .any(|(truth, arm)| {
             arm.as_ref() == Some(other)
                 && holds(
-                    &Proposition::ConditionIs(condition.clone(), truth),
+                    &Proposition::condition_is(condition.clone(), truth),
                     available,
                 )
         })
@@ -310,7 +310,7 @@ mod tests {
         known_bridge_leaf(goal, &|p| facts.pure_known_available(p))
     }
     fn equality(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
+        Proposition::condition_is(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
     }
     fn operation(ty: MachineIntegerType, op: Operation) -> Option<(IntegerTerm, IntegerTerm)> {
         let a = MachineTerm::Variable(Variable(995701));
@@ -390,7 +390,7 @@ mod tests {
             else_term: b.clone().into(),
         };
         for (truth, arm, wrong) in [(true, a.clone(), b.clone()), (false, b, a)] {
-            let premise = Proposition::ConditionIs(guard.clone(), truth);
+            let premise = Proposition::condition_is(guard.clone(), truth);
             assert!(known(
                 &equality(value.clone(), arm.clone()),
                 std::slice::from_ref(&premise)

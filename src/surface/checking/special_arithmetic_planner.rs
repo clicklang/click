@@ -27,7 +27,7 @@ pub(super) fn plan_special_arithmetic(
     }
     if let Proposition::ConditionIs(condition, value) = goal
         && crate::kernel::PureFactContext::new()
-            .widened_unsigned_sum_bound_premises(condition)
+            .widened_unsigned_sum_bound_premises(condition.native_compat())
             .is_some()
     {
         let context = premises
@@ -35,7 +35,7 @@ pub(super) fn plan_special_arithmetic(
             .fold(crate::kernel::PureFactContext::new(), |context, premise| {
                 context.assume_proposition(premise.clone())
             });
-        if context.decide_widened_sum_bound(condition) == Some(*value) {
+        if context.decide_widened_sum_bound(condition.native_compat()) == Some(*value) {
             return Some(KernelPlan {
                 nodes: vec![KernelNode::UnsignedSumBound {
                     bounds: (0..premises.len()).collect(),
@@ -353,7 +353,7 @@ fn cast_identity_bounds(goal: &Proposition, premises: &[Proposition]) -> Option<
 }
 
 fn is_positive_alignment(p: &Proposition) -> bool {
-    matches!(p, Proposition::ConditionIs(condition, true) if alignment_shape(condition).is_some())
+    matches!(p, Proposition::ConditionIs(condition, true) if alignment_shape(condition.native_compat()).is_some())
 }
 
 fn alignment_is_relevant(
@@ -364,7 +364,7 @@ fn alignment_is_relevant(
     let Proposition::ConditionIs(condition, true) = alignment else {
         return false;
     };
-    let Some((pointer, _)) = alignment_shape(condition) else {
+    let Some((pointer, _)) = alignment_shape(condition.native_compat()) else {
         return false;
     };
     proposition_mentions_pointer(relation, pointer) || proposition_mentions_pointer(goal, pointer)
@@ -381,7 +381,7 @@ fn proposition_mentions_pointer(
             Proposition::ConditionIs(condition, _) => {
                 if let Some(view) =
                     crate::kernel::machine_integer::comparison::structural_comparison_view(
-                        condition,
+                        condition.native_compat(),
                     )
                 {
                     for operand in &view.operands {
@@ -524,7 +524,7 @@ fn bounded_address_equal(left: &crate::kernel::Address, right: &crate::kernel::A
     true
 }
 fn is_alignment_goal(p: &Proposition) -> bool {
-    matches!(p, Proposition::ConditionIs(condition, _) if alignment_shape(condition).is_some())
+    matches!(p, Proposition::ConditionIs(condition, _) if alignment_shape(condition.native_compat()).is_some())
 }
 fn is_pointer_relation(p: &Proposition) -> bool {
     matches!(&p, condition_source_0 @ Proposition::ConditionIs(
@@ -608,7 +608,9 @@ fn word_comparison_truth(p: &Proposition) -> Option<bool> {
     let Proposition::ConditionIs(condition, truth) = p else {
         return None;
     };
-    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
+        condition.native_compat(),
+    )?;
     (matches!(
         view.format,
         MachineIntegerType::Int64 | MachineIntegerType::UInt64
@@ -620,13 +622,13 @@ fn is_word_equality(p: &Proposition) -> bool {
     let Proposition::ConditionIs(condition, _) = p else {
         return false;
     };
-    word_comparison_truth(p) == Some(true) && alignment_shape(condition).is_none()
+    word_comparison_truth(p) == Some(true) && alignment_shape(condition.native_compat()).is_none()
 }
 fn float_finite_premise(goal: &Proposition, premises: &[Proposition]) -> Option<usize> {
     let Proposition::ConditionIs(condition, _) = goal else {
         return None;
     };
-    let (width, expression) = match condition {
+    let (width, expression) = match condition.native_compat() {
         ConditionTerm::Float32(FloatCondition::Comparison { left, right, .. })
             if bounded_term_equal(left, right) =>
         {
@@ -678,7 +680,7 @@ fn charge_proposition(proposition: &Proposition) -> bool {
     let Proposition::ConditionIs(condition, _) = proposition else {
         return true;
     };
-    match condition {
+    match condition.native_compat() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -1070,7 +1072,7 @@ mod tests {
                 Box::new(MachineTerm::constant(1))
             );
         }
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::Float32(FloatCondition::Comparison {
                 operator: KernelComparisonOperator::Equal,
                 left: Box::new(term.clone()),
@@ -1078,7 +1080,7 @@ mod tests {
             }),
             true,
         );
-        let finite = Proposition::ConditionIs(
+        let finite = Proposition::condition_is(
             ConditionTerm::Float32(FloatCondition::Classification {
                 classification: FloatClassification::Finite,
                 value: Box::new(term),
@@ -1091,7 +1093,7 @@ mod tests {
     #[test]
     fn finite_candidate_scan_charges_unrelated_premises() {
         let value = MachineTerm::Variable(Variable(2));
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::Float32(FloatCondition::Comparison {
                 operator: KernelComparisonOperator::Equal,
                 left: Box::new(value.clone()),
@@ -1101,7 +1103,7 @@ mod tests {
         );
         let mut premises = (0..64)
             .map(|i| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -1112,7 +1114,7 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        premises.push(Proposition::ConditionIs(
+        premises.push(Proposition::condition_is(
             ConditionTerm::Float32(FloatCondition::Classification {
                 classification: FloatClassification::Finite,
                 value: Box::new(value),

@@ -773,8 +773,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Proposition::ConditionIs(c, _) = p else {
                 return false;
             };
-            crate::kernel::machine_integer::comparison::structural_comparison_view(c)
-                .is_some_and(|v| v.format.format().bits() == 64)
+            crate::kernel::machine_integer::comparison::structural_comparison_view(
+                c.native_compat(),
+            )
+            .is_some_and(|v| v.format.format().bits() == 64)
         });
         if !native_word_goal {
             return Ok(None);
@@ -839,7 +841,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         for premise in premises {
             let kernel = input.lower_cited_surface_proposition(premise, "address-word relation")?;
-            let word_relation = matches!(&kernel,Proposition::ConditionIs(c,true) if crate::kernel::machine_integer::comparison::structural_comparison_view(c).is_some_and(|v|v.format.format().bits()==64));
+            let word_relation = matches!(&kernel,Proposition::ConditionIs(c,true) if crate::kernel::machine_integer::comparison::structural_comparison_view(c.native_compat()).is_some_and(|v|v.format.format().bits()==64));
             if !word_relation {
                 continue;
             }

@@ -62,7 +62,7 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
         MachineTerm::uint64_bitwise_or(word, MachineTerm::Variable(Variable(960003))),
     ];
     for expression in expressions {
-        let fact = Proposition::ConditionIs(
+        let fact = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 expression.clone(),
                 MachineTerm::IntegerAddress(
@@ -287,7 +287,7 @@ fn cited_shared_tag_bounds_retain_growing_prefixes_and_selected_sources() {
                 );
                 assert!(
                     used.premises
-                        .contains(&Proposition::ConditionIs(upper, true))
+                        .contains(&Proposition::condition_is(upper, true))
                 );
                 assert!(used.complete);
             }

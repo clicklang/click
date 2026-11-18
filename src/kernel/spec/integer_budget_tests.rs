@@ -153,7 +153,7 @@ fn integer_existential_scopes_definedness_with_its_witness() {
     assert!(
         contains(
             body,
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::IntegerEqual(
                     IntegerTerm::var(witness).into(),
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -208,7 +208,7 @@ fn from_machine_keeps_signed_and_unsigned_values_distinct() {
 #[test]
 fn bitvector_substitution_reaches_machine_integer_proposition() {
     let variable = Variable(47);
-    let proposition = Proposition::ConditionIs(
+    let proposition = Proposition::condition_is(
         ConditionTerm::integer_equal(
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
@@ -230,7 +230,7 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
     // too, by the Integer equality's own smart constructor.
     assert_eq!(
         substituted,
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+        Proposition::condition_is(ConditionTerm::Constant(true), true)
     );
 
     let expression = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
@@ -452,7 +452,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let (registered_memory, registered_pointer) =
         crate::kernel::eval::registered_load_for_variable(&load)
             .expect("the load variable must retain its exact descriptor");
-    let defining = Proposition::ConditionIs(
+    let defining = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -483,7 +483,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         .expect("a guarded definition must remain a guarded obligation");
     assert_eq!(retained_guard, guarded);
 
-    let tampered_pointer = Proposition::ConditionIs(
+    let tampered_pointer = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -508,7 +508,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
 
     let tampered_memory =
         crate::kernel::intern_memory(SymbolicMemory::new().with_block("other", 16));
-    let tampered_state = Proposition::ConditionIs(
+    let tampered_state = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -534,7 +534,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     assert!(matches!(retained_state, Proposition::And(_, _)));
 
     let unknown = Variable((1u64 << 40) + 123_456_789);
-    let unknown_definition = Proposition::ConditionIs(
+    let unknown_definition = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -667,7 +667,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
         crate::kernel::eval::registered_load_for_variable(&load)
             .expect("the exact load must have a registry descriptor");
     let defining = |memory: SharedMemory, pointer: Address, variable: Variable| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -688,7 +688,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
         bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
-    let marker = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    let marker = Proposition::condition_is(ConditionTerm::Constant(true), true);
     let exact_path = SpecPropositionPath {
         proposition: marker.clone(),
         facts: vec![ExecutionPureFact::certified(exact.clone())].into(),
@@ -1058,14 +1058,14 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
         let upper = IntegerTerm::constant(expected_upper);
         assert!(paths[0].obligations.iter().any(|obligation| {
             *obligation.proposition()
-                == Proposition::ConditionIs(
+                == Proposition::condition_is(
                     ConditionTerm::integer_greater_equal(value.clone(), lower.clone()),
                     true,
                 )
         }));
         assert!(paths[0].obligations.iter().any(|obligation| {
             *obligation.proposition()
-                == Proposition::ConditionIs(
+                == Proposition::condition_is(
                     ConditionTerm::integer_less_equal(value.clone(), upper.clone()),
                     true,
                 )

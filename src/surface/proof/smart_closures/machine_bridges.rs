@@ -190,7 +190,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         if crate::kernel::PureFactContext::new()
-            .widened_unsigned_sum_bound_premises(condition)
+            .widened_unsigned_sum_bound_premises(condition.native_compat())
             .is_none()
             || signed_intervals::has_retained_read_source(surface)
             || premises
@@ -218,9 +218,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let _recorded = super::super::surface_synthesis::SynthesisRecordedPointsScope::enter(
                 view.fixed_state.recorded_states,
             );
-            let query =
-                crate::kernel::machine_integer::comparison::comparison_view(condition, true)
-                    .expect("recognized widened sum comparison");
+            let query = crate::kernel::machine_integer::comparison::comparison_view(
+                condition.native_compat(),
+                true,
+            )
+            .expect("recognized widened sum comparison");
             let (_, _, operands) = query.operands[0]
                 .operand_view()
                 .binary()

@@ -25,6 +25,13 @@ trait VariableSubstitution {
     fn local_slot(&self, pointer: &Address) -> Address;
     fn term(&self, term: &Term) -> Term;
     fn condition(&self, condition: &ConditionTerm) -> ConditionTerm;
+    fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm>;
+    fn stored_condition(&self, condition: &StoredConditionTerm) -> StoredConditionTerm {
+        if let Some(root) = condition.root().and_then(|root| self.condition_root(root)) {
+            return StoredConditionTerm::from_root(root).expect("logical condition substitution");
+        }
+        self.condition(condition.native_compat()).into()
+    }
     fn program_value(&self, value: &ProgramValue) -> ProgramValue;
     fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue;
     /// Native program-value storage applies its existing typed literal
@@ -92,6 +99,9 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     }
     fn condition(&self, condition: &ConditionTerm) -> ConditionTerm {
         substitute_bitvector_variable_in_condition(condition, self.from, self.to)
+    }
+    fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm> {
+        substitute_bitvector_variable_in_common_condition(condition, self.from, self.to)
     }
     fn program_value(&self, value: &ProgramValue) -> ProgramValue {
         substitute_bitvector_variable_in_program_value(value, self.from, self.to)
@@ -169,6 +179,9 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     }
     fn condition(&self, condition: &ConditionTerm) -> ConditionTerm {
         substitute_pointer_variable_in_condition(condition, self.from, self.to)
+    }
+    fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm> {
+        substitute_pointer_variable_in_common_condition(condition, self.from, self.to)
     }
     fn program_value(&self, value: &ProgramValue) -> ProgramValue {
         substitute_pointer_variable_in_program_value(value, self.from, self.to)
@@ -1306,7 +1319,7 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
         }
         Proposition::Equal(left, right) => Proposition::Equal(s.term(left), s.term(right)),
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(s.condition(condition), *value)
+            Proposition::condition_is(s.stored_condition(condition), *value)
         }
         Proposition::Predicate { name, arguments } => Proposition::Predicate {
             name: name.clone(),
@@ -2109,7 +2122,7 @@ fn substitute_surface_load_binding(
     let mut collector =
         crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::checked();
     collector.collect(proposition);
-    collector.collect(&Proposition::ConditionIs(
+    collector.collect(&Proposition::condition_is(
         ConditionTerm::equal(MachineTerm::Variable(from), load.clone()),
         true,
     ));
@@ -2195,7 +2208,7 @@ pub(crate) fn substitute_algebraic_variable_in_proposition(
             rewritten_term(right, from, to),
         ),
         Proposition::ConditionIs(condition, value) => {
-            let leaf = Proposition::ConditionIs(condition.clone(), *value);
+            let leaf = Proposition::condition_is(condition.clone(), *value);
             let source = AlgebraicTerm {
                 algebraic_type: to.algebraic_type.clone(),
                 node: AlgebraicTermNode::Variable(from),
@@ -2419,7 +2432,7 @@ fn collect_proposition_bound_variables_one(
             collect_term_bound_variables(right, variables);
         }
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_bound_variables(condition, variables);
+            collect_condition_bound_variables(condition.native_compat(), variables);
         }
         Proposition::Predicate { arguments, .. } => {
             for argument in arguments {
@@ -3087,7 +3100,7 @@ fn collect_pointer_bound_variables(pointer: &Address, variables: &mut BTreeSet<V
     match &pointer.base {
         AddressBase::PureFunctionApplication(_) => {
             collect_proposition_capture_variables(
-                &Proposition::ConditionIs(
+                &Proposition::condition_is(
                     ConditionTerm::AddressEqual(
                         Box::new(pointer.clone()),
                         Box::new(pointer.clone()),
@@ -4084,7 +4097,7 @@ fn validate_integer_pure_proposition(
             validate_integer_atomic_proposition(proposition, collector)
         }
         Proposition::ConditionIs(condition, _) => {
-            validate_integer_pure_condition(condition, collector)
+            validate_integer_pure_condition(condition.native_compat(), collector)
         }
         Proposition::MemoryReadDefined { .. } | Proposition::MemoryLoadable { .. } => {
             // A symbolic array read contributes this obligation to the
@@ -4150,7 +4163,7 @@ fn validate_integer_pure_condition(
     collector: &mut crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector,
 ) -> Result<(), IntegerPureSubstitutionError> {
     validate_integer_atomic_proposition(
-        &Proposition::ConditionIs(condition.clone(), true),
+        &Proposition::condition_is(condition.clone(), true),
         collector,
     )
 }
@@ -4301,8 +4314,11 @@ fn substitute_pure_proposition_with_walker(
                         )?);
                     }
                     Proposition::ConditionIs(condition, value) => {
-                        rewritten.push(Proposition::ConditionIs(
-                            substitute_integer_pure_condition_with_walker(condition, walker)?,
+                        rewritten.push(Proposition::condition_is(
+                            substitute_integer_pure_condition_with_walker(
+                                condition.native_compat(),
+                                walker,
+                            )?,
                             *value,
                         ));
                     }
@@ -4545,13 +4561,13 @@ fn substitute_integer_pure_condition_with_walker(
     walker: &mut crate::kernel::proof::term_rewrite::TermRewrite<'_>,
 ) -> Result<ConditionTerm, IntegerPureSubstitutionError> {
     let Proposition::ConditionIs(result, _) = rewrite_integer_atomic_proposition_with_walker(
-        &Proposition::ConditionIs(condition.clone(), true),
+        &Proposition::condition_is(condition.clone(), true),
         walker,
     )?
     else {
         unreachable!()
     };
-    Ok(result)
+    Ok(result.native_compat().clone())
 }
 
 fn rewrite_integer_memory_loadable_with_walker(
@@ -8385,7 +8401,7 @@ mod machine_integer_pointer_substitution_tests {
         let term =
             IntegerTerm::from_machine(crate::kernel::MachineIntegerType::UInt64, bits.clone())
                 .unwrap();
-        let proposition = Proposition::ConditionIs(
+        let proposition = Proposition::condition_is(
             ConditionTerm::integer_equal(term, IntegerTerm::constant_i64(0)),
             true,
         );

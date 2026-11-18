@@ -10083,7 +10083,7 @@ pub(in crate::kernel) fn quantity_condition_holds(
     assumptions: &PureFactContext,
     condition: ConditionTerm,
 ) -> bool {
-    assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), true))
+    assumptions.proves_exact(&Proposition::condition_is(condition.clone(), true))
         || assumptions.decide(&condition) == Some(true)
 }
 
@@ -10188,7 +10188,7 @@ pub(in crate::kernel) fn population_quantity_sum(
         left: Box::new(left.clone()),
         right: Box::new(right.clone()),
     };
-    (assumptions.proves_exact(&Proposition::ConditionIs(no_overflow.clone(), false))
+    (assumptions.proves_exact(&Proposition::condition_is(no_overflow.clone(), false))
         || assumptions.decide(&no_overflow) == Some(false))
     .then(|| MachineTerm::add(left.clone(), right.clone()))
 }
@@ -10212,7 +10212,7 @@ fn numeric_population_owned_units(fact: &ResourceFact) -> Option<u32> {
 
 fn resource_quantity_is_zero(quantity: &MachineTerm, assumptions: &PureFactContext) -> bool {
     quantity.as_const() == Some(0)
-        || assumptions.proves_exact(&Proposition::ConditionIs(
+        || assumptions.proves_exact(&Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

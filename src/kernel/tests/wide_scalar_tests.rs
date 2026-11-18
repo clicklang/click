@@ -507,7 +507,8 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
             let Proposition::ConditionIs(condition, true) = proposition else {
                 unreachable!()
             };
-            assumptions = assumptions.assume_condition(condition.clone(), true);
+            assumptions =
+                assumptions.assume_condition((condition.clone()).native_compat().clone(), true);
         }
         let mut remaining = Vec::new();
         let result = coerce_program_value_to_type(
@@ -671,7 +672,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
                 assumptions,
             )
         };
-    let bound = Proposition::ConditionIs(
+    let bound = Proposition::condition_is(
         ConditionTerm::uint64_less_equal(
             bits.clone(),
             MachineTerm::uint64_constant(i64::MAX as u64),
@@ -705,7 +706,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
         Some(result)
     );
     assert!(remaining.is_empty());
-    let weaker = Proposition::ConditionIs(
+    let weaker = Proposition::condition_is(
         ConditionTerm::uint64_less_equal(
             bits.clone(),
             MachineTerm::uint64_constant((i64::MAX as u64) + 1),

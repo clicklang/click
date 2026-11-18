@@ -601,7 +601,7 @@ mod tests {
                 let ProgramValue::Int32(term) = value else {
                     unreachable!()
                 };
-                facts.assume_proposition(Proposition::ConditionIs(
+                facts.assume_proposition(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,

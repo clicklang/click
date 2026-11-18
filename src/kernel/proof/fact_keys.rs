@@ -360,12 +360,15 @@ fn memory_erased_proposition_key_one(proposition: &Proposition) -> MemoryErasedP
         }
         // `Bool` values have no state-blind key yet: they are filed
         // exactly until their checked memory bridge has a structural view.
-        Proposition::ConditionIs(condition, _) if condition.is_bool_value_form() => {
+        Proposition::ConditionIs(condition, _)
+            if condition.native_compat().is_bool_value_form() =>
+        {
             MemoryErasedPropositionKey::Exact(proposition.clone())
         }
-        Proposition::ConditionIs(condition, value) => {
-            MemoryErasedPropositionKey::Condition(memory_erased_condition_key(condition), *value)
-        }
+        Proposition::ConditionIs(condition, value) => MemoryErasedPropositionKey::Condition(
+            memory_erased_condition_key(condition.native_compat()),
+            *value,
+        ),
         Proposition::Implies(left, right) => MemoryErasedPropositionKey::Implies(
             Box::new(memory_erased_proposition_key(left)),
             Box::new(memory_erased_proposition_key(right)),
@@ -815,7 +818,7 @@ pub(crate) fn integer_condition_alpha_key(
     let Proposition::ConditionIs(condition, true) = proposition else {
         return None;
     };
-    let (left, right) = match condition {
+    let (left, right) = match condition.native_compat() {
         crate::kernel::integer_comparison_condition!(left, right) => (left, right),
         _ => return None,
     };
@@ -3156,7 +3159,7 @@ mod proposition_identity_tests {
     use crate::kernel::{ProgramValue, SymbolicMemory};
 
     fn equal(left: MachineTerm, right: MachineTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3541,7 +3544,7 @@ mod proposition_identity_tests {
         );
         let (load_memory, load_pointer) = crate::kernel::registered_load_for_variable(&load)
             .expect("registered load should retain its exact version");
-        let spelled = Proposition::ConditionIs(
+        let spelled = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3575,7 +3578,7 @@ mod proposition_identity_tests {
         let (changed_memory, changed_pointer) =
             crate::kernel::registered_load_for_variable(&changed_load)
                 .expect("changed registered load should retain its version");
-        let changed_spelled = Proposition::ConditionIs(
+        let changed_spelled = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3654,7 +3657,11 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             )
         }
         Proposition::ConditionIs(condition, value) => AlphaPropositionKey::Condition(
-            alpha_condition_key_with_bindings::<ALLOW_LOADS>(condition, bindings, next_binder)?,
+            alpha_condition_key_with_bindings::<ALLOW_LOADS>(
+                condition.native_compat(),
+                bindings,
+                next_binder,
+            )?,
             *value,
         ),
         Proposition::Predicate { name, arguments } => AlphaPropositionKey::Predicate {
@@ -4113,7 +4120,7 @@ mod integer_alpha_scaling_tests {
                 name: Default::default(),
                 var: Variable(binder),
                 sort: Sort::Integer,
-                body: Box::new(Proposition::ConditionIs(
+                body: Box::new(Proposition::condition_is(
                     ConditionTerm::IntegerGreaterEqual(
                         applied.into(),
                         IntegerTerm::constant_i64(0).into(),
@@ -4489,7 +4496,7 @@ mod memory_state_alpha_tests {
     }
 
     fn equality(term: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerEqual(IntegerTerm::constant_i64(9).into(), term.into()),
             true,
         )
@@ -4667,7 +4674,7 @@ mod memory_state_alpha_tests {
                 name: Default::default(),
                 var: binder,
                 sort: Sort::ProgramInt32,
-                body: Box::new(Proposition::ConditionIs(
+                body: Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -5141,7 +5148,7 @@ mod machine_quantifier_identity_tests {
                         var: Variable(981),
                         name: crate::kernel::BinderName::written("i"),
                         sort: Sort::ProgramInteger(format),
-                        body: Box::new(Proposition::ConditionIs(condition, truth)),
+                        body: Box::new(Proposition::condition_is(condition, truth)),
                     };
                     assert!(
                         propositions_are_alpha_equal(
@@ -5168,7 +5175,7 @@ mod machine_quantifier_identity_tests {
             name: "x".into(),
             var: Variable(variable),
             sort: Sort::ProgramInt64,
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 if wide {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,

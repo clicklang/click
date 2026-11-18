@@ -11,7 +11,7 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
     let a = MachineTerm::Variable(Variable(200));
     let b = MachineTerm::Variable(Variable(201));
     let one = MachineTerm::constant(1);
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::signed_add_overflows(
             MachineTerm::add(a.clone(), one.clone()),
             MachineTerm::subtract(b.clone(), one),
@@ -112,7 +112,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
             ProgramValue::typed_pointer(payload.clone(), ProgramType::Int32Pointer),
         )],
     };
-    let alias = Proposition::ConditionIs(
+    let alias = Proposition::condition_is(
         crate::kernel::ConditionTerm::address_equal(payload.clone(), program.clone()),
         true,
     );
@@ -132,7 +132,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
                     .unwrap()
             });
         let witness = Address::symbolic(fields[0][0].0);
-        let transported = Proposition::ConditionIs(
+        let transported = Proposition::condition_is(
             crate::kernel::ConditionTerm::address_equal(program.clone(), witness),
             true,
         );
@@ -362,7 +362,7 @@ fn return_proposition_context_validation_scales_with_introductions() {
         let mut base = PureFactStore::default();
         let premises: Vec<_> = (0..size)
             .map(|i| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     crate::kernel::ConditionTerm::equal(
                         MachineTerm::Variable(Variable(i)),
                         MachineTerm::constant(i as u32),
@@ -561,7 +561,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
         collected
             .collect_return_resource_rewrites(&core, size / 2)
             .unwrap();
-        let extra = Proposition::ConditionIs(
+        let extra = Proposition::condition_is(
             crate::kernel::ConditionTerm::equal(
                 MachineTerm::Variable(Variable(1000)),
                 MachineTerm::constant(9),
@@ -702,7 +702,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
         .is_err(),
         "a rewrite cannot retain scratch field bindings as a handle"
     );
-    let forged_facts = facts.with_fact(Proposition::ConditionIs(
+    let forged_facts = facts.with_fact(Proposition::condition_is(
         crate::kernel::ConditionTerm::Constant(false),
         true,
     ));
@@ -844,15 +844,15 @@ fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
 fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
     use crate::kernel::ConditionTerm;
     let x = MachineTerm::Variable(Variable(910_000));
-    let strong = Proposition::ConditionIs(
+    let strong = Proposition::condition_is(
         ConditionTerm::signed_greater_than(x.clone(), MachineTerm::constant(0)),
         true,
     );
-    let weak = Proposition::ConditionIs(
+    let weak = Proposition::condition_is(
         ConditionTerm::signed_greater_equal(x.clone(), MachineTerm::constant(0)),
         true,
     );
-    let reflexive = Proposition::ConditionIs(
+    let reflexive = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -865,7 +865,7 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
     for size in [16, 32, 64, 128] {
         let mut facts = PureFactStore::default().with_fact(strong.clone());
         for index in 0..size {
-            facts = facts.with_fact(Proposition::ConditionIs(
+            facts = facts.with_fact(Proposition::condition_is(
                 ConditionTerm::signed_less_than(
                     MachineTerm::Variable(Variable(920_000 + index)),
                     MachineTerm::constant(100),
@@ -925,7 +925,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
         let mut parent = PureFactStore::default();
         for index in 0..count {
             memory = memory.store(owner.offset_by_bytes((index + 1) * 8), int32(index));
-            parent = parent.with_fact(Proposition::ConditionIs(
+            parent = parent.with_fact(Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::Variable(Variable(952_000 + u64::from(index))),
                     MachineTerm::constant(index),
@@ -935,7 +935,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
         }
         memory = memory.store(owner.clone(), ProgramValue::UInt64(value.clone()));
         let state = ExecutionState::new().with_memory(memory.clone());
-        let arm = parent.with_fact(Proposition::ConditionIs(
+        let arm = parent.with_fact(Proposition::condition_is(
             ConditionTerm::address_equal(alias.clone(), owner.clone()),
             true,
         ));

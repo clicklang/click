@@ -15,11 +15,11 @@ fn nested_solve_derivations_keep_rule_temporaries_off_the_recursive_stack() {
             let samples = [1, 2, 4, 8].map(|depth| {
                 let variable = Variable(98_000);
                 let value = MachineTerm::Variable(variable);
-                let positive = Proposition::ConditionIs(
+                let positive = Proposition::condition_is(
                     ConditionTerm::signed_less_than(MachineTerm::constant(0), value.clone()),
                     true,
                 );
-                let nonnegative = Proposition::ConditionIs(
+                let nonnegative = Proposition::condition_is(
                     ConditionTerm::signed_less_equal(MachineTerm::constant(0), value),
                     true,
                 );
@@ -33,7 +33,7 @@ fn nested_solve_derivations_keep_rule_temporaries_off_the_recursive_stack() {
                         Box::new(nonnegative),
                     )),
                 };
-                let truth = Proposition::ConditionIs(
+                let truth = Proposition::condition_is(
                     ConditionTerm::equal(MachineTerm::constant(0), MachineTerm::constant(0)),
                     true,
                 );
@@ -86,7 +86,7 @@ fn algebraic_constructor_injectivity_ignores_unrelated_facts() {
     let algebraic_type = maybe_int32_type();
     let left = MachineTerm::Variable(Variable(89_100));
     let right = MachineTerm::Variable(Variable(89_101));
-    let goal = Proposition::ConditionIs(ConditionTerm::equal(left.clone(), right.clone()), true);
+    let goal = Proposition::condition_is(ConditionTerm::equal(left.clone(), right.clone()), true);
     let source = Proposition::Equal(
         Term::Algebraic(maybe_constructor(
             &algebraic_type,
@@ -193,7 +193,7 @@ fn callback_contract_availability_uses_scoped_pointer_equality() {
         interface_type,
     );
     let alias =
-        Proposition::ConditionIs(ConditionTerm::address_equal(callback.clone(), target), true);
+        Proposition::condition_is(ConditionTerm::address_equal(callback.clone(), target), true);
     let mut samples = Vec::new();
     for size in [4, 64, 256] {
         let mut context = PureFactContext::new()
@@ -440,14 +440,14 @@ fn structured_obligation_emission_scales_flat_in_unrelated_facts() {
                 );
             }
             let structured = Proposition::Implies(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::signed_less_than(
                         MachineTerm::Variable(Variable(96_001)),
                         MachineTerm::constant(10),
                     ),
                     true,
                 )),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::signed_less_than(
                         MachineTerm::Variable(Variable(96_002)),
                         MachineTerm::constant(10),
@@ -495,8 +495,8 @@ fn order_path_decision_scales_flat_in_unrelated_propositions() {
                 assumptions = assumptions
                     .assume_condition(guard.clone(), true)
                     .assume_proposition(Proposition::Implies(
-                        Box::new(Proposition::ConditionIs(guard, true)),
-                        Box::new(Proposition::ConditionIs(
+                        Box::new(Proposition::condition_is(guard, true)),
+                        Box::new(Proposition::condition_is(
                             ConditionTerm::signed_less_equal(
                                 MachineTerm::Variable(Variable(97_400 + index as u64)),
                                 MachineTerm::Variable(Variable(97_600 + index as u64)),
@@ -505,7 +505,7 @@ fn order_path_decision_scales_flat_in_unrelated_propositions() {
                         )),
                     ));
             }
-            let goal = Proposition::ConditionIs(ConditionTerm::signed_less_equal(a, c), true);
+            let goal = Proposition::condition_is(ConditionTerm::signed_less_equal(a, c), true);
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::search::ProofSearch::proves(&(assumptions), &goal)
             });
@@ -612,7 +612,7 @@ fn forall_integer_instantiation_charges_shared_replacement_only_once() {
     let mut measurements = Vec::new();
     for size in [8, 16, 32, 64] {
         let mut replacement = IntegerTerm::var(Variable(752));
-        let mut body = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let mut body = Proposition::condition_is(ConditionTerm::Constant(true), true);
         for _ in 0..size {
             let child: SharedIntegerTerm = replacement.into();
             replacement = IntegerTerm::Add(child.clone(), child);
@@ -844,14 +844,14 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                     fact_index,
                     Proposition::Implies(
                         Box::new(Proposition::And(
-                            Box::new(Proposition::ConditionIs(
+                            Box::new(Proposition::condition_is(
                                 ConditionTerm::signed_less_equal(
                                     MachineTerm::constant(0),
                                     MachineTerm::Variable(fact_index),
                                 ),
                                 true,
                             )),
-                            Box::new(Proposition::ConditionIs(
+                            Box::new(Proposition::condition_is(
                                 ConditionTerm::signed_less_than(
                                     MachineTerm::Variable(fact_index),
                                     length.clone(),
@@ -859,7 +859,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                                 true,
                             )),
                         )),
-                        Box::new(Proposition::ConditionIs(
+                        Box::new(Proposition::condition_is(
                             ConditionTerm::equal(
                                 MachineTerm::MemoryLoad(
                                     ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
@@ -884,14 +884,14 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                 assumptions = assumptions.assume_proposition(forall_int32(
                     unrelated_index,
                     Proposition::Implies(
-                        Box::new(Proposition::ConditionIs(
+                        Box::new(Proposition::condition_is(
                             ConditionTerm::signed_less_equal(
                                 MachineTerm::constant(0),
                                 MachineTerm::Variable(unrelated_index),
                             ),
                             true,
                         )),
-                        Box::new(Proposition::ConditionIs(
+                        Box::new(Proposition::condition_is(
                             ConditionTerm::equal(
                                 MachineTerm::MemoryLoad(
                                     ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
@@ -1101,7 +1101,7 @@ fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
             let delta = MachineTerm::Variable(Variable(98_500 + index));
             let new = MachineTerm::Variable(Variable(99_000 + index));
             Proposition::Implies(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
@@ -1110,7 +1110,7 @@ fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
                     },
                     false,
                 )),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     {
                         let condition = ConditionTerm::equal(
                             new,
@@ -1126,7 +1126,7 @@ fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
                 )),
             )
         };
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::Variable(Variable(99_000)),
                 MachineTerm::constant(1),
@@ -1134,7 +1134,7 @@ fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
             true,
         );
         let bound = |value: u32| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::signed_less_than(
                     MachineTerm::Variable(Variable(97_900)),
                     MachineTerm::constant(value),
@@ -1206,7 +1206,7 @@ fn state_substitution_of_an_absent_variable_is_memoized() {
 fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
     let x = MachineTerm::Variable(Variable(990_000));
     let y = MachineTerm::Variable(Variable(990_001));
-    let low_word_only = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let low_word_only = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -1224,16 +1224,16 @@ fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
         // Keep term-bridge imports cold at every sample size.
         crate::kernel::clear_integer_bridge_memo();
         let mut facts = PureFactContext::new()
-            .assume_proposition(Proposition::ConditionIs(
+            .assume_proposition(Proposition::condition_is(
                 ConditionTerm::uint64_equal(x.clone(), MachineTerm::uint64_constant(u64::MAX)),
                 true,
             ))
-            .assume_proposition(Proposition::ConditionIs(
+            .assume_proposition(Proposition::condition_is(
                 ConditionTerm::uint64_equal(y.clone(), MachineTerm::uint64_constant(2)),
                 true,
             ));
         for index in 0..size {
-            facts = facts.assume_proposition(Proposition::ConditionIs(
+            facts = facts.assume_proposition(Proposition::condition_is(
                 ConditionTerm::uint64_equal(
                     MachineTerm::Variable(Variable(991_000 + index)),
                     MachineTerm::uint64_constant(index),
@@ -1301,7 +1301,7 @@ fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
 #[test]
 fn wide_constant_arithmetic_work_scales_with_selected_expression() {
     let variable = MachineTerm::Variable(Variable(993_000));
-    let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let facts = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::uint64_equal(variable.clone(), MachineTerm::uint64_constant(9)),
         true,
     ));
@@ -1330,11 +1330,11 @@ fn wide_constant_arithmetic_work_scales_with_selected_expression() {
 #[test]
 fn pointer_association_selected_guard_work_ignores_ambient_facts() {
     let i = MachineTerm::Variable(Variable(198201));
-    let defined = Proposition::ConditionIs(
+    let defined = Proposition::condition_is(
         ConditionTerm::signed_add_overflows(i.clone(), MachineTerm::constant(4)),
         false,
     );
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::address_offset_equal(
             AddressOffset::Add(
                 Box::new(AddressOffset::scale_int32(i.clone(), 1)),
@@ -1349,7 +1349,7 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut ambient = vec![defined.clone()];
         ambient.extend((0..count).map(|n| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::Variable(Variable(199000 + n)),
                     MachineTerm::constant(n as u32),
@@ -1393,9 +1393,9 @@ fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
             true,
         ),
     );
-    let goal = Proposition::ConditionIs(goal_condition.clone(), true);
+    let goal = Proposition::condition_is(goal_condition.clone(), true);
     let bound_of = |condition: &ConditionTerm| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             condition
                 .pointer_offset_uint64_association_guard()
                 .expect("a full-width association has a guard"),
@@ -1426,7 +1426,7 @@ fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
                 if related {
                     other_bound(n)
                 } else {
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         ConditionTerm::equal(
                             MachineTerm::Variable(Variable(199000 + n)),
                             MachineTerm::constant(n as u32),
@@ -1557,7 +1557,7 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
                 ),
                 wide: true,
             })
-            .assume_proposition(Proposition::ConditionIs(
+            .assume_proposition(Proposition::condition_is(
                 ConditionTerm::uint64_less_equal(
                     requested.clone(),
                     MachineTerm::uint64_constant(16),
@@ -1643,11 +1643,11 @@ fn required_obligation_connective_work_scales_with_goal_not_ambient_facts() {
         let mut work_by_ambient = Vec::new();
         for ambient in [8, 32, 128, 512] {
             let _session = crate::kernel::VerificationSession::enter();
-            let known = Proposition::ConditionIs(ConditionTerm::Variable(Variable(98000)), true);
-            let unknown = Proposition::ConditionIs(ConditionTerm::Variable(Variable(98001)), true);
+            let known = Proposition::condition_is(ConditionTerm::Variable(Variable(98000)), true);
+            let unknown = Proposition::condition_is(ConditionTerm::Variable(Variable(98001)), true);
             let mut facts = PureFactContext::new().assume_proposition(known.clone());
             for i in 0..ambient {
-                facts = facts.assume_proposition(Proposition::ConditionIs(
+                facts = facts.assume_proposition(Proposition::condition_is(
                     ConditionTerm::Variable(Variable(99000 + i)),
                     true,
                 ));
@@ -1710,7 +1710,7 @@ fn restricting_model_support_ignores_unselected_scalar_graph_edges() {
             context.restricted_to_facts(&[], std::slice::from_ref(&equality))
         });
         assert!(selected.contains_known(&equality));
-        assert!(!selected.contains_known(&Proposition::ConditionIs(
+        assert!(!selected.contains_known(&Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::Variable(Variable(100000)),
                 MachineTerm::Variable(Variable(100001)),
@@ -1744,11 +1744,11 @@ fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
         bytes: 4u32.into(),
         wide: false,
     };
-    let known = Proposition::ConditionIs(
+    let known = Proposition::condition_is(
         ConditionTerm::equal(MachineTerm::Variable(Variable(990_000)), 1u32.into()),
         true,
     );
-    let missing = Proposition::ConditionIs(
+    let missing = Proposition::condition_is(
         ConditionTerm::equal(MachineTerm::Variable(Variable(990_001)), 1u32.into()),
         true,
     );
@@ -1775,7 +1775,10 @@ fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
         let Proposition::ConditionIs(condition, _) = &missing else {
             unreachable!()
         };
-        assert_eq!(assumptions.difference_decision(condition, &[]), None);
+        assert_eq!(
+            assumptions.difference_decision(condition.native_compat(), &[]),
+            None
+        );
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             let retain = |goal| {
                 crate::kernel::reasoning::path_facts::call_input_fact_is_already_known(
@@ -1809,7 +1812,7 @@ fn finite_forall_requested_prefix_has_constant_work_across_domain_sizes() {
             k,
             Proposition::Implies(
                 Box::new(int32_half_open_bound(&MachineTerm::Variable(k), 0, width)),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Constant(true),
                     true,
                 )),
@@ -2199,7 +2202,7 @@ fn integer_match_rewrite_lookup_scales_with_its_selected_sources() {
                     },
                 ],
             };
-            let goal = Proposition::ConditionIs(
+            let goal = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(
                     matched.into(),
                     crate::kernel::IntegerTerm::constant_i64(1).into(),

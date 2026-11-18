@@ -45,7 +45,7 @@ impl WideEqualitySources {
             view.operands[1].operand_view(),
             admitted_endpoints.map(|ends| &ends.1),
         );
-        let source = Proposition::ConditionIs(condition.clone(), truth);
+        let source = Proposition::condition_is(condition.clone(), truth);
         for (own, other) in [(&left, &right), (&right, &left)] {
             let mut neighbors = self.endpoints.get(own).cloned().unwrap_or_default();
             let sources = neighbors.get(other).cloned().unwrap_or_default();

@@ -456,7 +456,7 @@ impl Printer<'_> {
             // value has the public source-region spelling read_event(i).result.
             Proposition::VolatileAccess(_) => None,
             Proposition::ConditionIs(condition, polarity) => {
-                self.condition(condition, *polarity, depth)
+                self.condition(condition.native_compat(), *polarity, depth)
             }
             Proposition::And(left, right) => {
                 let left = self.proposition(left, depth)?;
@@ -2987,7 +2987,7 @@ mod tests {
     use crate::kernel::{AddressBase, LoadKind, Pointer, ProgramType, ProgramValue, SharedMemory};
 
     fn equality(value: MachineTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3034,7 +3034,7 @@ mod tests {
             (0.0, "d >= float64_from_bits(0x0000000000000000u64)"),
             (1.5, "d >= float64_from_bits(0x3ff8000000000000u64)"),
         ] {
-            let fact = Proposition::ConditionIs(
+            let fact = Proposition::condition_is(
                 ConditionTerm::Float64(crate::kernel::FloatCondition::Comparison {
                     operator: crate::kernel::ComparisonOperator::GreaterEqual,
                     left: Box::new(MachineTerm::Variable(Variable(7))),
@@ -3044,7 +3044,7 @@ mod tests {
             );
             assert_eq!(source(&fact, &mut labels), expected);
         }
-        let fact = Proposition::ConditionIs(
+        let fact = Proposition::condition_is(
             ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
                 operator: crate::kernel::ComparisonOperator::LessThan,
                 left: Box::new(MachineTerm::Float32Binary {
@@ -3060,7 +3060,7 @@ mod tests {
             source(&fact, &mut labels),
             "f + float32_from_bits(0x3fc00000) < float32_from_bits(0x40000000)"
         );
-        let integer = Proposition::ConditionIs(
+        let integer = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
@@ -3137,7 +3137,7 @@ mod tests {
             MachineCastSpelling::UInt32From64,
             Box::new(MachineTerm::Variable(Variable(94))),
         );
-        let fact = Proposition::ConditionIs(
+        let fact = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -3159,7 +3159,7 @@ mod tests {
         labels.source_name(Variable(7), "a".into());
         labels.source_name(Variable(8), "u".into());
         labels.source_types.insert(Variable(8), ProgramType::UInt32);
-        let signed = Proposition::ConditionIs(
+        let signed = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3169,7 +3169,7 @@ mod tests {
             true,
         );
         assert_eq!(source(&signed, &mut labels), "a == -56");
-        let unsigned = Proposition::ConditionIs(
+        let unsigned = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3180,7 +3180,7 @@ mod tests {
         );
         assert_eq!(source(&unsigned, &mut labels), "u != 4294967240u32");
         // An unsigned order over an `int32` value converts it.
-        let order = Proposition::ConditionIs(
+        let order = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::LessEqual,
@@ -3220,7 +3220,7 @@ mod tests {
                     left: Box::new(MachineTerm::Variable(Variable(7))),
                     right: Box::new(MachineTerm::Variable(Variable(8))),
                 };
-                let fact = Proposition::ConditionIs(
+                let fact = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format,
                         relation: CompareRelation::LessThan,
@@ -3251,7 +3251,7 @@ mod tests {
             Box::new(binary_node!(Int32, Add, a(), b())),
             Box::new(binary_node!(Int32, Subtract, a(), b())),
         );
-        let less = Proposition::ConditionIs(
+        let less = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -3260,7 +3260,7 @@ mod tests {
             },
             false,
         );
-        let masked = Proposition::ConditionIs(
+        let masked = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

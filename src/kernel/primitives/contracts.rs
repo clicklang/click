@@ -2872,49 +2872,51 @@ impl MemoryRange {
                     pending.push(left);
                     pending.push(right);
                 }
-                Proposition::ConditionIs(condition, true) => match (kind, condition) {
-                    (
-                        RangeIndexKind::Int32,
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessEqual,
-                            left: lo,
-                            right: v,
-                        },
-                    )
-                    | (
-                        RangeIndexKind::UInt64,
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::UInt64,
-                            relation: CompareRelation::LessEqual,
-                            left: lo,
-                            right: v,
-                        },
-                    ) if matches!(v.as_ref(), MachineTerm::Variable(actual) if *actual == variable) => {
-                        lower = Some(lo.as_ref().clone())
+                Proposition::ConditionIs(condition, true) => {
+                    match (kind, condition.native_compat()) {
+                        (
+                            RangeIndexKind::Int32,
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessEqual,
+                                left: lo,
+                                right: v,
+                            },
+                        )
+                        | (
+                            RangeIndexKind::UInt64,
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::UInt64,
+                                relation: CompareRelation::LessEqual,
+                                left: lo,
+                                right: v,
+                            },
+                        ) if matches!(v.as_ref(), MachineTerm::Variable(actual) if *actual == variable) => {
+                            lower = Some(lo.as_ref().clone())
+                        }
+                        (
+                            RangeIndexKind::Int32,
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessThan,
+                                left: v,
+                                right: hi,
+                            },
+                        )
+                        | (
+                            RangeIndexKind::UInt64,
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::UInt64,
+                                relation: CompareRelation::LessThan,
+                                left: v,
+                                right: hi,
+                            },
+                        ) if matches!(v.as_ref(), MachineTerm::Variable(actual) if *actual == variable) => {
+                            upper = Some(hi.as_ref().clone())
+                        }
+                        _ => {}
                     }
-                    (
-                        RangeIndexKind::Int32,
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessThan,
-                            left: v,
-                            right: hi,
-                        },
-                    )
-                    | (
-                        RangeIndexKind::UInt64,
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::UInt64,
-                            relation: CompareRelation::LessThan,
-                            left: v,
-                            right: hi,
-                        },
-                    ) if matches!(v.as_ref(), MachineTerm::Variable(actual) if *actual == variable) => {
-                        upper = Some(hi.as_ref().clone())
-                    }
-                    _ => {}
-                },
+                }
                 _ => {}
             }
         }
@@ -3100,12 +3102,12 @@ pub(crate) fn memory_range_element_count_guards(
     element_width: u32,
 ) -> Vec<Proposition> {
     assert!(element_width > 0, "memory element width must be positive");
-    let mut guards = vec![Proposition::ConditionIs(
+    let mut guards = vec![Proposition::condition_is(
         ConditionTerm::signed_less_equal(MachineTerm::constant(0), element_count.clone()),
         true,
     )];
     if element_count_limit_constrains_int32(element_width) {
-        guards.push(Proposition::ConditionIs(
+        guards.push(Proposition::condition_is(
             ConditionTerm::signed_less_equal(
                 element_count,
                 MachineTerm::constant(memory_range_element_count_limit(element_width)),
@@ -3178,8 +3180,8 @@ pub(crate) fn memory_range_byte_count_span(
         MachineTerm::constant(memory_range_element_count_limit(element_width)),
     );
     MemoryRangeSpan::Guards(vec![
-        Proposition::ConditionIs(forward, true),
-        Proposition::ConditionIs(fits, true),
+        Proposition::condition_is(forward, true),
+        Proposition::condition_is(fits, true),
     ])
 }
 
@@ -3295,7 +3297,7 @@ fn collect_stated_loadable_span_guards(
                 }
                 _ => (bytes.native_compat(), 1),
             };
-            let guard = Proposition::ConditionIs(
+            let guard = Proposition::condition_is(
                 ConditionTerm::uint64_less_equal(
                     elements.clone(),
                     MachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width)),
@@ -3353,13 +3355,13 @@ pub(crate) fn memory_range_span_guards(range: &MemoryRange) -> Vec<Proposition> 
         range.element_width(),
     ) {
         MemoryRangeSpan::ConstantValid => Vec::new(),
-        MemoryRangeSpan::ConstantInvalid { .. } => vec![Proposition::ConditionIs(
+        MemoryRangeSpan::ConstantInvalid { .. } => vec![Proposition::condition_is(
             ConditionTerm::Constant(false),
             true,
         )],
         MemoryRangeSpan::Guards(guards) if range.element_width() == 1 => guards,
         MemoryRangeSpan::Guards(_) => {
-            let mut guards = vec![Proposition::ConditionIs(
+            let mut guards = vec![Proposition::condition_is(
                 ConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
                 true,
             )];
@@ -3485,11 +3487,11 @@ fn wide_memory_range_span_guards(range: &MemoryRange) -> Option<Vec<Proposition>
     let (start, end) = range.wide_bounds()?;
     let limit = i64::MAX as u64 / u64::from(range.element_width());
     Some(vec![
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::uint64_less_equal(start.clone(), end.clone()),
             true,
         ),
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::uint64_less_equal(end.clone(), MachineTerm::uint64_constant(limit)),
             true,
         ),
@@ -3538,7 +3540,7 @@ pub(crate) fn memory_range_byte_count_guards(
 ) -> Vec<Proposition> {
     match memory_range_byte_count_span(start, end, element_width) {
         MemoryRangeSpan::ConstantValid => Vec::new(),
-        MemoryRangeSpan::ConstantInvalid { .. } => vec![Proposition::ConditionIs(
+        MemoryRangeSpan::ConstantInvalid { .. } => vec![Proposition::condition_is(
             ConditionTerm::Constant(false),
             true,
         )],
@@ -4225,7 +4227,7 @@ mod guarded_quantified_cell_tests {
     }
 
     fn holds(condition: ConditionTerm) -> Proposition {
-        Proposition::ConditionIs(condition, true)
+        Proposition::condition_is(condition, true)
     }
 
     fn variable(variable: Variable) -> Box<MachineTerm> {

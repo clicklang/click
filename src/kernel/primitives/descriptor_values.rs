@@ -207,6 +207,12 @@ impl From<ConditionTerm> for StoredConditionTerm {
     }
 }
 impl StoredConditionTerm {
+    pub(crate) fn operand_view(&self) -> BooleanOperandView<'_> {
+        match self.root() {
+            Some(root) => BooleanOperandView::Shared(root),
+            None => BooleanOperandView::Native(self.native_compat()),
+        }
+    }
     pub(crate) fn from_root(root: KernelTerm) -> Option<Self> {
         (root.ty() == &KernelType::Bool).then(|| Self(StoredCondition::Shared(root)))
     }
@@ -336,6 +342,98 @@ mod protocol_value_tests {
             }
         }
     }
+    #[test]
+    fn condition_proposition_storage_keeps_roots_and_native_fact_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for condition in [
+            ConditionTerm::Constant(false),
+            ConditionTerm::Constant(true),
+            ConditionTerm::Variable(Variable(10993711)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(MachineTerm::Variable(Variable(10993712))),
+                right: Box::new(MachineTerm::constant(9)),
+            },
+        ] {
+            let root = KernelTermImport::for_exact_field_inputs().condition(&condition);
+            for truth in [false, true] {
+                let native = Proposition::condition_is(condition.clone(), truth);
+                let shared = Proposition::condition_is(
+                    StoredConditionTerm::from_root(root.clone()).unwrap(),
+                    truth,
+                );
+                let Proposition::ConditionIs(stored, actual_truth) = shared.clone() else {
+                    unreachable!();
+                };
+                assert_eq!(stored.root(), Some(&root));
+                assert_eq!(actual_truth, truth);
+                assert_eq!(shared, native);
+                assert_eq!(shared.cmp(&native), std::cmp::Ordering::Equal);
+                assert_eq!(hash(&shared), hash(&native));
+                assert_eq!(format!("{shared:?}"), format!("{native:?}"));
+                assert_eq!(shared.condition_native(), native.condition_native());
+            }
+        }
+    }
+
+    #[test]
+    fn condition_proposition_visitors_keep_shared_substitution_and_native_scope() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = Variable(10993713);
+        let condition = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(MachineTerm::Variable(variable)),
+            right: Box::new(MachineTerm::constant(3)),
+        };
+        let root = KernelTermImport::for_exact_field_inputs().condition(&condition);
+        let native = Proposition::condition_is(condition, false);
+        let shared =
+            Proposition::condition_is(StoredConditionTerm::from_root(root).unwrap(), false);
+        for capture in [false, true] {
+            let mut expected = Default::default();
+            let mut actual = Default::default();
+            if capture {
+                crate::kernel::reasoning::collect_proposition_capture_variables(
+                    &native,
+                    &mut expected,
+                );
+                crate::kernel::reasoning::collect_proposition_capture_variables(
+                    &shared,
+                    &mut actual,
+                );
+            } else {
+                crate::kernel::reasoning::collect_proposition_bitvector_variables(
+                    &native,
+                    &mut expected,
+                );
+                crate::kernel::reasoning::collect_proposition_bitvector_variables(
+                    &shared,
+                    &mut actual,
+                );
+            }
+            assert_eq!(actual, expected);
+            assert!(actual.contains(&variable));
+        }
+        let replacement = MachineTerm::Variable(Variable(10993714));
+        let expected = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
+            &native,
+            variable,
+            &replacement,
+        );
+        let actual = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
+            &shared,
+            variable,
+            &replacement,
+        );
+        let Proposition::ConditionIs(stored, _) = &actual else {
+            unreachable!();
+        };
+        assert!(stored.root().is_some());
+        assert_eq!(actual, expected);
+    }
+
     mod scaling_tests {
         use super::*;
         include!("../../scaling_tests/kernel/primitives/descriptor_values.rs");

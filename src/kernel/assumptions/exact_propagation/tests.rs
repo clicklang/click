@@ -124,7 +124,7 @@ fn exact_propagation_is_idempotent_and_does_not_fire_cycles_without_a_seed() {
 fn exact_propagation_keeps_condition_polarity_and_restriction_support() {
     let a = ConditionTerm::Variable(crate::kernel::Variable(780_000));
     let b = atom("result");
-    let rule = or(Proposition::ConditionIs(a.clone(), true), b.clone());
+    let rule = or(Proposition::condition_is(a.clone(), true), b.clone());
     let parent = context(vec![rule.clone()]);
     let child = parent.clone().assume_condition(a.clone(), false);
     assert!(child.contains_known(&b));
@@ -159,7 +159,7 @@ fn exact_propagation_does_not_match_different_memory_states_or_types() {
         ProgramValue::Int32(MachineTerm::Variable(Variable(781_001))),
     );
     let read = |memory| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
                     ProgramPoint::at(&intern_memory(memory)),
@@ -323,7 +323,7 @@ fn exact_propagation_does_not_use_equality_derived_guards() {
         .assume_condition(ConditionTerm::equal(a.clone(), b), true)
         .assume_condition(ConditionTerm::equal(a, MachineTerm::constant(0)), true)
         .assume_proposition(implies(
-            Proposition::ConditionIs(guard.clone(), true),
+            Proposition::condition_is(guard.clone(), true),
             result.clone(),
         ));
     assert_eq!(ctx.decide(&guard), Some(true));
@@ -346,14 +346,14 @@ fn exact_propagation_uses_only_intrinsic_literal_and_reflexive_truths() {
     ] {
         assert!(
             context(vec![implies(
-                Proposition::ConditionIs(guard.clone(), true),
+                Proposition::condition_is(guard.clone(), true),
                 result.clone()
             )])
             .contains_known(&result)
         );
         assert!(
             !context(vec![implies(
-                Proposition::ConditionIs(guard, false),
+                Proposition::condition_is(guard, false),
                 result.clone()
             )])
             .contains_known(&result)
@@ -377,21 +377,24 @@ fn exact_propagation_matches_native_observation_guards_at_both_polarities() {
         ),
     ] {
         for truth in [true, false] {
-            let original = Proposition::ConditionIs(integer.clone(), truth);
+            let original = Proposition::condition_is(integer.clone(), truth);
             let propagated = context(vec![implies(atom("seed"), original.clone()), atom("seed")]);
             assert!(
                 propagated.contains_assumed_exact(&original),
                 "propagation must retain the clause's source spelling"
             );
-            let guard = Proposition::ConditionIs(integer.clone(), truth);
-            let fact = Proposition::ConditionIs(native.clone(), truth);
+            let guard = Proposition::condition_is(integer.clone(), truth);
+            let fact = Proposition::condition_is(native.clone(), truth);
             let rule = implies(guard, result.clone());
             for facts in [vec![rule.clone(), fact.clone()], vec![fact, rule.clone()]] {
                 assert!(context(facts).contains_known(&result));
             }
             assert!(
-                !context(vec![rule, Proposition::ConditionIs(native.clone(), !truth)])
-                    .contains_known(&result)
+                !context(vec![
+                    rule,
+                    Proposition::condition_is(native.clone(), !truth)
+                ])
+                .contains_known(&result)
             );
         }
     }
@@ -404,7 +407,7 @@ fn exact_propagation_matches_value_preserving_observation_conversions() {
     let x = MachineTerm::Variable(Variable(782_030));
     let y = MachineTerm::Variable(Variable(782_031));
     let widened = MachineTerm::machine_integer_cast(M::Int32, M::Int64, x.clone());
-    let guard = Proposition::ConditionIs(
+    let guard = Proposition::condition_is(
         ConditionTerm::integer_less_than(
             IntegerTerm::from_machine(M::Int64, widened).unwrap(),
             IntegerTerm::from_machine(M::Int32, y.clone()).unwrap(),
@@ -412,11 +415,11 @@ fn exact_propagation_matches_value_preserving_observation_conversions() {
         true,
     );
     let fact =
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(x.clone(), y.clone()), true);
+        Proposition::condition_is(ConditionTerm::signed_less_than(x.clone(), y.clone()), true);
     let result = atom("converted_result");
     assert!(context(vec![implies(guard, result.clone()), fact.clone()]).contains_known(&result));
     let wrapping = MachineTerm::machine_integer_cast(M::Int32, M::UInt64, x);
-    let different = Proposition::ConditionIs(
+    let different = Proposition::condition_is(
         ConditionTerm::integer_less_than(
             IntegerTerm::from_machine(M::UInt64, wrapping).unwrap(),
             IntegerTerm::from_machine(M::Int32, y).unwrap(),
@@ -440,14 +443,14 @@ fn exact_propagation_matches_retained_and_native_arithmetic_operands() {
     );
     let retained =
         IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(M::Int32, subtract).unwrap());
-    let guard = Proposition::ConditionIs(
+    let guard = Proposition::condition_is(
         ConditionTerm::integer_less_than(
             IntegerTerm::from_machine(M::Int32, variable(782040)).unwrap(),
             retained,
         ),
         true,
     );
-    let native = Proposition::ConditionIs(
+    let native = Proposition::condition_is(
         ConditionTerm::signed_less_than(
             variable(782040),
             MachineTerm::machine_binary(
@@ -469,7 +472,7 @@ fn exact_propagation_matches_retained_and_native_arithmetic_operands() {
         assert!(ctx.contains_known(&result));
         assert!(ctx.contains_assumed_exact(&native));
     }
-    let different = Proposition::ConditionIs(
+    let different = Proposition::condition_is(
         ConditionTerm::signed_less_than(
             variable(782040),
             MachineTerm::machine_binary(
@@ -496,7 +499,7 @@ fn exact_propagation_computes_substituted_word_equality_guards() {
             right: Box::new(MachineTerm::int64_constant(right)),
         };
         for truth in [true, false] {
-            let guard = Proposition::ConditionIs(comparison.clone(), truth);
+            let guard = Proposition::condition_is(comparison.clone(), truth);
             let facts = context(vec![implies(guard, result.clone())]);
             assert_eq!(facts.contains_known(&result), equal == truth);
         }

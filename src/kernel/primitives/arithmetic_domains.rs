@@ -37,8 +37,8 @@ impl Proposition {
         let [minimum, minus_one] =
             ConditionTerm::signed_division_exception_tests(format, left, right);
         Self::Or(
-            Box::new(Self::ConditionIs(minimum, false)),
-            Box::new(Self::ConditionIs(minus_one, false)),
+            Box::new(Self::condition_is(minimum, false)),
+            Box::new(Self::condition_is(minus_one, false)),
         )
     }
 
@@ -68,8 +68,8 @@ impl Proposition {
             )
         };
         Self::Or(
-            Box::new(Self::ConditionIs(compare(left, &minimum), false)),
-            Box::new(Self::ConditionIs(compare(right, &minus_one), false)),
+            Box::new(Self::condition_is(compare(left, &minimum), false)),
+            Box::new(Self::condition_is(compare(right, &minus_one), false)),
         )
     }
 
@@ -84,7 +84,7 @@ impl Proposition {
             _ => unreachable!("native signed division uses int32 or int64"),
         };
         Self::And(
-            Box::new(Self::ConditionIs(
+            Box::new(Self::condition_is(
                 ConditionTerm::machine_compare(format, CompareRelation::Equal, right.clone(), zero),
                 false,
             )),
@@ -105,15 +105,15 @@ impl Proposition {
         if let IntegerTerm::Machine(value) = &exact
             && format.format().contains(value.ty().format())
         {
-            return Self::ConditionIs(ConditionTerm::Constant(true), true);
+            return Self::condition_is(ConditionTerm::Constant(true), true);
         }
         let (minimum, maximum) = format.format().bounds();
         Self::And(
-            Box::new(Self::ConditionIs(
+            Box::new(Self::condition_is(
                 ConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant(maximum)),
                 true,
             )),
-            Box::new(Self::ConditionIs(
+            Box::new(Self::condition_is(
                 ConditionTerm::integer_greater_equal(exact, IntegerTerm::constant(minimum)),
                 true,
             )),
@@ -295,14 +295,14 @@ mod construction_tests {
         // An already written symbolic bound stays a proposition. The domain
         // builder's root-type rule below does not fold ordinary comparisons.
         let domain = Proposition::And(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::integer_less_equal(
                     value.clone(),
                     IntegerTerm::constant_i64(i64::MAX),
                 ),
                 true,
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::integer_greater_equal(value, IntegerTerm::constant_i64(i64::MIN)),
                 true,
             )),
@@ -318,12 +318,12 @@ mod construction_tests {
         );
         assert_eq!(
             Proposition::arithmetic_domain([
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
-                Proposition::ConditionIs(ConditionTerm::Constant(false), false),
+                Proposition::condition_is(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(ConditionTerm::Constant(false), false),
             ]),
             None
         );
-        let falsehood = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+        let falsehood = Proposition::condition_is(ConditionTerm::Constant(false), true);
         assert_eq!(
             Proposition::arithmetic_domain([falsehood.clone()]),
             Some(falsehood)

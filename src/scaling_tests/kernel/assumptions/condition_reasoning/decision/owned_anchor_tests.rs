@@ -7,7 +7,7 @@ fn pointer_decision_miss_does_not_walk_owned_anchor_aliases() {
         let mut facts =
             PureFactContext::new().assume_proposition(owner_of(&[left.clone(), pointer(3)]));
         for index in 0..size {
-            facts = facts.assume_proposition(Proposition::ConditionIs(
+            facts = facts.assume_proposition(Proposition::condition_is(
                 ConditionTerm::address_equal(left.clone(), pointer(100 + index)),
                 true,
             ));
@@ -34,7 +34,7 @@ fn explicit_separation_decides_pointers_without_composition_discovery() {
         let mut facts =
             PureFactContext::new().assume_proposition(owner_of(&[left.clone(), right.clone()]));
         for index in 0..size {
-            facts = facts.assume_proposition(Proposition::ConditionIs(
+            facts = facts.assume_proposition(Proposition::condition_is(
                 ConditionTerm::address_equal(left.clone(), pointer(100 + index)),
                 true,
             ));

@@ -107,7 +107,7 @@ mod tests {
     use crate::kernel::Variable;
 
     fn le(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(left.into(), right.into()),
             true,
         )

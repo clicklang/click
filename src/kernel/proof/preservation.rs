@@ -227,7 +227,7 @@ fn preserve_field(
             crate::kernel::ResourceFieldValue::Algebraic(b),
         ) if a.algebraic_type == b.algebraic_type => {
             return Some(if a == b {
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+                Proposition::condition_is(ConditionTerm::Constant(true), true)
             } else {
                 Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()))
             });
@@ -271,7 +271,7 @@ fn preserve_field(
         ) => integer_equality(MachineIntegerType::UInt64, a.clone(), b.clone())?,
         _ => return None,
     };
-    Some(Proposition::ConditionIs(condition, true))
+    Some(Proposition::condition_is(condition, true))
 }
 
 // A comparison selects the read of its own format, and an 8- or 16-bit read
@@ -306,7 +306,7 @@ fn observation_equality(
     {
         let widen =
             |value| MachineTerm::machine_integer_cast(narrow, MachineIntegerType::Int32, value);
-        return Some(Proposition::ConditionIs(
+        return Some(Proposition::condition_is(
             ConditionTerm::equal(widen(integer_bits(after)?), widen(integer_bits(before)?)),
             true,
         ));
@@ -328,7 +328,7 @@ fn observation_equality(
         }
         _ => return None,
     };
-    Some(Proposition::ConditionIs(condition, true))
+    Some(Proposition::condition_is(condition, true))
 }
 
 fn integer_bits(value: ProgramValue) -> Option<MachineTerm> {
@@ -613,7 +613,7 @@ mod tests {
             left: Box::new(Resource::Footprint(footprint)),
             right: Box::new(Resource::Instance(kept)),
         };
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             match format {
                 MachineIntegerType::Int64 | MachineIntegerType::UInt64 => ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
@@ -669,7 +669,7 @@ mod tests {
                     panic!("wide equality")
                 };
                 **left = MachineTerm::Variable(Variable(8_390_999));
-                preservation.result = Proposition::ConditionIs(condition, truth);
+                preservation.result = Proposition::condition_is(condition, truth);
                 assert!(preservation.apply(|p| p == &separation).is_err());
             }
         }
@@ -731,7 +731,7 @@ mod tests {
         }
         let (mut preservation, _) = resource_fixture(8);
         let result = &mut preservation.result;
-        *result = Proposition::ConditionIs(
+        *result = Proposition::condition_is(
             ConditionTerm::equal(MachineTerm::Variable(Variable(8_390_902)), 99u32.into()),
             true,
         );
@@ -820,7 +820,7 @@ mod tests {
         else {
             unreachable!()
         };
-        let result = Proposition::ConditionIs(
+        let result = Proposition::condition_is(
             ConditionTerm::pointer_equal(after_value, before_value),
             true,
         );
@@ -845,7 +845,7 @@ mod tests {
         let ProgramValue::Parameter(b) = observe(before, &address, ty) else {
             unreachable!()
         };
-        let goal = Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true);
+        let goal = Proposition::condition_is(ConditionTerm::AlgebraicEqual(a, b), true);
         let result = &mut preservation.result;
         *result = goal.clone();
         (preservation, goal)
@@ -866,7 +866,7 @@ mod tests {
             unreachable!()
         };
         old.algebraic_type = TypeParameterName::intern("WrongTransportValue").algebraic_type();
-        *result = Proposition::ConditionIs(condition, true);
+        *result = Proposition::condition_is(condition, true);
         assert!(
             preservation.apply(|_| true).is_err(),
             "abstract types must agree"
@@ -899,7 +899,7 @@ mod tests {
         **left = (**left)
             .clone()
             .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(8_399_099))));
-        wrong_domain.result = Proposition::ConditionIs(condition, true);
+        wrong_domain.result = Proposition::condition_is(condition, true);
         assert!(
             wrong_domain
                 .apply(|_| true)
@@ -907,7 +907,7 @@ mod tests {
                 .contains("constructed result")
         );
         let result = &mut preservation.result;
-        *result = Proposition::ConditionIs(
+        *result = Proposition::condition_is(
             ConditionTerm::AddressEqual(
                 Box::new(Address::symbolic(Variable(8_399_000))),
                 Box::new(Address::symbolic(Variable(8_399_001))),

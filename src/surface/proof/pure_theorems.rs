@@ -602,7 +602,7 @@ pub(super) fn pure_induction_hypothesis(
         }
         body = Proposition::Implies(Box::new(requirement), Box::new(body));
     }
-    let smaller = Proposition::ConditionIs(
+    let smaller = Proposition::condition_is(
         if unsigned {
             ConditionTerm::uint64_less_than(value.clone(), MachineTerm::Variable(*current_variable))
         } else {
@@ -617,7 +617,7 @@ pub(super) fn pure_induction_hypothesis(
     );
     body = Proposition::Implies(Box::new(smaller), Box::new(body));
     if !unsigned {
-        let nonnegative = Proposition::ConditionIs(
+        let nonnegative = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
@@ -3686,7 +3686,7 @@ fn oriented_order_comparisons(proposition: &Proposition) -> Proposition {
     use crate::kernel::ConditionTerm as Condition;
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            let oriented = match condition {
+            let oriented = match condition.native_compat() {
                 Condition::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
@@ -3761,7 +3761,7 @@ fn oriented_order_comparisons(proposition: &Proposition) -> Proposition {
                 }
                 other => other.clone(),
             };
-            Proposition::ConditionIs(oriented, *value)
+            Proposition::condition_is(oriented, *value)
         }
         Proposition::Not(inner) => Proposition::Not(Box::new(oriented_order_comparisons(inner))),
         Proposition::And(left, right) => Proposition::And(
@@ -3788,7 +3788,7 @@ mod tests {
     fn axiom_comparison_states_each_order_as_less_than_or_less_equal() {
         use crate::kernel::ConditionTerm as Condition;
         let word = |index| Box::new(MachineTerm::Variable(crate::kernel::Variable(index)));
-        let fact = |condition| Proposition::ConditionIs(condition, true);
+        let fact = |condition| Proposition::condition_is(condition, true);
         let greater = Proposition::Implies(
             Box::new(fact(Condition::Compare {
                 format: MachineIntegerType::Int32,

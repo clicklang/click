@@ -499,7 +499,7 @@ fn retain_indexed_scalar_cell_value(
     if read != stored {
         path.facts.push(ExecutionPureFact {
             logical_read_equation: true,
-            ..ExecutionPureFact::certified(Proposition::ConditionIs(
+            ..ExecutionPureFact::certified(Proposition::condition_is(
                 ConditionTerm::equal(read, stored),
                 true,
             ))
@@ -755,7 +755,7 @@ fn evaluate_retained_memory_load_case(
         {
             assumptions
                 .exact_memory_load_condition_candidates(&pointer)
-                .map(|(condition, value)| Proposition::ConditionIs(condition.clone(), value))
+                .map(|(condition, value)| Proposition::condition_is(condition.clone(), value))
                 .collect::<Vec<_>>()
         }
     } else {
@@ -2619,10 +2619,11 @@ thread_local! {
 /// fact. Only the two literal roots are inspected.
 pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> {
     if let Proposition::ConditionIs(condition, value) = proposition
-        && let Some(decided) =
-            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+        && let Some(decided) = crate::kernel::machine_integer::comparison::closed_condition_value(
+            condition.native_compat(),
+        )
     {
-        return Some(Proposition::ConditionIs(
+        return Some(Proposition::condition_is(
             ConditionTerm::Constant(decided),
             *value,
         ));
@@ -2672,10 +2673,12 @@ fn decide_closed_conditions(proposition: &Proposition) -> Option<Proposition> {
     };
     match proposition {
         Proposition::ConditionIs(condition, value)
-            if !matches!(condition, ConditionTerm::Constant(_)) =>
+            if !matches!(condition.native_compat(), ConditionTerm::Constant(_)) =>
         {
-            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
-                .map(|decided| Proposition::ConditionIs(ConditionTerm::Constant(decided), *value))
+            crate::kernel::machine_integer::comparison::closed_condition_value(
+                condition.native_compat(),
+            )
+            .map(|decided| Proposition::condition_is(ConditionTerm::Constant(decided), *value))
         }
         Proposition::And(left, right) => pair(left, right).map(|(l, r)| Proposition::And(l, r)),
         Proposition::Or(left, right) => pair(left, right).map(|(l, r)| Proposition::Or(l, r)),
@@ -2767,7 +2770,7 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
             } else {
                 ConditionTerm::address_equal(left, right)
             };
-            resolved = Proposition::ConditionIs(condition, *value);
+            resolved = Proposition::condition_is(condition, *value);
         }
     }
     // A pointer value carries a provenance and bounds beside its address,
@@ -2796,7 +2799,7 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
                 }
                 condition => condition,
             };
-            resolved = Proposition::ConditionIs(condition, *value);
+            resolved = Proposition::condition_is(condition, *value);
         }
     }
     (&resolved != proposition).then_some(resolved)
@@ -3699,7 +3702,7 @@ pub(crate) fn check_canonical_at_creation(condition: &ConditionTerm, value: bool
     if !CANONICAL_AT_CREATION_VIOLATIONS.with(|count| count.get().is_some()) {
         return;
     }
-    let proposition = Proposition::ConditionIs(condition.clone(), value);
+    let proposition = Proposition::condition_is(condition.clone(), value);
     if is_load_variable_defining_fact(&proposition) || is_store_fact(condition, value) {
         return;
     }
@@ -3870,7 +3873,7 @@ pub(crate) fn canonical_condition_fact(fact: &Proposition) -> Proposition {
     let Proposition::ConditionIs(condition, value) = fact else {
         return fact.clone();
     };
-    Proposition::ConditionIs(canonical_condition(condition), *value)
+    Proposition::condition_is(canonical_condition(condition.native_compat()), *value)
 }
 
 /// Select unresolved read descriptors with an explicit worklist. Range-fold
@@ -4994,7 +4997,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
         return;
     };
     let defining_load = load.clone();
-    let defining_proposition = Proposition::ConditionIs(
+    let defining_proposition = Proposition::condition_is(
         ConditionTerm::Compare {
             // The raw-load form historically used a 32-bit equality with
             // a width-check exception. Registered read terms use the actual
@@ -5662,7 +5665,7 @@ mod tests {
             assert!(known.pointers_known_equal(read.address(), stored.address()));
             // Check entailment, not exact premise raising: the producer's
             // equation may name the endpoints in the opposite order.
-            known.contains_known(&Proposition::ConditionIs(
+            known.contains_known(&Proposition::condition_is(
                 ConditionTerm::pointer_equal(read.clone(), stored),
                 true,
             ))
@@ -5804,7 +5807,7 @@ mod tests {
         );
         let facts: ExecutionFacts = vec![fact.clone()].into();
         assert!(!facts.has_path_conditions());
-        let goal = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let goal = Proposition::condition_is(ConditionTerm::Constant(true), true);
         assert_eq!(wrap_path_context(goal.clone(), &facts, &[]), goal);
         let path = crate::kernel::spec::SpecPropositionPath {
             proposition: goal.clone(),
@@ -6558,7 +6561,7 @@ mod tests {
             let (variable, descriptor) = load_variable_for_term(&raw).unwrap();
             let mut facts = ExecutionFacts::new();
             record_load_variable_defining_fact(variable, descriptor.clone(), &mut facts);
-            let expected = Proposition::ConditionIs(
+            let expected = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
@@ -6610,7 +6613,7 @@ mod tests {
             (address.offset_by_bytes(4), LoadKind::Int32),
         ] {
             let other = load_variable_for_term(&raw(pointer, kind)).unwrap().0;
-            let changed = Proposition::ConditionIs(
+            let changed = Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::Variable(variable),
                     MachineTerm::Variable(other),
@@ -6630,7 +6633,7 @@ mod tests {
         crate::kernel::primitives::start_fresh_memory_arena();
         // Keeping the old handle still names the old descriptor. Replacing
         // it with an equal-content descriptor from this new arena does not.
-        let replacement = Proposition::ConditionIs(
+        let replacement = Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::Variable(variable),
                 MachineTerm::MemoryLoad(
@@ -6711,7 +6714,7 @@ mod tests {
         assert_eq!(produced.generated_load_source_events().len(), 1);
         // Exercise the raw descriptor form too: structural state equality
         // can hold across epochs, but it must not carry producer authority.
-        let fact = ExecutionPureFact::certified(Proposition::ConditionIs(
+        let fact = ExecutionPureFact::certified(Proposition::condition_is(
             ConditionTerm::equal(MachineTerm::Variable(variable), first_load),
             true,
         ))
@@ -6728,7 +6731,7 @@ mod tests {
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );
-        let replacement = Proposition::ConditionIs(
+        let replacement = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -7506,7 +7509,7 @@ mod tests {
             source,
         );
         let bare = PureFactContext::new();
-        let alias = Proposition::ConditionIs(
+        let alias = Proposition::condition_is(
             ConditionTerm::address_equal(argument.clone(), table.clone()),
             true,
         );
@@ -8488,7 +8491,7 @@ mod tests {
         let wrong = Address::symbolic(Variable(99_102));
         let empty = PureFactContext::new();
         let equality = |left: &Address, right: &Address| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::address_equal(left.clone(), right.clone()),
                 true,
             )
@@ -8607,7 +8610,7 @@ mod tests {
         record_load_access_width(&memory, &address, 8);
         let read = Address::loaded_value(&intern_memory(memory.clone()), &address);
         let equality = |left: &Address, right: &Address| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::AddressEqual(Box::new(left.clone()), Box::new(right.clone())),
                 true,
             )
@@ -8672,8 +8675,8 @@ mod tests {
         record_load_access_width(projected.memory(), &address, 8);
         let read = Address::symbolic(Variable(104_004));
         context.register_pointer_read(&read, projected.shared_memory(), &address);
-        let alias = Proposition::ConditionIs(ConditionTerm::address_equal(address, written), true);
-        let goal = Proposition::ConditionIs(ConditionTerm::address_equal(read, stored), true);
+        let alias = Proposition::condition_is(ConditionTerm::address_equal(address, written), true);
+        let goal = Proposition::condition_is(ConditionTerm::address_equal(read, stored), true);
         let facts = PureFactStore::from_ordered(std::slice::from_ref(&alias));
         assert!(normalize_using_conditions(&goal, std::slice::from_ref(&alias), &facts).is_ok());
         assert!(normalize_using_conditions(&goal, &[], &PureFactStore::from_ordered(&[])).is_err());
@@ -8796,7 +8799,7 @@ mod pointer_comparison_tests {
             Address::loaded_value(&memory, &slot),
             ProgramType::Int32Pointer,
         );
-        let equal = Proposition::ConditionIs(
+        let equal = Proposition::condition_is(
             ConditionTerm::PointerEqual(Box::new(read.clone()), Box::new(stored)),
             true,
         );
@@ -8807,7 +8810,7 @@ mod pointer_comparison_tests {
                 width: 8u32.into(),
             },
         ));
-        let unequal = Proposition::ConditionIs(
+        let unequal = Proposition::condition_is(
             ConditionTerm::PointerEqual(Box::new(read), Box::new(larger)),
             true,
         );
@@ -8836,7 +8839,7 @@ mod pointer_comparison_tests {
             start: target,
             width: 8u32.into(),
         }));
-        let unequal = Proposition::ConditionIs(
+        let unequal = Proposition::condition_is(
             ConditionTerm::PointerEqual(Box::new(read), Box::new(stored)),
             true,
         );
@@ -9025,7 +9028,7 @@ fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_ter
     };
     let original = read(memory.clone(), written.clone());
     let simple = read(memory.clone(), index.clone());
-    let equality = |left, right| Proposition::ConditionIs(ConditionTerm::equal(left, right), true);
+    let equality = |left, right| Proposition::condition_is(ConditionTerm::equal(left, right), true);
     let fact = equality(original.clone(), simple.clone());
     let comparison =
         arithmetic_comparison_form(&fact).expect("the addresses have an arithmetic identity");
@@ -9119,12 +9122,12 @@ mod structural_read_connective_tests {
             LoadKind::Int32,
         );
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, read).unwrap();
-        let leaf = Proposition::ConditionIs(
+        let leaf = Proposition::condition_is(
             ConditionTerm::integer_equal(observed, IntegerTerm::constant_i64(37)),
             true,
         );
         let expected = comparison_form(&leaf).expect("stored value comparison");
-        let guard = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let guard = Proposition::condition_is(ConditionTerm::Constant(true), true);
         let wrap = |body: Proposition| {
             Proposition::Implies(
                 Box::new(guard.clone()),

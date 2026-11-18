@@ -10,7 +10,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 fn refused_integer_equality_does_not_rebuild_connected_order_facts() {
     let left = IntegerTerm::var(Variable(791_001));
     let right = IntegerTerm::var(Variable(791_002));
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::IntegerEqual(left.clone().into(), right.into()),
         true,
     );
@@ -340,7 +340,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
         }
         // An equation between different reads is useful, even when its left
         // operand is a reserved load name. It must remain a candidate.
-        let alias = Proposition::ConditionIs(
+        let alias = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -358,7 +358,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
                 Box::new(MachineTerm::Variable(*variable)),
             )
         });
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

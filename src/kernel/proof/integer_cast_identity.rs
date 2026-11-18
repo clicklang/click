@@ -146,7 +146,7 @@ mod tests {
     use num_bigint::BigInt;
 
     fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::integer_less_equal(a, b), true)
+        Proposition::condition_is(ConditionTerm::integer_less_equal(a, b), true)
     }
     fn inputs(source: Ty, destination: Ty) -> (Vec<Proposition>, Proposition) {
         let value = MachineTerm::Variable(Variable(168_001));
@@ -159,7 +159,7 @@ mod tests {
                 le(IntegerTerm::constant(lo), original.clone()),
                 le(original.clone(), IntegerTerm::constant(hi)),
             ],
-            Proposition::ConditionIs(ConditionTerm::integer_equal(observed, original), true),
+            Proposition::condition_is(ConditionTerm::integer_equal(observed, original), true),
         )
     }
 
@@ -206,7 +206,7 @@ mod tests {
                 else {
                     unreachable!()
                 };
-                let reversed = Proposition::ConditionIs(
+                let reversed = Proposition::condition_is(
                     ConditionTerm::integer_equal(b.as_ref().clone(), a.as_ref().clone()),
                     true,
                 );
@@ -229,7 +229,7 @@ mod tests {
                 MachineTerm::machine_integer_cast(intermediate, destination, widened.clone());
             let original = IntegerTerm::from_machine(intermediate, widened).unwrap();
             let observed = IntegerTerm::from_machine(destination, narrowed).unwrap();
-            let goal = Proposition::ConditionIs(
+            let goal = Proposition::condition_is(
                 ConditionTerm::integer_equal(observed.clone(), original.clone()),
                 true,
             );
@@ -254,7 +254,7 @@ mod tests {
                 continue;
             }
             let wrong_goal =
-                Proposition::ConditionIs(ConditionTerm::integer_equal(observed, underlying), true);
+                Proposition::condition_is(ConditionTerm::integer_equal(observed, underlying), true);
             assert!(check_rule(vec![0, 1], &wrong_goal, &premises).is_err());
         }
 
@@ -264,7 +264,7 @@ mod tests {
         let widened = MachineTerm::machine_integer_cast(Ty::UInt8, Ty::UInt16, truncated);
         let original = IntegerTerm::from_machine(Ty::UInt32, variable).unwrap();
         let observed = IntegerTerm::from_machine(Ty::UInt16, widened).unwrap();
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::integer_equal(observed, original.clone()),
             true,
         );
@@ -289,7 +289,7 @@ mod tests {
                     Box::new(MachineTerm::constant(mask)),
                 );
                 let observed = IntegerTerm::from_machine(destination, narrowed).unwrap();
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::integer_equal(observed, original.clone()),
                     true,
                 )
@@ -371,7 +371,7 @@ mod tests {
                 premises[1].clone(),
             ],
             vec![
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::integer_less_equal(IntegerTerm::constant(lo), original.clone()),
                     false,
                 ),
@@ -425,7 +425,7 @@ mod tests {
                     value: Box::new(value),
                 },
             ));
-            let goal = Proposition::ConditionIs(
+            let goal = Proposition::condition_is(
                 ConditionTerm::integer_equal(cast, original.clone()),
                 true,
             );
@@ -435,7 +435,7 @@ mod tests {
         let Proposition::ConditionIs(condition, _) = goal else {
             unreachable!()
         };
-        let false_goal = Proposition::ConditionIs(condition, false);
+        let false_goal = Proposition::condition_is(condition, false);
         assert!(check_rule(vec![0, 1], &false_goal, &premises).is_err());
     }
 

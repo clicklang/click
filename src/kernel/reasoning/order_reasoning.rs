@@ -321,7 +321,7 @@ fn visit_antecedent_order(
     crate::instrumentation::record_deterministic_work(1);
     match proposition {
         Proposition::ConditionIs(condition, truth) => {
-            let Some(view) = comparison_view(condition, *truth) else {
+            let Some(view) = comparison_view(condition.native_compat(), *truth) else {
                 return;
             };
             if view.format != format {
@@ -525,9 +525,10 @@ pub(in crate::kernel) fn collect_order_facts_from_assumed_proposition(
 ) {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            let Some(view) =
-                crate::kernel::machine_integer::comparison::comparison_view(condition, *value)
-            else {
+            let Some(view) = crate::kernel::machine_integer::comparison::comparison_view(
+                condition.native_compat(),
+                *value,
+            ) else {
                 return;
             };
             if view.format != MachineIntegerType::Int32 {
@@ -1564,7 +1565,7 @@ mod shared_antecedent_tests {
         endpoint: i128,
         truth: bool,
     ) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::integer_less_equal(
                 observed(format, root),
                 IntegerTerm::constant(endpoint.into()),
@@ -1642,16 +1643,16 @@ mod retained_cycle_tests {
     }
 
     fn cycle(left: IntegerTerm, right: IntegerTerm, strict: bool, mirrored: bool) -> Proposition {
-        let first = Proposition::ConditionIs(
+        let first = Proposition::condition_is(
             ConditionTerm::integer_less_equal(left.clone(), right.clone()),
             true,
         );
         let second = if strict && mirrored {
-            Proposition::ConditionIs(ConditionTerm::integer_less_equal(left, right), false)
+            Proposition::condition_is(ConditionTerm::integer_less_equal(left, right), false)
         } else if strict {
-            Proposition::ConditionIs(ConditionTerm::integer_less_than(right, left), true)
+            Proposition::condition_is(ConditionTerm::integer_less_than(right, left), true)
         } else {
-            Proposition::ConditionIs(ConditionTerm::integer_less_equal(right, left), true)
+            Proposition::condition_is(ConditionTerm::integer_less_equal(right, left), true)
         };
         Proposition::And(Box::new(first), Box::new(second))
     }
@@ -1805,7 +1806,7 @@ mod retained_fold_endpoint_tests {
                 &empty
             ));
             assert_eq!(KernelTermExport::machine_export_count(), cold_exports);
-            let original = Proposition::ConditionIs(source.clone(), true);
+            let original = Proposition::condition_is(source.clone(), true);
             let known = empty.clone().assume_condition(source.clone(), true);
             let refuted = empty.clone().assume_condition(source, false);
             let exports = KernelTermExport::machine_export_count();

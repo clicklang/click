@@ -3075,7 +3075,7 @@ mod tests {
                 AddressOffset::scale_int32(MachineTerm::Variable(Variable(989_812)), 4),
             ),
         };
-        let equality = Proposition::ConditionIs(
+        let equality = Proposition::condition_is(
             ConditionTerm::address_equal(query.clone(), owner.offset_by_bytes(24)),
             true,
         );

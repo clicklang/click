@@ -3236,7 +3236,9 @@ fn reject_impossible_range_guards(
         {
             true
         }
-        Proposition::ConditionIs(condition, true) => assumptions.decide(condition) == Some(false),
+        Proposition::ConditionIs(condition, true) => {
+            assumptions.decide(condition.native_compat()) == Some(false)
+        }
         _ => false,
     }) {
         return Err(ClickError::new(

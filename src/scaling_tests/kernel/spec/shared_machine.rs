@@ -415,7 +415,7 @@ fn closed_order_lowering_ignores_unrelated_state_and_facts() {
             let mut facts = PureFactContext::new();
             for index in 0..unrelated {
                 state = state.with_local(format!("unused{index}"), int32(index));
-                facts = facts.assume_proposition(Proposition::ConditionIs(
+                facts = facts.assume_proposition(Proposition::condition_is(
                     ConditionTerm::signed_less_equal(
                         MachineTerm::Variable(Variable(999800 + index as u64)),
                         MachineTerm::constant(100),

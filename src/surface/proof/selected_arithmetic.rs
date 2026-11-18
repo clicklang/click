@@ -634,18 +634,18 @@ mod tests {
             };
             let equality = ConditionTerm::IntegerEqual(side(995450), side(995451));
             assert_eq!(
-                is_rewrite_equality(&Proposition::ConditionIs(equality.clone(), true)),
+                is_rewrite_equality(&Proposition::condition_is(equality.clone(), true)),
                 format.format().bits() <= 64
             );
-            assert!(!is_rewrite_equality(&Proposition::ConditionIs(
+            assert!(!is_rewrite_equality(&Proposition::condition_is(
                 equality, false
             )));
-            assert!(!is_rewrite_equality(&Proposition::ConditionIs(
+            assert!(!is_rewrite_equality(&Proposition::condition_is(
                 ConditionTerm::IntegerNotEqual(side(995450), side(995451)),
                 true
             )));
         }
-        assert!(!is_rewrite_equality(&Proposition::ConditionIs(
+        assert!(!is_rewrite_equality(&Proposition::condition_is(
             ConditionTerm::IntegerEqual(
                 IntegerTerm::Variable(Variable(995452)).into(),
                 IntegerTerm::Variable(Variable(995453)).into()
@@ -964,7 +964,7 @@ theorem black_color_is_black(color: Color) {
         let used = MachineTerm::Variable(Variable(920_001));
         let capacity = MachineTerm::Variable(Variable(920_002));
         let slots = MachineTerm::Variable(Variable(920_003));
-        let kernel = Proposition::ConditionIs(
+        let kernel = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

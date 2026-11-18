@@ -1448,7 +1448,7 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
                 _,
             )) = condition_source_0.condition_native() =>
         {
-            Some(Proposition::ConditionIs(
+            Some(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: *format,
                     relation: CompareRelation::Equal,
@@ -1462,7 +1462,7 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
             if let Some((ConditionTerm::IntegerEqual(left, right), _)) =
                 condition_source_0.condition_native() =>
         {
-            Some(Proposition::ConditionIs(
+            Some(Proposition::condition_is(
                 ConditionTerm::IntegerEqual(right.clone(), left.clone()),
                 true,
             ))
@@ -1478,7 +1478,7 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
                 _,
             )) = condition_source_0.condition_native() =>
         {
-            Some(Proposition::ConditionIs(
+            Some(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
@@ -1492,7 +1492,7 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
             if let Some((ConditionTerm::PointerEqual(left, right), _)) =
                 condition_source_0.condition_native() =>
         {
-            Some(Proposition::ConditionIs(
+            Some(Proposition::condition_is(
                 ConditionTerm::PointerEqual(right.clone(), left.clone()),
                 true,
             ))
@@ -1501,7 +1501,7 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
             if let Some((ConditionTerm::AddressEqual(left, right), _)) =
                 condition_source_0.condition_native() =>
         {
-            Some(Proposition::ConditionIs(
+            Some(Proposition::condition_is(
                 ConditionTerm::AddressEqual(right.clone(), left.clone()),
                 true,
             ))
@@ -1510,7 +1510,7 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
             if let Some((ConditionTerm::AddressOffsetEqual(left, right), _)) =
                 condition_source_0.condition_native() =>
         {
-            Some(Proposition::ConditionIs(
+            Some(Proposition::condition_is(
                 ConditionTerm::AddressOffsetEqual(right.clone(), left.clone()),
                 true,
             ))

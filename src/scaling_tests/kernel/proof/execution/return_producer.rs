@@ -7,7 +7,7 @@ fn return_producer_ignores_unrelated_history_and_facts() {
     for size in [16, 64, 256, 512] {
         let (mut core, _, mut facts) = bound_return_producer();
         for index in 0..size {
-            facts = facts.with_fact(Proposition::ConditionIs(
+            facts = facts.with_fact(Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::Variable(Variable(1000 + index)),
                     MachineTerm::constant(0),
@@ -27,7 +27,7 @@ fn return_producer_ignores_unrelated_history_and_facts() {
             core.execution_evidence[0].push(event.clone());
         }
         let ancestor = core.clone();
-        let delta = facts.with_fact(Proposition::ConditionIs(
+        let delta = facts.with_fact(Proposition::condition_is(
             ConditionTerm::Constant(false),
             false,
         ));

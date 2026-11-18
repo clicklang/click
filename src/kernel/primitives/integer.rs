@@ -2623,7 +2623,7 @@ mod tests {
             SharedPureApplication::intern("counted".to_string(), Vec::new()),
         ));
         let replacement = SharedIntegerTerm::from(IntegerTerm::constant_i64(7));
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(
                 SharedIntegerTerm::from(IntegerTerm::constant_i64(0)),
                 SharedIntegerTerm::from(IntegerTerm::Add(
@@ -3091,7 +3091,7 @@ mod tests {
             } else {
                 IntegerTerm::TruncatingQuotient(x.clone(), y.clone())
             };
-            let proposition = Proposition::ConditionIs(
+            let proposition = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(term.into(), IntegerTerm::constant_i64(99).into()),
                 true,
             );

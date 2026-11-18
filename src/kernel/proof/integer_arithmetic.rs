@@ -231,13 +231,13 @@ pub(crate) fn integer_disequality_claims(proposition: &Proposition) -> Vec<Integ
         _ => return Vec::new(),
     };
     let readings = if matches!(
-        condition,
+        condition.native_compat(),
         crate::kernel::integer_comparison_condition!(_, _)
     ) {
-        vec![Proposition::ConditionIs(condition.clone(), value)]
+        vec![Proposition::condition_is(condition.clone(), value)]
     } else {
         crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
-            &Proposition::ConditionIs(condition.clone(), value),
+            &Proposition::condition_is(condition.clone(), value),
         )
     };
     let mut context = IntegerAffineCollectionContext::default();
@@ -302,7 +302,7 @@ pub(crate) fn excluded_type_bound(premise: &Proposition) -> Option<Proposition> 
     } else {
         return None;
     };
-    Some(Proposition::ConditionIs(condition, true))
+    Some(Proposition::condition_is(condition, true))
 }
 
 pub(crate) fn machine_type_range_claim(
@@ -330,18 +330,18 @@ pub(crate) fn integer_affine_machine_values(
     // A native comparison observes the machine values its Integer reading
     // does, as `integer_affine_claim` reads it.
     if !matches!(
-        condition,
+        condition.native_compat(),
         crate::kernel::integer_comparison_condition!(_, _)
     ) && let Some(reading) =
         crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
-            &Proposition::ConditionIs(condition.clone(), value),
+            &Proposition::condition_is(condition.clone(), value),
         )
         .into_iter()
         .next()
     {
         return integer_affine_machine_values(&reading);
     }
-    let (left, right) = match condition {
+    let (left, right) = match condition.native_compat() {
         ConditionTerm::IntegerLessThan(left, right)
         | ConditionTerm::IntegerLessEqual(left, right)
         | ConditionTerm::IntegerGreaterThan(left, right)
@@ -435,7 +435,7 @@ fn integer_affine_claims_with_context(
     let readings = match proposition {
         Proposition::ConditionIs(condition, _)
             if !matches!(
-                condition,
+                condition.native_compat(),
                 crate::kernel::integer_comparison_condition!(_, _)
             ) =>
         {
@@ -469,7 +469,7 @@ pub(crate) fn written_integer_affine_claim(proposition: &Proposition) -> bool {
         Proposition::Not(inner) => match inner.as_ref() {
             Proposition::ConditionIs(condition, value) => {
                 !crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
-                    &Proposition::ConditionIs(condition.clone(), !value),
+                    &Proposition::condition_is(condition.clone(), !value),
                 )
                 .is_empty()
             }
@@ -504,18 +504,18 @@ fn integer_affine_claim_with_context(
     // comparison of their exact observations does, so it is that Integer
     // claim. One constant-size reading; nothing else is consulted.
     if !matches!(
-        condition,
+        condition.native_compat(),
         crate::kernel::integer_comparison_condition!(_, _) | ConditionTerm::Constant(_)
     ) && let Some(reading) =
         crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
-            &Proposition::ConditionIs(condition.clone(), value),
+            &Proposition::condition_is(condition.clone(), value),
         )
         .into_iter()
         .next()
     {
         return integer_affine_claim_with_context(&reading, context);
     }
-    if let ConditionTerm::Constant(actual) = condition {
+    if let ConditionTerm::Constant(actual) = condition.native_compat() {
         return Some(IntegerAffineClaim {
             relation: IntegerAffineRelation::Equal,
             terms: BTreeMap::new(),
@@ -526,7 +526,7 @@ fn integer_affine_claim_with_context(
             },
         });
     }
-    let (left, right, relation, strict) = match condition {
+    let (left, right, relation, strict) = match condition.native_compat() {
         ConditionTerm::IntegerLessThan(left, right) if value => {
             (left, right, IntegerAffineRelation::LessEqual, true)
         }
@@ -1026,7 +1026,7 @@ mod tests {
     }
 
     fn proposition(condition: ConditionTerm) -> Proposition {
-        Proposition::ConditionIs(condition, true)
+        Proposition::condition_is(condition, true)
     }
 
     fn claim(proposition: &Proposition) -> IntegerAffineClaim {
@@ -1174,19 +1174,19 @@ mod tests {
     fn negated_integer_disequality_keeps_its_affine_equality() {
         let left = crate::kernel::SharedIntegerTerm::from(variable(995480));
         let right = crate::kernel::SharedIntegerTerm::from(variable(995481));
-        let equality = Proposition::ConditionIs(
+        let equality = Proposition::condition_is(
             ConditionTerm::IntegerEqual(left.clone(), right.clone()),
             true,
         );
         let unequal = ConditionTerm::IntegerNotEqual(left, right);
         let expected = integer_affine_claim(&equality).unwrap();
         for premise in [
-            Proposition::ConditionIs(unequal.clone(), false),
-            Proposition::Not(Box::new(Proposition::ConditionIs(unequal.clone(), true))),
+            Proposition::condition_is(unequal.clone(), false),
+            Proposition::Not(Box::new(Proposition::condition_is(unequal.clone(), true))),
         ] {
             assert_eq!(integer_affine_claim(&premise), Some(expected.clone()));
         }
-        assert!(integer_affine_claim(&Proposition::ConditionIs(unequal, true)).is_none());
+        assert!(integer_affine_claim(&Proposition::condition_is(unequal, true)).is_none());
     }
 
     #[test]
@@ -1218,7 +1218,7 @@ mod tests {
         let value =
             |ty| SharedMachineIntegerTerm::intern(ty, MachineTerm::Variable(Variable(97301)));
         let differs = |ty, constant: i64| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::integer_equal(
                     IntegerTerm::Machine(value(ty)),
                     IntegerTerm::constant_i64(constant),
@@ -1259,7 +1259,7 @@ mod tests {
                 sides.swap(0, 1);
             }
             let [left, right] = sides;
-            let premise = Proposition::ConditionIs(
+            let premise = Proposition::condition_is(
                 ConditionTerm::IntegerNotEqual(left.into(), right.into()),
                 true,
             );
@@ -1272,7 +1272,7 @@ mod tests {
             );
         }
         // An equality is no disequality.
-        let equal = Proposition::ConditionIs(
+        let equal = Proposition::condition_is(
             ConditionTerm::integer_equal(
                 observed(MachineIntegerType::UInt64),
                 IntegerTerm::constant_i64(0),

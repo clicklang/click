@@ -37,8 +37,8 @@ fn guards(ty: MachineIntegerType) -> (ConditionTerm, ConditionTerm, ConditionTer
     let min = ConditionTerm::integer_equal(a, IntegerTerm::constant(i128::MIN.into()));
     let minus_one = ConditionTerm::integer_equal(b, IntegerTerm::constant_i64(-1));
     let safe = Proposition::Or(
-        Box::new(Proposition::ConditionIs(min.clone(), false)),
-        Box::new(Proposition::ConditionIs(minus_one.clone(), false)),
+        Box::new(Proposition::condition_is(min.clone(), false)),
+        Box::new(Proposition::condition_is(minus_one.clone(), false)),
     );
     (zero, min, minus_one, safe)
 }
@@ -182,7 +182,7 @@ fn wide_division_symbolic_paths_keep_native_guards_and_certified_observation() {
                 normal
                     .facts
                     .iter()
-                    .any(|f| f.proposition() == &Proposition::ConditionIs(zero.clone(), false))
+                    .any(|f| f.proposition() == &Proposition::condition_is(zero.clone(), false))
             );
             if ty == MachineIntegerType::Int128 {
                 assert!(normal.facts.iter().any(|f| f.proposition() == &safe));
@@ -207,7 +207,7 @@ fn wide_division_symbolic_paths_keep_native_guards_and_certified_observation() {
                 (false, IntegerTerm::TruncatingQuotient(_, _))
                     | (true, IntegerTerm::TruncatingRemainder(_, _))
             ));
-            let equation = Proposition::ConditionIs(
+            let equation = Proposition::condition_is(
                 ConditionTerm::integer_equal(
                     IntegerTerm::from_machine(ty, term.clone()).unwrap(),
                     result.as_ref().clone(),
@@ -291,7 +291,7 @@ fn wide_division_minimum_dividend_still_checks_minus_one_for_remainder() {
             normal
                 .facts
                 .iter()
-                .any(|f| f.proposition() == &Proposition::ConditionIs(minus_one.clone(), false))
+                .any(|f| f.proposition() == &Proposition::condition_is(minus_one.clone(), false))
         );
         assert!(output.iter().any(|p| p.outcome
             == ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow)));
@@ -386,11 +386,11 @@ fn inequality_guards(ty: MachineIntegerType) -> (ConditionTerm, Proposition) {
     let b = IntegerTerm::from_machine(ty, MachineTerm::Variable(RIGHT)).unwrap();
     let nonzero = ConditionTerm::integer_not_equal(b.clone(), IntegerTerm::constant_i64(0));
     let safe = Proposition::Or(
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             ConditionTerm::integer_not_equal(a, IntegerTerm::constant(i128::MIN.into())),
             true,
         )),
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             ConditionTerm::integer_not_equal(b, IntegerTerm::constant_i64(-1)),
             true,
         )),
@@ -432,7 +432,7 @@ fn wide_division_accepts_inequality_guards_without_erasing_native_failures() {
                     let Proposition::ConditionIs(condition, _) = guard else {
                         unreachable!()
                     };
-                    context.assume_condition(condition, false)
+                    context.assume_condition(condition.native_compat().clone(), false)
                 });
                 assert_eq!(
                     paths(ty, remainder, &context)[0].outcome,
@@ -564,11 +564,11 @@ fn promoted_division_safe_guard(ty: MachineIntegerType) -> Proposition {
     let dividend =
         IntegerTerm::from_machine(MachineIntegerType::Int128, MachineTerm::Variable(LEFT)).unwrap();
     Proposition::Or(
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             ConditionTerm::integer_not_equal(dividend, IntegerTerm::constant(i128::MIN.into())),
             true,
         )),
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             native_divisor_equal(ty, -1),
             false,
         )),

@@ -26,10 +26,10 @@ fn packed(value: &MachineTerm, parent: &Address) -> MachineTerm {
     }
 }
 fn fact(a: MachineTerm, b: MachineTerm) -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::uint64_equal(a, b), true)
+    Proposition::condition_is(ConditionTerm::uint64_equal(a, b), true)
 }
 fn alias(a: &Address, b: &Address) -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::address_equal(a.clone(), b.clone()), true)
+    Proposition::condition_is(ConditionTerm::address_equal(a.clone(), b.clone()), true)
 }
 fn proved(context: &PureFactContext, goal: &Proposition) -> bool {
     crate::kernel::reasoning::required_obligation_is_exactly_discharged(context, goal)
@@ -47,7 +47,7 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
     let pointer = Address::symbolic(Variable(960_002));
     let decoded = Address::from_integer_address(bits.clone());
     let equation = fact(bits.clone(), raw_address(&pointer));
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::uint64_equal(raw_address(&decoded), raw_address(&pointer)),
         true,
     );
@@ -72,20 +72,20 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
     // A cast that already carries the exact original domain can compare its
     // numeric coordinates. A bare address name cannot manufacture that domain.
     let original_domain = right.clone().with_address(decoded.clone());
-    assert!(child.contains_known(&Proposition::ConditionIs(
+    assert!(child.contains_known(&Proposition::condition_is(
         ConditionTerm::PointerEqual(Box::new(original_domain.clone()), Box::new(right.clone())),
         true,
     )));
-    assert!(child.contains_known(&Proposition::ConditionIs(
+    assert!(child.contains_known(&Proposition::condition_is(
         ConditionTerm::pointer_equal(original_domain, right.clone()),
         true,
     )));
-    assert!(!child.contains_known(&Proposition::ConditionIs(
+    assert!(!child.contains_known(&Proposition::condition_is(
         ConditionTerm::address_equal(decoded, pointer),
         true,
     )));
     assert!(!child.pointer_provenance_match(&left, &right));
-    assert!(!child.contains_known(&Proposition::ConditionIs(
+    assert!(!child.contains_known(&Proposition::condition_is(
         ConditionTerm::pointer_equal(left, right),
         true,
     )));
@@ -144,7 +144,7 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
     let p = Pointer::new(p, ProgramType::Int32Pointer);
     let q = Pointer::new(q, ProgramType::Int32Pointer);
     assert!(!context.pointer_provenance_match(&p, &q));
-    assert!(!context.contains_known(&Proposition::ConditionIs(
+    assert!(!context.contains_known(&Proposition::condition_is(
         ConditionTerm::pointer_equal(p, q),
         true,
     )));
@@ -447,7 +447,7 @@ fn machine_observation_round_trip_keeps_equality_scope_and_format() {
         };
         let goal =
             ConditionTerm::machine_compare(format, CompareRelation::Equal, converted, y.clone());
-        let edge = Proposition::ConditionIs(
+        let edge = Proposition::condition_is(
             ConditionTerm::machine_compare(format, CompareRelation::Equal, x, y),
             true,
         );

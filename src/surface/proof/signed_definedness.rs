@@ -62,7 +62,7 @@ fn spell_signed_bound(
         return None;
     };
     use crate::kernel::machine_integer::comparison::structural_comparison_view;
-    let view = structural_comparison_view(condition)?;
+    let view = structural_comparison_view(condition.native_compat())?;
     let format = match width {
         SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
         SignedDefinedWidth::Int64 => MachineIntegerType::Int64,

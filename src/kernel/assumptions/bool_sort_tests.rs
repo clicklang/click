@@ -79,12 +79,12 @@ fn opening_a_conditional_is_its_case_split() {
         split,
         Some(Proposition::Or(
             Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(c.clone(), true)),
-                Box::new(Proposition::ConditionIs(a.clone(), false)),
+                Box::new(Proposition::condition_is(c.clone(), true)),
+                Box::new(Proposition::condition_is(a.clone(), false)),
             )),
             Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(c, false)),
-                Box::new(Proposition::ConditionIs(b, false)),
+                Box::new(Proposition::condition_is(c, false)),
+                Box::new(Proposition::condition_is(b, false)),
             )),
         ))
     );

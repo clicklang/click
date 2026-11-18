@@ -1809,14 +1809,14 @@ impl<'a> Proof<'a> {
             else {
                 return Err(self.step_error("the empty fold law must have a range guard"));
             };
-            match self.facts().assumptions().decide(condition) {
+            match self.facts().assumptions().decide(condition.native_compat()) {
                 Some(value) => value == *expected,
                 None => {
                     // A written predecessor guard also selects the append
                     // case. Inspect only that guard, without instantiating
                     // a body whose range case is still unknown.
                     let guard = crate::kernel::integer_range_fold_predecessor_guard(index)
-                        .map(|condition| Proposition::ConditionIs(condition, true));
+                        .map(|condition| Proposition::condition_is(condition, true));
                     if !guard.as_ref().is_some_and(|guard| {
                         self.facts().listed_premise_available(guard, &[], false)
                     }) {
@@ -2133,7 +2133,7 @@ impl<'a> Proof<'a> {
             // premise-free checked Integer certificate proves the same truth;
             // this changes presentation, never the kernel obligation.
             if lowered
-                == Some(Proposition::ConditionIs(
+                == Some(Proposition::condition_is(
                     ConditionTerm::Constant(true),
                     true,
                 ))

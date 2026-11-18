@@ -253,7 +253,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Native unsigned comparisons use their own observation, rather than
         // relabelling their bits int32. Transport a written cast explicitly.
         if matches!(goal, Proposition::ConditionIs(condition, _) if
-            crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+            crate::kernel::machine_integer::comparison::structural_comparison_view(condition.native_compat())
                 .is_some_and(|view| view.format == MachineIntegerType::UInt32))
             && let Some(surface @ ClickProposition::Comparison { left, right, .. }) =
                 input.surface_goal()

@@ -4309,7 +4309,7 @@ fn states_terms_differ(stated: &[&Proposition], left: &MachineTerm, right: &Mach
             return false;
         };
         matches!(
-            condition.as_bitvector_comparison(),
+            condition.native_compat().as_bitvector_comparison(),
             Some((
                 crate::kernel::BitvectorComparisonOp::Compare(
                     _,
@@ -8697,7 +8697,7 @@ mod assembly_fact_tests {
                 "zero".into(),
                 vec![pointer.clone()],
             )),
-            fact: Box::new(Proposition::ConditionIs(
+            fact: Box::new(Proposition::condition_is(
                 ConditionTerm::Constant(false),
                 true,
             )),

@@ -164,7 +164,7 @@ impl super::ProofSearch<PureFactContext> {
             return None;
         };
         let view = crate::kernel::assumptions::order_view_at_format(
-            condition,
+            condition.native_compat(),
             *truth,
             MachineIntegerType::Int32,
         )?;
@@ -214,13 +214,13 @@ impl super::ProofSearch<PureFactContext> {
 
         let direct = match proposition {
             Proposition::ConditionIs(condition, value) => {
-                context.decide(condition) == Some(*value)
+                context.decide(condition.native_compat()) == Some(*value)
                     // The memory DAG answers first where it can: a bounded
                     // walk over named derivation edges, ahead of the deep
                     // canonicalization below.
                     || *value
                         && matches!(
-                            condition,
+                            condition.native_compat(),
                             ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }
                                 if atomic_loads_equal_along_memory_derivations(
                                     left, right, context,
@@ -233,12 +233,12 @@ impl super::ProofSearch<PureFactContext> {
                     // input-linear worklists.
                     || *value
                         && matches!(
-                            condition,
+                            condition.native_compat(),
                             ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }
                                 if canonicalize_atomic_loads(left)
                                         == canonicalize_atomic_loads(right)
                         )
-                    || context.proves_condition_from_facts(SearchPermission::new(), condition, *value)
+                    || context.proves_condition_from_facts(SearchPermission::new(), condition.native_compat(), *value)
             }
             Proposition::And(left, right) => {
                 crate::kernel::search::ProofSearch::proves(context, left)
@@ -494,7 +494,8 @@ impl super::ProofSearch<PureFactContext> {
             }
         }
         if let Proposition::ConditionIs(condition, _) = proposition
-            && let Some(selected) = context.widened_unsigned_sum_bound_premises(condition)
+            && let Some(selected) =
+                context.widened_unsigned_sum_bound_premises(condition.native_compat())
         {
             let candidate = selected
                 .into_iter()
@@ -562,7 +563,7 @@ impl super::ProofSearch<PureFactContext> {
             }
             condition_sources = selected
                 .into_iter()
-                .map(|(condition, value)| Proposition::ConditionIs(condition, value))
+                .map(|(condition, value)| Proposition::condition_is(condition, value))
                 .collect();
         }
 
@@ -807,7 +808,7 @@ impl super::ProofSearch<PureFactContext> {
                         .iter()
                         .filter_map(|fact| match fact {
                             Proposition::ConditionIs(condition, value) => {
-                                Some((condition.clone(), *value))
+                                Some((condition.native_compat().clone(), *value))
                             }
                             _ => None,
                         })
@@ -1613,7 +1614,7 @@ impl super::ProofSearch<PureFactContext> {
         crate::kernel::search::record_discovery("proves_not");
         match proposition {
             Proposition::ConditionIs(condition, value) => {
-                context.decide(condition) == Some(!*value)
+                context.decide(condition.native_compat()) == Some(!*value)
             }
             Proposition::Not(body) => crate::kernel::search::ProofSearch::proves(context, body),
             _ => {
@@ -1632,7 +1633,7 @@ mod monotone_forall_tests {
         let outer = Variable(100);
         let other = Variable(101);
         let equality = |left, right| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -1719,7 +1720,7 @@ fn connected_condition_premises(
             let exact_goal_fact = matches!(
                 proposition,
                 Proposition::ConditionIs(goal, expected)
-                    if goal == condition && *expected == value
+                    if goal.native_compat() == condition && *expected == value
             );
             if exclude_exact_goal && exact_goal_fact || selected.contains_key(condition) {
                 continue;
@@ -1739,7 +1740,7 @@ fn connected_condition_premises(
         && let Proposition::ConditionIs(condition, value) = proposition
         && context.contains_assumed_exact(proposition)
     {
-        selected.insert(condition.clone(), *value);
+        selected.insert((condition.clone()).native_compat().clone(), *value);
     }
     Some(selected.into_iter().collect())
 }
@@ -1751,7 +1752,7 @@ mod condition_premise_tests {
     #[test]
     fn indexed_constant_selection_checks_only_its_cited_premises() {
         let equal = |left, right| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -1857,7 +1858,7 @@ mod condition_premise_tests {
             left: Box::new(term(size as u64)),
             right: Box::new(MachineTerm::constant(1000)),
         };
-        (context, Proposition::ConditionIs(goal, true))
+        (context, Proposition::condition_is(goal, true))
     }
 
     // Keep the former planner as a test oracle, counting whole-context
@@ -1940,7 +1941,7 @@ mod condition_premise_tests {
             .assume_condition(order(40, 41), true)
             .assume_condition(order(70, 71), true)
             .assume_condition(order(90, 91), true);
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -1976,7 +1977,7 @@ mod condition_premise_tests {
             connected_condition_premises(&stated, &goal, true).unwrap(),
             selected
         );
-        let constant = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let constant = Proposition::condition_is(ConditionTerm::Constant(true), true);
         let context = PureFactContext::new().assume_proposition(constant.clone());
         assert_eq!(
             connected_condition_premises(&context, &constant, false)
@@ -2035,7 +2036,7 @@ pub(crate) fn connected_equalities(
         connected_atomic_premises(context, goal, &[], true, true, true)?;
     let mut equalities = Vec::new();
     for (condition, value) in conditions {
-        let fact = Proposition::ConditionIs(condition, value);
+        let fact = Proposition::condition_is(condition, value);
         // A registered read's defining equation is kernel metadata, not a
         // source equality. It cannot supply a new rewrite or source spelling.
         if crate::kernel::is_verified_load_variable_defining_fact(&fact) {
@@ -2096,7 +2097,7 @@ pub(crate) fn arithmetic_connected_premises(
     Some(
         conditions
             .into_iter()
-            .map(|(condition, value)| Proposition::ConditionIs(condition, value))
+            .map(|(condition, value)| Proposition::condition_is(condition, value))
             .filter(|fact| !crate::kernel::is_verified_load_variable_defining_fact(fact))
             .collect(),
     )
@@ -2184,7 +2185,9 @@ fn connected_atomic_premises(
     let mut propositions = Vec::new();
     for fact in selected {
         match fact {
-            Proposition::ConditionIs(condition, value) => conditions.push((condition, value)),
+            Proposition::ConditionIs(condition, value) => {
+                conditions.push((condition.native_compat().clone(), value))
+            }
             other => propositions.push(other),
         }
     }
@@ -2256,7 +2259,7 @@ fn native_view_prefix_premises(
     if base != source_base {
         return None;
     }
-    let coverage = Proposition::ConditionIs(
+    let coverage = Proposition::condition_is(
         ConditionTerm::uint64_less_equal(
             bytes.native_compat().clone(),
             source_bytes.native_compat().clone(),
@@ -2421,7 +2424,7 @@ fn reduce_solve_atomic_premises(
             }
             match premise {
                 Proposition::ConditionIs(condition, value) => {
-                    conditions.push((condition.clone(), *value));
+                    conditions.push((condition.native_compat().clone(), *value));
                 }
                 _ => propositions.push(premise.clone()),
             }
@@ -2529,7 +2532,7 @@ mod atomic_reduction_tests {
             left: Box::new(left),
             right: Box::new(right),
         };
-        let goal = Proposition::ConditionIs(equal(left.clone(), right.clone()), true);
+        let goal = Proposition::condition_is(equal(left.clone(), right.clone()), true);
         let mut context = PureFactContext::new()
             .assume_condition(equal(left.clone(), middle.clone()), true)
             .assume_condition(equal(middle, right), true);

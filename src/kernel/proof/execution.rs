@@ -1692,7 +1692,7 @@ impl CheckedResourceRewrite {
         }
         let mut evaluation_assumptions = assumptions.clone();
         for imported in imported_counts.into_iter().flatten() {
-            let bound = Proposition::ConditionIs(
+            let bound = Proposition::condition_is(
                 crate::kernel::ConditionTerm::signed_greater_equal(
                     imported.entry_count,
                     imported
@@ -2876,7 +2876,7 @@ impl CheckedResourceObservation {
             let quantity = observed
                 .owned_quantity_term()
                 .ok_or("count observation requires owned member quantity")?;
-            let nonnegative = Proposition::ConditionIs(
+            let nonnegative = Proposition::condition_is(
                 crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
                     MachineIntegerType::Int32,
                     CompareRelation::LessEqual,
@@ -3540,7 +3540,7 @@ fn matched_value_premise_instances(
         crate::instrumentation::record_deterministic_work(1);
         let premise = match fact {
             crate::kernel::AtomicConnectedFact::Condition(condition, value) => {
-                Proposition::ConditionIs(condition.clone(), value)
+                Proposition::condition_is(condition.clone(), value)
             }
             crate::kernel::AtomicConnectedFact::Proposition(proposition) => proposition.clone(),
         };
@@ -6782,7 +6782,7 @@ pub(crate) fn checked_branch_fact_is_available(facts: &PureFactStore, fact: &Pro
         // shared comparison spellings use the same retained source; this
         // does not derive a weaker bound or search for a missing premise.
         || matches!(fact, Proposition::ConditionIs(condition, truth)
-            if facts.assumptions().selected_comparison_source(condition, *truth).is_some())
+            if facts.assumptions().selected_comparison_source(condition.native_compat(), *truth).is_some())
         || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare { .. }, _)) if crate::kernel::proposition_holds_without_facts(fact)))
         || matches!(fact, Proposition::And(left, right)
             if checked_branch_fact_is_available(facts, left)

@@ -830,7 +830,8 @@ impl SelectedFacts<'_> {
         match proposition {
             Proposition::ConditionIs(fact, fact_value) => {
                 *fact_value == value
-                    && self.condition_matches_after_memory_resolution(fact, condition)
+                    && self
+                        .condition_matches_after_memory_resolution(fact.native_compat(), condition)
             }
             Proposition::And(left, right) => {
                 self.selected_proposition_proves_condition(left, condition, value)
@@ -862,14 +863,16 @@ impl SelectedFacts<'_> {
         }
         match proposition {
             Proposition::ConditionIs(condition, value) => {
-                self.decide_selected_condition_without_propositions(condition) == Some(*value)
+                self.decide_selected_condition_without_propositions(condition.native_compat())
+                    == Some(*value)
             }
             Proposition::And(left, right) => {
                 self.proves_selected_proposition(left) && self.proves_selected_proposition(right)
             }
             Proposition::Not(body) => match body.as_ref() {
                 Proposition::ConditionIs(condition, value) => {
-                    self.decide_selected_condition_without_propositions(condition) == Some(!*value)
+                    self.decide_selected_condition_without_propositions(condition.native_compat())
+                        == Some(!*value)
                 }
                 _ => self.prop_facts.contains(proposition),
             },
@@ -1126,8 +1129,8 @@ mod retained_order_tests {
             MachineTerm::constant(7),
         );
         let source = Proposition::Implies(
-            Box::new(Proposition::ConditionIs(guard.clone(), true)),
-            Box::new(Proposition::ConditionIs(bound(&a, &b, true), true)),
+            Box::new(Proposition::condition_is(guard.clone(), true)),
+            Box::new(Proposition::condition_is(bound(&a, &b, true), true)),
         );
         let empty = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
@@ -1152,14 +1155,14 @@ mod retained_order_tests {
         let binder = KernelTerm::variable(KernelType::Program(ty.program_type()), k);
         let body = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [a.clone(), binder]);
         let guard = Proposition::And(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::signed_less_equal(
                     MachineTerm::constant(0),
                     MachineTerm::Variable(k),
                 ),
                 true,
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::signed_less_than(MachineTerm::Variable(k), MachineTerm::constant(2)),
                 true,
             )),
@@ -1170,7 +1173,7 @@ mod retained_order_tests {
             sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Implies(
                 Box::new(guard),
-                Box::new(Proposition::ConditionIs(bound(&body, &b, false), true)),
+                Box::new(Proposition::condition_is(bound(&body, &b, false), true)),
             )),
         };
         let context = PureFactContext::new();

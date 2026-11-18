@@ -592,7 +592,11 @@ fn collect_proposition_bitvector_variables_one(
             collect_term_bitvector_variables(right, variables);
         }
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_bitvector_variables(condition, variables);
+            retained_folds::collect_boolean_variables(
+                condition.operand_view(),
+                retained_folds::FoldVariableRead::ExpressionFree,
+                variables,
+            );
         }
         Proposition::Predicate { arguments, .. } => {
             for argument in arguments {
@@ -3514,11 +3518,28 @@ pub(in crate::kernel) fn collect_proposition_capture_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     let mut integer_seen = SeenTerms::default();
+    let mut condition_summaries = Default::default();
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
             Proposition::ConditionIs(condition, _) => {
-                collect_condition_capture_variables(condition, variables, &mut integer_seen);
+                if let Some(root) = condition.root() {
+                    variables.extend(
+                        retained_folds::common_variables(
+                            root,
+                            retained_folds::FoldVariableRead::MachineCapture,
+                            &mut condition_summaries,
+                        )
+                        .iter()
+                        .copied(),
+                    );
+                } else {
+                    collect_condition_capture_variables(
+                        condition.native_compat(),
+                        variables,
+                        &mut integer_seen,
+                    );
+                }
             }
             Proposition::And(left, right)
             | Proposition::Or(left, right)

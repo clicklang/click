@@ -19,7 +19,7 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
         crate::kernel::AddressObjectClass::NONE,
     );
     let packed = |word: &MachineTerm| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
@@ -39,7 +39,7 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
             true,
         )
     };
-    let alias = Proposition::ConditionIs(
+    let alias = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
@@ -73,7 +73,7 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
     for count in [4_u64, 16, 64, 256] {
         let mut padded = context.clone();
         for index in 0..count {
-            padded = padded.assume_proposition(Proposition::ConditionIs(
+            padded = padded.assume_proposition(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
@@ -112,7 +112,7 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
         crate::kernel::AddressObjectClass::NONE,
     );
     let packed = |word: &MachineTerm| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
@@ -135,7 +135,7 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
     let narrow = PureFactContext::new()
         .defer_non_exact_condition_reasoning()
         .assume_proposition(packed(&word))
-        .assume_proposition(Proposition::ConditionIs(
+        .assume_proposition(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -178,7 +178,7 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
         &needed,
     ));
     let parent_fact = |pointer: &Address, value: u32| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

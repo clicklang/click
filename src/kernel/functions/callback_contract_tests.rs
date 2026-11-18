@@ -1763,7 +1763,7 @@ fn empty_requirement_lowering_retains_selected_call_source() {
 
 #[test]
 fn source_load_state_collection_is_iterative_and_bounded() {
-    let leaf = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    let leaf = Proposition::condition_is(ConditionTerm::Constant(true), true);
     // The condition node is visited in addition to the proposition nodes.
     let within_limit = (0..4094).fold(leaf.clone(), |body, _| Proposition::Not(Box::new(body)));
     assert!(

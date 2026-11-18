@@ -76,7 +76,7 @@ pub(super) fn initialized_input_range_fact(
         ),
     };
     let condition = |relation, left, right| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::machine_compare(format, relation, left, right),
             true,
         )

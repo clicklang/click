@@ -2149,7 +2149,7 @@ fn composite_exposure_finds_held_cells_by_structure_near_linearly() {
             }));
             let mut assumptions = PureFactContext::new();
             for index in 0..size - 1 {
-                assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
+                assumptions = assumptions.assume_proposition(Proposition::condition_is(
                     ConditionTerm::signed_less_than(
                         MachineTerm::Variable(Variable(900_000 + index)),
                         MachineTerm::Variable(Variable(900_000 + index + 1)),
@@ -3099,7 +3099,7 @@ fn known_resource_constructor_skips_predicate_refutation_work() {
     for size in [4, 16, 64, 256] {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
-            assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
+            assumptions = assumptions.assume_proposition(Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::ClickFunctionApplication {
                         name: format!("predicate{index}"),
@@ -3201,7 +3201,7 @@ fn known_exclusion_skips_refutation_of_unpublishable_arms() {
     for size in [4, 16, 64, 256] {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
-            assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
+            assumptions = assumptions.assume_proposition(Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::ClickFunctionApplication {
                         name: format!("predicate{index}"),

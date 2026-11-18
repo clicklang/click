@@ -149,7 +149,7 @@ fn checked_authority_events_reject_forged_deltas() {
         )
         .is_err()
     );
-    let forged_facts = facts.clone().with_fact(Proposition::ConditionIs(
+    let forged_facts = facts.clone().with_fact(Proposition::condition_is(
         crate::kernel::ConditionTerm::Constant(true),
         true,
     ));
@@ -608,7 +608,7 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
         &function, &one, &facts, &member, false, &death, &zero, &exposed,
     )
     .unwrap();
-    let forged_facts = exposed.with_fact(Proposition::ConditionIs(
+    let forged_facts = exposed.with_fact(Proposition::condition_is(
         crate::kernel::ConditionTerm::Constant(false),
         true,
     ));

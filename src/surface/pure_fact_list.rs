@@ -106,7 +106,7 @@ impl PureFactList {
             let negated = Proposition::Not(Box::new(leaf.clone()));
             let opposite = match leaf {
                 Proposition::ConditionIs(condition, value) => {
-                    Some(Proposition::ConditionIs(condition.clone(), !value))
+                    Some(Proposition::condition_is(condition.clone(), !value))
                 }
                 Proposition::Not(body)
                     if !matches!(body.as_ref(), Proposition::Not(_) | Proposition::And(_, _)) =>
@@ -188,9 +188,9 @@ mod tests {
 
     #[test]
     fn shared_statement_facts_preserve_scope_order_and_context() {
-        let original = Proposition::ConditionIs(condition(400), true);
-        let left = Proposition::ConditionIs(condition(401), true);
-        let right = Proposition::ConditionIs(condition(402), true);
+        let original = Proposition::condition_is(condition(400), true);
+        let left = Proposition::condition_is(condition(401), true);
+        let right = Proposition::condition_is(condition(402), true);
         let pair = Proposition::And(Box::new(left.clone()), Box::new(right.clone()));
         let root = PureFactStore::from_statement_facts(std::slice::from_ref(&original), None, None);
         let branch = root.with_kernel_checked_fact(pair.clone());
@@ -219,8 +219,8 @@ mod tests {
 
     #[test]
     fn statement_store_retains_producer_context_and_extends_without_surface_indexes() {
-        let original = Proposition::ConditionIs(condition(410), true);
-        let added = Proposition::ConditionIs(condition(411), true);
+        let original = Proposition::condition_is(condition(410), true);
+        let added = Proposition::condition_is(condition(411), true);
         let context = PureFactContext::new().assume_proposition(original.clone());
         let mut view = PureFactList::for_statement(
             vec![original.clone()],
@@ -240,8 +240,8 @@ mod tests {
 
     #[test]
     fn indexed_initial_facts_retain_their_cached_context() {
-        let original = Proposition::ConditionIs(condition(10), true);
-        let added = Proposition::ConditionIs(condition(11), true);
+        let original = Proposition::condition_is(condition(10), true);
+        let added = Proposition::condition_is(condition(11), true);
         let mut list = PureFactList::from(vec![original.clone()]);
         let cached = list.context();
         let indexed = list.fact_store();
@@ -278,7 +278,7 @@ mod tests {
         let mut leaves = Vec::new();
         for variable in [1, 2] {
             for value in [true, false] {
-                let fact = Proposition::ConditionIs(condition(variable), value);
+                let fact = Proposition::condition_is(condition(variable), value);
                 leaves.push(fact.clone());
                 leaves.push(not(fact.clone()));
                 leaves.push(not(not(fact)));
@@ -322,13 +322,13 @@ mod tests {
 
     #[test]
     fn propagated_double_negation_has_an_exact_conflict_without_explosion() {
-        let positive = Proposition::ConditionIs(condition(1), true);
-        let negative = Proposition::ConditionIs(condition(1), false);
+        let positive = Proposition::condition_is(condition(1), true);
+        let negative = Proposition::condition_is(condition(1), false);
         let source = Proposition::Not(Box::new(Proposition::Not(Box::new(negative.clone()))));
         let list = PureFactList::from(vec![source]);
         assert!(list.contains(&negative));
         assert!(list.directly_conflicts_with(&positive));
-        assert!(!list.directly_conflicts_with(&Proposition::ConditionIs(condition(2), true)));
+        assert!(!list.directly_conflicts_with(&Proposition::condition_is(condition(2), true)));
     }
 
     #[test]

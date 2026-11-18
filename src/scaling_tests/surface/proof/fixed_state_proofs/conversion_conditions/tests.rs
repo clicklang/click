@@ -75,7 +75,7 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
         }
         if related {
             for i in 0..ambient {
-                let condition = Proposition::ConditionIs(
+                let condition = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
@@ -110,7 +110,7 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
                     var: Variable(790_000 + i),
                     sort: crate::kernel::Sort::ProgramInt32,
                     name: crate::kernel::BinderName::written("k"),
-                    body: Box::new(Proposition::ConditionIs(
+                    body: Box::new(Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessThan,

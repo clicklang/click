@@ -13327,7 +13327,7 @@ pub struct VolatileAccess {
 pub enum Proposition {
     VolatileAccess(Arc<VolatileAccess>),
     Equal(Term, Term),
-    ConditionIs(ConditionTerm, bool),
+    ConditionIs(StoredConditionTerm, bool),
     Predicate {
         name: String,
         arguments: Vec<Term>,
@@ -13455,11 +13455,16 @@ pub enum Proposition {
 }
 
 impl Proposition {
+    /// Store an exact native input or an already-retained logical condition.
+    pub fn condition_is(condition: impl Into<StoredConditionTerm>, truth: bool) -> Self {
+        Self::ConditionIs(condition.into(), truth)
+    }
+
     /// Selected native condition-payload inspection. This view borrows the
     /// original payload and truth marker without rebuilding a proposition.
     pub(crate) fn condition_native(&self) -> Option<(&ConditionTerm, &bool)> {
         match self {
-            Self::ConditionIs(condition, truth) => Some((condition, truth)),
+            Self::ConditionIs(condition, truth) => Some((condition.native_compat(), truth)),
             _ => None,
         }
     }
@@ -13849,7 +13854,7 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
         Proposition::VolatileAccess(event) => Proposition::VolatileAccess(event.clone()),
         Proposition::Equal(left, right) => Proposition::Equal(left.clone(), right.clone()),
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(condition.clone(), *value)
+            Proposition::condition_is(condition.clone(), *value)
         }
         Proposition::Predicate { name, arguments } => Proposition::Predicate {
             name: name.clone(),
@@ -14542,7 +14547,7 @@ impl AtomicConnectedFact<'_> {
     pub(crate) fn matches(&self, goal: &Proposition) -> bool {
         match self {
             Self::Condition(condition, value) => {
-                matches!(goal, Proposition::ConditionIs(c,v) if c == *condition && v == value)
+                matches!(goal, Proposition::ConditionIs(c,v) if c.native_compat() == *condition && v == value)
             }
             Self::Proposition(proposition) => *proposition == goal,
         }
@@ -14550,7 +14555,7 @@ impl AtomicConnectedFact<'_> {
     pub(crate) fn to_proposition(&self) -> Proposition {
         match self {
             Self::Condition(condition, value) => {
-                Proposition::ConditionIs((*condition).clone(), *value)
+                Proposition::condition_is((*condition).clone(), *value)
             }
             Self::Proposition(proposition) => (*proposition).clone(),
         }

@@ -5350,7 +5350,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
             } else {
                 match proposition {
                     Proposition::ConditionIs(condition, value) => {
-                        Proposition::ConditionIs(condition, !value)
+                        Proposition::condition_is(condition, !value)
                     }
                     Proposition::Not(body) => *body,
                     proposition => Proposition::Not(Box::new(proposition)),
@@ -5416,7 +5416,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
     } else {
         match proposition {
             Proposition::ConditionIs(condition, value) => {
-                Proposition::ConditionIs(condition, !value)
+                Proposition::condition_is(condition, !value)
             }
             Proposition::Not(body) => *body,
             proposition => Proposition::Not(Box::new(proposition)),
@@ -5450,7 +5450,7 @@ fn holds_exact_negation(available: &PureFactStore, fact: &Proposition) -> bool {
     let mut spellings = vec![negated];
     match fact {
         Proposition::ConditionIs(condition, value) => {
-            spellings.push(Proposition::ConditionIs(condition.clone(), !value));
+            spellings.push(Proposition::condition_is(condition.clone(), !value));
         }
         Proposition::Not(body) => {
             spellings.push(body.as_ref().clone());

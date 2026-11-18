@@ -18,7 +18,7 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
         "speculative premise rendering",
         0,
         &[],
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -39,7 +39,7 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
     for size in [128, 512, 2048, 8192] {
         let premises = (0..size)
             .map(|index| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -68,13 +68,13 @@ fn reflexive_pointer_metadata_does_not_search_state_history() {
     let theorems = TheoremEnvironment::new(&[]);
     let pointer = Address::symbolic(Variable(8_179_830));
     let state = ExecutionState::new().with_local("p", ProgramValue::pointer(pointer.clone()));
-    let reflexive = Proposition::ConditionIs(
+    let reflexive = Proposition::condition_is(
         ConditionTerm::AddressEqual(Box::new(pointer.clone()), Box::new(pointer)),
         true,
     );
     let equivalent = Proposition::Not(Box::new(match &reflexive {
         Proposition::ConditionIs(condition, _) => {
-            Proposition::ConditionIs(condition.clone(), false)
+            Proposition::condition_is(condition.clone(), false)
         }
         _ => unreachable!(),
     }));
@@ -99,7 +99,7 @@ fn reflexive_pointer_metadata_does_not_search_state_history() {
             "reflexive pointer metadata",
             0,
             &facts,
-            Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(ConditionTerm::Constant(true), true),
             ParameterBinding::default(),
             FixedStateFrame::new(&state, &state, None, &retained_states),
             Some(&anchor),

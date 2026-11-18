@@ -47,10 +47,10 @@ mod constant_truth_tests {
 
     #[test]
     fn equivalent_false_polarities_are_available_only_in_their_scope() {
-        let positive_false = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
-        let negative_true = Proposition::ConditionIs(ConditionTerm::Constant(true), false);
+        let positive_false = Proposition::condition_is(ConditionTerm::Constant(false), true);
+        let negative_true = Proposition::condition_is(ConditionTerm::Constant(true), false);
         let root = PureFactStore::from_ordered(&[]);
-        let true_branch = root.with_fact(Proposition::ConditionIs(
+        let true_branch = root.with_fact(Proposition::condition_is(
             ConditionTerm::Constant(true),
             true,
         ));
@@ -67,8 +67,8 @@ mod constant_truth_tests {
 
     #[test]
     fn either_false_polarity_is_a_contradiction() {
-        let positive_false = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
-        let negative_true = Proposition::ConditionIs(ConditionTerm::Constant(true), false);
+        let positive_false = Proposition::condition_is(ConditionTerm::Constant(false), true);
+        let negative_true = Proposition::condition_is(ConditionTerm::Constant(true), false);
         let root = PureFactStore::from_ordered(&[]);
         for held in [&positive_false, &negative_true] {
             let branch = root.with_fact(held.clone());
@@ -87,12 +87,12 @@ mod constant_truth_tests {
         let b: crate::kernel::SharedIntegerTerm =
             crate::kernel::IntegerTerm::Variable(Variable(901_002)).into();
         let equality =
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.clone(), b.clone()), true);
+            Proposition::condition_is(ConditionTerm::IntegerEqual(a.clone(), b.clone()), true);
         let root = PureFactStore::from_ordered(std::slice::from_ref(&equality));
         assert!(!root.contradicts(&equality));
         for (left, right) in [(a.clone(), b.clone()), (b, a)] {
             let disequality =
-                Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(left, right), true);
+                Proposition::condition_is(ConditionTerm::IntegerNotEqual(left, right), true);
             let branch = root.with_fact(disequality.clone());
             assert!(branch.contradicts(&equality));
             assert!(branch.contradicts(&disequality));
@@ -328,7 +328,7 @@ impl PureFactStore {
                 }
                 (Proposition::ConditionIs(a, p), Proposition::ConditionIs(b, q)) if p == q => {
                     let mut retained_leaves = Vec::new();
-                    let pairs = match (a, b) {
+                    let pairs = match (a.native_compat(), b.native_compat()) {
                         (
                             ConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
@@ -598,7 +598,7 @@ impl PureFactStore {
                             Some(LoadKind::UInt16) => Some(MachineIntegerType::UInt16),
                             _ => None,
                         };
-                        let selected = Proposition::ConditionIs(
+                        let selected = Proposition::condition_is(
                             if wide {
                                 ConditionTerm::Compare {
                                     format: MachineIntegerType::Int64,
@@ -688,7 +688,7 @@ impl PureFactStore {
             LoadKind::Bits64 => MachineIntegerType::Int64,
             _ => return None,
         };
-        let selected = Proposition::ConditionIs(
+        let selected = Proposition::condition_is(
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 format,
                 CompareRelation::Equal,
@@ -972,7 +972,7 @@ pub(crate) fn constructor_consequent_instances(proposition: &Proposition) -> Vec
             // The refuted condition in a positive form where one exists,
             // `x > 100` rather than `x <= 100` false, as a branch states it.
             Proposition::ConditionIs(condition, value) => {
-                let refuted = Proposition::ConditionIs(condition.clone(), !value);
+                let refuted = Proposition::condition_is(condition.clone(), !value);
                 condition_polarity_forms(&refuted)
                     .into_iter()
                     .rev()
@@ -1342,7 +1342,7 @@ impl PureFactStore {
     /// states it. This is one equivalent fact, one exact lookup, not a search
     /// for an arbitrary contradiction.
     fn contains_opposite_constant_polarity(&self, fact: &Proposition) -> bool {
-        matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, truth) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(value), _)) if (self.contains(&Proposition::ConditionIs(ConditionTerm::Constant(!value), !truth)))))
+        matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, truth) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(value), _)) if (self.contains(&Proposition::condition_is(ConditionTerm::Constant(!value), !truth)))))
     }
 
     pub(crate) fn contains_top_level(&self, fact: &Proposition) -> bool {
@@ -1691,7 +1691,7 @@ impl PureFactStore {
         let held = self.holds_contradiction_fact(fact);
         held && (self.contains(&negated)
             || matches!(fact, Proposition::ConditionIs(condition, value)
-                    if self.contains(&Proposition::ConditionIs(condition.clone(), !value)))
+                    if self.contains(&Proposition::condition_is(condition.clone(), !value)))
             // `i < 0` and `i >= 0` are different conditions, not one
             // condition at both polarities, so the negation is recognized
             // through the bounded list of equivalent spellings the other
@@ -1706,7 +1706,7 @@ impl PureFactStore {
                 // polarity, the form `normalize()` decides, as for
                 // `to_integer(x) + 1 == to_integer(x)`.
                 Proposition::ConditionIs(condition, value) => {
-                    Proposition::ConditionIs(condition.clone(), !value)
+                    Proposition::condition_is(condition.clone(), !value)
                 }
                 _ => negated,
             }))
@@ -1826,8 +1826,8 @@ impl PureFactStore {
     pub(crate) fn with_selected_load_equality_bridge(&self, goal: &Proposition) -> Self {
         if self.pure_known_available(goal)
             || !matches!(goal, Proposition::ConditionIs(condition, true)
-                if matches!(condition, ConditionTerm::Compare { format: MachineIntegerType::Int8 | MachineIntegerType::UInt8 | MachineIntegerType::Int16 | MachineIntegerType::UInt16 | MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. })
-                    || condition.pointer_offset_sides().is_some())
+                if matches!(condition.native_compat(), ConditionTerm::Compare { format: MachineIntegerType::Int8 | MachineIntegerType::UInt8 | MachineIntegerType::Int16 | MachineIntegerType::UInt16 | MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. })
+                    || condition.native_compat().pointer_offset_sides().is_some())
         {
             return self.clone();
         }
@@ -1901,7 +1901,8 @@ impl PureFactStore {
         };
         let (view, bounds) =
             crate::kernel::machine_integer::comparison::comparison_view_through_integer_operations(
-                condition, *truth,
+                condition.native_compat(),
+                *truth,
             )?;
         if !bounds
             .iter()
@@ -2564,7 +2565,7 @@ impl PureFactStore {
             }
         }
         if let Proposition::ConditionIs(condition, _) = proposition {
-            let finite: Vec<_> = match condition {
+            let finite: Vec<_> = match condition.native_compat() {
                 ConditionTerm::Float32(FloatCondition::Comparison { left, right, .. }) => {
                     vec![(32, left), (32, right)]
                 }
@@ -2575,14 +2576,14 @@ impl PureFactStore {
             };
             for (width, value) in finite {
                 let classification = match width {
-                    32 => Proposition::ConditionIs(
+                    32 => Proposition::condition_is(
                         ConditionTerm::Float32(FloatCondition::Classification {
                             classification: FloatClassification::Finite,
                             value: value.clone(),
                         }),
                         true,
                     ),
-                    64 => Proposition::ConditionIs(
+                    64 => Proposition::condition_is(
                         ConditionTerm::Float64(FloatCondition::Classification {
                             classification: FloatClassification::Finite,
                             value: value.clone(),
@@ -3143,7 +3144,7 @@ pub(crate) fn is_definedness_guard(proposition: &Proposition) -> bool {
     match proposition {
         Proposition::And(left, right) => is_definedness_guard(left) && is_definedness_guard(right),
         Proposition::ConditionIs(condition, false) => matches!(
-            condition,
+            condition.native_compat(),
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
@@ -3195,8 +3196,8 @@ pub(crate) fn is_definedness_guard(proposition: &Proposition) -> bool {
 /// `true` itself is an ordinary fact and is not included.
 fn closed_condition_holds(fact: &Proposition) -> bool {
     matches!(fact, Proposition::ConditionIs(condition, value)
-        if !matches!(condition, ConditionTerm::Constant(_))
-            && crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+        if !matches!(condition.native_compat(), ConditionTerm::Constant(_))
+            && crate::kernel::machine_integer::comparison::closed_condition_value(condition.native_compat())
                 == Some(*value))
 }
 
@@ -3210,9 +3211,9 @@ fn index_guarded_implication_fact(
     let Proposition::ConditionIs(condition, _) = consequent.as_ref() else {
         return index;
     };
-    let Some(view) =
-        crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
-    else {
+    let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
+        condition.native_compat(),
+    ) else {
         return index;
     };
     if !matches!(
@@ -3484,7 +3485,7 @@ fn collect_proposition_bitvector_atoms(
 ) {
     match proposition {
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_bitvector_atoms(condition, atoms)
+            collect_condition_bitvector_atoms(condition.native_compat(), atoms)
         }
         Proposition::ResourceSeparate { left, right } => {
             for resource in [left, right] {
@@ -4006,7 +4007,7 @@ fn directly_conflicts_with_normalized_index(
                 || directly_conflicts_with_normalized_index(exact, right)
         }
         Proposition::ConditionIs(condition, value) => {
-            exact.contains(&Proposition::ConditionIs(condition.clone(), !value))
+            exact.contains(&Proposition::condition_is(condition.clone(), !value))
         }
         Proposition::Not(body) => exact.contains(body.as_ref()),
         other => exact.contains(&Proposition::Not(Box::new(other.clone()))),
@@ -4070,8 +4071,8 @@ mod integer_equality_fact_index_tests {
         let read = Address::symbolic(Variable(949_001));
         let target = Address::symbolic(Variable(949_002));
         let alias =
-            Proposition::ConditionIs(ConditionTerm::address_equal(read.clone(), target), true);
-        let goal = Proposition::ConditionIs(
+            Proposition::condition_is(ConditionTerm::address_equal(read.clone(), target), true);
+        let goal = Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
                     ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
@@ -4085,7 +4086,7 @@ mod integer_equality_fact_index_tests {
         for size in [16_u32, 64, 256, 1024, 4096] {
             let mut facts = PureFactStore::default();
             for index in 0..size {
-                facts = facts.with_kernel_checked_fact(Proposition::ConditionIs(
+                facts = facts.with_kernel_checked_fact(Proposition::condition_is(
                     ConditionTerm::address_equal(
                         Address::symbolic(Variable(950_000 + 2 * u64::from(index))),
                         Address::symbolic(Variable(950_001 + 2 * u64::from(index))),
@@ -4130,18 +4131,18 @@ mod integer_equality_fact_index_tests {
     }
 
     fn equality(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left.into(), right.into()), true)
+        Proposition::condition_is(ConditionTerm::IntegerEqual(left.into(), right.into()), true)
     }
 
     fn less_equal(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(left.into(), right.into()),
             true,
         )
     }
 
     fn less_than(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerLessThan(left.into(), right.into()),
             true,
         )
@@ -4253,7 +4254,7 @@ mod integer_equality_fact_index_tests {
             left: Box::new(range("a")),
             right: Box::new(range("b")),
         };
-        let bound = Proposition::ConditionIs(
+        let bound = Proposition::condition_is(
             ConditionTerm::signed_less_equal(
                 MachineTerm::constant(0),
                 MachineTerm::Variable(Variable(210_000)),
@@ -4291,7 +4292,7 @@ mod integer_equality_fact_index_tests {
         for size in [8, 32, 128, 512] {
             let unrelated = (0..size)
                 .map(|index| {
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::GreaterEqual,
@@ -4326,7 +4327,7 @@ mod integer_equality_fact_index_tests {
                     }
                 };
                 let facts =
-                    base.with_kernel_checked_fact(Proposition::ConditionIs(condition, true));
+                    base.with_kernel_checked_fact(Proposition::condition_is(condition, true));
                 assert_eq!(
                     facts
                         .assumptions()
@@ -4627,7 +4628,7 @@ mod integer_equality_fact_index_tests {
         let renamed = loadable_exists(&memory, "caller", Variable(207_800), block, None, 4);
         let changed_memory_state =
             loadable_exists(&changed_memory, "caller", Variable(207_800), block, None, 4);
-        let antecedent = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let antecedent = Proposition::condition_is(ConditionTerm::Constant(true), true);
         let implication = Proposition::Implies(Box::new(antecedent.clone()), Box::new(consequent));
         let without_antecedent = PureFactStore::from_ordered(std::slice::from_ref(&implication));
         assert!(!without_antecedent.contains_discharged_implication_consequent(&renamed));
@@ -4657,7 +4658,7 @@ mod integer_equality_fact_index_tests {
         };
         let source = path_reaches("callee_path", Variable(207_750));
         let required = path_reaches("caller_path", Variable(207_751));
-        let antecedent = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let antecedent = Proposition::condition_is(ConditionTerm::Constant(true), true);
         let facts = PureFactStore::from_ordered(&[
             Proposition::Implies(Box::new(antecedent.clone()), Box::new(source)),
             antecedent,
@@ -4668,7 +4669,7 @@ mod integer_equality_fact_index_tests {
     #[test]
     fn quantified_implication_extract_does_not_scan_unrelated_consequents() {
         let memory = SymbolicMemory::new().with_block("selected-implication", 32);
-        let antecedent = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let antecedent = Proposition::condition_is(ConditionTerm::Constant(true), true);
         let selected = loadable_exists(
             &memory,
             "callee",
@@ -4833,7 +4834,7 @@ mod integer_equality_fact_index_tests {
         );
         let source_fact = less_equal(source, IntegerTerm::constant_i64(9));
         let wrong_kind = less_than(required.clone(), IntegerTerm::constant_i64(9));
-        let false_fact = Proposition::ConditionIs(
+        let false_fact = Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(required.into(), IntegerTerm::constant_i64(9).into()),
             false,
         );
@@ -5012,7 +5013,7 @@ mod retained_root_context_tests {
         for size in [16u32, 64, 256, 1024] {
             let inputs = (0..size)
                 .map(|index| {
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         ConditionTerm::equal(
                             MachineTerm::Variable(Variable(970_000 + u64::from(index))),
                             MachineTerm::constant(index),
@@ -5172,7 +5173,7 @@ mod held_separation_tests {
             range.base().clone()
         };
         let link = |a, b| {
-            Proposition::ConditionIs(ConditionTerm::address_equal(pointer(a), pointer(b)), true)
+            Proposition::condition_is(ConditionTerm::address_equal(pointer(a), pointer(b)), true)
         };
         let first = link(0, 2);
         let second = link(2, 3);
@@ -5228,7 +5229,7 @@ mod held_separation_tests {
         let (Resource::Memory(alias), Resource::Memory(owner)) = (cell(2), cell(0)) else {
             unreachable!()
         };
-        let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
+        let facts = PureFactStore::from_ordered(&[Proposition::condition_is(
             ConditionTerm::AddressEqual(
                 Box::new(alias.base().clone()),
                 Box::new(owner.base().clone()),
@@ -5275,7 +5276,7 @@ mod held_separation_tests {
         let (Resource::Memory(left), Resource::Memory(right)) = (cell(0), cell(1)) else {
             unreachable!()
         };
-        let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
+        let facts = PureFactStore::from_ordered(&[Proposition::condition_is(
             ConditionTerm::AddressEqual(
                 Box::new(left.base().clone()),
                 Box::new(right.base().clone()),
@@ -5326,7 +5327,7 @@ mod held_separation_tests {
         let (Resource::Memory(left_range), Resource::Memory(right_range)) = (&left, &right) else {
             unreachable!()
         };
-        let alias = Proposition::ConditionIs(
+        let alias = Proposition::condition_is(
             ConditionTerm::AddressEqual(
                 Box::new(left_range.base().clone()),
                 Box::new(right_range.base().clone()),
@@ -5433,7 +5434,7 @@ mod integer_witness_freshness_tests {
         let binder = Variable(3_200_000);
         let load = Variable((1 << 40) + 7);
         let integer_fact = |variable| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::IntegerEqual(
                     crate::kernel::IntegerTerm::var(variable).into(),
                     crate::kernel::IntegerTerm::constant_i64(0).into(),
@@ -5442,7 +5443,7 @@ mod integer_witness_freshness_tests {
             )
         };
         let facts = PureFactStore::from_ordered(&[
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::equal(MachineTerm::Variable(load), MachineTerm::constant(0)),
                 true,
             ),
@@ -5470,7 +5471,7 @@ mod quantified_conjunct_projection_tests {
     use super::*;
 
     fn equals(var: u64, constant: u32) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::Variable(Variable(var)),
                 MachineTerm::constant(constant),
@@ -5479,7 +5480,7 @@ mod quantified_conjunct_projection_tests {
         )
     }
     fn at_most(var: u64, bound: u32) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::signed_less_equal(
                 MachineTerm::Variable(Variable(var)),
                 MachineTerm::constant(bound),
@@ -5606,7 +5607,7 @@ mod retained_match_root_tests {
             }],
         };
         let machine = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, native.clone());
-        let written = Proposition::ConditionIs(
+        let written = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -5615,7 +5616,7 @@ mod retained_match_root_tests {
             },
             true,
         );
-        let common = Proposition::ConditionIs(
+        let common = Proposition::condition_is(
             ConditionTerm::IntegerEqual(
                 crate::kernel::IntegerTerm::Machine(machine).into(),
                 crate::kernel::IntegerTerm::constant_i64(1).into(),
@@ -5702,7 +5703,7 @@ mod unified_store_tests {
     fn publication_and_membership_share_the_stored_proposition() {
         let a = fact("shared_at_root");
         let b = fact("shared_after_append");
-        let condition = Proposition::ConditionIs(
+        let condition = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

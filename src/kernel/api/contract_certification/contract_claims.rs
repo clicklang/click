@@ -313,7 +313,7 @@ mod cached_read_completion_tests {
         memory: SymbolicMemory,
         published: SymbolicMemory,
     ) -> Result<CheckedFunctionProposition, String> {
-        let proposition = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let proposition = Proposition::condition_is(ConditionTerm::Constant(true), true);
         let state = ExecutionState::new().with_memory(published);
         let function = program_function(
             ProgramType::Int32,
@@ -395,7 +395,7 @@ mod cached_read_completion_tests {
         let strengthened = FunctionSpecification::new(
             specification.state().clone(),
             specification.arguments().to_vec(),
-            vec![Proposition::ConditionIs(
+            vec![Proposition::condition_is(
                 ConditionTerm::Constant(false),
                 true,
             )],
@@ -1773,7 +1773,7 @@ fn obligation_has_known_condition_consequent(
     }
     match obligation {
         Proposition::ConditionIs(condition, value) => {
-            assumptions.difference_decision(condition, &[]) == Some(*value)
+            assumptions.difference_decision(condition.native_compat(), &[]) == Some(*value)
         }
         _ => false,
     }
@@ -2813,7 +2813,7 @@ fn lowered_goal_is_constant_true(proposition: &Proposition) -> bool {
 /// one form by exact structural rules: no fact is consulted.
 pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
     fn truth(value: bool) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::Constant(value), true)
+        Proposition::condition_is(ConditionTerm::Constant(value), true)
     }
     fn as_truth(proposition: &Proposition) -> Option<bool> {
         match proposition {
@@ -2842,9 +2842,9 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
     }
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            if let ConditionTerm::Constant(constant) = condition {
+            if let ConditionTerm::Constant(constant) = condition.native_compat() {
                 truth(constant == value)
-            } else if reflexive(condition) {
+            } else if reflexive(condition.native_compat()) {
                 truth(*value)
             } else {
                 proposition.clone()
@@ -2869,7 +2869,7 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
             match (as_truth(&body), body) {
                 (Some(value), _) => truth(!value),
                 (None, Proposition::ConditionIs(condition, value)) => {
-                    Proposition::ConditionIs(condition, !value)
+                    Proposition::condition_is(condition, !value)
                 }
                 (None, body) => Proposition::Not(Box::new(body)),
             }
@@ -3161,7 +3161,7 @@ mod checked_proposition_index_tests {
     use super::*;
 
     fn route(variable: u64, value: bool) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3174,7 +3174,7 @@ mod checked_proposition_index_tests {
 
     fn lowering_candidate(marker: bool, facts: Vec<Proposition>) -> SpecPropositionPath {
         SpecPropositionPath {
-            proposition: Proposition::ConditionIs(ConditionTerm::Constant(marker), true),
+            proposition: Proposition::condition_is(ConditionTerm::Constant(marker), true),
             facts: facts.into_iter().map(ExecutionPureFact::new).collect(),
             obligations: Vec::new(),
             introductions: LoweringIntroductions::new(),
@@ -3272,7 +3272,7 @@ mod checked_proposition_index_tests {
 
     #[test]
     fn completions_are_indexed_by_the_claim_they_closed() {
-        let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
         let checked = |claim: Option<FunctionContractClaimTarget>| {
             let function = ProgramFunction::new(
                 ProgramType::Void,
@@ -3322,7 +3322,7 @@ mod checked_proposition_index_tests {
         // This is deliberately a fact recorded by execution after entry.  It
         // must not make an entry-dependent resource term evaluable during
         // certification setup.
-        let body_fact = Proposition::ConditionIs(
+        let body_fact = Proposition::condition_is(
             ConditionTerm::signed_less_than(
                 MachineTerm::Variable(Variable(93_001)),
                 MachineTerm::constant(8),
@@ -3427,7 +3427,7 @@ mod unproved_path_obligation_message_tests {
     /// lowering wrote, never as a kernel term dump.
     #[test]
     fn names_the_obligation_by_its_context_without_a_term_dump() {
-        let condition = Proposition::ConditionIs(
+        let condition = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -3607,14 +3607,14 @@ mod claim_requirement_tests {
 
     #[test]
     fn claim_identity_requires_its_evaluation_obligations_in_this_context() {
-        let domain = Proposition::ConditionIs(
+        let domain = Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::Variable(Variable(991_001)),
                 MachineTerm::constant(1),
             ),
             true,
         );
-        let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
         let empty = PureFactStore::from_ordered(std::slice::from_ref(&truth));
         let established = empty.with_kernel_checked_fact(domain.clone());
         for (target, is_exceptional) in [

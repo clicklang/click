@@ -98,7 +98,7 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
     for size in [16u64, 64, 256] {
         let facts = (0..size)
             .map(|index| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
