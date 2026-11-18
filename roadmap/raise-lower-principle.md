@@ -1463,8 +1463,10 @@ ordinary match guards and nested `matches!` expressions preserve their existing
 fallthrough and refusal behavior. Extracted observation handles retain an owner
 when they outlive a local proposition. Native rebuilt equalities copy the same
 exact field payloads. The output schema is unchanged. All 767 selected
-condition/proposition/substitution/arithmetic checks passed; broader ownership,
-scaling and regular proof checks remain pending.
+condition/proposition/substitution/arithmetic checks passed, followed by all
+669 selected ownership-sensitive checks and all 1,939 regular scaling cases.
+All 5,623 regular proof fixtures passed. Fact stability recorded 121 refusals
+and zero changed terms/paths; quality passed. Full nightly was not run.
 
 The initial inventory considered named syntax children and missed anonymous
 wildcard truth markers. The corrected inventory records 47 further patterns
