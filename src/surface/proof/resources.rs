@@ -577,7 +577,7 @@ pub(super) fn materialize_folded_composite_resource_cells(
         assumptions,
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
-    Ok(state.with_memory(memory))
+    Ok(state.with_materialized_memory_at_current_point(memory))
 }
 
 fn materialize_folded_composite_resource_memory(
@@ -1265,7 +1265,9 @@ pub(super) fn project_initial_composite_resource_cores(
                     ))
                 })?,
         };
-        state = state.with_memory(memory).with_resource_context(resources);
+        state = state
+            .with_materialized_memory_at_current_point(memory)
+            .with_resource_context(resources);
     }
     Ok(state)
 }
@@ -6169,6 +6171,62 @@ mod wide_range_reader_tests {
 #[cfg(test)]
 mod guarded_unmatched_materialization_tests {
     use super::*;
+
+    #[test]
+    fn ordinary_composite_cell_naming_keeps_the_entry_point() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let file = crate::surface::parser::parse_file_items(
+            "resource initialized_cell(p: int32*) { owns *p; }",
+        )
+        .unwrap();
+        let resources = ResourceEnvironment::new(&file.resource_definitions);
+        let functions = ClickFunctionEnvironment::new(&[]);
+        let predicates = PredicateEnvironment::new(&[]);
+        let specs = SpecDefinitions::new(&predicates, &functions);
+        let parameters = ParameterBinding::new(&[], &[]);
+        let pointer = Address::symbolic(crate::kernel::Variable(88_026));
+        let held = ResourceFact::own_composite(
+            "initialized_cell".into(),
+            vec![ProgramValue::typed_pointer(
+                pointer.clone(),
+                ProgramType::Int32Pointer,
+            )],
+        );
+        let state = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4))
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(held));
+        let point = state.observation_point_id().unwrap();
+        assert!(!matches!(
+            state.memory().load(&pointer),
+            ExpressionOutcome::Value(_)
+        ));
+        let named = materialize_folded_composite_resource_cells(
+            &resources,
+            parameters,
+            state.clone(),
+            "entry naming",
+            specs,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        let projected = project_initial_composite_resource_cores(
+            &resources,
+            parameters,
+            state,
+            &PureFactList::from(vec![]),
+            "entry projection",
+            Some(OwnedCores::Standing),
+            specs,
+        )
+        .unwrap();
+        for named_view in [named, projected] {
+            assert!(matches!(
+                named_view.memory().load(&pointer),
+                ExpressionOutcome::Value(_)
+            ));
+            assert_eq!(named_view.observation_point_id(), Some(point));
+        }
+    }
 
     #[test]
     fn composite_unfold_keeps_the_point_while_naming_a_cell() {
