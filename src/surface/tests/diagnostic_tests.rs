@@ -4132,7 +4132,7 @@ fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact(
                 // Exhaustion happens after the ordinary proof completed.
                 // Its fact survives in the failure context; no legacy
                 // transport node is needed to retain that checked prefix.
-                assert!(failed.contains("value#1 = value#1 is true"), "{trace}");
+                assert!(failed.contains("value#1 == value#1 is true"), "{trace}");
                 assert!(trace.contains("pointer read at state#"), "{trace}");
             }
         });
