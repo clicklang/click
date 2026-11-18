@@ -8577,7 +8577,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 .allow_symbolic_contract_loads()
                 .prefer_symbolic_external_loads(),
             ranges: Vec::new(),
-            exact: false,
+            exact: true,
             reaches_unnamed: false,
             undefined_family: false,
             work: 0,
@@ -8589,13 +8589,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
     /// it reaches has no definition in the set: the interface is malformed
     /// and the transition that needs the footprint is refused.
     fn derive(mut self, fact: &ResourceFact) -> Option<OwnedMemoryFootprint> {
-        self.exact = match fact {
-            ResourceFact::Own(Resource::Memory(_), _) => true,
-            ResourceFact::Own(Resource::Composite { .. }, quantity) => {
-                quantity.as_const() == Some(1)
-            }
-            _ => false,
-        };
         self.pending.push(OwnedFootprintTask::Fact(fact.clone()));
         while let Some(task) = self.pending.pop() {
             // Past the bound the footprint is unnamed memory, which covers
@@ -8691,14 +8684,23 @@ impl<'a> OwnedFootprintDerivation<'a> {
             self.reaches_unnamed = true;
             return false;
         }
+        self.exact &= definition.witnesses.is_empty()
+            && definition.resource_parameters.is_empty()
+            && !definition.authorized
+            && !definition.is_sealed();
         true
     }
 
     fn owned_fact(&mut self, fact: &ResourceFact) {
-        if !fact.is_own() {
+        let ResourceFact::Own(resource, quantity) = fact else {
             return;
-        }
-        match fact.resource() {
+        };
+        self.exact &= match resource {
+            Resource::Memory(_) => true,
+            Resource::Composite { .. } | Resource::Instance(_) => quantity.as_const() == Some(1),
+            _ => false,
+        };
+        match resource {
             Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
                 self.reaches_unnamed = true;
             }
@@ -8805,10 +8807,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
         if !self.enters(definition) {
             return;
         }
-        self.exact &= definition.witnesses.is_empty()
-            && definition.resource_parameters.is_empty()
-            && !definition.authorized
-            && !definition.is_sealed();
         if definition.instance_schema.is_some() || definition.matched.is_some() {
             self.reaches_unnamed = true;
             return;
@@ -8873,6 +8871,8 @@ impl<'a> OwnedFootprintDerivation<'a> {
             evaluation.instance_field_scope = ResourceContext::new()
                 .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance)));
             evaluation.resource_bindings = None;
+        } else {
+            self.exact = false;
         }
         for ((name, _), value) in schema.fields().iter().zip(fields) {
             if let Some(AlgebraicValue::Program(value)) = value {
@@ -8898,6 +8898,9 @@ impl<'a> OwnedFootprintDerivation<'a> {
             return;
         };
         for (arm, constructor) in self.footprint_arms(definition, matched, arguments, fields) {
+            // A union of possible arms is a conservative footprint, even
+            // when each individual arm names all of its memory.
+            self.exact &= constructor.is_some();
             let mut arm_evaluation = evaluation.clone();
             if let Some(constructor) = &constructor {
                 for ((name, binding_type), value) in
@@ -9002,11 +9005,17 @@ impl<'a> OwnedFootprintDerivation<'a> {
             None => self.exact = false,
         }
         for spec in contains {
-            // A flat body contributes exactly its unconditional memory
-            // clauses. Other terms may project a conservative span or child.
-            self.exact &= matches!(spec.term(), ResourceTerm::Memory(segment) if segment.guard().is_none())
-                && spec.guard().is_none()
-                && spec.resource_arguments().is_empty();
+            // Direct memory and ordinary nested bodies may be exact. Each
+            // owned child records its own certainty when the worklist visits it.
+            self.exact &= spec.guard().is_none()
+                && spec.resource_arguments().is_empty()
+                && match spec.term() {
+                    ResourceTerm::Memory(segment) => segment.guard().is_none(),
+                    ResourceTerm::Composite { .. } | ResourceTerm::Instance { .. } => {
+                        spec.access() == ResourceAccessMode::Own
+                    }
+                    _ => false,
+                };
             // Abstract tokens own no memory, regardless of their quantity.
             // Footprint discovery need not prove that quantity nonnegative;
             // the actual resource exchange still checks it. A population
@@ -9079,6 +9088,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     let [path] = paths.as_slice() else {
                         return None;
                     };
+                    self.exact &= path.obligations.is_empty();
                     let ExpressionOutcome::Value(value) = &path.outcome else {
                         return None;
                     };
