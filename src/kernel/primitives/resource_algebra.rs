@@ -9386,9 +9386,9 @@ fn instance_pointer_arguments(instance: &ResourceInstance) -> impl Iterator<Item
 }
 
 /// The C pointer arguments among `arguments`, in order.
-fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<Item = &Address> {
+fn algebraic_pointer_arguments(arguments: &ResourceArguments) -> impl Iterator<Item = &Address> {
     arguments.iter().filter_map(|argument| match argument {
-        AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => Some(pointer.pointer()),
+        ResourceFieldValue::Program(ProgramValue::Pointer(pointer)) => Some(pointer.pointer()),
         _ => None,
     })
 }
@@ -9462,9 +9462,9 @@ pub(crate) fn coalesce_written_resource_descriptions(
 /// with no assumption able to override it, so two facts anchored in
 /// different blocks can never have their first arguments proven equal and
 /// never normalize together.
-fn normalization_anchor(arguments: &[AlgebraicValue]) -> Option<&AddressBase> {
+fn normalization_anchor(arguments: &ResourceArguments) -> Option<&AddressBase> {
     match arguments.first() {
-        Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer)))
+        Some(ResourceFieldValue::Program(ProgramValue::Pointer(pointer)))
             if matches!(
                 pointer.pointer().base,
                 AddressBase::Heap(_) | AddressBase::Temporary(_)
@@ -9480,7 +9480,7 @@ fn normalization_anchor(arguments: &[AlgebraicValue]) -> Option<&AddressBase> {
 fn shape_root_key(
     family: ResourceFamily,
     name: &str,
-    arguments: &[AlgebraicValue],
+    arguments: &ResourceArguments,
 ) -> super::ShapeRootKey {
     (
         family,
@@ -9587,9 +9587,11 @@ impl OwnedMemberKey {
 }
 
 /// The first argument of a token or composite when it is a pointer.
-fn normalization_root_pointer(arguments: &[AlgebraicValue]) -> Option<&Address> {
+fn normalization_root_pointer(arguments: &ResourceArguments) -> Option<&Address> {
     match arguments.first() {
-        Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) => Some(pointer.pointer()),
+        Some(ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) => {
+            Some(pointer.pointer())
+        }
         _ => None,
     }
 }
@@ -9806,7 +9808,13 @@ fn exact_resources_proven_equal(
                     .arguments()
                     .iter()
                     .zip(right.payload.arguments())
-                    .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
+                    .all(|(a, b)| {
+                        crate::kernel::resource_field_values_proven_equal(
+                            (a).into(),
+                            (b).into(),
+                            assumptions,
+                        )
+                    })
         }
         (Resource::Instance(left), Resource::Instance(right)) => {
             left.identity == right.identity
@@ -9819,7 +9827,13 @@ fn exact_resources_proven_equal(
                     .arguments
                     .iter()
                     .zip(right.arguments.iter())
-                    .all(|(a, b)| crate::kernel::instance_arguments_proven_equal(a, b, assumptions))
+                    .all(|(a, b)| {
+                        crate::kernel::instance_field_values_proven_equal(
+                            (a).into(),
+                            (b).into(),
+                            assumptions,
+                        )
+                    })
                 && left.fields.iter().zip(right.fields.iter()).all(|(a, b)| {
                     crate::kernel::resource_field_values_proven_equal(a, b, assumptions)
                 })
@@ -9839,7 +9853,13 @@ fn exact_resources_proven_equal(
                 && left_arguments
                     .iter()
                     .zip(right_arguments.iter())
-                    .all(|(a, b)| crate::kernel::instance_arguments_proven_equal(a, b, assumptions))
+                    .all(|(a, b)| {
+                        crate::kernel::instance_field_values_proven_equal(
+                            (a).into(),
+                            (b).into(),
+                            assumptions,
+                        )
+                    })
         }
         (
             Resource::Token {
@@ -9857,7 +9877,11 @@ fn exact_resources_proven_equal(
                     .iter()
                     .zip(right_arguments.iter())
                     .all(|(left, right)| {
-                        crate::kernel::resource_arguments_proven_equal(left, right, assumptions)
+                        crate::kernel::resource_field_values_proven_equal(
+                            (left).into(),
+                            (right).into(),
+                            assumptions,
+                        )
                     })
         }
         _ => false,
@@ -12995,10 +13019,12 @@ impl ResourceFact {
         if name != Self::ALLOCATION_RESOURCE_NAME {
             return None;
         }
-        let [
-            AlgebraicValue::Program(ProgramValue::Pointer(base)),
-            AlgebraicValue::Program(bytes),
-        ] = arguments.as_ref()
+        let Some(
+            [
+                ResourceFieldValue::Program(ProgramValue::Pointer(base)),
+                ResourceFieldValue::Program(bytes),
+            ],
+        ) = arguments.fixed_values::<2>()
         else {
             return None;
         };
@@ -13010,7 +13036,7 @@ impl ResourceFact {
         Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => true,
             Resource::Memory(range) => &range.base().base == block,
             Resource::Composite { arguments, .. } => arguments.iter().any(
-                |argument| matches!(argument, AlgebraicValue::Program(ProgramValue::Pointer(pointer)) if &pointer.base == block),
+                |argument| matches!(argument, crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer)) if &pointer.base == block),
             ),
             Resource::Iterated(iterated) => iterated.blocks().contains(&block),
             Resource::Token { .. } | Resource::PopulationAuthority(_)

@@ -649,7 +649,7 @@ fn materialize_folded_composite_resource_memory(
         }
         let substitutions = resource_value_substitutions_with_witnesses(
             definition,
-            resource_arguments,
+            &(resource_arguments).native_values(),
             state.memory(),
             state.resources(),
             assumptions,
@@ -1200,7 +1200,7 @@ pub(super) fn project_initial_composite_resource_cores(
         }
         let substitutions = resource_value_substitutions_with_witnesses(
             definition,
-            &resource_arguments,
+            &(&resource_arguments).native_values(),
             state.memory(),
             state.resources(),
             &assumptions,
@@ -1322,7 +1322,7 @@ fn project_selected_instance_arm_cells(
     };
     let Ok(substitutions) = resource_value_substitutions_for_parameters(
         arm.name(),
-        instance.arguments(),
+        &(instance.arguments()).native_values(),
         &selected.bindings,
         arm.parameters(),
     ) else {
@@ -1883,7 +1883,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     let (memory, contained_resources, body_projected) = apply_composite_observation_law_with_facts(
         resource_environment,
         definition,
-        resource_arguments,
+        &(resource_arguments).native_values(),
         parameter_binding,
         &state,
         &state,
@@ -2372,7 +2372,7 @@ fn project_held_resource_observable_facts(
     apply_composite_observation_law_with_facts(
         resource_environment,
         definition,
-        resource_arguments,
+        &(resource_arguments).native_values(),
         parameter_binding,
         pre_state,
         state,

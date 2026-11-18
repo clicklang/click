@@ -716,18 +716,20 @@ fn collect_argument_carriers(
     }
 }
 
-fn collect_algebraic_value_carriers(
-    value: &AlgebraicValue,
+fn collect_algebraic_value_carriers<'a>(
+    value: impl Into<ResourceFieldValue<'a>>,
     variables: &mut CarrierVariables,
     seen: &mut BTreeSet<u64>,
 ) {
     if !variables.visit() {
         return;
     }
-    match value {
-        AlgebraicValue::Program(value) => collect_program_value_carriers(value, variables),
-        AlgebraicValue::Integer(value) => collect_integer_carriers(value, variables, seen),
-        AlgebraicValue::Algebraic(value) => collect_algebraic_carriers_seen(value, variables, seen),
+    match value.into() {
+        ResourceFieldValue::Program(value) => collect_program_value_carriers(value, variables),
+        ResourceFieldValue::Integer(value) => collect_integer_carriers(value, variables, seen),
+        ResourceFieldValue::Algebraic(value) => {
+            collect_algebraic_carriers_seen(value, variables, seen)
+        }
     }
 }
 
@@ -1477,13 +1479,13 @@ fn collect_resource_carriers(resource: &Resource, carriers: &mut CarrierVariable
             Resource::Composite { arguments, .. } | Resource::Token { arguments, .. } => {
                 for argument in arguments.iter() {
                     match argument {
-                        AlgebraicValue::Program(value) => {
+                        crate::kernel::ResourceFieldValue::Program(value) => {
                             collect_program_value_carriers(value, carriers)
                         }
-                        AlgebraicValue::Integer(value) => {
+                        crate::kernel::ResourceFieldValue::Integer(value) => {
                             collect_integer_carriers(value, carriers, &mut BTreeSet::new());
                         }
-                        AlgebraicValue::Algebraic(value) => {
+                        crate::kernel::ResourceFieldValue::Algebraic(value) => {
                             collect_algebraic_carriers(value, carriers)
                         }
                     }
@@ -3881,22 +3883,25 @@ impl<'a> TermRewrite<'a> {
     fn rewrite_algebraic_replacement(&mut self, replacement: &AlgebraicTerm) -> AlgebraicTerm {
         replacement.clone()
     }
-    fn field(&mut self, v: &AlgebraicValue) -> AlgebraicValue {
+    fn field<'field>(&mut self, v: impl Into<ResourceFieldValue<'field>>) -> AlgebraicValue {
+        let v = v.into();
         if self.checked_work_exhausted() {
             return match v {
-                AlgebraicValue::Program(value) => {
+                ResourceFieldValue::Program(value) => {
                     AlgebraicValue::Program(exhausted_program_value(value))
                 }
-                AlgebraicValue::Integer(value) => AlgebraicValue::Integer(exhausted_integer(value)),
-                AlgebraicValue::Algebraic(value) => {
+                ResourceFieldValue::Integer(value) => {
+                    AlgebraicValue::Integer(exhausted_integer(value))
+                }
+                ResourceFieldValue::Algebraic(value) => {
                     AlgebraicValue::Algebraic(exhausted_algebraic(value))
                 }
             };
         }
         match v {
-            AlgebraicValue::Program(v) => AlgebraicValue::Program(self.value(v)),
-            AlgebraicValue::Integer(v) => AlgebraicValue::Integer(self.integer(v)),
-            AlgebraicValue::Algebraic(v) => AlgebraicValue::Algebraic(self.algebraic(v)),
+            ResourceFieldValue::Program(v) => AlgebraicValue::Program(self.value(v)),
+            ResourceFieldValue::Integer(v) => AlgebraicValue::Integer(self.integer(v)),
+            ResourceFieldValue::Algebraic(v) => AlgebraicValue::Algebraic(self.algebraic(v)),
         }
     }
     fn argument(&mut self, a: &PureFunctionArgument) -> PureFunctionArgument {

@@ -284,7 +284,12 @@ fn initialize(
 fn payload_fact(right: &PublicationRight) -> ResourceFact {
     ResourceFact::own(Resource::Composite {
         name: right.payload().family().to_string(),
-        arguments: right.payload().arguments().iter().cloned().collect(),
+        arguments: right
+            .payload()
+            .arguments()
+            .iter()
+            .map(ResourceFieldValue::into_native)
+            .collect(),
     })
 }
 

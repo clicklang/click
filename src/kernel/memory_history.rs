@@ -238,12 +238,11 @@ pub(crate) fn resource_field_values_proven_equal(
 /// it is not part of which instance this is. A kernel token whose identity is
 /// itself bounds evidence, such as `allocation(p, n)`, keeps the complete
 /// pointer comparison.
-pub(crate) fn instance_arguments_proven_equal(
-    left: &AlgebraicValue,
-    right: &AlgebraicValue,
+pub(crate) fn instance_field_values_proven_equal(
+    left: crate::kernel::ResourceFieldValue<'_>,
+    right: crate::kernel::ResourceFieldValue<'_>,
     assumptions: &PureFactContext,
 ) -> bool {
-    let (left, right) = (left.into(), right.into());
     if let (
         crate::kernel::ResourceFieldValue::Program(left),
         crate::kernel::ResourceFieldValue::Program(right),
@@ -465,10 +464,11 @@ pub(crate) fn resources_directly_match(
                     .iter()
                     .zip(right_arguments.iter())
                     .all(|(left, right)| match (left, right) {
-                        (AlgebraicValue::Program(left), AlgebraicValue::Program(right)) => {
-                            values_match(left, right)
-                        }
-                        _ => resource_arguments_proven_equal(left, right, assumptions),
+                        (
+                            crate::kernel::ResourceFieldValue::Program(left),
+                            crate::kernel::ResourceFieldValue::Program(right),
+                        ) => values_match(left, right),
+                        _ => resource_field_values_proven_equal(left, right, assumptions),
                     })
         }
         _ => false,

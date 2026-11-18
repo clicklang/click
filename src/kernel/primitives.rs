@@ -11555,7 +11555,10 @@ pub enum ResourceFact {
 
 /// Immutable logical indices shared by resource states and population keys.
 /// Cloning a resource must not clone a recursive model stored in its indices.
-pub type ResourceArguments = std::sync::Arc<[AlgebraicValue]>;
+/// Explicit native argument input/output DTO.
+pub type NativeResourceArguments = std::sync::Arc<[AlgebraicValue]>;
+/// Immutable resource arguments retain the same typed carriers as fields.
+pub type ResourceArguments = ResourceFieldValues;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Resource {
@@ -11817,7 +11820,7 @@ impl ResourceInstance {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn arguments(&self) -> &[AlgebraicValue] {
+    pub fn arguments(&self) -> &ResourceArguments {
         &self.arguments
     }
     pub fn fields(&self) -> &ResourceFieldValues {
@@ -13098,7 +13101,7 @@ mod population_authority_spec_tests {
     fn authority_cannot_be_composed_twice_or_split() {
         let description = super::super::ResourceDescription::new(
             "node".into(),
-            Arc::from([]),
+            Vec::<AlgebraicValue>::new().into(),
             ResourceFieldSchema::new(vec![]).unwrap(),
         );
         let fact = ResourceFact::own(Resource::PopulationAuthority(description.clone()));

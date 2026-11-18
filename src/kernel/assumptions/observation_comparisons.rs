@@ -55,7 +55,7 @@ impl ResourceKey {
             .iter()
             .map(|argument| {
                 crate::instrumentation::record_deterministic_work(1);
-                if let AlgebraicValue::Program(value) = argument {
+                if let crate::kernel::ResourceFieldValue::Program(value) = argument {
                     let term = match value {
                         ProgramValue::Int8(t)
                         | ProgramValue::UInt8(t)
@@ -81,7 +81,7 @@ impl ResourceKey {
                         );
                     }
                 }
-                ResourceArgumentKey::Exact(argument.clone())
+                ResourceArgumentKey::Exact(argument.into_native())
             })
             .collect();
         match resource {

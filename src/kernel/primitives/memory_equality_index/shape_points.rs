@@ -13,7 +13,9 @@ fn shape_pointer(fact: &ResourceFact) -> Option<(Shape, &Address)> {
     else {
         return None;
     };
-    let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) = arguments.first() else {
+    let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
+        arguments.first()
+    else {
         return None;
     };
     Some((

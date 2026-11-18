@@ -660,7 +660,7 @@ pub(in crate::surface) fn initial_call_state(
             }
             let scope = crate::kernel::ResourceDescription::new(
                 name.clone(),
-                vec![arguments[0].clone()].into(),
+                vec![arguments.get(0).expect("argument index").into_native()].into(),
                 ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
             )
             .with_population_arity(arguments.len());

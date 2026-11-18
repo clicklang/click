@@ -2073,7 +2073,7 @@ fn program_function_contract_entry_facts(
         let Some(mut arguments) = arguments
             .iter()
             .map(|argument| {
-                let AlgebraicValue::Program(value) = argument else {
+                let crate::kernel::ResourceFieldValue::Program(value) = argument else {
                     return None;
                 };
                 Some(Some(SpecExpression::Value(value.clone())))

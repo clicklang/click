@@ -864,9 +864,10 @@ pub(super) fn resources_equal_ignoring_memories(left: &Resource, right: &Resourc
                     .iter()
                     .zip(right_arguments.iter())
                     .all(|(left, right)| match (left, right) {
-                        (AlgebraicValue::Program(left), AlgebraicValue::Program(right)) => {
-                            values_match(left, right)
-                        }
+                        (
+                            crate::kernel::ResourceFieldValue::Program(left),
+                            crate::kernel::ResourceFieldValue::Program(right),
+                        ) => values_match(left, right),
                         _ => left == right,
                     })
         }

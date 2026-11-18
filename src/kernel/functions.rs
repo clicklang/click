@@ -699,8 +699,9 @@ pub(super) fn transfer_population_call_facts<'a>(
             }
             let description = authorities[0];
             if let Some((base, _)) = allocations.first() {
-                let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
-                    description.arguments()
+                let Some(
+                    [crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))],
+                ) = (description.arguments()).fixed_values::<1>()
                 else {
                     return Err(RuntimeError::FunctionContract(
                         "population call control needs one pointer anchor".into(),
@@ -4144,7 +4145,8 @@ fn execute_verified_function_applications_with_suspension(
                 arguments,
                 ResourceFieldSchema::new(vec![]).expect("empty schema"),
             );
-            let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+            let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+                (description.arguments()).fixed_values::<1>()
             else {
                 paths.push(resource_call_failure(
                     "final release needs one pointer anchor",
@@ -4247,8 +4249,9 @@ fn execute_verified_function_applications_with_suspension(
                 }
                 let retirement = if retired.recognizes_imported_population(additional) {
                     retired.checked_retire_imported(additional, &effective_assumptions)
-                } else if let Some(AlgebraicValue::Program(ProgramValue::Pointer(anchor))) =
-                    additional.arguments().first()
+                } else if let Some(crate::kernel::ResourceFieldValue::Program(
+                    ProgramValue::Pointer(anchor),
+                )) = additional.arguments().first()
                 {
                     retired.checked_retire(&anchor.pointer().base, additional)
                 } else {
@@ -4407,8 +4410,9 @@ fn execute_verified_function_applications_with_suspension(
                     arguments.clone(),
                     ResourceFieldSchema::new(vec![]).expect("empty schema"),
                 );
-                let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
-                    description.arguments().first()
+                let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(
+                    pointer,
+                ))) = description.arguments().first()
                 else {
                     paths.push(resource_call_failure(
                         "population helper needs one pointer anchor",
@@ -7227,7 +7231,7 @@ fn call_value_arguments(
         else {
             continue;
         };
-        let agrees = |left: &AlgebraicValue, right: &AlgebraicValue| match (
+        let agrees = |left: ResourceFieldValue<'_>, right: ResourceFieldValue<'_>| match (
             left.as_program_value(),
             right.as_program_value(),
         ) {
@@ -7258,7 +7262,10 @@ fn call_value_arguments(
                 {
                     continue;
                 }
-                let Some(value) = held_arguments[position].as_program_value() else {
+                let Some(value) = held_arguments
+                    .get(position)
+                    .and_then(ResourceFieldValue::as_program_value)
+                else {
                     continue;
                 };
                 if !found.contains(value) {
@@ -7278,7 +7285,7 @@ fn call_value_arguments(
         {
             found = string_literal_instance_values(
                 definition,
-                probe_arguments,
+                &(probe_arguments).native_values(),
                 position,
                 parameter.program_type(),
                 caller_state,
@@ -8513,7 +8520,9 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 }
             }
             Resource::MutexUse(_) | Resource::Publication(_) | Resource::MutexLive(_) => {}
-            Resource::Composite { name, arguments } => self.composite(name, arguments),
+            Resource::Composite { name, arguments } => {
+                self.composite(name, &(arguments).native_values())
+            }
             Resource::Instance(instance) => {
                 let Some(definition) = self.definition(instance.name()) else {
                     self.undefined_family = true;
@@ -8529,7 +8538,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     .map(ResourceFieldValue::into_native)
                     .map(Some)
                     .collect::<Vec<_>>();
-                self.instance(definition, instance.arguments(), &fields);
+                self.instance(definition, &(instance.arguments()).native_values(), &fields);
             }
         }
     }
@@ -10601,7 +10610,7 @@ fn candidate_composite_view_adapter(
     let mut gap = None;
     let facts_hold = composite_definition_facts_hold(
         definition,
-        arguments,
+        &(arguments).native_values(),
         caller_state,
         assumptions,
         budget,
@@ -10954,7 +10963,7 @@ fn string_literal_composite_holds(
     {
         return Ok(false);
     }
-    let literal_pointer = |argument: &AlgebraicValue| {
+    let literal_pointer = |argument: ResourceFieldValue<'_>| {
         matches!(argument.as_program_value(), Some(ProgramValue::Pointer(pointer))
             if matches!(pointer.pointer().base, AddressBase::StringLiteral { .. }))
     };
@@ -10991,7 +11000,14 @@ fn string_literal_composite_holds(
     if !within_literals {
         return Ok(false);
     }
-    composite_definition_facts_hold(definition, arguments, state, assumptions, budget, &mut None)
+    composite_definition_facts_hold(
+        definition,
+        &(arguments).native_values(),
+        state,
+        assumptions,
+        budget,
+        &mut None,
+    )
 }
 
 /// The pieces of a viewed composite whose checked one-level expansion is
@@ -11041,7 +11057,7 @@ fn local_storage_composite_pieces(
     let mut unestablished = None;
     if !composite_definition_facts_hold(
         definition,
-        arguments,
+        &(arguments).native_values(),
         state,
         assumptions,
         budget,
@@ -14063,8 +14079,8 @@ fn held_child_witness(
         .iter()
         .filter_map(|fact| match fact.resource() {
             Resource::Composite { name, arguments } if name == child_name => {
-                match arguments.as_ref() {
-                    [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] => {
+                match arguments.fixed_values::<1>() {
+                    Some([ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) => {
                         Some(pointer.pointer().clone())
                     }
                     _ => None,
@@ -14780,7 +14796,13 @@ fn check_instance_resource_arguments(
                 .arguments()
                 .iter()
                 .zip(arguments.iter())
-                .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
+                .all(|(a, b)| {
+                    crate::kernel::resource_field_values_proven_equal(
+                        (a).into(),
+                        (b).into(),
+                        assumptions,
+                    )
+                })
         {
             let binder = formal.binding_name().unwrap_or("resource");
             let spelling = formal
@@ -15465,14 +15487,18 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 .zip(child_instance.arguments.iter())
                 .enumerate()
                 .find(|(_, (a, b))| {
-                    !crate::kernel::instance_arguments_proven_equal(a, b, assumptions)
+                    !crate::kernel::instance_field_values_proven_equal(
+                        (a).into(),
+                        (b).into(),
+                        assumptions,
+                    )
                 })
             {
                 return Err(ResourceRewriteRefusal::ChildArgumentNotEstablished {
                     child: child.name.clone(),
                     index,
-                    actual: Box::new(a.clone()),
-                    required: Box::new(b.clone()),
+                    actual: Box::new(a.into_native()),
+                    required: Box::new(b.into_native()),
                 });
             }
             if let Some(((field, _), _)) = actual
@@ -16043,9 +16069,20 @@ fn construct_composite_resource_body_with_source(
         );
     }
     let witnesses = if selected.is_some() {
-        bind_composite_witness_values(definition, arguments, &mut state, None, assumptions)?
+        bind_composite_witness_values(
+            definition,
+            &(arguments).native_values(),
+            &mut state,
+            None,
+            assumptions,
+        )?
     } else {
-        bind_composite_witnesses(definition, arguments, &mut state, assumptions)?
+        bind_composite_witnesses(
+            definition,
+            &(arguments).native_values(),
+            &mut state,
+            assumptions,
+        )?
     };
     let mut budget = ExecutionBudget::beside_live_state();
     // Opening a held composite assumes the body its fold established
@@ -16977,7 +17014,14 @@ pub(super) fn assembled_composite_body_facts_hold(
             parameter.program_type(),
         );
     }
-    if bind_composite_witnesses(definition, arguments, &mut state, assumptions).is_none() {
+    if bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )
+    .is_none()
+    {
         return false;
     }
     let mut budget = ExecutionBudget::beside_live_state();
@@ -18569,7 +18613,7 @@ fn instance_argument_class_facts(
     matched_argument_classes(definition, body)
         .into_iter()
         .filter_map(|(index, class)| match instance.arguments().get(index) {
-            Some(AlgebraicValue::Program(value @ ProgramValue::Pointer(_))) => {
+            Some(crate::kernel::ResourceFieldValue::Program(value @ ProgramValue::Pointer(_))) => {
                 // The receipt's value carries the class, as a checked call's
                 // does: that annotation is what the graph indexes.
                 let typed = value.clone().with_pointer_object_class(Some(class.clone()));
@@ -19561,7 +19605,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     .zip(arguments.iter())
                     .enumerate()
                     .find(|(_, (a, b))| {
-                        !crate::kernel::instance_arguments_proven_equal(a, b, assumptions)
+                        !crate::kernel::instance_field_values_proven_equal(
+                            (a).into(),
+                            (b).into(),
+                            assumptions,
+                        )
                     })
                     .map(|(index, _)| {
                         format!(
