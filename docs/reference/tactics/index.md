@@ -3878,8 +3878,9 @@ expansion preserves the checked step, and profiling charges one simple leaf.
 **Forms:** `unfold(resource(args)[i]);` and `fold(resource(args)[i]);`
 
 The resource must declare guarded iterated ownership. Open the whole
-resource first. The written arguments select its held clause, and the
-clause supplies the element range at the current `int32` index `i`.
+resource first. The written arguments must determine the clause's bounds,
+layout, and guard. They select its held instance, and the clause supplies
+the element range at the current `int32` index `i`.
 Indexed `unfold` moves the element to ordinary owned memory, leaving an
 open slot. Indexed `fold` consumes that memory and restores the slot.
 The same checks apply as for [taking](#taking-a-range) and
