@@ -581,19 +581,17 @@ impl ContractExitObligations {
                 state: Box::new((*outcome.state).clone()),
             }
         };
-        let mut checked_claims = Vec::new();
-        let mut returned = ResourceContext::new_with_equalities(facts.assumptions());
-        for claim in &context.resource_claims {
-            if let Some(crate::kernel::proof::ClaimGoalEvidence::Resource(receipt)) =
-                claims.evidence(claim.key())
-            {
-                checked_claims.push(claim.key().clone());
-                if receipt.contributes_returned_resources {
-                    returned = returned
-                        .unchecked_with_facts(receipt.returned_resources.facts().iter().cloned());
-                }
-            }
-        }
+        let checked_claims = context
+            .resource_claims
+            .iter()
+            .filter(|claim| {
+                matches!(
+                    claims.evidence(claim.key()),
+                    Some(crate::kernel::proof::ClaimGoalEvidence::Resource(_))
+                )
+            })
+            .map(|claim| claim.key().clone())
+            .collect::<Vec<_>>();
         let mut effect_paths = Vec::new();
         for (case_index, case) in cases.iter().enumerate() {
             let mut path = path.clone();
@@ -622,7 +620,6 @@ impl ContractExitObligations {
                         .get(self.path_index)
                         .cloned()
                         .flatten(),
-                    returned.clone(),
                     false,
                     execution.boundary_transfer.as_deref(),
                 )
@@ -638,7 +635,6 @@ impl ContractExitObligations {
                         .get(self.path_index)
                         .cloned()
                         .flatten(),
-                    returned.clone(),
                     false,
                     execution.boundary_transfer.as_deref(),
                     Some(&checked_outcome),
