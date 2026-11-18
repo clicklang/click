@@ -131,10 +131,13 @@ fn function_contract_lookup_ignores_unrelated_pointer_facts() {
             name: FunctionContract::predicate_name_for(name),
             arguments: vec![
                 Term::ExecutionState(Box::new(ExecutionState::new())),
-                Term::ProgramValue(ProgramValue::typed_pointer(
-                    pointer,
-                    ProgramType::FunctionPointer(CallbackSignature::from_encoded(90_000)),
-                )),
+                Term::ProgramValue(
+                    (ProgramValue::typed_pointer(
+                        pointer,
+                        ProgramType::FunctionPointer(CallbackSignature::from_encoded(90_000)),
+                    ))
+                    .into(),
+                ),
             ],
         }
     }
@@ -175,7 +178,7 @@ fn callback_contract_availability_uses_scoped_pointer_equality() {
         name: FunctionContract::predicate_name_for(name),
         arguments: vec![
             Term::ExecutionState(Box::new(state)),
-            Term::ProgramValue(ProgramValue::typed_pointer(pointer, interface_type)),
+            Term::ProgramValue((ProgramValue::typed_pointer(pointer, interface_type)).into()),
         ],
     };
     let target = Address::function("callback-target");
@@ -1847,10 +1850,13 @@ fn equality_aware_pointer_fact_queries_ignore_unrelated_facts_and_old_states() {
         name: FunctionContract::predicate_name_for("Selected"),
         arguments: vec![
             Term::ExecutionState(Box::new(state)),
-            Term::ProgramValue(ProgramValue::typed_pointer(
-                pointer,
-                ProgramType::FunctionPointer(CallbackSignature::from_encoded(122_000)),
-            )),
+            Term::ProgramValue(
+                (ProgramValue::typed_pointer(
+                    pointer,
+                    ProgramType::FunctionPointer(CallbackSignature::from_encoded(122_000)),
+                ))
+                .into(),
+            ),
         ],
     };
     let goal = fact(alias.clone(), ExecutionState::new());

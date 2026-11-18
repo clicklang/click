@@ -7080,7 +7080,7 @@ pub(super) fn contracts_for_pointer(
                 .iter()
                 .skip(2)
                 .map(|argument| match argument {
-                    Term::ProgramValue(value) => Some(value.clone()),
+                    Term::ProgramValue(value) => Some(value.native_compat().clone()),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -7620,7 +7620,7 @@ fn function_contract_requirement_is_proven(
             let Some(values) = values
                 .iter()
                 .map(|value| match value {
-                    Term::ProgramValue(value) => Some(value.clone()),
+                    Term::ProgramValue(value) => Some(value.native_compat().clone()),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()

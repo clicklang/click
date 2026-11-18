@@ -19,7 +19,7 @@ fn value(pointer: &Address, checked: bool) -> ProgramValue {
 fn source(name: &str, pointer: &Address) -> Proposition {
     Proposition::Predicate {
         name: name.into(),
-        arguments: vec![Term::ProgramValue(value(pointer, true))],
+        arguments: vec![Term::ProgramValue((value(pointer, true)).into())],
     }
 }
 fn equal(a: &Address, b: &Address) -> Proposition {
@@ -170,7 +170,7 @@ fn goals_alternatives_and_weak_cast_metadata_do_not_admit_type_evidence() {
         .with_contract_pointer_object_class(Some(class()), None, 0, 91);
     let weak = context.assume_proposition(Proposition::Predicate {
         name: "weak".into(),
-        arguments: vec![Term::ProgramValue(weak)],
+        arguments: vec![Term::ProgramValue((weak).into())],
     });
     assert!(!can_type(&weak, &p));
 }

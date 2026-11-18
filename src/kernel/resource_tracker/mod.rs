@@ -1422,7 +1422,7 @@ fn collect_term_reads(term: &Term, reads: &mut Vec<ResourceRead>) {
         Term::Algebraic(term) => {
             term.for_each_machine_operand(|term| collect_operand_reads(term, reads));
         }
-        Term::ProgramValue(value) => collect_value_reads(value, reads),
+        Term::ProgramValue(value) => collect_value_reads(value.native_compat(), reads),
         _ => {}
     }
 }

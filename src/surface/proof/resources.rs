@@ -481,7 +481,7 @@ fn dynamic_body_fact_dependency(
             | Proposition::ResourceContains { .. } => Ok(()),
             Proposition::MemoryLoads { outcome, .. } => match outcome {
                 ExpressionOutcome::Value(value) => walk_term(
-                    &Term::ProgramValue(value.native_compat().clone()),
+                    &Term::ProgramValue(value.clone()),
                     state,
                     assumptions,
                     temporary_views,
@@ -501,7 +501,7 @@ fn dynamic_body_fact_dependency(
                 // Definedness is an observation of the same cell as a load.
                 // Retain its access dependency, including loads in its address.
                 walk_term(
-                    &Term::ProgramValue(ProgramValue::pointer(pointer.clone())),
+                    &Term::ProgramValue(ProgramValue::pointer(pointer.clone()).into()),
                     state,
                     assumptions,
                     temporary_views,

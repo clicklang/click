@@ -9504,7 +9504,7 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
         name: "selected".to_string(),
         arguments: vec![
             Term::ExecutionState(Box::new(state.clone())),
-            Term::ProgramValue(ProgramValue::Int32(MachineTerm::constant(7))),
+            Term::ProgramValue((ProgramValue::Int32(MachineTerm::constant(7))).into()),
         ],
     };
 

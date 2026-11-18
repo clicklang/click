@@ -2925,8 +2925,8 @@ impl LoopExitRestatement {
             program_value_comparison_proposition(fresh, ComparisonOperator::Equal, held)
                 .unwrap_or_else(|| {
                     Proposition::Equal(
-                        Term::ProgramValue(fresh.clone()),
-                        Term::ProgramValue(held.clone()),
+                        Term::ProgramValue(fresh.clone().into()),
+                        Term::ProgramValue(held.clone().into()),
                     )
                 }),
         );
@@ -3422,7 +3422,7 @@ fn exhausted_identities(limit: ExecutionLimit) -> String {
 fn resource_value_term(value: &AlgebraicValue) -> Term {
     match value {
         AlgebraicValue::Integer(term) => Term::Integer(term.clone()),
-        AlgebraicValue::Program(value) => Term::ProgramValue(value.clone()),
+        AlgebraicValue::Program(value) => Term::ProgramValue(value.clone().into()),
         AlgebraicValue::Algebraic(term) => Term::Algebraic(term.clone()),
     }
 }

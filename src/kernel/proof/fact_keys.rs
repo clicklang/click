@@ -682,10 +682,13 @@ pub(in crate::kernel) fn pointer_predicate_selector(proposition: &Proposition) -
                 if let Some(ProgramValue::Pointer(pointer)) =
                     term_source_0.program_value_native() =>
             {
-                Term::ProgramValue(ProgramValue::typed_pointer(
-                    crate::kernel::Address::null(),
-                    pointer.program_type(),
-                ))
+                Term::ProgramValue(
+                    ProgramValue::typed_pointer(
+                        crate::kernel::Address::null(),
+                        pointer.program_type(),
+                    )
+                    .into(),
+                )
             }
             other => other.clone(),
         })
@@ -3719,7 +3722,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                         }
                         Term::ProgramValue(value) => AlphaPredicateArgumentKey::Value(
                             alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
-                                value,
+                                value.native_compat(),
                                 bindings,
                                 next_binder,
                             )?,
