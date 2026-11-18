@@ -357,7 +357,7 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
     let call = |pointer| MachineTerm::ClickFunctionApplication {
         name: "pointer_getter".into(),
         arguments: vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-            crate::kernel::PointerValue::new(pointer, ProgramType::Int32Pointer),
+            crate::kernel::Pointer::new(pointer, ProgramType::Int32Pointer),
         ))],
     };
     let expression = |pointer| {
@@ -385,8 +385,8 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
     // address equality alone must not identify these function applications.
     assert!(!graph.are_uint64_equal(&a, &b));
     graph.add_pointer_value_equality(
-        &crate::kernel::PointerValue::new(p, ProgramType::Int32Pointer),
-        &crate::kernel::PointerValue::new(q, ProgramType::Int32Pointer),
+        &crate::kernel::Pointer::new(p, ProgramType::Int32Pointer),
+        &crate::kernel::Pointer::new(q, ProgramType::Int32Pointer),
     );
     assert!(graph.are_uint64_equal(&a, &b));
 }
@@ -429,19 +429,18 @@ fn a_uint32_constant_is_one_class_with_its_word() {
 #[test]
 fn common_call_operands_register_complete_pointer_arguments() {
     use crate::kernel::{
-        KernelTermExport, KernelTermImport, MachineOperandView as V, PointerValue,
-        SharedPureApplication,
+        KernelTermExport, KernelTermImport, MachineOperandView as V, Pointer, SharedPureApplication,
     };
     let _session = crate::kernel::VerificationSession::enter();
-    let p = PointerValue::new(
+    let p = Pointer::new(
         Address::symbolic(Variable(940_061)),
         ProgramType::Int32Pointer,
     );
-    let q = PointerValue::new(
+    let q = Pointer::new(
         Address::symbolic(Variable(940_062)),
         ProgramType::Int32Pointer,
     );
-    let call = |pointer: PointerValue| {
+    let call = |pointer: Pointer| {
         KernelTermImport::default().machine_call(
             M::Int32,
             &SharedPureApplication::intern(
@@ -454,7 +453,7 @@ fn common_call_operands_register_complete_pointer_arguments() {
     let exports = KernelTermExport::machine_export_count();
     let mut graph = EqualityGraph::default();
     assert!(!graph.are_int32_equal_views(V::Shared(&a), V::Shared(&b)));
-    graph.add_equality(p.pointer(), q.pointer());
+    graph.add_equality(p.address(), q.address());
     assert!(!graph.are_int32_equal_views(V::Shared(&a), V::Shared(&b)));
     graph.add_pointer_value_equality(&p, &q);
     assert!(graph.are_int32_equal_views(V::Shared(&a), V::Shared(&b)));

@@ -640,6 +640,13 @@ pub enum CppBinaryOperator {
     LogicalAnd,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CppCompoundAssignment {
+    Add,
+    Subtract,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppExpression {
@@ -658,6 +665,8 @@ pub enum CppExpression {
         callee: CppFunctionReference,
         arguments: Vec<CppCallArgument>,
         value_type: CppType,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        returned_member: Option<Box<CppReturnedMember>>,
         span: CppSpan,
     },
     IntegerLiteral {
@@ -789,6 +798,14 @@ pub struct CppFieldReference {
     pub declaration_id: String,
     pub name: String,
     pub span: CppSpan,
+}
+
+/// A direct field read through the address yielded by an observer.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppReturnedMember {
+    pub reference_type: CppType,
+    pub field: CppFieldReference,
 }
 
 /// Preserve the original field-reference encoding; a base edge has a distinct
@@ -1195,13 +1212,16 @@ pub enum CppStatement {
         pointer: CppExpression,
         span: CppSpan,
     },
-    /// `call(...) = value` through a returned native reference. C++17
-    /// sequences an assignment's right operand first, so the value is read
-    /// before the call yields the referent's address and is stored there.
+    /// An assignment through a returned reference or one of its fields.
+    /// C++17 sequences the right operand before evaluating the call.
     CallStore {
         callee: CppFunctionReference,
         arguments: Vec<CppCallArgument>,
         value_type: CppType,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        field: Option<Box<CppFieldReference>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        compound_operator: Option<CppCompoundAssignment>,
         value: CppExpression,
         span: CppSpan,
     },
@@ -1843,6 +1863,24 @@ impl<'a> RecordIndex<'a> {
 
     pub(super) fn has_destructors(&self) -> bool {
         self.has_destructors
+    }
+
+    pub(super) fn resolve_returned_field<'s>(
+        &'s self,
+        reference_type: &'s CppType,
+        field: &CppFieldReference,
+    ) -> Result<(&'s CppType, u32), String> {
+        if !matches!(reference_type, CppType::LvalueReference { pointee }
+            if matches!(pointee.as_ref(), CppType::Record { .. }))
+        {
+            return Err("C++ returned field requires a record lvalue reference".into());
+        }
+        let (field_type, offset) =
+            self.resolve_path(reference_type, [ProjectionRef::Field(field)])?;
+        if Scalar::of(field_type).is_none() {
+            return Err("C++ returned field requires a supported scalar type".into());
+        }
+        Ok((field_type, offset))
     }
 
     pub(super) fn resolve_path<'b, 's, P: Into<ProjectionRef<'b>>>(
@@ -3844,6 +3882,8 @@ impl CppStatement {
                 callee,
                 arguments,
                 value_type,
+                field,
+                compound_operator,
                 value,
                 span,
             } => {
@@ -3851,9 +3891,27 @@ impl CppStatement {
                 let CppType::LvalueReference { pointee } = value_type else {
                     return Err("C++ call store requires a returned reference".into());
                 };
-                require_native_pointer_element(pointee, false, "call store referent")?;
+                let stored_type = if let Some(field) = field {
+                    field.span.validate(logical_source)?;
+                    let (field_type, _) = records.resolve_returned_field(value_type, field)?;
+                    if matches!(pointee.as_ref(), CppType::Record { is_const: true, .. })
+                        || Scalar::of(field_type).is_some_and(|scalar| scalar.is_const)
+                    {
+                        return Err("C++ call store cannot write through a const field or record reference".into());
+                    }
+                    field_type
+                } else {
+                    require_native_pointer_element(pointee, false, "call store referent")?;
+                    pointee
+                };
+                if compound_operator.is_some()
+                    && (field.is_none()
+                        || !matches!(Scalar::mutable_kind(stored_type), Some(ScalarKind::Int32 | ScalarKind::Int64)))
+                {
+                    return Err("C++ compound call store requires a mutable signed integer field".into());
+                }
                 value.validate(places, records, logical_source)?;
-                if !same_scalar_type(&super::scalar::scalar_value_type(pointee), value.value_type()) {
+                if !same_scalar_type(&super::scalar::scalar_value_type(stored_type), value.value_type()) {
                     return Err("C++ call store must preserve the referent's native type".into());
                 }
                 Ok(())
@@ -4788,8 +4846,21 @@ impl CppExpression {
                 callee,
                 arguments,
                 value_type,
+                returned_member,
                 span,
             } => {
+                if let Some(member) = returned_member {
+                    member.field.span.validate(logical_source)?;
+                    let (field_type, _) =
+                        records.resolve_returned_field(&member.reference_type, &member.field)?;
+                    if !same_scalar_type(&super::scalar::scalar_value_type(field_type), value_type)
+                    {
+                        return Err(
+                            "C++ record-reference field read must preserve the field value type"
+                                .into(),
+                        );
+                    }
+                }
                 require_return_value_type(value_type, "expression observer result")?;
                 if matches!(value_type, CppType::Void | CppType::LvalueReference { .. }) {
                     return Err("C++ expression observers require a scalar value result".into());
@@ -6264,12 +6335,17 @@ fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<Collec
             callee,
             arguments,
             value_type,
+            returned_member,
             ..
         } => {
             calls.push(CollectedCall::Ordinary {
                 callee,
                 arguments,
-                destination: Some(value_type),
+                destination: Some(
+                    returned_member
+                        .as_ref()
+                        .map_or(value_type, |member| &member.reference_type),
+                ),
                 observer: true,
                 scalar_initialization: false,
                 pointer_admitted: false,

@@ -74,7 +74,7 @@ fn existential_returns_carry_the_producers_witness_and_independent_child_ids() {
         };
         assert_eq!(
             body.transfers[1].fact,
-            owner(hidden.pointer().clone(), 0, 1)
+            owner(hidden.address().clone(), 0, 1)
         );
         assert_eq!(body.transfers[1].parent, occurrence.source);
         assert!(children.insert(body.transfers[1].source));
@@ -351,7 +351,7 @@ fn nested_existential_returns_keep_bindings_and_do_not_infer_them_from_siblings(
         let ProgramValue::Pointer(pointer) = value else {
             panic!("pointer witness");
         };
-        assert_eq!(child.fact, owner(pointer.pointer().clone(), 0, 1));
+        assert_eq!(child.fact, owner(pointer.address().clone(), 0, 1));
         assert!(
             body.transfers
                 .iter()
@@ -431,10 +431,10 @@ fn a_nested_witness_does_not_select_a_matching_sibling_description() {
     let [ProgramValue::Pointer(hidden)] = body.witnesses[&nested_source].as_slice() else {
         panic!("one nested witness");
     };
-    assert_ne!(hidden.pointer(), &pointer);
+    assert_ne!(hidden.address(), &pointer);
     assert!(body.expansion.contains(&owner(pointer, 0, 1)));
     assert!(
         body.expansion
-            .contains(&owner(hidden.pointer().clone(), 0, 1))
+            .contains(&owner(hidden.address().clone(), 0, 1))
     );
 }

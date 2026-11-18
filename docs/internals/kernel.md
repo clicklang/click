@@ -1431,6 +1431,15 @@ statement the yielding outcome's own binding (`MirStatement::RangeNext`
 with `payload: Some(i)` and `option: None`), and the `Option` and its
 temporary are gone.
 
+A slice or array iterator's `next` is split the same way, each outcome
+`MirStatement::SharedArrayNext` with `taken` set by the header's
+`SharedArrayHasNext`. `temporaries::bind_slice_payloads` makes the `Some`
+arm's first statement, `x = SharedArrayOptionElement(opt)`, the yielding
+outcome's `payload: Some(x)`, or leaves no payload when the arm binds nothing
+(`Some(_)`). The unreachable tag test, the `Option` and its temporary go,
+and the yielding outcome lowers to the binding and the advance, the other to
+nothing.
+
 A crate's own `Iterator::next` returns its `Option` through a call step.
 `user_iterators::test_user_next_results` turns the `match` on it into
 `MirTerminator::If` on `Expression::VariantIs`. `temporaries::call_steps`

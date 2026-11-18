@@ -772,7 +772,7 @@ fn load_carrier(
     pointer: &crate::kernel::Address,
 ) -> AlgebraicValue {
     AlgebraicValue::Program(ProgramValue::UInt64(
-        AlgebraicTermNode::memory_load_carrier(memory, pointer),
+        AlgebraicTermNode::memory_load_carrier(&crate::kernel::ProgramPoint::at(memory), pointer),
     ))
 }
 
@@ -791,8 +791,14 @@ fn collect_algebraic_term_bitvector_variables(
                 collect_algebraic_value_bitvector_variables(field, variables);
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
-            collect_algebraic_value_bitvector_variables(&load_carrier(memory, pointer), variables);
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
+            collect_algebraic_value_bitvector_variables(
+                &load_carrier(memory.shared_memory(), pointer),
+                variables,
+            );
         }
         AlgebraicTermNode::If {
             condition,
@@ -839,16 +845,16 @@ fn collect_algebraic_term_bitvector_variables(
     }
 }
 
-fn collect_algebraic_value_bitvector_variables(
-    value: &AlgebraicValue,
+fn collect_algebraic_value_bitvector_variables<'a>(
+    value: impl Into<ResourceFieldValue<'a>>,
     variables: &mut BTreeSet<Variable>,
 ) {
-    match value {
-        AlgebraicValue::Program(value) => {
+    match value.into() {
+        ResourceFieldValue::Program(value) => {
             collect_program_value_bitvector_variables(value, variables)
         }
-        AlgebraicValue::Integer(value) => collect_integer_variables(value, variables),
-        AlgebraicValue::Algebraic(value) => {
+        ResourceFieldValue::Integer(value) => collect_integer_variables(value, variables),
+        ResourceFieldValue::Algebraic(value) => {
             collect_algebraic_term_bitvector_variables(value, variables)
         }
     }
@@ -860,8 +866,15 @@ fn collect_sequence_bitvector_variables(
 ) {
     match sequence.node.as_ref() {
         SequenceTermNode::Literal(values) => {
-            for value in values.iter() {
-                collect_program_value_bitvector_variables(value, variables);
+            for index in 0..values.len() {
+                if let Some(value) = values.retained_value_ref(index) {
+                    collect_expression_value_bitvector_variables(value, variables);
+                } else {
+                    collect_program_value_bitvector_variables(
+                        values.get(index).unwrap(),
+                        variables,
+                    );
+                }
             }
         }
         SequenceTermNode::Concat(left, right) => {
@@ -1294,9 +1307,12 @@ fn collect_algebraic_term_bound_identities(
                 collect_algebraic_value_bound_identities(field, variables, integer_seen);
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             collect_algebraic_value_bound_identities(
-                &load_carrier(memory, pointer),
+                &load_carrier(memory.shared_memory(), pointer),
                 variables,
                 integer_seen,
             );
@@ -1672,8 +1688,18 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
             }
         }
         Resource::Instance(instance) => {
-            for value in instance.arguments.iter().chain(instance.fields.iter()) {
+            for value in instance.arguments.iter() {
                 collect_algebraic_value_bitvector_variables(value, variables);
+            }
+            for index in 0..instance.fields.len() {
+                if let Some(value) = instance.fields.retained_program(index) {
+                    collect_expression_value_bitvector_variables(value, variables);
+                } else {
+                    collect_algebraic_value_bitvector_variables(
+                        instance.fields.get(index).expect("field index"),
+                        variables,
+                    );
+                }
             }
             crate::kernel::ResourceReference::visit_captured_values(
                 instance.resource_arguments(),
@@ -1991,8 +2017,18 @@ fn collect_execution_environment_variables_uncached(
         // steps compare against, so its names are reserved like a measure's.
         if let Some(entry) = anchor.structural_entry() {
             variables.insert(entry.identity);
-            for value in entry.arguments.iter().chain(entry.fields.iter()) {
+            for value in entry.arguments.iter() {
                 collect_algebraic_value_bitvector_variables(value, variables);
+            }
+            for index in 0..entry.fields.len() {
+                if let Some(value) = entry.fields.retained_program(index) {
+                    collect_expression_value_bitvector_variables(value, variables);
+                } else {
+                    collect_algebraic_value_bitvector_variables(
+                        entry.fields.get(index).expect("field index"),
+                        variables,
+                    );
+                }
             }
         }
         for obligation in anchor.entry_obligations() {
@@ -2184,9 +2220,9 @@ pub(crate) fn collect_condition_bitvector_variables(
             }
         }
         ConditionTerm::BoolLoad(memory, pointer) => {
-            collect_shared_memory_bitvector_variables(memory, variables);
+            collect_shared_memory_bitvector_variables(memory.shared_memory(), variables);
             collect_pointer_bitvector_variables(pointer, variables);
-            collect_stored_load_connection_variables(memory, pointer, variables);
+            collect_stored_load_connection_variables(memory.shared_memory(), pointer, variables);
         }
     }
 }
@@ -2724,9 +2760,12 @@ fn collect_algebraic_free_integer_variables(
                 }
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             collect_algebraic_value_integer_variables(
-                &load_carrier(memory, pointer),
+                &load_carrier(memory.shared_memory(), pointer),
                 variables,
                 seen,
             );
@@ -2927,9 +2966,12 @@ fn collect_algebraic_integer_variables(
                 collect_algebraic_value_integer_variables(field, variables, seen);
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             collect_algebraic_value_integer_variables(
-                &load_carrier(memory, pointer),
+                &load_carrier(memory.shared_memory(), pointer),
                 variables,
                 seen,
             );
@@ -3734,9 +3776,12 @@ fn collect_capture_variables_in_algebraic_term(
                 collect_capture_variables_in_algebraic_value(field, variables, integer_seen);
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             collect_capture_variables_in_algebraic_value(
-                &load_carrier(memory, pointer),
+                &load_carrier(memory.shared_memory(), pointer),
                 variables,
                 integer_seen,
             );
@@ -4647,9 +4692,13 @@ fn collect_algebraic_scope_summary(
             }
             summary
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
-            collect_algebraic_value_scope_summary(&load_carrier(memory, pointer), summaries)
-        }
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => collect_algebraic_value_scope_summary(
+            &load_carrier(memory.shared_memory(), pointer),
+            summaries,
+        ),
         AlgebraicTermNode::If {
             condition,
             then_term,
@@ -5486,9 +5535,12 @@ fn collect_binder_variables_in_algebraic_term(
                 );
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             collect_binder_variables_in_algebraic_value(
-                &load_carrier(memory, pointer),
+                &load_carrier(memory.shared_memory(), pointer),
                 integer_variables,
                 bitvector_variables,
                 integer_seen,

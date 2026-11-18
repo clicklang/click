@@ -112,8 +112,7 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
         exit 1
     fi
     # Charon and its compiler runtime are a separate artifact under `rust/`,
-    # about half of the whole build output, fetched only by the shards whose
-    # tests start the Rust compiler.
+    # fetched only by the shards whose tests start the Rust compiler.
     if [[ -n "$needs_charon" ]]; then
         mkdir -p target/charon/debug
         tar -xzf "$artifacts/rust/charon.tar.gz" -C target/charon/debug
@@ -167,14 +166,17 @@ if [[ "${1:-}" == "--nightly" ]]; then
     export CLICK_NIGHTLY=1
 fi
 
+ci_build=""
 ci_artifacts=""
 nextest_args=("$@")
 if [[ -n "$nightly" ]]; then
     nextest_args+=(--run-ignored all --profile nightly)
 fi
 if [[ "${1:-}" == "--ci-prepare" ]]; then
+    ci_build=1
     ci_artifacts="${2:?usage: scripts/check.sh --ci-prepare ARTIFACTS}"
-    nextest_args=()
+elif [[ "${1:-}" == "--ci-warm-cache" ]]; then
+    ci_build=1
 fi
 
 # A few expansion regressions recurse deeply enough to overflow the default
@@ -198,7 +200,7 @@ keep_junit() {
 }
 
 clippy_status=0
-if [[ -z "$ci_artifacts" ]]; then
+if [[ -z "$ci_build" ]]; then
     run_quality_checks
     if [[ -n "$nightly" ]]; then
         phase_started=$SECONDS
@@ -217,7 +219,7 @@ fi
 # everything else. CI builds both and runs every suite; set
 # CLICK_REQUIRE_FRONTENDS=1 to make a missing toolchain an error here too.
 # An installed toolchain whose build fails is always an error.
-if [[ -n "$ci_artifacts" ]]; then
+if [[ -n "$ci_build" ]]; then
     CLICK_REQUIRE_FRONTENDS=1
 fi
 skipped_frontends=()
@@ -287,24 +289,29 @@ if ! command -v cargo-nextest >/dev/null 2>&1; then
     exit 1
 fi
 
-if [[ -n "$ci_artifacts" ]]; then
-    mkdir -p "$ci_artifacts"
+if [[ -n "$ci_build" ]]; then
+    archive_args=()
+    if [[ -n "$ci_artifacts" ]]; then
+        mkdir -p "$ci_artifacts"
+        archive_args=(--archive "$ci_artifacts/tests.tar.zst")
+    fi
     # CI restores `master`'s incremental state. rustc 1.98.1 can panic
     # reusing it ("encountered incremental compilation error with
     # evaluate_obligation") after a change to an auto-trait's inputs, and
     # does so on every retry. Clearing the incremental state and building
     # once more removes that failure; a real compile error fails again.
-    if ! scripts/fast-gate-build.sh --archive "$ci_artifacts/tests.tar.zst"; then
+    if ! scripts/fast-gate-build.sh "${archive_args[@]}" > /dev/null; then
         echo "warning: build failed; retrying without the restored incremental state" >&2
         rm -rf "${CARGO_TARGET_DIR:-target}/debug/incremental"
-        scripts/fast-gate-build.sh --archive "$ci_artifacts/tests.tar.zst"
+        scripts/fast-gate-build.sh "${archive_args[@]}" > /dev/null
     fi
+    [[ -n "$ci_artifacts" ]] || exit 0
     tar -cf "$ci_artifacts/exporter.tar" \
         -C "$(dirname "$CLICK_CPP_EXPORTER")" "$(basename "$CLICK_CPP_EXPORTER")"
     mkdir -p "$ci_artifacts/rust"
     tar -czf "$ci_artifacts/rust/charon.tar.gz" \
         -C "$(dirname "$CLICK_CHARON")" "$(basename "$CLICK_CHARON")" charon-driver
-    scripts/charon-runtime.sh pack "$ci_artifacts/rust/rust-runtime.tar.gz"
+    scripts/charon-runtime.sh pack "$ci_artifacts/rust/rust-runtime.tar.zst"
     exit 0
 fi
 

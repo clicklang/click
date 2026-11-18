@@ -47,6 +47,7 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
         _ => None,
     };
     value == Some(expected)
+        || (expected && super::super::arithmetic_special::intrinsic_pointer_alignment(goal))
 }
 
 /// Constant operands and reflexivity only: a bounded structural check, with

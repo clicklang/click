@@ -164,6 +164,7 @@ struct SpecEvaluation<'a> {
     /// well-formed logical calls' nominal argument requirements.
     recover_resource_call_types: bool,
     pointer_cast_operand: bool,
+    conditional_guard: bool,
     machine_preparation_disabled: bool,
     machine_result_production_disabled: bool,
     integer_bindings: BTreeMap<Variable, IntegerResult>,
@@ -223,6 +224,7 @@ impl<'a> SpecEvaluation<'a> {
             program_definedness: false,
             recover_resource_call_types: false,
             pointer_cast_operand: false,
+            conditional_guard: false,
             machine_preparation_disabled: false,
             machine_result_production_disabled: false,
             integer_bindings: initial_integer_bindings(),
@@ -235,6 +237,7 @@ impl<'a> SpecEvaluation<'a> {
             program_definedness: false,
             recover_resource_call_types: false,
             pointer_cast_operand: false,
+            conditional_guard: false,
             machine_preparation_disabled: false,
             machine_result_production_disabled: false,
             integer_bindings: initial_integer_bindings(),
@@ -2188,7 +2191,7 @@ fn evaluate_spec_integer_expression_paths_in(
             } else {
                 state
             };
-            let Some(AlgebraicValue::Integer(value)) = retained_state
+            let Some(crate::kernel::ResourceFieldValue::Integer(value)) = retained_state
                 .resource_instance_at_path(projection.identity, &projection.children)
                 .and_then(|instance| {
                     crate::kernel::eval::typed_reads::record_field(
@@ -3791,7 +3794,7 @@ fn evaluate_spec_algebraic_non_call_in(
             } else {
                 state
             };
-            let Some(AlgebraicValue::Algebraic(value)) = retained_state
+            let Some(crate::kernel::ResourceFieldValue::Algebraic(value)) = retained_state
                 .resource_instance_at_path(projection.identity, &projection.children)
                 .and_then(|instance| {
                     crate::kernel::eval::typed_reads::record_field(
@@ -4561,7 +4564,7 @@ pub(super) fn sequence_elements(sequence: &SequenceTerm) -> SequenceElements<'_>
 
 pub(super) struct SequenceElements<'a> {
     pending: Vec<&'a SequenceTerm>,
-    current: Option<std::slice::Iter<'a, ProgramValue>>,
+    current: Option<SequenceValuesIter<'a>>,
 }
 
 impl<'a> Iterator for SequenceElements<'a> {
@@ -4722,7 +4725,7 @@ fn evaluate_spec_sequence_at_state_in(
                             continue;
                         };
                         let mut next_values = values.clone();
-                        next_values.push(element_path.value.into_native());
+                        next_values.push(element_path.value);
                         next.push((next_values, merged_facts, merged_obligations));
                     }
                 }
@@ -4731,14 +4734,16 @@ fn evaluate_spec_sequence_at_state_in(
             Ok(paths
                 .into_iter()
                 .filter_map(|(values, facts, obligations)| {
-                    let element_type = values.first().map(ProgramValue::program_type);
+                    let element_type = values.first().map(ExecutionValue::program_type);
                     values
                         .iter()
                         .all(|value| Some(value.program_type()) == element_type)
                         .then(|| SpecSequencePath {
                             value: SequenceTerm {
                                 element_type,
-                                node: std::sync::Arc::new(SequenceTermNode::Literal(values.into())),
+                                node: std::sync::Arc::new(SequenceTermNode::Literal(
+                                    SequenceValues::from_values(values),
+                                )),
                             },
                             facts,
                             obligations,
@@ -5579,7 +5584,11 @@ fn lower_spec_comparison_proposition_at_state_in(
                 merge_failure_count = merge_failure_count.saturating_add(1);
                 continue;
             };
-            if let Some(proposition) = left_path.value.comparison(operator, &right_path.value)? {
+            if let Some(proposition) = left_path.value.comparison_in(
+                operator,
+                &right_path.value,
+                budget.conditional_guard,
+            )? {
                 paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
                     proposition,
@@ -5636,7 +5645,7 @@ fn lower_mutex_held_at_state_in(
             if state.preserves_mutex_protocols
                 && (state.mutex_ledger.is_none() || state.opaque_mutex_acquisitions.is_some())
             {
-                let guard = super::mutexes::guard_resource(state, mutex.pointer(), true)
+                let guard = super::mutexes::guard_resource(state, mutex.address(), true)
                     .expect("abstract guard description");
                 // The guard is matched as written: the facts never make
                 // an aliased mutex held.
@@ -5661,7 +5670,7 @@ fn lower_mutex_held_at_state_in(
                 .mutex_ledger
                 .as_ref()
                 .map_or(ConditionTerm::Constant(false), |ledger| {
-                    ledger.held_condition(mutex.pointer())
+                    ledger.held_condition(mutex.address())
                 });
             SpecPropositionPath {
                 introductions: Vec::new(),
@@ -5801,7 +5810,7 @@ fn lower_spec_predicate_proposition_at_state_in(
             {
                 return Ok(Vec::new());
             }
-            path.proposition = pointer_same_object_proposition(left.pointer(), right.pointer());
+            path.proposition = pointer_same_object_proposition(left.address(), right.address());
         }
     }
     Ok(paths)
@@ -6338,7 +6347,7 @@ fn evaluate_resource_count_paths(
                 else {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 };
-                let anchor = pointer.pointer();
+                let anchor = pointer.address();
                 // Consuming an authority after its population is proved empty
                 // preserves that exact zero as an immutable observation. It
                 // does not restore ownership or permission to change members.
@@ -6658,14 +6667,14 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             } else {
                 state
             };
-            let Some(AlgebraicValue::Program(value)) = retained_state
+            let Some(value) = retained_state
                 .resource_instance_at_path(projection.identity, &projection.children)
                 .and_then(|instance| {
                     crate::kernel::eval::typed_reads::record_field(
                         instance,
                         projection.field_index,
                     );
-                    instance.fields().get(projection.field_index)
+                    instance.fields().program_value(projection.field_index)
                 })
             else {
                 return Err(ExecutionLimit::ResourceFieldInstanceUnavailable);
@@ -6675,9 +6684,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             }
             vec![SpecExpressionPath {
                 value: if budget.machine_result_production_disabled {
-                    value.clone().into()
+                    value.into_native().into()
                 } else {
-                    SpecValue::from(value.clone())
+                    value
                         .retain_pointer_result()
                         .retain_algebraic_result()
                         .retain_float_result()
@@ -7574,7 +7583,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 };
                 path.value =
                     ProgramValue::Pointer(value.clone().with_bounds(Some(SubobjectBounds {
-                        start: value.pointer().clone(),
+                        start: value.address().clone(),
                         width: (*width).into(),
                     })))
                     .into();
@@ -7816,7 +7825,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .collect();
             let application = (!all_null)
                 .then(|| SharedPureApplication::intern(name.to_owned(), call_arguments(arguments)));
-            let value = PointerValue::new(
+            let value = Pointer::new(
                 if all_null {
                     Address::null()
                 } else {
@@ -8024,8 +8033,8 @@ fn refine_object_pointer_argument_with_null(
     {
         return true;
     }
-    let names_declared_object = |value: &PointerValue| {
-        [value.pointer(), value.provenance()]
+    let names_declared_object = |value: &Pointer| {
+        [value.address(), value.provenance()]
             .into_iter()
             .any(|object| {
                 object.offset == AddressOffset::Constant(0)
@@ -8035,7 +8044,7 @@ fn refine_object_pointer_argument_with_null(
     if pointer.object_type_evidence().is_none()
         && (assumptions
             .equality_graph
-            .has_object_type(pointer.pointer(), object_class)
+            .has_object_type(pointer.address(), object_class)
             || names_declared_object(pointer)
             || {
                 // Complete-value equality can identify the declared object
@@ -8050,7 +8059,7 @@ fn refine_object_pointer_argument_with_null(
             }
             // A pointer the facts prove null meets the requirement too. It
             // keeps its written address rather than being respelled as null.
-            || proves_null(assumptions, pointer.pointer()))
+            || proves_null(assumptions, pointer.address()))
     {
         *pointer = pointer
             .clone()
@@ -8260,7 +8269,7 @@ fn array_ref_argument_memory(memory: &SymbolicMemory, pointer: &ProgramValue) ->
     };
     let interned = crate::kernel::intern_memory(memory.clone());
     crate::kernel::resource_tracker::last_same_version_point(
-        crate::kernel::resource_tracker::TrackedResource::Block(&pointer.pointer().base),
+        crate::kernel::resource_tracker::TrackedResource::Block(&pointer.address().base),
         &crate::kernel::resource_tracker::ProgramPoint::at(&interned),
     )
     .map(|point| point.memory().clone())
@@ -8363,7 +8372,7 @@ fn evaluate_spec_pointer_offset_paths_in(
                 value: (ProgramValue::Pointer(
                     pointer.clone().with_address(
                         pointer
-                            .pointer()
+                            .address()
                             .offset_by_typed_elements(elements, byte_width, unsigned, wide),
                     ),
                 ))
@@ -8876,14 +8885,15 @@ fn evaluate_spec_if_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
-    let condition_paths = {
-        lower_spec_proposition_at_state_with_algebraic_bindings_in(
-            scope,
-            condition,
-            assumptions,
-            budget,
-        )
-    }?;
+    let previous_guard = std::mem::replace(&mut budget.conditional_guard, true);
+    let condition_paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
+        scope,
+        condition,
+        assumptions,
+        budget,
+    );
+    budget.conditional_guard = previous_guard;
+    let condition_paths = condition_paths?;
     for condition_path in condition_paths {
         let branch_assumptions = assumptions_with_path_context(
             assumptions,
@@ -8896,7 +8906,7 @@ fn evaluate_spec_if_paths_in(
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
                 Proposition::ConditionIs(condition, _)
-                    if crate::kernel::machine_integer::comparison::is_bounded_bit_comparison(
+                    if crate::kernel::machine_integer::comparison::is_bounded_machine_comparison(
                         condition,
                     ) =>
                 {
@@ -9981,11 +9991,11 @@ pub(super) fn program_value_comparison_proposition(
         {
             match operator {
                 ComparisonOperator::Equal => Some((
-                    pointer_equality_condition(left.pointer().clone(), right.pointer().clone()),
+                    pointer_equality_condition(left.address().clone(), right.address().clone()),
                     true,
                 )),
                 ComparisonOperator::NotEqual => Some((
-                    pointer_equality_condition(left.pointer().clone(), right.pointer().clone()),
+                    pointer_equality_condition(left.address().clone(), right.address().clone()),
                     false,
                 )),
                 ComparisonOperator::LessThan
@@ -10011,10 +10021,10 @@ pub(super) fn program_value_comparison_proposition(
         {
             match operator {
                 ComparisonOperator::Equal => {
-                    Some((pointer_is_null_condition(pointer.pointer().clone()), true))
+                    Some((pointer_is_null_condition(pointer.address().clone()), true))
                 }
                 ComparisonOperator::NotEqual => {
-                    Some((pointer_is_null_condition(pointer.pointer().clone()), false))
+                    Some((pointer_is_null_condition(pointer.address().clone()), false))
                 }
                 ComparisonOperator::LessThan
                 | ComparisonOperator::LessEqual
@@ -10353,7 +10363,7 @@ mod pointer_integer_observation_tests {
     #[test]
     fn integer_specifications_observe_bits_without_a_pointer_record() {
         let context = PureFactContext::new();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );

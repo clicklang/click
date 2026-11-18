@@ -9,7 +9,7 @@ pub(super) enum AlgebraicResult {
 }
 impl From<AlgebraicTerm> for AlgebraicResult {
     fn from(value: AlgebraicTerm) -> Self {
-        Self::Imported(KernelTermImport::default().algebraic(&value))
+        Self::Imported(KernelTermImport::for_exact_field_inputs().algebraic(&value))
     }
 }
 impl AlgebraicResult {
@@ -31,7 +31,12 @@ impl AlgebraicResult {
                 && self.native_constructor().is_some())
     }
     pub(super) fn retain_native(value: AlgebraicTerm, retain: bool) -> Self {
-        let root = KernelTermImport::default().algebraic(&value);
+        let mut import = if retain {
+            KernelTermImport::default()
+        } else {
+            KernelTermImport::for_exact_field_inputs()
+        };
+        let root = import.algebraic(&value);
         if retain {
             Self::Shared(root)
         } else {
@@ -90,7 +95,7 @@ impl AlgebraicFieldResult {
         }
     }
     pub(super) fn from_native(value: AlgebraicValue) -> Self {
-        Self::Imported(KernelTermImport::default().match_field(&value))
+        Self::Imported(KernelTermImport::for_exact_field_inputs().match_field(&value))
     }
     pub(super) fn from_program(value: SpecValue) -> Self {
         match value {
@@ -197,6 +202,90 @@ impl Eq for AlgebraicFieldResult {}
 mod storage_tests {
     use super::*;
     use crate::kernel::VerificationSession;
+
+    #[test]
+    fn imported_program_fields_preserve_native_call_argument_carriers() {
+        let _session = VerificationSession::enter();
+        let word = MachineTerm::Variable(Variable(1012150));
+        let call = |argument| {
+            ProgramValue::UInt32(MachineTerm::ClickFunctionApplication {
+                name: "imported_field_identity".into(),
+                arguments: vec![argument],
+            })
+        };
+        let a = AlgebraicValue::Program(call(PureFunctionArgument::Value(ProgramValue::UInt32(
+            word.clone(),
+        ))));
+        let b = AlgebraicValue::Program(call(PureFunctionArgument::SharedMachine(
+            SharedMachineIntegerTerm::intern(MachineIntegerType::UInt32, word),
+        )));
+        assert_ne!(a, b);
+        let stored_a = AlgebraicFieldResult::from_native(a.clone());
+        let stored_b = AlgebraicFieldResult::from_native(b.clone());
+        assert_ne!(stored_a, stored_b);
+        assert_eq!(stored_a.into_native(), a);
+        assert_eq!(stored_b.into_native(), b);
+    }
+
+    #[test]
+    fn imported_fields_keep_nested_program_call_carriers() {
+        let _session = VerificationSession::enter();
+        let call = MachineTerm::ClickFunctionApplication {
+            name: "nested_field_input".into(),
+            arguments: vec![PureFunctionArgument::SharedMachine(
+                SharedMachineIntegerTerm::intern(
+                    MachineIntegerType::UInt32,
+                    MachineTerm::Variable(Variable(1012151)),
+                ),
+            )],
+        };
+        let values = [
+            ProgramValue::UInt32(MachineTerm::Binary {
+                op: MachineBinaryOp::Add,
+                format: MachineIntegerType::UInt32,
+                left: Box::new(call.clone()),
+                right: Box::new(MachineTerm::uint32_constant(1)),
+            }),
+            ProgramValue::Float64(MachineTerm::ClickFunctionApplication {
+                name: "outer_float_field".into(),
+                arguments: vec![PureFunctionArgument::Value(ProgramValue::UInt32(
+                    call.clone(),
+                ))],
+            }),
+            ProgramValue::Bool(MachineTerm::BoolCast {
+                to: MachineIntegerType::UInt8,
+                value: Box::new(ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(call),
+                    right: Box::new(MachineTerm::uint32_constant(7)),
+                }),
+            }),
+        ];
+        for value in values {
+            let field = AlgebraicValue::Program(value);
+            let stored = AlgebraicFieldResult::from_native(field.clone());
+            assert_eq!(stored.clone().into_native(), field);
+            assert_eq!(stored, AlgebraicFieldResult::from_native(field.clone()));
+            let source = AlgebraicTerm {
+                algebraic_type: KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(
+                    match &field {
+                        AlgebraicValue::Program(v) => v.program_type(),
+                        _ => unreachable!(),
+                    },
+                )])
+                .algebraic_type,
+                node: AlgebraicTermNode::Constructor {
+                    variant: "Arm".into(),
+                    fields: vec![field],
+                },
+            };
+            assert_eq!(
+                AlgebraicResult::from(source.clone()).into_native_compat(),
+                source
+            );
+        }
+    }
 
     #[test]
     fn common_algebraic_storage_keeps_imported_and_retained_equality_classes() {

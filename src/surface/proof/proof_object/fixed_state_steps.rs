@@ -1846,7 +1846,7 @@ impl<'a> Proof<'a> {
                 context
                     .theorem_context
                     .values
-                    .get(name)
+                    .get_retained(name)
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();
@@ -2021,13 +2021,13 @@ impl<'a> Proof<'a> {
         let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
         let mut names = BTreeSet::new();
         collect_contract_expression_referenced_names(&expression, &mut names);
-        let values: BTreeMap<_, _> = names
+        let values: ProgramValueBindings = names
             .iter()
             .filter_map(|name| {
                 context
                     .theorem_context
                     .values
-                    .get(name)
+                    .get_retained(name)
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();
@@ -2101,13 +2101,13 @@ impl<'a> Proof<'a> {
         {
             return Ok(value);
         }
-        let values: BTreeMap<_, _> = names
+        let values: ProgramValueBindings = names
             .iter()
             .filter_map(|name| {
                 context
                     .theorem_context
                     .values
-                    .get(name)
+                    .get_retained(name)
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();
@@ -2174,6 +2174,35 @@ impl<'a> Proof<'a> {
                 .capture_instantiate_integer_argument(argument)
                 .map(InstanceArgument::Integer);
         }
+        let value = self.capture_native_argument(argument)?;
+        let uint64 = Sort::ProgramInteger(crate::kernel::MachineIntegerType::UInt64);
+        match (binder, value) {
+            (Sort::ProgramInt32, ProgramValue::Int32(argument)) => {
+                Ok(InstanceArgument::Machine(argument))
+            }
+            (binder, ProgramValue::UInt64(argument)) if *binder == uint64 => {
+                Ok(InstanceArgument::Machine(argument))
+            }
+            (
+                Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _),
+                ProgramValue::Pointer(pointer),
+            ) => Ok(InstanceArgument::Pointer(pointer)),
+            (binder, _) if *binder == uint64 => {
+                Err(self.step_error("`instantiate` argument did not evaluate to uint64"))
+            }
+            (Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _), _) => {
+                Err(self.step_error("`instantiate` argument did not evaluate to a pointer"))
+            }
+            _ => Err(self.step_error("`instantiate` argument did not evaluate to int32")),
+        }
+    }
+
+    /// Capture a native theorem operand with its original scalar or pointer
+    /// type, in exactly the environment used by explicit instantiation.
+    pub(in crate::surface::proof) fn capture_native_argument(
+        &self,
+        argument: &ContractExpression,
+    ) -> Result<ProgramValue, ClickError> {
         let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
         let value = if let ProofContext::Pure(context) = self.context.as_ref() {
             let names = contract_expression_referenced_names(&argument);
@@ -2294,32 +2323,13 @@ impl<'a> Proof<'a> {
                 "could not evaluate `instantiate` argument: {message}"
             ))
         })?;
-        let uint64 = Sort::ProgramInteger(crate::kernel::MachineIntegerType::UInt64);
-        match (binder, value) {
-            (Sort::ProgramInt32, ProgramValue::Int32(argument)) => {
-                Ok(InstanceArgument::Machine(argument))
-            }
-            (binder, ProgramValue::UInt64(argument)) if *binder == uint64 => {
-                Ok(InstanceArgument::Machine(argument))
-            }
-            (
-                Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _),
-                ProgramValue::Pointer(pointer),
-            ) => Ok(InstanceArgument::Pointer(pointer)),
-            (binder, _) if *binder == uint64 => {
-                Err(self.step_error("`instantiate` argument did not evaluate to uint64"))
-            }
-            (Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _), _) => {
-                Err(self.step_error("`instantiate` argument did not evaluate to a pointer"))
-            }
-            _ => Err(self.step_error("`instantiate` argument did not evaluate to int32")),
-        }
+        Ok(value)
     }
 
     /// An `Integer` binder's argument, captured as a mathematical value in
     /// the current proof context: the theorem's and the proof's `Integer`
     /// bindings in a pure proof, the fixed-state environment otherwise.
-    fn capture_instantiate_integer_argument(
+    pub(in crate::surface::proof) fn capture_instantiate_integer_argument(
         &self,
         argument: &ContractExpression,
     ) -> Result<crate::kernel::IntegerTerm, ClickError> {

@@ -628,6 +628,95 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
 }
 
 #[test]
+fn consuming_private_member_publishes_definedness_at_the_current_point() {
+    use crate::kernel::{MemorySegment, SpecExpression, SpecPoint, SpecProposition};
+    use crate::kernel::{int32, program_expression, program_parameter};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let (before, authority) = source_state();
+    let Resource::PopulationAuthority(description) = authority.resource() else {
+        unreachable!()
+    };
+    let member = ResourceFact::own(Resource::Composite {
+        name: description.family().to_owned(),
+        arguments: description.arguments().to_vec().into(),
+    });
+    let pointer = before.locals.slot("anchor").unwrap().clone();
+    let memory = before.memory().clone().store(pointer.clone(), int32(7));
+    let owned = ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0.into(), 1.into()));
+    let before = before
+        .with_memory(memory)
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(owned));
+    let facts = PureFactStore::default();
+    let (before, _) = before
+        .checked_population_authority_exchange(&authority, true, facts.assumptions())
+        .unwrap();
+    let definition = CompositeResourceDefinition::new(
+        "reference",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
+            program_expression::variable("p"),
+            program_expression::int32_literal(0),
+            program_expression::int32_literal(1),
+        ))],
+        vec![SpecProposition::Defined(SpecExpression::MemoryLoad {
+            point: SpecPoint::Current,
+            pointer: Box::new(SpecExpression::ProgramExpression(
+                program_expression::variable("p"),
+            )),
+            value_type: ProgramType::Int32,
+        })],
+    )
+    .with_authorized(true);
+    let function = program_function(
+        ProgramType::Void,
+        "member",
+        vec![],
+        ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
+    )
+    .with_composite_resource_definitions(vec![definition.clone()]);
+    let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {
+        at: Some(state.observation_point_id().unwrap()),
+        memory: state.memory().clone(),
+        pointer: pointer.clone(),
+        value_type: ProgramType::Int32,
+    };
+    let birth_facts = facts.clone().with_fact(defined_at(&before));
+    let (member_state, _) = before
+        .checked_population_member_exchange(&member, true, &definition, birth_facts.assumptions())
+        .unwrap();
+    let consuming = member_state
+        .clone()
+        .with_memory(member_state.memory().clone());
+    assert_ne!(
+        consuming.observation_point_id(),
+        before.observation_point_id()
+    );
+    assert!(consuming.memory().same_storage_roots(before.memory()));
+    let (after, death) = consuming
+        .checked_population_member_exchange(&member, false, &definition, facts.assumptions())
+        .unwrap();
+    let body_facts = crate::kernel::functions::instantiate_private_member_body_facts(
+        &member,
+        &definition,
+        &consuming,
+        facts.assumptions(),
+    )
+    .unwrap();
+    assert_eq!(body_facts.declared, vec![(0, defined_at(&consuming))]);
+    let exposed = body_facts
+        .propositions
+        .into_iter()
+        .fold(facts.clone(), |facts, fact| facts.with_fact(fact));
+    CheckedPopulationMemberRewrite::check(
+        &function, &consuming, &facts, &member, false, &death, &after, &exposed,
+    )
+    .unwrap();
+}
+
+#[test]
 fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
     use crate::kernel::{MemorySegment, program_parameter};
 
@@ -645,7 +734,7 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
         unreachable!()
     };
     let memory = ResourceFact::own_memory(MemoryRange::new(
-        pointer.pointer().clone(),
+        pointer.address().clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));

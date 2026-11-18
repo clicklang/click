@@ -187,8 +187,19 @@ pub(crate) fn resource_arguments_proven_equal(
     right: &AlgebraicValue,
     assumptions: &PureFactContext,
 ) -> bool {
+    resource_field_values_proven_equal(left.into(), right.into(), assumptions)
+}
+
+pub(crate) fn resource_field_values_proven_equal(
+    left: crate::kernel::ResourceFieldValue<'_>,
+    right: crate::kernel::ResourceFieldValue<'_>,
+    assumptions: &PureFactContext,
+) -> bool {
     match (left, right) {
-        (AlgebraicValue::Program(left), AlgebraicValue::Program(right)) => {
+        (
+            crate::kernel::ResourceFieldValue::Program(left),
+            crate::kernel::ResourceFieldValue::Program(right),
+        ) => {
             // A resource index observes an integer's numeric value. Matching
             // indices neither copies a C word nor transports its hidden record.
             program_values_proven_equal_for_memory_resolution(
@@ -197,7 +208,10 @@ pub(crate) fn resource_arguments_proven_equal(
                 assumptions,
             )
         }
-        (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
+        (
+            crate::kernel::ResourceFieldValue::Algebraic(left),
+            crate::kernel::ResourceFieldValue::Algebraic(right),
+        ) => {
             left.algebraic_type == right.algebraic_type
                 && (left == right
                     || assumptions.proves_exact(&Proposition::Equal(
@@ -229,19 +243,23 @@ pub(crate) fn instance_arguments_proven_equal(
     right: &AlgebraicValue,
     assumptions: &PureFactContext,
 ) -> bool {
-    if let (AlgebraicValue::Program(left), AlgebraicValue::Program(right)) = (left, right)
+    let (left, right) = (left.into(), right.into());
+    if let (
+        crate::kernel::ResourceFieldValue::Program(left),
+        crate::kernel::ResourceFieldValue::Program(right),
+    ) = (left, right)
         && let (ProgramValue::Pointer(left), ProgramValue::Pointer(right)) =
             (left.numeric_value(), right.numeric_value())
     {
         return (assumptions.pointer_provenance_match(left, right)
             || assumptions.provenance_equal(left.provenance(), right.provenance()))
             && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                left.pointer(),
-                right.pointer(),
+                left.address(),
+                right.address(),
                 assumptions,
             );
     }
-    resource_arguments_proven_equal(left, right, assumptions)
+    resource_field_values_proven_equal(left, right, assumptions)
 }
 
 pub(crate) fn canonical_program_memory_for_pointer_load(
@@ -410,9 +428,16 @@ pub(crate) fn resources_directly_match(
                 && left
                     .arguments()
                     .iter()
+                    .map(crate::kernel::ResourceFieldValue::from)
                     .chain(left.fields())
-                    .zip(right.arguments().iter().chain(right.fields()))
-                    .all(|(a, b)| resource_arguments_proven_equal(a, b, assumptions))
+                    .zip(
+                        right
+                            .arguments()
+                            .iter()
+                            .map(crate::kernel::ResourceFieldValue::from)
+                            .chain(right.fields()),
+                    )
+                    .all(|(a, b)| resource_field_values_proven_equal(a, b, assumptions))
         }
         (
             Resource::Composite {
@@ -2987,7 +3012,7 @@ pub(crate) fn pointer_read_has_stored_value(
     assumptions: &PureFactContext,
 ) -> bool {
     pointer_read_stored_value(left, assumptions, None).is_some_and(|stored| {
-        stored.pointer() == right || assumptions.pointers_known_equal(stored.pointer(), right)
+        stored.address() == right || assumptions.pointers_known_equal(stored.address(), right)
     })
 }
 
@@ -3115,7 +3140,7 @@ pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
         let stores_read = |cell: &MemoryDagCell, read: &LoadedPointerView| {
             matches!(cell, MemoryDagCell::Stored { value, .. }
                 if matches!(value.native(), ProgramValue::Pointer(value)
-                    if value.pointer() == &Address::loaded_value(&read.defining_memory, &read.defining_address)))
+                    if value.address() == &Address::loaded_value(&read.defining_memory, &read.defining_address)))
         };
         left.node() == right.node() || stores_read(&left, &b) || stores_read(&right, &a)
     })
@@ -3193,7 +3218,7 @@ fn pointer_read_domains_equal(
 pub(in crate::kernel) fn complete_pointer_read_value(
     origin: &Address,
     assumptions: &PureFactContext,
-) -> Option<PointerValue> {
+) -> Option<Pointer> {
     let ProgramValue::Pointer(value) = complete_pointer_carrier_read_value(origin, assumptions)?
     else {
         return None;
@@ -3276,8 +3301,8 @@ pub(crate) fn pointer_read_has_recorded_value(
         .into_iter()
         .any(|(read, value)| {
             pointer_read_stored_value(read, assumptions, Some(64)).is_some_and(|stored| {
-                stored.pointer() == value
-                    || assumptions.pointers_known_equal(stored.pointer(), value)
+                stored.address() == value
+                    || assumptions.pointers_known_equal(stored.address(), value)
             })
         })
 }
@@ -3430,7 +3455,7 @@ pub(in crate::kernel) fn pointer_read_stored_value(
     read: &Address,
     assumptions: &PureFactContext,
     max_hops: Option<usize>,
-) -> Option<PointerValue> {
+) -> Option<Pointer> {
     let MachineTerm::MemoryLoad(memory, address, kind) =
         crate::kernel::equality_graph::logical_pointer_read_term(read)?
     else {
@@ -3472,7 +3497,7 @@ fn pointer_value_at_stopping_store(
     kind: LoadKind,
     bytes: u32,
     assumptions: &PureFactContext,
-) -> Option<PointerValue> {
+) -> Option<Pointer> {
     let step = cell.node().derivation()?;
     let MemoryDerivation::Store {
         pointer: write,
@@ -3532,7 +3557,7 @@ pub(crate) fn pointer_load_offset_proven_equal(
         return false;
     };
     crate::kernel::reasoning::pointer_offsets_proven_equal_for_memory_resolution(
-        &stored.pointer().offset,
+        &stored.address().offset,
         right,
         assumptions,
     )
@@ -6253,7 +6278,7 @@ pub(super) fn store_value_equation(
         // The producer knows this exact store's value. Retain its read equation;
         // registration relates aliases by congruence, without looking in cells.
         let memory = crate::kernel::intern_memory(after.clone());
-        let read = PointerValue::new(
+        let read = Pointer::new(
             Address::loaded_value(&memory, pointer),
             value.program_type(),
         );
@@ -6510,8 +6535,8 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
             collect_condition_memories(right, memories);
         }
         ConditionTerm::BoolLoad(memory, pointer) => {
-            if !memories.contains(memory) {
-                memories.push(memory.clone());
+            if !memories.contains(memory.shared_memory()) {
+                memories.push(memory.shared_memory().clone());
             }
             collect_pointer_offset_memories(&pointer.offset, memories);
         }
@@ -6826,13 +6851,13 @@ fn transport_framed_atomic_condition(
 }
 
 fn transport_framed_atomic_pointer_value(
-    value: &PointerValue,
+    value: &Pointer,
     after: &SymbolicMemory,
     assumptions: Option<(&PureFactContext, bool)>,
-) -> Option<PointerValue> {
+) -> Option<Pointer> {
     // Only reconstructed complete words need their read provenance moved
     // alongside their numeric address. Ordinary pointers keep their origin.
-    let reconstructed_word = value.pointer().integer_address_bits().is_some();
+    let reconstructed_word = value.address().integer_address_bits().is_some();
     value.try_map_pointers(|pointer| {
         if reconstructed_word && let Some(read) = pointer.as_loaded_value() {
             // The supplied endpoint names this observation. Check its one
@@ -7781,7 +7806,7 @@ mod opaque_pointer_frame_tests {
         field: &Address,
         write: &Address,
         facts: &PureFactContext,
-    ) -> Option<(PointerValue, Proposition)> {
+    ) -> Option<(Pointer, Proposition)> {
         let resource = |p: Address, bytes| {
             Resource::Memory(MemoryRange::new_with_element_width(
                 p,
@@ -8029,12 +8054,12 @@ mod opaque_pointer_frame_tests {
         let field = header.clone().offset_by_bytes(8);
         let buffer = Address::symbolic(Variable(9_880_421));
         let target = Address::symbolic(Variable(9_880_422));
-        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
-            Some(SubobjectBounds {
+        let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+            SubobjectBounds {
                 start: target,
                 width: 4u32.into(),
-            }),
-        );
+            },
+        ));
         let before =
             SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
         let write = buffer.clone().offset_by_bytes(4);
@@ -8045,8 +8070,8 @@ mod opaque_pointer_frame_tests {
                 .store(write.clone(), ProgramValue::Int32(7u32.into())),
         );
         let read = |memory: &SharedMemory| {
-            PointerValue::from_read(
-                stored.pointer().clone(),
+            Pointer::from_read(
+                stored.address().clone(),
                 ProgramType::Int32Pointer,
                 memory,
                 &field,
@@ -9327,7 +9352,7 @@ mod common_boolean_transport_tests {
                 right: Box::new(MachineTerm::constant(1)),
             },
             ConditionTerm::PointerValueEqual(
-                Box::new(PointerValue::new(
+                Box::new(Pointer::new(
                     Address {
                         base: AddressBase::Symbolic(Variable(972_003)),
                         offset: AddressOffset::scaled_int32_node(
@@ -9341,10 +9366,7 @@ mod common_boolean_transport_tests {
                     },
                     ProgramType::Int32Pointer,
                 )),
-                Box::new(PointerValue::new(
-                    Address::null(),
-                    ProgramType::Int32Pointer,
-                )),
+                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
             ),
             ConditionTerm::PointerEqual(
                 Box::new(Address {
@@ -9412,7 +9434,10 @@ mod common_boolean_transport_tests {
                 Box::new(ConditionTerm::Constant(true)),
                 Box::new(ConditionTerm::Constant(false)),
             ),
-            ConditionTerm::BoolLoad(memory, Box::new(Address::symbolic(Variable(972_003)))),
+            ConditionTerm::BoolLoad(
+                crate::kernel::ProgramPoint::at(&memory),
+                Box::new(Address::symbolic(Variable(972_003))),
+            ),
         ] {
             assert!(
                 transport_framed_atomic_condition(&source, &SymbolicMemory::new(), None).is_none()
@@ -9441,7 +9466,7 @@ mod common_boolean_read_tests {
         let old = crate::kernel::intern_memory(before);
         let new = crate::kernel::intern_memory(after);
         let source = ConditionTerm::BoolLoad(
-            new.clone(),
+            crate::kernel::ProgramPoint::at(&new.clone()),
             Box::new(Address {
                 base: AddressBase::Symbolic(Variable(999370)),
                 offset: AddressOffset::scaled_int32_node(

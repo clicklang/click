@@ -569,7 +569,7 @@ pub(in crate::kernel) fn coerce_program_value_to_type_as(
         && pointer.program_type() == ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED)
     {
         return Some(ProgramValue::typed_pointer(
-            pointer.pointer().clone(),
+            pointer.address().clone(),
             ProgramType::FunctionPointer(signature),
         ));
     }
@@ -976,7 +976,7 @@ pub(in crate::kernel) fn cast_program_value_to_type(
     )
 }
 
-pub(super) fn cast_pointer_value(pointer: PointerValue, target_type: ProgramType) -> PointerValue {
+pub(super) fn cast_pointer_value(pointer: Pointer, target_type: ProgramType) -> Pointer {
     // Character-to-character casts retain the selected byte view.
     // Other casts to bytes, and every void cast, widen that view.
     let byte_to_byte = matches!(
@@ -1041,8 +1041,8 @@ fn cast_program_value_to_type_with_integer_origin(
                             target_type,
                         )
                         .map_err(RuntimeError::PointerConversion)?;
-                        if recovered.as_ref().map(PointerValue::pointer)
-                            != Some(record.pointer.pointer())
+                        if recovered.as_ref().map(Pointer::address)
+                            != Some(record.pointer.address())
                         {
                             return Err(RuntimeError::PointerConversion(
                                 "integer-to-pointer cast requires the original pointer with its tag cleared".into(),
@@ -1077,13 +1077,13 @@ fn cast_program_value_to_type_with_integer_origin(
                 return match super::pointer_tags::cast_tagged_address_to_pointer(
                     &term, assumptions, obligations, target_type,
                 ) {
-                    Ok(Some(pointer)) if pointer.pointer() == &Address::null() => Ok(ProgramValue::Pointer(pointer)),
+                    Ok(Some(pointer)) if pointer.address() == &Address::null() => Ok(ProgramValue::Pointer(pointer)),
                     Ok(Some(pointer)) => {
                         let origin = integer_pointer_origin.ok_or_else(|| RuntimeError::PointerConversion(
                             "integer-to-pointer cast requires a complete representation or a fresh cast identity".into(),
                         ))?;
-                        Ok(ProgramValue::Pointer(PointerValue::new(origin, target_type)
-                            .with_address(pointer.pointer().clone())
+                        Ok(ProgramValue::Pointer(Pointer::new(origin, target_type)
+                            .with_address(pointer.address().clone())
                             .with_declared_object_class(pointer.object_class())))
                     }
                     Ok(None) => Err(RuntimeError::PointerConversion(
@@ -1123,7 +1123,7 @@ fn cast_program_value_to_type_with_integer_origin(
             ));
         }
         let address =
-            MachineTerm::object_pointer_address(pointer.pointer().clone(), pointer.object_class());
+            MachineTerm::object_pointer_address(pointer.address().clone(), pointer.object_class());
         let numeric = match target_type {
             ProgramType::UInt64 => ProgramValue::UInt64(address),
             _ => ProgramValue::Int64(address),
@@ -1164,7 +1164,7 @@ pub(in crate::kernel) fn freed_pointer_use(
     }
     state
         .memory()
-        .deallocated_heap_allocation_holding(pointer.pointer(), assumptions)?;
+        .deallocated_heap_allocation_holding(pointer.address(), assumptions)?;
     Some(UndefinedBehavior::FreedPointerUse)
 }
 
@@ -1460,10 +1460,10 @@ pub(super) fn evaluate_native_expression_paths(
                         continue;
                     };
                     let outside_known_block = match (
-                        pointer.pointer().offset.as_const(),
+                        pointer.address().offset.as_const(),
                         state
                             .memory()
-                            .block_size(&pointer.pointer().base)
+                            .block_size(&pointer.address().base)
                             .and_then(|size| size.as_const()),
                     ) {
                         (Some(offset), Some(size)) => {
@@ -1474,12 +1474,12 @@ pub(super) fn evaluate_native_expression_paths(
                         }
                         _ => false,
                     };
-                    if pointer.pointer().is_in_null_block()
+                    if pointer.address().is_in_null_block()
                         || outside_known_block
-                        || state.memory().is_ended_local_address(pointer.pointer())
+                        || state.memory().is_ended_local_address(pointer.address())
                         || state
                             .memory()
-                            .is_deallocated_heap_address(pointer.pointer(), assumptions)
+                            .is_deallocated_heap_address(pointer.address(), assumptions)
                     {
                         path.outcome =
                             ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory);
@@ -1491,10 +1491,10 @@ pub(super) fn evaluate_native_expression_paths(
                     // storage, and is what a load of it would rest on.
                     if !assumptions.proves_memory_loadable(
                         state.memory(),
-                        pointer.pointer(),
+                        pointer.address(),
                         &MachineTerm::constant(width),
                     ) && state.resources().permits_memory_read(
-                        pointer.pointer(),
+                        pointer.address(),
                         width,
                         assumptions,
                     ) {
@@ -1505,7 +1505,7 @@ pub(super) fn evaluate_native_expression_paths(
                         assumptions,
                         Proposition::MemoryLoadable {
                             memory: state.memory().clone(),
-                            base: pointer.pointer().clone(),
+                            base: pointer.address().clone(),
                             bytes: MachineTerm::constant(width),
                             wide: false,
                         },
@@ -2176,7 +2176,7 @@ fn evaluate_program_cast_paths(
                         Some(address) => {
                             let class = pointer.object_class().or_else(|| address.object_class());
                             pointer
-                                .with_address(address.pointer().clone())
+                                .with_address(address.address().clone())
                                 .with_declared_object_class(class)
                         }
                         None => pointer,
@@ -2916,7 +2916,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                     ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => LValuePath {
                         outcome: LValueOutcome::LValue(
                             LValue::memory_with_volatile(
-                                pointer.pointer().clone(),
+                                pointer.address().clone(),
                                 value_type,
                                 pointer.pointee_volatile(),
                             )
@@ -2965,7 +2965,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                     ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => LValuePath {
                         outcome: LValueOutcome::LValue(
                             LValue::memory_with_volatile(
-                                pointer.pointer().clone(),
+                                pointer.address().clone(),
                                 *value_type,
                                 *volatile || pointer.pointee_volatile(),
                             )
@@ -3011,7 +3011,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                     ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => LValuePath {
                         outcome: LValueOutcome::LValue(
                             LValue::memory_with_volatile(
-                                pointer.pointer().clone(),
+                                pointer.address().clone(),
                                 value_type,
                                 pointer.pointee_volatile(),
                             )
@@ -3675,7 +3675,7 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                     match pointer_type {
                         Some(pointer_type) => {
                             let facts = lvalue_path.facts;
-                            let mut address = PointerValue::new(pointer, pointer_type)
+                            let mut address = Pointer::new(pointer, pointer_type)
                                 .with_pointee_volatile(lvalue.is_volatile())
                                 .with_pointee_constant(lvalue.is_constant())
                                 .with_bounds(lvalue.bounds().cloned());
@@ -4172,7 +4172,7 @@ pub(in crate::kernel) fn program_truthiness_paths(
             assumptions,
         ),
         ProgramValue::Pointer(pointer) => {
-            let is_null = pointer_is_null_condition(pointer.pointer().clone());
+            let is_null = pointer_is_null_condition(pointer.address().clone());
             match decide_with_facts(assumptions, &facts, &is_null) {
                 Some(true) => vec![TruthinessPath {
                     is_true: false,
@@ -4294,7 +4294,7 @@ mod pointer_integer_tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let root = Address::symbolic(Variable(991_085));
-        let source = PointerValue::new(root.clone(), ProgramType::Int32Pointer)
+        let source = Pointer::new(root.clone(), ProgramType::Int32Pointer)
             .with_object_class(Some(class.clone()))
             .with_bounds(Some(SubobjectBounds {
                 start: root,
@@ -4315,7 +4315,7 @@ mod pointer_integer_tests {
         .unwrap() else {
             panic!("pointer cast")
         };
-        assert_eq!(decoded.pointer(), source.pointer());
+        assert_eq!(decoded.address(), source.address());
         assert_eq!(decoded.object_class(), Some(class));
         assert!(!decoded.bounds_are_known());
         assert_ne!(decoded.provenance(), source.provenance());
@@ -4323,12 +4323,12 @@ mod pointer_integer_tests {
 
     #[test]
     fn pointer_integer_round_trip_retains_the_complete_pointer() {
-        let root = PointerValue::new(
+        let root = Pointer::new(
             Address::symbolic(Variable(991_001)),
             ProgramType::Int32Pointer,
         );
         let member = root.clone().with_bounds(Some(SubobjectBounds {
-            start: root.pointer().clone(),
+            start: root.address().clone(),
             width: 4u32.into(),
         }));
         let context = PureFactContext::new();
@@ -4337,7 +4337,7 @@ mod pointer_integer_tests {
                 member.clone(),
                 member
                     .clone()
-                    .with_address(member.pointer().offset_by_bytes(4)),
+                    .with_address(member.address().offset_by_bytes(4)),
             ] {
                 let word = cast(ProgramValue::Pointer(pointer.clone()), ty, &context).unwrap();
                 assert_eq!(
@@ -4360,12 +4360,12 @@ mod pointer_integer_tests {
 
     #[test]
     fn equal_integer_bits_do_not_exchange_pointer_bounds() {
-        let root = PointerValue::new(
+        let root = Pointer::new(
             Address::symbolic(Variable(991_002)),
             ProgramType::Int32Pointer,
         );
         let member = root.clone().with_bounds(Some(SubobjectBounds {
-            start: root.pointer().clone(),
+            start: root.address().clone(),
             width: 4u32.into(),
         }));
         let context = PureFactContext::new();
@@ -4420,7 +4420,7 @@ mod pointer_integer_partial_write_tests {
     fn a_partial_byte_write_discards_the_representation_even_when_bits_are_unchanged() {
         let context = PureFactContext::new();
         let word = cast_program_value_to_type(
-            ProgramValue::Pointer(PointerValue::new(
+            ProgramValue::Pointer(Pointer::new(
                 Address::symbolic(Variable(995_001)),
                 ProgramType::Int32Pointer,
             )),
@@ -4451,11 +4451,11 @@ mod pointer_integer_cast_identity_tests {
 
     #[test]
     fn identical_numeric_bits_cannot_copy_a_casts_established_bounds() {
-        let source = PointerValue::new(
+        let source = Pointer::new(
             Address::symbolic(Variable(997_001)),
             ProgramType::Int32Pointer,
         );
-        let bits = MachineTerm::pointer_address(source.pointer().clone());
+        let bits = MachineTerm::pointer_address(source.address().clone());
         let context = PureFactContext::new();
         let cast = |origin| {
             cast_program_value_to_type_with_integer_origin(
@@ -4474,7 +4474,7 @@ mod pointer_integer_cast_identity_tests {
         let ProgramValue::Pointer(second) = cast(997_003) else {
             panic!("pointer")
         };
-        assert_eq!(first.pointer(), second.pointer());
+        assert_eq!(first.address(), second.address());
         let context = context.assume_condition(
             ConditionTerm::pointer_value_equal(first, source.clone()),
             true,
@@ -4483,7 +4483,7 @@ mod pointer_integer_cast_identity_tests {
             MemoryRange::from_pointer_value(&source, 0u32.into(), 1u32.into(), 4),
         ));
         assert!(!resources.permits_designated_memory_read(
-            second.pointer(),
+            second.address(),
             Some(second.access_provenance()),
             4,
             &context
@@ -4495,7 +4495,7 @@ mod pointer_integer_cast_identity_tests {
 mod packed_word_contract_tests {
     use super::*;
 
-    fn cast(value: ProgramValue, assumptions: &PureFactContext) -> PointerValue {
+    fn cast(value: ProgramValue, assumptions: &PureFactContext) -> Pointer {
         let result = cast_program_value_to_type(
             value,
             ProgramType::Int32Pointer,
@@ -4560,9 +4560,9 @@ mod packed_word_contract_tests {
         let empty = PureFactContext::new();
         let reconstructed = cast(word, &empty);
         let unrelated = cast(other, &empty);
-        assert_eq!(reconstructed.pointer(), unrelated.pointer());
+        assert_eq!(reconstructed.address(), unrelated.address());
         assert!(!empty.pointer_provenance_match(&reconstructed, &unrelated));
-        let target = PointerValue::new(
+        let target = Pointer::new(
             Address::symbolic(Variable(997_004)),
             ProgramType::Int32Pointer,
         )
@@ -4571,7 +4571,7 @@ mod packed_word_contract_tests {
             width: 4u32.into(),
         }));
         let numeric = empty.assume_condition(
-            ConditionTerm::pointer_equal(reconstructed.pointer().clone(), target.pointer().clone()),
+            ConditionTerm::pointer_equal(reconstructed.address().clone(), target.address().clone()),
             true,
         );
         assert!(!numeric.pointer_provenance_match(&reconstructed, &target));

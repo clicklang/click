@@ -1328,10 +1328,12 @@ The adapter retains Charon's native control flow, iterator calls, and `Option`
 branches. An iterator is held as the slice it still covers, the slice
 `iter.as_slice()` returns: its data and its length. `core`'s `slice::Iter`
 holds the same slice as a start and an end pointer. Each successful
-`next()` yields the element at `iter.as_slice()`, records its shared address
-in the returned option, and moves the slice on by one element before
-entering the Rust body. An exhausted iterator exits without a read,
-including for an empty slice.
+`next()` yields the element at `iter.as_slice()`, binds the loop variable to
+its shared address, and moves the slice on by one element before entering
+the Rust body; no `Option` or compiler temporary holds it, as for a range. A
+`match` on `next()` whose `Some(_)` arm binds nothing only moves the slice
+on. An exhausted iterator exits without a read, including for an empty
+slice.
 
 A proof reads a loop's iterator as `iter` inside that loop's clauses and
 phases, and as `loop(i).iter` anywhere, through Rust's own methods:

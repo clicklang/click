@@ -1384,7 +1384,12 @@ impl BodyAdapter<'_, '_> {
             let iterator = self.local(root)?;
             let option = self.local(option)?;
             return Ok(Some(if shared {
-                S::SharedArrayNext { iterator, option }
+                S::SharedArrayNext {
+                    iterator,
+                    option: Some(option),
+                    payload: None,
+                    taken: None,
+                }
             } else {
                 S::ChunkNext { iterator, option }
             }));
@@ -3772,6 +3777,7 @@ pub(super) fn decode_crate(
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_range_payloads(&mut locals, &mut blocks, &temporaries);
+        temporaries::bind_slice_payloads(&mut locals, &mut blocks, &temporaries);
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
         temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
         functions.push(out::Function {
@@ -4597,58 +4603,6 @@ mod tests {
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         let claim = "verifying \"iteration.rs\"; fn signed(words: &[i32; 4]) -> i32 { views words[0..4]; ensures result == old(words[0]); }";
         assert!(ProgramVerificationSession::new_program_prepared(claim, &prepared).is_err());
-    }
-
-    #[test]
-    fn charon_shared_iteration_none_cannot_yield_a_scalar_reference() {
-        let mut export = decode(ITERATION_ARTIFACT, "iteration.rs", ITERATION_SOURCE).unwrap();
-        export.functions.retain(|f| f.name == "signed");
-        let f = &mut export.functions[0];
-        for local in f
-            .parameters
-            .iter_mut()
-            .chain(&mut f.mir.as_mut().unwrap().locals)
-        {
-            if let Type::Reference { pointee, .. } = &mut local.value_type
-                && let Type::Array { length, .. } = pointee.as_mut()
-            {
-                *length = 0;
-            }
-        }
-        let mir = f.mir.as_mut().unwrap();
-        let payload = mir
-            .blocks
-            .iter()
-            .flat_map(|b| &b.statements)
-            .find(|s| {
-                matches!(
-                    s,
-                    S::Assign {
-                        value: E::SharedArrayOptionElement { .. },
-                        ..
-                    }
-                )
-            })
-            .unwrap()
-            .clone();
-        let none_edge = mir
-            .blocks
-            .iter()
-            .find_map(|b| match b.terminator {
-                T::If {
-                    condition: E::SharedArrayHasNext { .. },
-                    else_target,
-                    ..
-                } => Some(else_target),
-                _ => None,
-            })
-            .unwrap();
-        let T::Goto { target: none } = mir.blocks[none_edge].terminator else {
-            panic!()
-        };
-        mir.blocks[none].statements.insert(0, payload);
-        let prepared = super::super::import::prepared_for_test(export).unwrap();
-        assert!(ProgramVerificationSession::new_program_prepared("verifying \"iteration.rs\"; fn signed(words: &[i32; 4]) -> i32 { ensures result == 0; }", &prepared).is_err());
     }
 
     const OWNED_ARRAY_ARTIFACT: &[u8] = include_bytes!(

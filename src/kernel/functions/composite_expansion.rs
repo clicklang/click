@@ -13,9 +13,9 @@ pub(super) fn composite_names_pointer_base(composite: &ResourceFact, pointer: &A
         let AlgebraicValue::Program(ProgramValue::Pointer(argument)) = argument else {
             return false;
         };
-        argument.pointer() == pointer
+        argument.address() == pointer
             || pointer
-                .shared_element_index_from_base_with_width(argument.pointer(), 1)
+                .shared_element_index_from_base_with_width(argument.address(), 1)
                 .is_some()
     })
 }
@@ -682,28 +682,25 @@ pub(crate) fn instantiate_private_member_body_facts(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
-    let memory = state.memory();
     let definitions = std::slice::from_ref(definition);
     let singleton = ResourceContext::new().unchecked_with_fact(composite.clone());
     let body = expand_composite_resource_fact(
         &singleton,
         composite,
         definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
+        &state.program_point(),
         assumptions,
     )?;
-    // Keep the current verification model and population state, but bind only
-    // this definition's parameters. Mutating a cloned caller-local map would
-    // copy the whole frame for every member fact instantiation.
+    // Keep the caller's observation point and population state. Bind only this
+    // definition's parameters and use only the private body as read authority.
     let mut fact_state = state.clone();
     fact_state.locals = LocalEnvironment::new();
-    instantiate_composite_resource_facts_with_state(
+    instantiate_composite_resource_facts_in_state(
         composite,
         definitions,
-        memory,
+        fact_state,
         &body,
         &assumptions.clone().require_owned_expression_loads(),
-        Some(&fact_state),
     )
 }
 

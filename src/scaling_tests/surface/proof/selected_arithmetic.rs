@@ -37,7 +37,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             memory: SymbolicMemory::new(),
-            values: BTreeMap::from([("x".into(), ProgramValue::Int32(value))]),
+            values: ProgramValueBindings::from([("x".into(), ProgramValue::Int32(value))]),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
             surface_requirements: surfaces,
@@ -173,7 +173,7 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             memory: SymbolicMemory::new(),
-            values: BTreeMap::from([
+            values: ProgramValueBindings::from([
                 ("k".into(), ProgramValue::Int32(k)),
                 ("j".into(), ProgramValue::Int32(j)),
                 ("y".into(), ProgramValue::Int32(y)),
@@ -273,7 +273,7 @@ fn retained_machine_rewrite_admission_reads_only_comparison_roots() {
 fn rewrite_history_keys_share_call_carriers_and_keep_state_authority() {
     use super::search::RewriteGoalKey;
     use crate::kernel::{
-        KernelTermImport, PointerValue, PureFunctionArgument, SharedMachineIntegerTerm,
+        KernelTermImport, Pointer, PureFunctionArgument, SharedMachineIntegerTerm,
         SharedPureApplication,
     };
     let mut samples = Vec::new();
@@ -289,7 +289,7 @@ fn rewrite_history_keys_share_call_carriers_and_keep_state_authority() {
                 "read_length".into(),
                 vec![PureFunctionArgument::ArrayRef {
                     memory,
-                    pointer: ProgramValue::Pointer(PointerValue::new(
+                    pointer: ProgramValue::Pointer(Pointer::new(
                         pointer.clone(),
                         ProgramType::Int32Pointer,
                     )),

@@ -130,7 +130,7 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
                 let read = AlgebraicTerm {
                     algebraic_type: algebraic_type.clone(),
                     node: AlgebraicTermNode::MemoryLoad {
-                        memory: memory.clone(),
+                        point: crate::kernel::ProgramPoint::at(&memory.clone()),
                         pointer: Box::new(address(index)),
                     },
                 };

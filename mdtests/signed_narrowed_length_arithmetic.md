@@ -1,4 +1,4 @@
-# Signed observations of a narrowed length have printable arithmetic certificates
+# Signed observations of a narrowed length have printable arithmetic steps
 
 The low word is an opaque signed value. Its explicit bounds support arithmetic;
 none of these facts imply a bound on the original native-width length. MemoryState

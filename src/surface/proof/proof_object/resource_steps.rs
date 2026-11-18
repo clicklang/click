@@ -1186,8 +1186,8 @@ impl<'a> Proof<'a> {
                     self.step_error(format!("unfold field binding `{name}` is already in scope"))
                 );
             }
-            match &instance.fields()[index] {
-                AlgebraicValue::Program(value) => {
+            match instance.fields().get(index).expect("checked field index") {
+                crate::kernel::ResourceFieldValue::Program(value) => {
                     locals.set_values(locals.values.with_inserted(
                         name.clone(),
                         ContractExpression::ProgramExpression(ProgramExpression::Value(
@@ -1196,7 +1196,8 @@ impl<'a> Proof<'a> {
                     ));
                 }
                 // Declaration expansion admits only C-typed field binders.
-                AlgebraicValue::Integer(_) | AlgebraicValue::Algebraic(_) => {
+                crate::kernel::ResourceFieldValue::Integer(_)
+                | crate::kernel::ResourceFieldValue::Algebraic(_) => {
                     return Err(self.step_error(format!(
                         "field `{slot}` of `{}` is not C-typed; an unfold pattern binds only C scalar and pointer fields",
                         instance.name()
@@ -1362,7 +1363,7 @@ impl<'a> Proof<'a> {
     fn apply_function_unfold_in_state(
         &self,
         application: &ClickFunctionApplication,
-        values: BTreeMap<String, ProgramValue>,
+        values: ProgramValueBindings,
         array_refs: ClickArrayRefs,
         algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
         integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,

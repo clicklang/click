@@ -165,7 +165,7 @@ fn pointer_result_from_outcomes<'a>(
                 .then(|| {
                     state
                         .memory()
-                        .declared_class(pointer.pointer())
+                        .declared_class(pointer.address())
                         .map(ObjectTypeEvidence::from)
                 })
                 .flatten()
@@ -290,7 +290,7 @@ mod tests {
             unreachable!()
         };
         assert!(after.supports_object_class(&class()));
-        assert_eq!(after.pointer(), before.pointer());
+        assert_eq!(after.address(), before.address());
         assert_eq!(after.provenance(), before.provenance());
         assert_eq!(after.bounds(), before.bounds());
         assert_eq!(after.bounds_are_known(), before.bounds_are_known());
@@ -370,7 +370,7 @@ mod tests {
             unreachable!()
         };
         let bits =
-            MachineTerm::object_pointer_address(source.pointer().clone(), source.object_class());
+            MachineTerm::object_pointer_address(source.address().clone(), source.object_class());
         let decoded = super::super::eval::pointer_tags::cast_tagged_address_to_pointer(
             &bits,
             &PureFactContext::new(),

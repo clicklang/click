@@ -1,12 +1,11 @@
-# Explicit transport refuses an unproved frame promptly
+# Explicit preservation refuses an unproved frame promptly
 
-The write is owned by the region, but its start is not known to lie in the
-arena's separated data range. The saved occupancy read therefore has no frame
-evidence. A single explicit transport must reuse identical failed memory
-questions across its bridge, reachability, and quantified-frame routes.
-The fixture harness pins this refusal below the work needed without that reuse.
+The region owns the write, but its start has no lower bound placing it in the
+arena's separated data range. An explicit `preserve` step names the occupancy
+cell and the store's footprint. It refuses when their separation is missing.
+The fixture harness checks that refusal under a pinned work limit.
 
-```c filename=explicit_transport_failure_is_prompt.c
+```c filename=explicit_preserve_failure_is_prompt.c
 struct arena {
     int32* data;
     int32* occupied;
@@ -60,7 +59,7 @@ resource arena_region(region: struct region*) {
     fact start < end;
 }
 
-verifying "explicit_transport_failure_is_prompt.c";
+verifying "explicit_preserve_failure_is_prompt.c";
 
 void arena_write(struct region* region, int32 value, int32 k) {
     owns r: arena_region(region);
@@ -74,15 +73,14 @@ void arena_write(struct region* region, int32 value, int32 k) {
     have to_integer(region->start + 1) <= to_integer(e) by {
         rewrite(region->start, s); known();
     }
-    mark w;
-    step_until(function.exit);
-    have at(w, region->arena->occupied[k]) == region->arena->occupied[k] by {
-        transport(at(w, region->arena->occupied[k]) == at(w, region->arena->occupied[k]),
-            at(w, region->arena->occupied[k]) == region->arena->occupied[k]) using {};
+    step_until(statement(2));
+    step();
+    have region->arena->occupied[k] == at(statement(2).entry, region->arena->occupied[k]) by {
+        preserve(memory(region->arena->occupied[k]), statement(2));
     }
 }
 ```
 
 ```expect
-fail: found no frame evidence
+fail: preserve separation is not exactly available
 ```

@@ -6084,10 +6084,8 @@ theorem nonpositive_dividend_remainder(n: Integer, d: Integer) {
 ### `integer::multiply_add`
 
 ```click
-theorem multiply_add(a: Integer, b: Integer, c: Integer) {
-    ensures (a + b) * c == a * c + b * c by {
-        normalize();
-    }
+axiom multiply_add(a: Integer, b: Integer, c: Integer) {
+    ensures (a + b) * c == a * c + b * c;
 }
 ```
 
@@ -11631,3 +11629,1366 @@ theorem lt_le(a: Integer, b: Integer) {
     }
 }
 ```
+
+### `integer::multiply_associative`
+
+```click
+axiom multiply_associative(a: Integer, b: Integer, c: Integer) {
+    ensures (a * b) * c == a * (b * c);
+}
+```
+
+### `integer::multiply_add_left`
+
+```click
+theorem multiply_add_left(a: Integer, b: Integer, c: Integer) {
+    ensures a * (b + c) == a * b + a * c by {
+        apply(integer::multiply_commutative(a, b + c));
+        apply(integer::multiply_add(b, c, a));
+        apply(integer::multiply_commutative(b, a));
+        apply(integer::multiply_commutative(c, a));
+        known();
+    }
+}
+```
+
+### `integer::negate_as_product`
+
+```click
+theorem negate_as_product(a: Integer) {
+    ensures -a == -1 * a by {
+        apply(integer::multiply_negate(a, 1));
+        apply(integer::multiply_commutative(-1, a));
+        have a * 1 == a by known();
+        known();
+    }
+}
+```
+
+### `integer::multiply_swap_front`
+
+```click
+theorem multiply_swap_front(a: Integer, b: Integer, c: Integer) {
+    ensures a * (b * c) == b * (a * c) by {
+        apply(integer::multiply_associative(a, b, c));
+        apply(integer::multiply_commutative(a, b));
+        apply(integer::multiply_associative(b, a, c));
+        known();
+    }
+}
+```
+
+### `integer::nonnegative_quotient_from_remainder`
+
+```click
+theorem nonnegative_quotient_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= n;
+    requires 0 <= r;
+    requires r <= d - 1;
+    requires n == q * d + r;
+    ensures truncating_quotient(n, d) == q by {
+        have q * d + 0 <= q * d + r by {
+            apply(integer::add_le(q * d, q * d, 0, r)) using { q * d <= q * d; 0 <= r; };
+        }
+        have q * d == q * d + 0 by known();
+        have q * d <= n by {
+            apply(integer::le_substitute(q * d + 0, q * d + r, q * d, n)) using {
+                q * d + 0 <= q * d + r; q * d == q * d + 0; n == q * d + r;
+            };
+        }
+        have q <= truncating_quotient(n, d) by {
+            apply(integer::positive_divisor_quotient_lower(n, d, q)) using { d != 0; 1 <= d; q * d <= n; };
+        }
+        have q * d + r <= q * d + (d - 1) by {
+            apply(integer::add_le(q * d, q * d, r, d - 1)) using { q * d <= q * d; r <= d - 1; };
+        }
+        have n <= q * d + (d - 1) by {
+            apply(integer::le_substitute(q * d + r, q * d + (d - 1), n, q * d + (d - 1))) using {
+                q * d + r <= q * d + (d - 1); n == q * d + r; q * d + (d - 1) == q * d + (d - 1);
+            };
+        }
+        have truncating_quotient(n, d) <= q by {
+            apply(integer::positive_divisor_quotient_upper_rounded(n, d, q)) using {
+                d != 0; 1 <= d; 0 <= n; n <= q * d + (d - 1);
+            };
+        }
+        apply(integer::le_antisymmetric(truncating_quotient(n, d), q)) using {
+            truncating_quotient(n, d) <= q; q <= truncating_quotient(n, d); d != 0;
+        };
+    }
+}
+```
+
+### `integer::nonnegative_quotient_shift`
+
+```click
+theorem nonnegative_quotient_shift(x: Integer, d: Integer, k: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= x;
+    requires 0 <= k;
+    ensures truncating_quotient(x + d * k, d) == truncating_quotient(x, d) + k by {
+        have 0 <= d by { apply(integer::le_transitive(0, 1, d)) using { 0 <= 1; 1 <= d; }; }
+        have 0 * d <= k * d by {
+            apply(integer::multiply_order_nonnegative(0, k, d)) using { 0 <= k; 0 <= d; };
+        }
+        have 0 * d == 0 by known();
+        have d * k == k * d by { apply(integer::multiply_commutative(d, k)); }
+        have 0 <= d * k by {
+            apply(integer::le_substitute(0 * d, k * d, 0, d * k)) using { 0 * d <= k * d; 0 == 0 * d; d * k == k * d; };
+        }
+        have 0 + 0 <= x + d * k by {
+            apply(integer::add_le(0, x, 0, d * k)) using { 0 <= x; 0 <= d * k; };
+        }
+        have 0 + 0 == 0 by known();
+        have 0 <= x + d * k by known();
+        have x == truncating_quotient(x, d) * d + truncating_remainder(x, d) by {
+            apply(integer::truncation_identity(x, d)) using { d != 0; };
+        }
+        have 0 <= truncating_remainder(x, d) by {
+            apply(integer::nonnegative_dividend_remainder(x, d)) using { d != 0; 0 <= x; };
+        }
+        have 0 < d by { apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; }; }
+        have truncating_remainder(x, d) <= d - 1 by {
+            apply(integer::positive_divisor_remainder_upper(x, d)) using { d != 0; 0 < d; };
+        }
+        have x + d * k == (truncating_quotient(x, d) * d + truncating_remainder(x, d)) + d * k by {
+            apply(integer::equal_add(x, truncating_quotient(x, d) * d + truncating_remainder(x, d), d * k, d * k)) using {
+                x == truncating_quotient(x, d) * d + truncating_remainder(x, d); d * k == d * k; d != 0;
+            };
+        }
+        have (truncating_quotient(x, d) + k) * d == truncating_quotient(x, d) * d + k * d by {
+            apply(integer::multiply_add(truncating_quotient(x, d), k, d)) using { d != 0; };
+        }
+        have (truncating_quotient(x, d) * d + truncating_remainder(x, d)) + d * k == (truncating_quotient(x, d) + k) * d + truncating_remainder(x, d) by {
+            rewrite((truncating_quotient(x, d) + k) * d, truncating_quotient(x, d) * d + k * d);
+            rewrite(d * k, k * d);
+            known();
+        }
+        have x + d * k == (truncating_quotient(x, d) + k) * d + truncating_remainder(x, d) by known();
+        apply(integer::nonnegative_quotient_from_remainder(x + d * k, d, truncating_quotient(x, d) + k, truncating_remainder(x, d))) using {
+            d != 0; 1 <= d; 0 <= x + d * k;
+            0 <= truncating_remainder(x, d); truncating_remainder(x, d) <= d - 1;
+            x + d * k == (truncating_quotient(x, d) + k) * d + truncating_remainder(x, d);
+        };
+    }
+}
+```
+
+### Aligned address word laws
+
+These unsigned equations use explicit `uint64` casts for wrapping arithmetic.
+Alignment weakening and masked tags use proved helpers; the elementary word
+and scalar-pointer offset laws are trusted axioms. Pointer offsets retain their
+element width and either an `int32` or `int64` index.
+
+### `integer::uint64_and_commute`
+
+```click
+axiom uint64_and_commute(a: uint64, b: uint64) {
+    ensures (a & b) == (b & a);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_and_associate`
+
+```click
+axiom uint64_and_associate(a: uint64, b: uint64, c: uint64) {
+    ensures ((a & b) & c) == (a & (b & c));
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_or_commute`
+
+```click
+axiom uint64_or_commute(a: uint64, b: uint64) {
+    ensures (a | b) == (b | a);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_and_or`
+
+```click
+axiom uint64_and_or(a: uint64, b: uint64, mask: uint64) {
+    ensures ((a | b) & mask) == ((a & mask) | (b & mask));
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_and_zero`
+
+```click
+theorem uint64_and_zero(a: uint64) {
+    ensures (a & 0u64) == 0u64 by known();
+}
+```
+
+### `integer::uint64_or_zero`
+
+```click
+theorem uint64_or_zero(a: uint64) {
+    ensures (a | 0u64) == a by known();
+}
+```
+
+### `integer::uint64_or_disjoint`
+
+```click
+axiom uint64_or_disjoint(a: uint64, b: uint64) {
+    requires (a & b) == 0u64;
+    ensures (a | b) == ((a + b) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_mask_add_low`
+
+```click
+axiom uint64_mask_add_low(base: uint64, tag: uint64, mask: uint64) {
+    requires (mask & (mask + 1u64)) == 0u64;
+    requires (base & mask) == 0u64;
+    ensures ((base + tag) & mask) == (tag & mask);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_mask_add_high`
+
+```click
+axiom uint64_mask_add_high(base: uint64, tag: uint64, mask: uint64) {
+    requires ((~mask) & ((~mask) + 1u64)) == 0u64;
+    requires (base & (~mask)) == 0u64;
+    ensures ((base + tag) & mask) == ((base + (tag & mask)) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_mask_multiple`
+
+```click
+axiom uint64_mask_multiple(value: uint64, factor: uint64, mask: uint64) {
+    requires (mask & (mask + 1u64)) == 0u64;
+    requires (factor & mask) == 0u64;
+    ensures ((value * factor) & mask) == 0u64;
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_mask_keep`
+
+```click
+axiom uint64_mask_keep(base: uint64, mask: uint64) {
+    requires (base & (~mask)) == 0u64;
+    ensures (base & mask) == base;
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_mask_add_clear`
+
+```click
+axiom uint64_mask_add_clear(base: uint64, tag: uint64, mask: uint64) {
+    requires ((~mask) & ((~mask) + 1u64)) == 0u64;
+    requires (base & (~mask)) == 0u64;
+    requires (tag & mask) == 0u64;
+    ensures ((base + tag) & mask) == base;
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_add_distinct`
+
+```click
+axiom uint64_add_distinct(base: uint64, a: uint64, b: uint64) {
+    requires a != b;
+    ensures ((base + a) as uint64) != ((base + b) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_or_add_low`
+
+```click
+axiom uint64_or_add_low(base: uint64, tag: uint64, bits: uint64, mask: uint64) {
+    requires (mask & (mask + 1u64)) == 0u64;
+    requires (base & mask) == 0u64;
+    requires (bits & mask) == bits;
+    ensures ((base + tag) | bits) == ((base + (tag | bits)) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_mask_subset`
+
+```click
+theorem uint64_mask_subset(base: uint64, large: uint64, small: uint64) {
+    requires (base & large) == 0u64;
+    requires (large & small) == small;
+    ensures (base & small) == 0u64 by {
+        apply(integer::uint64_and_associate(base, large, small)) using {};
+        apply(integer::uint64_and_commute(0u64, small)) using {};
+        rewrite(small, large & small);
+        rewrite(base & (large & small), (base & large) & small);
+        rewrite(base & large, 0u64);
+        rewrite(0u64 & small, small & 0u64);
+        known();
+    }
+}
+```
+
+### `integer::uint64_or_masked`
+
+```click
+theorem uint64_or_masked(base: uint64, tag: uint64, mask: uint64) {
+    requires (base & mask) == 0u64;
+    ensures (base | (tag & mask)) == ((base + (tag & mask)) as uint64) by {
+        have (base & (tag & mask)) == 0u64 by {
+            apply(integer::uint64_and_commute(tag, mask)) using {};
+            apply(integer::uint64_and_associate(base, mask, tag)) using {};
+            apply(integer::uint64_and_commute(0u64, tag)) using {};
+            rewrite(tag & mask, mask & tag);
+            rewrite(base & (mask & tag), (base & mask) & tag);
+            rewrite(base & mask, 0u64);
+            rewrite(0u64 & tag, tag & 0u64);
+            known();
+        }
+        apply(integer::uint64_or_disjoint(base, tag & mask)) using { (base & (tag & mask)) == 0u64; };
+    }
+}
+```
+
+### `integer::uint8_pointer_add_address_int32`
+
+```click
+axiom uint8_pointer_add_address_int32(p: uint8*, index: int32) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 1u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint8_pointer_add_address_int64`
+
+```click
+axiom uint8_pointer_add_address_int64(p: uint8*, index: int64) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 1u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::int8_pointer_add_address_int32`
+
+```click
+axiom int8_pointer_add_address_int32(p: int8*, index: int32) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 1u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::int8_pointer_add_address_int64`
+
+```click
+axiom int8_pointer_add_address_int64(p: int8*, index: int64) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 1u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint16_pointer_add_address_int32`
+
+```click
+axiom uint16_pointer_add_address_int32(p: uint16*, index: int32) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 2u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint16_pointer_add_address_int64`
+
+```click
+axiom uint16_pointer_add_address_int64(p: uint16*, index: int64) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 2u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::int16_pointer_add_address_int32`
+
+```click
+axiom int16_pointer_add_address_int32(p: int16*, index: int32) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 2u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::int16_pointer_add_address_int64`
+
+```click
+axiom int16_pointer_add_address_int64(p: int16*, index: int64) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 2u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint32_pointer_add_address_int32`
+
+```click
+axiom uint32_pointer_add_address_int32(p: uint32*, index: int32) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 4u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint32_pointer_add_address_int64`
+
+```click
+axiom uint32_pointer_add_address_int64(p: uint32*, index: int64) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 4u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::int32_pointer_add_address_int32`
+
+```click
+axiom int32_pointer_add_address_int32(p: int32*, index: int32) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 4u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::int32_pointer_add_address_int64`
+
+```click
+axiom int32_pointer_add_address_int64(p: int32*, index: int64) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 4u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_pointer_add_address_int32`
+
+```click
+axiom uint64_pointer_add_address_int32(p: uint64*, index: int32) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 8u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::uint64_pointer_add_address_int64`
+
+```click
+axiom uint64_pointer_add_address_int64(p: uint64*, index: int64) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 8u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::int64_pointer_add_address_int32`
+
+```click
+axiom int64_pointer_add_address_int32(p: int64*, index: int32) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 8u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::int64_pointer_add_address_int64`
+
+```click
+axiom int64_pointer_add_address_int64(p: int64*, index: int64) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 8u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::float32_pointer_add_address_int32`
+
+```click
+axiom float32_pointer_add_address_int32(p: float*, index: int32) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 4u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::float32_pointer_add_address_int64`
+
+```click
+axiom float32_pointer_add_address_int64(p: float*, index: int64) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 4u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::float64_pointer_add_address_int32`
+
+```click
+axiom float64_pointer_add_address_int32(p: double*, index: int32) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 8u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::float64_pointer_add_address_int64`
+
+```click
+axiom float64_pointer_add_address_int64(p: double*, index: int64) {
+    ensures address(p + index) == ((address(p) + (index as uint64) * 8u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `integer::nonnegative_remainder_from_reconstruction`
+
+Recover a nonnegative dividend's remainder from a reconstruction with a
+positive divisor and an explicit remainder range. This is a proved helper for
+transporting a bounded residue through scalar addition.
+
+```click
+theorem nonnegative_remainder_from_reconstruction(n: Integer, d: Integer, q: Integer, r: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= n;
+    requires 0 <= r;
+    requires r <= d - 1;
+    requires n == q * d + r;
+    ensures truncating_remainder(n, d) == r by {
+        apply(integer::nonnegative_quotient_from_remainder(n, d, q, r)) using {
+            d != 0; 1 <= d; 0 <= n; 0 <= r; r <= d - 1; n == q * d + r;
+        };
+        apply(integer::truncation_identity(n, d)) using { d != 0; };
+        have n == q * d + truncating_remainder(n, d) by known();
+        have n == truncating_remainder(n, d) + q * d by {
+            apply(integer::sum_commute(n, q * d, truncating_remainder(n, d))) using {
+                n == q * d + truncating_remainder(n, d); d != 0;
+            };
+        }
+        have n == r + q * d by {
+            apply(integer::sum_commute(n, q * d, r)) using { n == q * d + r; };
+        }
+        apply(integer::sum_difference(n, truncating_remainder(n, d), q * d)) using {
+            n == truncating_remainder(n, d) + q * d; d != 0;
+        };
+        apply(integer::sum_difference(n, r, q * d)) using { n == r + q * d; };
+        known();
+    }
+}
+```
+
+**Verified use:** [`signed_interval_remainder_reconstruction.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_interval_remainder_reconstruction.md).
+
+### `integer::uint8_pointer_translate_int32`
+
+```click
+axiom uint8_pointer_translate_int32(p: uint8*, q: uint8*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint8_pointer_add_associate_int32`
+
+```click
+theorem uint8_pointer_add_associate_int32(p: uint8*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint8_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint8_pointer_translate_uint64`
+
+```click
+axiom uint8_pointer_translate_uint64(p: uint8*, q: uint8*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint8_pointer_add_associate_uint64`
+
+```click
+theorem uint8_pointer_add_associate_uint64(p: uint8*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint8_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int8_pointer_translate_int32`
+
+```click
+axiom int8_pointer_translate_int32(p: int8*, q: int8*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int8_pointer_add_associate_int32`
+
+```click
+theorem int8_pointer_add_associate_int32(p: int8*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int8_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int8_pointer_translate_uint64`
+
+```click
+axiom int8_pointer_translate_uint64(p: int8*, q: int8*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int8_pointer_add_associate_uint64`
+
+```click
+theorem int8_pointer_add_associate_uint64(p: int8*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int8_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint16_pointer_translate_int32`
+
+```click
+axiom uint16_pointer_translate_int32(p: uint16*, q: uint16*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint16_pointer_add_associate_int32`
+
+```click
+theorem uint16_pointer_add_associate_int32(p: uint16*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint16_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint16_pointer_translate_uint64`
+
+```click
+axiom uint16_pointer_translate_uint64(p: uint16*, q: uint16*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint16_pointer_add_associate_uint64`
+
+```click
+theorem uint16_pointer_add_associate_uint64(p: uint16*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint16_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int16_pointer_translate_int32`
+
+```click
+axiom int16_pointer_translate_int32(p: int16*, q: int16*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int16_pointer_add_associate_int32`
+
+```click
+theorem int16_pointer_add_associate_int32(p: int16*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int16_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int16_pointer_translate_uint64`
+
+```click
+axiom int16_pointer_translate_uint64(p: int16*, q: int16*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int16_pointer_add_associate_uint64`
+
+```click
+theorem int16_pointer_add_associate_uint64(p: int16*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int16_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint32_pointer_translate_int32`
+
+```click
+axiom uint32_pointer_translate_int32(p: uint32*, q: uint32*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint32_pointer_add_associate_int32`
+
+```click
+theorem uint32_pointer_add_associate_int32(p: uint32*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint32_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint32_pointer_translate_uint64`
+
+```click
+axiom uint32_pointer_translate_uint64(p: uint32*, q: uint32*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint32_pointer_add_associate_uint64`
+
+```click
+theorem uint32_pointer_add_associate_uint64(p: uint32*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint32_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int32_pointer_translate_int32`
+
+```click
+axiom int32_pointer_translate_int32(p: int32*, q: int32*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int32_pointer_add_associate_int32`
+
+```click
+theorem int32_pointer_add_associate_int32(p: int32*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int32_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int32_pointer_translate_uint64`
+
+```click
+axiom int32_pointer_translate_uint64(p: int32*, q: int32*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int32_pointer_add_associate_uint64`
+
+```click
+theorem int32_pointer_add_associate_uint64(p: int32*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int32_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint64_pointer_translate_int32`
+
+```click
+axiom uint64_pointer_translate_int32(p: uint64*, q: uint64*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint64_pointer_add_associate_int32`
+
+```click
+theorem uint64_pointer_add_associate_int32(p: uint64*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint64_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint64_pointer_translate_uint64`
+
+```click
+axiom uint64_pointer_translate_uint64(p: uint64*, q: uint64*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::uint64_pointer_add_associate_uint64`
+
+```click
+theorem uint64_pointer_add_associate_uint64(p: uint64*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint64_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int64_pointer_translate_int32`
+
+```click
+axiom int64_pointer_translate_int32(p: int64*, q: int64*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int64_pointer_add_associate_int32`
+
+```click
+theorem int64_pointer_add_associate_int32(p: int64*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int64_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int64_pointer_translate_uint64`
+
+```click
+axiom int64_pointer_translate_uint64(p: int64*, q: int64*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::int64_pointer_add_associate_uint64`
+
+```click
+theorem int64_pointer_add_associate_uint64(p: int64*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int64_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::float32_pointer_translate_int32`
+
+```click
+axiom float32_pointer_translate_int32(p: float*, q: float*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::float32_pointer_add_associate_int32`
+
+```click
+theorem float32_pointer_add_associate_int32(p: float*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::float32_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::float32_pointer_translate_uint64`
+
+```click
+axiom float32_pointer_translate_uint64(p: float*, q: float*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::float32_pointer_add_associate_uint64`
+
+```click
+theorem float32_pointer_add_associate_uint64(p: float*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::float32_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::float64_pointer_translate_int32`
+
+```click
+axiom float64_pointer_translate_int32(p: double*, q: double*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::float64_pointer_add_associate_int32`
+
+```click
+theorem float64_pointer_add_associate_int32(p: double*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::float64_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::float64_pointer_translate_uint64`
+
+```click
+axiom float64_pointer_translate_uint64(p: double*, q: double*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+```
+
+**Axiom:** trusted, not proved; both the pointer relation and exact Integer displacement equation are required.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+### `integer::float64_pointer_add_associate_uint64`
+
+```click
+theorem float64_pointer_add_associate_uint64(p: double*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::float64_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+```
+
+**Proved:** from pointer translation and the corresponding addition observation theorem.
+
+**Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).

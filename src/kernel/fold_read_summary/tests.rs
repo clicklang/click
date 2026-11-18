@@ -414,7 +414,7 @@ fn application(
         vec![
             PureFunctionArgument::ArrayRef {
                 memory: memory.clone(),
-                pointer: ProgramValue::Pointer(PointerValue::new(
+                pointer: ProgramValue::Pointer(Pointer::new(
                     base.clone(),
                     ProgramType::Int32Pointer,
                 )),

@@ -22,7 +22,7 @@ impl KernelTerm {
             self.0.machine_leaf.get_or_init(|| MachineTerm::BoolCast {
                 to: MachineIntegerType::UInt8,
                 value: Box::new(ConditionTerm::BoolLoad(
-                    point.shared_memory().clone(),
+                    point.clone(),
                     Box::new(address.export().expect("retained Boolean read address")),
                 )),
             })
@@ -48,7 +48,7 @@ mod tests {
         );
         let sources = [before, after].map(|memory| {
             ConditionTerm::BoolLoad(
-                intern_memory(memory),
+                crate::kernel::ProgramPoint::at(&intern_memory(memory)),
                 Box::new(Address {
                     base: AddressBase::Symbolic(Variable(999301)),
                     offset: AddressOffset::Add(
@@ -109,7 +109,7 @@ mod tests {
             ProgramValue::Int32(MachineTerm::Variable(Variable(999310))),
         ));
         let source = ConditionTerm::BoolLoad(
-            memory,
+            crate::kernel::ProgramPoint::at(&memory),
             Box::new(Address {
                 base: AddressBase::Symbolic(Variable(999311)),
                 offset: AddressOffset::scaled_int32_node(

@@ -270,7 +270,7 @@ impl DifferenceGraph {
         if let ConditionTerm::PointerValueEqual(a, b) = condition {
             if value {
                 self.assume_condition(
-                    &ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
+                    &ConditionTerm::pointer_equal(a.address().clone(), b.address().clone()),
                     true,
                 );
             }

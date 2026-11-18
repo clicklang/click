@@ -159,7 +159,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 KernelTermNode::Legacy(value) => {
                     KernelTerm::native_observation_leaf(value.value().clone())
                 }
-                KernelTermNode::PointerValue(_)
+                KernelTermNode::Pointer(_)
                 | KernelTermNode::PointerRead { .. }
                 | KernelTermNode::PointerArithmetic { .. }
                 | KernelTermNode::PointerCall { .. }

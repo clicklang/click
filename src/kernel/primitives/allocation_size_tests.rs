@@ -41,7 +41,7 @@ fn allocation_tokens_and_ranges_carry_the_allocation_size_kind() {
     ] {
         let token = ResourceFact::own_heap_allocation(base.clone(), &size);
         let (read_base, read_size) = token.allocation_size().expect("an allocation token");
-        assert_eq!(read_base.pointer(), &base);
+        assert_eq!(read_base.address(), &base);
         assert_eq!(read_size, size);
         assert_eq!(
             token.allocation().map(|(_, bytes)| bytes),

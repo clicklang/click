@@ -1143,12 +1143,12 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
     let AlgebraicValue::Program(ProgramValue::Pointer(parent)) = &instance.arguments()[0] else {
         unreachable!()
     };
-    let stored = PointerValue::new(Address::symbolic(Variable(559)), ProgramType::Int32Pointer);
+    let stored = Pointer::new(Address::symbolic(Variable(559)), ProgramType::Int32Pointer);
     let state = state.with_memory(SymbolicMemory::new().store(
-        parent.pointer().clone(),
+        parent.address().clone(),
         ProgramValue::Pointer(stored.clone()),
     ));
-    let observed = Address::loaded_value(&intern_memory(state.memory().clone()), parent.pointer());
+    let observed = Address::loaded_value(&intern_memory(state.memory().clone()), parent.address());
     let equation = ExecutionPureFact::logical_read_equation(stored, observed)
         .proposition()
         .clone();
@@ -1334,7 +1334,7 @@ fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
     let ProgramValue::Pointer(pointer) = instance.arguments()[0].as_program_value().unwrap() else {
         panic!("fixture pointer");
     };
-    let guard = ConditionTerm::pointer_equal(pointer.pointer().clone(), Address::null());
+    let guard = ConditionTerm::pointer_equal(pointer.address().clone(), Address::null());
     let unknown = PureFactContext::new();
     assert!(rewrite_resource_instance(&state, &instance, &definition, &unknown, true).is_err());
     for is_null in [false, true] {
@@ -1572,7 +1572,10 @@ fn resource_instances_validate_fields_without_expanding_symbolic_values() {
     let ty = resource_index_type("Mark", vec![]);
     let model = resource_index_variable(&ty, 1);
     let instance = field_instance(2, model.clone(), 3);
-    assert_eq!(instance.fields()[0], AlgebraicValue::Algebraic(model));
+    assert_eq!(
+        instance.fields().get(0).unwrap().into_native(),
+        AlgebraicValue::Algebraic(model)
+    );
     let make = |schema, fields| {
         ResourceInstance::new(
             Variable(2),
@@ -1614,7 +1617,7 @@ fn resource_instances_validate_fields_without_expanding_symbolic_values() {
         .is_none()
     );
     let copy = instance.clone();
-    assert!(std::sync::Arc::ptr_eq(&instance.fields, &copy.fields));
+    assert!(instance.fields.shares_storage_with(&copy.fields));
     assert!(std::sync::Arc::ptr_eq(&instance.arguments, &copy.arguments));
 }
 
@@ -3621,8 +3624,8 @@ fn composite_resource_arguments_respect_proven_pointer_equality() {
     });
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::PointerValueEqual(
-            Box::new(PointerValue::new(left_pointer, ProgramType::Int32Pointer)),
-            Box::new(PointerValue::new(right_pointer, ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(left_pointer, ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(right_pointer, ProgramType::Int32Pointer)),
         ),
         true,
     );

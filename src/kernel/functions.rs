@@ -706,7 +706,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                         "population call control needs one pointer anchor".into(),
                     ));
                 };
-                if *base != pointer.pointer() {
+                if *base != pointer.address() {
                     return Err(RuntimeError::FunctionContract(
                         "population call allocation does not match its authority anchor".into(),
                     ));
@@ -2858,8 +2858,8 @@ fn representation_copy_arguments(
         return None;
     };
     Some((
-        destination.pointer(),
-        source.pointer(),
+        destination.address(),
+        source.address(),
         values.get(effect.bytes_argument)?,
     ))
 }
@@ -4174,7 +4174,7 @@ fn execute_verified_function_applications_with_suspension(
                 *quantity
             };
             let (spent, _) = match events.checked_member_exchange_quantity(
-                &pointer.pointer().base,
+                &pointer.address().base,
                 &description,
                 false,
                 &exchange_quantity,
@@ -4226,7 +4226,7 @@ fn execute_verified_function_applications_with_suspension(
             let retirement = if spent.recognizes_imported_population(&description) {
                 spent.checked_retire_imported(&description, &effective_assumptions)
             } else {
-                spent.checked_retire(&pointer.pointer().base, &description)
+                spent.checked_retire(&pointer.address().base, &description)
             };
             let (retired, _) = match retirement {
                 Ok(exchange) => exchange,
@@ -4250,7 +4250,7 @@ fn execute_verified_function_applications_with_suspension(
                 } else if let Some(AlgebraicValue::Program(ProgramValue::Pointer(anchor))) =
                     additional.arguments().first()
                 {
-                    retired.checked_retire(&anchor.pointer().base, additional)
+                    retired.checked_retire(&anchor.address().base, additional)
                 } else {
                     paths.push(resource_call_failure(
                         "final release authority needs a pointer anchor",
@@ -4421,7 +4421,7 @@ fn execute_verified_function_applications_with_suspension(
                     ));
                     continue 'arguments;
                 };
-                let anchor = pointer.pointer();
+                let anchor = pointer.address();
                 if produce
                     && !events.recognizes_imported_population(&description)
                     && (anchor.offset != AddressOffset::Constant(0)
@@ -7232,7 +7232,7 @@ fn call_value_arguments(
             right.as_program_value(),
         ) {
             (Some(ProgramValue::Pointer(left)), Some(ProgramValue::Pointer(right))) => {
-                left.pointer() == right.pointer()
+                left.address() == right.address()
             }
             _ => left == right,
         };
@@ -7392,7 +7392,7 @@ fn function_contract_requirement_is_proven(
             let comparison_pointer = assumptions
                 .equality_graph
                 .pointer_value_representative(pointer);
-            let target = match comparison_pointer.pointer() {
+            let target = match comparison_pointer.address() {
                 Address {
                     base: AddressBase::Function(target),
                     offset: AddressOffset::Constant(0),
@@ -7430,7 +7430,7 @@ fn function_contract_requirement_is_proven(
             // carries its own contract, fixed to its captured values.
             let Some(target) = target else {
                 for source in contracts_for_pointer(
-                    pointer.pointer(),
+                    pointer.address(),
                     assumptions,
                     environment,
                     &pointer.program_type(),
@@ -8047,7 +8047,9 @@ fn matched_instance_body_ownership(
     {
         return None;
     }
-    let AlgebraicValue::Algebraic(model) = instance.fields().get(matched.field_index)? else {
+    let crate::kernel::ResourceFieldValue::Algebraic(model) =
+        instance.fields().get(matched.field_index)?
+    else {
         return None;
     };
     let projection = ResourceFieldProjection {
@@ -8524,7 +8526,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 let fields = instance
                     .fields()
                     .iter()
-                    .cloned()
+                    .map(ResourceFieldValue::into_native)
                     .map(Some)
                     .collect::<Vec<_>>();
                 self.instance(definition, instance.arguments(), &fields);
@@ -9736,7 +9738,7 @@ fn apply_verified_heap_allocation_delta(
         .iter()
         .filter_map(|fact| {
             fact.allocation_size()
-                .map(|(base, bytes)| (fact, base.pointer().clone(), bytes))
+                .map(|(base, bytes)| (fact, base.address().clone(), bytes))
         })
         .collect::<Vec<_>>();
     // The caller's untouched resources are expanded only when the callee
@@ -9777,7 +9779,7 @@ fn apply_verified_heap_allocation_delta(
         .filter_map(|fact| {
             fact.allocation_size().map(|(base, bytes)| {
                 (
-                    base.pointer().clone(),
+                    base.address().clone(),
                     bytes,
                     returned_tokens.contains(&fact).then_some(fact),
                 )
@@ -10878,7 +10880,7 @@ fn string_literal_instance_values(
         let Some(ProgramValue::Pointer(pointer)) = argument.as_program_value() else {
             return None;
         };
-        let pointer = pointer.pointer();
+        let pointer = pointer.address();
         let AddressBase::StringLiteral { bytes, .. } = &pointer.base else {
             return None;
         };
@@ -10954,7 +10956,7 @@ fn string_literal_composite_holds(
     }
     let literal_pointer = |argument: &AlgebraicValue| {
         matches!(argument.as_program_value(), Some(ProgramValue::Pointer(pointer))
-            if matches!(pointer.pointer().base, AddressBase::StringLiteral { .. }))
+            if matches!(pointer.address().base, AddressBase::StringLiteral { .. }))
     };
     let pointers_are_literal = arguments.iter().all(|argument| {
         !matches!(argument.as_program_value(), Some(ProgramValue::Pointer(_)))
@@ -14045,7 +14047,7 @@ fn held_child_witness(
         .iter()
         .filter_map(|argument| match argument {
             AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
-                Some(pointer.pointer().clone())
+                Some(pointer.address().clone())
             }
             _ => None,
         })
@@ -14063,7 +14065,7 @@ fn held_child_witness(
             Resource::Composite { name, arguments } if name == child_name => {
                 match arguments.as_ref() {
                     [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] => {
-                        Some(pointer.pointer().clone())
+                        Some(pointer.address().clone())
                     }
                     _ => None,
                 }
@@ -15397,13 +15399,16 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             .iter()
             .map(|source| {
                 match source {
-                    ResourceChildField::Constructor(index) => constructor_fields.get(*index),
-                    ResourceChildField::Parent(index) => instance.fields.get(*index),
+                    ResourceChildField::Constructor(index) => constructor_fields
+                        .get(*index)
+                        .cloned()
+                        .map(StoredResourceField::Input),
+                    ResourceChildField::Parent(index) => instance.fields.stored_field(*index),
                 }
-                .cloned()
                 .ok_or("invalid child field binding")
             })
-            .collect::<Result<ResourceArguments, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
+        let fields = ResourceFieldValues::from_stored(fields);
         let identity = explicit_children[child.name.as_str()];
         if unfold && state.resources.owned_instance(identity).is_some() {
             return Err("unfold child result identity is already in use".into());
@@ -15476,7 +15481,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 .iter()
                 .zip(actual.fields.iter().zip(child_instance.fields.iter()))
                 .find(|(_, (a, b))| {
-                    !crate::kernel::resource_arguments_proven_equal(a, b, assumptions)
+                    !crate::kernel::resource_field_values_proven_equal(*a, *b, assumptions)
                 })
             {
                 return Err(ResourceRewriteRefusal::OwnedMessage(format!(
@@ -15839,7 +15844,7 @@ pub(super) fn loop_instance_guard(
         Ok(_) => return Err("loop guard requires a mutex pointer".into()),
         Err(message) => return Err(message.into()),
     };
-    Ok(Some((pointer.pointer().clone(), held.clone())))
+    Ok(Some((pointer.address().clone(), held.clone())))
 }
 
 pub(in crate::kernel) fn instance_body_guard_case(
@@ -16574,7 +16579,10 @@ pub(super) fn function_return_resources_definitionally_established(
     let exit_memory = if exceptional {
         return_state.memory().clone()
     } else {
-        function_exit_memory(caller_state, return_state, value, function)
+        let Ok(memory) = function_exit_memory(caller_state, return_state, value, function) else {
+            return false;
+        };
+        memory
     };
     let mut claim_return_state = return_state.clone();
     claim_return_state.set_memory(exit_memory.clone());
@@ -18070,7 +18078,9 @@ pub(super) fn instance_arm_read_authority(
     let Some(body) = definition.matched.as_ref() else {
         return Vec::new();
     };
-    let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        instance.fields().get(body.field_index)
+    else {
         return Vec::new();
     };
     let variants = match decide_resource_model_arm(model, assumptions) {
@@ -18316,7 +18326,9 @@ fn instance_arm_refutation_facts(
     let Some(body) = definition.matched.as_ref() else {
         return Vec::new();
     };
-    let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        instance.fields().get(body.field_index)
+    else {
         return Vec::new();
     };
     // A model that already carries a constructor needs no exclusion, and only
@@ -18664,7 +18676,9 @@ fn decided_instance_arm_facts(
     let Some(body) = definition.matched.as_ref() else {
         return Vec::new();
     };
-    let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        instance.fields().get(body.field_index)
+    else {
         return Vec::new();
     };
     let Some(selection) = select_resource_model_arm(model, assumptions) else {
@@ -19339,11 +19353,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 _ => state,
             };
             Ok(
-                super::mutexes::guard_resource(acquisition_state, pointer.pointer(), false)
+                super::mutexes::guard_resource(acquisition_state, pointer.address(), false)
                     .ok_or_else(|| {
                         if resource.role() == ResourceTransferRole::Borrow {
                             RuntimeError::MissingMutexGuard {
-                                mutex: pointer.pointer().clone(),
+                                mutex: pointer.address().clone(),
                             }
                         } else {
                             RuntimeError::FunctionContract(
@@ -19378,11 +19392,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 _ => state,
             };
             Ok(
-                super::mutexes::live_resource(initialization_state, pointer.pointer(), false)
+                super::mutexes::live_resource(initialization_state, pointer.address(), false)
                     .ok_or_else(|| {
                         if resource.role() == ResourceTransferRole::Borrow {
                             RuntimeError::MissingMutexLive {
-                                mutex: pointer.pointer().clone(),
+                                mutex: pointer.address().clone(),
                             }
                         } else {
                             RuntimeError::FunctionContract(
@@ -19417,7 +19431,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 ResourceStateSource::Entry => entry_state,
                 _ => state,
             };
-            let mut fact = super::mutexes::use_resource(initialization_state, pointer.pointer());
+            let mut fact = super::mutexes::use_resource(initialization_state, pointer.address());
             if let Some(protected) = protected {
                 let description = match evaluate_resource_type(
                     entry_state,
@@ -19475,7 +19489,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
             Ok(Ok(ResourceFact::own(Resource::Publication(
                 PublicationRight {
                     side: *side,
-                    flag: pointer.pointer().clone(),
+                    flag: pointer.address().clone(),
                     payload,
                     observed: None,
                 },
@@ -20016,10 +20030,10 @@ fn evaluate_function_declared_resource_spec(
                 budget,
             )? {
                 Ok(ProgramValue::Pointer(address))
-                    if !argument_state.memory().has_known_cell_at(address.pointer()) =>
+                    if !argument_state.memory().has_known_cell_at(address.address()) =>
                 {
                     selected_load_values
-                        .get(&(address.pointer().clone(), *value_type))
+                        .get(&(address.address().clone(), *value_type))
                         .cloned()
                 }
                 _ => None,
@@ -20584,6 +20598,9 @@ fn end_inline_frame_automatic_lifetimes(
         if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
             return Err(error);
         }
+        if let Some(error) = state.automatic_storage_loan_refusal(&slot.base) {
+            return Err(error);
+        }
         blocks.push(slot.base.clone());
     }
     Ok(retire_automatic_lifetime_blocks(memory, &blocks))
@@ -20607,7 +20624,7 @@ fn end_function_body_automatic_lifetimes(
         crate::instrumentation::record_deterministic_work(1);
         if slot.base.is_local_block()
             && !(function.return_aggregate_layout().is_some()
-                && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.pointer().base == slot.base))
+                && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.address().base == slot.base))
             && !caller.has_block(&slot.base)
             && memory.has_block(&slot.base)
         {
@@ -20625,6 +20642,9 @@ fn end_function_body_automatic_lifetimes(
                 return Err(error);
             }
             if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
+                return Err(error);
+            }
+            if let Some(error) = state.automatic_storage_loan_refusal(&slot.base) {
                 return Err(error);
             }
             blocks.push(slot.base.clone());
@@ -20646,6 +20666,9 @@ fn end_function_body_automatic_lifetimes(
             ) {
                 return Err(error);
             }
+            if let Some(error) = state.automatic_storage_loan_refusal(&pointer.base) {
+                return Err(error);
+            }
             blocks.push(pointer.base.clone());
         }
     }
@@ -20664,20 +20687,22 @@ pub(in crate::kernel) fn function_exit_memory(
     callee_state: &ExecutionState,
     value: &ExecutionValue,
     function: &ProgramFunction,
-) -> SymbolicMemory {
+) -> Result<SymbolicMemory, RuntimeError> {
     if function.return_aggregate_layout().is_some() {
-        return callee_state.memory.clone();
+        return Ok(callee_state.memory.clone());
     }
     match value.pointer() {
         Some(pointer)
-            if pointer.pointer().base.is_local_block()
-                && !caller_state.memory.has_block(&pointer.pointer().base) =>
+            if pointer.address().base.is_local_block()
+                && !caller_state.memory.has_block(&pointer.address().base) =>
         {
-            callee_state
-                .memory
-                .without_local_block(&pointer.pointer().base)
+            let block = &pointer.address().base;
+            if let Some(error) = callee_state.automatic_storage_loan_refusal(block) {
+                return Err(error);
+            }
+            Ok(callee_state.memory.without_local_block(block))
         }
-        _ => callee_state.memory.clone(),
+        _ => Ok(callee_state.memory.clone()),
     }
 }
 
@@ -22290,6 +22315,9 @@ impl From<bool> for ConditionTerm {
         Self::Constant(value)
     }
 }
+
+#[cfg(test)]
+mod automatic_frame_loan_tests;
 
 #[cfg(test)]
 mod mutex_automatic_frame_tests;
