@@ -1066,7 +1066,7 @@ not a change to proof rules or snapshot architecture.
 | --- | --- | --- |
 | 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Landed in [PR #3217](https://github.com/clicklang/click/pull/3217); all pushed commits verified upstream; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
-| 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Implemented locally; all 524 focused checks, all 1,918 regular scaling cases, selected wide-range/allocation proofs, fact stability and quality passed. |
+| 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Implemented locally; final 525 focused checks, all 1,919 regular scaling cases, 14 wide-range/allocation proofs, fact stability and quality passed. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
 | 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
@@ -1174,6 +1174,15 @@ wide-range/allocation proofs, fact stability (zero changed terms/paths), and
 quality passed. After integrating upstream `f94b8b852` and the resource-argument
 slice, all 524 affected checks and quality passed again. No syntax, proof-rule,
 search-budget or snapshot change.
+
+Final review caught an unsafe equal-value shortcut in the native byte mapper:
+two call arguments can have the same observation ID but different producer
+payloads. The new regression failed on the exact returned argument payload;
+the mapper now always retains its native callback's exact result. On this final
+upstream-integrated tree, all 525 focused checks, all 1,919 regular scaling
+checks (two isolated and 1,917 remaining), all 14 selected proofs, fact stability
+(zero changed terms/paths) and quality passed. Native rewrite callbacks remain
+explicit compatibility boundaries; no equality rule changed.
 
 ## Chunk 3: machine-valued pure-function results
 
