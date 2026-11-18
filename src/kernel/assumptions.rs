@@ -3,7 +3,7 @@ mod float_conversions;
 #[allow(dead_code)]
 mod pointer_checks;
 mod pointer_domains;
-pub(in crate::kernel) use pointer_domains::PointerDomain;
+pub(in crate::kernel) use pointer_domains::{PointerDomain, PointerDomainSource};
 #[allow(dead_code)]
 mod retained_folds;
 #[allow(dead_code)]
@@ -1290,6 +1290,7 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
         key.atomic_connection_facts = crate::persistent::PersistentMap::default();
         key.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         key.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
+        key.explicit_memory_boundaries = Default::default();
         key.universals_by_conclusion = crate::persistent::PersistentMap::default();
         key.universal_equality_sources = Default::default();
         key.shared_condition_variables = Default::default();
@@ -3780,7 +3781,20 @@ impl PureFactContext {
         } else {
             ConditionTerm::pointer_equal(right.clone(), left.clone())
         };
-        let source = self.adjust_pointer_address_source(key, condition);
+        let source = self.adjust_pointer_address_source(key.clone(), condition);
+        if left.base.is_local_block() || right.base.is_local_block() {
+            self.equality_graph.admitted.local_pointer_aliases = if source.is_some() {
+                self.equality_graph
+                    .admitted
+                    .local_pointer_aliases
+                    .with_value(key)
+            } else {
+                self.equality_graph
+                    .admitted
+                    .local_pointer_aliases
+                    .without_value(&key)
+            };
+        }
         for (key, alias) in [(left, right), (right, left)] {
             let aliases = self
                 .equality_graph
@@ -3889,25 +3903,6 @@ impl PureFactContext {
                 })
     }
 
-    pub(in crate::kernel) fn access_provenance_match(
-        &self,
-        required: (&Address, Option<&Address>),
-        available: &MemoryRange,
-    ) -> bool {
-        if pointer_checks::access_match(
-            required,
-            (
-                &available.provenance,
-                available.bounds_owner.as_deref(),
-                available.carrier_bounds_known,
-            ),
-            self,
-        ) {
-            return true;
-        }
-        self.selected_domain_access_matches(required, available)
-    }
-
     pub(in crate::kernel) fn pointer_provenance_match(
         &self,
         left: &PointerValue,
@@ -3958,128 +3953,6 @@ impl PureFactContext {
                 pointer_checks::Origins::native(right),
                 self,
             )
-    }
-
-    pub(in crate::kernel) fn pointer_value_at_entry(&self, value: &PointerValue) -> PointerValue {
-        if value.bounds_are_known() {
-            return value.clone();
-        }
-        let representative = self
-            .equality_graph
-            .admitted
-            .pointer_value_classes
-            .representative(value);
-        let representative = super::pointer_provenance::prefer_pointer(
-            &representative,
-            &self.equality_graph.pointer_value_representative(value),
-        );
-        let mut framed_address = None;
-        let representative = if !representative.bounds_are_known()
-            && value.provenance().as_loaded_value().is_some()
-            && value.bounds_owner() == Some(value.provenance())
-        {
-            self.known_value_of_framed_pointer_read(value)
-                .inspect(|known| {
-                    framed_address = Some(known.pointer().clone());
-                })
-                .unwrap_or(representative)
-        } else {
-            representative
-        };
-        if !representative.bounds_are_known() {
-            // Typed loads already return the complete stored pointer when one
-            // exists. Normalizing their result must not repeat that history
-            // search, including for opaque pointers reconstructed from words.
-            // Only full pointer premises above can supply additional bounds.
-            return value.clone();
-        }
-        let adopted = value
-            .clone()
-            .with_provenance(std::sync::Arc::new(representative.provenance().clone()))
-            .with_bounds(representative.bounds().cloned())
-            .with_bounds_owner(
-                representative
-                    .bounds_owner()
-                    .cloned()
-                    .map(std::sync::Arc::new),
-            );
-        let adopted = match framed_address {
-            Some(address) => adopted.with_address(address),
-            None => adopted,
-        };
-        if representative.bounds().is_none() {
-            adopted.with_root_bounds()
-        } else {
-            adopted
-        }
-    }
-
-    /// Address aliases select existing full-value premises; only the selected
-    /// read's complete eight-byte source can authorize their pointer metadata.
-    fn known_value_of_framed_pointer_read(&self, value: &PointerValue) -> Option<PointerValue> {
-        let source = {
-            let _checking =
-                crate::instrumentation::CheckingWorkScope::new("select framed pointer source", 1);
-            crate::instrumentation::record_deterministic_work(1);
-            let alias = self
-                .equality_graph
-                .unique_exact_pointer_alias(value.pointer())?;
-            let address = ConditionTerm::pointer_equal(value.pointer().clone(), alias.clone());
-            let sources = self
-                .equality_graph
-                .admitted
-                .pointer_address_sources
-                .get(&address)
-                .or_else(|| {
-                    self.equality_graph
-                        .admitted
-                        .pointer_address_sources
-                        .get(&address.flipped())
-                })?;
-            // A source bucket can grow with states of this same address. Its
-            // cached cardinality decides whether implicit selection is unambiguous.
-            if sources.len() != 1 {
-                return None;
-            }
-            sources.iter().next()?
-        };
-        crate::instrumentation::record_deterministic_work(1);
-        let ConditionTerm::PointerValueEqual(left, right) = source else {
-            return None;
-        };
-        for read in [left.as_ref(), right.as_ref()] {
-            if read.pointer() != value.pointer()
-                || read.bounds_are_known()
-                || read.bounds().is_some()
-                || read.bounds_owner() != Some(read.provenance())
-            {
-                continue;
-            }
-            let representative = self
-                .equality_graph
-                .admitted
-                .pointer_value_classes
-                .representative(read);
-            let representative = super::pointer_provenance::prefer_pointer(
-                &representative,
-                &self.equality_graph.pointer_value_representative(read),
-            );
-            if !representative.bounds_are_known() {
-                continue;
-            }
-            if crate::kernel::memory_history::pointer_read_provenance_equal(
-                value.provenance(),
-                read.provenance(),
-                self,
-            ) && crate::kernel::memory_history::pointer_read_bounds_equal(
-                value.provenance(),
-                read.provenance(),
-                self,
-            ) {
-                return Some(representative);
-            }
-        }
-        None
     }
 
     fn adjust_pointer_value_equality(&mut self, proposition: &Proposition) {
@@ -4882,6 +4755,7 @@ impl PureFactContext {
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.address_base_aliases =
             crate::persistent::PersistentMap::default();
+        self.equality_graph.admitted.local_pointer_aliases = Default::default();
         self.equality_graph
             .admitted
             .pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
@@ -5601,6 +5475,7 @@ impl PureFactContext {
         self.memory_loadable_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_object_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
+        self.explicit_memory_boundaries = Default::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.resource_contains_facts = crate::persistent::PersistentMap::default();
         self.memory_effect_facts = crate::persistent::PersistentMap::default();
@@ -5656,6 +5531,7 @@ impl PureFactContext {
 
     fn adjust_memory_loadable_fact(&mut self, proposition: &Proposition) {
         if let Proposition::MemoryReadDefined {
+            memory,
             pointer,
             value_type,
             ..
@@ -5670,12 +5546,22 @@ impl PureFactContext {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
-            let facts = facts.with_value(proposition.clone());
-            self.memory_read_defined_facts = if facts.is_empty() {
-                self.memory_read_defined_facts.without_key(&key)
-            } else {
-                self.memory_read_defined_facts.with_inserted(key, facts)
+            // The evaluator asks about validity of a memory view. The exact
+            // fact store separately retains the observation's point.
+            let validity = Proposition::MemoryReadDefined {
+                at: None,
+                memory: memory.clone(),
+                pointer: pointer.clone(),
+                value_type: *value_type,
             };
+            let sources = facts
+                .get(&validity)
+                .cloned()
+                .unwrap_or_default()
+                .with_value(proposition.clone());
+            self.memory_read_defined_facts = self
+                .memory_read_defined_facts
+                .with_inserted(key, facts.with_inserted(validity, sources));
             return;
         }
         let Proposition::MemoryLoadable { base, .. } = proposition else {
@@ -6192,7 +6078,11 @@ impl PureFactContext {
                     value_type,
                 ))
             })
-            .flat_map(crate::persistent::PersistentSet::iter)
+            .flat_map(|facts| {
+                facts
+                    .values()
+                    .flat_map(crate::persistent::PersistentSet::iter)
+            })
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
             .collect()
     }
@@ -6529,6 +6419,7 @@ impl PureFactContext {
     /// facts with at least one non-memory side, which the block-pair index
     /// cannot serve but whose containment may entail memory separation.
     fn adjust_nonmemory_separation_fact(&mut self, proposition: &Proposition) {
+        self.index_explicit_memory_boundary(proposition);
         let Proposition::ResourceSeparate { left, right } = proposition else {
             return;
         };
@@ -7327,6 +7218,30 @@ impl PureFactContext {
             return true;
         }
         match proposition {
+            Proposition::MemoryReadDefined {
+                memory,
+                pointer,
+                value_type,
+                ..
+            } => {
+                // Reuse a typed validity fact for this exact view. The fact's
+                // point remains distinct in exact membership and in proofs
+                // that construct a fact at a specific footprint endpoint.
+                // This lookup takes no alias or history steps.
+                self.memory_read_defined_facts
+                    .get(&(
+                        crate::kernel::api::canonicalize_pointer_loads(pointer),
+                        *value_type,
+                    ))
+                    .is_some_and(|facts| {
+                        facts.contains_key(&Proposition::MemoryReadDefined {
+                            at: None,
+                            memory: memory.clone(),
+                            pointer: pointer.clone(),
+                            value_type: *value_type,
+                        })
+                    })
+            }
             Proposition::Equal(
                 Term::ProgramValue(ProgramValue::Pointer(left)),
                 Term::ProgramValue(ProgramValue::Pointer(right)),

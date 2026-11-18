@@ -2935,11 +2935,7 @@ private:
       initializer["span"] = span(source_initializer->getSourceRange());
     } else if (const auto *call = initializer_call;
                call != nullptr && !is_numeric_limits_max_call(call)) {
-      if (record_reference) {
-        fail(call->getExprLoc(), "record-reference locals currently bind existing object lvalues, not call results");
-        return std::nullopt;
-      }
-      if (!(int_reference
+      if (!((int_reference || record_reference)
               ? source_initializer->isLValue() && scalar_call->conversions.empty() &&
                 context_.hasSameType(call->getCallReturnType(context_), local->getType())
               : context_.hasSameType(source_initializer->getType().getUnqualifiedType(), local->getType().getUnqualifiedType()))) {

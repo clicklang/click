@@ -1093,7 +1093,7 @@ step is still checked.
 
 | Form | Class | Audience | Purpose | Details |
 | --- | --- | --- | --- | --- |
-| `both { ... } and { ... }` | control | Expansion output | Prove both sides of a conjunction. | [Reference](#conjunctions) |
+| `both { left => { ... } right => { ... } }` | control | Expansion output | Prove both sides of a conjunction. | [Reference](#conjunctions) |
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
 | `solve()` | smart | Core | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
 | `solve() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
@@ -1138,8 +1138,8 @@ cannot reuse a live proof binding. Narrow machine binders also supply their
 intrinsic bounds at introduction; these type facts need no extra `intro()`.
 A written range quantifier still has its explicit range-membership guard.
 
-`both { ... } and { ... }` proves an `A and B` goal by opening the exact `A`
-and `B` child goals. Both arms inherit the parent assumptions; neither inherits
+`both { left => { ... } right => { ... } }` opens the exact `A` and `B` child
+goals of `A and B`. Both arms inherit the parent assumptions; neither inherits
 facts proved only in the other arm. This differs from `known()`, which
 closes a conjunction from already-established facts. Empty or unfinished arms fail.
 The `both` source location owns expansion and profiling of its nested proof;
@@ -1265,12 +1265,13 @@ complete rewritten surface proof through the ordinary entry point.
 
 ### Conjunctions
 
-**Form:** `both { ... } and { ... }`
+**Form:** `both { left => { ... } right => { ... } }`
 
 **Expansion output.** `click expand` writes it; by hand, a conjunction goal is
-normally split by `solve` or the implicit closer; write `both` only when each side needs its
-own explicit proof. Prove the exact left and right children of an `and` goal in
-separate scopes.
+normally split by `solve` or the implicit closer. Write `both` when each side
+needs its own explicit proof. Write the `left` arm first for the left child
+of the `and` goal, then the `right` arm for the right child. Each arm has
+its own proof scope.
 
 **Failure, checking, and tools:**
 
@@ -1281,12 +1282,11 @@ assumptions. The source container owns expansion of its nested proof.
 
 ### Execution outcomes
 
-**Form:** `outcomes { returned => { ... } threw => { ... } }`
+**Form:** `outcomes { returned[(value)] => { ... } threw[(error)] => { ... } }`
 
 **Specialized.** Write it at a C++ call that may throw, when the two outcomes
 need different proofs; the implicit tail splits them for you. At a maybe-throwing
-call, prove its two successors separately; each arm begins with the `step()`
-that runs the call along its edge. Inside a `try`/`catch (int name)` the `threw`
+call, `outcomes` executes the call and starts each arm at its checked successor. Inside a `try`/`catch (int name)` the `threw`
 arm follows the caught exceptional edge into the handler.
 
 Outside any `try` the `threw` arm ends at function exit with that throw, while
@@ -1295,13 +1295,21 @@ call's own nested `outcomes`. The implicit tail splits every maybe-throwing call
 way, inside a C `if` arm as well as at top level, and expansion writes the split
 it took.
 
+Write `returned(value)` to name the checked value of a call whose result the
+program uses. Write `threw(error)` to name the thrown payload. Each name is a
+proof binding scoped to its arm. At function exit, the same syntax selects
+the call edge already recorded on the path and binds the same call payload.
+For example, a call's returned value still names that value after the caller
+transforms it, and a caught exception names the original thrown value even
+if the caller returns normally. An arm without a name can ignore its payload.
+
 **Failure, checking, and tools:**
 
 The checked execution must establish exactly one edge of each kind. Each arm has
 its own outcome goal and must close it; neither arm can use the other's facts or
 state. Expansion preserves both certificates.
 
-**Checked examples:** [`cpp_import.rs`](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs), [`outcomes_routes_a_throw_that_leaves_the_function.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_routes_a_throw_that_leaves_the_function.md)
+**Checked examples:** [`cpp_import.rs`](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs), [`outcomes_routes_a_throw_that_leaves_the_function.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_routes_a_throw_that_leaves_the_function.md), [`outcomes_payload_bindings.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_payload_bindings.md)
 
 ### Simplification
 

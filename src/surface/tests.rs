@@ -2477,7 +2477,7 @@ fn ensure_comparison(
 // explicitly with --ignored. See `docs/internals/testing.md`, "Batching short
 // tests".
 #[cfg(feature = "fast-gate")]
-fn run_test_batch(cases: &[(&str, fn())]) {
+pub(super) fn run_test_batch(cases: &[(&str, fn())]) {
     for &(name, test) in cases {
         eprintln!("batched case {name} started");
         let started = std::time::Instant::now();
@@ -2534,6 +2534,9 @@ macro_rules! test_batches {
         }
     };
 }
+
+#[cfg(feature = "fast-gate")]
+pub(super) use test_batches;
 
 mod authority_private_body_tests;
 mod authority_transfer_wrapper_tests;

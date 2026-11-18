@@ -567,7 +567,7 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
         offset: AddressOffset::Constant(0),
     };
     let proposition = SpecProposition::Defined(SpecExpression::MemoryLoad {
-        memory: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
+        point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
         pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
             PointerValue::new(pointer, ProgramType::Int32Pointer),
         ))),
@@ -603,7 +603,7 @@ fn defined_memory_load_retains_typed_validity_for_an_already_known_cell() {
         offset: AddressOffset::Constant(0),
     };
     let proposition = SpecProposition::Defined(SpecExpression::MemoryLoad {
-        memory: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new().store(
+        point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         ))),
@@ -780,7 +780,7 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
         offset: AddressOffset::Constant(0),
     };
     let body = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
-        memory: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
+        point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
         pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
             PointerValue::new(missing_pointer.clone(), ProgramType::Int32Pointer),
         ))),
@@ -845,7 +845,7 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
         byte_width: 4,
     };
     let body = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
-        memory: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
+        point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
         pointer: Box::new(pointer),
         value_type: ProgramType::Int32,
     }));

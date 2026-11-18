@@ -1356,7 +1356,7 @@ fn return_exchange_keeps_the_published_body_state() {
         vec![],
         vec![SpecProposition::Comparison {
             left: SpecExpression::MemoryLoad {
-                memory: SpecPoint::Current,
+                point: SpecPoint::Current,
                 pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
                     PointerValue::new(pointer.clone(), ProgramType::Int32Pointer),
                 ))),
@@ -2678,7 +2678,7 @@ fn interface_logical_read_does_not_establish_validity() {
         offset: AddressOffset::Constant(0),
     };
     let load = SpecExpression::MemoryLoad {
-        memory: SpecPoint::Current,
+        point: SpecPoint::Current,
         pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
             PointerValue::new(pointer, ProgramType::Int32Pointer),
         ))),

@@ -34,9 +34,10 @@ void fill_t(uint8* dst) {
         }
         instantiate(at(filled,
             (0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 })), k);
-        have defined(dst[k]) by {
+        have at(statement(1).exit, defined(dst[k])) by {
             preserve(memory(dst[k]), statement(1));
         }
+        have defined(dst[k]) by { known(); }
         have dst[k] == 7u8 by { known(); }
         known();
     }

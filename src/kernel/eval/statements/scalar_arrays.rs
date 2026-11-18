@@ -90,11 +90,11 @@ pub(super) fn execute(
             if bytes != 0
                 && let Some(refusal) = subobject_access_refusal(
                     target,
-                    target_pointer.bounds(),
+                    &target_pointer,
                     bytes,
                     &facts,
                     &obligations,
-                    assumptions,
+                    &selected,
                 )
             {
                 paths.push(path(
@@ -138,10 +138,27 @@ pub(super) fn execute(
                 ));
                 continue;
             }
-            if bytes != 0
-                && let Some(outcome) =
-                    memory_write_permission_outcome(state, target, bytes, &selected)
-            {
+            let write_refusal = if bytes == 0 {
+                None
+            } else if !fresh {
+                let destination = MemoryRange::from_pointer_value(
+                    &target_pointer,
+                    0u32.into(),
+                    count.into(),
+                    element_type.byte_width(),
+                );
+                memory_region_write_obligation_outcome(
+                    state,
+                    target,
+                    bytes,
+                    &destination,
+                    &selected,
+                    &mut obligations,
+                )
+            } else {
+                memory_write_permission_outcome(state, target, bytes, &selected)
+            };
+            if let Some(outcome) = write_refusal {
                 paths.push(path(outcome, facts, obligations));
                 continue;
             }
@@ -156,11 +173,11 @@ pub(super) fn execute(
                 };
                 if let Some(refusal) = subobject_access_refusal(
                     source.pointer(),
-                    source.bounds(),
+                    source,
                     bytes,
                     &facts,
                     &obligations,
-                    assumptions,
+                    &selected,
                 ) {
                     paths.push(path(
                         StatementOutcome::UndefinedBehavior(refusal),

@@ -10,7 +10,7 @@ reported
 goal is a memory-viewability fact
 ```
 
-which left no way to finish a `both { ... }` arm whose goal was a narrowed
+which left no way to finish a `both` arm whose goal was a narrowed
 range. Here the narrowing is established once, then cited: from a `both` arm,
 and under a universal after `intro`.
 
@@ -49,7 +49,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
         };
     }
     have viewable(a[0..k]) and 0 <= k by {
-        both { known(); } and { solve(); }
+        both { left => { known(); } right => { solve(); } }
     }
     have forall (j: int32) { 0 <= j and j <= k implies viewable(a[0..j]) } by {
         intro(); intro();

@@ -1940,7 +1940,7 @@ pub(in crate::surface) fn pure_theorem_array_refs(
             Some((
                 parameter.name().to_string(),
                 ClickArrayRef {
-                    memory: memory.clone(),
+                    point: crate::kernel::ProgramPoint::of_memory(memory),
                     pointer: pointer.pointer().clone(),
                     element_type,
                 },

@@ -2650,13 +2650,9 @@ impl LoweringContext<'_> {
             // The byte-array lvalue denotes the complete record footprint.
             // Checked address formation validates it without reading fields.
             let bytes = self.record_layout(name)?.size_bytes();
-            (
-                ProgramExpression::Subobject {
-                    pointer: Box::new(pointer),
-                    width: bytes,
-                },
-                ProgramType::UInt8Array(bytes),
-            )
+            // The array lvalue checks the whole footprint without selecting
+            // a new subobject. Keep the source pointer's designation/bounds.
+            (pointer, ProgramType::UInt8Array(bytes))
         } else {
             (pointer, ProgramType::Int32)
         };
@@ -2889,7 +2885,10 @@ fn lower_binary_value(
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<ProgramType, String> {
-    if scalar::record_pointee(value_type).is_some() {
+    if scalar::record_pointee(value_type).is_some()
+        || matches!(value_type, CppType::LvalueReference { .. })
+            && scalar::record_referent(value_type).is_some()
+    {
         return Ok(ProgramType::Int32Pointer);
     }
     if let CppType::Pointer { pointee } = value_type {

@@ -73,7 +73,8 @@ impl Context<'_> {
         slice: &E,
         size: &E,
     ) -> Result<ProgramStatement, String> {
-        if !matches!(slice, E::Local { name } if self.slices.get(name).is_some_and(|(_, shared)| *shared))
+        if !super::shared_slice_local(slice)
+            .is_some_and(|name| self.slices.get(name).is_some_and(|(_, shared)| *shared))
         {
             return Err("chunks_exact requires a shared byte-slice local".into());
         }

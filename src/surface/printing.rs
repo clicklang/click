@@ -933,10 +933,14 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             line(output, &prefix, "}");
         }
         ProofTactic::Both(both) => {
+            let arm_prefix = "    ".repeat(indent + 1);
             line(output, &prefix, "both {");
-            write_tactics(output, &both.left_tactics, indent + 1);
-            line(output, &prefix, "} and {");
-            write_tactics(output, &both.right_tactics, indent + 1);
+            line(output, &arm_prefix, "left => {");
+            write_tactics(output, &both.left_tactics, indent + 2);
+            line(output, &arm_prefix, "}");
+            line(output, &arm_prefix, "right => {");
+            write_tactics(output, &both.right_tactics, indent + 2);
+            line(output, &arm_prefix, "}");
             line(output, &prefix, "}");
         }
         ProofTactic::Cases(proof_cases) => {
@@ -969,12 +973,21 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::CallOutcomes(outcomes) => {
             let arm_prefix = "    ".repeat(indent + 1);
             line(output, &prefix, "outcomes {");
-            line(output, &arm_prefix, "returned => {");
-            write_tactics(output, &outcomes.returned_tactics, indent + 2);
-            line(output, &arm_prefix, "}");
-            line(output, &arm_prefix, "threw => {");
-            write_tactics(output, &outcomes.threw_tactics, indent + 2);
-            line(output, &arm_prefix, "}");
+            for ((label, tactics), binding) in [
+                ("returned", &outcomes.returned_tactics),
+                ("threw", &outcomes.threw_tactics),
+            ]
+            .into_iter()
+            .zip(&outcomes.payload_bindings)
+            {
+                let payload = binding
+                    .as_ref()
+                    .map(|name| format!("({name})"))
+                    .unwrap_or_default();
+                line(output, &arm_prefix, &format!("{label}{payload} => {{"));
+                write_tactics(output, tactics, indent + 2);
+                line(output, &arm_prefix, "}");
+            }
             line(output, &prefix, "}");
         }
         ProofTactic::Loop(loop_clause) => {

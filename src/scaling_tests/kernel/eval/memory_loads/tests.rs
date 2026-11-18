@@ -1,3 +1,4 @@
+use crate::kernel::assumptions::PointerDomain;
 // Scaling tests of `src/kernel/eval/memory_loads.rs` (module `tests`): deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
@@ -1642,13 +1643,13 @@ fn opaque_word_call_frame(size: u32) -> (SymbolicMemory, PureFactContext, Addres
 }
 
 #[test]
-fn normalizing_an_opaque_word_pointer_does_not_search_unrelated_call_resources() {
+fn querying_an_opaque_word_pointer_does_not_search_unrelated_call_resources() {
     let costs = [4u32, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let (memory, context, word) = opaque_word_call_frame(size);
         // The load producer's final step creates this opaque word. Avoid
         // measuring its earlier carrier search: this regression targets the
-        // subsequent normalization of the already-produced complete value.
+        // subsequent domain query of the already-produced complete value.
         let value = complete_loaded_word(
             ProgramValue::UInt64(MachineTerm::Variable(Variable(989_705))),
             &memory,
@@ -1669,10 +1670,9 @@ fn normalizing_an_opaque_word_pointer_does_not_search_unrelated_call_resources()
         };
         assert!(!pointer.bounds_are_known());
         let context = context.assume_condition(ConditionTerm::Variable(Variable(989_703)), true);
-        let (normalized, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.pointer_value_at_entry(&pointer)
-        });
-        assert_eq!(normalized, pointer);
+        let (normalized, work) =
+            crate::instrumentation::measure_deterministic_work(|| context.pointer_domain(&pointer));
+        assert_eq!(normalized, PointerDomain::Unknown);
         if size == 16 {
             // A full pointer premise still supplies the selected member bounds.
             let root = Address::symbolic(Variable(989_704));
@@ -1687,8 +1687,8 @@ fn normalizing_an_opaque_word_pointer_does_not_search_unrelated_call_resources()
                 true,
             );
             assert_eq!(
-                related.pointer_value_at_entry(&pointer).bounds(),
-                bounded.bounds()
+                related.pointer_domain(&pointer),
+                PointerDomain::Selected(bounded.bounds().unwrap().clone())
             );
         }
         work

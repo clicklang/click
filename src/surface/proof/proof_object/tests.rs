@@ -13044,8 +13044,8 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
             ensures result == result by {
                 branch {
                     outcomes {
-                        returned => { step(); }
-                        threw => { step(); step_until(function.exit); }
+                        returned => { }
+                        threw => { step_until(function.exit); }
                     }
                 } else { }
                 step();
@@ -13158,7 +13158,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     let (outcomes, call_record) = outer
         .focus_split_arm(&outer_record, true)
         .unwrap()
-        .split_focused_call_outcomes()
+        .split_focused_call_outcomes([None, None])
         .expect("call split should be checked")
         .expect("modular helper has normal and throwing outcomes");
     let returned = outcomes.focus_split_arm(&call_record, true).unwrap();
@@ -13216,8 +13216,9 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
             outcomes
                 .focus_branch(id)
                 .unwrap()
-                .checked_call_returned(0)
+                .checked_call_outcome(0)
                 .ok()
+                .map(|edge| edge.returned)
         })
         .collect::<Vec<_>>();
     call_edges.sort_unstable();

@@ -816,6 +816,7 @@ impl EqualityGraph {
             .opaque_pointer_domain(origin)
     }
 
+    #[cfg(test)]
     pub(in crate::kernel) fn bounds_owner_is_root(&self, origin: &Address) -> bool {
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, [origin]);

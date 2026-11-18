@@ -1,5 +1,33 @@
 use super::*;
 
+// These older interface-algebra fixtures deliberately supply descriptions,
+// without a fact establishing a callback's contract. Keep their raw admission
+// controls separate from the production established-fact entry point.
+fn execute_description_contracts_paths(
+    caller_state: &ExecutionState,
+    contracts: &[&FunctionContract],
+    arguments: &[ProgramExpression],
+    assumptions: &PureFactContext,
+    environment: &ExecutionEnvironment,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<FunctionPath>> {
+    let applications = contracts
+        .iter()
+        .map(|contract| NamedContractApplication {
+            contract,
+            framed_rule: None,
+        })
+        .collect::<Vec<_>>();
+    execute_named_contract_applications_paths(
+        caller_state,
+        &applications,
+        arguments,
+        assumptions,
+        environment,
+        budget,
+    )
+}
+
 #[test]
 fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
     let schema = ResourceFieldSchema::new(vec![(
@@ -60,7 +88,7 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
     let run = |state: &ExecutionState,
                contract: &FunctionContract,
                environment: &ExecutionEnvironment| {
-        execute_program_function_contracts_paths(
+        execute_description_contracts_paths(
             state,
             &[contract],
             &[],
@@ -569,7 +597,7 @@ fn named_contract_application_discards_template_body_and_storage() {
     // One caller state, so both applications start from one creation ledger.
     let caller = ExecutionState::new().with_population_creation_tracking();
     let run = |contract: &FunctionContract| {
-        execute_program_function_contracts_paths(
+        execute_description_contracts_paths(
             &caller,
             &[contract],
             std::slice::from_ref(&argument),
@@ -666,7 +694,7 @@ fn direct_and_callback_resource_transition(
     };
     assert_eq!(*direct_value.native(), ProgramValue::Void);
 
-    let paths = execute_program_function_contracts_paths(
+    let paths = execute_description_contracts_paths(
         state,
         &[contract],
         &[],
@@ -1364,7 +1392,7 @@ fn unresolved_call_requirements_retain_selected_source_site_identity() {
         .with_population_creation_tracking()
         .with_memory(SymbolicMemory::new().with_block("second", 4));
     let run = |state: &ExecutionState| {
-        execute_program_function_contracts_paths(
+        execute_description_contracts_paths(
             state,
             &[&contract],
             &arguments,
@@ -1442,7 +1470,7 @@ fn selected_contract_and_requirement_ordinals_stay_with_their_call() {
     .with_contract_requirement_sources(vec![None, Some(1)]);
     let first = FunctionContract::new("FirstInterface", template.clone()).unwrap();
     let second = FunctionContract::new("SecondInterface", template).unwrap();
-    let paths = execute_program_function_contracts_paths(
+    let paths = execute_description_contracts_paths(
         &ExecutionState::new(),
         &[&first, &second],
         &[crate::kernel::program_expression::int32_literal(0)],
@@ -1499,7 +1527,7 @@ fn requirement_capability_describes_the_complete_source_tree() {
         name: "len".to_string().into(),
         variable: Variable(900),
         body: Box::new(SpecProposition::MemoryLoadable {
-            memory: SpecPoint::Current,
+            point: SpecPoint::Current,
             base: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
                 "p",
             )),
@@ -1526,7 +1554,7 @@ fn requirement_capability_describes_the_complete_source_tree() {
     )
     .with_contract_requirement_sources(vec![Some(0), Some(1)]);
     let contract = FunctionContract::new("CapabilitySource", function).unwrap();
-    let paths = execute_program_function_contracts_paths(
+    let paths = execute_description_contracts_paths(
         &ExecutionState::new().with_population_creation_tracking(),
         &[&contract],
         &[
@@ -1594,7 +1622,7 @@ fn calls_without_unresolved_requirements_do_not_construct_call_site_metadata() {
     let contract = FunctionContract::new("Established", function).unwrap();
 
     CallRequirementSite::reset_test_construction_count();
-    let paths = execute_program_function_contracts_paths(
+    let paths = execute_description_contracts_paths(
         &ExecutionState::new().with_population_creation_tracking(),
         &[&contract],
         &[crate::kernel::program_expression::int32_literal(7)],
@@ -1633,7 +1661,7 @@ fn missing_contract_requirement_source_map_fails_closed() {
     )
     .without_test_contract_requirement_sources();
     let contract = FunctionContract::new("MissingMap", function).unwrap();
-    let paths = execute_program_function_contracts_paths(
+    let paths = execute_description_contracts_paths(
         &ExecutionState::new(),
         &[&contract],
         &[crate::kernel::program_expression::int32_literal(0)],
@@ -1715,7 +1743,7 @@ fn empty_requirement_lowering_retains_selected_call_source() {
         true,
     );
     let contract = FunctionContract::new("EmptyRequirement", function).unwrap();
-    let paths = execute_program_function_contracts_paths(
+    let paths = execute_description_contracts_paths(
         &ExecutionState::new().with_population_creation_tracking(),
         &[&contract],
         &[],
@@ -1799,7 +1827,7 @@ fn check_callback_interface_scaling(select: bool) {
             ExecutionEnvironment::new()
         };
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            execute_program_function_contracts_paths(
+            execute_description_contracts_paths(
                 &ExecutionState::new().with_population_creation_tracking(),
                 &contracts,
                 &[crate::kernel::program_expression::int32_literal(7)],
@@ -1867,7 +1895,7 @@ fn check_unrelated_functions(select: bool) {
             environment = selected;
         }
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            execute_program_function_contracts_paths(
+            execute_description_contracts_paths(
                 &ExecutionState::new().with_population_creation_tracking(),
                 &contracts,
                 &[crate::kernel::program_expression::int32_literal(7)],
@@ -1884,6 +1912,148 @@ fn check_unrelated_functions(select: bool) {
         samples.windows(2).all(|pair| pair[0] == pair[1]),
         "unrelated functions must not change call work: {samples:?}"
     );
+}
+
+fn opaque_callback_contract() -> FunctionContract {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    let input = ResourceSpec::owned_memory(
+        MemorySegment::new(variable("p"), int32_literal(0), int32_literal(1))
+            .with_uninitialized(true),
+    );
+    let output = ResourceSpec::owned_memory(MemorySegment::new(
+        ProgramExpression::Variable(BindingName::ContractResult),
+        int32_literal(0),
+        int32_literal(1),
+    ))
+    .with_role(ResourceTransferRole::Produce)
+    .with_state_source(ResourceStateSource::Post);
+    FunctionContract::new(
+        "OpaqueTransfer",
+        program_function(
+            ProgramType::Int32Pointer,
+            "discarded_template",
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
+            program_skip(),
+        )
+        .with_resource_summary(vec![input], vec![output]),
+    )
+    .unwrap()
+}
+
+fn named_contract_fact(contract: &FunctionContract, pointer: Address) -> Proposition {
+    Proposition::Predicate {
+        name: contract.predicate_name(),
+        arguments: vec![
+            Term::ExecutionState(Box::new(ExecutionState::new())),
+            Term::ProgramValue(ProgramValue::typed_pointer(
+                pointer,
+                contract.function_pointer_type(),
+            )),
+        ],
+    }
+}
+
+fn opaque_callback_state(count: u64) -> (ExecutionState, ProgramExpression, ResourceFact) {
+    let p = Address::symbolic(Variable(8_960_000));
+    let owner =
+        |pointer| ResourceFact::own_memory(MemoryRange::new(pointer, 0u32.into(), 1u32.into()));
+    let held = owner(Address::symbolic(Variable(8_960_100)));
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(owner(p.clone()))
+        .unchecked_with_facts(
+            (0..count).map(|i| owner(Address::symbolic(Variable(8_960_100 + i)))),
+        );
+    (
+        ExecutionState::new()
+            .with_population_creation_tracking()
+            .with_memory(SymbolicMemory::new().with_block(p.base.clone(), 4))
+            .with_resource_context(resources),
+        ProgramExpression::Value(ProgramValue::pointer(p)),
+        held,
+    )
+}
+
+#[test]
+fn established_named_contract_frames_opaque_outputs_but_a_declaration_does_not() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let contract = opaque_callback_contract();
+    let callback = Address::symbolic_function(Variable(8_960_010));
+    let (state, argument, held) = opaque_callback_state(1);
+    let environment = ExecutionEnvironment::new().with_function_contract(contract.clone());
+    let empty = PureFactContext::new();
+    assert!(
+        contracts_for_pointer(
+            &callback,
+            &empty,
+            &environment,
+            &contract.function_pointer_type()
+        )
+        .is_empty()
+    );
+    let raw = execute_description_contracts_paths(
+        &state,
+        &[&contract],
+        std::slice::from_ref(&argument),
+        &empty,
+        &environment,
+        &mut ExecutionBudget::new(),
+    )
+    .unwrap();
+    assert!(
+        matches!(raw[0].outcome, FunctionOutcome::RuntimeError(_)),
+        "{raw:?}"
+    );
+    let premise = named_contract_fact(&contract, callback.clone());
+    let facts = empty.clone().assume_proposition(premise.clone());
+    let established = contracts_for_pointer(
+        &callback,
+        &facts,
+        &environment,
+        &contract.function_pointer_type(),
+    );
+    assert_eq!(established.len(), 1);
+    assert_eq!(established[0]._premise, premise);
+    assert!(
+        contracts_for_pointer(
+            &callback,
+            &empty,
+            &environment,
+            &contract.function_pointer_type()
+        )
+        .is_empty()
+    );
+    assert!(
+        contracts_for_pointer(
+            &Address::symbolic_function(Variable(8_960_011)),
+            &facts,
+            &environment,
+            &contract.function_pointer_type()
+        )
+        .is_empty()
+    );
+    let paths = execute_program_function_contracts_paths(
+        &state,
+        &established.iter().collect::<Vec<_>>(),
+        &[argument],
+        &facts,
+        &environment,
+        &mut ExecutionBudget::new(),
+    )
+    .unwrap();
+    let [
+        FunctionPath {
+            outcome: FunctionOutcome::Return {
+                state: returned, ..
+            },
+            ..
+        },
+    ] = paths.as_slice()
+    else {
+        panic!("{paths:?}")
+    };
+    assert!(returned.resources().contains_exact_representation(&held));
+    assert_eq!(returned.resources().flat_owned_memory_ranges().len(), 2);
+    assert_eq!(state.resources().flat_owned_memory_ranges().len(), 2);
 }
 
 #[cfg(test)]
