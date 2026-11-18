@@ -24030,6 +24030,27 @@ fn integer_fold_zero_contribution_expansion_replays_without_search() {
 }
 
 #[test]
+fn whole_iterated_clause_expands_and_rechecks() {
+    let (source, sources) = mdtest_sources("mdtests/iterated_ownership_whole_clause.md");
+    let sources = sources
+        .iter()
+        .map(|(name, body)| (name.as_str(), body.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "init_cells.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("fold(arena_cells(data, occupied, capacity)[..]);")
+            && expanded
+                .contains("unfold(at(clause_args, arena_cells(data, occupied, capacity))[..]);"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("init_cells.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn indexed_iterated_ownership_expands_and_rechecks() {
     let (source, sources) = mdtest_sources("mdtests/indexed_iterated_ownership.md");
     let sources = sources
@@ -24058,6 +24079,20 @@ fn indexed_iterated_ownership_expands_and_rechecks() {
         error
             .report()
             .contains("selected iterated ownership fact is not held"),
+        "{}",
+        error.report()
+    );
+
+    let open_slot = source.replace(
+        "fold(at(opened, arena_slots(data, free_slots, capacity))[i]);",
+        "unfold(at(opened, arena_slots(data, free_slots, capacity))[..]);",
+    );
+    assert_ne!(open_slot, source);
+    let error = verify_c_sources(&open_slot, &sources).unwrap_err();
+    assert!(
+        error.report().contains(
+            "unfolding the whole clause needs the iterated ownership fact with no element taken out"
+        ),
         "{}",
         error.report()
     );
