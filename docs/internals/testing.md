@@ -809,6 +809,49 @@ its shared nonnegative bound once and uses explicit transitivity for each
 original earlier fact, preserving the symbolic loop variable, C program,
 contract, size range, and context-growth assertion.
 
+The narrow-cast word-interning regression retains its per-cast work bounds
+for independent casts, nested cast chains, and cross-signedness widening at
+sizes 8/16 in the gate. Original 64/256/512 cases run separately nightly;
+the helper and its original cost bounds are unchanged. The complete ordinary
+fold/unfold selected-guard audit (4/16/64/256 unrelated requirements) also runs
+nightly. Small ordinary-fold positive, invalid-value, missing-guard, and strict
+certificate-replay checks remain in the gate.
+
+Four loop expansion tests reuse the certificates returned by their existing
+whole-source verification through `expand_checked_grouped_claim`. They retain
+fresh verification of the generated source, negative checks, the zero-planning
+assertion, and the nested-loop expansion-idempotence check. This avoids another
+search for an input proof that the same test just checked. Three are gate cases;
+the duplicate-invariant audit was already nightly and stays there.
+
+Each of the four symbolic-upper-bound expansion variants contains one theorem
+and one ensure. Selected-claim expansion verifies that input, so those cases
+omit a preceding duplicate verification. Every generated proof still rechecks
+with zero planning, and each forged tighter bound must fail.
+Two interleaved serial runs using retained before/after binaries took
+6.790/6.788s before and 5.931/5.472s after removing that duplicate pass.
+
+On the same four-CPU host and cached unoptimized fast-gate binary setup,
+the cast and selected-guard selection at `cff495519` took 5.787s wall and
+18.666 summed test-seconds before this gate/nightly split; afterward, the two
+retained gate sizes took 0.328s wall and 0.451 summed test-seconds. These are
+selected test observations, not whole-gate timings. Loop certificate reuse is also
+measured before the next upstream refresh: one serial before/after pair for
+the four cases took 16.968s/14.096s, including the nightly duplicate-invariant
+audit. Retain the explicit proof checks rather than treating those variable
+wall times as a scaling assertion.
+
+With the cast/fold/loop changes above on upstream `a1b9ea190`, before the
+symbolic-upper-bound cleanup, a cached
+four-worker unit/API run passed 8,116 tests in 444.876s (1,773.878 summed
+test-seconds). It excludes compilation and every `gate_tests::` integration
+or corpus harness. This is a current snapshot with a different test inventory
+from the earlier 8,574-test baseline, not a controlled overall speedup ratio.
+The library theorem proof took 15.206s and stays in the gate. Remaining leads
+include the sibling-C-if preservation expansion (9.430s) and the 384-case
+bitwise-conditional round-trip matrix (7.685s); inspect proof/setup reuse or
+retain a compact gate selection with the complete matrix nightly.
+
 ### Sharing setup in expansion API tests
 
 The batch runner and inventory macro are visible within the test-only Surface

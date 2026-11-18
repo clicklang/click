@@ -1635,7 +1635,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             view.parameter_binding.parameters,
             &values,
-            view.fixed_state.state.memory(),
+            &view.fixed_state.state.program_point(),
         );
         let (values, array_refs) =
             contract_environment_at_state(&values, &array_refs, view.fixed_state.state);
@@ -2292,7 +2292,7 @@ impl<'a> Proof<'a> {
             let array_refs = array_refs_for_parameters(
                 view.parameter_binding.parameters,
                 &parameter_values,
-                view.fixed_state.state.memory(),
+                &view.fixed_state.state.program_point(),
             );
             let (values, array_refs) = contract_environment_at_state(
                 &parameter_values,
@@ -2354,7 +2354,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             view.parameter_binding.parameters,
             &parameter_values,
-            view.fixed_state.state.memory(),
+            &view.fixed_state.state.program_point(),
         );
         let (values, array_refs) =
             contract_environment_at_state(&parameter_values, &array_refs, view.fixed_state.state);
@@ -2884,12 +2884,12 @@ impl<'a> Proof<'a> {
     /// inside the outermost one. The labels were derived from the exact
     /// source shape and checked outcome when the outcome goal was created,
     /// not from a user assertion.
-    pub(in crate::surface::proof) fn checked_call_returned(
+    pub(in crate::surface::proof) fn checked_call_outcome(
         &self,
         depth: usize,
-    ) -> Result<bool, ClickError> {
+    ) -> Result<&CallOutcomeEdge, ClickError> {
         self.focused_outcome_data()
-            .and_then(|data| data.call_routes.get(depth).copied())
+            .and_then(|data| data.call_routes.get(depth))
             .ok_or_else(|| {
                 self.step_error("`outcomes` requires a checked returned/threw call edge")
             })

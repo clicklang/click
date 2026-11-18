@@ -881,14 +881,10 @@ fn produced_composite_over_a_viewed_owner_is_refused() {
     let pointer = pointer();
     let function = view_and_produce_reader("view_and_produce");
     let environment =
-        ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
-            pointer_result: None,
+        ExecutionEnvironment::new().with_external_function_rule(ExternalFunctionRule {
             function: function.clone(),
-            descent_completion: None,
-            concrete_loop_exits: None,
-            loop_semantics: LoopSemantics::Verify,
-            checked_callees: None,
-            applied_tactics: Default::default(),
+            scoped_unselected: false,
+            representation_copy: None,
         });
     let paths = execute_program_function_call_paths(
         &caller(&pointer),

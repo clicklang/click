@@ -5089,8 +5089,11 @@ pub(super) fn lower_surface_candidate_in_state_with_assumptions(
 ) -> Result<Proposition, ClickError> {
     check_verification_deadline()?;
     let values = parameter_values(parameter_binding)?;
-    let array_refs =
-        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
+    let array_refs = array_refs_for_parameters(
+        parameter_binding.parameters,
+        &values,
+        &state.program_point(),
+    );
     let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
     let assumptions = assumptions.clone().allow_symbolic_contract_loads();
     lower_fixed_state_proposition_through_kernel(

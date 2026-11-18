@@ -1632,43 +1632,40 @@ fn ownership_fallback_inventory_rejects_new_routes_and_hidden_references() {
 }
 
 #[test]
-fn ownership_fallback_inventory_pins_callers_and_reference_counts() {
-    let path = "src/kernel/loans.rs";
-    let target = "try_compose_with_fact_with_occurrence";
-    for (owner, name) in [(
-        "StableViewTransferPlan",
-        "lend_local_views_with_worker_shares",
-    )] {
-        let source = format!("impl {owner} {{ fn {name}(c: C) {{ c.{target}(); }} }}");
-        let file = syn::parse_file(&source).unwrap();
+fn ownership_boundaries_cannot_restore_discovery() {
+    for (path, owner, name, target) in [
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "EvaluatedReturnResources",
+            "admit_clause",
+            "try_compose_with_legacy_discovery_and_occurrences",
+        ),
+        (
+            "src/kernel/primitives/resource_algebra.rs",
+            "ResourceContext",
+            "admit_certified_memory_boundary",
+            "legacy_memory_boundary_conflict",
+        ),
+        (
+            "src/kernel/primitives/resource_algebra/ownership_admission.rs",
+            "ResourceContext",
+            "compose_selected_occurrences",
+            "resume_legacy_discovery",
+        ),
+    ] {
         let key = format!("{path}\tlegacy-caller\t{owner}::{name}\t{target}");
-        assert_eq!(proof_search_boundary::inventory(path, &file)[&key], 1);
-        assert_eq!(proof_search_boundary::expected()[&key], 1);
-        let doubled = syn::parse_file(&format!(
-            "impl {owner} {{ fn {name}(c: C) {{ c.{target}(); c.{target}(); }} }}"
+        assert!(!proof_search_boundary::expected().contains_key(&key));
+        let file = syn::parse_file(&format!(
+            "impl {owner} {{ fn {name}(c: C) {{ c.{target}(); }} }}"
         ))
         .unwrap();
         assert!(
-            proof_search_boundary::check(path, &doubled)
+            proof_search_boundary::check(path, &file)
                 .unwrap_err()
                 .iter()
-                .any(|error| error.contains(&key) && error.contains("2 references"))
+                .any(|error| error.contains(&key) && error.contains("unreviewed"))
         );
     }
-    let path = "src/kernel/functions/mixed_return_resources.rs";
-    let target = "try_compose_with_legacy_discovery_and_occurrences";
-    let key = format!("{path}\tlegacy-caller\tPreparedReturnComposition::finish\t{target}");
-    assert!(!proof_search_boundary::expected().contains_key(&key));
-    let file = syn::parse_file(&format!(
-        "impl PreparedReturnComposition {{ fn finish(c: C) {{ c.{target}(); }} }}"
-    ))
-    .unwrap();
-    assert!(
-        proof_search_boundary::check(path, &file)
-            .unwrap_err()
-            .iter()
-            .any(|error| error.contains(&key) && error.contains("unreviewed"))
-    );
 }
 
 #[test]

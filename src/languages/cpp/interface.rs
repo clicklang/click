@@ -563,7 +563,9 @@ fn function_interface(
     // A lambda's leading parameters are its captures, which a sidecar head
     // does not write; its contract reads them by name.
     interface = interface.with_closure_captures(source.closure_captures);
-    if let Some((_, name)) = super::scalar::record_pointee(&source.return_type) {
+    if let Some((_, name, _)) = super::scalar::record_referent(&source.return_type)
+        && (return_reference || super::scalar::record_pointee(&source.return_type).is_some())
+    {
         let layout = layouts
             .get(name)
             .ok_or("C++ record pointer return has no checked layout")?;

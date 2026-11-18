@@ -87,6 +87,17 @@ impl ReadIntervals {
         }
     }
 
+    /// The hull of the complete interval partition, without enumerating it.
+    pub(super) fn bounding_span(&self) -> Option<(AddressCoordinate, AddressCoordinate)> {
+        let root = self.root.as_ref()?;
+        let mut first = root;
+        while let Some(left) = &first.left {
+            crate::instrumentation::record_deterministic_work(1);
+            first = left;
+        }
+        Some((first.key.0.clone(), root.max_end.as_ref().clone()))
+    }
+
     /// Select one intersecting interval along a single root-to-leaf path.
     /// The caller must establish a complete, constant-coordinate fragment
     /// before treating a miss as absence of overlap.

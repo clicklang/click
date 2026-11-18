@@ -86,13 +86,11 @@ int32 guarded_before_second(
             step();
             step();
             step();
-            step();
             have second_cell == old(second_cell);
             step_until(function.exit);
             solve();
         }
         threw => {
-            step();
             have second_cell == old(second_cell);
             step_until(function.exit);
             solve();

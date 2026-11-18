@@ -159,14 +159,22 @@ fn program_branch_condition_at_frontier(
     else {
         return Ok(None);
     };
-    if !super::same_branch_condition(
-        &surface_program_condition(&source, &execution.core.state)?,
-        condition,
-    ) {
+    let canonical = surface_program_condition(
+        &source,
+        &execution.core.state,
+        Some(&execution.presentation.recorded_states),
+    )?;
+    if !super::same_branch_condition(&canonical, condition)
+        && !(context.constants.source_layout.has_call_captures()
+            && super::same_branch_condition(
+                &surface_program_condition(&source, &execution.core.state, None)?,
+                condition,
+            ))
+    {
         return Ok(None);
     }
     Ok(Some(surface_at_program_point(
-        condition,
+        &canonical,
         &ProgramPointRef {
             region: CodeRegionRef::Region(statement_index),
             kind: ProgramPointKind::Entry,
@@ -519,7 +527,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
-            state.memory(),
+            &state.program_point(),
         );
         let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
         evaluate_fixed_state_expression_through_kernel(
@@ -1010,7 +1018,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
-            before.memory(),
+            &before.program_point(),
         );
         let (values, array_refs) = contract_environment_at_state(&values, &array_refs, before);
         let mut arguments = Vec::with_capacity(parameters.len());
