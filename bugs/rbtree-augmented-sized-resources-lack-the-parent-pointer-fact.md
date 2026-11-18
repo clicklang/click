@@ -456,3 +456,10 @@ The proof in `rbtree_size_insert_black_parent.click` binds the packed parent
 tag at each unfold, then retains the ancestor's word and black bit in an
 owned resource across the reads. Refolding uses the saved tags and the
 proof executes the remaining local declaration before entering the loop.
+
+## Replacing a child link
+
+The augmented `__rb_change_child` proof retains the ancestor's packed tag and
+its typed parent cast, the sibling and root links, and the replaced child's
+cached size and parent cast across the store. The produced link uses the
+entry size, which the contract separately proves equals the exit size.

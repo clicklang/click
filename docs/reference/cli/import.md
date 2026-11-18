@@ -2472,6 +2472,35 @@ contract; without one the call is refused, naming the callee
 
 ## C++ standard library
 
+### The standard-library contract boundary
+
+Clang parses the standard headers and resolves each call to a declaration.
+Click selects a library contract using the resolved specialization and
+overload, then checks the caller against that contract. Click assumes the
+library contract and reports it as a standard-library assumption. The same
+contract applies across standard-library implementations.
+
+New standard-library models describe observable state and effects in Click
+contracts. For example, a span describes a borrowed range, and a vector
+describes an owned allocation and its live elements. The model should derive
+bounds, ownership transfers, and invalidation from those contracts. Private
+fields, representation invariants, and the library implementation's method
+bodies are outside this proof boundary.
+
+### Current catalog and layout-backed accessors
+
+The existing `std::span` and `std::array` models still use layout-backed state
+accessors, as described below. This is an implementation dependency of the
+current models. The contract boundary above is the target for replacing it.
+
+The pinned libc++ test `libcxx_span_empty_checks_abstract_state` exercises the
+contract boundary with an explicit `extern` for `std::span<int>::empty()`.
+Its contract takes the receiver's count from a Click abstract resource. The
+same count is available to the caller, and the call is refused when the
+caller lacks that resource. To migrate the built-in span contracts, Click
+also needs to establish that logical state at construction, preserve it
+through C++ copies, and transfer it to returned spans.
+
 A function declared in a system header (one reached through `-isystem`, a
 system include path, or `#pragma clang system_header`) is an axiom. The
 exporter records its kind, receiver, parameters and return type, keyed by its
@@ -2480,8 +2509,7 @@ prepares it as an opaque function, and each call is checked against a
 contract:
 
 - Click supplies contracts for the standard functions in its catalog, keyed on
-  the standard name and signature, so a proof does not depend on whether
-  libstdc++ or libc++ was parsed. The sidecar is parsed with them appended; the
+  the standard name and signature. The sidecar is parsed with them appended; the
   catalog itself is never written into a sidecar by expansion.
 - The catalog's contracts are Click text, written as a sidecar writes a
   class template's methods ([class templates verified once](#class-templates-verified-once)):
