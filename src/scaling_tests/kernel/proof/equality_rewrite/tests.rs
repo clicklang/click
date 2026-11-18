@@ -405,12 +405,12 @@ fn integer_equality_rewrite_scales_with_selected_dag_not_ambient_facts() {
         });
         let checked = checked.unwrap();
         assert!(work <= 20 * size + 100, "size {size}: {work}");
-        let condition_source = checked.proposition().clone();
-        let Some((ConditionTerm::IntegerEqual(mut root, _), true)) =
-            condition_source.condition_native()
+        let Some((ConditionTerm::IntegerEqual(root, _), true)) =
+            checked.proposition().condition_native()
         else {
             unreachable!()
         };
+        let mut root = root.clone();
         for _ in 0..size {
             let IntegerTerm::Multiply(a, b) = root.as_ref() else {
                 unreachable!()

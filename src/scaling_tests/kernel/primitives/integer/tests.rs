@@ -79,9 +79,9 @@ fn truncating_integer_congruence_visits_shared_nodes_once() {
                 _ => unreachable!(),
             };
             assert_eq!(left.id(), right.id());
-            node = left.clone();
+            node = left;
         }
-        assert_eq!(node, to);
+        assert_eq!(node, &to);
     }
 }
 

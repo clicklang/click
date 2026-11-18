@@ -2709,7 +2709,7 @@ mod tests {
             else {
                 panic!("rewritten scalar comparison");
             };
-            assert!(matches!(*left, MachineTerm::MemoryLoad(..)));
+            assert!(matches!(left.as_ref(), MachineTerm::MemoryLoad(..)));
             let observed = crate::kernel::eval::scalar_read_observation(
                 crate::kernel::MachineOperandView::Legacy(&left),
             )

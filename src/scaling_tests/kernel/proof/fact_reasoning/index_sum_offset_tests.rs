@@ -85,7 +85,10 @@ fn offset_equality_work_is_linear_in_shared_offset_terms() {
             Box::new(left.offset.clone()),
             Box::new(AddressOffset::Constant(0)),
         );
-        [(left.offset, right.offset), (summed, unequal)]
+        [
+            (left.offset.clone(), right.offset.clone()),
+            (summed, unequal),
+        ]
     };
     let mut equal_work = Vec::new();
     let mut unequal_work = Vec::new();

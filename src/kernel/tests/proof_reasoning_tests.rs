@@ -549,7 +549,7 @@ fn pointer_substitution_replaces_the_block_and_preserves_the_offset() {
         panic!("pointer substitution changed the proposition shape");
     };
     assert_eq!(
-        *left,
+        **left,
         Address {
             base: AddressBase::Symbolic(Variable(90_101)),
             offset: AddressOffset::Constant(12),

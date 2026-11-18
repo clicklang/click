@@ -219,10 +219,10 @@ impl PureFactContext {
             .into_iter()
             .flatten()
         {
-            let Some((ref condition, value)) = source.condition_native() else {
+            let Some((condition, value)) = source.condition_native() else {
                 continue;
             };
-            let view = order_view_at_format(condition, value, MachineIntegerType::Int32)?;
+            let view = order_view_at_format(condition, *value, MachineIntegerType::Int32)?;
             let strict = view.relation == crate::kernel::machine_integer::Relation::Less;
             let [left, right] = view
                 .operands

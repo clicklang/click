@@ -8098,7 +8098,7 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
         };
         let rewritten_left = rewrite_int32_term_by_exact_equality(&left, &from, &to);
         let rewritten_right = rewrite_int32_term_by_exact_equality(&right, &from, &to);
-        if rewritten_left == *left && rewritten_right == *right {
+        if &rewritten_left == left.as_ref() && &rewritten_right == right.as_ref() {
             return None;
         }
         goal = Proposition::ConditionIs(

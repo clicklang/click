@@ -7648,7 +7648,8 @@ fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
             else {
                 panic!("native bitwise comparison");
             };
-            let left = crate::kernel::IntegerTerm::from_machine(format, *left).unwrap();
+            let left =
+                crate::kernel::IntegerTerm::from_machine(format, left.as_ref().clone()).unwrap();
             // Same-format observations canonically use a native comparison.
             // A mixed-format observation pair must retain its Integer form.
             let other_format = if format.format().bits() == 32 {
@@ -7656,7 +7657,9 @@ fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
             } else {
                 T::Int32
             };
-            let right = crate::kernel::IntegerTerm::from_machine(other_format, *right).unwrap();
+            let right =
+                crate::kernel::IntegerTerm::from_machine(other_format, right.as_ref().clone())
+                    .unwrap();
             let state = state.clone().with_local(
                 "y",
                 other_format.value_from_term(MachineTerm::Variable(Variable(999709))),

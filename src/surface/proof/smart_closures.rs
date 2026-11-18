@@ -2950,7 +2950,7 @@ impl<'a> Proof<'a> {
             if value.as_ref() == term {
                 return Some(expression.clone());
             }
-            observed.push((expression, value));
+            observed.push((expression, value.clone()));
         }
         // Only on a miss, and only a widening of a narrow value, is read
         // through: the observation the planner reads a native narrow
