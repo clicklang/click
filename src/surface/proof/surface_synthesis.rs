@@ -3910,19 +3910,42 @@ fn raise_kernel_term_dispatch(
         } => {
             // Wide equality reads unsigned literals as the same words. Keep
             // their payloads even beside a variable: signed casts change literals.
-            let unsigned_literal = *relation == CompareRelation::Equal
-                && format.format().bits() == 64
+            use crate::kernel::MachineOperandView as V;
+            let wide_equality = *relation == CompareRelation::Equal && format.format().bits() == 64;
+            let unsigned_literal = wide_equality
                 && arguments.iter().any(|term| {
-                    crate::kernel::MachineOperandView::Shared(term)
+                    V::Shared(term)
                         .literal()
                         .is_some_and(|value| value.uint64_as_const().is_some())
                 });
+            let unsigned_widening = |operand: V<'_>| {
+                operand.cast().is_some_and(|(spelling, _, _, child)| {
+                    matches!(
+                        spelling,
+                        MachineCastSpelling::UInt64FromInt32 | MachineCastSpelling::UInt64From32
+                    ) && (child.variable().is_some() || child.literal().is_some())
+                })
+            };
+            let operands = arguments.each_ref().map(V::Shared);
+            // Equality compares bits. Casting an unsigned widening to the
+            // Int64 filing type would rebuild it as a signed widening.
+            let unsigned_word = wide_equality
+                && operands.iter().copied().any(unsigned_widening)
+                && operands
+                    .iter()
+                    .copied()
+                    .all(|operand| unsigned_widening(operand) || operand.variable().is_some());
             let operand = |term| {
                 let expression = spell_wrapping_uint64_operand(term, recurse(term)?)?;
-                if unsigned_literal {
+                if unsigned_literal || (unsigned_word && unsigned_widening(V::Shared(term))) {
                     Some(expression)
                 } else {
-                    synthesize_observation_operand(expression, format.program_type())
+                    let ty = if unsigned_word {
+                        ProgramType::UInt64
+                    } else {
+                        format.program_type()
+                    };
+                    synthesize_observation_operand(expression, ty)
                 }
             };
             proposition_bool_value(ClickProposition::Comparison {
