@@ -19520,11 +19520,19 @@ impl Parser {
             );
         }
         self.expect(Token::RParen)?;
-        let layout = self.structs.get(name).ok_or_else(|| {
-            self.error_here(format!(
-                "`__builtin_offsetof` requires complete struct `{name}`"
-            ))
-        })?;
+        let layout = self
+            .structs
+            .get(name)
+            .or_else(|| {
+                self.bit_field_records
+                    .get(name)
+                    .map(|record| &record.storage)
+            })
+            .ok_or_else(|| {
+                self.error_here(format!(
+                    "`__builtin_offsetof` requires complete struct `{name}`"
+                ))
+            })?;
         let field = layout
             .fields
             .get(&member)

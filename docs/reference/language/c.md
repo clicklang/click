@@ -1371,12 +1371,19 @@ compilers Click is targeting.
 
 ### Local integer bit-fields
 
-On x86-64, a standalone file-scope struct definition can contain named,
-unqualified `int`, `signed int`, and `unsigned int` bit-fields. A field
-that does not fit in the current 32-bit allocation word starts at the next
-word. Widths are decimal literals between 1 and 32. Local
-records support positional and designated integer-literal initialization,
-including zero initialization of omitted fields, or can start unwritten.
+On x86-64, a standalone file-scope struct definition can mix modeled
+ordinary members with `int`, `signed int`, and `unsigned int` bit-fields. A bit-field that does not fit in the current 32-bit allocation
+word starts at the next word. An ordinary member starts at the first
+byte that satisfies its ABI alignment after the preceding member.
+An unnamed bit-field occupies bits but supplies no field value or initializer
+slot. An unnamed zero-width field advances placement to the next word boundary.
+Unnamed fields do not raise the record's alignment. Widths are decimal literals
+from 0 through 32, with zero reserved for unnamed fields.
+
+Local records support positional and designated literal initialization,
+including zero initialization of omitted named fields, or can start unwritten.
+`sizeof` uses the complete record layout, and `__builtin_offsetof` gives
+the offset of an ordinary addressable member.
 Reads promote narrow signed and unsigned fields to `int`. A 32-bit unsigned
 field retains type `unsigned int`. Signed values use the target's two's
 complement representation. Writes retain the assigned value's low bits up
@@ -1384,7 +1391,9 @@ to the field width and preserve neighboring fields.
 
 `object.field` and `pointer->field` read fields. A fixed local pointer can be
 initialized by `struct tag *p = &object`, including a pointer to a const
-record. Member assignment accepts a side-effect-free integer expression.
+record. Member assignment accepts a side-effect-free arithmetic expression
+for ordinary scalar members and an integer expression for bit-fields.
+Ordinary members have addresses and can be operands of `sizeof`.
 Standalone `++`, `--`, `+=`, and `-=` statements read the old field, perform
 arithmetic after promotion, and store the result. Increment and decrement
 expressions used for their values are outside this subset.
@@ -1408,10 +1417,12 @@ requires exact source and destination offsets and an exact byte count. Use
 `sizeof(record)` or `sizeof(struct tag)` for the full representation.
 
 Typed field access through pointers still requires a fixed local alias.
-Pointer reassignment for such aliases, bit-field addresses, unevaluated field
-operands, and combinations with `goto` are outside the subset. Packed or
-aligned definitions, ordinary fields mixed with bit-fields, unnamed or
-zero-width fields, and multiword records are unsupported.
+Pointer reassignment for such aliases, addresses or unevaluated operands
+of bit-fields, and combinations with `goto` are outside the subset.
+Packed or explicitly aligned struct definitions are unsupported.
+Local objects of mixed record type require modeled unqualified arithmetic
+scalar members. Layout queries also support modeled array, pointer, and
+embedded members.
 
 <!-- verified-example: mdtests/c_bit_field_neighbor.md -->
 <!-- verified-example: mdtests/c_bit_field_partial_initialization.md -->
@@ -1422,6 +1433,9 @@ zero-width fields, and multiword records are unsupported.
 <!-- verified-example: mdtests/c_bit_field_memcpy_roundtrip.md -->
 <!-- verified-example: mdtests/c_bit_field_multiword_update_and_copy.md -->
 <!-- verified-example: mdtests/c_bit_field_multiword_memcpy.md -->
+<!-- verified-example: mdtests/c_bit_field_mixed_layout.md -->
+<!-- verified-example: mdtests/c_bit_field_mixed_composite_layout.md -->
+<!-- verified-example: mdtests/c_bit_field_unnamed_layout.md -->
 
 ### Block-scope struct compound literals
 
