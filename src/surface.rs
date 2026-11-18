@@ -673,7 +673,6 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         "library/bytes.click",
         include_str!("../library/bytes.click"),
     ),
-    ("library/cstr.click", include_str!("../library/cstr.click")),
     (
         "library/c/builtins.click",
         include_str!("../library/c/builtins.click"),
