@@ -20685,7 +20685,7 @@ pub(in crate::kernel) fn function_exit_memory(
             if pointer.address().base.is_local_block()
                 && !caller_state.memory.has_block(&pointer.address().base) =>
         {
-            let block = &pointer.pointer().base;
+            let block = &pointer.address().base;
             if let Some(error) = callee_state.automatic_storage_loan_refusal(block) {
                 return Err(error);
             }
