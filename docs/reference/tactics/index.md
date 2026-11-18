@@ -4081,8 +4081,9 @@ decided:
 - After the function exit, or inside `have ... by { ... }`: observe at the
   frontier before.
 
-An `observe` whose guard is undecided currently succeeds and adds nothing.
-That is not a guarantee; decide the guard first.
+When projecting a composite body, `observe` reports an undecided guard and
+names the condition to prove or refute. A known-false guard selects an empty
+body and succeeds.
 
 **Failure, checking, and tools:**
 

@@ -2724,8 +2724,8 @@ cannot depend on reading that same memory. A guarded body may directly contain
 the resource being defined. This direct self-recursion is the supported
 recursive form; unguarded recursion and mutual resource cycles are rejected.
 
-`observe` keeps a guarded resource opaque when neither the guard nor its
-negation is known. Explicit `fold` and `unfold` require the guard to be decided.
+Automatic projection keeps a guarded body opaque while its guard is undecided.
+Explicit `observe`, `fold`, and `unfold` require the guard to be decided.
 When active, they expose or consume exactly one body layer, leaving a recursive
 child such as `list(node->next)` folded. This makes proof cost depend on the
 number of explicit list operations, not the unknown length of the list.

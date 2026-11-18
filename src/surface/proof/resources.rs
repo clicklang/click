@@ -1884,7 +1884,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         &ProgramValue::Int32(MachineTerm::constant(0)),
         available_pure_facts,
         spec_definitions,
-        false,
+        CompositeObservation::Explicit(&surface_substitutions),
         Some(function.composite_resource_definitions()),
     )
     .map_err(|message| {
@@ -2373,7 +2373,7 @@ fn project_held_resource_observable_facts(
         result,
         available_pure_facts,
         spec_definitions,
-        true,
+        CompositeObservation::Implicit,
         None,
     )
     .map(|(memory, _, _)| memory)
@@ -2511,6 +2511,11 @@ fn composite_resource_body_is_active_with_assumptions(
     })
 }
 
+enum CompositeObservation<'a> {
+    Explicit(&'a BTreeMap<String, ContractExpression>),
+    Implicit,
+}
+
 /// Applies the non-consuming observation law declared by a composite body.
 /// The kernel algebra handles the folded resource fact itself; Click owns this
 /// definitional layer because it requires source-level substitution and fact
@@ -2526,7 +2531,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
     result: &ProgramValue,
     available_pure_facts: &mut F,
     spec_definitions: SpecDefinitions<'_>,
-    lower_declared_source_facts: bool,
+    observation: CompositeObservation<'_>,
     compiled_definitions: Option<&[CompositeResourceDefinition]>,
 ) -> Result<(SymbolicMemory, ResourceContext, bool), String> {
     let Some(composite_body) = definition.composite_body() else {
@@ -2560,6 +2565,16 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         spec_definitions,
     )?
     else {
+        if let CompositeObservation::Explicit(substitutions) = observation {
+            let guard = composite_body
+                .condition()
+                .expect("only a guarded body can be undecided");
+            let guard = substitute_click_proposition(guard, substitutions)?;
+            return Err(format!(
+                "guard `{}` is undecided: prove it or its negation before observing the body",
+                describe_click_proposition(&guard)
+            ));
+        }
         return Ok((state.memory().clone(), ResourceContext::new(), false));
     };
     if !body_active {
@@ -2628,7 +2643,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         result,
         available_pure_facts,
         spec_definitions,
-        lower_declared_source_facts,
+        matches!(observation, CompositeObservation::Implicit),
     )?;
     Ok((memory, contained_resources, true))
 }
