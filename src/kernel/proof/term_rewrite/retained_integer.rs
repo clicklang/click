@@ -32,6 +32,16 @@ impl TermRewrite<'_> {
                     }
                     KernelTermNode::IntegerLiteral(_) => {}
                     KernelTermNode::IntegerOperation { arguments, .. } => pending.extend(arguments),
+                    KernelTermNode::MachineObservation { operand, .. } => {
+                        collect_machine_operand_carriers(
+                            MachineOperandView::Shared(operand),
+                            &mut variables,
+                        );
+                        if variables.exhausted() {
+                            self.reserve_source_variables(variables);
+                            return None;
+                        }
+                    }
                     _ => return None,
                 }
             }
@@ -87,6 +97,36 @@ impl TermRewrite<'_> {
                         term.clone()
                     } else {
                         import.integer(&rewritten.into())
+                    }
+                }
+                KernelTermNode::MachineObservation { format, operand } => {
+                    let rewritten = self.shared_machine_operand(operand)?;
+                    let changed = rewritten != *operand;
+                    let view = MachineOperandView::Shared(&rewritten);
+                    let observed = view
+                        .observe(*format)
+                        .unwrap_or_else(|| IntegerTerm::Machine(view.retain(*format)));
+                    let observed = match observed {
+                        IntegerTerm::Machine(machine) if changed => {
+                            if let Some(root) = machine.shared_operand() {
+                                IntegerTerm::Machine(
+                                    SharedMachineIntegerTerm::observe_shared(
+                                        machine.ty(),
+                                        root.clone(),
+                                    )
+                                    .expect("rewritten machine observation"),
+                                )
+                            } else {
+                                IntegerTerm::Machine(machine)
+                            }
+                        }
+                        observed => observed,
+                    };
+                    if !changed && matches!(observed, IntegerTerm::Machine(_)) {
+                        // A no-op keeps the producer's exact observation handle.
+                        term.clone()
+                    } else {
+                        import.integer(&observed.into())
                     }
                 }
                 KernelTermNode::IntegerOperation {
@@ -271,6 +311,93 @@ mod tests {
         assert!(variables.shared_integer_operand(&conditional).is_none());
         assert!(variables.refusal_status().is_none());
         assert!(!conditional.has_cached_native_argument());
+    }
+    #[test]
+    fn retained_machine_observations_match_native_widths_literals_reads_and_changes() {
+        let _session = VerificationSession::enter();
+        let from = Variable(991970);
+        let address = Address {
+            base: AddressBase::Symbolic(Variable(991971)),
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(from), 4),
+        };
+        let memory = intern_memory(SymbolicMemory::new());
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(address),
+            LoadKind::Int32,
+        );
+        let mut cases = Vec::new();
+        for format in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt16,
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+            MachineIntegerType::Int128,
+            MachineIntegerType::UInt128,
+        ] {
+            let bits = format.format().bits();
+            let mask = if bits == 128 {
+                u128::MAX
+            } else {
+                (1u128 << bits) - 1
+            };
+            cases.extend([
+                (format, MachineTerm::Variable(from)),
+                (format, MachineTerm::Constant { format, bits: 0 }),
+                (format, MachineTerm::Constant { format, bits: mask }),
+            ]);
+        }
+        // The observation may reject a numeric literal reading and retain its
+        // original typed handle. Do not introduce a new signedness policy.
+        cases.push((
+            MachineIntegerType::Int64,
+            MachineTerm::uint64_constant(u64::MAX),
+        ));
+        cases.push((MachineIntegerType::Int32, read));
+        for (format, machine) in cases {
+            let input = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(format, machine));
+            let root = KernelTermImport::default().integer(&input.clone().into());
+            assert!(matches!(
+                root.node(),
+                KernelTermNode::MachineObservation { .. }
+            ));
+            for replacement in [
+                MachineTerm::constant(7),
+                MachineTerm::Variable(Variable(991972)),
+            ] {
+                for source in [
+                    MachineTerm::Variable(from),
+                    MachineTerm::Variable(Variable(991973)),
+                ] {
+                    let mut baseline = TermRewrite::for_bits_checked(&source, &replacement);
+                    let expected = baseline.integer(&input);
+                    let expected_debug = format!("{expected:?}");
+                    let mut rewrite = TermRewrite::for_bits_checked(&source, &replacement);
+                    let exports = KernelTermExport::machine_export_count();
+                    let was_cached = root.has_cached_native_argument();
+                    let actual = rewrite.shared_integer_operand(&root);
+                    assert_eq!(
+                        rewrite.refusal_status(),
+                        baseline.refusal_status(),
+                        "format={format:?}"
+                    );
+                    let actual = actual.expect("selected numeric observation");
+                    assert_eq!(
+                        KernelTermExport::machine_export_count(),
+                        exports,
+                        "format={format:?}"
+                    );
+                    assert_eq!(root.has_cached_native_argument(), was_cached);
+                    let output = actual.integer_native_compat().unwrap();
+                    assert_eq!(output, &expected, "format={format:?}");
+                    assert_eq!(format!("{output:?}"), expected_debug, "format={format:?}");
+                }
+            }
+        }
     }
 }
 
