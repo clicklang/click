@@ -741,7 +741,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                         to_events,
                         &description,
                         false,
-                        quantity,
+                        quantity.native_compat(),
                         assumptions,
                     )
                     .map_err(|refusal| {
@@ -783,7 +783,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                 to_events,
                 &description,
                 authority_fact,
-                quantity,
+                quantity.native_compat(),
                 assumptions,
             )
             .map_err(|refusal| {
@@ -4193,13 +4193,13 @@ fn execute_verified_function_applications_with_suspension(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: quantity.clone(),
+                        left: Box::new(quantity.native_compat().clone()),
                         right: Box::new(MachineTerm::constant(0)),
                     },
                 ) {
                 MachineTerm::constant(0)
             } else {
-                *quantity
+                quantity.native_compat().clone()
             };
             let (spent, _) = match events.checked_member_exchange_quantity(
                 &pointer.address().base,
@@ -4471,7 +4471,7 @@ fn execute_verified_function_applications_with_suspension(
                         block: anchor.base.clone(),
                         description,
                         produce,
-                        quantity: (**quantity).clone(),
+                        quantity: quantity.native_compat().clone(),
                         exclusive,
                     });
                     continue;
@@ -4481,7 +4481,7 @@ fn execute_verified_function_applications_with_suspension(
                         &anchor.base,
                         &description,
                         produce,
-                        quantity,
+                        quantity.native_compat(),
                         &effective_assumptions,
                     )
                 } else {
@@ -4489,7 +4489,7 @@ fn execute_verified_function_applications_with_suspension(
                         &anchor.base,
                         &description,
                         produce,
-                        quantity,
+                        quantity.native_compat(),
                         &effective_assumptions,
                     )
                 };
@@ -16860,7 +16860,7 @@ fn consume_returned_resource_unit(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: quantity.clone(),
+            left: Box::new(quantity.native_compat().clone()),
             right: Box::new(MachineTerm::constant(1)),
         },
     );
