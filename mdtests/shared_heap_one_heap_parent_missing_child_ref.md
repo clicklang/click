@@ -63,6 +63,8 @@ resource parent(p: struct parent*) {
 
 authorized resource child_ref(obj: struct child*) {}
 
+function child_object(obj: struct child*) -> Bool { true }
+
 resource child_control(obj: struct child*) {
     owns allocation(obj, sizeof(struct child));
     owns *obj;
@@ -94,6 +96,8 @@ void child_release(struct child* obj) {
     if obj->refs == 1 {
         unfold(child_ref(obj));
         unfold(authority(child_ref(obj)));
+        step_until(function.exit);
+        solve();
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
@@ -103,13 +107,15 @@ void child_release(struct child* obj) {
         step();
         step();
         fold(child_control(obj));
+        step_until(function.exit);
+        solve();
     }
 }
 
 void parent_attach(struct parent* p, struct child* kid) {
     requires to_integer(count(child_ref(kid))) < 2147483647;
     requires kid != 0;
-    consumes p->kid;
+    consumes uninitialized(p->kid);
     owns child_control(kid);
     owns child_ref(kid);
     produces child_ref(kid);
@@ -137,13 +143,16 @@ void parent_detach(struct parent* p) {
             unfold(link);
             have old(p->kid) == entry_child by solve();
             if p->kid->refs > 1 {
+                step_until(function.exit);
             } else {
+                step_until(function.exit);
             }
         },
     }
 }
 
 int32 caller(struct child* kid) {
+    requires child_object(kid);
     requires kid != 0;
     requires to_integer(count(child_ref(kid))) == 1;
     consumes child_control(kid);

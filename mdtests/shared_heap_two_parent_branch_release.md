@@ -79,6 +79,8 @@ resource parent(p: struct parent*) {
 
 authorized resource child_ref(obj: struct child*) {}
 
+function child_object(obj: struct child*) -> Bool { true }
+
 resource child_control(obj: struct child*) {
     owns allocation(obj, sizeof(struct child));
     owns *obj;
@@ -110,6 +112,8 @@ void child_release(struct child* obj) {
     if obj->refs == 1 {
         unfold(child_ref(obj));
         unfold(authority(child_ref(obj)));
+        step_until(function.exit);
+        solve();
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
@@ -119,6 +123,8 @@ void child_release(struct child* obj) {
         step();
         step();
         fold(child_control(obj));
+        step_until(function.exit);
+        solve();
     }
 }
 
@@ -153,7 +159,7 @@ int32 parent_read_payload(struct parent* p) {
         },
         ParentLink::Linked(entry_child) => {
             unfold(link);
-            open(child_control(p->kid)) { }
+            open(child_control(p->kid)) { step_until(function.exit); }
             let link = fold(parent(p), { link: ParentLink::Linked(p->kid) });
             solve();
         },
@@ -190,6 +196,7 @@ void parent_detach(struct parent* p) {
 }
 
 void caller(struct parent* first, struct parent* second, struct child* kid) {
+    requires child_object(kid);
     consumes first->kid;
     consumes second->kid;
     requires kid != 0;
