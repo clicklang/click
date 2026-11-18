@@ -1840,7 +1840,7 @@ fn records_checked_surface_forms_for_lowered_propositions() {
         right: current_int(10),
     };
     let surface = ClickProposition::And(Box::new(left.clone()), Box::new(right.clone()));
-    let values = BTreeMap::from([(
+    let values = ProgramValueBindings::from([(
         "x".to_string(),
         ProgramValue::Int32(MachineTerm::Variable(Variable(42))),
     )]);
@@ -5245,7 +5245,7 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
         ));
     }
     let facts = crate::surface::verification::assumptions_from_propositions(&bounds);
-    let values = BTreeMap::from([
+    let values = ProgramValueBindings::from([
         ("hi".to_string(), ProgramValue::Int32(hi)),
         ("lo".to_string(), ProgramValue::Int32(lo)),
     ]);
@@ -5511,7 +5511,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
     let reparsed = file.theorem_definitions()[0].requires()[0]
         .theorem_proposition()
         .unwrap();
-    let values = BTreeMap::from([(
+    let values = ProgramValueBindings::from([(
         "i".to_string(),
         ProgramValue::Int32(MachineTerm::constant(7)),
     )]);

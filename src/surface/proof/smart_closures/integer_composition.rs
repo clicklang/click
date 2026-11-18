@@ -1515,7 +1515,7 @@ mod tests {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             memory: SymbolicMemory::new(),
-            values: BTreeMap::new(),
+            values: ProgramValueBindings::new(),
             integer_values: PersistentBinderMap::default(),
             array_refs: BTreeMap::new(),
             requires: vec![premise.clone()],

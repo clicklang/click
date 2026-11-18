@@ -714,7 +714,7 @@ pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, 
 /// through it rather than showing `v2`. One definition, so a pure theorem and a
 /// C proof name the same term the same way.
 pub(in crate::surface) fn value_naming_tables(
-    values: &std::collections::BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
 ) -> (
     Vec<crate::languages::interface::ImportedParameter>,
     Vec<ProgramExpression>,

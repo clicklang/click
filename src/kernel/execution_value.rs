@@ -1183,3 +1183,49 @@ mod float_cell_key_tests {
         }
     }
 }
+
+/// Immutable program-value storage. Native inputs remain explicit compatibility
+/// inputs; producer roots survive every clone and handoff without exporting.
+/// Equality follows native syntax, separately from execution observation keys.
+#[derive(Clone, Debug)]
+pub(crate) struct RetainedProgramValue(std::sync::Arc<ExecutionValue>);
+impl From<ProgramValue> for RetainedProgramValue {
+    fn from(value: ProgramValue) -> Self {
+        Self::from(ExecutionValue::Native(value))
+    }
+}
+impl From<ExecutionValue> for RetainedProgramValue {
+    fn from(value: ExecutionValue) -> Self {
+        Self(std::sync::Arc::new(value))
+    }
+}
+impl RetainedProgramValue {
+    pub(crate) fn root(&self) -> Option<&KernelTerm> {
+        self.0.shared()
+    }
+    pub(crate) fn native_compat(&self) -> &ProgramValue {
+        match self.0.as_ref() {
+            ExecutionValue::Native(value) => value,
+            ExecutionValue::Shared(root) => root
+                .program_value_native_compat()
+                .expect("stored program value output"),
+        }
+    }
+    pub(crate) fn into_native_compat(self) -> ProgramValue {
+        self.into_value().into_native()
+    }
+    pub(crate) fn into_value(self) -> ExecutionValue {
+        match std::sync::Arc::try_unwrap(self.0) {
+            Ok(value) => value,
+            Err(value) => value.as_ref().clone(),
+        }
+    }
+}
+impl PartialEq for RetainedProgramValue {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+            || matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b)
+            || self.native_compat() == other.native_compat()
+    }
+}
+impl Eq for RetainedProgramValue {}

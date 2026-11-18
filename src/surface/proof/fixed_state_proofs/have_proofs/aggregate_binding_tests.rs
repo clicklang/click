@@ -4,7 +4,7 @@ use crate::kernel::{
     program_parameter_with_aggregate_layout, program_return, program_void_value,
 };
 
-fn aggregate_entry(count: u32) -> (ExecutionState, BTreeMap<String, ProgramValue>) {
+fn aggregate_entry(count: u32) -> (ExecutionState, ProgramValueBindings) {
     let source = Address {
         base: "local:caller_packet".into(),
         offset: crate::kernel::AddressOffset::Constant(0),
@@ -17,7 +17,7 @@ fn aggregate_entry(count: u32) -> (ExecutionState, BTreeMap<String, ProgramValue
     let value = ProgramValue::pointer(source.clone());
     let values = (0..count)
         .map(|index| (format!("input_{index}"), value.clone()))
-        .collect::<BTreeMap<_, _>>();
+        .collect::<ProgramValueBindings>();
     let function = program_function(
         ProgramType::Void,
         "aggregate_binding",
