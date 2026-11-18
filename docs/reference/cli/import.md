@@ -2091,6 +2091,15 @@ For discarded-result copy assignment between live lvalues, a resolved
 checked as a call. An `extern` contract can describe the destination's
 updated logical state, the source's state, and the returned reference.
 
+A C++ function taking a record by value can declare contract value parameters
+with `let`. For example, `let count: uint64;` and
+`requires value.count == count;` give the contract a name for the entry
+count independently of later writes to the parameter. A caller can relate
+its record's entry count to a resource field in a precondition and pass
+the count with `step(shorten, { count: old(source.count) });`. The call
+checks the equality on the copied record. The copy's storage is local
+to the callee, and copying pointer fields grants no backing authority.
+
 Discarded-result trivial copy assignment between live lvalues of the same
 nominal record lowers to shared C aggregate field copies. Clang must resolve a
 non-deleted, non-virtual trivial copy assignment; the record and embedded
