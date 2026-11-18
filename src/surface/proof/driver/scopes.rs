@@ -67,6 +67,21 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
+    /// Carry a selected native endpoint inside an owned have body.
+    pub(in crate::surface::proof) fn try_native_integer_bound(
+        &self,
+        source: &Proposition,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_native_integer_bound(&self.proof.body, source)?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Construct a signed addition or subtraction certificate from the selected bounds.
     pub(in crate::surface::proof) fn try_int32_add_sub_using(
         &self,

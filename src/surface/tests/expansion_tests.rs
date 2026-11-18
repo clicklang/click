@@ -17781,6 +17781,14 @@ fn retained_int32_addition_expands_with_ordinary_bounds() {
             "the exact cited bound should close with known: {goal}\n{expanded}"
         );
     }
+    assert!(
+        expanded.contains("apply(click::integer::lt_le_predecessor("),
+        "the native strict upper bound should use Integer discreteness: {expanded}"
+    );
+    assert!(
+        !expanded.contains("normalize() using"),
+        "all retained interval bounds in this fixture should be ordinary: {expanded}"
+    );
     let increment = " + to_integer((1 as int32)))";
     let mut sum_bounds = 0;
     let mut identities = 0;

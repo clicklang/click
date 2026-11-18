@@ -395,6 +395,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed));
         }
+        if retained
+            && let [source] = kernels.as_slice()
+            && let Some(closed) = Self::try_native_integer_bound(search_input, source)?
+            && closed.is_complete()
+        {
+            return Ok(Some(closed));
+        }
         if retained {
             let step = if kernels.contains(goal)
                 || crate::surface::planning::solve::computes_with_known(goal)

@@ -4933,6 +4933,10 @@ id = "library.theorem.integer::subtract_right_order"
 path = "reference/library/index.md#integersubtract_right_order"
 
 [[item]]
+id = "library.theorem.integer::lt_le_predecessor"
+path = "reference/library/index.md#integerlt_le_predecessor"
+
+[[item]]
 id = "library.theorem.integer::subtract_left_order"
 path = "reference/library/index.md#integersubtract_left_order"
 
