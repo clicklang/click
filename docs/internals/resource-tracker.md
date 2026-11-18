@@ -2017,6 +2017,20 @@ exceptional and fallthrough completion, reject overlapping raw observations,
 and grow owners, related ranges, tokens, aliases and private slots at 4/16/64.
 Existing observable-projection tests cover private filtering and invalidation.
 
+For an explicit folded composite observation on a state with no loan bindings,
+the kernel takes the selected resource and the memory naming input. It
+constructs the successor from the reached state, inserts the checked body's
+views with the selected occurrence as support, and publishes the structural
+witnesses of that body. There is no proposed resource context to compare
+against the whole retained partition. Loan-bound observations still use the
+ledger projection route. The introduced pure facts still need their ordinary
+checked definition and derivation evidence.
+
+Exact contract certification shares its original closing entry with the
+single unconditional finite entry case. Guarded and recursive cases retain
+their case-specific entry construction. Closing still needs the definition
+and footprint evidence for each requested claim.
+
 The source tests in `tests/search_boundary.rs` pin the perimeter, including
 new/hidden references and duplicate caller edges. Runtime probes exercise
 raw-output admission and pending-return admission; the broader legacy routes

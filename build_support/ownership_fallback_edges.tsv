@@ -61,7 +61,7 @@ src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::try_com
 src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::try_compose_with_facts_delaying_normalization	try_compose_with_facts_delaying_normalization_with_occurrences	1
 src/kernel/proof/execution.rs	legacy-caller	::checks_population_authority_exchange	try_compose_with_fact	1
 src/kernel/proof/execution.rs	legacy-caller	::trace_completion_from_entry	try_compose_with_facts	1
-src/kernel/proof/execution.rs	legacy-caller	CheckedResourceObservation::check	expand_composite_resource_fact_with_children	1
+src/kernel/proof/execution.rs	legacy-caller	CheckedResourceObservation::certify	expand_composite_resource_fact_with_children	1
 src/kernel/publication.rs	legacy-caller	::acquire_load	try_compose_with_facts_delaying_normalization	1
 src/kernel/publication.rs	legacy-caller	::initialize	try_compose_with_facts_delaying_normalization	1
 src/kernel/publication.rs	legacy-caller	::resolve_observed_publications	try_compose_with_facts_delaying_normalization	1
