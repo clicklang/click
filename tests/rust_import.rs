@@ -1072,6 +1072,42 @@ fn charon_chunk_project() -> Project {
     fs::write(p.root.join("borrow.click"), CHARON_CHUNK_SIDECAR).unwrap();
     p
 }
+/// A chunk loop's `next` binds its chunk itself: the `Option` MIR returns,
+/// its tag test and its temporary are gone.
+#[test]
+fn charon_chunk_loops_bind_their_chunk_without_an_option() {
+    use click::languages::rust::schema::{MirStatement, Type};
+    let prepared = charon_chunk_project().prepared().unwrap();
+    let mut bound = 0;
+    for function in &prepared.export().functions {
+        let Some(mir) = &function.mir else { continue };
+        assert!(
+            !mir.locals
+                .iter()
+                .any(|local| local.value_type == Type::ChunkOption),
+            "{}",
+            function.name
+        );
+        for statement in mir.blocks.iter().flat_map(|block| &block.statements) {
+            if let MirStatement::ChunkNext {
+                option,
+                payload,
+                taken,
+                ..
+            } = statement
+            {
+                assert_eq!(option, &None, "{}: {statement:?}", function.name);
+                assert!(
+                    payload.is_none() || *taken == Some(true),
+                    "{}: {statement:?}",
+                    function.name
+                );
+                bound += usize::from(payload.is_some());
+            }
+        }
+    }
+    assert!(bound > 0);
+}
 /// The imports and the slice spelling a claim about a library iterator
 /// needs.
 const LIBRARY_CHUNKS: &str = "import click::integer;";
