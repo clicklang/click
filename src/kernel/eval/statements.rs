@@ -194,7 +194,7 @@ fn indexed_store_bounds(
     else {
         return None;
     };
-    let address = base.pointer();
+    let address = base.address();
     if address.base != AddressBase::ExternalArgument
         || address != &address.object_base()
         || base.provenance() != &address.object_identity()
