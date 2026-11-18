@@ -10271,8 +10271,10 @@ impl ExecutionState {
             .after(super::intern_memory_ref(&self.memory), steps);
     }
 
-    /// Keep `before`'s memory, and so stand where `before` stood: a state
-    /// rebuilt around unchanged memory has not moved.
+    /// Take `before`'s memory and stand where `before` stood, without the
+    /// resource invalidation of [`Self::set_memory_of`]: for a state rebuilt
+    /// around unchanged memory, or one taking the memory a transition that
+    /// already accounted for its resources produced.
     pub(crate) fn keep_memory_of(&mut self, before: &Self) {
         self.memory = before.memory.clone();
         self.point = before.point.clone();

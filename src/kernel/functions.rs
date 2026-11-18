@@ -3686,7 +3686,8 @@ fn execute_verified_function_applications_with_suspension(
                             .into_certified(),
                         );
                     }
-                    post_state.set_memory_directly(successor.memory.clone());
+                    // The helper's successor made this memory: stand where it stands.
+                    post_state.keep_memory_of(&successor);
                     post_state.mutex_ledger = successor.mutex_ledger.clone();
                     post_state.opaque_mutex_acquisitions =
                         successor.opaque_mutex_acquisitions.clone();
@@ -5354,7 +5355,8 @@ fn exceptional_direct_function_path(
             }
         };
     let mut throw_state = caller_state.clone();
-    throw_state.set_memory(memory);
+    // The thrown memory is the post state's: continue its path.
+    throw_state.set_memory_of(&post_state);
     refresh_call_written_locals(
         &mut throw_state,
         &transfer.memory_effects,
