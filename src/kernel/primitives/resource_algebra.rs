@@ -467,6 +467,7 @@ pub(super) fn nominal_ownership_block(block: &AddressBase) -> bool {
             | AddressBase::Temporary(_)
             | AddressBase::Concrete(_)
             | AddressBase::AutomaticLocal { .. }
+            | AddressBase::SliceLength { .. }
             | AddressBase::StaticObject { .. }
             | AddressBase::AggregateReturn { .. }
             | AddressBase::ContractResult
@@ -792,6 +793,7 @@ impl ResourceContextIndex {
                     block,
                     AddressBase::Concrete(_)
                         | AddressBase::AutomaticLocal { .. }
+                        | AddressBase::SliceLength { .. }
                         | AddressBase::StaticObject { .. }
                         | AddressBase::AggregateReturn { .. }
                         | AddressBase::ContractResult

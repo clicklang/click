@@ -1623,6 +1623,7 @@ impl ResourceContext {
                         | AddressBase::Temporary(_)
                         | AddressBase::Concrete(_)
                         | AddressBase::AutomaticLocal { .. }
+                        | AddressBase::SliceLength { .. }
                         | AddressBase::StaticObject { .. }
                         | AddressBase::AggregateReturn { .. }
                         | AddressBase::ExternalArgument

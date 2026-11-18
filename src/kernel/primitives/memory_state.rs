@@ -10830,11 +10830,15 @@ pub(crate) fn withdraw_never_address_taken_locals(taken: &BTreeSet<BindingName>)
     changed
 }
 
-/// The declaration a storage block belongs to. Typed C blocks carry this
-/// directly; non-C legacy blocks retain their original prefix grammar.
+/// The declaration a storage block belongs to. Typed blocks carry this
+/// directly; legacy blocks retain their original prefix grammar.
 fn local_block_object_name(block: &AddressBase) -> Option<BindingName> {
-    if let AddressBase::AutomaticLocal { binding, .. } = block {
-        return Some(binding.clone().into());
+    match block {
+        AddressBase::AutomaticLocal { binding, .. } => return Some(binding.clone().into()),
+        AddressBase::SliceLength { slice, .. } => {
+            return Some(BindingName::SliceLength(slice.clone()));
+        }
+        _ => {}
     }
     let rest = block.strip_prefix("local:")?;
     match rest.split_once(':') {
