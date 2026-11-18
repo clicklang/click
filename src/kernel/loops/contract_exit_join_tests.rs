@@ -21,7 +21,7 @@ fn exit_disjunct_restates_model_getters_without_replacing_history() {
     let held = model(986_100);
     let fresh = model(986_101);
     let fact = |model| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::ClickFunctionApplication {
                     name: "pending".into(),

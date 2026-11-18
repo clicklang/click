@@ -760,7 +760,7 @@ pub(super) fn syntactic_expression_type(
 }
 
 pub(super) fn concrete_variable_types(
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
 ) -> BTreeMap<String, ClickType> {
     values

@@ -201,7 +201,7 @@ impl ParsedBlocks {
         children
     }
 
-    /// The two arm blocks of a proof `if`, `branch` or `both`.
+    /// The two arm blocks of a proof `if` or `branch` in source order.
     pub(super) fn two_arms(
         &self,
         range: &Range<usize>,
@@ -228,6 +228,20 @@ impl ParsedBlocks {
         Ok(arms)
     }
 
+    /// The blocks of `both` in conjunct order, regardless of source order.
+    pub(super) fn both_arms(
+        &self,
+        tokens: &[SourceToken],
+        range: &Range<usize>,
+    ) -> Result<[(usize, usize); 2], ClickError> {
+        let [first, second] = self.two_arms(range, "both")?;
+        if tokens[first.0 - 2].text == "right" {
+            Ok([second, first])
+        } else {
+            Ok([first, second])
+        }
+    }
+
     /// The `returned` and `threw` arm blocks of
     /// `outcomes { returned => { ... } threw => { ... } }`, in that order
     /// whichever order they are written in.
@@ -239,7 +253,14 @@ impl ParsedBlocks {
         let mut returned = None;
         let mut threw = None;
         for (open, close) in self.child_blocks(range) {
-            match open.checked_sub(2).map(|label| tokens[label].text.as_str()) {
+            let label = open.checked_sub(2).and_then(|index| {
+                if tokens[index].text == ")" {
+                    index.checked_sub(3)
+                } else {
+                    Some(index)
+                }
+            });
+            match label.map(|index| tokens[index].text.as_str()) {
                 Some("returned") => returned = Some((open, close)),
                 Some("threw") => threw = Some((open, close)),
                 _ => {}

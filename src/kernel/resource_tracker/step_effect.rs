@@ -215,6 +215,7 @@ pub(in crate::kernel) fn separation_check(
                 SeparationCheck::HeapAllocationSeparation
             }
             MemoryDerivation::Store { .. }
+            | MemoryDerivation::RepresentationWrite { .. }
             | MemoryDerivation::CellsSeeded { .. }
             | MemoryDerivation::BlockDeclared { .. }
             | MemoryDerivation::HeapAllocated { .. }
@@ -230,9 +231,9 @@ pub(in crate::kernel) fn separation_check(
         // covers its size, liveness and heap status as well as its cells;
         // only a store has a single address to be distinct from.
         TrackedResource::Block(_) => match step {
-            MemoryDerivation::Store { .. } | MemoryDerivation::CellsSeeded { .. } => {
-                SeparationCheck::PointerDistinctness
-            }
+            MemoryDerivation::Store { .. }
+            | MemoryDerivation::RepresentationWrite { .. }
+            | MemoryDerivation::CellsSeeded { .. } => SeparationCheck::PointerDistinctness,
             MemoryDerivation::BlockDeclared { .. }
             | MemoryDerivation::HeapAllocated { .. }
             | MemoryDerivation::HeapAllocationPending { .. }
@@ -261,6 +262,7 @@ pub(in crate::kernel) fn separation_check(
                 SeparationCheck::HeapAllocationSeparation
             }
             MemoryDerivation::Store { .. }
+            | MemoryDerivation::RepresentationWrite { .. }
             | MemoryDerivation::CellsSeeded { .. }
             | MemoryDerivation::BlockDeclared { .. }
             | MemoryDerivation::HeapAllocated { .. }
@@ -321,11 +323,10 @@ fn cell_effect(
                 None => unknown(),
             }
         }
-        MemoryDerivation::Store {
-            pointer: write,
-            value,
-            ..
-        } => store_cell_effect(step, write, value.native(), pointer, bytes, evidence),
+        MemoryDerivation::Store { .. } | MemoryDerivation::RepresentationWrite { .. } => {
+            let (write, width) = step.single_write().expect("one checked write");
+            store_cell_effect(step, write, width, pointer, bytes, evidence)
+        }
         MemoryDerivation::CellsSeeded { .. } => {
             match seeded_cell_effect(step, pointer, bytes, evidence) {
                 SeededCellEffect::Written(..) => StepEffect::Affected,
@@ -628,7 +629,7 @@ fn cell_effect(
 fn store_cell_effect(
     step: &MemoryDerivation,
     write: &Address,
-    value: &ProgramValue,
+    write_bytes: u32,
     pointer: &Address,
     bytes: u32,
     evidence: &Evidence<'_>,
@@ -654,7 +655,7 @@ fn store_cell_effect(
     // question outright, so take that answer first: overlapping
     // bytes mean the store wrote this cell, whatever the addresses
     // are called.
-    let overlap = access_byte_overlap(write, value.byte_width(), pointer, bytes, assumptions);
+    let overlap = access_byte_overlap(write, write_bytes, pointer, bytes, assumptions);
     if overlap == AccessByteOverlap::Overlaps {
         return StepEffect::Affected;
     }
@@ -726,7 +727,7 @@ fn store_cell_effect(
         .or_else(|| assumptions.pointer_at_known_base(write, &pointer.object_base()))
         && !write.blocks_proven_distinct(&aligned)
         && assumptions.pointers_known_equal(write, &aligned)
-        && exact_access_byte_overlap(&aligned, value.byte_width(), pointer, bytes)
+        && exact_access_byte_overlap(&aligned, write_bytes, pointer, bytes)
             == Some(AccessByteOverlap::Separate)
     {
         // A node origin may itself be a loaded pointer with symbolic
@@ -737,7 +738,7 @@ fn store_cell_effect(
     } else if let Some(justification) =
         crate::kernel::memory_history::indexed_store_byte_separation_evidence(
             write,
-            value.byte_width(),
+            write_bytes,
             pointer,
             bytes,
             assumptions,
@@ -745,13 +746,8 @@ fn store_cell_effect(
     {
         hop(justification)
     } else if explicit_dag_check_active()
-        && let Some(justification) = typed_store_separated_ranges_evidence(
-            write,
-            value.byte_width(),
-            pointer,
-            bytes,
-            assumptions,
-        )
+        && let Some(justification) =
+            typed_store_separated_ranges_evidence(write, write_bytes, pointer, bytes, assumptions)
     {
         hop(justification)
     } else if explicit_dag_check_active()
@@ -767,13 +763,9 @@ fn store_cell_effect(
         hop(MemoryDagHopJustification::AssumptionDependent(
             MemoryDagAssumptionKind::StoreGeneralDistinctness,
         ))
-    } else if let Some(justification) = owned_composition_store_separated_evidence(
-        write,
-        value.byte_width(),
-        pointer,
-        bytes,
-        assumptions,
-    ) {
+    } else if let Some(justification) =
+        owned_composition_store_separated_evidence(write, write_bytes, pointer, bytes, assumptions)
+    {
         // Last, after every cheaper check: one composition in the
         // context owns the written address and the read address
         // through two different members, so the partition invariant
@@ -809,7 +801,7 @@ pub(in crate::kernel) fn write_is_at_read_address(
                 assumptions,
             )
         || write.base == pointer.base
-            && assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+            && assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
                 write.offset.clone(),
                 pointer.offset.clone(),
             )) == Some(true)
@@ -913,7 +905,7 @@ fn seeded_cell_effect_store_by_store(
         crate::instrumentation::record_deterministic_work(1);
         let write = run.slot_pointer(index);
         let value = run.value(index);
-        match store_cell_effect(step, &write, &value, pointer, bytes, evidence) {
+        match store_cell_effect(step, &write, value.byte_width(), pointer, bytes, evidence) {
             StepEffect::Affected => return SeededCellEffect::Written(write, value),
             StepEffect::Separate(Separation::Cell(justification)) => hops.push(justification),
             StepEffect::Separate(_) | StepEffect::NotShownSeparate(_) => {
@@ -1054,7 +1046,8 @@ fn block_effect(step: &MemoryDerivation, block: &AddressBase) -> StepEffect {
         }
     };
     match step {
-        MemoryDerivation::Store { pointer, .. } => {
+        MemoryDerivation::Store { pointer, .. }
+        | MemoryDerivation::RepresentationWrite { pointer, .. } => {
             one_object(&pointer.base, BlockSeparation::StoreInDistinctBlock)
         }
         // Every store of a run writes the run's own block.
@@ -1193,11 +1186,12 @@ fn footprint_effect(step: &MemoryDerivation, ranges: Option<&[MemoryRange]>) -> 
     };
     match step {
         MemoryDerivation::BranchJoin { .. } => unknown(),
-        MemoryDerivation::Store { pointer, value, .. } => {
+        MemoryDerivation::Store { .. } | MemoryDerivation::RepresentationWrite { .. } => {
+            let (pointer, bytes) = step.single_write().expect("one checked write");
             if !memory_block_may_alias(&pointer.base)
                 && !ranges
                     .iter()
-                    .any(|range| memory_range_overlaps_pointer(range, pointer, value.byte_width()))
+                    .any(|range| memory_range_overlaps_pointer(range, pointer, bytes))
             {
                 separate(FootprintSeparation::StoreOutsideRanges)
             } else {

@@ -212,7 +212,7 @@ fn next_checked_post_execution_tactic<'a>(
             );
             continue;
         }
-        let scope = deferred
+        let mut scope = deferred
             .lexical_bindings
             .clone()
             .or_else(|| arm_scope.clone());
@@ -258,18 +258,26 @@ fn next_checked_post_execution_tactic<'a>(
                 )
             }
             PostExecutionTactic::CallOutcomes {
+                payload_bindings,
                 returned_tactics,
                 threw_tactics,
             } => {
                 let proof = proof.ok_or_else(|| {
                     ClickError::new("post-execution `outcomes` has no focused outcome Proof")
                 })?;
-                let returned = proof
-                    .clone()
-                    .at_source_tactic(deferred.source_index)
-                    .checked_call_returned(call_depth)?;
+                let focused = proof.clone().at_source_tactic(deferred.source_index);
+                let edge = focused.checked_call_outcome(call_depth)?;
+                let returned = edge.returned;
+                if let Some(name) = &payload_bindings[usize::from(!returned)] {
+                    let payload = edge.payload.clone().ok_or_else(|| {
+                        focused.step_error(format!(
+                            "`outcomes` cannot bind `{name}`: this call edge has no bindable payload"
+                        ))
+                    })?;
+                    scope = Some(focused.scope_call_payload(scope.as_ref(), name, payload));
+                }
                 (
-                    SurfacePathSelector::CallOutcome,
+                    SurfacePathSelector::CallOutcome(payload_bindings.clone()),
                     returned,
                     if returned {
                         returned_tactics
@@ -561,7 +569,7 @@ fn prove_claims_by_checked_tactics(
     // parameters for diagnostics as building it would have.
     crate::surface::proof_diagnostics::render::enter_ambient_naming(
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        state.memory(),
+        &state,
     );
     crate::surface::diagnostics::enter_ambient_object_fields(parsed_function);
     let opened_entry = shared_entry.get_or_open(|| {
@@ -1669,8 +1677,11 @@ fn close_claim_directly_from_outcome<'a>(
             FunctionOutcome::Return { value, state },
         ) => {
             let values = parameter_values(parameter_binding).unwrap_or_default();
-            let array_refs =
-                array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
+            let array_refs = array_refs_for_parameters(
+                parameter_binding.parameters,
+                &values,
+                &state.program_point(),
+            );
             let evaluate = |expression: &ContractExpression| {
                 evaluate_fixed_state_expression_through_kernel(
                     expression,
@@ -2046,7 +2057,7 @@ fn apply_post_execution_arithmetic_using<'a>(
         let plan = crate::surface::checking::arithmetic_plans(goal, &kernel_premises, false)
             .next()
             .ok_or_else(|| {
-                focused.step_error("post-execution arithmetic certificate could not be constructed")
+                focused.step_error("post-execution arithmetic step could not be constructed")
             })?;
         match plan {
             ArithmeticPlan::Special(plan) => {
@@ -2104,7 +2115,7 @@ fn apply_post_execution_arithmetic_using<'a>(
                     .signed_plan_to_surface(&plan, &pairs, surface_goal)
                     .ok_or_else(|| {
                         focused.step_error(
-                            "post-execution signed arithmetic certificate could not be transcribed",
+                            "post-execution signed arithmetic step could not be transcribed",
                         )
                     })?;
                 return crate::kernel::search::ProofSearch::apply_signed_interval_composition(
@@ -3606,7 +3617,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                         continue;
                                     }
                                     if let Proposition::ConditionIs(condition, value) = proposition
-                                        && assumptions.decide(condition) == Some(!*value)
+                                        && assumptions.decide(condition.native_compat())
+                                            == Some(!*value)
                                     {
                                         refuted.push(obligation.clone());
                                         continue;
@@ -5988,7 +6000,7 @@ mod tests {
         let left = MachineTerm::Variable(Variable(1));
         let right = MachineTerm::Variable(Variable(2));
         let assumptions = PureFactContext::new()
-            .assume_proposition(Proposition::ConditionIs(
+            .assume_proposition(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -5997,7 +6009,7 @@ mod tests {
                 },
                 true,
             ))
-            .assume_proposition(Proposition::ConditionIs(
+            .assume_proposition(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -6010,7 +6022,7 @@ mod tests {
         // A fact whose negation is *exactly* available still registers as a
         // conflict, and the inconsistency guard is what stops that conflict
         // from being read as sibling-path evidence.
-        let exactly_refuted = Proposition::ConditionIs(
+        let exactly_refuted = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -6027,7 +6039,7 @@ mod tests {
         // An unrelated fact is not evidence either, but for a narrower
         // reason since the general prover left the kernel: the exact routes
         // report no conflict at all rather than deriving one by explosion.
-        let unrelated = Proposition::ConditionIs(
+        let unrelated = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -6051,8 +6063,8 @@ mod tests {
             right: Box::new(MachineTerm::constant(10)),
         };
         let assumptions = PureFactContext::new()
-            .assume_proposition(Proposition::ConditionIs(condition.clone(), false));
-        let fact = Proposition::ConditionIs(condition, true);
+            .assume_proposition(Proposition::condition_is(condition.clone(), false));
+        let fact = Proposition::condition_is(condition, true);
 
         assert_eq!(proof_case_fact_conflicts(&fact, &assumptions), Ok(true));
     }

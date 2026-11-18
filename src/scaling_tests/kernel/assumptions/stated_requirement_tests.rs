@@ -11,7 +11,7 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
         name: "goal".into(),
         var: Variable(300),
         sort: Sort::Bitvector32,
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -25,7 +25,7 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
     let mut large = small.clone();
     for index in 0..128 {
         large = large.assume_proposition(requirement(10_000 + index, "unrelated"));
-        large = large.assume_proposition(Proposition::ConditionIs(
+        large = large.assume_proposition(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

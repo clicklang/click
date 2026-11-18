@@ -973,6 +973,7 @@ fn deferred_post_execution_region(
             InternalProofNode::CallOutcomes {
                 index,
                 source_index,
+                payload_bindings,
                 returned_branch,
                 threw_branch,
                 continuation,
@@ -982,6 +983,7 @@ fn deferred_post_execution_region(
                     tactic_index: *index,
                     source_index: *source_index,
                     tactic: PostExecutionTactic::CallOutcomes {
+                        payload_bindings: payload_bindings.clone(),
                         returned_tactics: deferred_post_execution_region(returned_branch)?,
                         threw_tactics: deferred_post_execution_region(threw_branch)?,
                     },
@@ -1134,7 +1136,7 @@ fn apply_frontier_source_tactic<'a>(
     let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
         proof
             .driver()
-            .apply_close_invariants_body(&[ProofTactic::Solve])?
+            .apply_close_invariants_body(&[ProofTactic::Solve], None)?
     } else if let Some(step) = SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic) {
         proof
             .driver()
@@ -1151,7 +1153,7 @@ fn apply_frontier_source_tactic<'a>(
     {
         apply_source_step_proofs(&proof, step, step_proof, indexed.index)?
     } else if let ProofTactic::CloseInvariantsBy(body) = &indexed.tactic {
-        proof.driver().apply_close_invariants_body(body)?
+        proof.driver().apply_close_invariants_body(body, None)?
     } else if let ProofTactic::Choose(choice) = &indexed.tactic {
         proof
             .driver()
@@ -1979,6 +1981,7 @@ fn try_check_structural_function_proof_inner<'a>(
             InternalProofNode::CallOutcomes {
                 index,
                 source_index,
+                payload_bindings,
                 returned_branch,
                 threw_branch,
                 continuation,
@@ -1986,7 +1989,9 @@ fn try_check_structural_function_proof_inner<'a>(
                 if !proof.is_at_function_exit() {
                     let owner = proof.clone();
                     let proof_at_call = proof.with_execution_tactic_index(*index)?;
-                    let Some((split, record)) = proof_at_call.split_focused_call_outcomes()? else {
+                    let Some((split, record)) =
+                        proof_at_call.split_focused_call_outcomes(payload_bindings.clone())?
+                    else {
                         return decline();
                     };
                     let mut advanced = split;
@@ -1994,14 +1999,9 @@ fn try_check_structural_function_proof_inner<'a>(
                         (true, returned_branch.as_ref()),
                         (false, threw_branch.as_ref()),
                     ] {
-                        let Some(leading) = execution_region_leading_tactic(region) else {
-                            return decline();
-                        };
-                        if !matches!(leading.tactic, ProofTactic::Step) {
-                            return decline();
-                        }
-                        let focused = advanced.focus_split_arm(&record, take_returned)?;
-                        let next = driven!(advance_focused_execution_region_after_leading_tactic(
+                        let focused =
+                            advanced.focus_call_outcome_arm(&record, take_returned, &owner)?;
+                        let next = driven!(advance_focused_execution_region(
                             focused,
                             Some(&record),
                             region,
@@ -2010,7 +2010,7 @@ fn try_check_structural_function_proof_inner<'a>(
                             owning_source_index,
                             1,
                         ));
-                        advanced = next;
+                        advanced = next.leave_call_outcome_arm(&owner);
                     }
                     if !advanced.is_at_function_exit() {
                         return decline();
@@ -2032,6 +2032,7 @@ fn try_check_structural_function_proof_inner<'a>(
                     *index,
                     *source_index,
                     PostExecutionTactic::CallOutcomes {
+                        payload_bindings: payload_bindings.clone(),
                         returned_tactics,
                         threw_tactics,
                     },
@@ -2323,13 +2324,10 @@ pub(in crate::surface::proof) fn source_have_error(
             crate::surface::diagnostics::describe_click_proposition(&have.proposition)
         ));
     }
-    let pointer_equality = matches!(
-        goal,
-        Some(Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(_, _),
+    let pointer_equality = matches!(&goal, Some(condition_source_0 @ Proposition::ConditionIs(
+            _,
             true
-        ))
-    );
+        )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(_, _), _))));
     let detail = if pointer_equality {
         "missing pure fact: pointer equality is true".to_string()
     } else {
@@ -4077,6 +4075,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
             InternalProofNode::CallOutcomes {
                 index,
                 source_index,
+                payload_bindings,
                 returned_branch,
                 threw_branch,
                 continuation,
@@ -4084,7 +4083,9 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 if !proof.is_at_function_exit() {
                     let owner = proof.clone();
                     let at_outcomes = proof.with_execution_tactic_index(*index)?;
-                    let Some((split, record)) = at_outcomes.split_focused_call_outcomes()? else {
+                    let Some((split, record)) =
+                        at_outcomes.split_focused_call_outcomes(payload_bindings.clone())?
+                    else {
                         return decline();
                     };
                     let mut advanced = split;
@@ -4092,14 +4093,9 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                         (true, returned_branch.as_ref()),
                         (false, threw_branch.as_ref()),
                     ] {
-                        let Some(leading) = execution_region_leading_tactic(region) else {
-                            return decline();
-                        };
-                        if !matches!(leading.tactic, ProofTactic::Step) {
-                            return decline();
-                        }
-                        let focused = advanced.focus_split_arm(&record, take_returned)?;
-                        let next = driven!(advance_focused_execution_region_after_leading_tactic(
+                        let focused =
+                            advanced.focus_call_outcome_arm(&record, take_returned, &owner)?;
+                        let next = driven!(advance_focused_execution_region(
                             focused,
                             Some(&record),
                             region,
@@ -4108,7 +4104,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                             owning_source_index,
                             depth + 1,
                         ));
-                        advanced = next;
+                        advanced = next.leave_call_outcome_arm(&owner);
                     }
                     let returned_exit = advanced.arm_at_function_exit(&record, true);
                     let threw_exit = advanced.arm_at_function_exit(&record, false);
@@ -4164,6 +4160,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     *index,
                     *source_index,
                     PostExecutionTactic::CallOutcomes {
+                        payload_bindings: payload_bindings.clone(),
                         returned_tactics,
                         threw_tactics,
                     },
@@ -5353,7 +5350,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
             } else {
                 match proposition {
                     Proposition::ConditionIs(condition, value) => {
-                        Proposition::ConditionIs(condition, !value)
+                        Proposition::condition_is(condition, !value)
                     }
                     Proposition::Not(body) => *body,
                     proposition => Proposition::Not(Box::new(proposition)),
@@ -5419,7 +5416,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
     } else {
         match proposition {
             Proposition::ConditionIs(condition, value) => {
-                Proposition::ConditionIs(condition, !value)
+                Proposition::condition_is(condition, !value)
             }
             Proposition::Not(body) => *body,
             proposition => Proposition::Not(Box::new(proposition)),
@@ -5453,7 +5450,7 @@ fn holds_exact_negation(available: &PureFactStore, fact: &Proposition) -> bool {
     let mut spellings = vec![negated];
     match fact {
         Proposition::ConditionIs(condition, value) => {
-            spellings.push(Proposition::ConditionIs(condition.clone(), !value));
+            spellings.push(Proposition::condition_is(condition.clone(), !value));
         }
         Proposition::Not(body) => {
             spellings.push(body.as_ref().clone());

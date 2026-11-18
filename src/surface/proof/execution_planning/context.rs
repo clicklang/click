@@ -582,18 +582,23 @@ pub(in crate::surface::proof) struct CertifiedConditionTransition {
 pub(in crate::surface::proof) fn surface_program_condition(
     condition: &ProgramExpression,
     state: &ExecutionState,
+    points: Option<&RecordedStates>,
 ) -> Result<ClickProposition, ClickError> {
-    Ok(surface_program_condition_unresolved(condition, state))
+    Ok(surface_program_condition_unresolved(
+        condition, state, points,
+    ))
 }
 
 fn surface_program_condition_unresolved(
     condition: &ProgramExpression,
     state: &ExecutionState,
+    points: Option<&RecordedStates>,
 ) -> ClickProposition {
     let no_values = BTreeMap::new();
     let source_names = crate::surface::lowering::ContractSubstitutions::with_source_names(
         &no_values,
         state.locals(),
+        points,
     );
     // A local is written by its name where the condition's state resolves
     // that name to it, as a proof that writes the condition reads it.
@@ -638,7 +643,7 @@ fn surface_program_condition_unresolved(
             expression,
             target_type: ProgramType::Bool,
             ..
-        } => surface_program_condition_unresolved(expression, state),
+        } => surface_program_condition_unresolved(expression, state, points),
         ProgramExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
         ProgramExpression::NotEqual(left, right) => {
             comparison(left, ComparisonOperator::NotEqual, right)
@@ -655,16 +660,16 @@ fn surface_program_condition_unresolved(
         ProgramExpression::GreaterEqual(left, right) => {
             comparison(left, ComparisonOperator::GreaterEqual, right)
         }
-        ProgramExpression::Not(body) => {
-            ClickProposition::Not(Box::new(surface_program_condition_unresolved(body, state)))
-        }
+        ProgramExpression::Not(body) => ClickProposition::Not(Box::new(
+            surface_program_condition_unresolved(body, state, points),
+        )),
         ProgramExpression::And(left, right) => ClickProposition::And(
-            Box::new(surface_program_condition_unresolved(left, state)),
-            Box::new(surface_program_condition_unresolved(right, state)),
+            Box::new(surface_program_condition_unresolved(left, state, points)),
+            Box::new(surface_program_condition_unresolved(right, state, points)),
         ),
         ProgramExpression::Or(left, right) => ClickProposition::Or(
-            Box::new(surface_program_condition_unresolved(left, state)),
-            Box::new(surface_program_condition_unresolved(right, state)),
+            Box::new(surface_program_condition_unresolved(left, state, points)),
+            Box::new(surface_program_condition_unresolved(right, state, points)),
         ),
         // A `bool` value is the claim on itself (Stage 5): `Bool` has no
         // integer value to compare with zero.
@@ -737,10 +742,8 @@ fn source_range_capability_is_supported(proposition: &Proposition) -> Option<boo
             return None;
         };
         let guard = |p: &Proposition| {
-            matches!(p,
-            Proposition::ConditionIs(ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right }, false)
-                if left.as_ref() == &MachineTerm::Variable(*var)
-                    && right.as_ref() == &MachineTerm::constant(1))
+            matches!(&p, condition_source_0 @ Proposition::ConditionIs(_, false) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right }, _)) if (left.as_ref() == &MachineTerm::Variable(*var)
+                    && right.as_ref() == &MachineTerm::constant(1))))
         };
         let range = if guard(left) {
             right
@@ -767,7 +770,7 @@ fn source_range_universal_is_supported(proposition: &Proposition) -> bool {
     };
     *sort == Sort::ProgramInt32
         && matches!(base.base, crate::kernel::AddressBase::ExternalArgument)
-        && is_one_byte_external_range(bytes)
+        && is_one_byte_external_range(bytes.native_compat())
 }
 
 /// A whole written existential range can require a caller-witness projection
@@ -803,7 +806,8 @@ fn has_explicit_existential_byte_range(proposition: &Proposition) -> bool {
                 work.push(right);
             }
             Proposition::MemoryLoadable { base, bytes, .. }
-                if base.base == crate::kernel::AddressBase::ExternalArgument && *bytes == width =>
+                if base.base == crate::kernel::AddressBase::ExternalArgument
+                    && *bytes.native_compat() == width =>
             {
                 return true;
             }
@@ -883,22 +887,22 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
         }
         super::super::check_verification_deadline()?;
         match item {
-            Work::Proposition(
-                Proposition::ConditionIs(
+            Work::Proposition(condition_source_0 @ Proposition::ConditionIs(_, true), _)
+                if let Some((
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: _,
                         right: _,
                     },
-                    true,
-                ),
-                _,
-            ) if quantified_external_range => {
+                    _,
+                )) = condition_source_0.condition_native()
+                    && (quantified_external_range) =>
+            {
                 return Ok(false);
             }
             Work::Proposition(Proposition::ConditionIs(condition, _), _) => {
-                work.push(Work::Condition(condition));
+                work.push(Work::Condition(condition.native_compat()));
             }
             Work::Proposition(Proposition::And(left, right), depth)
             | Work::Proposition(Proposition::Or(left, right), depth)
@@ -920,10 +924,10 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
             Work::Proposition(Proposition::MemoryLoadable { base, bytes, .. }, _)
                 if quantified_external_range
                     && matches!(base.base, crate::kernel::AddressBase::ExternalArgument)
-                    && (is_one_byte_external_range(bytes) || explicit_range) =>
+                    && (is_one_byte_external_range(bytes.native_compat()) || explicit_range) =>
             {
                 saw_external_range = true;
-                work.push(Work::Bitvector(bytes));
+                work.push(Work::Bitvector(bytes.native_compat()));
                 work.push(Work::PointerOffset(&base.offset));
             }
             Work::Proposition(
@@ -1217,7 +1221,7 @@ mod tests {
 
     #[test]
     fn source_capability_walk_is_iterative_and_bounded() {
-        let leaf = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let leaf = Proposition::condition_is(ConditionTerm::Constant(true), true);
         for depth in [1, 16, 128, 1024] {
             let supported =
                 (0..depth).fold(leaf.clone(), |body, _| Proposition::Not(Box::new(body)));
@@ -1231,7 +1235,7 @@ mod tests {
             .expect_err("the structural capability bound must be an actionable error");
         assert!(error.message().contains("structural limit"));
 
-        let load_variable = Proposition::ConditionIs(
+        let load_variable = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -1271,7 +1275,7 @@ mod tests {
             crate::kernel::load_access_width_or_widest(&memory, &pointer),
             &memory,
         );
-        let proposition = Proposition::ConditionIs(
+        let proposition = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -1290,7 +1294,7 @@ mod tests {
             )
             .unwrap()
         );
-        let memory_load = Proposition::ConditionIs(
+        let memory_load = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -1324,7 +1328,7 @@ mod tests {
             crate::kernel::load_access_width_or_widest(&memory, &dynamic_pointer),
             &memory,
         );
-        let dynamic_load = Proposition::ConditionIs(
+        let dynamic_load = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -1372,7 +1376,7 @@ mod tests {
         let range = Proposition::MemoryLoadable {
             memory: crate::kernel::SymbolicMemory::new(),
             base: pointer,
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         };
         let quantified = Proposition::ForAll {
@@ -1380,7 +1384,7 @@ mod tests {
             var: Variable(3_100_000),
             sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Implies(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Constant(true),
                     true,
                 )),
@@ -1397,7 +1401,7 @@ mod tests {
             var: Variable(3_100_001),
             sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
@@ -1431,7 +1435,7 @@ mod tests {
             var: Variable(3_100_001),
             sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
@@ -1454,7 +1458,7 @@ mod tests {
             var: Variable(3_100_001),
             sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
@@ -1491,14 +1495,14 @@ mod tests {
             && let Proposition::Implies(_, consequent) = body.as_mut()
             && let Proposition::MemoryLoadable { bytes, .. } = consequent.as_mut()
         {
-            *bytes = MachineTerm::constant(2);
+            *bytes = MachineTerm::constant(2).into();
         }
         let wide_guarded = Proposition::Exists {
             name: "len".to_string(),
             var: Variable(3_100_001),
             sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
@@ -1527,7 +1531,7 @@ mod tests {
             var: Variable(3_100_001),
             sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
@@ -1549,7 +1553,7 @@ mod tests {
             var: Variable(3_100_001),
             sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
@@ -1560,7 +1564,7 @@ mod tests {
                 )),
                 Box::new(Proposition::And(
                     Box::new(quantified.clone()),
-                    Box::new(Proposition::ConditionIs(
+                    Box::new(Proposition::condition_is(
                         ConditionTerm::Constant(true),
                         true,
                     )),
@@ -1617,13 +1621,13 @@ mod boolean_guard_tests {
             let converted =
                 crate::kernel::program_expression::cast(condition.clone(), ProgramType::Bool);
             assert_eq!(
-                surface_program_condition(&converted, &ExecutionState::new()).unwrap(),
-                surface_program_condition(&condition, &ExecutionState::new()).unwrap()
+                surface_program_condition(&converted, &ExecutionState::new(), None).unwrap(),
+                surface_program_condition(&condition, &ExecutionState::new(), None).unwrap()
             );
             let nested = crate::kernel::program_expression::cast(converted, ProgramType::Bool);
             assert_eq!(
-                surface_program_condition(&nested, &ExecutionState::new()).unwrap(),
-                surface_program_condition(&condition, &ExecutionState::new()).unwrap()
+                surface_program_condition(&nested, &ExecutionState::new(), None).unwrap(),
+                surface_program_condition(&condition, &ExecutionState::new(), None).unwrap()
             );
         }
     }

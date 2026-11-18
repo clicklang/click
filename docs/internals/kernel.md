@@ -73,6 +73,10 @@ Kernel files:
   deferred evaluator bindings and evaluated fold endpoints also retain common
   roots. Compound native specification inputs still use the selected typed
   substitution boundary; native fold descriptors remain checking/input DTOs.
+  Algebraic result/field origins likewise retain common roots; their origin tag
+  preserves checking versus producer equality and handoffs. Integer match-arm
+  bodies stay common through symbolic result construction. Constructor/iota
+  and pointer metadata checks have explicit native readings.
 - `eval.rs`: program expression/statement evaluation and memory operations.
 - `loops.rs`: loop verification, loop effects, loop havoc, and invariant
   helpers.
@@ -1381,7 +1385,10 @@ reads it, or with the condition that decides a branch.
 #### Where the implementation departs from this
 
 The Rust importer gives every MIR local the user did not name a local
-`__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR is three-address code,
+`__rust_mir_<N>` (`src/languages/rust/charon.rs`). A source name bound more
+than once keeps that key in the MIR only; `MirBody::spellings` gives its
+source name, and the lowering declares it as a `LocalBindingId` with that
+spelling, where its storage starts, as C declares a block's locals. MIR is three-address code,
 so most of these hold one operand of a larger source expression.
 
 `src/languages/rust/charon/temporaries.rs` puts a pure value back into the
@@ -1427,6 +1434,16 @@ statement the yielding outcome's own binding (`MirStatement::RangeNext`
 with `payload: Some(i)` and `option: None`), and the `Option` and its
 temporary are gone.
 
+A slice, enumerated slice or chunk iterator's `next` is split the same way,
+each outcome (`MirStatement::SharedArrayNext`, `EnumerateNext` or `ChunkNext`)
+with `taken` set by the header's test. `temporaries::bind_slice_payloads`
+makes the `Some` arm's leading reads of the `Option` the yielding outcome's
+own bindings: a slice iterator's element (`payload`), an enumeration's index
+and element (`index`, `element`), or a chunk (`payload`). A `Some(_)` arm
+binds nothing. The unreachable tag test, the `Option` and its temporary go,
+and the yielding outcome lowers to the bindings and the advance, the other to
+nothing.
+
 A crate's own `Iterator::next` returns its `Option` through a call step.
 `user_iterators::test_user_next_results` turns the `match` on it into
 `MirTerminator::If` on `Expression::VariantIs`. `temporaries::call_steps`
@@ -1459,7 +1476,11 @@ unchanging value back at every read, in any block: a literal, a copy of a
 parameter the body never writes, moves or borrows, or a reference borrowing a
 place rooted at a local, whose address rustc keeps for the borrow's life. A
 reborrow `&mut *t` of such a borrow is the borrow itself, and `*&p` is `p`;
-each value is resolved once, so a chain of reborrows costs its length.
+each value is resolved once, so a chain of reborrows costs its length. A
+shared borrow of a shared slice local, or a shared slice of a local array
+(`&words[..]`), is that slice, as `split_at` and `chunks_exact` read it; the
+length or a conversion of an unchanging value is unchanging; and a shared
+borrow of a reference or slice parameter does not change it.
 
 `temporaries::remove_unused` removes a temporary the body never names apart
 from its storage markers and its writes of pure values, and a `()` temporary
@@ -1730,16 +1751,19 @@ Evaluation introduces no execution local or lexical binder. The Surface form
 remains the original address expression, including `old(...)`/`at(...)` state
 selectors; no generated operand name or replacement syntax is required.
 
-C++ evaluation and cleanup temporaries use a separate `LocalBindingId`
-namespace, owned by the source unit and function with a deterministic temporary
-ordinal. They have type/layout metadata and no lexical C spelling. Surface
-references use `f.temporary(N)` (source-qualified when necessary), independently
-of `f.local(N)` and `f.parameter(N)`. Exact storage uses the existing
-`.storage(implicit)`, `.storage(lifetime, N)`, or `.storage(frame, N)` selectors;
-aggregate temporaries materialize distinct objects with ordinary automatic
-lifetimes. The parser indexes their declarations in the prelowered body once.
-Return capture, intermediate call values, and `catch (int)` payloads all use
-these identities, and `TryCatchInt32` carries a `BindingName` through
+C++ scalar captures use typed execution steps. Calls retain their declared
+result type, and staged reads and return expressions publish their evaluated
+value before a later call or cleanup can change its operands. A short-circuit
+expression publishes the selected arm's value at the join. Proofs cite the
+producer's `.result` or bind the checked value with `let { result: name } = step()`.
+
+C++ materialized objects and hidden catch payloads use a separate
+`LocalBindingId` namespace owned by the source unit and function. Their
+ordinals have no lexical C spelling. A materialization step publishes the
+object's address as its `.result` after construction or copy. This names the
+same object through its original automatic lifetime, including for a
+constructor that returns `void`. The parser indexes legacy temporary
+declarations in the prelowered body once. `TryCatchInt32` carries a `BindingName` through
 execution and evidence checking. Unwinding through a destructible local binds
 no payload: see the C++ cleanup model in
 [Architecture](architecture.md#selected-control-flow-and-c-cleanup-model). No generated variable spelling or collision
@@ -2036,7 +2060,7 @@ the loop VC needs the invariant.
 `SpecElaborationContext` in `src/surface.rs` is the bridge from Surface
 Click into Kernel Click. It records scalar spec bindings, Click array refs,
 and the memory used for C-fragment reads. The surface's contract environment
-carries array refs as `ClickArrayRef { memory, pointer, element_type }`, and
+carries array refs as `ClickArrayRef { point, pointer, element_type }`, and
 elaboration types indexing by them so `uint8[]` indexing scales by one byte
 and returns `uint8`; spec lowering mirrors this with typed `SpecArrayRef`,
 typed `SpecExpression::MemoryLoad`, and byte-width

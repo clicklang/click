@@ -8,7 +8,7 @@ fn mirrored_float_spellings_use_exact_indexes_and_preserve_nan_polarity() {
             left: Box::new(a.clone()),
             right: Box::new(b.clone()),
         };
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             if wide {
                 ConditionTerm::Float64(condition)
             } else {
@@ -46,7 +46,7 @@ fn mirrored_float_spellings_use_exact_indexes_and_preserve_nan_polarity() {
                 for size in [0, 64, 256, 1024] {
                     let mut input = (0..size)
                         .map(|i| {
-                            Proposition::ConditionIs(
+                            Proposition::condition_is(
                                 ConditionTerm::Variable(Variable(992000 + i)),
                                 true,
                             )

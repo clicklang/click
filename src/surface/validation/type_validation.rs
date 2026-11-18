@@ -2861,6 +2861,40 @@ fn infer_spec_value_type(
         ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
             Ok(SpecValueType::Algebraic(algebraic_type.clone()))
         }
+        ContractExpression::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            let then_type =
+                infer_spec_value_type(then_branch, variables, click_functions, context)?;
+            let else_type =
+                infer_spec_value_type(else_branch, variables, click_functions, context)?;
+            match (then_type, else_type) {
+                (SpecValueType::Algebraic(a), SpecValueType::Algebraic(b)) if a == b => {
+                    Ok(SpecValueType::Algebraic(a))
+                }
+                (SpecValueType::Algebraic(_), _) | (_, SpecValueType::Algebraic(_)) => {
+                    Err(ClickError::new(format!(
+                        "conditional branches must have the same algebraic type in {context}"
+                    )))
+                }
+                (SpecValueType::Scalar(a), SpecValueType::Scalar(b)) => {
+                    Ok(SpecValueType::Scalar(match (a, b) {
+                        (Some(a), Some(b)) if click_types_compatible(a, b) => Some(a),
+                        (Some(_), Some(_)) => None,
+                        (Some(ty), None) | (None, Some(ty)) => Some(ty),
+                        (None, None) => None,
+                    }))
+                }
+                (then_type, else_type) if then_type == else_type => Ok(then_type),
+                (then_type, else_type) => Err(ClickError::new(format!(
+                    "conditional branches have types {} and {} in {context}",
+                    describe_spec_value_type(&then_type),
+                    describe_spec_value_type(&else_type),
+                ))),
+            }
+        }
         ContractExpression::AlgebraicMatch { arms, .. } => {
             if let Some(first) = arms.first()
                 && let SpecValueType::Algebraic(application) =
@@ -3351,8 +3385,8 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::CallOutcomes(_) => "outcomes",
         ProofTactic::Loop(_) => "loop",
         ProofTactic::ObserveResource(_) | ProofTactic::ObserveSavedMemory { .. } => "observe",
-        ProofTactic::Iterated(IteratedTactic::Take(_)) => "take",
-        ProofTactic::Iterated(IteratedTactic::Give(_)) => "give",
+        ProofTactic::Iterated(IteratedTactic::UnfoldSlot(_)) => "unfold",
+        ProofTactic::Iterated(IteratedTactic::FoldSlot(_)) => "fold",
         ProofTactic::Iterated(IteratedTactic::Gather(_)) => "gather",
         ProofTactic::Iterated(IteratedTactic::Scatter(_)) => "scatter",
         ProofTactic::Witness(_) => "witness",

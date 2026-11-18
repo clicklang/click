@@ -172,8 +172,9 @@ fn every_format_has_its_range_and_spells_its_constants() {
             panic!("{ty:?} observes a variable as a machine value");
         };
         for upper in [false, true] {
-            let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(low, high), true) =
-                range::range_fact(&machine, upper)
+            let condition_source = range::range_fact(&machine, upper);
+            let Some((ConditionTerm::IntegerLessEqual(low, high), true)) =
+                condition_source.condition_native()
             else {
                 panic!("{ty:?} range fact is an order");
             };
@@ -212,10 +213,10 @@ fn exact_comparison_decides_alike_at_every_format() {
             // The converse reading gives the Integer comparison back, with
             // `!=` as a false equality.
             let readings = comparison::integer_observations_of_native_comparison(
-                &Proposition::ConditionIs(native, truth),
+                &Proposition::condition_is(native, truth),
             );
             let expected = match relation {
-                Relation::NotEqual => Proposition::ConditionIs(
+                Relation::NotEqual => Proposition::condition_is(
                     integer_condition(
                         Relation::Equal,
                         observe(ty, a.clone()),
@@ -223,7 +224,7 @@ fn exact_comparison_decides_alike_at_every_format() {
                     ),
                     false,
                 ),
-                _ => Proposition::ConditionIs(condition.clone(), true),
+                _ => Proposition::condition_is(condition.clone(), true),
             };
             assert!(
                 readings.contains(&expected),
@@ -279,9 +280,9 @@ fn every_order_is_native_at_its_own_format() {
                 "{ty:?} {relation:?}"
             );
             let readings = comparison::integer_observations_of_native_comparison(
-                &Proposition::ConditionIs(native, true),
+                &Proposition::condition_is(native, true),
             );
-            let expected = Proposition::ConditionIs(
+            let expected = Proposition::condition_is(
                 integer_condition(relation, observe(ty, a.clone()), observe(ty, b.clone())),
                 true,
             );
@@ -323,14 +324,14 @@ fn in_range_identity_holds_at_every_format() {
             let (min, max) = range::range(ty);
             let bounds = |low: BigInt, high: BigInt| {
                 vec![
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         ConditionTerm::integer_less_equal(
                             IntegerTerm::constant(low),
                             value.clone(),
                         ),
                         true,
                     ),
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         ConditionTerm::integer_less_equal(
                             value.clone(),
                             IntegerTerm::constant(high),
@@ -339,7 +340,7 @@ fn in_range_identity_holds_at_every_format() {
                     ),
                 ]
             };
-            let goal = Proposition::ConditionIs(
+            let goal = Proposition::condition_is(
                 ConditionTerm::integer_equal(observed.clone(), value.clone()),
                 true,
             );
@@ -445,21 +446,21 @@ fn definedness_is_the_range_of_the_exact_result_at_every_format() {
                     .is_some_and(|(found, op, _, _)| found == ty && op == operation),
                 "{ty:?} {operation:?}"
             );
-            let fact = Proposition::ConditionIs(condition, false);
+            let fact = Proposition::condition_is(condition, false);
             let value = operation.exact(observe(ty, a.clone()), observe(ty, b.clone()));
             let (min, max) = range::range(ty);
             let bounds = definedness::integer_bounds_of_definedness(&fact);
             assert_eq!(
                 bounds,
                 vec![
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         ConditionTerm::integer_less_equal(
                             value.clone(),
                             IntegerTerm::constant(max)
                         ),
                         true,
                     ),
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         ConditionTerm::integer_greater_equal(value, IntegerTerm::constant(min)),
                         true,
                     ),
@@ -635,10 +636,8 @@ fn operation_bounds_hold_at_every_format() {
                     assert_eq!(bound, None, "{ty:?}");
                     continue;
                 }
-                let Some(Proposition::ConditionIs(
-                    ConditionTerm::IntegerLessEqual(low, high),
-                    true,
-                )) = bound
+                let Some((ConditionTerm::IntegerLessEqual(low, high), true)) =
+                    bound.as_ref().and_then(Proposition::condition_native)
                 else {
                     panic!("{ty:?} {division:?} upper {upper} has a bound");
                 };

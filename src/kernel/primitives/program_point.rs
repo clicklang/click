@@ -16,9 +16,10 @@ use super::{MemoryDerivation, SharedMemory, SymbolicMemory, intern_memory, inter
 /// The identity of one point an execution path reached.
 ///
 /// Identities are unique within a process and carry no order: no decision
-/// may depend on comparing two of them other than for equality.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct ProgramPointId(u64);
+/// may depend on comparing two of them other than for equality. Ordering is
+/// provided solely for exact fact keys.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ProgramPointId(u64);
 
 static NEXT_PROGRAM_POINT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -129,8 +130,23 @@ pub(crate) struct PathLink(Option<Arc<PointNode>>);
 impl PathLink {
     /// A new point reached from this one by `steps`, where the path has
     /// `memory`.
+    ///
+    /// A path that has no point yet begins where its first step began: a
+    /// state set up by steps before it first stands at a point (an entry
+    /// state whose precondition observed cells) gets a point at the memory
+    /// before them, so a walk back can cross them as it crosses any step.
     pub(crate) fn after(&self, memory: SharedMemory, steps: Option<Arc<StepLog>>) -> Self {
-        Self::reached_from(memory, steps, Box::new([self.clone()]), None)
+        let from = match (&self.0, &steps) {
+            (None, Some(log)) => {
+                let oldest =
+                    std::iter::successors(Some(log.as_ref()), |log| log.previous.as_deref())
+                        .last()
+                        .expect("a log holds a step");
+                Self::reached_from(oldest.step.base().clone(), None, Box::new([]), None)
+            }
+            _ => self.clone(),
+        };
+        Self::reached_from(memory, steps, Box::new([from]), None)
     }
 
     /// A new point where two arms that split at `split` rejoin with
@@ -336,9 +352,9 @@ impl ProgramPoint {
 
     /// This point with its memory's values renamed: the same place on the
     /// path, its memory spelled with substituted variables.
-    pub(crate) fn with_renamed_memory(&self, memory: SymbolicMemory) -> Self {
+    pub(crate) fn with_renamed_memory(&self, memory: SharedMemory) -> Self {
         Self {
-            memory: intern_memory(memory),
+            memory,
             path: self.path.clone(),
         }
     }
@@ -441,6 +457,19 @@ mod tests {
             *right_mid.program_point().shared_memory()
         );
         assert!(left.memory().pending_steps.is_none());
+    }
+
+    /// A state set up by steps before its first point begins at the memory
+    /// those steps started from, so a walk back can cross them.
+    #[test]
+    fn a_path_begins_before_its_first_steps() {
+        let state = ExecutionState::default().with_memory(memory_holding(0));
+        let point = state.program_point();
+        let [start] = point.path_link().predecessors() else {
+            panic!("the first point follows the path's start");
+        };
+        assert!(start.predecessors().is_empty());
+        assert_eq!(start.memory(), Some(&intern_memory(SymbolicMemory::new())));
     }
 
     /// A join records where its arms split.

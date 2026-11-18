@@ -104,7 +104,7 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
     for count in [4usize, 16, 64, 256] {
         let mut facts = (0..count)
             .map(|k| {
-                ExecutionPureFact::new(Proposition::ConditionIs(
+                ExecutionPureFact::new(Proposition::condition_is(
                     ConditionTerm::signed_less_than(
                         MachineTerm::Variable(Variable(926_000 + k as u64)),
                         MachineTerm::constant(k as u32),

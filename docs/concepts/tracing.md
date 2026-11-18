@@ -425,7 +425,7 @@ A refused subobject access retains its bounds requirement on the `goal:`
 line. Concrete bounds use byte-range containment. Opaque bounds print
 `subobject bounds of P cover bytes [A, B)`: `P` identifies the pointer
 whose bounds are needed, while `[A, B)` is the attempted access. This is
-bounds evidence, not merely address equality or ownership at that address.
+bounds evidence, not merely integer address equality or ownership at that address.
 The refusal does not establish that the access is invalid on every execution;
 it can also mean the proof has not established its bounds.
 

@@ -742,6 +742,36 @@ fn straight_line_assignments_cost_the_same_at_every_position() {
 }
 
 #[test]
+#[ignore = "nightly: compares four complete source proofs"]
+fn successful_steps_do_not_read_the_held_resource_list_for_diagnostics() {
+    use crate::surface::proof::take_step_diagnostic_resource_reads;
+
+    let samples = [1, 2, 4, 8].map(|n| {
+        let params = (0..n)
+            .map(|i| format!("int32* p{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let owns = lines(n, |i| format!("    owns *p{i};"));
+        // Each repetition adds a decided branch and one scalar assignment,
+        // both checked with all n unrelated resources held.
+        let body = lines(n, |_| "    if (x == 0) x = 0;".into());
+        let c = format!("int32 caller({params}) {{ int32 x; x = 0;\n{body}\nreturn x; }}");
+        let steps = steps(3 + n * 2);
+        let click = format!(
+            "verifying \"hunt.c\";\nint32 caller({params}) {{\n{owns}\n}} by {{\n{steps}\n}}"
+        );
+        take_step_diagnostic_resource_reads();
+        verify_c_sources(&click, &[("hunt.c", c.as_str())])
+            .unwrap_or_else(|error| panic!("size {n}: {}", error.message()));
+        take_step_diagnostic_resource_reads()
+    });
+    assert!(
+        samples == [0; 4],
+        "resource entries read for step diagnostics: {samples:?}"
+    );
+}
+
+#[test]
 fn constant_index_stores_cost_the_same_at_every_position() {
     assert_no_drift("const_array", const_array, 12);
 }
@@ -770,11 +800,25 @@ fn a_call_ignores_unrelated_owned_objects() {
 // that happen to share its external-argument memory block.
 #[test]
 fn a_partial_borrow_call_ignores_unrelated_owned_objects() {
-    assert_flat_across(
-        "partial_borrow_beside_objects",
-        partial_borrow_beside_objects,
-        [1, 8],
-        "touch_half(data);",
+    let samples = [1_usize, 8, 64].map(|size| {
+        let run = run(partial_borrow_beside_objects, size);
+        let work = run
+            .statement_steps("partial_borrow_beside_objects")
+            .iter()
+            .filter(|(role, _)| role == "touch_half(data);")
+            .map(|(_, work)| *work)
+            .max()
+            .unwrap();
+        (size, work)
+    });
+    // Splitting and restoring the borrowed slice updates the frame's cached
+    // footprint. Its tree paths may grow logarithmically; a scan of unrelated
+    // objects would make the second increment eight times the first.
+    let first = samples[1].1.saturating_sub(samples[0].1);
+    let second = samples[2].1.saturating_sub(samples[1].1);
+    assert!(
+        second <= first * 3 + 2,
+        "partial borrow footprint updates: {samples:?}"
     );
 }
 
@@ -995,11 +1039,25 @@ void caller({params}) {{
     step();
 }}"
         );
-        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c_sources(&click, &[("hunt.c", c.as_str())])
+        let ((result, work), events) = crate::instrumentation::collect(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                verify_c_sources(&click, &[("hunt.c", c.as_str())])
+            })
         });
         result.unwrap_or_else(|error| panic!("size {n}: {}", error.message()));
-        work
+        // Index publication is O(log N) per delta, separately covered by
+        // private ownership publication/withdrawal scaling. Keep this check
+        // sensitive to a single extra visit per parameter pair in lowering.
+        let footprint_work: usize = events
+            .iter()
+            .filter_map(|event| match event {
+                crate::instrumentation::VerificationEvent::OperationFinished {
+                    name, work, ..
+                } if name == "prepare ownership footprint" => Some(*work),
+                _ => None,
+            })
+            .sum();
+        work - footprint_work
     };
     work(1);
     sizes.map(|n| (n, work(n)))
@@ -1093,7 +1151,7 @@ fn saved_iterated_base_ignores_aliases_states_and_unrelated_resources() {
     let (source, sources) =
         super::expansion_tests::mdtest_sources("mdtests/iterated_saved_base_release.md");
     // Exact work equality detects a scan even at these small sizes. Larger
-    // parameter sets mostly measure full-function setup before `give`.
+    // parameter sets mostly measure full-function setup before indexed `fold`.
     let work = [1, 2, 4].map(|size| {
         let parameters = (0..size)
             .map(|i| format!(", int32* alias{i}, int32* spare{i}"))
@@ -1112,16 +1170,20 @@ fn saved_iterated_base_ignores_aliases_states_and_unrelated_resources() {
             .map(|i| format!("    mark unrelated{i};\n"))
             .collect::<String>();
         click = click.replace("    mark before;", &format!("{marks}    mark before;"));
+        // The two unfolds, the mark, and the step precede the indexed fold.
+        let indexed_fold = 4 + size;
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
             verify_c_sources(&click, &[(sources[0].0.as_str(), c.as_str())])
         });
         result.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
         let successful = samples
             .iter()
-            .filter(|sample| sample.tactic.tactic_name == "give")
+            .filter(|sample| {
+                sample.tactic.tactic_name == "fold" && sample.tactic.source_index == indexed_fold
+            })
             .map(|sample| sample.work)
             .max()
-            .expect("give work");
+            .expect("indexed fold work");
         let false_guard = c.replace("occupied[index] = 0", "occupied[index] = 1");
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
             verify_c_sources(&click, &[(sources[0].0.as_str(), false_guard.as_str())])
@@ -1129,10 +1191,12 @@ fn saved_iterated_base_ignores_aliases_states_and_unrelated_resources() {
         assert!(result.unwrap_err().message().contains("the guard is false"));
         let refused = samples
             .iter()
-            .filter(|sample| sample.tactic.tactic_name == "give")
+            .filter(|sample| {
+                sample.tactic.tactic_name == "fold" && sample.tactic.source_index == indexed_fold
+            })
             .map(|sample| sample.work)
             .max()
-            .expect("refused give work");
+            .expect("refused indexed fold work");
         (successful, refused)
     });
     assert_eq!(work[0], work[1], "saved-base work: {work:?}");

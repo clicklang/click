@@ -63,13 +63,16 @@ theorem increment_is_positive_step() {
             solve() using { input <= 100; };
         }
         both {
-            known();
-        } and {
-            intro();
-            have 0 < result by {
-                solve() using { 0 <= input; input < result; };
+            left => {
+                known();
             }
-            known();
+            right => {
+                intro();
+                have 0 < result by {
+                    solve() using { 0 <= input; input < result; };
+                }
+                known();
+            }
         }
     }
 }

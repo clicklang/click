@@ -5,8 +5,8 @@ fn compound_guards_select_exact_values_and_keep_unknowns_undecided() {
     let a = ConditionTerm::Variable(Variable(701));
     let b = ConditionTerm::Variable(Variable(702));
     for conjunction in [false, true] {
-        let left = Box::new(Proposition::ConditionIs(a.clone(), true));
-        let right = Box::new(Proposition::ConditionIs(b.clone(), false));
+        let left = Box::new(Proposition::condition_is(a.clone(), true));
+        let right = Box::new(Proposition::condition_is(b.clone(), false));
         let guard = if conjunction {
             Proposition::And(left, right)
         } else {
@@ -21,8 +21,8 @@ fn compound_guards_select_exact_values_and_keep_unknowns_undecided() {
         for left in [false, true] {
             for right in [false, true] {
                 let facts = PureFactContext::new()
-                    .assume_proposition(Proposition::ConditionIs(a.clone(), left))
-                    .assume_proposition(Proposition::ConditionIs(b.clone(), right));
+                    .assume_proposition(Proposition::condition_is(a.clone(), left))
+                    .assume_proposition(Proposition::condition_is(b.clone(), right));
                 let expected = if conjunction {
                     left && !right
                 } else {

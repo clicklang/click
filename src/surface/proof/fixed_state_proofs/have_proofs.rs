@@ -1088,7 +1088,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<(ClickArrayRef, crate::kernel::PointerValue), String> {
+) -> Result<(ClickArrayRef, crate::kernel::Pointer), String> {
     if let ContractExpression::Binding(name)
     | ContractExpression::ProgramExpression(ProgramExpression::Variable(
         crate::kernel::BindingName::Named(name),
@@ -1116,22 +1116,21 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
             )
         ));
     };
-    let memory = match expression {
-        ContractExpression::Old(_) => fixed_state.pre_state.memory().clone(),
+    let point = match expression {
+        ContractExpression::Old(_) => fixed_state.pre_state.program_point(),
         ContractExpression::At { selector, .. } => {
             selected_program_state(selector, fixed_state.pre_state, fixed_state.recorded_states)?
-                .memory()
-                .clone()
+                .program_point()
         }
-        _ => fixed_state.state.memory().clone(),
+        _ => fixed_state.state.program_point(),
     };
     let element_type = contract_array_ref_element_type(contract_environment.array_refs, expression)
         .or_else(|| pointer.program_type().pointee_type())
         .ok_or_else(|| "array reference pointer has no modeled element type".to_string())?;
     Ok((
         ClickArrayRef {
-            memory,
-            pointer: pointer.pointer().clone(),
+            point,
+            pointer: pointer.address().clone(),
             element_type,
         },
         pointer,
@@ -1173,8 +1172,8 @@ pub(in crate::surface::proof) struct FixedStateLowering {
     pub(in crate::surface::proof) entry_state: ExecutionState,
     pub(in crate::surface::proof) lowering_state: ExecutionState,
     pub(in crate::surface::proof) element_types: BTreeMap<String, ProgramType>,
-    pub(in crate::surface::proof) entry_values: BTreeMap<String, ProgramValue>,
-    pub(in crate::surface::proof) current_values: BTreeMap<String, ProgramValue>,
+    pub(in crate::surface::proof) entry_values: ProgramValueBindings,
+    pub(in crate::surface::proof) current_values: ProgramValueBindings,
 }
 
 fn has_live_aggregate_binding(state: &ExecutionState, name: &str) -> bool {
@@ -1254,8 +1253,8 @@ impl FixedStateLowering {
         let mut entry_state = pre_state.clone();
         let mut lowering_state = state.clone();
         let mut element_types = BTreeMap::new();
-        let mut entry_values = BTreeMap::new();
-        let mut current_values = BTreeMap::new();
+        let mut entry_values = ProgramValueBindings::new();
+        let mut current_values = ProgramValueBindings::new();
         for name in names {
             crate::instrumentation::record_deterministic_work(1);
             if name.named().is_none() {
@@ -1273,18 +1272,20 @@ impl FixedStateLowering {
                 .named()
                 .expect("a nonlocal binding has a lexical name")
                 .to_owned();
-            if let Some(value) = contract_environment.values.get(&name) {
+            if let Some(value) = contract_environment.values.get_retained(&name) {
                 if entry_state.locals().get(&name).is_none()
                     && (result.is_some() || !has_live_aggregate_binding(&entry_state, &name))
                     && (!preserve_place_bindings || !entry_state.locals().contains_name(&name))
                 {
-                    entry_state = entry_state.with_local(name.clone(), value.clone());
+                    entry_state =
+                        entry_state.with_retained_local(name.clone(), value.clone().into_value());
                 }
                 if lowering_state.locals().get(&name).is_none()
                     && (result.is_some() || !has_live_aggregate_binding(&lowering_state, &name))
                     && (!preserve_place_bindings || !lowering_state.locals().contains_name(&name))
                 {
-                    lowering_state = lowering_state.with_local(name.clone(), value.clone());
+                    lowering_state = lowering_state
+                        .with_retained_local(name.clone(), value.clone().into_value());
                 }
             }
             if let Some(element_type) = lowering_state
@@ -1299,35 +1300,30 @@ impl FixedStateLowering {
             {
                 element_types.insert(name.clone(), element_type);
             }
-            // A local that keeps its value in memory, a borrowed Rust enum
-            // local, is named by the read of its object.
-            if let Some(value) = entry_state
-                .locals()
-                .get(&name)
-                .map(|value| value.clone().into_native())
-                .or_else(|| entry_state.held_local_value(&name))
-                .or_else(|| {
-                    entry_state
-                        .locals()
-                        .array_object_value(&name)
-                        .map(|(value, _)| value)
-                })
-            {
-                entry_values.insert(name.clone(), value);
+            // Preserve stored producers. Borrowed enum/array readings remain
+            // explicit native input boundaries when no stored producer exists.
+            let selected_value = |state: &ExecutionState| {
+                state
+                    .locals()
+                    .get(&name)
+                    .map(|value| value.clone().into_value())
+                    .or_else(|| {
+                        state
+                            .held_local_value(&name)
+                            .map(crate::kernel::ExecutionValue::Native)
+                    })
+                    .or_else(|| {
+                        state
+                            .locals()
+                            .array_object_value(&name)
+                            .map(|(value, _)| crate::kernel::ExecutionValue::Native(value))
+                    })
+            };
+            if let Some(value) = selected_value(&entry_state) {
+                entry_values.insert_retained(name.clone(), value);
             }
-            if let Some(value) = lowering_state
-                .locals()
-                .get(&name)
-                .map(|value| value.clone().into_native())
-                .or_else(|| lowering_state.held_local_value(&name))
-                .or_else(|| {
-                    lowering_state
-                        .locals()
-                        .array_object_value(&name)
-                        .map(|(value, _)| value)
-                })
-            {
-                current_values.insert(name, value);
+            if let Some(value) = selected_value(&lowering_state) {
+                current_values.insert_retained(name, value);
             }
         }
         if let Some(result) = result {
@@ -1351,11 +1347,11 @@ impl FixedStateLowering {
     ) -> Self {
         let bound = |state: &ExecutionState| {
             let mut bound = state.clone();
-            for (name, value) in contract_environment.values {
+            for (name, value) in contract_environment.values.iter_retained() {
                 if bound.locals().get(name).is_none()
                     && (result.is_some() || !has_live_aggregate_binding(&bound, name))
                 {
-                    bound = bound.with_local(name.clone(), value.clone());
+                    bound = bound.with_retained_local(name.clone(), value.clone().into_value());
                 }
             }
             bound
@@ -1383,10 +1379,12 @@ impl FixedStateLowering {
             .locals()
             .object_values()
             .filter_map(|(name, value)| {
-                entry_state
-                    .locals()
-                    .active_source_name(name)
-                    .map(|name| (name.to_owned(), value.clone().into_native()))
+                entry_state.locals().active_source_name(name).map(|name| {
+                    (
+                        name.to_owned(),
+                        RetainedProgramValue::from(value.clone().into_value()),
+                    )
+                })
             })
             .collect();
         let current_values = lowering_state
@@ -1396,7 +1394,12 @@ impl FixedStateLowering {
                 lowering_state
                     .locals()
                     .active_source_name(name)
-                    .map(|name| (name.to_owned(), value.clone().into_native()))
+                    .map(|name| {
+                        (
+                            name.to_owned(),
+                            RetainedProgramValue::from(value.clone().into_value()),
+                        )
+                    })
             })
             .collect();
         Self {
@@ -1442,55 +1445,84 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
 ) -> Option<Proposition> {
     match proposition {
         Proposition::Equal(left, right) => Some(Proposition::Equal(right, left)),
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) => Some(Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format,
-                relation: CompareRelation::Equal,
-                left: right,
-                right: left,
-            },
-            true,
-        )),
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => Some(
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(right, left), true),
-        ),
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) => Some(Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left: right,
-                right: left,
-            },
-            true,
-        )),
-        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
-            Some(Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(right.clone(), left.clone()),
+        ref condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some(Proposition::condition_is(
+                ConditionTerm::Compare {
+                    format: *format,
+                    relation: CompareRelation::Equal,
+                    left: right.clone(),
+                    right: left.clone(),
+                },
                 true,
             ))
         }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => Some(
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(right, left), true),
-        ),
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => Some(
-            Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(right, left), true),
-        ),
+        ref condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some(Proposition::condition_is(
+                ConditionTerm::IntegerEqual(right.clone(), left.clone()),
+                true,
+            ))
+        }
+        ref condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some(Proposition::condition_is(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left: right.clone(),
+                    right: left.clone(),
+                },
+                true,
+            ))
+        }
+        ref condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::PointerEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some(Proposition::condition_is(
+                ConditionTerm::PointerEqual(right.clone(), left.clone()),
+                true,
+            ))
+        }
+        ref condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some(Proposition::condition_is(
+                ConditionTerm::AddressEqual(right.clone(), left.clone()),
+                true,
+            ))
+        }
+        ref condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressOffsetEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some(Proposition::condition_is(
+                ConditionTerm::AddressOffsetEqual(right.clone(), left.clone()),
+                true,
+            ))
+        }
         _ => None,
     }
 }
@@ -1743,7 +1775,7 @@ mod retained_capture_tests {
         capture_fixed_state_retained_expression_with_guards(
             expression,
             &PureFactContext::new(),
-            ContractEnvironment::new(&BTreeMap::new(), &ClickArrayRefs::new()),
+            ContractEnvironment::new(&ProgramValueBindings::new(), &ClickArrayRefs::new()),
             BTreeMap::new(),
             &PersistentBinderMap::default(),
             FixedStateFrame::new(&state, &state, None, &RecordedStates::default()),
@@ -1764,7 +1796,7 @@ mod retained_capture_tests {
             ProgramValue::Bool(MachineTerm::constant(1)),
             ProgramValue::Float64(MachineTerm::Variable(Variable(997002))),
             ProgramValue::Pointer(
-                crate::kernel::PointerValue::new(
+                crate::kernel::Pointer::new(
                     crate::kernel::Address::symbolic(Variable(997003)),
                     ProgramType::Int32Pointer,
                 )
@@ -1787,5 +1819,104 @@ mod retained_capture_tests {
         include!(
             "../../../scaling_tests/surface/proof/fixed_state_proofs/have_proofs/retained_capture.rs"
         );
+    }
+}
+
+#[cfg(test)]
+mod retained_binding_tests {
+    use super::*;
+    use crate::kernel::{
+        ExecutionValue, KernelTerm, KernelType, MachineBinaryOp, MachineIntegerType,
+    };
+
+    #[test]
+    fn fixed_state_binding_keeps_theorem_roots_in_both_states_and_maps() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let atom = KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(996941));
+        let root = KernelTerm::machine_binary_shared(
+            MachineIntegerType::UInt64,
+            MachineBinaryOp::Add,
+            [atom.clone(), atom],
+        );
+        let mut values = ProgramValueBindings::new();
+        values.insert_retained("value".into(), ExecutionValue::Shared(root.clone()));
+        let arrays = ClickArrayRefs::new();
+        let state = ExecutionState::new();
+        let lowering = FixedStateLowering::for_expression_values(
+            &ContractExpression::Binding("value".into()),
+            ContractEnvironment::new(&values, &arrays),
+            &state,
+            &state,
+            None,
+        );
+        for state in [&lowering.entry_state, &lowering.lowering_state] {
+            assert_eq!(state.locals().get("value").unwrap().shared(), Some(&root));
+        }
+        for values in [&lowering.entry_values, &lowering.current_values] {
+            assert_eq!(values.get_retained("value").unwrap().root(), Some(&root));
+        }
+        assert!(!root.has_cached_native_argument());
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../../scaling_tests/surface/proof/fixed_state_proofs/have_proofs/retained_bindings.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn fixed_array_argument_retains_the_selected_point_with_equal_memory() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = crate::kernel::Address::symbolic(crate::kernel::Variable(995_001));
+    let entry = ExecutionState::new()
+        .with_memory(crate::kernel::SymbolicMemory::new())
+        .with_local(
+            "a",
+            ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
+        );
+    let later = entry.clone().with_memory(entry.memory().clone());
+    assert_eq!(entry.memory(), later.memory());
+    let entry_id = entry.program_point_id().unwrap();
+    let later_id = later.program_point_id().unwrap();
+    assert_ne!(entry_id, later_id);
+
+    let values = ProgramValueBindings::new();
+    let arrays = ClickArrayRefs::new();
+    let selector = ProgramPointSelector::ProgramPoint(ProgramPointRef {
+        region: CodeRegionRef::Region(0),
+        kind: ProgramPointKind::Exit,
+    });
+    let mut recorded = RecordedStates::new();
+    recorded.insert(selector.clone(), later.clone());
+    let binding = || {
+        Box::new(ContractExpression::ProgramExpression(
+            ProgramExpression::Variable("a".into()),
+        ))
+    };
+    for (expression, expected) in [
+        (ContractExpression::Old(binding()), entry_id),
+        (
+            ContractExpression::At {
+                selector,
+                expression: binding(),
+            },
+            later_id,
+        ),
+    ] {
+        let (array, _) = evaluate_fixed_state_array_ref_through_kernel(
+            &expression,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&values, &arrays),
+            FixedStateFrame::new(&entry, &later, None, &recorded),
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            ),
+        )
+        .unwrap();
+        assert_eq!(array.point.id(), Some(expected));
     }
 }

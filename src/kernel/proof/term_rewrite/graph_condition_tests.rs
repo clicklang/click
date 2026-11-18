@@ -7,7 +7,7 @@ fn offset(id: u64) -> AddressOffset {
 }
 
 fn guard() -> ConditionTerm {
-    ConditionTerm::pointer_offset_equal(offset(51), offset(52))
+    ConditionTerm::address_offset_equal(offset(51), offset(52))
 }
 
 fn choice() -> MachineTerm {
@@ -138,7 +138,7 @@ fn check_binder_bodies(scalar: bool) {
         name: Default::default(),
         var: Variable(51),
         sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(guard(), true)),
+        body: Box::new(Proposition::condition_is(guard(), true)),
     };
     // Both cited facts and graph facts are from the enclosing scope.
     for conditions in [&empty, &cited] {
@@ -201,8 +201,8 @@ fn rewriting_a_bool_claim_keeps_the_lowerings_truth_polarity() {
     let after = ConditionTerm::bool_application("after", vec![]);
     let replacement = ConditionTerm::bool_not(after.clone());
     for truth in [false, true] {
-        let claim = Proposition::ConditionIs(from.clone(), truth);
+        let claim = Proposition::condition_is(from.clone(), truth);
         let rewritten = TermRewrite::for_condition_exact(&from, &replacement).proposition(&claim);
-        assert_eq!(rewritten, Proposition::ConditionIs(after.clone(), !truth));
+        assert_eq!(rewritten, Proposition::condition_is(after.clone(), !truth));
     }
 }

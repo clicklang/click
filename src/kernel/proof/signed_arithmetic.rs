@@ -874,10 +874,11 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         },
         _ => return None,
     };
-    if !matches!(condition, ConditionTerm::Compare { .. })
+    if !matches!(condition.native_compat(), ConditionTerm::Compare { .. })
         && let Some(view) =
             crate::kernel::machine_integer::comparison::structural_native_comparison_view(
-                condition, value,
+                condition.native_compat(),
+                value,
             )
     {
         use crate::kernel::machine_integer::Relation as R;
@@ -942,8 +943,10 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             constant,
         });
     }
-    let widened = crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(condition);
-    let condition = widened.as_ref().unwrap_or(condition);
+    let widened = crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(
+        condition.native_compat(),
+    );
+    let condition = widened.as_ref().unwrap_or(condition.native_compat());
     let (relation, left, right, strict) = match (condition, value) {
         (
             ConditionTerm::Compare {

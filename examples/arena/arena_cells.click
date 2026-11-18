@@ -750,9 +750,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             }
             have 0 <= run_length and run_length <= count by {
                 both {
-                    normalize();
-                } and {
-                    solve() using { at(function.entry, 0) < at(function.entry, count); };
+                    left => {
+                        normalize();
+                    }
+                    right => {
+                        solve() using { at(function.entry, 0) < at(function.entry, count); };
+                    }
                 }
             }
             have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k]) } by {
@@ -897,11 +900,14 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have 0 <= run_length and run_length <= count by {
                     both {
-                        solve() using { (at(region(13).entry, 0) as int32) <= (at(region(13).entry,
-                                run_length) as int32); (at(region(13).entry, run_length) as int32) <
-                                (at(region(13).entry, count) as int32); };
-                    } and {
-                        known();
+                        left => {
+                            solve() using { (at(region(13).entry, 0) as int32) <= (at(region(13).entry,
+                                    run_length) as int32); (at(region(13).entry, run_length) as int32) <
+                                    (at(region(13).entry, count) as int32); };
+                        }
+                        right => {
+                            known();
+                        }
                     }
                 }
                 have viewable(arena->occupied[0..arena->capacity]) by {
@@ -1036,9 +1042,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     intro();
                     intro();
                     both {
-                        normalize();
-                    } and {
-                        solve() using { at(function.entry, 0) < at(function.entry, count); };
+                        left => {
+                            normalize();
+                        }
+                        right => {
+                            solve() using { at(function.entry, 0) < at(function.entry, count); };
+                        }
                     }
                 }
                 have run.hi == i implies (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) implies 0 <= run_length and run_length <= count implies forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k]) } by {
@@ -1407,7 +1416,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     instantiate(forall (k: int32) { m <= k and k < end implies arena->occupied[k] == 0 }, i);
                     known();
                 }
-                take(arena->data[i..(i + 1)]);
+                unfold(arena_window(arena->data, arena->occupied, arena->capacity, start, end)[i]);
                 have start <= i by {
                     known();
                 }
@@ -2597,7 +2606,7 @@ void arena_free(struct region* region) {
                 preserve(memory(region->arena), statement(4).statement(0));
             }
             mark cleared;
-            give(at(opened, arena->data)[i..(i + 1)]);
+            fold(at(opened, arena_clear_window(arena->data, arena->occupied, arena->capacity, region->start, region->end))[i]);
             step();
             have to_integer(region->start) <= (to_integer(at(opened, i)) + 1) by {
                 solve() using { to_integer(old(region->start)) <= to_integer(at(opened, i)); to_integer(region->start) == to_integer(old(region->start)); };
@@ -3874,9 +3883,12 @@ int32 arena_pipeline(
         requires r1.end <= s0.capacity by known();
         requires defined(r1.start + 0) and (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) by {
             both {
-                normalize();
-            } and {
-                solve() using { to_integer(r1.start) < to_integer(r1.end); };
+                left => {
+                    normalize();
+                }
+                right => {
+                    solve() using { to_integer(r1.start) < to_integer(r1.end); };
+                }
             }
         }
     }
@@ -4071,9 +4083,12 @@ int32 arena_pipeline(
         requires r2.end <= s0.capacity by known();
         requires defined(r2.start + 0) and (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) by {
             both {
-                normalize();
-            } and {
-                solve() using { to_integer(r2.start) < to_integer(r2.end); };
+                left => {
+                    normalize();
+                }
+                right => {
+                    solve() using { to_integer(r2.start) < to_integer(r2.end); };
+                }
             }
         }
     }

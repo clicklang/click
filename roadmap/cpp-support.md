@@ -127,14 +127,19 @@ implementation:
   - broader memory-reading siblings;
   - nontrivial embedded destruction;
   - header destructor bodies;
-  - omitted default arguments.
+  - default arguments beyond integral constants and direct, argument-free
+    runtime helpers returning integral values.
 
   Record (struct/class) reference locals now bind existing objects and keep
   mutable/const aliases, permissions, and storage lifetimes distinct. Proofs
   name their fields as `r.field` and their addresses as `&r`; the named
   `cpp_record_reference_locals_*` regressions cover source admission, ordinary
   verification, expansion, cold checking and retained sessions. Reference call
-  results and temporary lifetime extension remain separate coverage work.
+  results compose through direct calls, forwarding and local bindings.
+  Proofs use `result.field` for the returned record's fields and `&result`
+  for its address. Direct integer field reads through a nonthrowing read-only
+  getter and simple integer field assignments through mutable return references
+  are supported. Temporary lifetime extension remains separate coverage work.
   Broader cleanup and unwinding belong to [control-flow.md](control-flow.md).
 - **Scalar and import coverage.** Select source before widening a profile
   for any of these:

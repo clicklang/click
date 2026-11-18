@@ -8,7 +8,7 @@ use super::*;
 fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
     let selected = input_scope("certificate-selected");
     let variable = input_pointer_variable(selected, 1).unwrap();
-    let pointer = crate::kernel::PointerValue::new(
+    let pointer = crate::kernel::Pointer::new(
         Address {
             base: AddressBase::ExternalArgument,
             offset: scale_int32_offset(MachineTerm::Variable(variable), 4),

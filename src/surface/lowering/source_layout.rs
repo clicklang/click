@@ -138,6 +138,7 @@ struct SourceExecutionLayoutData {
     /// result is the state's call result of that number while its statement
     /// runs.
     call_numbers: BTreeMap<usize, u32>,
+    snapshot_step_results: bool,
     aggregate_results:
         BTreeMap<usize, std::sync::Arc<BTreeMap<String, crate::kernel::AggregateField>>>,
     full_expression_ends: BTreeSet<usize>,
@@ -153,6 +154,10 @@ struct SourceExecutionLayoutData {
     /// `<region>.result`, and the call region of each frontend result
     /// temporary, which no other name spells.
     call_results: BTreeMap<usize, crate::kernel::BindingName>,
+    /// The producing call step of a frontend temporary assigned its result.
+    call_captures: BTreeMap<crate::kernel::BindingName, u32>,
+    /// Source call ordinals in prelowered bodies, in executable region order.
+    named_calls: Option<NamedCalls>,
     allocation_regions: BTreeSet<usize>,
     /// The source path of the statement each region belongs to: the inverse
     /// of `source_statements`, for spelling a region by its statement.
@@ -169,6 +174,25 @@ struct SourceExecutionLayoutData {
     /// The function's loop regions, counted once for every loop's clause
     /// validation rather than once per loop.
     loop_region_count: std::sync::OnceLock<usize>,
+}
+
+#[derive(Debug, Default)]
+struct NamedCalls {
+    in_function: BTreeMap<String, Vec<usize>>,
+    in_statement: BTreeMap<Vec<u32>, BTreeMap<String, Vec<usize>>>,
+}
+
+impl NamedCalls {
+    fn regions(&self, path: Option<&[u32]>, callee: &str) -> &[usize] {
+        crate::instrumentation::record_deterministic_work(1);
+        let calls = match path {
+            Some(path) => self.in_statement.get(path),
+            None => Some(&self.in_function),
+        };
+        calls
+            .and_then(|calls| calls.get(callee))
+            .map_or(&[], Vec::as_slice)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -264,6 +288,7 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
 fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
     match statement {
         ProgramStatement::Assign { expression, .. }
+        | ProgramStatement::StepValue { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression)
         | ProgramStatement::Assert {
@@ -572,6 +597,19 @@ impl SourceExecutionLayout {
             }
         }
 
+        // A frontend can lower a conditional value to two arms that publish
+        // the same result. That result belongs to the join, not either arm.
+        fn terminal_value_steps(statement: &ProgramStatement) -> Option<&[u32]> {
+            let tail = match statement {
+                ProgramStatement::Seq(statements) => statements.get(statements.len() - 1)?.as_ref(),
+                statement => statement,
+            };
+            match tail {
+                ProgramStatement::StepValue { steps, .. } => Some(steps),
+                _ => None,
+            }
+        }
+
         fn visit(
             statement: &ProgramStatement,
             next_statement_index: &mut usize,
@@ -601,6 +639,16 @@ impl SourceExecutionLayout {
                 } => {
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
+                    if let (Some(yes), Some(no)) = (
+                        terminal_value_steps(then_branch),
+                        terminal_value_steps(else_branch),
+                    ) && yes == no
+                    {
+                        for step in yes {
+                            layout.step_regions.insert(*step, statement_index);
+                            layout.call_numbers.entry(statement_index).or_insert(*step);
+                        }
+                    }
                     let then_statement_index = *next_statement_index;
                     let then_last =
                         visit(then_branch, next_statement_index, layout, aggregate_objects)?;
@@ -758,6 +806,15 @@ impl SourceExecutionLayout {
                     {
                         aggregate_objects
                             .insert(name.binding().clone(), aggregate_result_fields(declared));
+                        // Construction can require proofs about the destination before
+                        // it has initialized fields or published the constructed value.
+                        let binding = name.binding();
+                        if binding
+                            .local_id()
+                            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                        {
+                            layout.call_results.insert(statement_index, binding.clone());
+                        }
                     }
                     if let ProgramStatement::CallConstruct { target, .. } = statement {
                         let fields = aggregate_objects.get(target).ok_or_else(|| {
@@ -782,6 +839,29 @@ impl SourceExecutionLayout {
                         layout.call_numbers.insert(statement_index, *call);
                         layout.step_regions.insert(*call, statement_index);
                     }
+                    if let ProgramStatement::StepValue {
+                        steps, expression, ..
+                    } = statement
+                    {
+                        if let ProgramExpression::Variable(name) = expression
+                            && name
+                                .local_id()
+                                .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                            && let Some(fields) = aggregate_objects.get(name)
+                        {
+                            layout
+                                .aggregate_results
+                                .insert(statement_index, fields.clone());
+                        }
+                        for step in steps {
+                            if let std::collections::btree_map::Entry::Vacant(entry) =
+                                layout.step_regions.entry(*step)
+                            {
+                                entry.insert(statement_index);
+                                layout.call_numbers.entry(statement_index).or_insert(*step);
+                            }
+                        }
+                    }
                     if let ProgramStatement::Call { .. }
                     | ProgramStatement::CallResult { .. }
                     | ProgramStatement::CallConstruct { .. } = statement
@@ -804,6 +884,22 @@ impl SourceExecutionLayout {
                             statement_index,
                             crate::surface::call_source_spelling(function_name).to_string(),
                         );
+                    }
+                    if let ProgramStatement::Assign {
+                        name,
+                        expression:
+                            ProgramExpression::StepResult {
+                                step,
+                                origin: crate::kernel::StepOrigin::Call(_),
+                                ..
+                            },
+                        ..
+                    } = statement
+                        && name
+                            .local_id()
+                            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                    {
+                        layout.call_captures.insert(name.clone(), *step);
                     }
                     if let ProgramStatement::CallConstruct { target, .. }
                     | ProgramStatement::HeapAllocate { target, .. } = statement
@@ -855,6 +951,7 @@ impl SourceExecutionLayout {
             &mut layout,
             &mut aggregate_objects,
         )?;
+        layout.snapshot_step_results = !layout.call_numbers.is_empty();
         // The statements as written its front end says each region comes
         // from, which name them as C's do.
         if let Some(sites) = imported.source_sites() {
@@ -893,6 +990,27 @@ impl SourceExecutionLayout {
                 })
                 .collect::<Vec<_>>();
             layout.loop_paths.extend(loops);
+        }
+        if layout.snapshot_step_results {
+            let mut named = NamedCalls::default();
+            for (region, callee) in &layout.call_targets {
+                crate::instrumentation::record_deterministic_work(1);
+                named
+                    .in_function
+                    .entry(callee.clone())
+                    .or_default()
+                    .push(*region);
+                if let Some(path) = layout.region_paths.get(region) {
+                    named
+                        .in_statement
+                        .entry(path.clone())
+                        .or_default()
+                        .entry(callee.clone())
+                        .or_default()
+                        .push(*region);
+                }
+            }
+            layout.named_calls = Some(named);
         }
         // A construction return already contains the completed result in the
         // caller's destination. Retire private value parameters at its checked
@@ -1564,6 +1682,36 @@ impl SourceExecutionLayout {
         self.data.call_results.get(&region)
     }
 
+    pub(in crate::surface) fn has_call_captures(&self) -> bool {
+        !self.data.call_captures.is_empty()
+    }
+
+    pub(in crate::surface) fn snapshots_step_results(&self) -> bool {
+        self.data.snapshot_step_results
+    }
+
+    /// The source selector of the call that produced a frontend capture.
+    pub(in crate::surface) fn call_capture_source(
+        &self,
+        binding: &crate::kernel::BindingName,
+    ) -> Option<(usize, crate::surface::CodeRegionRef)> {
+        use crate::surface::{CodeRegionRef, SourcePathStep};
+        crate::instrumentation::record_deterministic_work(1);
+        let step = self.data.call_captures.get(binding)?;
+        let region = self.step_region(*step)?;
+        let callee = self.data.call_targets.get(&region)?;
+        let path = self.data.region_paths.get(&region).map(Vec::as_slice);
+        let calls = self.data.named_calls.as_ref()?.regions(path, callee);
+        let ordinal = calls.binary_search(&region).ok()?;
+        let mut steps = path
+            .unwrap_or_default()
+            .iter()
+            .map(|index| SourcePathStep::Statement(*index as usize))
+            .collect::<Vec<_>>();
+        steps.push(SourcePathStep::Call(callee.clone(), ordinal));
+        Some((region, CodeRegionRef::Path(steps)))
+    }
+
     /// The number of the call inside an expression that `region` is.
     pub(in crate::surface) fn is_aggregate_result(&self, region: usize) -> bool {
         self.data.aggregate_results.contains_key(&region)
@@ -1580,6 +1728,24 @@ impl SourceExecutionLayout {
 
     pub(in crate::surface) fn call_number(&self, region: usize) -> Option<u32> {
         self.data.call_numbers.get(&region).copied()
+    }
+
+    /// A retained result’s source region. Compiler bodies without statement
+    /// provenance expose their numbered regions as `region(N)`.
+    /// Choose by retained provenance, rather than trying alternate spellings.
+    pub(in crate::surface) fn result_code_region(
+        &self,
+        region: usize,
+    ) -> Option<crate::surface::CodeRegionRef> {
+        if self.data.region_paths.contains_key(&region) || self.data.calls.contains(&region) {
+            self.source_path_spelling(region, crate::surface::ProgramPointKind::Exit)
+                .map(crate::surface::CodeRegionRef::Path)
+        } else {
+            self.data
+                .statements
+                .contains_key(&region)
+                .then_some(crate::surface::CodeRegionRef::Region(region))
+        }
     }
 
     /// The region of the step numbered `step`.
@@ -1620,6 +1786,15 @@ impl SourceExecutionLayout {
         // calls, in the order they run.
         match steps {
             [SourcePathStep::Call(function, index)] => {
+                if let Some(named) = &data.named_calls {
+                    let calls = named.regions(None, function);
+                    return calls.get(*index).copied().ok_or_else(|| {
+                        format!(
+                            "this function calls `{function}` {} time(s), so it has no `call({function}, {index})`",
+                            calls.len()
+                        )
+                    });
+                }
                 let calls = data
                     .calls
                     .iter()
@@ -1718,6 +1893,16 @@ impl SourceExecutionLayout {
                     });
                 }
                 SourcePathStep::Call(function, index) if last => {
+                    if let Some(named) = &data.named_calls {
+                        let calls = named.regions(Some(&path), function);
+                        return calls.get(*index).copied().ok_or_else(|| {
+                            format!(
+                                "`{}` calls `{function}` {} time(s), so it has no `call({function}, {index})`",
+                                describe(&path),
+                                calls.len()
+                            )
+                        });
+                    }
                     let calls = own(&path)
                         .iter()
                         .filter(|region| data.call_targets.get(region) == Some(function))
@@ -1847,9 +2032,12 @@ impl SourceExecutionLayout {
             let steps = vec![match data.call_targets.get(&region) {
                 Some(function) => SourcePathStep::Call(
                     function.clone(),
-                    earlier
-                        .filter(|earlier| data.call_targets.get(earlier) == Some(function))
-                        .count(),
+                    match &data.named_calls {
+                        Some(named) => named.regions(None, function).binary_search(&region).ok()?,
+                        None => earlier
+                            .filter(|earlier| data.call_targets.get(earlier) == Some(function))
+                            .count(),
+                    },
                 ),
                 None => SourcePathStep::AnyCall(earlier.count()),
             }];
@@ -2792,12 +2980,15 @@ mod source_execution_layout_tests {
                 calls: BTreeSet::new(),
                 loop_tests: BTreeSet::new(),
                 call_numbers: BTreeMap::new(),
+                snapshot_step_results: false,
                 aggregate_results: BTreeMap::new(),
                 full_expression_ends: BTreeSet::new(),
                 step_regions: BTreeMap::new(),
                 prior_steps: BTreeMap::new(),
                 operator_regions: BTreeMap::new(),
                 call_results: BTreeMap::new(),
+                call_captures: BTreeMap::new(),
+                named_calls: None,
                 allocation_regions: BTreeSet::new(),
                 region_paths: BTreeMap::new(),
                 loop_paths: BTreeMap::new(),

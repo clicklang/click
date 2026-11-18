@@ -365,7 +365,8 @@ pub(crate) enum Change {
 impl Change {
     fn of_derivation(derivation: &MemoryDerivation) -> Self {
         match derivation {
-            MemoryDerivation::Store { pointer, .. } => Self::Store {
+            MemoryDerivation::Store { pointer, .. }
+            | MemoryDerivation::RepresentationWrite { pointer, .. } => Self::Store {
                 pointer: pointer.clone(),
             },
             // The first element names the recorded range, without attributing
@@ -907,7 +908,7 @@ fn version_at_state(resource: TrackedResource<'_>, point: StatePoint<'_>) -> Opt
             .state()
             .resource_instance_at_path(identity, children)
             .and_then(|instance| instance.fields().get(field_index))
-            .cloned()
+            .map(ResourceFieldValue::into_native)
             .map(Version::Field),
         // A memory resource's version is a program point, not a value.
         TrackedResource::Cell { .. }
@@ -1391,7 +1392,9 @@ pub(crate) fn reads_of_proposition(fact: &Proposition) -> Vec<ResourceRead> {
 
 fn collect_proposition_reads(fact: &Proposition, reads: &mut Vec<ResourceRead>) {
     match fact {
-        Proposition::ConditionIs(condition, _) => collect_condition_reads(condition, reads),
+        Proposition::ConditionIs(condition, _) => {
+            collect_condition_reads(condition.native_compat(), reads)
+        }
         Proposition::Equal(left, right) => {
             collect_term_reads(left, reads);
             collect_term_reads(right, reads);
@@ -1549,7 +1552,7 @@ fn collect_condition_operand_reads(
 
 fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRead>) {
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_reads(pointer, reads);
             }
@@ -1566,11 +1569,11 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
         ConditionTerm::Float32(float) | ConditionTerm::Float64(float) => {
             float.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_offset_reads(left, reads);
             collect_offset_reads(right, reads);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_reads(left, reads);
             collect_pointer_reads(right, reads);
         }
@@ -1593,7 +1596,7 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
                 pointer: pointer.as_ref().clone(),
                 bytes: 1,
             },
-            ProgramPoint::at(memory),
+            memory.clone(),
         ),
     }
 }
@@ -1678,7 +1681,7 @@ fn collect_operand_reads(
 
 fn collect_value_reads(value: &ProgramValue, reads: &mut Vec<ResourceRead>) {
     match value {
-        ProgramValue::Pointer(pointer) => collect_pointer_reads(pointer.pointer(), reads),
+        ProgramValue::Pointer(pointer) => collect_pointer_reads(pointer.address(), reads),
         _ => {
             if let Some(term) = crate::kernel::spec::program_value_bitvector_term(value) {
                 collect_bitvector_reads(&term, reads);
@@ -1757,7 +1760,7 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
             if let ProgramValue::Pointer(pointer) = pointer {
                 push_read(
                     reads,
-                    OwnedResource::Block(pointer.pointer().base.clone()),
+                    OwnedResource::Block(pointer.address().base.clone()),
                     ProgramPoint::of_memory(memory),
                 );
             }

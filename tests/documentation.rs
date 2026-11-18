@@ -1401,6 +1401,7 @@ fn tactic_form_inventory_is_bidirectional() {
             "solve" => surface == "`solve()`",
             "solve-using" => surface == "`solve() using { P; ... }`",
             "unfold-function" => surface == "`unfold(function(args))`",
+            "fold-slot" => surface == "`fold(resource(args)[i])`",
             _ => surface.contains(form.syntax),
         };
         let matching = rows

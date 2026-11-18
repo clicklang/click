@@ -325,7 +325,7 @@ fn shared_carrier_cache_preserves_current_registered_load_dependencies() {
         ],
     );
     let machine = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
-    let proposition = Proposition::ConditionIs(
+    let proposition = Proposition::condition_is(
         ConditionTerm::IntegerEqual(
             IntegerTerm::Machine(machine.clone()).into(),
             IntegerTerm::constant_i64(0).into(),

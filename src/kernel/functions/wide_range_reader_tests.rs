@@ -82,7 +82,7 @@ fn wide_resource_body_loadability_preserves_native_span() {
     let loadable = evaluate_composite_resource_loadable_propositions(
         &composite,
         &definitions,
-        state.memory(),
+        &state.program_point(),
         &facts,
     )
     .unwrap();

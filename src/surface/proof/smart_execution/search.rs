@@ -680,7 +680,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let array_refs = array_refs_for_parameters(
             parameter_binding.parameters,
             &values,
-            fixed_state.state.memory(),
+            &fixed_state.state.program_point(),
         );
         let (values, array_refs) =
             contract_environment_at_state(&values, &array_refs, fixed_state.state);

@@ -8,8 +8,9 @@ Nothing about the indices decreases, so the loop measure is the number of
 cells in `visited[0..n]` that still hold zero. The guard establishes that the
 current cell contributes one; the body marks it and the point-update theorem
 proves that the measure drops by exactly one. The proof also exercises an
-early return inside the ranked loop and preserves the quantified bounds on the
-pointer-chasing array. A ghost `Nat` witness tracks how many `next` hops reach
+early return inside the ranked loop. Explicit cell separation preserves the
+quantified bounds on the pointer-chasing array and the two parts of the
+mark array beside the store. A ghost `Nat` witness tracks how many `next` hops reach
 `cur`; its inductive frame lemma keeps that relation stable across each store
 to the disjoint `visited` array. A result of `1` therefore names an in-bounds,
 unmarked target reachable from `from` by a finite walk.
@@ -145,6 +146,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
         owns visited[0..n];
         initialize by { solve(); }
         preserve by {
+            observe(visited[0..n]);
             mark iter;
             let previous = obtain(exists (previous: Nat) { walk(next, from, previous) == cur });
             have at(iter, forall (k: int32) {
@@ -166,39 +168,76 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             step();
             step();
             have forall (k: int32) {
-                0 <= k and k < n implies 0 <= next[k] and next[k] < n
+                0 <= k and k < n implies at(iter, next[k]) == next[k]
             } by {
-                transport(
-                    at(iter, forall (k: int32) {
-                        0 <= k and k < n implies 0 <= next[k] and next[k] < n
-                    }),
-                    forall (k: int32) {
-                        0 <= k and k < n implies 0 <= next[k] and next[k] < n
-                    }
-                ) using {
-                    at(iter, forall (k: int32) {
-                        0 <= k and k < n implies 0 <= next[k] and next[k] < n
-                    });
-                    0 <= cur; cur < n;
-                };
+                intro(); intro();
+                have contains(memory(visited[0..n]), memory(visited[cur])) by {
+                    apply(click::separation::contains_element(visited, 0, n, cur)) using {
+                        0 <= cur; cur < n;
+                    };
+                }
+                have contains(memory(next[0..n]), memory(next[k])) by {
+                    apply(click::separation::contains_element(next, 0, n, k)) using {
+                        0 <= k; k < n;
+                    };
+                }
+                have separate(memory(visited[cur]), memory(next[k])) by {
+                    apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[cur]), memory(next[k]))) using {
+                        separate(memory(visited[0..n]), memory(next[0..n]));
+                        contains(memory(visited[0..n]), memory(visited[cur]));
+                        contains(memory(next[0..n]), memory(next[k]));
+                    };
+                }
+                have separate(loop(0).statement(1).footprint, memory(next[k])) by {
+                    normalize() using { separate(memory(visited[cur]), memory(next[k])); };
+                }
+                have next[k] == at(iter, next[k]) by {
+                    preserve(memory(next[k]), loop(0).statement(1));
+                }
                 known();
             }
-            transport(
-                forall (k: int32) { 0 <= k and k < n implies at(iter, next[k]) == at(iter, next[k]) },
-                forall (k: int32) { 0 <= k and k < n implies at(iter, next[k]) == next[k] }
-            ) using {
-                forall (k: int32) { 0 <= k and k < n implies at(iter, next[k]) == at(iter, next[k]) };
-                0 <= cur; cur < n;
-            };
-            transport(
-                forall (k: int32) { 0 <= k and k < cur implies at(iter, visited[k]) == at(iter, visited[k]) },
-                forall (k: int32) { 0 <= k and k < cur implies at(iter, visited[k]) == visited[k] }
-            ) using { forall (k: int32) { 0 <= k and k < cur implies at(iter, visited[k]) == at(iter, visited[k]) }; };
-            transport(
-                forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == at(iter, visited[k]) },
-                forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == visited[k] }
-            ) using { forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == at(iter, visited[k]) }; };
-            have viewable(visited[0..n]);
+            have forall (k: int32) {
+                0 <= k and k < n implies 0 <= next[k] and next[k] < n
+            } by {
+                intro(); intro();
+                instantiate(at(iter, forall (j: int32) {
+                    0 <= j and j < n implies 0 <= next[j] and next[j] < n
+                }), k);
+                instantiate(forall (j: int32) {
+                    0 <= j and j < n implies at(iter, next[j]) == next[j]
+                }, k);
+                rewrite(next[k], at(iter, next[k]));
+                known();
+            }
+            have forall (k: int32) { 0 <= k and k < cur implies at(iter, visited[k]) == visited[k] } by {
+                intro(); intro();
+                have cur != k by { solve() using { k < cur; }; }
+                have separate(memory(visited[cur]), memory(visited[k])) by {
+                    apply(click::separation::separate_elements(visited, cur, k)) using { cur != k; };
+                }
+                have separate(loop(0).statement(1).footprint, memory(visited[k])) by {
+                    normalize() using { separate(memory(visited[cur]), memory(visited[k])); };
+                }
+                have visited[k] == at(iter, visited[k]) by {
+                    preserve(memory(visited[k]), loop(0).statement(1));
+                }
+                known();
+            }
+            have forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == visited[k] } by {
+                intro(); intro();
+                have cur != k by { solve() using { cur < k; }; }
+                have separate(memory(visited[cur]), memory(visited[k])) by {
+                    apply(click::separation::separate_elements(visited, cur, k)) using { cur != k; };
+                }
+                have separate(loop(0).statement(1).footprint, memory(visited[k])) by {
+                    normalize() using { separate(memory(visited[cur]), memory(visited[k])); };
+                }
+                have visited[k] == at(iter, visited[k]) by {
+                    preserve(memory(visited[k]), loop(0).statement(1));
+                }
+                known();
+            }
+            observe(visited[0..n]);
             apply(unmarked_point_update(at(iter, visited), visited, 0, n, n, cur));
             apply(unmarked_nonnegative(visited, 0, n, n));
             have unmarked(visited, 0, n) < unmarked(at(iter, visited), 0, n) by {
@@ -206,8 +245,14 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                     to_integer(unmarked(visited, 0, n)) == to_integer(unmarked(at(iter, visited), 0, n) - 1);
                 };
             }
+            have 0 <= next[cur] and next[cur] < n by {
+                instantiate(forall (k: int32) {
+                    0 <= k and k < n implies 0 <= next[k] and next[k] < n
+                }, cur);
+                known();
+            }
             step();
-            have viewable(next[0..n]);
+            observe(next[0..n]);
             apply(walk_frame(at(iter, next), next, n, from, previous));
             have walk(next, from, previous) == at(iter, cur) by {
                 solve() using {

@@ -77,7 +77,7 @@ fn worker() -> (VerifiedFunctionRule, VerifiedFunctionTerminationRule) {
         vec![],
         vec![SpecProposition::Comparison {
             left: SpecExpression::MemoryLoad {
-                memory: SpecPoint::Current,
+                point: SpecPoint::Current,
                 pointer: Box::new(SpecExpression::ProgramExpression(
                     crate::kernel::program_expression::variable("p"),
                 )),
@@ -1081,7 +1081,7 @@ fn thread_guarantees_are_withheld_until_join() {
             &PureFactContext::new(),
         )
         .unwrap();
-    let postcondition = Proposition::ConditionIs(
+    let postcondition = Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(intern_memory_ref(spawned.parent().memory()))),

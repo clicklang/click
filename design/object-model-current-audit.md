@@ -291,7 +291,7 @@ Four repairs make these boundaries compose:
   address class's unique concrete storage anchor. An authenticated descriptor
   alias can therefore initialize the original word and identify a write to
   this function's local storage. The checked transfer still supplies bounds,
-  lifetime and authority; address equality grants none of them.
+  lifetime and authority; integer address equality grants none of them.
 
 - Native byte and halfword read observations retain their own widths when a
   word or pointer has also been read at that address. Previously the wider
@@ -449,6 +449,15 @@ are in `tests/cpp_import.rs`; Markdown witnesses are in `mdtests/`.
   `cpp_native_reference_results_preserve_aliases_and_require_backing_authority_offline`
   cover aliasing, read permissions, qualification mismatch and forged result
   metadata. An alias-only contract cannot prove a referent value.
+- **Record reference results:** `cpp_record_reference_results_*` cover direct
+  and forwarded nominal record references, mutable and const call-result local
+  aliases, result fields, nested member identity, pointer-backed results and
+  forged call-capture types. They check ordinary verification, expansion,
+  strict cold checking and retained replay; returned addresses grant no
+  authority or lifetime extension. The nested getter and forwarding fixture
+  writes through the returned reference while preserving a sibling view.
+  Its proof uses the returned pointer's retained identity and the checked
+  domain supplied by the getter's equality.
 - **R3 — member boundaries at actual calls:**
   `cpp_reference_formation_rejects_one_past_even_under_trivial_postconditions`
   pairs a one-past refusal with a larger-backed positive.

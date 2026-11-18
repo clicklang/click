@@ -44,7 +44,7 @@ fn kept_frame_misses_do_not_walk_aliases_or_unrelated_ranges() {
             for index in 1..=size {
                 if aliases {
                     context = context.assume_condition(
-                        ConditionTerm::pointer_equal(query.clone(), pointer(index)),
+                        ConditionTerm::address_equal(query.clone(), pointer(index)),
                         true,
                     );
                 } else {
@@ -94,6 +94,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
             .unwrap();
         let mut context =
             PureFactContext::new().assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: field.clone(),
                 value_type: ProgramType::Int32,
@@ -102,10 +103,11 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
         for index in 0..size {
             query = Address::symbolic(Variable(900_001 + index));
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(source.clone(), query.clone()),
+                ConditionTerm::address_equal(source.clone(), query.clone()),
                 true,
             );
             context = context.assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: Address::symbolic(Variable(910_000 + index)),
                 value_type: ProgramType::Int32,
@@ -160,6 +162,7 @@ fn read_validity_state_buckets_keep_exact_hits_and_bounded_misses() {
         for index in 0..size {
             memory = memory.store(other.clone(), ProgramValue::Int32((index as u32).into()));
             context = context.assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: source.clone(),
                 value_type: ProgramType::Int32,

@@ -881,14 +881,10 @@ fn produced_composite_over_a_viewed_owner_is_refused() {
     let pointer = pointer();
     let function = view_and_produce_reader("view_and_produce");
     let environment =
-        ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
-            pointer_result: None,
+        ExecutionEnvironment::new().with_external_function_rule(ExternalFunctionRule {
             function: function.clone(),
-            descent_completion: None,
-            concrete_loop_exits: None,
-            loop_semantics: LoopSemantics::Verify,
-            checked_callees: None,
-            applied_tactics: Default::default(),
+            scoped_unselected: false,
+            representation_copy: None,
         });
     let paths = execute_program_function_call_paths(
         &caller(&pointer),
@@ -1343,7 +1339,7 @@ fn candidate_unresolved_return_obligation_refuses_recovery() {
     .expect("candidate transfer should run")
     .expect("candidate transfer should be accepted");
     let callee = callee_state_with_resource_transfer(callee, &transfer);
-    let unresolved = ProofObligation::verification_condition(Proposition::ConditionIs(
+    let unresolved = ProofObligation::verification_condition(Proposition::condition_is(
         ConditionTerm::Constant(false),
         true,
     ))
@@ -2043,6 +2039,96 @@ fn candidate_rejects_mutable_effect_overlapping_view() {
             && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
             && diagnostic.subject().memory_range().is_some()
     ));
+}
+
+#[test]
+fn verified_call_checks_its_writes_against_preexisting_loans() {
+    let target = pointer();
+    let parameter = crate::kernel::program_expression::variable("p");
+    let segment = MemorySegment::new(
+        parameter.clone(),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
+    let function = program_function(
+        ProgramType::Void,
+        "summary_write",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_store(
+            parameter,
+            crate::kernel::program_expression::int32_literal(9),
+        ),
+    )
+    .with_resource_summary(
+        vec![ResourceSpec::owned_memory(segment.clone())],
+        Vec::new(),
+    )
+    .with_contract(Vec::new(), Vec::new(), vec![segment], Vec::new(), true);
+    let environment = environment(&function);
+    for overlap in [false, true] {
+        let protected = if overlap {
+            target.clone()
+        } else {
+            SymbolicMemory::local_pointer("other")
+        };
+        let range = MemoryRange::new(protected, 0u32.into(), 1u32.into());
+        let opening_ledger = LoanLedger::new();
+        let lender = opening_ledger.fresh_participant().unwrap();
+        let reader = opening_ledger.fresh_participant().unwrap();
+        let ledger = lend_summary_test_range(&opening_ledger, lender, reader, range);
+        let state = caller(&target)
+            .with_loan_ledger(Some(ledger.clone()))
+            .with_loan_participant(Some(lender));
+        let paths = execute_program_function_call_paths(
+            &state,
+            &function,
+            &[crate::kernel::program_expression::pointer_value(
+                target.clone(),
+            )],
+            &PureFactContext::new(),
+            ExecutionContext::apply_verified_rules(&environment),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let [
+            FunctionPath {
+                outcome: FunctionOutcome::Return { state, .. },
+                obligations,
+                ..
+            },
+        ] = paths.as_slice()
+        else {
+            panic!("expected a conditional summary return");
+        };
+        assert_eq!(state.loan_ledger(), Some(&ledger));
+        let [obligation] = obligations.as_slice() else {
+            panic!("expected one write separation requirement");
+        };
+        assert!(obligation.call_requirement_site().is_some());
+        let Proposition::ResourceSeparate { left, right } = obligation.proposition() else {
+            panic!("expected write separation");
+        };
+        assert_eq!(
+            PureFactContext::new().proves_resource_separate(left, right),
+            !overlap
+        );
+    }
+}
+
+fn lend_summary_test_range(
+    ledger: &LoanLedger,
+    lender: super::super::loans::LoanParticipantId,
+    reader: super::super::loans::LoanParticipantId,
+    range: MemoryRange,
+) -> LoanLedger {
+    let owner = ResourceFact::own_memory(range);
+    let support = ResourceContext::new()
+        .unchecked_with_fact(owner.clone())
+        .unique_owned_occurrence_for_fact(&owner)
+        .unwrap()
+        .0;
+    let opening = ledger.lend(lender, reader, support, owner).unwrap();
+    ledger.apply(&opening.transition).unwrap()
 }
 
 /// A mutable effect on the same symbolic base as the lent view, at the
@@ -2837,7 +2923,7 @@ fn refused_composite_assembly_retains_the_failed_source_clause() {
     // rather than folding it to `false`.
     assert_eq!(
         *fact,
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
@@ -2892,7 +2978,7 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
             "aliased_partial" | "aliased_whole" | "owner_with_alias_fact"
         ) {
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(local.clone(), Address::symbolic(Variable(941_001))),
+                ConditionTerm::address_equal(local.clone(), Address::symbolic(Variable(941_001))),
                 true,
             );
         }

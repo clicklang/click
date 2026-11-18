@@ -391,7 +391,7 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
             let samples = [2, 4, 8, 16].map(|depth| {
                 let mut body = "have 0 == 0 by { normalize(); } normalize();".to_string();
                 for _ in 0..depth {
-                    body = format!("both {{ {body} }} and {{ normalize(); }}");
+                    body = format!("both {{ left => {{ {body} }} right => {{ normalize(); }} }}");
                 }
                 let source = format!("theorem nested() {{ ensures 0 == 0 by {{ {body} }} }}");
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1876,7 +1876,7 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
     use crate::kernel::{ConditionTerm, MachineTerm, Proposition, Variable};
 
     let less = |left: u64, right: u64| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -1889,7 +1889,7 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
     let context = |links: usize, unrelated: usize, broken: Option<usize>, reversed: bool| {
         let mut available = Vec::new();
         for index in 0..unrelated {
-            available.push(Proposition::ConditionIs(
+            available.push(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -1994,7 +1994,7 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: MachineTerm::constant(bytes),
+        bytes: (MachineTerm::constant(bytes)).into(),
         wide: false,
     };
     // (sources stated about the goal's object, goal, premises the
@@ -2105,6 +2105,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
 
     let memory = SymbolicMemory::new().with_block("goal", 64);
     let read_defined = |pointer: Address| Proposition::MemoryReadDefined {
+        at: None,
         memory: memory.clone(),
         pointer,
         value_type: ProgramType::Int32,
@@ -2140,8 +2141,8 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             "a read defined at an alias",
             vec![
                 read_defined(address.clone()),
-                Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(alias.clone(), address),
+                Proposition::condition_is(
+                    ConditionTerm::address_equal(alias.clone(), address),
                     true,
                 ),
             ],
@@ -4402,7 +4403,7 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
     use crate::kernel::{ConditionTerm, MachineTerm, Proposition, PureFactContext, Variable};
 
     let equal = |variable: u64, value: u32| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -4423,7 +4424,7 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
                     Box::new(equal(variable, 1)),
                 ));
             }
-            let goal = Proposition::ConditionIs(
+            let goal = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -4505,7 +4506,7 @@ fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
                     Box::new(is(variable, "Black")),
                 ));
             }
-            let goal = Proposition::ConditionIs(
+            let goal = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -6181,6 +6182,7 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
 /// The closers `solve() using` tries before arithmetic cost an unsigned chain
 /// more than a signed one, so the two chains' peaks are not compared.
 #[test]
+#[ignore = "nightly: signed and unsigned order-chain scaling across eight complete proofs"]
 fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
     for (value_type, bound) in [("int32", "4"), ("uint32", "4u32")] {
         let samples = [8usize, 16, 24, 32].map(|edges| {
@@ -6839,11 +6841,11 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
     let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: MachineTerm::constant(bytes),
+        bytes: (MachineTerm::constant(bytes)).into(),
         wide: false,
     };
     let equal = |left: u64, right: u64| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -6865,8 +6867,8 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
             "a non-null source without other non-null objects",
             vec![
                 loadable(Address::symbolic(Variable(470_002)), 16),
-                Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(
+                Proposition::condition_is(
+                    ConditionTerm::address_equal(
                         Address::symbolic(Variable(470_002)),
                         Address::null(),
                     ),
@@ -6897,8 +6899,8 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                 for index in 0..unrelated as u64 {
                     context = context
                         .assume_proposition(equal(471_000 + 2 * index, 471_001 + 2 * index))
-                        .assume_proposition(Proposition::ConditionIs(
-                            ConditionTerm::pointer_equal(
+                        .assume_proposition(Proposition::condition_is(
+                            ConditionTerm::address_equal(
                                 Address::symbolic(Variable(475_000 + index)),
                                 Address::null(),
                             ),
@@ -6910,7 +6912,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                                 base: format!("other{index}").as_str().into(),
                                 offset: AddressOffset::Constant(0),
                             },
-                            bytes: MachineTerm::constant(16),
+                            bytes: (MachineTerm::constant(16)).into(),
                             wide: false,
                         });
                 }
@@ -6992,7 +6994,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
         offset: AddressOffset::Constant(0),
     };
     let index = MachineTerm::Variable(Variable(490_000));
-    let equality = Proposition::ConditionIs(
+    let equality = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -7015,7 +7017,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
                 },
                 ProgramValue::Int32(value.clone()),
             );
-            context = context.assume_proposition(Proposition::ConditionIs(
+            context = context.assume_proposition(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -7032,7 +7034,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: at(MachineTerm::constant(2)),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         let goal = Proposition::MemoryLoadable {
@@ -7042,7 +7044,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
                 Box::new(index_cell.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         context = context
@@ -7095,7 +7097,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         )
     };
     let equal = |left: MachineTerm, right: MachineTerm| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -7106,7 +7108,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         )
     };
     let less = |left: MachineTerm, right: MachineTerm, holds: bool| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -7149,7 +7151,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                         base: format!("other{index}").as_str().into(),
                         offset: AddressOffset::scaled_int32_node(variable(482_000 + index), 4),
                     },
-                    bytes: MachineTerm::constant(16),
+                    bytes: (MachineTerm::constant(16)).into(),
                     wide: false,
                 });
         }
@@ -7228,7 +7230,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                             base: format!("extension{step}").as_str().into(),
                             offset: AddressOffset::Constant(0),
                         },
-                        bytes: MachineTerm::constant(16),
+                        bytes: (MachineTerm::constant(16)).into(),
                         wide: false,
                     });
                 let proof = crate::kernel::search::ProofSearch::derive_atomic_proposition(
@@ -8180,15 +8182,14 @@ fn explicit_byte_view_narrowing_rejects_missing_authority_and_bounds() {
 }
 
 /// Explicit framing must refuse locally even as unrelated scalar premises grow.
-/// The mdtest pins one refusal; this checks that its context-dependent memo does
-/// not turn extra facts into repeated frame searches. Keep the multi-run recheck
-/// out of the gate, whose single fixture covers the behavior.
+/// The mdtest pins one refusal. Check that looking up the selected separation
+/// stays bounded as the proof accumulates premises.
 #[test]
 #[ignore = "nightly: 6s for four explicit frame refusals"]
 fn explicit_frame_refusal_scales_with_unrelated_facts() {
     let mdtest = crate::cli::parse_mdtest(
-        std::path::Path::new("explicit_transport_failure_is_prompt.md"),
-        include_str!("../../../../mdtests/explicit_transport_failure_is_prompt.md"),
+        std::path::Path::new("explicit_preserve_failure_is_prompt.md"),
+        include_str!("../../../../mdtests/explicit_preserve_failure_is_prompt.md"),
     )
     .unwrap();
     let mut samples = Vec::new();
@@ -8231,7 +8232,9 @@ fn explicit_frame_refusal_scales_with_unrelated_facts() {
         });
         let error = result.expect_err("a missing frame is still refused");
         assert!(
-            error.message().contains("found no frame evidence"),
+            error
+                .message()
+                .contains("preserve separation is not exactly available"),
             "{size}: {error:?}"
         );
         samples.push(sample);
@@ -8240,11 +8243,11 @@ fn explicit_frame_refusal_scales_with_unrelated_facts() {
         "explicit frame refusal with unrelated facts",
         &samples,
     );
-    // The selected transport pays only a fixed amount per added premise.
+    // The selected preservation check pays only a fixed amount per added premise.
     // Whole-run totals also include shared frontend initialization.
     for pair in samples.windows(2) {
-        let before = pair[0].named_work["control tactic `have`"];
-        let after = pair[1].named_work["control tactic `have`"];
+        let before = pair[0].named_work["simple tactic `have`"];
+        let after = pair[1].named_work["simple tactic `have`"];
         assert!(
             after <= before + 6 * (pair[1].size - pair[0].size),
             "{samples:?}"
@@ -9227,10 +9230,21 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
 /// adds
 /// (`context_rebuild_entries` with the split minus without it).
 #[test]
+#[ignore = "nightly: proof-if context scaling compares eight complete loop proofs"]
 fn proof_if_split_ignores_earlier_unrelated_facts() {
     fn rebuild_entries(size: usize, split: bool) -> usize {
+        // Establish the shared lower bound once; each distinct earlier fact
+        // then needs one explicit transitivity application instead of a new
+        // arithmetic search. Keep i symbolic so these remain distinct facts.
         let haves = (1..=size)
-            .map(|k| format!("            have i >= 0 - {k} by solve();\n"))
+            .map(|k| {
+                format!(
+                    "            have i >= 0 - {k} by {{\n\
+                     \x20               apply(click::integer::le_transitive(0 - {k}, 0, to_integer(i))) using {{\n\
+                     \x20                   0 - {k} <= 0; 0 <= to_integer(i);\n\
+                     \x20               }};\n            }}\n"
+                )
+            })
             .collect::<String>();
         // Arms that each close the iteration have no continuation to rejoin,
         // so the split is taken rather than tried as a straight-line join.
@@ -9242,11 +9256,32 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
             ""
         };
         let click_source = format!(
-            "verifying \"split.c\";\n\n\
-             int32 count_once(int32 flag) {{\n    ensures result == 1;\n}} by {{\n    \
-             step();\n    step();\n    loop {{\n        decreases 1 - i;\n        invariant i >= 0;\n        \
-             invariant i <= 1;\n        initialize by solve();\n        preserve by {{\n            \
-             step();\n{haves}{close}        }}\n    }}\n    step();\n    solve();\n}}\n"
+            r#"verifying "split.c";
+int32 count_once(int32 flag) {{
+    ensures result == 1;
+}} by {{
+    step();
+    step();
+    loop {{
+        decreases 1 - i;
+        invariant i >= 0;
+        invariant i <= 1;
+        initialize by {{ normalize(); }}
+        preserve by {{
+            mark before_increment;
+            step();
+            have 0 <= to_integer(i) by {{
+                solve() using {{
+                    at(before_increment, i) >= 0;
+                    at(before_increment, i) <= 1;
+                }};
+            }}
+{haves}{close}        }}
+    }}
+    step();
+    solve();
+}}
+"#
         );
         let c_source = "int32 count_once(int32 flag) {\n    int32 i;\n    i = 0;\n    \
                         while (i < 1) { i = i + 1; }\n    return i;\n}\n";
@@ -11106,6 +11141,7 @@ fn nested_call_results_scale_with_the_statements_that_read_them() {
 }
 
 #[test]
+#[ignore = "nightly: 5.6s selected-guard context scaling audit"]
 fn ordinary_fold_unfold_checks_only_selected_guards() {
     let mut samples = Vec::new();
     for size in [4, 16, 64, 256] {
@@ -11185,4 +11221,32 @@ fn exceptional_borrowed_memory_is_indexed_in_unrelated_context() {
         frontier[0] > 0 && frontier.iter().all(|work| *work == frontier[0]),
         "call frontier {frontier:?}"
     );
+}
+
+#[test]
+fn recorded_call_snapshots_read_one_point_and_one_call() {
+    for count in [8, 128, 1024] {
+        let mut points = RecordedStates::new();
+        let selected = ProgramPointSelector::Mark("saved".into());
+        for region in 0..count {
+            points.record_call_result(region, Some(crate::kernel::int32(region as u32)));
+        }
+        points.set_call_result_snapshot(&selected, Some(points.call_results.clone()));
+        // Grow both the number of snapshots and the number of times the
+        // selected call ran without changing its earlier snapshot.
+        for run in 0..count {
+            points.record_call_result(0, Some(crate::kernel::int32(1 + run as u32)));
+            let point = ProgramPointSelector::Mark(format!("run_{run}"));
+            points.set_call_result_snapshot(&point, Some(points.call_results.clone()));
+        }
+        assert_eq!(points.call_result_snapshots.len(), count + 1);
+        let (saved, work) = crate::instrumentation::measure_deterministic_work(|| {
+            points.call_results_at(&selected).unwrap().get(&0).cloned()
+        });
+        assert_eq!(
+            saved.map(RetainedProgramValue::into_native_compat),
+            Some(crate::kernel::int32(0))
+        );
+        assert_eq!(work, 1, "{count} calls and snapshots");
+    }
 }

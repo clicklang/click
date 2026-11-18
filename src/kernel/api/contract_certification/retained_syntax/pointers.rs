@@ -1,8 +1,8 @@
 //! Borrow exact pointer payloads and written addresses during certification.
 use super::*;
 use crate::kernel::{
-    Address, AddressBase, AddressOffset, KernelAddressOffset, PointerValue,
-    RetainedPointerMetadata, SharedAddress, SharedAddressOffset, SharedPointerValue,
+    Address, AddressBase, AddressOffset, KernelAddressOffset, Pointer, RetainedPointerMetadata,
+    SharedAddress, SharedAddressOffset, SharedPointer,
 };
 use std::borrow::Cow;
 
@@ -116,8 +116,8 @@ impl<'a> Offset<'a> {
 
 #[derive(Clone, Copy)]
 enum Value<'a> {
-    Native(&'a PointerValue),
-    Shared(&'a SharedPointerValue),
+    Native(&'a Pointer),
+    Shared(&'a SharedPointer),
 }
 impl<'a> Value<'a> {
     fn argument(argument: CallArgument<'a>) -> Option<Self> {
@@ -137,7 +137,7 @@ impl<'a> Value<'a> {
     }
     fn address(self) -> BorrowedAddress<'a> {
         match self {
-            Self::Native(value) => BorrowedAddress::Native(value.pointer()),
+            Self::Native(value) => BorrowedAddress::Native(value.address()),
             Self::Shared(value) => BorrowedAddress::Shared(&value.node().address),
         }
     }
@@ -202,7 +202,7 @@ impl<'a> Array<'a> {
             }),
             CallArgument::Shared(root) => {
                 let N::ArrayReference {
-                    memory,
+                    point,
                     pointer,
                     element_type,
                 } = root.node()
@@ -210,7 +210,7 @@ impl<'a> Array<'a> {
                     return None;
                 };
                 Some(Self {
-                    memory: memory.arena_id(),
+                    memory: point.shared_memory().arena_id(),
                     element_type: *element_type,
                     pointer: Value::Shared(pointer.pointer_payload()?),
                 })
@@ -247,7 +247,7 @@ impl Comparison {
     pub(super) fn shared_addresses(&mut self, a: &SharedAddress, b: &SharedAddress) -> bool {
         self.addresses(BorrowedAddress::Shared(a), BorrowedAddress::Shared(b))
     }
-    pub(super) fn pointer_value(&mut self, a: &PointerValue, b: &PointerValue) -> bool {
+    pub(super) fn pointer_value(&mut self, a: &Pointer, b: &Pointer) -> bool {
         self.pointer_values(Value::Native(a), Value::Native(b))
     }
     fn pointer_values(&mut self, a: Value<'_>, b: Value<'_>) -> bool {

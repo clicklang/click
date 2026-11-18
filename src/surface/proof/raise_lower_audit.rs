@@ -165,7 +165,7 @@ mod tests {
     };
 
     fn compare(relation: CompareRelation, value: bool) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,
@@ -269,6 +269,22 @@ mod tests {
             lines
                 .iter()
                 .any(|(outcome, original)| outcome == "same" && original.starts_with(fact)),
+            "{lines:#?}"
+        );
+    }
+
+    /// A parameter named `result` raises as `program::result`, so a read
+    /// through it lowers back to that parameter, not to the returned
+    /// pointer that bare `result` names after the return.
+    #[test]
+    fn a_parameter_named_result_round_trips_as_program_result() {
+        let lines = round_trips(
+            "result_parameter_false_field_postcondition.md",
+            include_str!("../../../mdtests/result_parameter_false_field_postcondition.md"),
+        );
+        assert!(!lines.is_empty());
+        assert!(
+            lines.iter().all(|(outcome, _)| outcome == "same"),
             "{lines:#?}"
         );
     }

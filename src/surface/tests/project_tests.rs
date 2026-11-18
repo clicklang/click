@@ -1483,7 +1483,7 @@ int32 drain(int32 n) {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_05")]
 fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
-    let overflow = Proposition::ConditionIs(
+    let overflow = Proposition::condition_is(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
@@ -1492,8 +1492,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         },
         false,
     );
-    let constant = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
-    let equality = Proposition::ConditionIs(
+    let constant = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let equality = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -1519,7 +1519,7 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
     for condition in [&overflow, &constant, &equality] {
         assert!(condition_polarity_equivalent(condition, condition));
     }
-    let less_than = Proposition::ConditionIs(
+    let less_than = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -1528,7 +1528,7 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         },
         true,
     );
-    let greater_equal = Proposition::ConditionIs(
+    let greater_equal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
@@ -1539,7 +1539,7 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
     );
     assert!(condition_polarity_equivalent(&less_than, &greater_equal));
 
-    let greater_equal_true = Proposition::ConditionIs(
+    let greater_equal_true = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
@@ -1548,7 +1548,7 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         },
         true,
     );
-    let reversed_less_equal = Proposition::ConditionIs(
+    let reversed_less_equal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
@@ -1593,12 +1593,10 @@ fn unfolding_composite_rejects_concretely_overlapping_owned_children() {
     let error = verify_c_sources(click_source, &[("preserve.c", c_source)])
         .expect_err("a composite fact must not authorize overlapping owned children");
     assert!(
-        error
-            .message()
-            .contains("could not open contract entry for `preserve.contract`")
-            && error.message().contains(
-                "could not evaluate the composite resource facts required at the contract entry"
-            ),
+        error.message().contains("`preserve.contract` setup failed")
+            && error
+                .message()
+                .contains("overlapping owned memory resource facts"),
         "{}",
         error.message()
     );

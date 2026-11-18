@@ -46,7 +46,7 @@ Indexing still needs both bounds and a covering held resource.
 Passing a subslice lends that subrange through the existing ledger; mutable
 halves require disjoint ownership. A range based on a projection or a
 function-result slice must match through checked pointer identity, rather
-than manufacture access from a numeric address equality.
+than manufacture access from an integer address equality.
 
 Slice-value equality is identity of data pointer and length. It is not Rust's
 content-comparing `PartialEq`; content equality needs an explicit predicate

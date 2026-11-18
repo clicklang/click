@@ -5,7 +5,12 @@ use num_traits::{One, Zero};
 
 fn order(p: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm)> {
     match p {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => Some((a, b)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some((a, b))
+        }
         _ => None,
     }
 }

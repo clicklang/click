@@ -636,8 +636,15 @@ pub(super) fn describe_pure_fact_with_environment(
         }
         None => skeleton,
     };
+    // A proved theorem is a fact only where it is applied: the caller cites
+    // it before the step that needs the contract.
+    let apply = skeleton
+        .strip_prefix("theorem ")
+        .and_then(|rest| rest.split_once('('))
+        .map(|(name, _)| format!("\nthen apply it before the call: `apply({name}());`"))
+        .unwrap_or_default();
     format!(
-        "function `{target}` does not satisfy named contract `{contract}` automatically;\nprove it explicitly:\n{skeleton}"
+        "function `{target}` does not satisfy named contract `{contract}` automatically;\nprove it explicitly:\n{skeleton}{apply}"
     )
 }
 
@@ -699,7 +706,7 @@ pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, 
     let Address {
         base: AddressBase::Function(target),
         offset: AddressOffset::Constant(0),
-    } = pointer.pointer()
+    } = pointer.address()
     else {
         return None;
     };
@@ -714,7 +721,7 @@ pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, 
 /// through it rather than showing `v2`. One definition, so a pure theorem and a
 /// C proof name the same term the same way.
 pub(in crate::surface) fn value_naming_tables(
-    values: &std::collections::BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
 ) -> (
     Vec<crate::languages::interface::ImportedParameter>,
     Vec<ProgramExpression>,
@@ -736,7 +743,7 @@ pub(in crate::surface) fn value_naming_tables(
 /// diagnostic that has no source spelling of its operands.
 pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
     match condition {
-        ConditionTerm::PointerValueEqual(_, _) => "pointer value equality",
+        ConditionTerm::PointerEqual(_, _) => "pointer value equality",
 
         ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality",
         ConditionTerm::IntegerLessThan(_, _) => "Integer less-than",
@@ -919,8 +926,8 @@ pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
         ConditionTerm::Float32(FloatCondition::Classification { .. }) => "float32 classification",
         ConditionTerm::Float64(FloatCondition::Comparison { .. }) => "float64 comparison",
         ConditionTerm::Float64(FloatCondition::Classification { .. }) => "float64 classification",
-        ConditionTerm::PointerOffsetEqual(_, _) => "pointer-offset equality",
-        ConditionTerm::PointerEqual(_, _) => "pointer equality",
+        ConditionTerm::AddressOffsetEqual(_, _) => "pointer-offset equality",
+        ConditionTerm::AddressEqual(_, _) => "pointer equality",
         ConditionTerm::Constant(_) => "constant condition",
         ConditionTerm::Variable(_) => "condition variable",
         ConditionTerm::BoolApplication(_) => "Bool function application",
@@ -1050,13 +1057,13 @@ pub(super) fn describe_missing_resource_fact(
             })
     {
         note = format!(
-            "\n  note: the held iterated ownership of `{}` has index {} taken out, and at a fold it must hold exactly the elements whose guard is true; `give` each element back, or store a guard value that makes its guard false, before folding",
+            "\n  note: the held iterated ownership of `{}` has index {} taken out, and at a fold it must hold exactly the elements whose guard is true; fold each open slot, or store a guard value that makes its guard false, before folding",
             held.owner(),
             held.holes()
                 .iter()
                 .map(|hole| format!(
                     "`{}`",
-                    describe_bitvector_with_context(hole, parameter_binding)
+                    describe_bitvector_with_context(hole.native_compat(), parameter_binding)
                 ))
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -1138,12 +1145,11 @@ pub(super) fn describe_multiple_statement_successors_guidance(
     r#"
 `step()` cannot choose between the two successors of this call. Use `outcomes` at this point:
 outcomes {
-    returned => { step(); }
-    threw => { step(); }
+    returned => { }
+    threw => { }
 }
-The `step()` in each arm advances the selected path; add the remaining
-`step()`, `step_until(function.exit)`, and `solve()` tactics inside that arm until all
-contract claims are closed.
+`outcomes` advances the call along each edge. Continue each arm from its checked
+successor and close its contract claims.
 "#
     .to_string()
 }
@@ -1408,7 +1414,12 @@ fn local_naming_entries(
     let mut entries = state
         .locals()
         .object_values()
-        .filter(|(name, _)| !name.named().is_some_and(|name| name.starts_with("__rust_")))
+        .filter(|(name, _)| {
+            !name
+                .local_id()
+                .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                && !name.named().is_some_and(|name| name.starts_with("__rust_"))
+        })
         .map(|(name, value)| {
             let binding = crate::kernel::program_local_source_name(name);
             (binding.to_string(), (binding, value.clone().into_native()))
@@ -1461,10 +1472,9 @@ pub(in crate::surface) fn step_result_expression(step: u32) -> Option<ContractEx
                 )),
             })
         }
-        None => {
-            let steps = layout.source_path_spelling(region, ProgramPointKind::Exit)?;
-            Some(ContractExpression::RegionResult(CodeRegionRef::Path(steps)))
-        }
+        None => Some(ContractExpression::RegionResult(
+            layout.result_code_region(region)?,
+        )),
     }
 }
 
@@ -2171,7 +2181,10 @@ pub(in crate::surface) fn describe_iterated_memory(
             iterated
                 .holes()
                 .iter()
-                .map(|hole| describe_bitvector_with_context(hole, parameter_binding))
+                .map(|hole| describe_bitvector_with_context(
+                    hole.native_compat(),
+                    parameter_binding
+                ))
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
@@ -2366,7 +2379,7 @@ fn describe_struct_place_range(
         // A recursive struct pointer field has the same known layout as its
         // parent. Do not infer that layout for pointers to another type.
         if let Some(field_name) =
-            describe_parameter_struct_field_pointer(range.base(), parameter, base.pointer())
+            describe_parameter_struct_field_pointer(range.base(), parameter, base.address())
             && let Some((_, field)) = layout.fields().iter().find(|(name, _)| {
                 field_name
                     == describe_field_place(
@@ -2450,7 +2463,7 @@ fn struct_byte_bounds(
             let layout = parameter
                 .pointee_struct_layout()
                 .or_else(|| parameter.struct_layout())?;
-            let offset = pointer_offset_bytes(&range.base().offset_from_base(base.pointer())?)?;
+            let offset = pointer_offset_bytes(&range.base().offset_from_base(base.address())?)?;
             Some((parameter, layout, offset))
         })
     {
@@ -2656,7 +2669,7 @@ pub(super) fn describe_memory_range(
             continue;
         };
         if let Some(field) =
-            describe_parameter_struct_field_pointer(range.base(), parameter, base.pointer())
+            describe_parameter_struct_field_pointer(range.base(), parameter, base.address())
         {
             let layout = parameter
                 .pointee_struct_layout()
@@ -4296,7 +4309,7 @@ fn states_terms_differ(stated: &[&Proposition], left: &MachineTerm, right: &Mach
             return false;
         };
         matches!(
-            condition.as_bitvector_comparison(),
+            condition.native_compat().as_bitvector_comparison(),
             Some((
                 crate::kernel::BitvectorComparisonOp::Compare(
                     _,
@@ -4346,18 +4359,29 @@ pub(in crate::surface) fn diagnostic_aggregate_parameter_load_cell(
         .iter()
         .zip(parameter_binding.arguments)
     {
-        if !parameter.is_struct_value() {
+        // A struct value's field is `s.f`; a field through a struct pointer
+        // is `p->f`, its first field included: `*p` would read the struct.
+        let (layout, select) = if parameter.is_struct_value() {
+            (parameter.struct_layout(), ".")
+        } else if parameter.is_reference() {
             continue;
-        }
+        } else {
+            (
+                parameter
+                    .pointee_struct_layout()
+                    .or_else(|| parameter.struct_layout()),
+                "->",
+            )
+        };
+        let Some(layout) = layout else {
+            continue;
+        };
         let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
             continue;
         };
-        let Some(offset) = diagnostic_pointer_element_index_from_base(pointer, base.pointer(), 1)
+        let Some(offset) = diagnostic_pointer_element_index_from_base(pointer, base.address(), 1)
             .and_then(|offset| offset.as_const())
         else {
-            continue;
-        };
-        let Some(layout) = parameter.struct_layout() else {
             continue;
         };
         let mut fields = layout.typed_leaf_fields().filter(|(_, at, ty)| {
@@ -4366,7 +4390,7 @@ pub(in crate::surface) fn diagnostic_aggregate_parameter_load_cell(
                     .is_some_and(|read| read.reads_word_of(kind))
         });
         if let (Some((field, _, _)), None) = (fields.next(), fields.next()) {
-            return Some(format!("{}.{field}", parameter.name()));
+            return Some(format!("{}{select}{field}", parameter.name()));
         }
     }
     None
@@ -4419,7 +4443,7 @@ pub(in crate::surface) fn diagnostic_source_pointer_cell(
             continue;
         };
         let mut fields = layout.fields().iter().filter(|(_, field)| {
-            let expected = base.pointer().offset_by_bytes(field.offset_bytes());
+            let expected = base.address().offset_by_bytes(field.offset_bytes());
             expected.base == pointer.base
                 && crate::kernel::offsets_have_same_canonical_form(
                     &expected.offset,
@@ -4803,7 +4827,7 @@ fn describe_source_cell_of_width(
             continue;
         };
         if let Some(field) =
-            describe_parameter_struct_field_pointer(pointer, parameter, base.pointer())
+            describe_parameter_struct_field_pointer(pointer, parameter, base.address())
         {
             return Some(SourceCell {
                 object: field,
@@ -4813,7 +4837,7 @@ fn describe_source_cell_of_width(
             });
         }
         if let Some(member) =
-            describe_parameter_struct_member(pointer, parameter, base.pointer(), parameter_binding)
+            describe_parameter_struct_member(pointer, parameter, base.address(), parameter_binding)
         {
             return Some(SourceCell {
                 object: member,
@@ -4975,7 +4999,7 @@ pub(super) fn describe_memory_block(
         .zip(parameter_binding.arguments)
     {
         if let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument
-            && &base.pointer().base == block
+            && &base.address().base == block
         {
             return Some(parameter.name().to_string());
         }
@@ -5165,7 +5189,7 @@ pub(in crate::surface) fn describe_pointer(
             continue;
         };
         if let Some(field) =
-            describe_parameter_struct_field_pointer(pointer, parameter, base.pointer())
+            describe_parameter_struct_field_pointer(pointer, parameter, base.address())
         {
             return field;
         }
@@ -5187,12 +5211,12 @@ pub(in crate::surface) fn describe_pointer(
                 best = Some(spelled);
             }
         } else if let Some(member) =
-            describe_parameter_struct_member(pointer, parameter, base.pointer(), parameter_binding)
+            describe_parameter_struct_member(pointer, parameter, base.address(), parameter_binding)
         {
             if best.as_ref().is_none_or(|best| member.len() < best.len()) {
                 best = Some(member);
             }
-        } else if let Some(bytes) = pointer.offset_from_base(base.pointer()) {
+        } else if let Some(bytes) = pointer.offset_from_base(base.address()) {
             // An address inside the parameter's object that is no whole
             // element of it -- a byte of a wider cell, say -- is still a
             // byte offset from the parameter, as a named object's is below.
@@ -5745,7 +5769,7 @@ pub(super) fn describe_program_value(
         ),
         ProgramValue::Pointer(pointer)
             if matches!(
-                pointer.pointer().base,
+                pointer.address().base,
                 AddressBase::ContractResult
                     | AddressBase::ContractException
                     | AddressBase::AggregateReturn { .. }
@@ -6446,7 +6470,7 @@ fn describe_load_at(pointer: &Address, parameter_binding: ParameterBinding<'_>) 
             let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                 return None;
             };
-            (parameter.is_reference() && base.pointer() == pointer)
+            (parameter.is_reference() && base.address() == pointer)
                 .then_some((parameter, parameter.name()))
         });
     match referent {
@@ -6514,7 +6538,7 @@ fn describe_struct_field_load(
         else {
             continue;
         };
-        let Some(offset) = diagnostic_pointer_element_index_from_base(pointer, base.pointer(), 1)
+        let Some(offset) = diagnostic_pointer_element_index_from_base(pointer, base.address(), 1)
             .and_then(|offset| offset.as_const())
         else {
             continue;
@@ -6640,7 +6664,7 @@ fn pointee_struct_at_depth(
         else {
             continue;
         };
-        if let Some(offset) = diagnostic_pointer_element_index_from_base(address, base.pointer(), 1)
+        if let Some(offset) = diagnostic_pointer_element_index_from_base(address, base.address(), 1)
             .and_then(|offset| offset.as_const())
         {
             return field_at(layout, u64::from(offset));
@@ -7347,7 +7371,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                         .replace('*', "_pointer")
                 ),
                 ProgramExpression::Load(_) => format!("*({operand})"),
-                ProgramExpression::AddressOf(_) => format!("&({operand})"),
+                ProgramExpression::AddressOf(_) | ProgramExpression::Subobject { .. } => {
+                    format!("&({operand})")
+                }
                 _ => unreachable!("CUnary stores a unary C operation"),
             }
         }
@@ -7675,25 +7701,24 @@ fn describe_let_type(click_type: &ClickType) -> String {
     .to_string()
 }
 
-/// Keep generated let bindings source-printable for long left-associated
-/// addition chains. The binding value is a top-level expression, so flattening
-/// only `+` nodes preserves precedence while avoiding artificial nesting.
+/// Keep long left-associated sums shallow without changing their grouping.
+/// Right operands retain parentheses: explicit rewrites target exact terms.
 fn describe_let_value(value: &ContractExpression) -> String {
     if !matches!(value, ContractExpression::Add(_, _)) {
         return describe_contract_expression(value);
     }
-    let mut pending = vec![value];
-    let mut terms = Vec::new();
-    while let Some(expression) = pending.pop() {
-        match expression {
-            ContractExpression::Add(left, right) => {
-                pending.push(right);
-                pending.push(left);
-            }
-            expression => terms.push(describe_contract_expression(expression)),
-        }
+    let mut left = value;
+    let mut rights = Vec::new();
+    while let ContractExpression::Add(first, second) = left {
+        rights.push(second.as_ref());
+        left = first;
     }
-    terms.join(" + ")
+    let mut output = describe_contract_expression(left);
+    for right in rights.into_iter().rev() {
+        output.push_str(" + ");
+        output.push_str(&describe_contract_expression(right));
+    }
+    output
 }
 
 pub(super) fn describe_binary_contract_expression(
@@ -8088,7 +8113,7 @@ pub(super) fn describe_bitvector_with_context(
         }
         MachineTerm::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
         MachineTerm::MemoryLoad(_, pointer, _) => describe_load_at(pointer, parameter_binding),
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             format!(
                 "({})",
                 click_cast(&describe_pointer(pointer, parameter_binding), "uint64")
@@ -8353,10 +8378,10 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
         };
     }
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => format!(
+        ConditionTerm::PointerEqual(left, right) => format!(
             "{} == {}",
-            describe_pointer(left.pointer(), ParameterBinding::default()),
-            describe_pointer(right.pointer(), ParameterBinding::default())
+            describe_pointer(left.address(), ParameterBinding::default()),
+            describe_pointer(right.address(), ParameterBinding::default())
         ),
 
         ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality".to_string(),
@@ -8380,12 +8405,12 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
         ConditionTerm::Variable(variable) => lowering_only_variable("cond", variable.0),
         ConditionTerm::Float32(float_condition) => describe_float_condition(float_condition),
         ConditionTerm::Float64(float_condition) => describe_float_condition(float_condition),
-        ConditionTerm::PointerOffsetEqual(left, right) => format!(
+        ConditionTerm::AddressOffsetEqual(left, right) => format!(
             "{} == {}",
             describe_pointer_offset(left),
             describe_pointer_offset(right)
         ),
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             format!(
                 "{} == {}",
                 describe_pointer(left, ParameterBinding::default()),
@@ -8543,7 +8568,7 @@ pub(super) fn describe_condition_with_context(
             left,
             right,
         } => binary(left, ">=", right),
-        ConditionTerm::PointerEqual(left, right) => format!(
+        ConditionTerm::AddressEqual(left, right) => format!(
             "{} == {}",
             describe_pointer(left, parameter_binding),
             describe_pointer(right, parameter_binding)
@@ -8674,7 +8699,7 @@ mod assembly_fact_tests {
                 "zero".into(),
                 vec![pointer.clone()],
             )),
-            fact: Box::new(Proposition::ConditionIs(
+            fact: Box::new(Proposition::condition_is(
                 ConditionTerm::Constant(false),
                 true,
             )),

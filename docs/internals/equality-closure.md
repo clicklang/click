@@ -36,7 +36,7 @@ base from an arbitrary class representative.
 
 A consumer that accepts an offset equality reads a same-block pointer
 equality through `ConditionTerm::pointer_offset_sides`, not by matching
-`PointerOffsetEqual` alone. In particular, a `have` at an execution frontier
+`AddressOffsetEqual` alone. In particular, a `have` at an execution frontier
 whose goal compares two loads of one pointer-valued field takes the
 load-equality bridge in either form
 (`mdtests/loop_node_link_frames_across_parent_link_store.md`).
@@ -82,17 +82,25 @@ subobject bounds without changing the pointer value. Intrinsic bounds are
 read directly. An opaque domain uses its retained origin to find an already
 registered bounds node and the cached witness of its equality class. The query
 registers no terms or reads, runs no closure, and recovers no memory history.
-Complete-pointer equality supplies domain knowledge; numeric address equality
+Complete-pointer equality supplies domain knowledge; integer address equality
 and equality of widened byte views do not supply the original domain.
 
-Access matching uses a cached selected domain when the offered
-range retains known bounds, has the same object identity, and lies entirely
-inside that selected domain. Both endpoints are checked in their original
-32-bit or native-width coordinates. A wider enclosing range cannot stand for
-the selected domain. This supplies domain compatibility, not ownership,
-initialization, liveness or permission to dereference a one-past pointer.
-Pointer arithmetic and other bounds consumers still retain their existing
-checks and value-adoption path pending their separate migration.
+Access matching checks the requested bytes or clause range against the cached
+selected domain and checks the supplier's object identity. A broader holding
+can supply those bytes, including when adjacent holdings were coalesced.
+Both clause endpoints are checked in their original 32-bit or native-width
+coordinates. The supplier must separately cover the access and provide the
+required permission, initialization, and liveness.
+Arithmetic formation, member selection, read/write bounds, and clause ranges
+consult the same query. Access bounds reuse the context already prepared for
+ownership checking, including unresolved opaque-domain misses. Formation and
+member selection prepare an expression's fact delta only for an unresolved
+domain. Execution retains the original pointer's address,
+provenance and opaque domain; copying, local reads, nonvolatile loads and
+integer restoration do not adopt another value's metadata from facts.
+Explicit member selection and conversions still construct their own structural
+views. Complete stored-value equations remain the source of bounds knowledge;
+unknown domains still need the existing coverage and resource checks.
 
 The domain unit tests and deterministic scaling tests in
 `assumptions/pointer_domains.rs` cover cold queries after late equality
@@ -404,12 +412,12 @@ Every read application (pointer, int32 and uint64) takes the read's
 *numeric* address, `UInt64Address(address class)`, as its operand, not the
 pointer's address class. Memory is addressed, so two reads of one state at
 equal addresses read the same bytes. A C pointer comparison states only a
-uint64 address equality (`program_pointer_comparison_condition`), which merges the
+integer address equality (`program_pointer_comparison_condition`), which merges the
 two numeric addresses and so the reads, but never the address classes that
 pointer equality and read authority use. Equal pointers still have equal
 numeric addresses by congruence. The first read at a displaced address
 `AddressShift(base, k)` also defines its numeric address as
-`UInt64Address(base) + k`, so address equalities of two bases relate reads of
+`UInt64Address(base) + k`, so integer address equalities of two bases relate reads of
 one field of each; an address that is never read, such as a resource's, adds
 no numeric nodes. Regressions:
 `reads_at_equal_addresses_are_equal_without_equal_pointers`,
@@ -504,7 +512,7 @@ equal after the same displacement, even when an earlier block merge flattened
 the base into affine coordinates. Registration publishes one selected prefix;
 it does not enumerate aliases or recursively publish every prefix. Each raw
 address form retains its registered shift definition, so repeated queries
-do not repeat base registration or closure. This supplies address equality only: field access still requires an owned range of the correct
+do not repeat base registration or closure. This supplies integer address equality only: field access still requires an owned range of the correct
 width. Regressions cover multiple owned fields, late cursor aliases, different
 offsets, missing ownership, and constant query work as unrelated fields grow.
 
@@ -882,7 +890,7 @@ A registration generation distinguishes reasoning memo entries from earlier
 misses, without scanning or rebuilding the proof environment. `solve` can emit
 `normalize() using {}` to check an equality against this ambient graph.
 The nonrecursive `mdtests/egraph_resource_pointer_load_alias.md` regression
-checks this after an unfold publishes address equality.
+checks this after an unfold publishes integer address equality.
 
 An explicit pointer rewrite uses this producer metadata to distinguish a
 pointer-valued read from ordinary address arithmetic. For a registered read,
@@ -955,7 +963,7 @@ constructor, decoder, substitution, provenance, and rendering consumers must
 be reviewed together. The current equality query requires none of that.
 
 Equal addresses at one state imply equal compatible loads. This must hold
-whether the loads were registered before or after the address equality, and
+whether the loads were registered before or after the integer address equality, and
 whether either load already belongs to another explicit class. For example:
 
 ```text
@@ -970,7 +978,7 @@ The answer must survive extra facts and all insertion orders. Nested loads
 must obey the same rule without a fixed nesting-depth limit.
 
 For 8-, 16-, 32-, and 64-bit integer reads, a recorded store equation
-`load(M, p) == value` and the address equality `p == id` establish
+`load(M, p) == value` and the integer address equality `p == id` establish
 `load(M, id) == value` by ordinary congruence. Registering the read alone
 supplies no cached value. Lowering keeps the read's own term and does not
 respell the address through the equality (lowering is fact-stable,
@@ -1106,7 +1114,7 @@ The occurrence count detects incomplete index coverage. A miss is final for
 a complete concrete fragment; incomplete fragments use the bounded candidate
 classifier described below. Positive hits retain their suppliers even when
 coverage is incomplete. Neither case scans unrelated resources, including
-resources published before a later address equality.
+resources published before a later integer address equality.
 Whole-cell read hits also use an exact-start payload attached to typed graph
 address classes. Offset congruence and late same-state loaded-pointer
 merges update this payload through the graph's persistent term-merge stream.
@@ -1299,7 +1307,7 @@ of the surface execution-step wrapper. The temporary context for checked
 composite/loan projection evidence also uses checked construction. It starts
 with only the selected composite head; removing that head and adding dependent
 children retains the graph attachment, so a prior child's whole-cell payload
-can be selected through transitive address equality. This is part of the
+can be selected through transitive integer address equality. This is part of the
 trusted kernel and changes candidate selection only: checked expansion and the
 loan ledger still establish the exact parent, children, and authority. Logical
 contract loads can bypass permission lookup, so regressions inspect the actual
@@ -1541,7 +1549,7 @@ private graph checkpoint. Known nonempty footprints select a witness directly;
 a unique symbolic candidate still requires ordinary nonemptiness and positive
 quantity checks. A cold miss refuses without walking equality history or
 publishing a context at lookup. Consuming an owner removes its witness only
-from the consuming resource fork. Address equality between different external
+from the consuming resource fork. Integer address equality between different external
 objects does not merge their provenance identities or create storage authority.
 
 Pure composition provenance has a private `ObjectEvidenceSources` interface.
@@ -1583,7 +1591,7 @@ not search for an implicit memory supplier. Explicit composition/publication and
 inputs may be visited proportionally to their admitted input or produced delta.
 
 Regressions cover transitive ownership aliases, view-only and zero-quantity
-refusals, typed object identity versus raw address equality, empty footprints,
+refusals, typed object identity versus raw integer address equality, empty footprints,
 consumed occurrences and persistent siblings, concrete storage anchors and
 ambiguous classes, and several external addresses mapped to distinct storage.
 Multi-size checks cover unrelated same-block footprints and composition
@@ -1670,7 +1678,7 @@ projection bridges use exact producer registry entries. These are trusted
 kernel rules; they introduce neither proposition premises nor access rights.
 
 Ordinary pointer equality queries and resource consumers use the resulting
-closure. A later address equality propagates through the registered source
+closure. A later integer address equality propagates through the registered source
 applications without repeating this check. There is no special comparison
 rule in `fold`. Producer publication occurs only after a typed read's existing
 prerequisites have been checked. The graph's generation invalidates equality
@@ -1921,7 +1929,7 @@ a constructor-bearing fact; kernel controls check missing and incompatible
 evidence.
 
 Complete C pointer-to-integer copies retain nominal type receipts in the
-`PointerInteger` representation record. A numeric `PointerAddress` observation
+`PointerInteger` representation record. A numeric `IntegerAddress` observation
 retains access-class annotation only: its annotation is excluded from numeric
 identity and cannot establish nominal type evidence. Recovering a typed pointer
 from those coordinates still needs the current scope's checked type facts.
@@ -1935,7 +1943,7 @@ using the existing iterative dependency worklist once per constructor. Byte
 displacements and compatible same-state reads therefore use the same
 classes as the original word. Complete pointer-value applications use the numeric
 address as one operand, alongside independent provenance and bounds operands;
-address equality cannot merge those other operands. Complete-value comparisons whose provenance and
+integer address equality cannot merge those other operands. Complete-value comparisons whose provenance and
 bounds already match reduce the remaining zero-offset constructor comparison to
 uint64 equality. The internal constructor does not enter the result-domain
 congruence used for actual pointer-returning pure functions. Numeric definitions

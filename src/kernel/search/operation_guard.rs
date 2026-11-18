@@ -41,19 +41,19 @@ mod tests {
         let context = PureFactContext::new();
         assert!(ProofSearch::proves(
             &context,
-            &Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+            &Proposition::condition_is(ConditionTerm::Constant(true), true)
         ));
         let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _operation = FastOperationScope::enter("explicit theorem application");
             ProofSearch::proves(
                 &context,
-                &Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                &Proposition::condition_is(ConditionTerm::Constant(true), true),
             )
         }));
         assert!(failure.is_err());
         assert!(ProofSearch::proves(
             &context,
-            &Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+            &Proposition::condition_is(ConditionTerm::Constant(true), true)
         ));
     }
 
@@ -74,7 +74,7 @@ mod tests {
 fn condition_transport_cannot_hide_inside_statement_publication() {
     let _operation = FastOperationScope::enter("statement result publication");
     crate::kernel::memory_history::prove_program_condition_fact_direct_transport(
-        &crate::kernel::Proposition::ConditionIs(
+        &crate::kernel::Proposition::condition_is(
             crate::kernel::ConditionTerm::Constant(true),
             true,
         ),

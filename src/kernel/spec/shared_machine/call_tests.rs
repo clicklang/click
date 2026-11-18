@@ -82,8 +82,8 @@ fn native_domain(value: &Proposition) -> Proposition {
         Proposition::Or(a, b) => {
             Proposition::Or(Box::new(native_domain(a)), Box::new(native_domain(b)))
         }
-        Proposition::ConditionIs(c, t) => Proposition::ConditionIs(
-            match c {
+        Proposition::ConditionIs(c, t) => Proposition::condition_is(
+            match c.native_compat() {
                 ConditionTerm::IntegerEqual(a, b) => {
                     ConditionTerm::integer_equal(native_integer(a), native_integer(b))
                 }
@@ -270,7 +270,10 @@ fn wide_call_identity_casts_keep_the_native_type_refusal() {
                 let root = call(source, "wide_call");
                 let native = SpecValue::Shared(root.clone()).into_native();
                 let state = ExecutionState::new();
-                let mut values : crate::persistent::PersistentMap<crate::kernel::BindingName,crate::kernel::KernelTerm> = crate::persistent::PersistentMap::default();
+                let mut values: crate::persistent::PersistentMap<
+                    crate::kernel::BindingName,
+                    crate::kernel::KernelTerm,
+                > = crate::persistent::PersistentMap::default();
                 values.insert("x".into(), root);
                 for shared in [false, true] {
                     let mut expression = if shared {
@@ -545,7 +548,7 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
         .into_iter()
         .flat_map(|null| (0..3).map(move |mode| (null, mode)))
     {
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             if null {
                 Address::null()
             } else {
@@ -562,7 +565,7 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
                     SpecPureFunctionArgument::Value(argument)
                 } else {
                     SpecPureFunctionArgument::ArrayRef {
-                        memory: SpecPoint::Current,
+                        point: SpecPoint::Current,
                         pointer: argument,
                         element_type: ProgramType::Int32,
                     }
@@ -719,7 +722,7 @@ fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
     let left = SpecValue::Shared(KernelTermImport::default().condition(&condition));
     let right_condition = ConditionTerm::Variable(Variable(999441));
     let right = SpecValue::Shared(KernelTermImport::default().condition(&right_condition));
-    let guard = Proposition::ConditionIs(ConditionTerm::Variable(Variable(999442)), false);
+    let guard = Proposition::condition_is(ConditionTerm::Variable(Variable(999442)), false);
     let combined = SpecValue::conditional(&guard, &left, &right, true)
         .unwrap()
         .unwrap();

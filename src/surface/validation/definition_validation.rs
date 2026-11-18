@@ -3410,7 +3410,7 @@ mod read_authority_tests {
         read: &ResourceFactRead,
         contained: &[ResourceClause],
         assumptions: &PureFactContext,
-        values: &BTreeMap<String, ProgramValue>,
+        values: &ProgramValueBindings,
     ) -> ResourceFactReadAuthorityAnalysis {
         analyze_resource_fact_read_authority(
             read,
@@ -3438,7 +3438,7 @@ mod read_authority_tests {
             &read(base, ProgramExpression::Value(int32(0))),
             &[clause],
             &PureFactContext::new(),
-            &BTreeMap::new(),
+            &ProgramValueBindings::new(),
         );
         assert!(
             result.covered,
@@ -3460,7 +3460,7 @@ mod read_authority_tests {
         let index_value = MachineTerm::Variable(Variable(12_001));
         let bound_value = MachineTerm::Variable(Variable(12_002));
         let assumptions = PureFactContext::new()
-            .assume_proposition(Proposition::ConditionIs(
+            .assume_proposition(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -3469,7 +3469,7 @@ mod read_authority_tests {
                 },
                 true,
             ))
-            .assume_proposition(Proposition::ConditionIs(
+            .assume_proposition(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -3478,7 +3478,7 @@ mod read_authority_tests {
                 },
                 true,
             ));
-        let values = BTreeMap::from([
+        let values = ProgramValueBindings::from([
             ("index".to_string(), ProgramValue::Int32(index_value)),
             ("bound".to_string(), ProgramValue::Int32(bound_value)),
         ]);
@@ -3502,7 +3502,7 @@ mod read_authority_tests {
             &read(base, ProgramExpression::Value(int32(1))),
             &[clause],
             &PureFactContext::new(),
-            &BTreeMap::new(),
+            &ProgramValueBindings::new(),
         );
         assert!(!result.covered, "a neighboring cell is outside the view");
     }
@@ -3520,7 +3520,7 @@ mod read_authority_tests {
             &read(base, ProgramExpression::Value(int32(0))),
             &[clause],
             &PureFactContext::new(),
-            &BTreeMap::new(),
+            &ProgramValueBindings::new(),
         );
         assert!(
             !result.covered,

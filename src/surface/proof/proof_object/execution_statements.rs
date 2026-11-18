@@ -159,14 +159,22 @@ fn program_branch_condition_at_frontier(
     else {
         return Ok(None);
     };
-    if !super::same_branch_condition(
-        &surface_program_condition(&source, &execution.core.state)?,
-        condition,
-    ) {
+    let canonical = surface_program_condition(
+        &source,
+        &execution.core.state,
+        Some(&execution.presentation.recorded_states),
+    )?;
+    if !super::same_branch_condition(&canonical, condition)
+        && !(context.constants.source_layout.has_call_captures()
+            && super::same_branch_condition(
+                &surface_program_condition(&source, &execution.core.state, None)?,
+                condition,
+            ))
+    {
         return Ok(None);
     }
     Ok(Some(surface_at_program_point(
-        condition,
+        &canonical,
         &ProgramPointRef {
             region: CodeRegionRef::Region(statement_index),
             kind: ProgramPointKind::Entry,
@@ -450,8 +458,8 @@ impl<'a> Proof<'a> {
     }
 
     /// The value produced by the current frontier statement. A bare step
-    /// accepts a scalar assignment or a used call result. A step with a
-    /// callee or contract selection accepts only a call result.
+    /// accepts a scalar assignment or a retained step result. A step with
+    /// a callee or contract selection accepts only a call result.
     ///
     /// A call whose result the rest of its statement reads is a call step of
     /// its own, and its result is that step's. A call in statement position
@@ -459,7 +467,7 @@ impl<'a> Proof<'a> {
     fn frontier_result(
         &self,
         name: &String,
-        allow_assignment: bool,
+        allow_non_call: bool,
     ) -> Result<FrontierResult, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`step` requires an execution-frontier proof"));
@@ -486,13 +494,19 @@ impl<'a> Proof<'a> {
             "step",
         )?;
         match statement {
-            ProgramStatement::Assign { name, .. } if allow_assignment => Ok(FrontierResult::Local(name)),
+            ProgramStatement::Assign { name, .. } if allow_non_call => Ok(FrontierResult::Local(name)),
             ProgramStatement::CallConstruct { target, .. } => {
                 Ok(FrontierResult::Local(target))
             }
-            ProgramStatement::CallResult { call, .. } => Ok(FrontierResult::Call(call)),
-            _ if allow_assignment => Err(self.step_error(format!(
-                "`let {{ result: {name} }} = step()` requires a scalar assignment or a used call result at the frontier"
+            ProgramStatement::CallResult { call, .. } => Ok(FrontierResult::Retained(call)),
+            ProgramStatement::StepValue { aggregate_layout: None, steps, .. }
+                if allow_non_call && !steps.is_empty() =>
+            {
+                // All of the step's destination slots hold the same evaluated value.
+                Ok(FrontierResult::Retained(steps[0]))
+            }
+            _ if allow_non_call => Err(self.step_error(format!(
+                "`let {{ result: {name} }} = step()` requires a scalar assignment, a used call result, or a retained scalar value at the frontier"
             ))),
             _ => Err(self.step_error(format!(
                 "`let {{ result: {name} }} = step(...)` names a call result, but this call's result is unused"
@@ -519,7 +533,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
-            state.memory(),
+            &state.program_point(),
         );
         let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
         evaluate_fixed_state_expression_through_kernel(
@@ -897,7 +911,7 @@ impl<'a> Proof<'a> {
             }
         }
         // Bind the result with one indexed read from the checked successor,
-        // using either the assigned local or the call's result slot.
+        // using either the assigned local or the step's result slot.
         let result_binding = match &result_target {
             Some((name, target)) => {
                 let state = &checked.execution.core.state;
@@ -906,13 +920,13 @@ impl<'a> Proof<'a> {
                         .locals()
                         .get(target)
                         .map(|value| value.clone().into_native()),
-                    FrontierResult::Call(call) => state
-                        .step_result(*call)
+                    FrontierResult::Retained(step) => state
+                        .step_result(*step)
                         .map(|value| value.clone().into_native()),
                 }
                 .ok_or_else(|| {
                     self.step_error(format!(
-                        "`let {{ result: {name} }} = step(...)` found no assignment result"
+                        "`let {{ result: {name} }} = step(...)` found no retained result"
                     ))
                 })?;
                 Some((
@@ -1010,7 +1024,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
-            before.memory(),
+            &before.program_point(),
         );
         let (values, array_refs) = contract_environment_at_state(&values, &array_refs, before);
         let mut arguments = Vec::with_capacity(parameters.len());
@@ -2033,7 +2047,7 @@ fn distinct_requirements(recorded: Vec<UnresolvedRequirement>) -> Vec<Unresolved
 #[test]
 fn requirement_deduplication_uses_replay_truth_and_polarity() {
     let requirement = |left: u32, right: u32| UnresolvedRequirement {
-        proposition: Proposition::ConditionIs(
+        proposition: Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -2147,6 +2161,6 @@ mod search;
 enum FrontierResult {
     /// The local it assigns.
     Local(crate::kernel::BindingName),
-    /// The result of this call step.
-    Call(u32),
+    /// The typed result the step retained.
+    Retained(u32),
 }

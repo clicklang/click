@@ -39,6 +39,7 @@ pub const C_PUBLIC_FORMS: &[&str] = &[
     "type.local-array",
     "type.struct-array-parameter",
     "type.struct-value",
+    "type.local-integer-bit-field-record",
     "type.function-pointer",
     "type.struct-pointer",
     "type.typeof",
@@ -2729,9 +2730,9 @@ pub enum CFloatClassification {
     Nan,
 }
 
-/// Struct indexing scales an element index as pointer arithmetic, not as a
-/// source int32 multiplication. Widen before generating the byte stride.
-fn struct_byte_stride(index: CExpression, width: u32) -> CExpression {
+/// Scale an index for pointer arithmetic in a type wide enough for a C int
+/// index and a stride that can span the modeled storage extent.
+fn widened_stride(index: CExpression, width: u32) -> CExpression {
     CExpression::Multiply(
         Box::new(CExpression::Cast {
             expression: Box::new(index),
@@ -3322,7 +3323,7 @@ impl ImportedFunction {
             return None;
         }
         Some(crate::kernel::ProgramValue::Pointer(
-            crate::kernel::PointerValue::new(address.pointer, declared_type.to_kernel_type())
+            crate::kernel::Pointer::new(address.pointer, declared_type.to_kernel_type())
                 .with_pointee_constant(declared_pointee_constant)
                 .with_bounds(address.bounds),
         ))
@@ -7265,6 +7266,11 @@ struct Parser {
     /// so a site quotes the expansion site rather than the replacement.
     written_lines: std::sync::Arc<BTreeMap<usize, std::sync::Arc<str>>>,
     position: usize,
+    // Bit-field records are admitted only through their private local lowering.
+    bit_field_records: BTreeMap<String, std::sync::Arc<bit_fields::BitFieldRecord>>,
+    local_bit_fields: BTreeMap<BindingName, bit_fields::LocalBitFields>,
+    bit_field_forbidden_operand: bool,
+    function_has_bit_fields: bool,
     structs: DeclarationMap<RecordLayout>,
     enums: DeclarationMap<CEnumDefinition>,
     enum_constants: BTreeMap<String, CExpression>,
@@ -7284,6 +7290,7 @@ struct Parser {
     local_pointers: BTreeMap<BindingName, bool>,
     variable_struct_values: BTreeMap<BindingName, String>,
     variable_array_shapes: CVariableArrayShapes,
+    local_row_pointers: imbl::OrdMap<BindingName, row_pointers::LocalRowPointer>,
     incomplete_array_names: BTreeSet<BindingName>,
     variable_types: CVariableTypes,
     variable_function_pointers: BTreeMap<BindingName, CallbackInterface>,
@@ -7878,6 +7885,10 @@ impl Parser {
             written_lines: std::sync::Arc::default(),
             position: 0,
             structs: DeclarationMap::new(),
+            bit_field_records: BTreeMap::new(),
+            local_bit_fields: BTreeMap::new(),
+            bit_field_forbidden_operand: false,
+            function_has_bit_fields: false,
             enums: DeclarationMap::new(),
             enum_constants: BTreeMap::new(),
             typedefs: BTreeMap::new(),
@@ -7890,6 +7901,7 @@ impl Parser {
             local_pointers: BTreeMap::new(),
             variable_struct_values: BTreeMap::new(),
             variable_array_shapes: Default::default(),
+            local_row_pointers: Default::default(),
             incomplete_array_names: BTreeSet::new(),
             variable_types: CVariableTypes::default(),
             variable_function_pointers: BTreeMap::new(),
@@ -7987,9 +7999,13 @@ impl Parser {
                     self.visible_bindings.remove(source_name);
                 }
             }
+            self.local_bit_fields.remove(&binding.kernel_name);
             self.variable_structs.remove(&binding.kernel_name);
             self.variable_struct_values.remove(&binding.kernel_name);
             self.variable_array_shapes.remove(&binding.kernel_name);
+            if let Some(row) = self.local_row_pointers.remove(&binding.kernel_name) {
+                self.variable_types.remove(&row.storage);
+            }
             self.variable_types.remove(&binding.kernel_name);
             self.variable_function_pointers.remove(&binding.kernel_name);
             self.variable_constants.remove(&binding.kernel_name);
@@ -9355,9 +9371,11 @@ impl Parser {
         let previous_literal_flag =
             std::mem::replace(&mut self.function_has_compound_literals, false);
         let previous_goto_flag = std::mem::replace(&mut self.function_has_goto, false);
+        let previous_bit_field_flag = std::mem::replace(&mut self.function_has_bit_fields, false);
         let body_result = self.parse_block_statement();
         self.function_has_compound_literals = previous_literal_flag;
         self.function_has_goto = previous_goto_flag;
+        self.function_has_bit_fields = previous_bit_field_flag;
         self.source_regions = previous_source_regions;
         let callback_statement_sources = std::mem::replace(
             &mut self.callback_statement_sources,
@@ -10356,12 +10374,12 @@ impl Parser {
                             self.source_identity.as_deref().unwrap_or("source"),
                             self.position
                         );
-                        self.parse_struct_body(name.clone())?;
+                        self.parse_struct_body(name.clone(), false)?;
                         name
                     } else {
                         let name = self.expect_ident("struct name")?;
                         if allow_anonymous_struct && self.peek() == Some(&Token::LBrace) {
-                            self.parse_struct_body(name.clone())?;
+                            self.parse_struct_body(name.clone(), false)?;
                         }
                         name
                     },
@@ -10744,7 +10762,8 @@ impl Parser {
             return Ok(parsed);
         }
 
-        let expression = self.parse_expression_allow_direct_aggregate()?;
+        let expression =
+            self.without_bit_field_operands(Self::parse_expression_allow_direct_aggregate)?;
         self.expect(Token::RParen)?;
         if let CExpression::Variable(name) = &expression
             && self.incomplete_array_names.contains(name)
@@ -11129,6 +11148,23 @@ impl Parser {
                 }
                 incomplete = true;
                 0
+            } else if self.peek_ident() == Some("sizeof") {
+                let length = match self.parse_primary()? {
+                    CExpression::SizeOfStruct { bytes, .. }
+                    | CExpression::SizeOfUnion { bytes, .. }
+                    | CExpression::SizeOfType { bytes, .. } => bytes,
+                    CExpression::UInt64Literal(bytes) => u32::try_from(bytes)
+                        .map_err(|_| self.error_here("array length is out of range"))?,
+                    _ => {
+                        return Err(
+                            self.error_here("expected a constant sizeof as the array length")
+                        );
+                    }
+                };
+                if length == 0 {
+                    return Err(self.error_here("local arrays must have positive length"));
+                }
+                length
             } else {
                 match self.next() {
                     Some(Token::Number(number)) => {
@@ -11674,6 +11710,11 @@ impl Parser {
     /// This matters for callers that deliberately parse on a small stack.
     #[inline(never)]
     fn parse_statement_unsited(&mut self) -> Result<CStatement, CSyntaxError> {
+        if !self.local_bit_fields.is_empty()
+            && let Some(store) = self.parse_local_bit_field_store()?
+        {
+            return Ok(store);
+        }
         if self.peek_ident() == Some("return") {
             return self.parse_return_statement();
         }
@@ -11992,6 +12033,11 @@ impl Parser {
                 Some("break") => self.parse_loop_control_statement(false),
                 Some("continue") => self.parse_loop_control_statement(true),
                 Some("goto") => {
+                    if self.function_has_bit_fields {
+                        return Err(self.error_here(
+                            "bit-field objects and goto in one function are not supported",
+                        ));
+                    }
                     if self.function_has_compound_literals {
                         return Err(self.error_here(
                             "compound literals and goto in one function are not supported",
@@ -12218,6 +12264,13 @@ impl Parser {
 
     fn parse_local_declaration(&mut self) -> Result<CStatement, CSyntaxError> {
         let parsed_type = self.parse_type()?;
+        if parsed_type
+            .struct_name
+            .as_ref()
+            .is_some_and(|tag| self.bit_field_records.contains_key(tag))
+        {
+            return self.parse_local_bit_field_record(&parsed_type);
+        }
         if parsed_type.union_name.is_some() {
             return Err(self.error_here(
                     "tagged union locals are not supported; access an active scalar member through a struct pointer",
@@ -12227,6 +12280,9 @@ impl Parser {
             return Err(self.error_here("void local declarations are not supported"));
         }
         self.validate_volatile_type(&parsed_type)?;
+        if self.starts_local_row_pointer_declarator() {
+            return self.parse_local_row_pointer(&parsed_type);
+        }
         if parsed_type.is_volatile && self.peek() == Some(&Token::LParen) {
             return Err(self.error_here(
                 "the small volatile model does not support volatile function-pointer objects",
@@ -13306,6 +13362,9 @@ impl Parser {
             )));
         }
         self.expect(Token::Equal)?;
+        if let Some(row) = self.local_row_pointers.get(&name).cloned() {
+            return self.parse_row_pointer_update(&row, Token::Equal);
+        }
         let expression = self.parse_expression()?;
         self.validate_function_pointer_assignment(&name, &expression)?;
         Ok(CStatement::Assign {
@@ -13364,6 +13423,9 @@ impl Parser {
                 ))
             })?,
         };
+        if let Some(row) = self.local_row_pointers.get(&name).cloned() {
+            return self.parse_row_pointer_update(&row, operator);
+        }
         if self.variable_struct_values.contains_key(&name) {
             if operator != Token::Equal {
                 return Err(self.error_here(format!(
@@ -17265,7 +17327,7 @@ impl Parser {
             pointee_constant,
             explicit_qualification: false,
         };
-        let byte_offset = struct_byte_stride(offset, element_width);
+        let byte_offset = widened_stride(offset, element_width);
         let expression = constructor(Box::new(byte_pointer), Box::new(byte_offset));
         Ok(if let Some(interface_type) = result_type {
             CExpression::Cast {
@@ -17490,6 +17552,17 @@ impl Parser {
 
         if self.peek() == Some(&Token::Amp) {
             self.position += 1;
+            if let Some(object) = self.local_bit_field_object()
+                && !object.is_pointer()
+                && !matches!(
+                    self.peek_next(),
+                    Some(Token::Dot | Token::Arrow | Token::LBracket | Token::LParen)
+                )
+            {
+                let pointer = object.source_pointer();
+                self.position += 1;
+                return Ok(pointer);
+            }
             if let Some(Token::Ident(name)) = self.peek().cloned()
                 && !self.variable_types.contains_key(&self.resolve_name(&name))
             {
@@ -17504,7 +17577,7 @@ impl Parser {
                     self.resolve_function_name(&name),
                 ));
             }
-            let target = self.parse_unary()?;
+            let target = self.without_bit_field_operands(Self::parse_unary)?;
             if matches!(target, CExpression::ScalarUpdate { .. }) {
                 return Err(self.error_here("an expression update result is not an lvalue"));
             }
@@ -17860,6 +17933,11 @@ impl Parser {
         mut expression: CExpression,
         allow_updates: bool,
     ) -> Result<CExpression, CSyntaxError> {
+        if let CExpression::Variable(name) = &expression
+            && let Some(row) = self.local_row_pointers.get(name).cloned()
+        {
+            expression = self.parse_row_pointer_access(&row)?;
+        }
         loop {
             match self.peek() {
                 Some(Token::PlusPlus | Token::MinusMinus) if !allow_updates => {
@@ -18004,7 +18082,7 @@ impl Parser {
                             )));
                         }
                         let offset = flatten_array_indices(indexes, &shape, false);
-                        let stride = struct_byte_stride(offset, element_width);
+                        let stride = widened_stride(offset, element_width);
                         expression = CExpression::AggregateAddress {
                             pointer: Box::new(CExpression::Add(
                                 Box::new(expression),
@@ -18104,7 +18182,7 @@ impl Parser {
                                 .get(struct_name)
                                 .expect("struct array has a declaration")
                                 .size_bytes;
-                            struct_byte_stride(offset, element_width)
+                            widened_stride(offset, element_width)
                         } else {
                             offset
                         };
@@ -18134,7 +18212,7 @@ impl Parser {
                                 pointee_constant: false,
                                 explicit_qualification: false,
                             };
-                            let offset = struct_byte_stride(first_index, element_width);
+                            let offset = widened_stride(first_index, element_width);
                             expression = self.index_expression(byte_pointer, offset);
                             if self.peek() != Some(&Token::Dot) {
                                 return Err(self.error_here(
@@ -19013,9 +19091,16 @@ impl Parser {
             && actual != expected
             && actual_struct_name.is_none()
             && expected_struct_name.is_none();
+        // C character pointers inspect a local bit-field record's object
+        // representation. Retyping to any wider scalar remains restricted.
+        let bit_field_representation_cast = one_byte_pointer(expected)
+            && actual_struct_name
+                .as_ref()
+                .is_some_and(|name| self.bit_field_records.contains_key(name));
         if expected == InterfaceType::VoidPointer
             || actual == InterfaceType::VoidPointer
             || signedness_cast
+            || bit_field_representation_cast
         {
             return Ok(());
         }
@@ -19454,11 +19539,19 @@ impl Parser {
             );
         }
         self.expect(Token::RParen)?;
-        let layout = self.structs.get(name).ok_or_else(|| {
-            self.error_here(format!(
-                "`__builtin_offsetof` requires complete struct `{name}`"
-            ))
-        })?;
+        let layout = self
+            .structs
+            .get(name)
+            .or_else(|| {
+                self.bit_field_records
+                    .get(name)
+                    .map(|record| &record.storage)
+            })
+            .ok_or_else(|| {
+                self.error_here(format!(
+                    "`__builtin_offsetof` requires complete struct `{name}`"
+                ))
+            })?;
         let field = layout
             .fields
             .get(&member)
@@ -19498,6 +19591,16 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<CExpression, CSyntaxError> {
+        if let Some(object) = self.local_bit_field_object().cloned() {
+            if object.is_pointer()
+                && !self.bit_field_forbidden_operand
+                && self.peek_next() != Some(&object.member_operator())
+            {
+                self.position += 1;
+                return Ok(object.source_pointer());
+            }
+            return self.parse_local_bit_field_read(object);
+        }
         if self.peek_ident() == Some("__builtin_offsetof") {
             return self.parse_builtin_offsetof();
         }
@@ -19521,8 +19624,15 @@ impl Parser {
                 let bytes = self
                     .structs
                     .get(&name)
-                    .ok_or_else(|| self.error_here(format!("unknown struct declaration `{name}`")))?
-                    .size_bytes;
+                    .map(|layout| layout.size_bytes)
+                    .or_else(|| {
+                        self.bit_field_records
+                            .get(&name)
+                            .map(|record| record.size_bytes())
+                    })
+                    .ok_or_else(|| {
+                        self.error_here(format!("unknown struct declaration `{name}`"))
+                    })?;
                 return Ok(CExpression::SizeOfStruct { name, bytes });
             }
             if self.peek_ident() == Some("union") {
@@ -19536,10 +19646,22 @@ impl Parser {
                     .size_bytes;
                 return Ok(CExpression::SizeOfUnion { name, bytes });
             }
+            if let Some(object) = self.local_bit_field_object()
+                && self.peek_next() == Some(&Token::RParen)
+            {
+                let bytes = if object.is_pointer() {
+                    8
+                } else {
+                    object.size_bytes()
+                };
+                self.position += 2;
+                return Ok(CExpression::UInt64Literal(u64::from(bytes)));
+            }
             if !self.is_type_start() {
                 // `sizeof(expression)`: the operand is not evaluated; only
                 // its type is used, as for GNU `typeof`.
-                let operand = self.parse_expression_allow_direct_aggregate()?;
+                let operand =
+                    self.without_bit_field_operands(Self::parse_expression_allow_direct_aggregate)?;
                 self.expect(Token::RParen)?;
                 if let CExpression::Variable(name) = &operand
                     && self.incomplete_array_names.contains(name)
@@ -19869,8 +19991,11 @@ impl Parser {
     }
 }
 
+mod bit_field_layout;
+mod bit_fields;
 mod compound_literals;
 mod initializers;
+mod row_pointers;
 
 mod type_declarations;
 

@@ -58,3 +58,9 @@ pub fn signed(words: &[i32; 4]) -> i32 {
     let mut iter = words.iter();
     match iter.next() { Some(word) => *word, None => 0 }
 }
+
+pub fn shadowed(a: u32) -> u32 {
+    let x = a & 7;
+    let x = x + 1;
+    x
+}

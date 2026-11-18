@@ -451,23 +451,74 @@ pub(in crate::surface) fn iterated_clause_to_spec(
 pub(in crate::surface) fn lower_iterated_clause_with_values(
     clause: &IteratedResourceClause,
     parameters: &[crate::languages::interface::ImportedParameter],
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     assumptions: &PureFactContext,
 ) -> Result<ResourceFact, ClickError> {
     let shape = iterated_clause_shape(clause).map_err(ClickError::new)?;
-    let guard = shape.guard.clone().ok_or_else(|| {
-        ClickError::new("an unguarded iterated ownership clause lowers to a plain memory range")
-    })?;
     let element_width =
         contract_segment_element_width_for_result_type(parameters, &clause.element, None);
-    let array_refs = array_refs_for_parameters(parameters, values, state.memory());
+    let array_refs = array_refs_for_parameters(parameters, values, &state.program_point());
+    let iterated = lower_iterated_shape(
+        clause,
+        &shape,
+        element_width,
+        ContractEnvironment::new(values, &array_refs),
+        state,
+        result,
+        assumptions,
+    )?;
+    Ok(ResourceFact::own(Resource::iterated(iterated)))
+}
+
+/// A proof tactic reads only the operands of its selected clause.
+pub(in crate::surface) fn lower_iterated_clause_at_current_locals(
+    clause: &IteratedResourceClause,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    assumptions: &PureFactContext,
+) -> Result<crate::kernel::IteratedMemory, ClickError> {
+    let shape = iterated_clause_shape(clause).map_err(ClickError::new)?;
+    let mut names = BTreeSet::new();
+    for expression in [&shape.lower, &shape.upper, &shape.element_base] {
+        collect_program_expression_referenced_names(expression, &mut names);
+    }
+    if let Some(guard) = &shape.guard {
+        collect_program_expression_referenced_names(&guard.base, &mut names);
+        collect_program_expression_referenced_names(&guard.value, &mut names);
+    }
+    let (values, array_refs) = contract_environment_for_names(parameter_binding, &names, state)?;
+    let element_width =
+        contract_segment_element_width_with_binding(parameter_binding, &clause.element);
+    lower_iterated_shape(
+        clause,
+        &shape,
+        element_width,
+        ContractEnvironment::new(&values, &array_refs),
+        state,
+        None,
+        assumptions,
+    )
+}
+
+fn lower_iterated_shape(
+    clause: &IteratedResourceClause,
+    shape: &IteratedClauseShape,
+    element_width: u32,
+    environment: ContractEnvironment<'_>,
+    state: &ExecutionState,
+    result: Option<&ProgramValue>,
+    assumptions: &PureFactContext,
+) -> Result<crate::kernel::IteratedMemory, ClickError> {
+    let guard = shape.guard.as_ref().ok_or_else(|| {
+        ClickError::new("an unguarded iterated ownership clause lowers to a plain memory range")
+    })?;
     let evaluate = |expression: &ProgramExpression, what: &str| {
         crate::surface::proof::evaluate_resource_fragment_through_kernel(
             expression,
             assumptions,
-            ContractEnvironment::new(values, &array_refs),
+            environment,
             state,
             result,
         )
@@ -508,7 +559,7 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
     let upper = int32(evaluate(&shape.upper, "upper bound")?, "upper bound")?;
     let guard_base = pointer(evaluate(&guard.base, "guard base")?, "guard base")?;
     let guard_value = int32(evaluate(&guard.value, "guard value")?, "guard value")?;
-    let iterated = crate::kernel::IteratedMemory::new(
+    crate::kernel::IteratedMemory::new(
         &clause.owner,
         element_base,
         element_width,
@@ -525,8 +576,7 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
             guard_value,
         ),
     )
-    .ok_or_else(|| ClickError::new("iterated ownership clause has an invalid element shape"))?;
-    Ok(ResourceFact::own(Resource::iterated(iterated)))
+    .ok_or_else(|| ClickError::new("iterated ownership clause has an invalid element shape"))
 }
 
 /// The clause as written, for printing and diagnostics.

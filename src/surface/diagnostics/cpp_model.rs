@@ -126,7 +126,7 @@ pub(super) fn describe_model_field_at(
                 else {
                     continue;
                 };
-                let expected = base.pointer().offset_by_bytes(field.offset_bytes());
+                let expected = base.address().offset_by_bytes(field.offset_bytes());
                 if expected.base != pointer.base
                     || !crate::kernel::offsets_have_same_canonical_form(
                         &expected.offset,

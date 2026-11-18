@@ -333,6 +333,7 @@ pub(super) fn returns_constant_element(value: &CppType) -> bool {
     match value {
         CppType::LvalueReference { pointee } | CppType::Pointer { pointee } => {
             Scalar::pointer_element(pointee, true).is_some_and(|element| element.is_const)
+                || matches!(pointee.as_ref(), CppType::Record { is_const: true, .. })
         }
         _ => false,
     }

@@ -76,7 +76,7 @@ pub(super) fn initialized_input_range_fact(
         ),
     };
     let condition = |relation, left, right| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::machine_compare(format, relation, left, right),
             true,
         )
@@ -95,6 +95,7 @@ pub(super) fn initialized_input_range_fact(
     );
     let wide = format == MachineIntegerType::UInt64;
     let defined = Proposition::MemoryReadDefined {
+        at: state.observation_point_id(),
         memory: state.memory().clone(),
         pointer: range
             .base()

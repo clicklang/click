@@ -9,20 +9,20 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     let before = intern_memory(SymbolicMemory::new().with_block(cell.base.clone(), 8));
     let after = intern_memory(before.memory().clone().with_block("other-local", 4));
     let pointer = |memory: &SharedMemory| {
-        PointerValue::from_read(
+        Pointer::from_read(
             Address::loaded_value(memory, &cell),
             ProgramType::Int32Pointer,
             memory,
             &cell,
         )
     };
-    let rhs = PointerValue::new(
+    let rhs = Pointer::new(
         Address::symbolic(Variable(991_100)),
         ProgramType::Int32Pointer,
     );
     let fact = |pointer| {
-        Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(Box::new(pointer), Box::new(rhs.clone())),
+        Proposition::condition_is(
+            ConditionTerm::PointerEqual(Box::new(pointer), Box::new(rhs.clone())),
             true,
         )
     };
@@ -43,7 +43,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     for size in [4u64, 16, 64, 256] {
         let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
         for index in 0..size {
-            facts = facts.with_fact(Proposition::ConditionIs(
+            facts = facts.with_fact(Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::Variable(Variable(992_100 + index)),
                     MachineTerm::constant(7),
@@ -56,8 +56,8 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
                 start: cell.clone(),
                 width: MachineTerm::constant(u32::try_from(index + 1).unwrap()),
             }));
-            facts = facts.with_fact(Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(Box::new(selected.clone()), Box::new(selected)),
+            facts = facts.with_fact(Proposition::condition_is(
+                ConditionTerm::PointerEqual(Box::new(selected.clone()), Box::new(selected)),
                 true,
             ));
         }

@@ -47,7 +47,10 @@ written preservation proofs consume this same result. Compatible exits use
 the invariant-head summary. An established false-guard exit with a distinct
 resource partition retains its own state; a feasible continuing edge with
 different ownership is an error, never an exit signal. Bundle closure adds
-proof facts without repeating the rebound or ownership comparison.
+proof facts without repeating the rebound or ownership comparison. The
+Surface bundle and the direct kernel summary select numeric ranking members
+from the same guard feasibility rule. A false next test leaves those members
+out of the bundle.
 Preselecting a pure guard is a premise rather than a source transition, so it
 records the selected body's entry, not fabricated test-entry/exit states.
 
@@ -242,6 +245,10 @@ alias as a new object or granting memory authority. Binding through a record
 pointer uses checked address formation on a byte-array lvalue of the complete
 record size, followed by the adapter's existing record-pointer representation.
 The address rule validates storage without reading the array or its fields.
+Record-reference results retain their nominal layout in the existing pointer
+result metadata and keep the separate reference-result flag and pointee const.
+Calls carry the referent's address; they do not use aggregate-result copying.
+Signature checking compares the written reference result's nominal record.
 Automatic destructor cleanup emits the existing storage-lifetime-end operation
 after the destructor returns, so an alias cannot keep a scoped record alive.
 

@@ -151,7 +151,7 @@ fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
                 for i in 1..=size {
                     memory = memory.store(cell(i as i64), narrow_stored_value(format, 3));
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             Address::symbolic(Variable(995000 + i)),
                             if related { cell(0) } else { cell(i as i64) },
                         ),
@@ -161,7 +161,7 @@ fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
                 memory = memory.store(cell(0), stored.clone());
                 let query = Address::symbolic(Variable(999999));
                 facts = facts
-                    .assume_condition(ConditionTerm::pointer_equal(query.clone(), cell(0)), true);
+                    .assume_condition(ConditionTerm::address_equal(query.clone(), cell(0)), true);
                 facts = facts.assume_proposition(
                     crate::kernel::memory_history::store_value_equation(&memory, &cell(0), &stored)
                         .unwrap(),

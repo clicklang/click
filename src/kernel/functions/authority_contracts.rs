@@ -1123,9 +1123,13 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
                 else {
                     return Ok(Err(error));
                 };
-                (description.clone(), Box::new(MachineTerm::constant(1)))
+                (
+                    description.clone(),
+                    Box::new(MachineTerm::constant(1).into()),
+                )
             }
         };
+        let quantity = Box::new(quantity.native_compat().clone());
         // A declared consumption under an authority this proof holds is a
         // death the caller applies, so the body must have recorded it with a
         // checked spend. Otherwise a returned control could state its counter
@@ -1266,7 +1270,11 @@ pub(super) fn check_quantity_exchange_at_return(
                 .iter()
                 .zip(output_arguments.iter())
                 .all(|(left, right)| {
-                    crate::kernel::resource_arguments_proven_equal(left, right, assumptions)
+                    crate::kernel::resource_field_values_proven_equal(
+                        (left).into(),
+                        (right).into(),
+                        assumptions,
+                    )
                 }) =>
         {
             let description = ResourceDescription::new(
@@ -1298,8 +1306,8 @@ pub(super) fn check_quantity_exchange_at_return(
                             right: Box::new(binary_node!(
                                 Int32,
                                 Subtract,
-                                Box::new((**produced).clone()),
-                                Box::new((**consumed).clone()),
+                                Box::new(produced.native_compat().clone()),
+                                Box::new(consumed.native_compat().clone()),
                             )),
                         },
                     )

@@ -711,7 +711,7 @@ fn assume_structural_path(
         let decided = match proposition {
             Proposition::MemoryLoadable { .. } => true,
             Proposition::ConditionIs(condition, value) => {
-                assumptions.decide(condition) == Some(*value)
+                assumptions.decide(condition.native_compat()) == Some(*value)
             }
             proposition => assumptions.proves_exact(proposition),
         };
@@ -862,10 +862,10 @@ fn call_passes_witness_child(
             else {
                 continue 'children;
             };
-            let expected = expected.pointer();
-            let actual = actual.pointer();
+            let expected = expected.address();
+            let actual = actual.address();
             if expected != actual
-                && assumptions.decide(&ConditionTerm::pointer_equal(
+                && assumptions.decide(&ConditionTerm::address_equal(
                     actual.clone(),
                     expected.clone(),
                 )) != Some(true)
@@ -2500,7 +2500,7 @@ pub(super) fn ranking_measure_term(
 /// a `Nat` is the same case: the checked conversion law
 /// `nat::to_integer_nonnegative` states exactly this member.
 pub(super) fn ranking_nonnegative_proposition(value: &RankingMeasureValue) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         match value {
             RankingMeasureValue::Machine(term) => {
                 ConditionTerm::signed_less_equal(MachineTerm::constant(0), term.clone())
@@ -2535,7 +2535,7 @@ pub(super) fn ranking_decrease_proposition(
     pre: &RankingMeasureValue,
     component: &RankingComponent,
 ) -> Result<Proposition, String> {
-    Ok(Proposition::ConditionIs(
+    Ok(Proposition::condition_is(
         match (post, pre) {
             (RankingMeasureValue::Machine(post), RankingMeasureValue::Machine(pre)) => {
                 ConditionTerm::signed_less_than(post.clone(), pre.clone())
@@ -2571,7 +2571,7 @@ pub(super) fn ranking_tie_proposition(
     pre: &RankingMeasureValue,
     component: &RankingComponent,
 ) -> Result<Proposition, String> {
-    Ok(Proposition::ConditionIs(
+    Ok(Proposition::condition_is(
         match (post, pre) {
             (RankingMeasureValue::Machine(post), RankingMeasureValue::Machine(pre))
             | (RankingMeasureValue::Unsigned32(post), RankingMeasureValue::Unsigned32(pre)) => {
@@ -4335,7 +4335,7 @@ fn value_function_address(value: &ProgramValue) -> Option<&str> {
     let ProgramValue::Pointer(pointer) = value else {
         return None;
     };
-    match &pointer.pointer().base {
+    match &pointer.address().base {
         AddressBase::Function(name) => Some(name),
         _ => None,
     }
@@ -5265,7 +5265,7 @@ mod ranking_member_tests {
         {
             assert_eq!(
                 obligation.proposition(),
-                &Proposition::ConditionIs(
+                &Proposition::condition_is(
                     ConditionTerm::signed_less_equal(MachineTerm::constant(0), post),
                     true,
                 )
@@ -5279,16 +5279,16 @@ mod ranking_member_tests {
             );
         }
 
-        let pivot_first = Proposition::ConditionIs(
+        let pivot_first = Proposition::condition_is(
             ConditionTerm::signed_less_than(post_outer.clone(), outer.clone()),
             true,
         );
         let pivot_second = Proposition::And(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::equal(post_outer, outer),
                 true,
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::signed_less_than(post_inner, inner),
                 true,
             )),
@@ -5322,7 +5322,7 @@ mod ranking_member_tests {
         assert_eq!(obligations.len(), 2);
         assert_eq!(
             obligations[1].proposition(),
-            &Proposition::ConditionIs(ConditionTerm::signed_less_than(post, value), true)
+            &Proposition::condition_is(ConditionTerm::signed_less_than(post, value), true)
         );
     }
 
@@ -5337,10 +5337,11 @@ mod ranking_member_tests {
     /// component is read at, not a state the surface named.
     fn current_load(cell: &Address) -> SpecExpression {
         SpecExpression::MemoryLoad {
-            memory: SpecPoint::Current,
-            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-                PointerValue::new(cell.clone(), ProgramType::Int32Pointer),
-            ))),
+            point: SpecPoint::Current,
+            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+                cell.clone(),
+                ProgramType::Int32Pointer,
+            )))),
             value_type: ProgramType::Int32,
         }
     }
@@ -5383,7 +5384,7 @@ mod ranking_member_tests {
         };
         assert_eq!(
             resolved(obligations[0].proposition()),
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::signed_less_equal(MachineTerm::constant(0), post.clone()),
                 true,
             ),
@@ -5391,7 +5392,7 @@ mod ranking_member_tests {
         );
         assert_eq!(
             resolved(obligations[1].proposition()),
-            Proposition::ConditionIs(ConditionTerm::signed_less_than(post, value), true),
+            Proposition::condition_is(ConditionTerm::signed_less_than(post, value), true),
             "the decrease member compares the back edge against the iteration entry"
         );
         // A pure component has no source spelling of its own once lowered, so
@@ -5448,7 +5449,7 @@ mod ranking_member_tests {
         assert_eq!(obligations.len(), 2);
         assert_eq!(
             obligations[0].proposition(),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::IntegerLessEqual(
                     observed_word(MachineTerm::constant(0)),
                     observed_word(post.clone())
@@ -5459,7 +5460,7 @@ mod ranking_member_tests {
         );
         assert_eq!(
             obligations[1].proposition(),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::IntegerLessThan(
                     observed_word(post.clone()),
                     observed_word(value.clone())
@@ -5512,14 +5513,14 @@ mod ranking_member_tests {
         assert_eq!(obligations.len(), 3);
         assert_eq!(
             obligations[0].proposition(),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::signed_less_equal(MachineTerm::constant(0), post_outer.clone()),
                 true,
             )
         );
         assert_eq!(
             obligations[1].proposition(),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::IntegerLessEqual(
                     observed_word(MachineTerm::constant(0)),
                     observed_word(post_inner.clone())
@@ -5527,16 +5528,16 @@ mod ranking_member_tests {
                 true,
             )
         );
-        let pivot_first = Proposition::ConditionIs(
+        let pivot_first = Proposition::condition_is(
             ConditionTerm::signed_less_than(post_outer.clone(), outer.clone()),
             true,
         );
         let pivot_second = Proposition::And(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::equal(post_outer, outer),
                 true,
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::IntegerLessThan(observed_word(post_inner), observed_word(inner)),
                 true,
             )),
@@ -5639,8 +5640,8 @@ mod ranking_member_tests {
         assert_eq!(
             members,
             vec![
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
-                Proposition::ConditionIs(
+                Proposition::condition_is(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(
                     ConditionTerm::unsigned_less_than(
                         canonical_ranking_term(&MachineTerm::subtract(
                             MachineTerm::constant(3),
@@ -5676,11 +5677,11 @@ mod ranking_member_tests {
         };
         assert_eq!(
             decrease(0, 1),
-            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+            Proposition::condition_is(ConditionTerm::Constant(true), true)
         );
         assert_eq!(
             decrease(4, 5),
-            Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+            Proposition::condition_is(ConditionTerm::Constant(false), true)
         );
     }
 
@@ -5700,14 +5701,14 @@ mod ranking_member_tests {
         assert_eq!(
             down,
             vec![
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(ConditionTerm::Constant(true), true),
             ]
         );
         let wrapped = ranking_members(&state(u64::MAX), &state(0), x()).expect("uint64 measure");
         assert_eq!(
             wrapped[1],
-            Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+            Proposition::condition_is(ConditionTerm::Constant(false), true)
         );
     }
 
@@ -5726,7 +5727,7 @@ mod ranking_member_tests {
         .expect("a uint8 measure reads at both ends");
         assert_eq!(
             members[0],
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::signed_less_equal(
                     MachineTerm::constant(0),
                     MachineTerm::machine_integer_cast(
@@ -5761,11 +5762,11 @@ mod ranking_member_tests {
         .expect("a pure uint32 value reads at both ends");
         assert_eq!(
             obligations[0].proposition(),
-            &Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+            &Proposition::condition_is(ConditionTerm::Constant(true), true)
         );
         assert_eq!(
             obligations[1].proposition(),
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::unsigned_less_than(value.clone(), value),
                 true
             )
@@ -5785,7 +5786,7 @@ mod ranking_member_tests {
             )
         };
         let x = || ProgramExpression::Variable(("x".to_string()).into());
-        let holds = |value| Proposition::ConditionIs(ConditionTerm::Constant(value), true);
+        let holds = |value| Proposition::condition_is(ConditionTerm::Constant(value), true);
         let down = ranking_members(&state(4), &state(5), x()).expect("int64 measure");
         assert_eq!(down, vec![holds(true), holds(true)]);
         let negative = ranking_members(&state(-1), &state(5), x()).expect("int64 measure");
@@ -5804,14 +5805,14 @@ mod ranking_member_tests {
     /// used to accept here by selecting the arm.
     #[test]
     fn structural_path_refuses_an_obligation_no_exact_route_settles() {
-        let left = Proposition::ConditionIs(
+        let left = Proposition::condition_is(
             ConditionTerm::signed_less_equal(
                 MachineTerm::constant(0),
                 MachineTerm::Variable(Variable(1)),
             ),
             true,
         );
-        let right = Proposition::ConditionIs(
+        let right = Proposition::condition_is(
             ConditionTerm::signed_less_equal(
                 MachineTerm::constant(0),
                 MachineTerm::Variable(Variable(2)),
@@ -5854,7 +5855,7 @@ mod local_descent_tests {
     fn summarized_loop(condition: u32) -> ProgramStatement {
         crate::kernel::program_while(
             crate::kernel::program_expression::int32_literal(condition),
-            vec![Proposition::ConditionIs(
+            vec![Proposition::condition_is(
                 ConditionTerm::Constant(true),
                 true,
             )],
@@ -6913,7 +6914,7 @@ mod local_descent_tests {
                     crate::kernel::LoopTestPosition::BeforeBody,
                 ),
                 update: None,
-                invariant: vec![Proposition::ConditionIs(
+                invariant: vec![Proposition::condition_is(
                     ConditionTerm::Constant(true),
                     true,
                 )],

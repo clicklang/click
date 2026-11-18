@@ -147,7 +147,7 @@ impl EqualityGraph {
             let sources = neighbors.get(other).cloned().unwrap_or_default();
             let sources = sources.with_inserted(
                 condition.clone(),
-                Proposition::ConditionIs(condition.clone(), true),
+                Proposition::condition_is(condition.clone(), true),
             );
             let neighbors = if sources.is_empty() {
                 neighbors.without_key(other)
@@ -167,7 +167,7 @@ impl EqualityGraph {
     /// Select an exact common-base address equality by its indexed offset
     /// coordinates. The index nominates sources; their complete offset sides
     /// must still match, so this does not cancel scaling or discard a base.
-    pub(in crate::kernel) fn exact_pointer_offset_equality_source(
+    pub(in crate::kernel) fn exact_address_offset_equality_source(
         &self,
         left: &AddressOffset,
         right: &AddressOffset,
@@ -184,7 +184,7 @@ impl EqualityGraph {
                 let Proposition::ConditionIs(condition, true) = premise else {
                     return None;
                 };
-                let (a, b) = condition.pointer_offset_sides()?;
+                let (a, b) = condition.native_compat().pointer_offset_sides()?;
                 ((a == left && b == right) || (a == right && b == left)).then_some(premise)
             })
     }
@@ -313,7 +313,7 @@ impl EqualityGraph {
                     };
                     let view =
                         crate::kernel::machine_integer::comparison::structural_comparison_view(
-                            condition,
+                            condition.native_compat(),
                         )?;
                     if view.negated
                         || view.relation != CompareRelation::Equal
@@ -412,7 +412,7 @@ impl EqualityGraph {
             return true;
         }
         let mut variables = BTreeSet::new();
-        let selector = ConditionTerm::PointerOffsetEqual(
+        let selector = ConditionTerm::AddressOffsetEqual(
             Box::new(offset.clone()),
             Box::new(AddressOffset::Constant(0)),
         );

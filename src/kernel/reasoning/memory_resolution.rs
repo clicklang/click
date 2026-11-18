@@ -12,7 +12,7 @@ use crate::kernel::binary_term;
 pub(in crate::kernel) enum ResolutionQuery {
     PointerDistinct(Address, Address),
     CommonBaseDistinct(Address, Address),
-    PointerEqual(Address, Address),
+    AddressEqual(Address, Address),
     OffsetEqual(AddressOffset, AddressOffset),
     BitvectorEqual(MachineTerm, MachineTerm),
     OperandEqual(
@@ -69,7 +69,7 @@ fn resolution_query_guard_refuses_reentry_and_keeps_the_outer_query() {
         base: "cell".into(),
         offset: AddressOffset::Constant(index as i64),
     };
-    let first = ResolutionQuery::PointerEqual(pointer(0), pointer(1));
+    let first = ResolutionQuery::AddressEqual(pointer(0), pointer(1));
     let second = ResolutionQuery::PointerDistinct(pointer(0), pointer(1));
     let outer = ResolutionQueryGuard::enter(first.clone()).expect("the first query registers");
     assert!(
@@ -129,8 +129,8 @@ pub(in crate::kernel) fn resolution_interrupted() -> bool {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum ResolutionQueryKey {
     PointerDistinct(u64, bool, Address, Address),
-    PointerEqual(u64, bool, Address, Address),
-    PointerOffsetEqual(u64, bool, AddressOffset, AddressOffset),
+    AddressEqual(u64, bool, Address, Address),
+    AddressOffsetEqual(u64, bool, AddressOffset, AddressOffset),
     BitvectorEqual(u64, bool, MachineTerm, MachineTerm),
     OperandEqual(
         u64,
@@ -415,7 +415,7 @@ fn expired_nested_reasoning_does_not_poison_resolution_memo() {
             let assumptions = PureFactContext::new();
             crate::kernel::search::ProofSearch::proves(
                 &(assumptions),
-                &Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                &Proposition::condition_is(ConditionTerm::Constant(true), true),
             )
         })
     }));
@@ -630,8 +630,8 @@ fn closure_distinctness_failure_key(
 #[test]
 fn closure_failure_memo_answers_a_repeated_failure_once() {
     let assumptions = PureFactContext::new();
-    let source = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
-    let target = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+    let source = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let target = Proposition::condition_is(ConditionTerm::Constant(false), true);
     let runs = std::cell::Cell::new(0);
     let check = |answer: bool| {
         closure_memoized_fact_check(
@@ -678,7 +678,7 @@ pub(in crate::kernel) fn pointers_directly_distinct_for_store(
     if left.blocks_proven_distinct(right)
         || constant_byte_shift(left, right).is_some_and(|shift| shift != 0)
         || assumptions
-            .exact_condition_value(&ConditionTerm::pointer_equal(left.clone(), right.clone()))
+            .exact_condition_value(&ConditionTerm::address_equal(left.clone(), right.clone()))
             == Some(false)
     {
         return true;
@@ -813,7 +813,7 @@ fn pointers_proven_distinct_for_memory_resolution_unmemoized(
             },
         )
         || assumptions
-            .exact_condition_value(&ConditionTerm::pointer_equal(left.clone(), right.clone()))
+            .exact_condition_value(&ConditionTerm::address_equal(left.clone(), right.clone()))
             == Some(false)
         || crate::instrumentation::measure_operation(
             "kernel",
@@ -904,7 +904,7 @@ fn never_address_taken_local_versus_pointer_value(
 /// cell in the question and the stated equality never gets a say.
 ///
 /// Soundness. `exact_pointer_aliases` reads the index of *assumed*
-/// `PointerEqual` facts: never a derived, heuristic or disjunctive conclusion,
+/// `AddressEqual` facts: never a derived, heuristic or disjunctive conclusion,
 /// and never a `!=`. Two pointers such a fact relates are one address, so a
 /// pointer proven distinct from one is proven distinct from the other; that is
 /// substitution of equals, not a new separation claim.
@@ -1140,7 +1140,7 @@ pub(in crate::kernel) fn pointers_proven_equal_for_memory_resolution(
     assumptions: &PureFactContext,
 ) -> bool {
     let key = resolution_query_memo_id(assumptions).map(|(id, bridging)| {
-        ResolutionQueryKey::PointerEqual(id, bridging, left.clone(), right.clone())
+        ResolutionQueryKey::AddressEqual(id, bridging, left.clone(), right.clone())
     });
     memoized_resolution_query(key, || {
         pointers_proven_equal_for_memory_resolution_unmemoized(left, right, assumptions)
@@ -1153,7 +1153,7 @@ pub(in crate::kernel) fn pointer_offsets_proven_equal_for_memory_resolution(
     assumptions: &PureFactContext,
 ) -> bool {
     let key = resolution_query_memo_id(assumptions).map(|(id, bridging)| {
-        ResolutionQueryKey::PointerOffsetEqual(id, bridging, left.clone(), right.clone())
+        ResolutionQueryKey::AddressOffsetEqual(id, bridging, left.clone(), right.clone())
     });
     memoized_resolution_query(key, || {
         pointer_offsets_equal_for_memory_resolution(left, right, assumptions) == Some(true)
@@ -1181,7 +1181,7 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
         return false;
     }
     let Some(_query) =
-        ResolutionQueryGuard::enter(ResolutionQuery::PointerEqual(left.clone(), right.clone()))
+        ResolutionQueryGuard::enter(ResolutionQuery::AddressEqual(left.clone(), right.clone()))
     else {
         return false;
     };
@@ -1585,7 +1585,7 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
     }
     let _query =
         ResolutionQueryGuard::enter(ResolutionQuery::OffsetEqual(left.clone(), right.clone()))?;
-    if let Some(value) = assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+    if let Some(value) = assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
         left.clone(),
         right.clone(),
     )) {
@@ -1877,7 +1877,7 @@ fn memory_resolution_uses_graph_offset_congruence_in_branch_scope() {
         )
     };
     let named = AddressOffset::Variable(Variable(91_100));
-    let named_fact = ConditionTerm::pointer_offset_equal(offset(2), named.clone());
+    let named_fact = ConditionTerm::address_offset_equal(offset(2), named.clone());
     let scalar_fact = ConditionTerm::equal(scalar(1), scalar(2));
     let parent = PureFactContext::new().assume_condition(named_fact.clone(), true);
     let branch = parent.clone().assume_condition(scalar_fact.clone(), true);
@@ -1927,8 +1927,8 @@ fn memory_resolution_uses_pointer_classes_across_blocks() {
         base: AddressBase::Symbolic(Variable(91_200 + block)),
         offset: AddressOffset::Constant(offset),
     };
-    let first = ConditionTerm::pointer_equal(pointer(0, 0), pointer(1, 4));
-    let second = ConditionTerm::pointer_equal(pointer(1, 4), pointer(2, 8));
+    let first = ConditionTerm::address_equal(pointer(0, 0), pointer(1, 4));
+    let second = ConditionTerm::address_equal(pointer(1, 4), pointer(2, 8));
     let parent = PureFactContext::new().assume_condition(first, true);
     let branch = parent.clone().assume_condition(second.clone(), true);
     assert!(!pointers_proven_equal_for_memory_resolution(
@@ -2269,9 +2269,9 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     }
     // Do not construct scaled query operands when there are no exact offset
     // equalities to select. Ordinary word equalities were queried above.
-    if assumptions.has_recorded_pointer_offset_equalities()
+    if assumptions.has_recorded_address_offset_equalities()
         && [1, 4].into_iter().any(|byte_width| {
-            assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+            assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
                 AddressOffset::scale_int32(left.clone(), byte_width),
                 AddressOffset::scale_int32(right.clone(), byte_width),
             )) == Some(true)
@@ -2443,7 +2443,7 @@ pub(in crate::kernel) fn int32_operand_values_equal_for_memory_resolution(
         {
             return true;
         }
-        if assumptions.has_recorded_pointer_offset_equalities()
+        if assumptions.has_recorded_address_offset_equalities()
             && [1, 4].into_iter().any(|byte_width| {
                 let offset = |v: V<'_>| {
                     v.word32_constant()
@@ -2453,7 +2453,7 @@ pub(in crate::kernel) fn int32_operand_values_equal_for_memory_resolution(
                             byte_width,
                         })
                 };
-                assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+                assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
                     offset(left),
                     offset(right),
                 )) == Some(true)
@@ -2553,8 +2553,8 @@ pub(in crate::kernel) fn program_values_proven_equal_for_memory_resolution(
         (ProgramValue::Pointer(left), ProgramValue::Pointer(right)) => {
             assumptions.pointer_provenance_match(left, right)
                 && pointers_proven_equal_for_memory_resolution(
-                    left.pointer(),
-                    right.pointer(),
+                    left.address(),
+                    right.address(),
                     assumptions,
                 )
         }
@@ -3294,11 +3294,11 @@ pub(in crate::kernel) fn pointers_proven_equal_by_reasoning(
 ) -> bool {
     left == right
         || left.base == right.base
-            && assumptions.decide(&ConditionTerm::pointer_offset_equal(
+            && assumptions.decide(&ConditionTerm::address_offset_equal(
                 left.offset.clone(),
                 right.offset.clone(),
             )) == Some(true)
-        || assumptions.decide(&ConditionTerm::pointer_equal(left.clone(), right.clone()))
+        || assumptions.decide(&ConditionTerm::address_equal(left.clone(), right.clone()))
             == Some(true)
 }
 
@@ -3508,6 +3508,11 @@ fn observable_heap_metadata_matches_for_load(
         candidates,
         left.heap.initialized.as_map(),
         right.heap.initialized.as_map(),
+        observable,
+    ) && observable_entries_match(
+        candidates,
+        left.heap.initialized.partial_map(),
+        right.heap.initialized.partial_map(),
         observable,
     ) && observable_elements_match(
         candidates,
@@ -5177,7 +5182,7 @@ fn materialized_cell_source(cell_pointer: &Address, value: &ProgramValue) -> Opt
         // pointer given a symbolic identity, or one loaded from another cell,
         // is a write and never qualifies.
         ProgramValue::Pointer(value) => {
-            let read = value.pointer().as_loaded_value()?;
+            let read = value.address().as_loaded_value()?;
             return (read.displacement == AddressOffset::Constant(0)
                 && read.defining_address == *cell_pointer)
                 .then_some(read.defining_memory);
@@ -5378,7 +5383,7 @@ fn offset_resolution_does_not_promote_wrapped_index_equality() {
         Some(true)
     );
     assert_ne!(
-        assumptions.decide(&ConditionTerm::pointer_offset_equal(sum, other)),
+        assumptions.decide(&ConditionTerm::address_offset_equal(sum, other)),
         Some(true)
     );
 }

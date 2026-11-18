@@ -31,10 +31,10 @@ fn free_uses_the_owned_base_and_retires_every_proven_alias() {
         offset: AddressOffset::Constant(0),
     };
     let alias = Address::symbolic(Variable(973_001));
-    let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::pointer_value_equal(
-            PointerValue::new(alias.clone(), ProgramType::Int32Pointer),
-            PointerValue::new(base.clone(), ProgramType::Int32Pointer),
+    let facts = PureFactContext::new().assume_proposition(Proposition::condition_is(
+        ConditionTerm::pointer_equal(
+            Pointer::new(alias.clone(), ProgramType::Int32Pointer),
+            Pointer::new(base.clone(), ProgramType::Int32Pointer),
         ),
         true,
     ));
@@ -82,12 +82,12 @@ fn free_does_not_treat_an_unproved_or_interior_alias_as_a_base() {
         .with_resource_context(owned_base(&base))
         .with_local("q", ProgramValue::pointer(alias.clone()));
     let none = PureFactContext::new();
-    let interior = none.clone().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(alias.clone(), base.offset_by_bytes(2)),
+    let interior = none.clone().assume_proposition(Proposition::condition_is(
+        ConditionTerm::address_equal(alias.clone(), base.offset_by_bytes(2)),
         true,
     ));
-    let numeric_only = none.clone().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(alias, base),
+    let numeric_only = none.clone().assume_proposition(Proposition::condition_is(
+        ConditionTerm::address_equal(alias, base),
         true,
     ));
     for facts in [&none, &interior, &numeric_only] {
@@ -112,10 +112,10 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
     };
     let alias = Address::symbolic(Variable(973_021));
     let pending = Address::symbolic(Variable(973_022));
-    let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::pointer_value_equal(
-            PointerValue::new(alias.clone(), ProgramType::Int32Pointer),
-            PointerValue::new(base.clone(), ProgramType::Int32Pointer),
+    let facts = PureFactContext::new().assume_proposition(Proposition::condition_is(
+        ConditionTerm::pointer_equal(
+            Pointer::new(alias.clone(), ProgramType::Int32Pointer),
+            Pointer::new(base.clone(), ProgramType::Int32Pointer),
         ),
         true,
     ));
@@ -124,11 +124,14 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
         .unwrap()
         .with_pending_heap_reallocation(
             pending,
-            base.clone(),
-            AllocationSize::int32(4),
-            None,
-            vec![],
-            vec![],
+            PendingReallocation {
+                old_pointer: base.clone(),
+                old_bytes: AllocationSize::int32(4),
+                retirement_separation: None,
+                zeroed_prefix: None,
+                copied_cells: vec![],
+                initialized_prefix: vec![],
+            },
         );
     let state = ExecutionState::new()
         .with_memory(memory)

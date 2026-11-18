@@ -585,14 +585,18 @@ fn collect_proposition_bitvector_variables_one(
     match proposition {
         Proposition::VolatileAccess(event) => {
             collect_pointer_bitvector_variables(&event.pointer, variables);
-            collect_program_value_bitvector_variables(&event.value, variables);
+            collect_expression_value_bitvector_variables(event.value.value(), variables);
         }
         Proposition::Equal(left, right) => {
             collect_term_bitvector_variables(left, variables);
             collect_term_bitvector_variables(right, variables);
         }
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_bitvector_variables(condition, variables);
+            retained_folds::collect_boolean_variables(
+                condition.operand_view(),
+                retained_folds::FoldVariableRead::ExpressionFree,
+                variables,
+            );
         }
         Proposition::Predicate { arguments, .. } => {
             for argument in arguments {
@@ -669,7 +673,7 @@ fn collect_proposition_bitvector_variables_one(
         } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(base, variables);
-            collect_bitvector_variables(bytes, variables);
+            collect_expression_value_bitvector_variables(bytes.value(), variables);
         }
         Proposition::ResourceSeparate { left, right } => {
             collect_resource_bitvector_variables(left, variables);
@@ -772,7 +776,7 @@ fn load_carrier(
     pointer: &crate::kernel::Address,
 ) -> AlgebraicValue {
     AlgebraicValue::Program(ProgramValue::UInt64(
-        AlgebraicTermNode::memory_load_carrier(memory, pointer),
+        AlgebraicTermNode::memory_load_carrier(&crate::kernel::ProgramPoint::at(memory), pointer),
     ))
 }
 
@@ -791,8 +795,14 @@ fn collect_algebraic_term_bitvector_variables(
                 collect_algebraic_value_bitvector_variables(field, variables);
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
-            collect_algebraic_value_bitvector_variables(&load_carrier(memory, pointer), variables);
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
+            collect_algebraic_value_bitvector_variables(
+                &load_carrier(memory.shared_memory(), pointer),
+                variables,
+            );
         }
         AlgebraicTermNode::If {
             condition,
@@ -839,16 +849,16 @@ fn collect_algebraic_term_bitvector_variables(
     }
 }
 
-fn collect_algebraic_value_bitvector_variables(
-    value: &AlgebraicValue,
+fn collect_algebraic_value_bitvector_variables<'a>(
+    value: impl Into<ResourceFieldValue<'a>>,
     variables: &mut BTreeSet<Variable>,
 ) {
-    match value {
-        AlgebraicValue::Program(value) => {
+    match value.into() {
+        ResourceFieldValue::Program(value) => {
             collect_program_value_bitvector_variables(value, variables)
         }
-        AlgebraicValue::Integer(value) => collect_integer_variables(value, variables),
-        AlgebraicValue::Algebraic(value) => {
+        ResourceFieldValue::Integer(value) => collect_integer_variables(value, variables),
+        ResourceFieldValue::Algebraic(value) => {
             collect_algebraic_term_bitvector_variables(value, variables)
         }
     }
@@ -860,8 +870,15 @@ fn collect_sequence_bitvector_variables(
 ) {
     match sequence.node.as_ref() {
         SequenceTermNode::Literal(values) => {
-            for value in values.iter() {
-                collect_program_value_bitvector_variables(value, variables);
+            for index in 0..values.len() {
+                if let Some(value) = values.retained_value_ref(index) {
+                    collect_expression_value_bitvector_variables(value, variables);
+                } else {
+                    collect_program_value_bitvector_variables(
+                        values.get(index).unwrap(),
+                        variables,
+                    );
+                }
             }
         }
         SequenceTermNode::Concat(left, right) => {
@@ -1294,9 +1311,12 @@ fn collect_algebraic_term_bound_identities(
                 collect_algebraic_value_bound_identities(field, variables, integer_seen);
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             collect_algebraic_value_bound_identities(
-                &load_carrier(memory, pointer),
+                &load_carrier(memory.shared_memory(), pointer),
                 variables,
                 integer_seen,
             );
@@ -1535,11 +1555,11 @@ pub(in crate::kernel) fn collect_loop_effect_bitvector_variables(
 }
 
 pub(in crate::kernel) fn collect_program_expression_outcome_bitvector_variables(
-    outcome: &ExpressionOutcome,
+    outcome: &ExpressionOutcome<crate::kernel::StoredProgramValue>,
     variables: &mut BTreeSet<Variable>,
 ) {
     if let ExpressionOutcome::Value(value) = outcome {
-        collect_program_value_bitvector_variables(value, variables);
+        collect_expression_value_bitvector_variables(value.value(), variables);
     }
 }
 
@@ -1654,7 +1674,7 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
             }
         }
         Resource::ConditionalMutexGuard(carrier) => {
-            collect_condition_bitvector_variables(&carrier.held, variables)
+            collect_condition_bitvector_variables(carrier.condition(), variables)
         }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
@@ -1668,12 +1688,22 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
                 .visit_values(|v| collect_algebraic_value_bitvector_variables(v, variables));
             collect_pointer_bitvector_variables(&right.flag, variables);
             if let Some(value) = &right.observed {
-                collect_program_value_bitvector_variables(value, variables);
+                collect_expression_value_bitvector_variables(value.value(), variables);
             }
         }
         Resource::Instance(instance) => {
-            for value in instance.arguments.iter().chain(instance.fields.iter()) {
+            for value in instance.arguments.iter() {
                 collect_algebraic_value_bitvector_variables(value, variables);
+            }
+            for index in 0..instance.fields.len() {
+                if let Some(value) = instance.fields.retained_program(index) {
+                    collect_expression_value_bitvector_variables(value, variables);
+                } else {
+                    collect_algebraic_value_bitvector_variables(
+                        instance.fields.get(index).expect("field index"),
+                        variables,
+                    );
+                }
             }
             crate::kernel::ResourceReference::visit_captured_values(
                 instance.resource_arguments(),
@@ -1991,8 +2021,18 @@ fn collect_execution_environment_variables_uncached(
         // steps compare against, so its names are reserved like a measure's.
         if let Some(entry) = anchor.structural_entry() {
             variables.insert(entry.identity);
-            for value in entry.arguments.iter().chain(entry.fields.iter()) {
+            for value in entry.arguments.iter() {
                 collect_algebraic_value_bitvector_variables(value, variables);
+            }
+            for index in 0..entry.fields.len() {
+                if let Some(value) = entry.fields.retained_program(index) {
+                    collect_expression_value_bitvector_variables(value, variables);
+                } else {
+                    collect_algebraic_value_bitvector_variables(
+                        entry.fields.get(index).expect("field index"),
+                        variables,
+                    );
+                }
             }
         }
         for obligation in anchor.entry_obligations() {
@@ -2139,7 +2179,7 @@ pub(crate) fn collect_condition_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_bitvector_variables(pointer, variables);
             }
@@ -2163,11 +2203,11 @@ pub(crate) fn collect_condition_bitvector_variables(
             float_condition
                 .for_each_bitvector_term(|term| collect_bitvector_variables(term, variables));
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_bitvector_variables(left, variables);
             collect_pointer_offset_bitvector_variables(right, variables);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_bitvector_variables(left, variables);
             collect_pointer_bitvector_variables(right, variables);
         }
@@ -2184,9 +2224,9 @@ pub(crate) fn collect_condition_bitvector_variables(
             }
         }
         ConditionTerm::BoolLoad(memory, pointer) => {
-            collect_shared_memory_bitvector_variables(memory, variables);
+            collect_shared_memory_bitvector_variables(memory.shared_memory(), variables);
             collect_pointer_bitvector_variables(pointer, variables);
-            collect_stored_load_connection_variables(memory, pointer, variables);
+            collect_stored_load_connection_variables(memory.shared_memory(), pointer, variables);
         }
     }
 }
@@ -2387,7 +2427,7 @@ fn collect_bitvector_integer_variables_seen(
     match term {
         MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_integer_variables(pointer, variables, seen)
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -2724,9 +2764,12 @@ fn collect_algebraic_free_integer_variables(
                 }
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             collect_algebraic_value_integer_variables(
-                &load_carrier(memory, pointer),
+                &load_carrier(memory.shared_memory(), pointer),
                 variables,
                 seen,
             );
@@ -2927,9 +2970,12 @@ fn collect_algebraic_integer_variables(
                 collect_algebraic_value_integer_variables(field, variables, seen);
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             collect_algebraic_value_integer_variables(
-                &load_carrier(memory, pointer),
+                &load_carrier(memory.shared_memory(), pointer),
                 variables,
                 seen,
             );
@@ -3323,7 +3369,7 @@ pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BT
                 collect_shared_memory_bitvector_variables(&origin, variables);
             }
         }
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_bitvector_variables(pointer, variables);
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -3453,7 +3499,7 @@ fn collect_bitvector_capture_variables_seen(
                 }
             }
         }
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_capture_variables(pointer, variables, integer_seen)
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -3472,11 +3518,28 @@ pub(in crate::kernel) fn collect_proposition_capture_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     let mut integer_seen = SeenTerms::default();
+    let mut condition_summaries = Default::default();
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
             Proposition::ConditionIs(condition, _) => {
-                collect_condition_capture_variables(condition, variables, &mut integer_seen);
+                if let Some(root) = condition.root() {
+                    variables.extend(
+                        retained_folds::common_variables(
+                            root,
+                            retained_folds::FoldVariableRead::MachineCapture,
+                            &mut condition_summaries,
+                        )
+                        .iter()
+                        .copied(),
+                    );
+                } else {
+                    collect_condition_capture_variables(
+                        condition.native_compat(),
+                        variables,
+                        &mut integer_seen,
+                    );
+                }
             }
             Proposition::And(left, right)
             | Proposition::Or(left, right)
@@ -3499,7 +3562,7 @@ fn collect_condition_capture_variables(
         return;
     }
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_capture_variables(pointer, variables, integer_seen);
             }
@@ -3530,14 +3593,14 @@ fn collect_condition_capture_variables(
                 }
             });
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_capture_variables(left, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
             }
             collect_pointer_offset_capture_variables(right, variables, integer_seen);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_capture_variables(left, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -3734,9 +3797,12 @@ fn collect_capture_variables_in_algebraic_term(
                 collect_capture_variables_in_algebraic_value(field, variables, integer_seen);
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             collect_capture_variables_in_algebraic_value(
-                &load_carrier(memory, pointer),
+                &load_carrier(memory.shared_memory(), pointer),
                 variables,
                 integer_seen,
             );
@@ -4420,7 +4486,7 @@ fn collect_bitvector_scope_summary(
             }
             summary
         }
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_scope_summary(pointer, summaries)
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -4482,7 +4548,7 @@ fn collect_condition_scope_summary(
         return IntegerScopeSummary::default();
     }
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             let mut summary = IntegerScopeSummary::default();
             for pointer in left.pointers().chain(right.pointers()) {
                 summary.merge(collect_pointer_scope_summary(pointer, summaries));
@@ -4517,7 +4583,7 @@ fn collect_condition_scope_summary(
             });
             summary
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             let mut summary = collect_pointer_offset_scope_summary(left, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4525,7 +4591,7 @@ fn collect_condition_scope_summary(
             summary.merge(collect_pointer_offset_scope_summary(right, summaries));
             summary
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             let mut summary = collect_pointer_scope_summary(left, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4647,9 +4713,13 @@ fn collect_algebraic_scope_summary(
             }
             summary
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
-            collect_algebraic_value_scope_summary(&load_carrier(memory, pointer), summaries)
-        }
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => collect_algebraic_value_scope_summary(
+            &load_carrier(memory.shared_memory(), pointer),
+            summaries,
+        ),
         AlgebraicTermNode::If {
             condition,
             then_term,
@@ -4947,7 +5017,7 @@ fn collect_bitvector_binder_variables_seen(
         MachineTerm::Constant { .. }
         | MachineTerm::Variable(_)
         | MachineTerm::MemoryLoad(_, _, _)
-        | MachineTerm::PointerAddress(_, _) => {}
+        | MachineTerm::IntegerAddress(_, _) => {}
         MachineTerm::IntegerToMachine { value, .. } => {
             collect_integer_binder_variables_shared(
                 value,
@@ -5138,7 +5208,7 @@ fn collect_condition_binder_variables(
         return;
     }
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_binder_variables(
                     pointer,
@@ -5195,7 +5265,7 @@ fn collect_condition_binder_variables(
                 }
             });
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_binder_variables(
                 left,
                 integer_variables,
@@ -5212,7 +5282,7 @@ fn collect_condition_binder_variables(
                 integer_seen,
             );
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_binder_variables(
                 left,
                 integer_variables,
@@ -5486,9 +5556,12 @@ fn collect_binder_variables_in_algebraic_term(
                 );
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             collect_binder_variables_in_algebraic_value(
-                &load_carrier(memory, pointer),
+                &load_carrier(memory.shared_memory(), pointer),
                 integer_variables,
                 bitvector_variables,
                 integer_seen,
@@ -6146,6 +6219,14 @@ fn variables_entering(base: &SymbolicMemory, memory: &SymbolicMemory) -> BTreeSe
             }
         }
     }
+    let before = base.heap.initialized.partial_map();
+    let after = memory.heap.initialized.partial_map();
+    for change in before.diff(after) {
+        let pointer = change.key();
+        if let Some(byte) = after.get(pointer) {
+            variables.extend(partial_byte_variables(pointer, byte.value.as_ref()));
+        }
+    }
     for change in base.cells.concrete().diff(memory.cells.concrete()) {
         let pointer = change.key();
         if let Some(value) = memory.cells.concrete().get(pointer) {
@@ -6275,6 +6356,7 @@ fn memory_entry_count(memory: &SymbolicMemory) -> usize {
         + memory.union_cells.len()
         + memory.heap.uninitialized_objects.len()
         + memory.heap.initialized.as_map().len()
+        + memory.heap.initialized.partial_map().len()
 }
 
 fn add_counts(counts: &mut VariableCounts, mentioned: BTreeSet<Variable>, sign: i64) {
@@ -6350,6 +6432,40 @@ fn object_address_variables(pointer: &Address) -> BTreeSet<Variable> {
     let mut variables = BTreeSet::new();
     collect_pointer_bitvector_variables(pointer, &mut variables);
     variables
+}
+
+fn partial_byte_variables(pointer: &Address, value: Option<&ProgramValue>) -> BTreeSet<Variable> {
+    match value {
+        Some(value) => cell_variables(pointer, value),
+        None => object_address_variables(pointer),
+    }
+}
+
+fn add_partial_byte_changes(
+    before: &super::super::primitives::InitializedBytes,
+    after: &super::super::primitives::InitializedBytes,
+    counts: &mut VariableCounts,
+) {
+    let before = before.partial_map();
+    let after = after.partial_map();
+    for change in before.diff(after) {
+        crate::instrumentation::record_deterministic_work(1);
+        let pointer = change.key();
+        if let Some(byte) = before.get(pointer) {
+            add_counts(
+                counts,
+                partial_byte_variables(pointer, byte.value.as_ref()),
+                -1,
+            );
+        }
+        if let Some(byte) = after.get(pointer) {
+            add_counts(
+                counts,
+                partial_byte_variables(pointer, byte.value.as_ref()),
+                1,
+            );
+        }
+    }
 }
 
 fn cell_variables(pointer: &Address, value: &ProgramValue) -> BTreeSet<Variable> {
@@ -6441,11 +6557,14 @@ fn heap_variable_counts(
                 }
             }
         }
+        add_partial_byte_changes(&base.initialized, &heap.initialized, &mut counts);
         counts
     } else {
         if whole == WholeCount::Charged {
             crate::instrumentation::record_deterministic_work(
-                heap.uninitialized_objects.len() + heap.initialized.as_map().len(),
+                heap.uninitialized_objects.len()
+                    + heap.initialized.as_map().len()
+                    + heap.initialized.partial_map().len(),
             );
         }
         let mut counts = VariableCounts::default();
@@ -6455,6 +6574,13 @@ fn heap_variable_counts(
             .chain(heap.initialized.as_map().keys())
         {
             add_counts(&mut counts, object_address_variables(pointer), 1);
+        }
+        for (pointer, byte) in heap.initialized.partial_map().iter() {
+            add_counts(
+                &mut counts,
+                partial_byte_variables(pointer, byte.value.as_ref()),
+                1,
+            );
         }
         counts
     };
@@ -6523,6 +6649,11 @@ fn counts_from_base(
             }
         }
     }
+    add_partial_byte_changes(
+        &base.heap.initialized,
+        &memory.heap.initialized,
+        &mut counts,
+    );
     for change in base.cells.concrete().diff(memory.cells.concrete()) {
         let pointer = change.key();
         if let Some(value) = base.cells.concrete().get(pointer) {
@@ -6666,6 +6797,12 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
         .chain(memory.heap.initialized.as_map().keys())
     {
         collect_pointer_bitvector_variables(pointer, variables);
+    }
+    for (pointer, byte) in memory.heap.initialized.partial_map().iter() {
+        collect_pointer_bitvector_variables(pointer, variables);
+        if let Some(value) = &byte.value {
+            collect_program_value_bitvector_variables(value, variables);
+        }
     }
     for (pointer, value) in memory.cells.concrete().iter() {
         #[cfg(test)]

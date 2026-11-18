@@ -4,7 +4,7 @@
 use super::*;
 use crate::kernel::{
     KernelAddressOffset as O, KernelTerm, KernelType, MachineOperandView as V, SharedAddress,
-    SharedAddressOffset, SharedPointerValue,
+    SharedAddressOffset, SharedPointer,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -15,7 +15,7 @@ pub(super) struct Origins<'a, A, W> {
     pub(super) known: bool,
 }
 impl<'a> Origins<'a, Address, MachineTerm> {
-    pub(super) fn native(value: &'a PointerValue) -> Self {
+    pub(super) fn native(value: &'a Pointer) -> Self {
         Self {
             provenance: value.provenance(),
             opaque: value.bounds_owner(),
@@ -25,7 +25,7 @@ impl<'a> Origins<'a, Address, MachineTerm> {
     }
 }
 impl<'a> Origins<'a, SharedAddress, KernelTerm> {
-    pub(super) fn shared(value: &'a SharedPointerValue) -> Self {
+    pub(super) fn shared(value: &'a SharedPointer) -> Self {
         let p = value.node();
         let q = p.qualifiers.as_ref();
         Self {
@@ -60,7 +60,7 @@ impl OriginChecks<Address, MachineTerm> for PureFactContext {
         a == b
     }
     fn opaque_is_root(&self, a: &Address) -> bool {
-        self.equality_graph.bounds_owner_is_root(a)
+        self.pointer_domain(PointerDomainSource::BoundsOwner(a)) == PointerDomain::Root
     }
 }
 pub(super) fn origins_match<A, W>(
@@ -227,10 +227,7 @@ mod tests {
         widths: HashMap<KernelTerm, MachineTerm>,
     }
     impl<'a> Selected<'a> {
-        fn new(
-            facts: &'a PureFactContext,
-            values: &[(&PointerValue, &SharedPointerValue)],
-        ) -> Self {
+        fn new(facts: &'a PureFactContext, values: &[(&Pointer, &SharedPointer)]) -> Self {
             let mut result = Self {
                 facts,
                 addresses: HashMap::new(),
@@ -278,8 +275,8 @@ mod tests {
         }
         fn opaque_is_root(&self, a: &SharedAddress) -> bool {
             self.facts
-                .equality_graph
-                .bounds_owner_is_root(&self.addresses[a])
+                .pointer_domain(PointerDomainSource::BoundsOwner(&self.addresses[a]))
+                == PointerDomain::Root
         }
     }
 
@@ -374,7 +371,7 @@ mod tests {
         let b = Address::symbolic(Variable(1012001));
         let provenance = std::sync::Arc::new(Address::symbolic(Variable(1012002)));
         let make = |start, width| {
-            PointerValue::new(a.clone(), ProgramType::Int32Pointer)
+            Pointer::new(a.clone(), ProgramType::Int32Pointer)
                 .with_provenance(provenance.clone())
                 .with_bounds(Some(SubobjectBounds {
                     start,
@@ -384,13 +381,13 @@ mod tests {
         let left = make(a.clone(), 4);
         let right = make(b.clone(), 4);
         let wrong_width = make(b.clone(), 8);
-        let sl = SharedPointerValue::import(&left);
-        let sr = SharedPointerValue::import(&right);
-        let sw = SharedPointerValue::import(&wrong_width);
+        let sl = SharedPointer::import(&left);
+        let sr = SharedPointer::import(&right);
+        let sw = SharedPointer::import(&wrong_width);
         let before = PureFactContext::new();
         let after = before
             .clone()
-            .assume_condition(ConditionTerm::pointer_equal(a, b), true);
+            .assume_condition(ConditionTerm::address_equal(a, b), true);
         for (facts, expected) in [(&before, false), (&after, true)] {
             let selected =
                 Selected::new(facts, &[(&left, &sl), (&right, &sr), (&wrong_width, &sw)]);
@@ -413,7 +410,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let cell = Address::symbolic(Variable(1012100));
-        let read = PointerValue::from_read(
+        let read = Pointer::from_read(
             Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
@@ -423,27 +420,27 @@ mod tests {
             base: AddressBase::Heap(1012101),
             offset: AddressOffset::Constant(0),
         };
-        let stored = PointerValue::new(base.clone(), ProgramType::Int32Pointer);
+        let stored = Pointer::new(base.clone(), ProgramType::Int32Pointer);
         let bounded = stored.clone().with_bounds(Some(SubobjectBounds {
             start: base.clone(),
             width: MachineTerm::constant(4),
         }));
         let held = MemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
         let before = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(read.pointer().clone(), base),
+            ConditionTerm::address_equal(read.address().clone(), base),
             true,
         );
         let after = before.clone().assume_condition(
-            ConditionTerm::pointer_value_equal(read.clone(), stored.clone()),
+            ConditionTerm::pointer_equal(read.clone(), stored.clone()),
             true,
         );
         let bounded_facts = before.clone().assume_condition(
-            ConditionTerm::pointer_value_equal(read.clone(), bounded.clone()),
+            ConditionTerm::pointer_equal(read.clone(), bounded.clone()),
             true,
         );
-        let sr = SharedPointerValue::import(&read);
-        let ss = SharedPointerValue::import(&stored);
-        let sb = SharedPointerValue::import(&bounded);
+        let sr = SharedPointer::import(&read);
+        let ss = SharedPointer::import(&stored);
+        let sb = SharedPointer::import(&bounded);
         let available = SharedAddress::import(&held.provenance);
         for (facts, expected) in [(&before, false), (&after, true), (&bounded_facts, false)] {
             let selected = Selected::new(facts, &[(&read, &sr), (&stored, &ss), (&bounded, &sb)]);

@@ -1079,12 +1079,13 @@ impl<'a> TermRewrite<'a> {
                     right: self.rewrite_spec_resource(right)?,
                 }
             }
-            SpecProposition::ResourceViewable { memory, resource } => {
-                SpecProposition::ResourceViewable {
-                    memory: memory.clone(),
-                    resource: self.rewrite_spec_resource(resource)?,
-                }
-            }
+            SpecProposition::ResourceViewable {
+                point: memory,
+                resource,
+            } => SpecProposition::ResourceViewable {
+                point: memory.clone(),
+                resource: self.rewrite_spec_resource(resource)?,
+            },
             SpecProposition::ResourceContains { parent, child } => {
                 SpecProposition::ResourceContains {
                     parent: self.rewrite_spec_resource(parent)?,
@@ -1092,13 +1093,13 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             SpecProposition::MemoryLoadable {
-                memory,
+                point: memory,
                 base,
                 start,
                 end,
                 element_width,
             } => SpecProposition::MemoryLoadable {
-                memory: memory.clone(),
+                point: memory.clone(),
                 base: self.rewrite_spec_expression(base)?,
                 start: self.rewrite_spec_expression(start)?,
                 end: self.rewrite_spec_expression(end)?,
@@ -1309,11 +1310,11 @@ impl<'a> TermRewrite<'a> {
                 value_type: *value_type,
             },
             SpecExpression::MemoryLoad {
-                memory,
+                point: memory,
                 pointer,
                 value_type,
             } => SpecExpression::MemoryLoad {
-                memory: memory.clone(),
+                point: memory.clone(),
                 pointer: Box::new(self.rewrite_spec_expression(pointer)?),
                 value_type: *value_type,
             },
@@ -1651,11 +1652,11 @@ impl<'a> TermRewrite<'a> {
                 SpecPureFunctionArgument::Algebraic(self.rewrite_spec_algebraic(value)?)
             }
             SpecPureFunctionArgument::ArrayRef {
-                memory,
+                point: memory,
                 pointer,
                 element_type,
             } => SpecPureFunctionArgument::ArrayRef {
-                memory: memory.clone(),
+                point: memory.clone(),
                 pointer: self.rewrite_spec_expression(pointer)?,
                 element_type: *element_type,
             },
@@ -1670,12 +1671,13 @@ impl<'a> TermRewrite<'a> {
             SpecPredicateArgument::Value(value) => {
                 SpecPredicateArgument::Value(self.rewrite_spec_expression(value)?)
             }
-            SpecPredicateArgument::ArrayRef { memory, pointer } => {
-                SpecPredicateArgument::ArrayRef {
-                    memory: memory.clone(),
-                    pointer: self.rewrite_spec_expression(pointer)?,
-                }
-            }
+            SpecPredicateArgument::ArrayRef {
+                point: memory,
+                pointer,
+            } => SpecPredicateArgument::ArrayRef {
+                point: memory.clone(),
+                pointer: self.rewrite_spec_expression(pointer)?,
+            },
         })
     }
 

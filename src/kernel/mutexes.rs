@@ -24,6 +24,7 @@ pub(super) use direct_loop_guard::{
 };
 pub(super) use loop_protocol::abstract_loop_mutex;
 
+use crate::kernel::StoredConditionTerm;
 use std::cmp::Ordering as CmpOrdering;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -89,7 +90,7 @@ enum MutexEntry {
     ConditionalLoop {
         initialization: MutexInitialization,
         epoch: u64,
-        held: ConditionTerm,
+        held: StoredConditionTerm,
     },
     Unlocked {
         initialization: MutexInitialization,
@@ -2158,7 +2159,7 @@ impl MutexLedger {
 
     pub(super) fn held_condition(&self, mutex: &Address) -> ConditionTerm {
         match self.get(mutex) {
-            Some(MutexEntry::ConditionalLoop { held, .. }) => held.clone(),
+            Some(MutexEntry::ConditionalLoop { held, .. }) => held.native_compat().clone(),
             entry => ConditionTerm::Constant(matches!(entry, Some(MutexEntry::Locked { .. }))),
         }
     }

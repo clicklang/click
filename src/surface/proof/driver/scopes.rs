@@ -3,6 +3,70 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    /// Expand a mathematical identity inside its owned have body.
+    pub(in crate::surface::proof) fn try_integer_algebra(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_integer_algebra(&self.proof.body)?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Emit local word laws in an owned have body.
+    pub(in crate::surface::proof) fn try_address_words_using(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_address_words_using(
+            &self.proof.body,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Rewrite selected conditional arms inside an owned have body.
+    pub(in crate::surface::proof) fn try_rewrite_conditional_arms_using(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some((body, _)) = crate::kernel::search::ProofSearch::rewrite_conditional_arms_using(
+            &self.proof.body,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Construct a selected scalar interval leaf without normalization.
+    pub(in crate::surface::proof) fn try_interval_fact_using(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_interval_fact_using(
+            &self.proof.body,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Run only the ordinary Integer emitter in a selected have body.
     pub(in crate::surface::proof) fn try_integer_composition_using(
         &self,
@@ -264,6 +328,24 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
+    /// Preserve the selected sources in an owned signed-domain proof.
+    pub(in crate::surface::proof) fn try_restricted_signed_definedness_closure(
+        &self,
+        premises: &[(crate::kernel::Proposition, ClickProposition)],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_restricted_signed_definedness_closure(
+                &self.proof.body,
+                premises,
+            )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Closes the body's `int32` or `int64` definedness goal from the
     /// operands' indexed constant bounds.
     pub(in crate::surface::proof) fn try_signed_definedness_closure(
@@ -323,6 +405,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
                     &(driver_proof.body),
                     true,
                 )?
+            && !checkable.ends_in_empty_normalize_using()
         {
             body = checkable;
         }

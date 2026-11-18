@@ -470,7 +470,7 @@ fn certification_uses_graph_int32_equality_with_state_scope() {
     let left = sum(load(&before, a.clone()));
     let right = sum(load(&before, b.clone()));
     let later = sum(load(&after, b.clone()));
-    let goal = |right| Proposition::ConditionIs(eq(&left, &right), true);
+    let goal = |right| Proposition::condition_is(eq(&left, &right), true);
     let certifies = |context: &PureFactContext, goal: &Proposition| {
         crate::kernel::PureFactContext::settles_exactly(context, goal)
     };
@@ -572,11 +572,11 @@ fn int32_restriction_and_contradiction_preserve_support() {
     let ab = eq(&a, &b);
     let bc = eq(&b, &c);
     let offset = |i| AddressOffset::Variable(Variable(i));
-    let pq = ConditionTerm::pointer_equal(
+    let pq = ConditionTerm::address_equal(
         Address::symbolic(Variable(20)),
         Address::symbolic(Variable(21)),
     );
-    let xy = ConditionTerm::pointer_offset_equal(offset(30), offset(31));
+    let xy = ConditionTerm::address_offset_equal(offset(30), offset(31));
     let context = PureFactContext::new()
         .assume_condition(ab.clone(), true)
         .assume_condition(bc.clone(), true)
@@ -649,7 +649,7 @@ fn int32_load_identity_keeps_states_separate() {
 fn offset_premises_support_scalar_graph_edges() {
     let (a, b, c) = (var(70), var(71), var(72));
     let offset_eq = |left: MachineTerm, right: MachineTerm| {
-        ConditionTerm::pointer_offset_equal(
+        ConditionTerm::address_offset_equal(
             AddressOffset::scale_int32(left, 4),
             AddressOffset::scale_int32(right, 4),
         )
@@ -668,7 +668,7 @@ fn offset_premises_support_scalar_graph_edges() {
     let mut context = PureFactContext::new();
     for width in [0, 1, 8] {
         context = context.assume_condition(
-            ConditionTerm::pointer_offset_equal(
+            ConditionTerm::address_offset_equal(
                 AddressOffset::scaled_int32_node(a.clone(), width),
                 AddressOffset::scaled_int32_node(b.clone(), width),
             ),
@@ -690,7 +690,7 @@ mod scaling_tests {
 fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
     let _session = VerificationSession::enter();
     let offset = |i: u64| AddressOffset::Variable(Variable(995_000 + i));
-    let input = ConditionTerm::PointerOffsetEqual(
+    let input = ConditionTerm::AddressOffsetEqual(
         Box::new(AddressOffset::Add(Box::new(offset(0)), Box::new(offset(1)))),
         Box::new(offset(2)),
     );
@@ -711,7 +711,7 @@ fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
 fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
     let _session = VerificationSession::enter();
     let pointer = |id| {
-        PointerValue::new(
+        Pointer::new(
             Address {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::scale_int32(var(id), 4),
@@ -720,7 +720,7 @@ fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
         )
     };
     let (left, right) = (pointer(941_001), pointer(941_002));
-    let equality = ConditionTerm::pointer_value_equal(left.clone(), right.clone());
+    let equality = ConditionTerm::pointer_equal(left.clone(), right.clone());
     assert!(equality.pointer_offset_sides().is_none());
     let context = PureFactContext::new().assume_condition(equality.clone(), true);
     assert!(
@@ -762,7 +762,7 @@ fn recorded_shared_index_members_keep_source_order_without_exporting() {
     };
     let left = shared(&x);
     let right = shared(&y);
-    let equality = ConditionTerm::PointerOffsetEqual(
+    let equality = ConditionTerm::AddressOffsetEqual(
         Box::new(AddressOffset::Int32Scaled {
             value: left.clone(),
             byte_width: 4,

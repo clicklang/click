@@ -1,5 +1,9 @@
 # Pool control rejects missing consumption
 
+The checkout increments the counter and produces an item. The final capacity
+check rewrites the equation in terms of entry values so the arithmetic check
+depends on whether the slot count actually decreased.
+
 ```c filename=pool_control.c
 struct pool { int32 checked_out; int32 capacity; };
 struct payload { int32 value; };
@@ -32,16 +36,41 @@ void checkout(struct pool* pool, struct payload* p) {
     ensures pool->capacity == old(pool->capacity);
 } by {
     open(control(pool)) {
-        have 1 <= count(slot(pool)) by solve();
-        have defined(pool->checked_out + 1);
+        have 1 <= to_integer(count(slot(pool))) by { known(); }
+        have defined(pool->checked_out);
+        have to_integer(pool->checked_out) + 1 <= 2147483647 by {
+            solve() using { to_integer(pool->checked_out) < 2147483647; };
+        }
+        have to_integer(pool->checked_out) + 1 >= -2147483648 by {
+            solve() using { 0 <= to_integer(pool->checked_out); };
+        }
+        have defined(pool->checked_out + 1) by { known(); }
         step();
         fold(item(pool, p));
-        have pool->capacity == pool->checked_out + count(slot(pool));
+        have to_integer(pool->capacity) == to_integer(old(pool->capacity)) by { known(); }
+        have to_integer(old(pool->capacity)) ==
+            to_integer(old(pool->checked_out)) + to_integer(old(count(slot(pool)))) by {
+            known();
+        }
+        have to_integer(pool->checked_out) == to_integer(old(pool->checked_out)) + 1 by {
+            solve() using {
+                to_integer(old(pool->checked_out)) + 1 <= 2147483647;
+                to_integer(old(pool->checked_out)) + 1 >= -2147483648;
+            };
+        }
+        have to_integer(pool->capacity) ==
+            to_integer(pool->checked_out) + to_integer(count(slot(pool))) by {
+            rewrite(to_integer(pool->capacity), to_integer(old(pool->capacity)));
+            rewrite(to_integer(old(pool->capacity)),
+                to_integer(old(pool->checked_out)) + to_integer(old(count(slot(pool)))));
+            rewrite(to_integer(pool->checked_out), to_integer(old(pool->checked_out)) + 1);
+            solve() using { 1 <= to_integer(old(count(slot(pool)))); };
+        }
     }
 }
 
 ```
 
 ```expect
-fail: could not establish `to_integer(pool->capacity) == (to_integer(pool->checked_out) + to_integer(count(slot(pool))))`
+fail: `checkout.contract` proof step have body tactic 4: arithmetic read the current goal as an Integer linear claim; no combination of the listed premises proves it
 ```

@@ -85,7 +85,7 @@ fn raw_pointer_conditions_keep_shared_displacements_through_rewrites_and_transpo
             SharedAddressBase::import(&AddressBase::Symbolic(Variable(999700))),
             offset.clone(),
         );
-        let source = KernelTerm::pointer_equal_raw([address.clone(), address]);
+        let source = KernelTerm::address_equal_raw([address.clone(), address]);
         let nested = KernelTerm::boolean_equal_raw([
             source.clone(),
             KernelTerm::intern(KernelType::Bool, KernelTermNode::BoolLiteral(false)),
@@ -120,7 +120,7 @@ fn raw_pointer_conditions_keep_shared_displacements_through_rewrites_and_transpo
         let KernelTermNode::BoolEqual { arguments } = pointers.node() else {
             panic!("Boolean equality")
         };
-        let KernelTermNode::PointerEqual { arguments } = arguments[0].node() else {
+        let KernelTermNode::AddressEqual { arguments } = arguments[0].node() else {
             panic!("raw address equality")
         };
         assert_eq!(arguments[0].node().offset, offset);
@@ -149,15 +149,15 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
                 .unwrap();
         }
         let values = [999802, 999803].map(|variable| {
-            let source = SharedPointerValue::import(&PointerValue::new(
+            let source = SharedPointer::import(&Pointer::new(
                 Address::symbolic(Variable(variable)),
                 ProgramType::Int32Pointer,
             ));
             let mut value = source.node().clone();
             value.address = SharedAddress::new(value.address.node().base.clone(), offset.clone());
-            SharedPointerValue::new(value)
+            SharedPointer::new(value)
         });
-        let root = KernelTerm::pointer_value_equal_raw(values.clone());
+        let root = KernelTerm::pointer_equal_raw(values.clone());
         let one = KernelTermImport::default()
             .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
         let zero = KernelTermImport::default()
@@ -205,7 +205,7 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
             (bits, pointers)
         });
         assert_eq!(bits, root);
-        let KernelTermNode::PointerValueEqual(pair) = pointers.node() else {
+        let KernelTermNode::PointerEqual(pair) = pointers.node() else {
             panic!("complete pointer equality");
         };
         assert_eq!(pair.arguments()[0].node().address.node().offset, offset);

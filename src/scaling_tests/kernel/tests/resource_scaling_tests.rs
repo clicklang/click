@@ -70,8 +70,8 @@ fn frame_with_unrelated_allocations(unrelated: usize) -> ResourceContext {
         ])
 }
 
-fn pointer_equal(left: Address, right: Address) -> ConditionTerm {
-    ConditionTerm::PointerEqual(Box::new(left), Box::new(right))
+fn address_equal(left: Address, right: Address) -> ConditionTerm {
+    ConditionTerm::AddressEqual(Box::new(left), Box::new(right))
 }
 
 fn symbolic_base(identity: u64) -> Address {
@@ -85,7 +85,7 @@ fn symbolic_base(identity: u64) -> Address {
 /// has a candidate to visit.
 fn assumptions_aliasing_the_target() -> PureFactContext {
     PureFactContext::new().assume_condition(
-        pointer_equal(heap_base(TARGET_HEAP), symbolic_base(2 * TARGET_HEAP)),
+        address_equal(heap_base(TARGET_HEAP), symbolic_base(2 * TARGET_HEAP)),
         true,
     )
 }
@@ -298,7 +298,7 @@ fn validity_is_logarithmic_in_unrelated_pointer_equalities() {
         let frame = frame_with_unrelated_allocations(2);
         let assumptions = (0..size).fold(assumptions_aliasing_the_target(), |facts, index| {
             facts.assume_condition(
-                pointer_equal(
+                address_equal(
                     symbolic_base(3 * TARGET_HEAP + 2 * index as u64),
                     symbolic_base(3 * TARGET_HEAP + 2 * index as u64 + 1),
                 ),
@@ -371,10 +371,10 @@ fn indexed_validity_still_finds_every_violation_kind() {
             .clone()
             .unchecked_with_fact(owned_range(other.clone(), 0, 4));
         let joined = PureFactContext::new()
-            .assume_condition(pointer_equal(heap_base(TARGET_HEAP), other.clone()), true);
+            .assume_condition(address_equal(heap_base(TARGET_HEAP), other.clone()), true);
         let crowded = (0..2 * size + 8).fold(joined.clone(), |facts, index| {
             facts.assume_condition(
-                pointer_equal(
+                address_equal(
                     symbolic_base(4 * TARGET_HEAP + 2 * index as u64),
                     symbolic_base(4 * TARGET_HEAP + 2 * index as u64 + 1),
                 ),
@@ -1066,6 +1066,15 @@ fn composing_a_parameter_object_ignores_unrelated_parameters() {
         let _session = crate::kernel::VerificationSession::enter();
         let (frame, assumptions) = parameter_frame(size);
         let added = parameter_object(FIRST_PARAMETER + size as u64);
+        // A new pointer parameter has no established relationship to the
+        // existing frame. Supply that explicit input before measuring lookup.
+        let Err(ResourceContextValidityError::UnestablishedOwnedBoundary(required)) = frame
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization([added.clone()], &assumptions)
+        else {
+            panic!("a new parameter requires its frame relationship");
+        };
+        let assumptions = assumptions.assume_proposition(*required);
         let (composed, work) = crate::instrumentation::measure_deterministic_work(|| {
             frame
                 .clone()
@@ -1107,6 +1116,9 @@ fn parameter_validity_still_refuses_related_overlaps() {
     let (frame, _) = parameter_frame(size);
     let target = FIRST_PARAMETER + 5;
     let overlaps = |extra: &ResourceFact, assumptions: &PureFactContext| {
+        // Publish this explicitly supplied equality input at the producer;
+        // admission must not initialize a cold ambient graph itself.
+        frame.synchronize_memory_equalities(assumptions);
         let whole = matches!(
             frame
                 .clone()
@@ -1166,7 +1178,7 @@ fn parameter_validity_still_refuses_related_overlaps() {
         "a parameter pinned to the address of an owned one"
     );
     let equal_pointer = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(parameter_base(other), parameter_base(target)),
+        ConditionTerm::address_equal(parameter_base(other), parameter_base(target)),
         true,
     );
     assert!(
@@ -1631,7 +1643,7 @@ fn external_descriptor(identity: u64) -> Address {
 /// The pointer a load of `cell` reads in `source`, as execution materializes
 /// it: the value named by that read.
 fn materialized_pointer(source: &SymbolicMemory, cell: &Address) -> ProgramValue {
-    ProgramValue::Pointer(PointerValue::from_read(
+    ProgramValue::Pointer(Pointer::from_read(
         Address::loaded(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(source))),
             Box::new(cell.clone()),
@@ -1903,7 +1915,7 @@ fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
     let index = MachineTerm::Variable(Variable(3 * TARGET_HEAP));
     let displaced = base.offset_by_elements(index.clone(), 1);
     let facts = PureFactContext::new()
-        .assume_condition(pointer_equal(alias.clone(), displaced), true)
+        .assume_condition(address_equal(alias.clone(), displaced), true)
         .assume_condition(
             ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
             true,
@@ -1950,7 +1962,9 @@ fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
 
 #[test]
 fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
-    for size in [4, 16, 64, 256] {
+    let mut insert_samples = Vec::new();
+    let mut remove_samples = Vec::new();
+    for size in [4_usize, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(
             (0..size)
@@ -1965,20 +1979,30 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
         ]);
         let expected = base.observable_composition();
         let mut resources = base;
-        let (_, sequence_work) = crate::instrumentation::measure_deterministic_work(|| {
-            for index in 0..size {
-                resources = resources.clone().unchecked_with_fact(owned_range(
+        let mut sequence_work = 0;
+        let mut insertion_work = 0;
+        for index in 0..size {
+            let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
+                resources.clone().unchecked_with_fact(owned_range(
                     SymbolicMemory::local_pointer(format!("hidden_{index}")),
                     0,
                     4,
-                ));
+                ))
+            });
+            resources = next;
+            insertion_work += work;
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let observed = resources.observable_composition();
                 assert!(std::sync::Arc::ptr_eq(&observed.storage, &expected.storage));
-            }
-        });
+            });
+            sequence_work += work;
+        }
+        // Ownership publication maintains a cached proof footprint in O(log N).
+        // Projection still ignores private deltas and retains its constant work.
+        insert_samples.push((size, insertion_work.div_ceil(size)));
         assert!(
             sequence_work <= size * 8 + 16,
-            "private insertion/projection N={size}: {sequence_work}"
+            "private projection N={size}: {sequence_work}"
         );
         let (_, query_work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..16 {
@@ -1989,10 +2013,10 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
             }
         });
         assert!(query_work <= 32, "unchanged queries N={size}: {query_work}");
+        resources = resources
+            .clone()
+            .unchecked_with_fact(owned_range(heap_base(3), 0, 4));
         let (_, addressed_work) = crate::instrumentation::measure_deterministic_work(|| {
-            resources = resources
-                .clone()
-                .unchecked_with_fact(owned_range(heap_base(3), 0, 4));
             assert_eq!(resources.observable_composition().facts().len(), 3);
         });
         assert!(
@@ -2003,23 +2027,31 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
             .without_exact_representation(&owned_range(heap_base(3), 0, 4))
             .unwrap();
         let removal_root = resources.observable_composition();
-        let (_, removal_work) = crate::instrumentation::measure_deterministic_work(|| {
-            for index in 0..size {
-                resources = resources
+        let mut removal_work = 0;
+        let mut withdrawal_work = 0;
+        for index in 0..size {
+            let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
+                resources
                     .clone()
                     .without_exact_representation(&owned_range(
                         SymbolicMemory::local_pointer(format!("hidden_{index}")),
                         0,
                         4,
                     ))
-                    .unwrap();
+                    .unwrap()
+            });
+            resources = next;
+            withdrawal_work += work;
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 assert!(std::sync::Arc::ptr_eq(
                     &resources.observable_composition().storage,
-                    &removal_root.storage
+                    &removal_root.storage,
                 ));
                 assert_eq!(resources.observable_composition(), expected);
-            }
-        });
+            });
+            removal_work += work;
+        }
+        remove_samples.push((size, withdrawal_work.div_ceil(size)));
         assert!(
             removal_work <= size * 12 + 16,
             "private removal/projection N={size}: {removal_work}"
@@ -2028,6 +2060,16 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
             "observable projection N={size}: insert={sequence_work}, queries={query_work}, addressed={addressed_work}, remove={removal_work}"
         );
     }
+    assert_constant_plus_log_growth(
+        "private ownership publication per delta",
+        &insert_samples,
+        8.0,
+    );
+    assert_constant_plus_log_growth(
+        "private ownership withdrawal per delta",
+        &remove_samples,
+        8.0,
+    );
 }
 
 #[test]
@@ -2276,13 +2318,22 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
         let assumptions = (0..aliases).fold(ordered, |facts, index| {
             facts
                 .assume_condition(
-                    pointer_equal(argument_base(STRUCT), argument_base(995_000 + index)),
+                    address_equal(argument_base(STRUCT), argument_base(995_000 + index)),
                     true,
                 )
                 .assume_condition(
-                    pointer_equal(argument_base(ARRAY), argument_base(996_000 + index)),
+                    address_equal(argument_base(ARRAY), argument_base(996_000 + index)),
                     true,
                 )
+        });
+        let frame = footprint[..3]
+            .iter()
+            .map(|fact| fact.resource().clone())
+            .reduce(Resource::star)
+            .unwrap();
+        let assumptions = assumptions.assume_proposition(Proposition::ResourceSeparate {
+            left: Box::new(footprint[3].resource().clone()),
+            right: Box::new(frame),
         });
         let (composed, work) = crate::instrumentation::measure_deterministic_work(|| {
             ResourceContext::new().try_compose_with_facts(footprint.iter().cloned(), &assumptions)
@@ -2317,11 +2368,11 @@ fn selected_ownership_overlap_ignores_ambient_aliases() {
         let assumptions = (0..count).fold(PureFactContext::new(), |facts, index| {
             facts
                 .assume_condition(
-                    pointer_equal(left.clone(), argument_base(999_000 + index)),
+                    address_equal(left.clone(), argument_base(999_000 + index)),
                     true,
                 )
                 .assume_condition(
-                    pointer_equal(right.clone(), argument_base(999_100 + index)),
+                    address_equal(right.clone(), argument_base(999_100 + index)),
                     true,
                 )
         });

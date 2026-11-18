@@ -22,8 +22,9 @@ use super::primitives::{
     memory_ranges_proven_overlapping,
 };
 use super::{
-    MachineTerm, MemoryRange, PureFactContext, Resource, ResourceContext, ResourceDescription,
-    ResourceFact, ResourceOccurrenceId, ResourceStateSource, ResourceTransferRole, Variable,
+    MachineTerm, MemoryRange, Proposition, PureFactContext, Resource, ResourceContext,
+    ResourceDescription, ResourceFact, ResourceOccurrenceId, ResourceStateSource,
+    ResourceTransferRole, Variable,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::cmp::Ordering;
@@ -333,6 +334,10 @@ impl PartialOrd for LoanViewBindings {
 pub(crate) struct ReturnedViewAuthority(LoanViewBinding);
 
 impl LoanViewBindings {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.state.map.is_empty()
+    }
+
     pub(crate) fn from_state(state: Arc<LoanViewBindingsState>) -> Self {
         Self { state }
     }
@@ -921,6 +926,9 @@ struct LoanLedgerData {
     active_nonlocal_indexed_ranges: usize,
     active_memory_loans: usize,
     active_footprint: active_footprint::ActiveFootprint,
+    /// Whole automatic objects pinned by live backing, with one diagnostic
+    /// range per loan and object. Bounds cannot release the object's lifetime.
+    automatic_storage_loans: PersistentMap<AddressBase, PersistentMap<LoanId, MemoryRange>>,
     /// Exact coordinate origins, including symbolic pointers. Constant byte
     /// intervals support cache retention without searching the symbolic loans.
     cache_memory_index: CacheProtectionIndex,
@@ -1006,12 +1014,46 @@ fn update_cache_protection(
     }
 }
 
+fn automatic_loan_blocks(range: &MemoryRange) -> impl Iterator<Item = &AddressBase> {
+    let base = &range.base().base;
+    let origin = &range.access_provenance().0.base;
+    std::iter::once(base)
+        .chain((origin != base).then_some(origin))
+        .filter(|block| block.is_local_block() || matches!(block, AddressBase::Temporary(_)))
+}
+
+fn update_automatic_storage_loans(
+    index: &mut PersistentMap<AddressBase, PersistentMap<LoanId, MemoryRange>>,
+    range: &MemoryRange,
+    loan: LoanId,
+    insert: bool,
+) {
+    let (start, end) = range.bound_terms();
+    if start == end || memory_range_is_empty(range) {
+        return;
+    }
+    for block in automatic_loan_blocks(range) {
+        let bucket = index.get(block).cloned().unwrap_or_default();
+        let bucket = if insert {
+            bucket.with_inserted(loan, range.clone())
+        } else {
+            bucket.without_key(&loan)
+        };
+        *index = if bucket.is_empty() {
+            index.without_key(block)
+        } else {
+            index.with_inserted(block.clone(), bucket)
+        };
+    }
+}
+
 fn update_indexed_memory_range(
     data: &mut LoanLedgerData,
     range: &MemoryRange,
     loan: LoanId,
     insert: bool,
 ) -> Result<(), LoanRefusal> {
+    update_automatic_storage_loans(&mut data.automatic_storage_loans, range, loan, insert);
     update_cache_protection(data, range, loan, insert);
     if ledger_interval_nodes(range).is_none() {
         return Ok(());
@@ -2055,6 +2097,9 @@ impl StableViewRecovery {
         boundary: &crate::kernel::functions::EscrowRecoveryBoundary,
         assumptions: &PureFactContext,
     ) -> Result<(), super::RuntimeError> {
+        if boundary.is_framed() {
+            return Ok(());
+        }
         let mut protected = ResourceContext::new_with_equalities(assumptions);
         let mut opaque = false;
         let members = self.protected_escrows.values().chain(
@@ -2690,6 +2735,7 @@ fn bound_view_covers_requirement(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum StableViewPlanError {
+    UnestablishedOwnedBoundary(Box<Proposition>),
     InvalidRequirement,
     MissingResource(ResourceFact),
     ConflictingRequirement(ResourceFact),
@@ -2713,6 +2759,9 @@ fn composition_conflict(
             StableViewPlanError::ConflictingRequirement(composed.clone())
         }
         Invalid::InvalidExclusiveAccess(_) => StableViewPlanError::InvalidResidual,
+        Invalid::UnestablishedOwnedBoundary(required) => {
+            StableViewPlanError::UnestablishedOwnedBoundary(required)
+        }
     }
 }
 
@@ -2722,6 +2771,7 @@ impl StableViewPlanError {
         operation: LoanRefusalOperation,
     ) -> Option<LoanRefusalDiagnostic> {
         match self {
+            Self::UnestablishedOwnedBoundary(_) => None,
             Self::Loan(refusal) => Some(refusal.diagnostic(operation)),
             Self::MissingResource(resource) => {
                 Some(LoanRefusal::MissingBacking.diagnostic_with_subject(
@@ -3011,7 +3061,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             {
                 StableViewPlanError::MissingResource(ResourceFact::Own(
                     fact.resource().clone(),
-                    Box::new(MachineTerm::constant(demanded)),
+                    Box::new(MachineTerm::constant(demanded).into()),
                 ))
             }
             _ => StableViewPlanError::MissingResource(fact.clone()),
@@ -3108,7 +3158,8 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             }
             let fact = use_plan.ledger.mutex_use_resource(use_plan.usage, callee)?;
             callee_resources = callee_resources
-                .try_compose_with_fact(fact.clone(), assumptions)
+                .install_established_partition([fact.clone()], assumptions)
+                .map(|(context, _)| context)
                 .map_err(|error| composition_conflict(error, &fact))?;
             mutex_use_requirements.insert(requirement.fact.clone(), fact.clone());
             let mut checked = requirement.clone();
@@ -3149,7 +3200,8 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 return Err(StableViewPlanError::UnsupportedPartition);
             }
             callee_resources = callee_resources
-                .try_compose_with_fact(requirement.fact.clone(), assumptions)
+                .install_established_partition([requirement.fact.clone()], assumptions)
+                .map(|(context, _)| context)
                 .map_err(|error| composition_conflict(error, &requirement.fact))?;
             memory_effects.push(
                 requirement
@@ -3274,7 +3326,8 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 .ok_or_else(|| missing_own_requirement(&requirement.fact))?,
         };
         callee_resources = callee_resources
-            .try_compose_with_fact(requirement.fact.clone(), assumptions)
+            .install_established_partition([requirement.fact.clone()], assumptions)
+            .map(|(context, _)| context)
             .map_err(|error| composition_conflict(error, &requirement.fact))?;
         if let Some(range) = requirement.fact.memory_own_range() {
             memory_effects.push(range.clone());
@@ -3712,33 +3765,26 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     assumptions,
                 )?
             } else if let Some(backing) = composite_backings.get(&support) {
-                let remaining = residual
-                    .clone()
-                    .without_selected_fact_with_origins(
-                        support,
-                        &selected,
-                        assumptions,
-                        &mut split_origins,
-                    )
-                    .ok_or(StableViewPlanError::MissingResource(selected.clone()))?;
-                // The exclusive requirements were reserved out of `residual`
-                // before any view was planned, so the residual alone cannot
-                // see a callee contract that asks to own bytes its own viewed
-                // composite covers.  Put the reserved owners back beside the
-                // frontier: this is the caller's partition as the contract
-                // actually demands it, and a self-overlapping contract is
-                // refused here rather than handing the callee an owner and a
-                // view of the same authority (law 1, law 8).
-                let protected = remaining
-                    .clone()
-                    .unchecked_with_facts(
-                        transferred_ownership
-                            .iter()
-                            .map(|requirement| requirement.fact.clone()),
-                    )
-                    .unchecked_with_facts(backing.pieces.clone());
-                if protected.validity_error(assumptions).is_some() {
-                    return Err(StableViewPlanError::ConflictingRequirement(selected));
+                // The entry partition still contains the owners reserved for
+                // the call. Check only the selected frontier against it, so
+                // an owned requirement cannot overlap a composite view even
+                // after reservation removed it from the residual. The
+                // frontier's internal partition was checked at expansion.
+                // A materialized adapter already consumed these pieces
+                // from this partition before inserting the head. Its
+                // restoration recipe carries that separation through the
+                // lend. The ordinary and folded-owner adapter paths still
+                // check the boundary for their described backing.
+                if backing.restored.is_empty() {
+                    match caller_resources
+                        .checked_frontier_boundary_conflict(&backing.pieces, assumptions)
+                    {
+                        Ok(None) => {}
+                        Ok(Some(_)) => {
+                            return Err(StableViewPlanError::ConflictingRequirement(selected));
+                        }
+                        Err(error) => return Err(composition_conflict(error, &selected)),
+                    }
                 }
                 planned_ledger.lend_composite(
                     caller,
@@ -4191,13 +4237,14 @@ impl StableViewTransferPlan {
     /// hold bindings of owned composites the callee consumed without
     /// returning: their holds are released, and a root the caller can then
     /// close is ended and its owner recovered (step 7).
+    #[cfg(test)]
     pub(crate) fn recover_stable_views(
         self,
         assumptions: &PureFactContext,
         escaping: &BTreeMap<LoanId, Vec<EscapingComposite>>,
         consumed_holds: &[LoanViewBinding],
     ) -> Result<StableViewRecovery, StableViewPlanError> {
-        self.recover_stable_views_impl(assumptions, escaping, consumed_holds, false)
+        self.recover_stable_views_impl(assumptions, escaping, consumed_holds, false, false)
     }
 
     /// Recover directly into the constructed call return, preserving its
@@ -4212,7 +4259,7 @@ impl StableViewTransferPlan {
         consumed_holds: &[LoanViewBinding],
     ) -> Result<StableViewRecovery, super::RuntimeError> {
         let mut recovery = self
-            .recover_stable_views(assumptions, escaping, consumed_holds)
+            .recover_stable_views_impl(assumptions, escaping, consumed_holds, false, true)
             .map_err(|error| {
                 error
                     .loan_diagnostic(LoanRefusalOperation::Recovery)
@@ -4239,24 +4286,46 @@ impl StableViewTransferPlan {
     /// Recover only this suspended call's loans against the parent's current
     /// context. Other children may have opened loans since entry, so recovery
     /// must keep the checked terminal ledger, never restore the entry state.
+    #[cfg(test)]
     pub(crate) fn recover_suspended_views(
-        mut self,
+        self,
         ledger: LoanLedger,
         resources: ResourceContext,
         bindings: LoanViewBindings,
         local_bindings: BTreeMap<ResourceFact, LoanViewBinding>,
         assumptions: &PureFactContext,
     ) -> Result<StableViewRecovery, StableViewPlanError> {
+        self.recover_suspended_views_with_entry_partition(
+            ledger,
+            resources,
+            bindings,
+            local_bindings,
+            None,
+            assumptions,
+        )
+    }
+
+    pub(in crate::kernel) fn recover_suspended_views_with_entry_partition(
+        mut self,
+        ledger: LoanLedger,
+        resources: ResourceContext,
+        bindings: LoanViewBindings,
+        local_bindings: BTreeMap<ResourceFact, LoanViewBinding>,
+        partition: Option<super::functions::ReturnedEntryPartition>,
+        assumptions: &PureFactContext,
+    ) -> Result<StableViewRecovery, StableViewPlanError> {
         let additions = resources
             .new_owned_occurrences_from(&self.caller_resources_after_requirements)
             .ok_or(StableViewPlanError::InvalidResidual)?;
         let boundary =
-            crate::kernel::functions::EscrowRecoveryBoundary::from_raw_outputs(additions);
+            crate::kernel::functions::EscrowRecoveryBoundary::from_raw_outputs(additions)
+                .with_entry_partition(partition);
         self.ledger = ledger;
         self.caller_resources_after_requirements = resources;
         self.parent_view_bindings = bindings;
         self.suspended_local_parents = local_bindings;
-        let recovery = self.recover_stable_views_impl(assumptions, &BTreeMap::new(), &[], true)?;
+        let recovery =
+            self.recover_stable_views_impl(assumptions, &BTreeMap::new(), &[], true, false)?;
         recovery
             .check_escrow_boundary(&recovery.resources, &boundary, assumptions)
             .map_err(|_| StableViewPlanError::InvalidResidual)?;
@@ -4269,10 +4338,14 @@ impl StableViewTransferPlan {
         escaping: &BTreeMap<LoanId, Vec<EscapingComposite>>,
         consumed_holds: &[LoanViewBinding],
         mut keep_terminal: bool,
+        defer_restoration: bool,
     ) -> Result<StableViewRecovery, StableViewPlanError> {
         // Recovery changes only this call's escrow. Normalizing the ambient
         // frame would rebuild unrelated resource indexes at every child join.
         let restore_resource = |resources: ResourceContext, member: &RecoveredEscrow| {
+            if defer_restoration {
+                return Ok(resources);
+            }
             resources
                 .restore_checked_escrow(member, assumptions)
                 .map_err(|error| composition_conflict(error, member.fact()))
@@ -4668,6 +4741,7 @@ impl LoanLedger {
                     active_nonlocal_indexed_ranges: 0,
                     active_memory_loans: 0,
                     active_footprint: Default::default(),
+                    automatic_storage_loans: PersistentMap::default(),
                     cache_memory_index: PersistentMap::default(),
                     cache_memory_subtree: PersistentMap::default(),
                     unindexed_memory: PersistentMap::default(),
@@ -6157,6 +6231,40 @@ impl LoanLedger {
         })
     }
 
+    /// Whole-object retirement uses the backing identities retained when
+    /// loans were opened. Select one live loan directly for the refusal.
+    pub(super) fn automatic_storage_retirement_refusal(
+        &self,
+        block: &AddressBase,
+        size: &MachineTerm,
+    ) -> Option<LoanRefusalDiagnostic> {
+        #[cfg(test)]
+        let _fast =
+            crate::kernel::search::FastOperationScope::enter("automatic storage retirement");
+        crate::instrumentation::record_deterministic_work(1);
+        let data = &self.storage.data;
+        let (loan, protected) = data.automatic_storage_loans.get(block)?.iter().next()?;
+        let record = data.loans.get(loan).expect("indexed live loan");
+        let attempted = MemoryRange::new_with_element_width(
+            Address {
+                base: block.clone(),
+                offset: super::AddressOffset::Constant(0),
+            },
+            0u32.into(),
+            size.clone(),
+            1,
+        );
+        Some(LoanRefusal::ActiveDependency.diagnostic_with_subject(
+            LoanRefusalOperation::MemoryAccess,
+            LoanRefusalSubject::for_memory_conflict(
+                attempted,
+                ResourceFact::view_memory(protected.clone()),
+                *loan,
+                origin_kind(&record.origin),
+            ),
+        ))
+    }
+
     /// Explain a refused access in the D13 shape: the loan that refused it,
     /// where that loan came from, the range it protects, and the range the
     /// operation attempted. Only the refusal path pays for the explanation,
@@ -7247,6 +7355,7 @@ impl LoanLedger {
         let data = &self.storage.data;
         let mut expected_cache_index = CacheProtectionIndex::default();
         let mut expected_cache_subtree = CacheProtectionIndex::default();
+        let mut expected_automatic_storage = PersistentMap::default();
         for (loan, record) in data.loans.iter() {
             if !data
                 .scopes
@@ -7256,6 +7365,7 @@ impl LoanLedger {
                 continue;
             }
             for range in &record.memory_backing {
+                update_automatic_storage_loans(&mut expected_automatic_storage, range, *loan, true);
                 if let Some((origin, nodes)) = cache_protection_nodes(range) {
                     for node in nodes {
                         for ancestor in memory_interval_ancestors(&node) {
@@ -7276,9 +7386,10 @@ impl LoanLedger {
                 }
             }
         }
-        if !expected_cache_index
-            .iter()
-            .eq(data.cache_memory_index.iter())
+        if expected_automatic_storage != data.automatic_storage_loans
+            || !expected_cache_index
+                .iter()
+                .eq(data.cache_memory_index.iter())
             || !expected_cache_subtree
                 .iter()
                 .eq(data.cache_memory_subtree.iter())

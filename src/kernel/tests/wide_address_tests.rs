@@ -17,7 +17,9 @@ fn outcome(state: &ExecutionState, expression: ProgramExpression) -> ExpressionO
     let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
     };
-    outcome.clone()
+    let native_outcome = outcome.native_compat();
+    let outcome = &native_outcome;
+    outcome.clone().map_value(Into::into)
 }
 
 fn value(state: &ExecutionState, expression: ProgramExpression) -> ProgramValue {
@@ -536,7 +538,7 @@ fn checked_object_address_rejects_storage_after_its_local_lifetime_ends() {
     };
     let retired = state
         .clone()
-        .with_memory(state.memory().without_local_block(&pointer.pointer().base));
+        .with_memory(state.memory().without_local_block(&pointer.address().base));
     assert!(matches!(
         outcome(
             &retired,
@@ -686,7 +688,7 @@ fn checked_byte_array_address_cast_preserves_retirement_checks() {
     };
     let retired = state
         .clone()
-        .with_memory(state.memory().without_local_block(&pointer.pointer().base));
+        .with_memory(state.memory().without_local_block(&pointer.address().base));
     let checked = crate::kernel::program_expression::checked_object_address(
         crate::kernel::program_expression::typed_load(
             ProgramExpression::Value(address),

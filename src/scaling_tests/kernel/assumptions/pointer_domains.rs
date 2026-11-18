@@ -1,7 +1,7 @@
 use super::*;
 
-fn opaque(id: u64) -> PointerValue {
-    PointerValue::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+fn opaque(id: u64) -> Pointer {
+    Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
 }
 
 /// The witness arrives after the entire related class has been built. Each
@@ -14,16 +14,13 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
             let _session = crate::kernel::VerificationSession::enter();
             let root = opaque(998_000);
             let selected = root.clone().with_bounds(Some(SubobjectBounds {
-                start: root.pointer().clone(),
+                start: root.address().clone(),
                 width: 4u32.into(),
             }));
             let mut facts = PureFactContext::new();
             for i in 0..unrelated {
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_value_equal(
-                        opaque(998_100 + 2 * i),
-                        opaque(998_101 + 2 * i),
-                    ),
+                    ConditionTerm::pointer_equal(opaque(998_100 + 2 * i), opaque(998_101 + 2 * i)),
                     true,
                 );
             }
@@ -31,14 +28,12 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
             let mut previous = first.clone();
             for i in 1..related {
                 let next = opaque(999_000 + i);
-                facts = facts.assume_condition(
-                    ConditionTerm::pointer_value_equal(previous, next.clone()),
-                    true,
-                );
+                facts = facts
+                    .assume_condition(ConditionTerm::pointer_equal(previous, next.clone()), true);
                 previous = next;
             }
             facts = facts.assume_condition(
-                ConditionTerm::pointer_value_equal(previous, selected.clone()),
+                ConditionTerm::pointer_equal(previous, selected.clone()),
                 true,
             );
             let ((domain, work), map_work) = crate::persistent::measure_persistent_work(|| {
@@ -56,6 +51,37 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
             assert!(
                 map_work <= 128 * logarithm + 128,
                 "related={related}, unrelated={unrelated}, map work={map_work}"
+            );
+            // Consumers query the same cold class without rewriting the value.
+            let ((paths, clause), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let paths = crate::kernel::eval::pointer_offset_by_bytes_paths(
+                        &ExecutionState::new(),
+                        first.clone(),
+                        4,
+                        ExecutionFacts::new(),
+                        Vec::new(),
+                        &facts,
+                    );
+                    let range =
+                        MemoryRange::from_pointer_value(&first, 0u32.into(), 1u32.into(), 4);
+                    let clause =
+                        crate::kernel::loops::memory_range_bounds_refusal(&first, &range, &facts);
+                    (paths, clause)
+                });
+            assert!(clause.is_none());
+            assert_eq!(paths.len(), 1);
+            assert_eq!(
+                paths[0].outcome,
+                ExpressionOutcome::Value(ProgramValue::Pointer(
+                    first
+                        .clone()
+                        .with_address(first.address().offset_by_bytes(4))
+                ))
+            );
+            assert!(
+                work <= 512 * logarithm + 1024,
+                "related={related}, unrelated={unrelated}, consumer work={work}"
             );
             let held = MemoryRange::from_pointer_value(&selected, 0u32.into(), 1u32.into(), 4);
             let (matched, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -83,7 +109,7 @@ fn an_unregistered_pointer_domain_does_not_recover_memory_history() {
         }
         let memory = crate::kernel::intern_memory(memory);
         let cell = Address::symbolic(Variable(1_001_000));
-        let read = PointerValue::from_read(
+        let read = Pointer::from_read(
             Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,

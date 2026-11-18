@@ -23,7 +23,7 @@ fn item() -> SpecExpression {
 
 fn read_at(elements: SpecExpression) -> SpecExpression {
     SpecExpression::MemoryLoad {
-        memory: SpecPoint::Current,
+        point: SpecPoint::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
             pointer: Box::new(name("v")),
             elements: Box::new(elements),
@@ -183,7 +183,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                 SpecIntegerExpression::PureFunctionApplication {
                     name: "helper".into(),
                     arguments: vec![SpecPureFunctionArgument::ArrayRef {
-                        memory: SpecPoint::Current,
+                        point: SpecPoint::Current,
                         pointer: name("v"),
                         element_type: ProgramType::Int32,
                     }],
@@ -247,7 +247,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                 zero(),
                 counted(
                     SpecExpression::MemoryLoad {
-                        memory: SpecPoint::FunctionEntry,
+                        point: SpecPoint::FunctionEntry,
                         pointer: Box::new(SpecExpression::PointerOffset {
                             pointer: Box::new(name("v")),
                             elements: Box::new(item()),
@@ -269,7 +269,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                 zero(),
                 counted(
                     SpecExpression::MemoryLoad {
-                        memory: SpecPoint::Current,
+                        point: SpecPoint::Current,
                         pointer: Box::new(SpecExpression::PointerOffset {
                             pointer: Box::new(name("v")),
                             elements: Box::new(item()),
@@ -414,7 +414,7 @@ fn application(
         vec![
             PureFunctionArgument::ArrayRef {
                 memory: memory.clone(),
-                pointer: ProgramValue::Pointer(PointerValue::new(
+                pointer: ProgramValue::Pointer(Pointer::new(
                     base.clone(),
                     ProgramType::Int32Pointer,
                 )),
@@ -427,7 +427,7 @@ fn application(
 }
 
 fn fact(condition: ConditionTerm) -> Proposition {
-    Proposition::ConditionIs(condition, true)
+    Proposition::condition_is(condition, true)
 }
 
 fn le(left: MachineTerm, right: MachineTerm) -> Proposition {
@@ -920,7 +920,7 @@ fn byte_fold_summary_checks_the_read_type_and_stride() {
     let mut parameters = parameters();
     parameters[0].1 = ProgramType::UInt8Pointer;
     let read = |width, value_type| SpecExpression::MemoryLoad {
-        memory: SpecPoint::Current,
+        point: SpecPoint::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
             pointer: Box::new(name("v")),
             elements: Box::new(item()),
@@ -960,7 +960,7 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
     let mut parameters = parameters();
     parameters[0].1 = ProgramType::UInt8Pointer;
     let read = SpecExpression::MemoryLoad {
-        memory: SpecPoint::Current,
+        point: SpecPoint::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
             pointer: Box::new(name("v")),
             elements: Box::new(item()),
@@ -1141,7 +1141,7 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
         end: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, MachineTerm::constant(4)),
         element_width: 4,
     };
-    let bound = Proposition::ConditionIs(
+    let bound = Proposition::condition_is(
         ConditionTerm::signed_less_equal(MachineTerm::constant(4), native),
         true,
     );

@@ -623,7 +623,11 @@ pub(super) fn mint_protected_instance(
     Ok(ResourceInstance::new(
         identity,
         description.family().into(),
-        description.arguments().iter().cloned().collect(),
+        description
+            .arguments()
+            .iter()
+            .map(crate::kernel::ResourceFieldValue::into_native)
+            .collect(),
         description.schema().clone(),
         fields,
     )
@@ -721,7 +725,11 @@ pub(super) fn fresh_protected_payload(
     let other = ResourceInstance::new(
         other_identity,
         description.family().into(),
-        description.arguments().iter().cloned().collect(),
+        description
+            .arguments()
+            .iter()
+            .map(crate::kernel::ResourceFieldValue::into_native)
+            .collect(),
         description.schema().clone(),
         other_fields,
     )

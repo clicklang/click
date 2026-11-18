@@ -38,7 +38,7 @@ void release(int32* data, int32* occupied, int32 capacity, int32 index) {
     mark before;
     step();
     step();
-    give(at(before, data)[index..index + 1]);
+    fold(at(before, arena_cells(data, occupied, capacity))[index]);
     fold(arena_cells(data, occupied, capacity));
 }
 ```

@@ -528,28 +528,21 @@ impl MemoryDagHopJustification {
         assumptions: &PureFactContext,
     ) -> bool {
         match self {
-            Self::StoreDistinctBlocks => matches!(
-                derivation,
-                MemoryDerivation::Store { pointer: write, .. }
-                    if write.blocks_proven_distinct(pointer)
-            ),
+            Self::StoreDistinctBlocks => derivation
+                .single_write()
+                .is_some_and(|(write, _)| write.blocks_proven_distinct(pointer)),
             Self::StoreAddressByteSeparation => {
-                let MemoryDerivation::Store {
-                    pointer: write,
-                    value,
-                    ..
-                } = derivation
-                else {
+                let Some((write, write_bytes)) = derivation.single_write() else {
                     return false;
                 };
                 assumptions
-                    .numeric_access_byte_overlap(write, value.byte_width(), pointer, bytes)
+                    .numeric_access_byte_overlap(write, write_bytes, pointer, bytes)
                     .or_else(|| {
                         (write.base == pointer.base)
                             .then(|| {
                                 crate::kernel::reasoning::exact_access_byte_overlap(
                                     write,
-                                    value.byte_width(),
+                                    write_bytes,
                                     pointer,
                                     bytes,
                                 )
@@ -559,25 +552,20 @@ impl MemoryDagHopJustification {
                     == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
             }
             Self::StoreAliasedByteSeparation { write: aligned } => {
-                let MemoryDerivation::Store {
-                    pointer: write,
-                    value,
-                    ..
-                } = derivation
-                else {
+                let Some((write, write_bytes)) = derivation.single_write() else {
                     return false;
                 };
                 !write.blocks_proven_distinct(aligned)
                     && assumptions.pointers_known_equal(write, aligned)
                     && crate::kernel::reasoning::exact_access_byte_overlap(
                         aligned,
-                        value.byte_width(),
+                        write_bytes,
                         pointer,
                         bytes,
                     ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
             }
             Self::StoreCommonBaseUnequalConstants { condition } => {
-                let MemoryDerivation::Store { pointer: write, .. } = derivation else {
+                let Some((write, _)) = derivation.single_write() else {
                     return false;
                 };
                 pointer_offsets_with_common_base_distinctness_condition(write, pointer)
@@ -585,7 +573,7 @@ impl MemoryDagHopJustification {
                     && condition == &ConditionTerm::Constant(false)
             }
             Self::StoreCommonBaseExactInequality { condition } => {
-                let MemoryDerivation::Store { pointer: write, .. } = derivation else {
+                let Some((write, _)) = derivation.single_write() else {
                     return false;
                 };
                 pointer_offsets_with_common_base_distinctness_condition(write, pointer)
@@ -597,7 +585,7 @@ impl MemoryDagHopJustification {
                 path,
                 reversed,
             } => {
-                let MemoryDerivation::Store { pointer: write, .. } = derivation else {
+                let Some((write, _)) = derivation.single_write() else {
                     return false;
                 };
                 let Some(ConditionTerm::Compare {
@@ -649,10 +637,12 @@ impl MemoryDagHopJustification {
             } => {
                 let retired;
                 let (write, write_bytes) = match (self, derivation) {
-                    (
-                        Self::StoreSeparatedRanges { .. },
-                        MemoryDerivation::Store { pointer, value, .. },
-                    ) => (pointer, value.byte_width()),
+                    (Self::StoreSeparatedRanges { .. }, _) => {
+                        let Some(write) = derivation.single_write() else {
+                            return false;
+                        };
+                        write
+                    }
                     (
                         Self::LocalLifetimeEndedSeparatedRanges { .. },
                         MemoryDerivation::LocalLifetimeEnded { base, block },
@@ -1184,8 +1174,11 @@ impl RangeBoundEvidence {
                 let Proposition::ConditionIs(condition, truth) = &to_successor.premise else {
                     return false;
                 };
-                let Some(edge) = order_view_at_format(condition, *truth, MachineIntegerType::Int32)
-                else {
+                let Some(edge) = order_view_at_format(
+                    condition.native_compat(),
+                    *truth,
+                    MachineIntegerType::Int32,
+                ) else {
                     return false;
                 };
                 let [lower, upper] = edge
@@ -1195,7 +1188,7 @@ impl RangeBoundEvidence {
                 if !strict
                     || edge.relation != Relation::Less
                     || Key::new(lower) != Key::new(left)
-                    || assumptions.exact_condition_value(condition) != Some(*truth)
+                    || assumptions.exact_condition_value(condition.native_compat()) != Some(*truth)
                 {
                     return false;
                 }
@@ -1227,10 +1220,10 @@ impl PointerInRangeEvidence {
                     .find_map(|alias| {
                         let membership = Self::for_pointer_direct(alias, range, assumptions)?;
                         let condition =
-                            ConditionTerm::pointer_equal(pointer.clone(), alias.clone());
+                            ConditionTerm::address_equal(pointer.clone(), alias.clone());
                         crate::kernel::record_implicit_consulted_premises(
                             assumptions,
-                            &Proposition::ConditionIs(condition.clone(), true),
+                            &Proposition::condition_is(condition.clone(), true),
                         );
                         Some(Self::ExactAlias {
                             alias: alias.clone(),
@@ -1254,8 +1247,8 @@ impl PointerInRangeEvidence {
                         let membership = Self::for_pointer_direct(&shifted, range, assumptions)?;
                         crate::kernel::record_implicit_consulted_premises(
                             assumptions,
-                            &Proposition::ConditionIs(
-                                ConditionTerm::pointer_equal(base.clone(), range.base().clone()),
+                            &Proposition::condition_is(
+                                ConditionTerm::address_equal(base.clone(), range.base().clone()),
                                 true,
                             ),
                         );
@@ -1403,7 +1396,7 @@ impl PointerInRangeEvidence {
         } = self
         {
             return *pointer == base.offset_by_bytes(*bytes)
-                && assumptions.exact_condition_value(&ConditionTerm::pointer_equal(
+                && assumptions.exact_condition_value(&ConditionTerm::address_equal(
                     base.clone(),
                     alias.clone(),
                 )) == Some(true)
@@ -1419,7 +1412,7 @@ impl PointerInRangeEvidence {
             membership,
         } = self
         {
-            return *condition == ConditionTerm::pointer_equal(pointer.clone(), alias.clone())
+            return *condition == ConditionTerm::address_equal(pointer.clone(), alias.clone())
                 && assumptions.exact_condition_value(condition) == Some(true)
                 && matches!(
                     membership.as_ref(),
@@ -1436,8 +1429,8 @@ impl PointerInRangeEvidence {
                             return true;
                         }
                         crate::kernel::proof::propositions_are_alpha_equal(
-                            &Proposition::ConditionIs(guard.clone(), true),
-                            &Proposition::ConditionIs(upper.clone(), true),
+                            &Proposition::condition_is(guard.clone(), true),
+                            &Proposition::condition_is(upper.clone(), true),
                         )
                     })
             }) && assumptions.exact_condition_value(upper) == Some(true);
@@ -2029,17 +2022,17 @@ mod separated_range_frame_tests {
                 left: Box::new(Resource::Memory(backing)),
                 right: Box::new(Resource::Memory(descriptor)),
             },
-            Proposition::ConditionIs(ConditionTerm::equal(loaded_start, start.clone()), true),
-            Proposition::ConditionIs(
+            Proposition::condition_is(ConditionTerm::equal(loaded_start, start.clone()), true),
+            Proposition::condition_is(
                 ConditionTerm::signed_less_equal(start.clone(), model_index.clone()),
                 true,
             ),
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::signed_less_than(model_index, end.clone()),
                 true,
             ),
-            Proposition::ConditionIs(ConditionTerm::signed_less_equal(0u32.into(), start), true),
-            Proposition::ConditionIs(ConditionTerm::signed_less_equal(end, 1024u32.into()), true),
+            Proposition::condition_is(ConditionTerm::signed_less_equal(0u32.into(), start), true),
+            Proposition::condition_is(ConditionTerm::signed_less_equal(end, 1024u32.into()), true),
         ];
         let context = facts
             .iter()
@@ -2386,7 +2379,7 @@ mod shared_range_bound_evidence_tests {
         };
         let goal = compare(variable(994103), variable(994104));
         for successor in [false, true] {
-            let first = Proposition::ConditionIs(
+            let first = Proposition::condition_is(
                 compare(
                     variable(994103),
                     if successor {
@@ -2397,7 +2390,8 @@ mod shared_range_bound_evidence_tests {
                 ),
                 true,
             );
-            let second = Proposition::ConditionIs(compare(product.clone(), variable(994104)), true);
+            let second =
+                Proposition::condition_is(compare(product.clone(), variable(994104)), true);
             let exports = KernelTermExport::machine_export_count();
             let facts = PureFactContext::new()
                 .assume_proposition(first.clone())

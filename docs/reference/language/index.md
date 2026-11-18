@@ -661,8 +661,10 @@ signed components owe `0 <= x`. The unsigned countdown idiom
 (`mdtests/an_unsigned_count_down_loop_owes_an_unsigned_descent.md`).
 Explicitly observing a machine expression, as in
 `decreases to_integer(3u32 - x)`, retains its wrapping arithmetic. A back
-edge on which that expression wraps upward is refused
-(`mdtests/an_unsigned_measure_that_wraps_upward_is_refused.md`). A plain
+edge on which that expression wraps upward is refused if the loop can
+continue (`mdtests/an_unsigned_measure_that_wraps_upward_is_refused.md`). When
+the next test is provably false, the exit owes no descent
+(`mdtests/loop_numeric_descent_on_exit.md`). A plain
 `decreases 3 - x` cannot wrap; it instead owes Integer nonnegativity and
 strict descent. A `long` loop's `length - i` likewise ranks by an Integer
 difference, without a signed 64-bit overflow obligation.
@@ -2722,8 +2724,8 @@ cannot depend on reading that same memory. A guarded body may directly contain
 the resource being defined. This direct self-recursion is the supported
 recursive form; unguarded recursion and mutual resource cycles are rejected.
 
-`observe` keeps a guarded resource opaque when neither the guard nor its
-negation is known. Explicit `fold` and `unfold` require the guard to be decided.
+Automatic projection keeps a guarded body opaque while its guard is undecided.
+Explicit `observe`, `fold`, and `unfold` require the guard to be decided.
 When active, they expose or consume exactly one body layer, leaving a recursive
 child such as `list(node->next)` folded. This makes proof cost depend on the
 number of explicit list operations, not the unknown length of the list.
@@ -2979,15 +2981,18 @@ Without an `if`, the clause owns every element; it must then be the
 one-cell element `base[k..k + 1]`, and it is exactly the range `owns
 base[lo..hi]` and lowers to it.
 
-Four simple steps move ownership in and out of an unfolded iterated fact.
-Each reads the one fact it names, one guard cell or one quantified guard fact,
-and the indices currently taken out:
+Once the resource is open, `unfold(arena_cells(data, occupied, capacity)[i]);`
+exposes just the element at `i`. The iterated clause supplies its memory
+range. `fold(arena_cells(data, occupied, capacity)[i]);` restores that element.
+Both require its guard to hold. The resource arguments select the exact
+held clause. If C has reassigned an argument, an explicit point can select
+the old arguments, as in
+`fold(at(opened, arena_cells(data, occupied, capacity))[i]);`.
+The index and guard are still read in the current state.
+See `mdtests/indexed_iterated_ownership.md`.
 
-- `take(data[j..j + 1]);` moves element `j` out as ordinary owned memory. The
-  index must be known to lie in the range, its guard must be known true, and
-  it must not already be out. The fact then makes no claim about `j`.
-- `give(data[j..j + 1]);` moves it back. The guard at `j` must be known true
-  and `j` must be out.
+Two operations convert the whole iterated fact:
+
 - `gather(arena_cells(data, occupied, capacity));` forms the fact the
   resource's clause denotes from the range its elements cover, when a
   quantified fact says every guard is true, or from nothing when every guard
@@ -2998,11 +3003,11 @@ The guard is read against the current cells, so a C store to a guard cell
 changes which elements the fact claims. Such a store is allowed only at an
 index where the fact claims nothing: an index out of range, an index taken
 out, an index whose guard is known false, or an index whose element this
-context owns outright. After the store the index stays out until `give`
-returns its element, unless the stored value makes the guard false. So the
-allocation protocol is `take` then mark
+context owns outright. After the store the slot stays open until indexed `fold`
+restores its element, unless the stored value makes the guard false. So the
+allocation protocol is indexed `unfold` then mark
 (`mdtests/iterated_ownership_allocate_one.md`), the free protocol is clear
-then `give` (`mdtests/iterated_ownership_release_one.md`), and marking a
+then indexed `fold` (`mdtests/iterated_ownership_release_one.md`), and marking a
 cell the fact still holds is refused
 (`mdtests/iterated_ownership_rejects_guard_store_while_held.md`). A fold of
 the declaring resource requires the fact with nothing taken out, so it
@@ -3012,7 +3017,7 @@ to guard cells that does not pass through a C store, such as a call's
 effect, drops the fact instead.
 
 The fact itself grants no access: a store to `data[j]` needs the element
-taken out first (`mdtests/iterated_ownership_rejects_store_without_take.md`).
+taken out first (`mdtests/iterated_ownership_rejects_store_with_closed_slot.md`).
 A loop takes one element per iteration from a fact inside its own resource
 (`mdtests/iterated_ownership_claim_loop.md`,
 `mdtests/iterated_ownership_release_loop.md`), and freed cells are reused by
@@ -4006,8 +4011,10 @@ It still names that result after every local or cell that held it has lost it,
 and a fact the call produced lowers from it exactly
 (`mdtests/a_call_result_is_spelled_by_its_call.md`,
 `mdtests/a_discarded_call_result_keeps_its_call_name.md`). Allocation regions also
-expose their nullable return through `.result`; void calls and other regions
-that do not produce a result are refused
+expose their nullable return through `.result`. In C++, the region that
+reserves storage for a materialized object exposes its address through
+`.result` before construction. Reading a field still requires initialized
+storage. Void calls and other regions that do not produce a result are refused
 (`mdtests/a_void_call_has_no_result_value.md`). Click writes a value only the frontend's
 temporary for a call held this way
 (`mdtests/an_unbound_call_result_is_reported_by_its_call.md`).

@@ -40,9 +40,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(body) = definition.composite_body() else {
                 continue;
             };
-            let Some(clause) =
-                held_composite_resource_clause(definition, arguments, parameter_binding, state)
-            else {
+            let Some(clause) = held_composite_resource_clause(
+                definition,
+                &(arguments).native_values(),
+                parameter_binding,
+                state,
+            ) else {
                 continue;
             };
             // The spelling is admitted only when it names the held resource.

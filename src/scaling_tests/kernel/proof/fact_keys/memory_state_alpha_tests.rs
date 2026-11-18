@@ -143,7 +143,7 @@ fn machine_comparison_alpha_keys_retain_shared_dags() {
             var: Variable(98123),
             name: crate::kernel::BinderName::written("i"),
             sort: Sort::ProgramInteger(format),
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 ConditionTerm::IntegerLessThan(
                     IntegerTerm::Machine(operand.clone()).into(),
                     IntegerTerm::Constant(BigInt::from(100)).into(),
@@ -184,7 +184,7 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
         let read = AlgebraicTerm {
             algebraic_type: algebraic_type.clone(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory: memory.clone(),
+                point: crate::kernel::ProgramPoint::at(&memory.clone()),
                 pointer: Box::new(Address {
                     base: AddressBase::Heap(992_000),
                     offset: AddressOffset::Constant(0),

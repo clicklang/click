@@ -86,7 +86,7 @@ fn statement_local_reservations_share_ambient_memory() {
         let selected = Proposition::MemoryLoadable {
             memory,
             base: pointer(0),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         let ambient = PureFactStore::from_ordered(std::slice::from_ref(&selected));

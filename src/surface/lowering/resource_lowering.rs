@@ -73,7 +73,7 @@ const INPUT_VARIABLE_BASE: u64 = 1 << 34;
 const INPUT_VARIABLE_CEILING: u64 = 1 << 40;
 thread_local! {
     static INPUT_SCOPES: std::cell::RefCell<std::collections::HashMap<u64, String>> = Default::default();
-    static INPUT_POINTER_PLACES: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize, crate::kernel::PointerValue)>> = Default::default();
+    static INPUT_POINTER_PLACES: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize, crate::kernel::Pointer)>> = Default::default();
     static INPUT_VARIABLE_OWNERS: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize)>> = Default::default();
     static INPUT_VARIABLES: std::cell::RefCell<std::collections::HashMap<(u64, usize), Variable>> = Default::default();
 }
@@ -182,7 +182,7 @@ fn input_pointer_variable(scope: u64, index: usize) -> Result<Variable, ClickErr
 // before the function is verified. No unrelated function inputs are searched.
 pub(in crate::surface) fn input_pointer_parameter(
     scope: u64,
-    pointer: &crate::kernel::PointerValue,
+    pointer: &crate::kernel::Pointer,
 ) -> Option<usize> {
     let variable = input_pointer_identity(pointer)?;
     crate::instrumentation::record_deterministic_work(1);
@@ -193,11 +193,11 @@ pub(in crate::surface) fn input_pointer_parameter(
     })
 }
 
-fn input_pointer_identity(pointer: &crate::kernel::PointerValue) -> Option<Variable> {
-    if pointer.pointer().base != AddressBase::ExternalArgument {
+fn input_pointer_identity(pointer: &crate::kernel::Pointer) -> Option<Variable> {
+    if pointer.address().base != AddressBase::ExternalArgument {
         return None;
     }
-    match &pointer.pointer().offset {
+    match &pointer.address().offset {
         AddressOffset::Int32Scaled { value, .. } => value.operand_view().variable().copied(),
         _ => None,
     }
@@ -660,7 +660,7 @@ pub(in crate::surface) fn initial_call_state(
             }
             let scope = crate::kernel::ResourceDescription::new(
                 name.clone(),
-                vec![arguments[0].clone()].into(),
+                vec![arguments.get(0).expect("argument index").into_native()].into(),
                 ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
             )
             .with_population_arity(arguments.len());
@@ -1171,8 +1171,11 @@ fn check_segment_base_loadability(
     let Ok(values) = parameter_values(parameter_binding) else {
         return Ok(());
     };
-    let array_refs =
-        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
+    let array_refs = array_refs_for_parameters(
+        parameter_binding.parameters,
+        &values,
+        &state.program_point(),
+    );
     // The address of the cell, not its content: a base whose address this
     // entry cannot evaluate is reported by the clause's own lowering.
     let Ok(ProgramValue::Pointer(cell)) =
@@ -1189,7 +1192,7 @@ fn check_segment_base_loadability(
     let obligation = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: cell.into_pointer(),
-        bytes: MachineTerm::constant(value_type.byte_width()),
+        bytes: (MachineTerm::constant(value_type.byte_width())).into(),
         wide: false,
     };
     if crate::kernel::execution_state_justifies_loadability_obligation(
@@ -1240,7 +1243,7 @@ pub(in crate::surface) fn folded_matched_instance_note(
             .iter()
             .zip(instance.fields())
             .filter_map(|((name, _), value)| match value {
-                AlgebraicValue::Algebraic(model) => Some((name.as_str(), model)),
+                crate::kernel::ResourceFieldValue::Algebraic(model) => Some((name.as_str(), model)),
                 _ => None,
             })
             .find_map(|(name, model)| {
@@ -1756,9 +1759,8 @@ pub(in crate::surface) fn resource_context_from_requirements(
     // reads the same parameter values and array references.
     let values =
         parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
-    let clause_parameters =
-        ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
-            .with_index(parameter_binding.index);
+    let clause_parameters = ClauseParameters::new(parameter_binding.parameters, &values, state)
+        .with_index(parameter_binding.index);
     for requirement in requires {
         if let Requirement::Resource(resource) = requirement {
             // This builds a provisional context under declared entry premises.
@@ -1873,7 +1875,7 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
             resource,
-            &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+            &ClauseParameters::new(parameter_binding.parameters, &values, state)
                 .with_index(parameter_binding.index),
             state,
             state,
@@ -1891,7 +1893,7 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
     }
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+        &ClauseParameters::new(parameter_binding.parameters, &values, state)
             .with_index(parameter_binding.index),
         state,
         state,
@@ -1950,12 +1952,12 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_entry_and
     assumptions: &PureFactContext,
 ) -> Result<ResourceFact, ClickError> {
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
-    let array_refs = array_refs_for_values(parameter_binding, &values, state.memory());
+    let array_refs = array_refs_for_values(parameter_binding, &values, &state.program_point());
     let (values, _) = contract_environment_at_state(&values, &array_refs, state);
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
             resource,
-            &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+            &ClauseParameters::new(parameter_binding.parameters, &values, state)
                 .with_index(parameter_binding.index),
             entry_state,
             state,
@@ -1973,7 +1975,7 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_entry_and
     }
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+        &ClauseParameters::new(parameter_binding.parameters, &values, state)
             .with_index(parameter_binding.index),
         entry_state,
         state,
@@ -1994,7 +1996,7 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_e
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
     lower_resource_clause_facts_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+        &ClauseParameters::new(parameter_binding.parameters, &values, state)
             .with_index(parameter_binding.index),
         entry_state,
         state,
@@ -2010,8 +2012,8 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_e
 /// not rebuild a map over every parameter.
 struct ClauseParameters<'a> {
     parameters: &'a [crate::languages::interface::ImportedParameter],
-    values: &'a BTreeMap<String, ProgramValue>,
-    memory: &'a SymbolicMemory,
+    values: &'a ProgramValueBindings,
+    state: &'a ExecutionState,
     index: Option<&'a crate::surface::ParameterIndex>,
     array_refs: std::cell::OnceCell<ClickArrayRefs>,
 }
@@ -2019,13 +2021,13 @@ struct ClauseParameters<'a> {
 impl<'a> ClauseParameters<'a> {
     fn new(
         parameters: &'a [crate::languages::interface::ImportedParameter],
-        values: &'a BTreeMap<String, ProgramValue>,
-        memory: &'a SymbolicMemory,
+        values: &'a ProgramValueBindings,
+        state: &'a ExecutionState,
     ) -> Self {
         Self {
             parameters,
             values,
-            memory,
+            state,
             index: None,
             array_refs: std::cell::OnceCell::new(),
         }
@@ -2045,7 +2047,7 @@ impl<'a> ClauseParameters<'a> {
                 index: self.index,
                 naming: None,
             };
-            array_refs_for_values(binding, self.values, self.memory)
+            array_refs_for_values(binding, self.values, &self.state.program_point())
         })
     }
 }
@@ -2053,7 +2055,7 @@ impl<'a> ClauseParameters<'a> {
 fn lower_resource_clause_with_values(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
 ) -> Result<ResourceFact, ClickError> {
@@ -2070,7 +2072,7 @@ fn lower_resource_clause_with_values(
 fn lower_resource_clause_with_values_mode(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     allow_symbolic_resource_arguments: bool,
@@ -2078,7 +2080,7 @@ fn lower_resource_clause_with_values_mode(
     let base_assumptions = PureFactContext::new();
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, values, state.memory())
+        &ClauseParameters::new(parameter_binding.parameters, values, state)
             .with_index(parameter_binding.index),
         state,
         state,
@@ -2355,7 +2357,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 };
                 let guard = crate::kernel::program_mutex_guard_resource(
                     state,
-                    mutex.pointer(),
+                    mutex.address(),
                     allow_symbolic_resource_arguments,
                 )
                 .ok_or_else(|| ClickError::new("mutex_guard requires a live acquisition"))?;
@@ -2436,7 +2438,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 };
                 let guard = crate::kernel::program_mutex_live_resource(
                     state,
-                    mutex.pointer(),
+                    mutex.address(),
                     allow_symbolic_resource_arguments,
                 )
                 .ok_or_else(|| ClickError::new("mutex_live requires a live initialization"))?;
@@ -2482,7 +2484,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 };
                 let right = Resource::Publication(crate::kernel::PublicationRight::new(
                     side,
-                    flag.pointer().clone(),
+                    flag.address().clone(),
                     crate::kernel::ResourceDescription::new(
                         payload_name.clone(),
                         arguments.clone(),
@@ -2524,7 +2526,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     };
                     crate::kernel::program_mutex_use_resource_with_type(
                         state,
-                        mutex.pointer(),
+                        mutex.address(),
                         crate::kernel::ResourceDescription::new(
                             name.clone(),
                             arguments.clone(),
@@ -2532,7 +2534,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         ),
                     )
                 } else {
-                    crate::kernel::program_mutex_use_resource(state, mutex.pointer())
+                    crate::kernel::program_mutex_use_resource(state, mutex.address())
                 };
                 return Ok(match access {
                     ResourceAccessMode::Own => guard,
@@ -2600,7 +2602,7 @@ fn evaluate_resource_argument_with_state(
 fn lower_resource_clause_facts_with_values(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
 ) -> Result<Vec<ResourceFact>, ClickError> {
@@ -2617,7 +2619,7 @@ fn lower_resource_clause_facts_with_values(
 fn lower_resource_clause_facts_with_values_mode(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     allow_symbolic_resource_arguments: bool,
@@ -2625,7 +2627,7 @@ fn lower_resource_clause_facts_with_values_mode(
     let base_assumptions = PureFactContext::new();
     lower_resource_clause_facts_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, values, state.memory())
+        &ClauseParameters::new(parameter_binding.parameters, values, state)
             .with_index(parameter_binding.index),
         state,
         state,
@@ -3116,7 +3118,11 @@ fn loadable_requirement_props(
                 segment,
                 ContractEnvironment::new(
                     &values,
-                    &array_refs_for_parameters(parameter_binding.parameters, &values, memory),
+                    &array_refs_for_parameters(
+                        parameter_binding.parameters,
+                        &values,
+                        &state.program_point(),
+                    ),
                 )
                 .with_parameters(parameter_binding),
                 &state,
@@ -3143,7 +3149,7 @@ fn loadable_requirement_props(
     let mut propositions = vec![Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes,
+        bytes: (bytes).into(),
         wide: false,
     }];
     propositions.extend(guards);
@@ -3224,8 +3230,15 @@ fn reject_impossible_range_guards(
     assumptions: &PureFactContext,
 ) -> Result<(), ClickError> {
     if guards.iter().any(|guard| match guard {
-        Proposition::ConditionIs(ConditionTerm::Constant(false), true) => true,
-        Proposition::ConditionIs(condition, true) => assumptions.decide(condition) == Some(false),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::Constant(false), _)) =
+                condition_source_0.condition_native() =>
+        {
+            true
+        }
+        Proposition::ConditionIs(condition, true) => {
+            assumptions.decide(condition.native_compat()) == Some(false)
+        }
         _ => false,
     }) {
         return Err(ClickError::new(
@@ -3290,7 +3303,7 @@ pub(in crate::surface) fn memory_range_loadable_atom_prop(
     Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes,
+        bytes: (bytes).into(),
         wide: false,
     }
 }
@@ -3595,6 +3608,35 @@ pub(in crate::surface) fn contract_segment_element_width_for_result_type(
     segment: &ContractSegment,
     result_type: Option<ProgramType>,
 ) -> u32 {
+    contract_segment_element_width_with_parameter(segment, result_type, &|name| {
+        parameters
+            .iter()
+            .find(|parameter| parameter.matches_binding(name))
+    })
+}
+
+pub(in crate::surface) fn contract_segment_element_width_with_binding(
+    binding: ParameterBinding<'_>,
+    segment: &ContractSegment,
+) -> u32 {
+    let Some(index) = binding.index else {
+        return contract_segment_element_width(binding.parameters, segment);
+    };
+    contract_segment_element_width_with_parameter(segment, None, &|name| {
+        binding
+            .parameters
+            .get(index.position(name.source_name())?)
+            .filter(|parameter| parameter.matches_binding(name))
+    })
+}
+
+fn contract_segment_element_width_with_parameter<'a>(
+    segment: &ContractSegment,
+    result_type: Option<ProgramType>,
+    parameter: &impl Fn(
+        &crate::kernel::BindingName,
+    ) -> Option<&'a crate::languages::interface::ImportedParameter>,
+) -> u32 {
     if matches!(
         segment.surface,
         ContractSegmentSurface::Object(_) | ContractSegmentSurface::ObjectPlace { .. }
@@ -3614,7 +3656,7 @@ pub(in crate::surface) fn contract_segment_element_width_for_result_type(
     {
         return element_width;
     }
-    contract_expression_element_width(parameters, &segment.base).unwrap_or(4)
+    contract_expression_element_width_with_parameter(&segment.base, parameter).unwrap_or(4)
 }
 
 /// Loop locals have frontend-declared types even before execution binds values.
@@ -3795,10 +3837,23 @@ pub(in crate::surface) fn contract_expression_element_width(
     parameters: &[crate::languages::interface::ImportedParameter],
     expression: &ProgramExpression,
 ) -> Option<u32> {
+    contract_expression_element_width_with_parameter(expression, &|name| {
+        parameters
+            .iter()
+            .find(|parameter| parameter.matches_binding(name))
+    })
+}
+
+fn contract_expression_element_width_with_parameter<'a>(
+    expression: &ProgramExpression,
+    parameter: &impl Fn(
+        &crate::kernel::BindingName,
+    ) -> Option<&'a crate::languages::interface::ImportedParameter>,
+) -> Option<u32> {
     match expression {
         ProgramExpression::AddressOf(place) => match place.as_ref() {
             ProgramExpression::Index(base, _) => {
-                contract_expression_element_width(parameters, base)
+                contract_expression_element_width_with_parameter(base, parameter)
             }
             _ => None,
         },
@@ -3809,44 +3864,43 @@ pub(in crate::surface) fn contract_expression_element_width(
         ProgramExpression::Cast { target_type, .. } => {
             target_type.pointee_type().map(ProgramType::byte_width)
         }
-        ProgramExpression::Variable(name) => parameters
-            .iter()
-            .find(|parameter| parameter.matches_binding(name))
-            .and_then(|parameter| {
-                if parameter.is_struct_value() {
-                    Some(4)
-                } else {
-                    parameter
-                        .array_element_width()
-                        .or_else(|| match parameter.interface_type() {
-                            interface_type if interface_type.is_pointer() => interface_type
-                                .pointee_type()
-                                .map(InterfaceType::to_kernel_type)
-                                .map(ProgramType::byte_width),
-                            // Abstract values and enums use their model
-                            // width, as do the cells that hold them.
-                            InterfaceType::ParameterPointer(name) => {
-                                Some(ProgramType::Parameter(name).byte_width())
-                            }
-                            InterfaceType::Int32Array(_) => Some(4),
-                            InterfaceType::CharArray(_, _) => Some(1),
-                            InterfaceType::UInt8Array(_) => Some(1),
-                            InterfaceType::Int8Array(_) => Some(1),
-                            InterfaceType::Int16Array(_) | InterfaceType::UInt16Array(_) => Some(2),
-                            InterfaceType::UInt32Array(_) => Some(4),
-                            InterfaceType::Int64Array(_, _) | InterfaceType::UInt64Array(_, _) => {
-                                Some(8)
-                            }
-                            InterfaceType::Int128Array(_) | InterfaceType::UInt128Array(_) => {
-                                Some(16)
-                            }
-                            _ => None,
-                        })
-                }
-            }),
-        ProgramExpression::Add(left, right) => contract_expression_element_width(parameters, left)
-            .or_else(|| contract_expression_element_width(parameters, right)),
-        ProgramExpression::Subtract(left, _) => contract_expression_element_width(parameters, left),
+        ProgramExpression::Variable(name) => parameter(name).and_then(|parameter| {
+            if parameter.is_struct_value() {
+                Some(4)
+            } else {
+                parameter
+                    .array_element_width()
+                    .or_else(|| match parameter.interface_type() {
+                        interface_type if interface_type.is_pointer() => interface_type
+                            .pointee_type()
+                            .map(InterfaceType::to_kernel_type)
+                            .map(ProgramType::byte_width),
+                        // Abstract values and enums use their model
+                        // width, as do the cells that hold them.
+                        InterfaceType::ParameterPointer(name) => {
+                            Some(ProgramType::Parameter(name).byte_width())
+                        }
+                        InterfaceType::Int32Array(_) => Some(4),
+                        InterfaceType::CharArray(_, _) => Some(1),
+                        InterfaceType::UInt8Array(_) => Some(1),
+                        InterfaceType::Int8Array(_) => Some(1),
+                        InterfaceType::Int16Array(_) | InterfaceType::UInt16Array(_) => Some(2),
+                        InterfaceType::UInt32Array(_) => Some(4),
+                        InterfaceType::Int64Array(_, _) | InterfaceType::UInt64Array(_, _) => {
+                            Some(8)
+                        }
+                        InterfaceType::Int128Array(_) | InterfaceType::UInt128Array(_) => Some(16),
+                        _ => None,
+                    })
+            }
+        }),
+        ProgramExpression::Add(left, right) => {
+            contract_expression_element_width_with_parameter(left, parameter)
+                .or_else(|| contract_expression_element_width_with_parameter(right, parameter))
+        }
+        ProgramExpression::Subtract(left, _) => {
+            contract_expression_element_width_with_parameter(left, parameter)
+        }
         ProgramExpression::TypedLoad { value_type, .. } => match value_type {
             interface_type if interface_type.is_pointer() => {
                 interface_type.pointee_type().map(ProgramType::byte_width)
@@ -3988,7 +4042,7 @@ fn requirement_proposition_and_facts_with_assumptions(
 
 pub(in crate::surface) fn parameter_values(
     parameter_binding: ParameterBinding<'_>,
-) -> Result<BTreeMap<String, ProgramValue>, ClickError> {
+) -> Result<ProgramValueBindings, ClickError> {
     crate::instrumentation::record_deterministic_work(parameter_binding.parameters.len());
     parameter_binding
         .parameters
@@ -4011,7 +4065,7 @@ pub(in crate::surface) fn parameter_values(
 pub(in crate::surface) fn parameter_values_named(
     parameter_binding: ParameterBinding<'_>,
     names: &BTreeSet<String>,
-) -> Result<BTreeMap<String, ProgramValue>, ClickError> {
+) -> Result<ProgramValueBindings, ClickError> {
     let Some(index) = parameter_binding.index else {
         return parameter_values(parameter_binding);
     };
@@ -4040,11 +4094,11 @@ pub(in crate::surface) fn parameter_values_named(
 /// index, found from those values alone rather than from every parameter.
 pub(in crate::surface) fn array_refs_for_values(
     parameter_binding: ParameterBinding<'_>,
-    values: &BTreeMap<String, ProgramValue>,
-    memory: &SymbolicMemory,
+    values: &ProgramValueBindings,
+    point: &crate::kernel::ProgramPoint,
 ) -> ClickArrayRefs {
     let Some(index) = parameter_binding.index else {
-        return array_refs_for_parameters(parameter_binding.parameters, values, memory);
+        return array_refs_for_parameters(parameter_binding.parameters, values, point);
     };
     values
         .iter()
@@ -4057,8 +4111,8 @@ pub(in crate::surface) fn array_refs_for_values(
             Some((
                 name.clone(),
                 ClickArrayRef {
-                    memory: memory.clone(),
-                    pointer: pointer.pointer().clone(),
+                    point: point.clone(),
+                    pointer: pointer.address().clone(),
                     element_type,
                 },
             ))
@@ -4107,7 +4161,7 @@ fn resource_clause_referenced_names(resource: &ResourceClause) -> Option<BTreeSe
 fn resource_clause_parameter_values(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-) -> Result<BTreeMap<String, ProgramValue>, ClickError> {
+) -> Result<ProgramValueBindings, ClickError> {
     match resource_clause_referenced_names(resource) {
         Some(names) => parameter_values_named(parameter_binding, &names),
         None => parameter_values(parameter_binding),
@@ -4116,8 +4170,8 @@ fn resource_clause_parameter_values(
 
 pub(in crate::surface) fn array_refs_for_parameters(
     parameters: &[crate::languages::interface::ImportedParameter],
-    values: &BTreeMap<String, ProgramValue>,
-    memory: &SymbolicMemory,
+    values: &ProgramValueBindings,
+    point: &crate::kernel::ProgramPoint,
 ) -> ClickArrayRefs {
     crate::instrumentation::record_deterministic_work(parameters.len());
     parameters
@@ -4130,8 +4184,8 @@ pub(in crate::surface) fn array_refs_for_parameters(
             Some((
                 parameter.name().to_string(),
                 ClickArrayRef {
-                    memory: memory.clone(),
-                    pointer: pointer.pointer().clone(),
+                    point: point.clone(),
+                    pointer: pointer.address().clone(),
                     element_type,
                 },
             ))

@@ -399,7 +399,7 @@ mod tests {
         // contains a range bound that refers to the same structural version.
         record(&memory, &pointer, LoadKind::Int32, &origin, 4);
         (
-            Proposition::ConditionIs(ConditionTerm::equal(read, 0u32.into()), true),
+            Proposition::condition_is(ConditionTerm::equal(read, 0u32.into()), true),
             bound,
         )
     }
@@ -429,7 +429,7 @@ mod tests {
         let pointer = Address::symbolic(Variable(998_701));
         let read = KernelTerm::scalar_read_descriptor(
             MachineIntegerType::Int32,
-            &memory,
+            &crate::kernel::ProgramPoint::at(&memory),
             &pointer,
             LoadKind::Int32,
         )

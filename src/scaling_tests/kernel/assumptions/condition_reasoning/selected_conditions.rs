@@ -8,7 +8,7 @@ fn exact_memory_condition_matches_ignore_other_facts() {
             crate::kernel::IntegerTerm::var(Variable(left)).into(),
             crate::kernel::IntegerTerm::var(Variable(right)).into(),
         ),
-        1 => ConditionTerm::pointer_equal(
+        1 => ConditionTerm::address_equal(
             Address::symbolic(Variable(left)),
             Address::symbolic(Variable(right)),
         ),
@@ -123,7 +123,7 @@ fn equivalent_equality_spellings_use_bounded_lookups() {
                 right: Box::new(word(right)),
             };
             let offset = |left, right| {
-                ConditionTerm::PointerOffsetEqual(
+                ConditionTerm::AddressOffsetEqual(
                     Box::new(AddressOffset::Variable(Variable(left))),
                     Box::new(AddressOffset::Variable(Variable(right))),
                 )

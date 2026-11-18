@@ -71,7 +71,7 @@ fn scaled_int32_literals_join_folded_constants_without_overflow() {
 #[test]
 fn scaled_int32_restriction_removes_only_unsupported_consequences() {
     let equality = ConditionTerm::equal(scalar(1), scalar(2));
-    let explicit = ConditionTerm::pointer_offset_equal(scaled(2, 4), offset(10));
+    let explicit = ConditionTerm::address_offset_equal(scaled(2, 4), offset(10));
     let context = PureFactContext::new()
         .assume_condition(equality.clone(), true)
         .assume_condition(explicit.clone(), true);

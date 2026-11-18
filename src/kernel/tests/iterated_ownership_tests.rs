@@ -79,21 +79,23 @@ fn cells_state(capacity: u32, free: u32) -> ExecutionState {
         )
 }
 
-fn take(state: &ExecutionState, index: u32) -> Result<ExecutionState, String> {
+fn open_slot(state: &ExecutionState, capacity: u32, index: u32) -> Result<ExecutionState, String> {
     crate::kernel::apply_iterated_step(
         state,
-        &crate::kernel::IteratedStep::Take {
-            element: range(DATA, index, index + 1),
+        &crate::kernel::IteratedStep::UnfoldSlot {
+            template: cells_fact(capacity),
+            index: index.into(),
         },
         &PureFactContext::new(),
     )
 }
 
-fn give(state: &ExecutionState, index: u32) -> Result<ExecutionState, String> {
+fn close_slot(state: &ExecutionState, capacity: u32, index: u32) -> Result<ExecutionState, String> {
     crate::kernel::apply_iterated_step(
         state,
-        &crate::kernel::IteratedStep::Give {
-            element: range(DATA, index, index + 1),
+        &crate::kernel::IteratedStep::FoldSlot {
+            template: cells_fact(capacity),
+            index: index.into(),
         },
         &PureFactContext::new(),
     )
@@ -131,7 +133,7 @@ fn allocation_and_release_protocols_keep_the_fact_exact() {
     let capacity = 16;
     let state = cells_state(capacity, 8);
     // Allocation: take the free cell, then mark it. The mark closes the hole.
-    let taken = take(&state, 3).expect("a free cell can be taken");
+    let taken = open_slot(&state, capacity, 3).expect("a free cell can be taken");
     assert_eq!(held_fact(&taken).holes().len(), 1);
     assert!(taken.resources().satisfies_fact(
         &ResourceFact::own_memory(range(DATA, 3, 4)),
@@ -144,7 +146,7 @@ fn allocation_and_release_protocols_keep_the_fact_exact() {
     // and giving the element back closes it.
     let cleared = store_guard(&marked, 3, 0).expect("an element owned outright may be released");
     assert_eq!(held_fact(&cleared).holes().len(), 1);
-    let given = give(&cleared, 3).expect("the released element goes back");
+    let given = close_slot(&cleared, capacity, 3).expect("the released element goes back");
     assert!(held_fact(&given).holes().is_empty());
     assert!(!given.resources().satisfies_fact(
         &ResourceFact::own_memory(range(DATA, 3, 4)),
@@ -156,11 +158,19 @@ fn allocation_and_release_protocols_keep_the_fact_exact() {
 fn element_steps_and_guard_stores_refuse_what_the_fact_may_hold() {
     let state = cells_state(16, 8);
     // Cell 9 is occupied: nothing to take, and nothing to give back.
-    assert!(take(&state, 9).unwrap_err().contains("guard is false"));
+    assert!(
+        open_slot(&state, 16, 9)
+            .unwrap_err()
+            .contains("guard is false")
+    );
     // The guard of cell 12 is not known at all.
-    assert!(take(&state, 12).unwrap_err().contains("not known to hold"));
+    assert!(
+        open_slot(&state, 16, 12)
+            .unwrap_err()
+            .contains("not known to hold")
+    );
     // Out of range.
-    assert!(take(&state, 20).is_err());
+    assert!(open_slot(&state, 16, 20).is_err());
     // Cell 2 is free and held: marking it without taking it out would
     // silently drop the cell from the fact.
     assert!(
@@ -169,15 +179,19 @@ fn element_steps_and_guard_stores_refuse_what_the_fact_may_hold() {
             .contains("the guard holds at this index")
     );
     // Taking the same element twice is refused while the first is out.
-    let taken = take(&state, 2).unwrap();
+    let taken = open_slot(&state, 16, 2).unwrap();
     assert!(
-        take(&taken, 2)
+        open_slot(&taken, 16, 2)
             .unwrap_err()
             .contains("already be taken out")
     );
     // Giving back an element whose guard is false is refused.
     let marked = store_guard(&taken, 2, 1).unwrap();
-    assert!(give(&marked, 2).unwrap_err().contains("guard is false"));
+    assert!(
+        close_slot(&marked, 16, 2)
+            .unwrap_err()
+            .contains("guard is false")
+    );
 }
 
 #[test]
@@ -265,7 +279,7 @@ mod scaling_tests {
 }
 
 #[test]
-fn iterated_element_selection_checks_pointer_reads_across_states() {
+fn indexed_slots_use_the_selected_clause_across_states() {
     let source = Address {
         base: "iterated-pointer-slot".into(),
         offset: AddressOffset::Constant(0),
@@ -313,11 +327,14 @@ fn iterated_element_selection_checks_pointer_reads_across_states() {
                 .unchecked_with_fact(ResourceFact::own_memory(range(OCCUPIED, 0, 1)))
                 .unchecked_with_fact(ResourceFact::own(Resource::iterated(iterated.clone()))),
         );
-    let take_at = |base| {
+    let unfold_at = |base| {
+        let mut template = iterated.clone();
+        template.element_base = base;
         crate::kernel::apply_iterated_step(
             &state,
-            &crate::kernel::IteratedStep::Take {
-                element: MemoryRange::new(base, 0u32.into(), 1u32.into()),
+            &crate::kernel::IteratedStep::UnfoldSlot {
+                template,
+                index: 0u32.into(),
             },
             &PureFactContext::new(),
         )
@@ -353,30 +370,36 @@ fn iterated_element_selection_checks_pointer_reads_across_states() {
         &PureFactContext::new(),
     ));
     let held_element = iterated.element_range(&0u32.into());
-    let taken = crate::kernel::apply_iterated_step(
-        &state,
-        &crate::kernel::IteratedStep::Take {
-            element: held_element.clone(),
-        },
-        &PureFactContext::new(),
-    )
-    .unwrap();
+    let taken = unfold_at(iterated.element_base.clone()).unwrap();
     let extra = ResourceFact::own_memory(MemoryRange::new(
         iterated.element_base.clone(),
         1u32.into(),
         2u32.into(),
     ));
+    let frame = taken
+        .resources()
+        .facts()
+        .iter()
+        .filter(|fact| fact.memory_own_range().is_some())
+        .map(|fact| fact.resource().clone())
+        .reduce(Resource::star)
+        .unwrap();
+    let addition_facts = PureFactContext::new().assume_proposition(Proposition::ResourceSeparate {
+        left: Box::new(extra.resource().clone()),
+        right: Box::new(frame),
+    });
     let taken_resources = taken
         .resources()
         .clone()
-        .try_compose_with_facts([extra], &PureFactContext::new())
+        .try_compose_with_facts([extra], &addition_facts)
         .unwrap();
     let taken = taken.with_resource_context(taken_resources);
-    let give = crate::kernel::IteratedStep::Give {
-        element: MemoryRange::new(current_base.clone(), 0u32.into(), 1u32.into()),
+    let restore = crate::kernel::IteratedStep::FoldSlot {
+        template: iterated.clone(),
+        index: 0u32.into(),
     };
-    let returned = crate::kernel::apply_iterated_step(&taken, &give, &PureFactContext::new())
-        .expect("giving the same pointer read back must consume the held element");
+    let returned = crate::kernel::apply_iterated_step(&taken, &restore, &PureFactContext::new())
+        .expect("folding the saved slot must consume the held element");
     assert!(
         returned
             .resources()
@@ -396,15 +419,17 @@ fn iterated_element_selection_checks_pointer_reads_across_states() {
                 &PureFactContext::new(),
             )
             .is_none(),
-        "giving must not leave a second copy of the element"
-    );
-    assert!(crate::kernel::apply_iterated_step(&returned, &give, &PureFactContext::new()).is_err());
-    assert!(
-        take_at(current_base).is_ok(),
-        "an unrelated store preserves the selected pointer read"
+        "folding must consume the direct ownership"
     );
     assert!(
-        take_at(read(&after, &source.offset_by_bytes(8))).is_err(),
+        crate::kernel::apply_iterated_step(&returned, &restore, &PureFactContext::new()).is_err()
+    );
+    assert!(
+        unfold_at(current_base).is_err(),
+        "slot lookup requires the written spelling of the held clause"
+    );
+    assert!(
+        unfold_at(read(&after, &source.offset_by_bytes(8))).is_err(),
         "a different read address is not the held base"
     );
     let changed = after.clone().store(
@@ -412,7 +437,7 @@ fn iterated_element_selection_checks_pointer_reads_across_states() {
         ProgramValue::typed_pointer(heap_base(DATA + 100), ProgramType::Int32Pointer),
     );
     assert!(
-        take_at(read(&changed, &source)).is_err(),
+        unfold_at(read(&changed, &source)).is_err(),
         "a changed pointer slot is not the original read"
     );
 }

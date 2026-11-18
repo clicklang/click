@@ -933,10 +933,14 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             line(output, &prefix, "}");
         }
         ProofTactic::Both(both) => {
+            let arm_prefix = "    ".repeat(indent + 1);
             line(output, &prefix, "both {");
-            write_tactics(output, &both.left_tactics, indent + 1);
-            line(output, &prefix, "} and {");
-            write_tactics(output, &both.right_tactics, indent + 1);
+            line(output, &arm_prefix, "left => {");
+            write_tactics(output, &both.left_tactics, indent + 2);
+            line(output, &arm_prefix, "}");
+            line(output, &arm_prefix, "right => {");
+            write_tactics(output, &both.right_tactics, indent + 2);
+            line(output, &arm_prefix, "}");
             line(output, &prefix, "}");
         }
         ProofTactic::Cases(proof_cases) => {
@@ -969,12 +973,21 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::CallOutcomes(outcomes) => {
             let arm_prefix = "    ".repeat(indent + 1);
             line(output, &prefix, "outcomes {");
-            line(output, &arm_prefix, "returned => {");
-            write_tactics(output, &outcomes.returned_tactics, indent + 2);
-            line(output, &arm_prefix, "}");
-            line(output, &arm_prefix, "threw => {");
-            write_tactics(output, &outcomes.threw_tactics, indent + 2);
-            line(output, &arm_prefix, "}");
+            for ((label, tactics), binding) in [
+                ("returned", &outcomes.returned_tactics),
+                ("threw", &outcomes.threw_tactics),
+            ]
+            .into_iter()
+            .zip(&outcomes.payload_bindings)
+            {
+                let payload = binding
+                    .as_ref()
+                    .map(|name| format!("({name})"))
+                    .unwrap_or_default();
+                line(output, &arm_prefix, &format!("{label}{payload} => {{"));
+                write_tactics(output, tactics, indent + 2);
+                line(output, &arm_prefix, "}");
+            }
             line(output, &prefix, "}");
         }
         ProofTactic::Loop(loop_clause) => {
@@ -1330,22 +1343,21 @@ pub(in crate::surface) fn format_resource_call(resource: &ResourceClause) -> Str
     )
 }
 
-/// One iterated-ownership tactic as it is written: `take(data[j..j + 1])`.
+/// Write one iterated-ownership tactic.
 pub(in crate::surface) fn describe_iterated_tactic(tactic: &IteratedTactic) -> String {
     format!(
         "{}({})",
         tactic.name(),
         match tactic {
-            IteratedTactic::Take(segment) | IteratedTactic::Give(segment) => {
-                match segment {
-                    IteratedElement::Current(segment) => describe_contract_segment(segment),
-                    IteratedElement::SavedBase { base, start, end } => format!(
-                        "{}[{}..{}]",
-                        describe_contract_expression(base),
-                        describe_contract_expression(start),
-                        describe_contract_expression(end),
-                    ),
-                }
+            IteratedTactic::UnfoldSlot(slot) | IteratedTactic::FoldSlot(slot) => {
+                let resource = format_resource_target(&slot.resource);
+                let target = match &slot.point {
+                    Some(point) => {
+                        format!("at({}, {resource})", describe_program_point_selector(point))
+                    }
+                    None => resource,
+                };
+                format!("{target}[{}]", describe_contract_expression(&slot.index))
             }
             IteratedTactic::Gather(resource) | IteratedTactic::Scatter(resource) => {
                 format_resource_target(resource)
@@ -1566,6 +1578,26 @@ pub(super) fn spell_source_names(context: &str, source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typed_let_source_preserves_right_associated_sums() {
+        let source = "theorem grouping(a:Integer,b:Integer,c:Integer) { requires (let value:Integer=a+(b+c);value)==a+(b+c); ensures true; }";
+        let parsed = parser::parse(source).unwrap();
+        let Requirement::Proposition(original) = &parsed.theorem_definitions()[0].requires()[0]
+        else {
+            panic!("expected a requirement");
+        };
+        let written = source_click_proposition(original);
+        let reparsed = parser::parse(&format!(
+            "theorem grouping(a:Integer,b:Integer,c:Integer) {{ requires {written}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(roundtrip) = &reparsed.theorem_definitions()[0].requires()[0]
+        else {
+            panic!("expected a requirement");
+        };
+        assert_eq!(original, roundtrip, "{written}");
+    }
 
     #[test]
     fn negative_int64_source_barrier_does_not_change_diagnostic_spelling() {

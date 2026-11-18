@@ -5,12 +5,12 @@ use super::*;
 impl KernelTerm {
     pub(crate) fn algebraic_read(
         ty: AlgebraicType,
-        memory: SharedMemory,
+        point: ProgramPoint,
         address: SharedAddress,
     ) -> Self {
         Self::intern(
             KernelType::Algebraic(ty),
-            KernelTermNode::AlgebraicRead(KernelMemoryRead::new(memory, address)),
+            KernelTermNode::AlgebraicRead(KernelMemoryRead::new(point, address)),
         )
     }
 
@@ -20,10 +20,10 @@ impl KernelTerm {
         let KernelTermNode::AlgebraicRead(read) = self.node() else {
             return None;
         };
-        let (memory, address) = read.parts();
+        let (point, address) = read.parts();
         Some(self.0.machine_leaf.get_or_init(|| {
             MachineTerm::MemoryLoad(
-                ProgramPoint::at(memory),
+                point.clone(),
                 Box::new(address.export().expect("retained read address")),
                 LoadKind::Bits64,
             )
@@ -51,7 +51,7 @@ mod tests {
         let sources = [first, second].map(|memory| AlgebraicTerm {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory,
+                point: crate::kernel::ProgramPoint::at(&memory),
                 pointer: Box::new(pointer.clone()),
             },
         });
@@ -62,19 +62,21 @@ mod tests {
         assert!(roots[0].algebraic_syntax_equal(&roots[1]));
         let other_type = KernelTerm::algebraic_read(
             TypeParameterName::intern("OtherReadT").algebraic_type(),
-            intern_memory(SymbolicMemory::new()),
+            crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
             SharedAddress::import(&pointer),
         );
         assert!(!roots[0].algebraic_syntax_equal(&other_type));
         let changed_memory = KernelTerm::algebraic_read(
             ty.clone(),
-            intern_memory(SymbolicMemory::new().with_block("changed-read-retained_state", 8)),
+            crate::kernel::ProgramPoint::at(&intern_memory(
+                SymbolicMemory::new().with_block("changed-read-retained_state", 8),
+            )),
             SharedAddress::import(&pointer),
         );
         assert!(!roots[0].algebraic_syntax_equal(&changed_memory));
         let changed_address = KernelTerm::algebraic_read(
             ty.clone(),
-            intern_memory(SymbolicMemory::new()),
+            crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
             SharedAddress::import(&Address::symbolic(Variable(999750))),
         );
         assert!(!roots[0].algebraic_syntax_equal(&changed_address));
@@ -84,10 +86,13 @@ mod tests {
             let KernelTermNode::AlgebraicRead(read) = root.node() else {
                 panic!("common read")
             };
-            let AlgebraicTermNode::MemoryLoad { memory, .. } = &value.node else {
+            let AlgebraicTermNode::MemoryLoad { point: memory, .. } = &value.node else {
                 panic!("read output")
             };
-            assert_eq!(memory.arena_id(), read.parts().0.arena_id());
+            assert_eq!(
+                memory.shared_memory().arena_id(),
+                read.parts().0.shared_memory().arena_id()
+            );
             let variable = AlgebraicTerm {
                 algebraic_type: ty.clone(),
                 node: AlgebraicTermNode::Variable(Variable(999746)),

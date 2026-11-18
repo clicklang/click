@@ -38,7 +38,7 @@ fn volatile_access_fact(
     kind: VolatileAccessKind,
     pointer: Address,
     value_type: ProgramType,
-    value: ProgramValue,
+    value: impl Into<crate::kernel::StoredProgramValue>,
 ) -> ExecutionResult<ExecutionPureFact> {
     crate::instrumentation::record_deterministic_work(1);
     let id = VolatileEventId(budget.allocate_kernel_variable()?.0);
@@ -48,7 +48,7 @@ fn volatile_access_fact(
             kind,
             pointer,
             value_type,
-            value,
+            value: value.into(),
         }),
     )))
 }
@@ -57,7 +57,7 @@ fn volatile_access_fact(
 pub(in crate::kernel) use byte_view::{ContainingIntegerCell, integer_cell_byte};
 pub(in crate::kernel) use byte_view::{
     assemble_declared_uint32_after_byte_store, byte_view_load_value, containing_integer_cell,
-    declared_uint32_read_representation, integer_cell_with_byte,
+    declared_uint32_read_representation, integer_cell_with_byte, known_integer_byte, mask_byte,
 };
 pub(super) use expression::*;
 #[cfg(test)]
@@ -151,7 +151,9 @@ pub(super) use statements::execute_execution_statement;
 pub(super) use statements::memory_write_permission_outcome;
 #[cfg(test)]
 pub(super) use statements::paths_after_scope_exit;
+#[cfg(test)]
 pub(crate) use statements::resolve_pending_heap_allocations;
+pub(crate) use statements::resolve_pending_heap_allocations_with;
 pub(super) use statements::{
     StatementJudgment, execute_execution_statement_paths, execute_loop_iteration_paths,
     execute_statement_paths, execute_statement_paths_with_prefix,

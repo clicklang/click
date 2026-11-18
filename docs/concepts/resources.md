@@ -1258,9 +1258,9 @@ exists.
 
 A guarded body may contain itself directly. `unfold(list(node))` exposes one
 nonnull node and the still-folded `list(node->next)` tail; `fold` performs the
-reverse step. Unknown guards remain opaque to observation and automatic
-resource expansion, while explicit `fold` and `unfold` report that the guard
-must first be proved true or false. Unguarded self-recursion and mutual
+reverse step. Unknown guards remain opaque during automatic projection. Explicit
+`observe`, `fold`, and `unfold` report that the guard must first be proved
+true or false. Unguarded self-recursion and mutual
 resource cycles remain rejected.
 
 Declared resource identity respects proved equality of its arguments. This is
@@ -1292,7 +1292,7 @@ keeps is simple to state: at every fold, the fact holds exactly the elements
 whose guard is true in the current memory. Everything else follows from
 keeping that invariant with local steps.
 
-- `take(data[j..j + 1])` moves element `j` out while its guard is known true;
+- `unfold(arena_cells(data, occupied, capacity)[j])` moves element `j` out while its guard is known true;
   the fact then makes no claim about `j`, and the element is ordinary owned
   memory that C can write.
 - A C store to a guard cell is allowed only where the fact claims nothing:
@@ -1300,13 +1300,13 @@ keeping that invariant with local steps.
   context owns outright. Marking a taken-out cell occupied (`occupied[j] =
   1`) closes the gap, because the guard is now false and the fact owes
   nothing for `j`. Clearing a cell whose element the caller owns
-  (`occupied[j] = 0`) opens one, which `give(data[j..j + 1])` closes by moving
+  (`occupied[j] = 0`) opens one, which `fold(arena_cells(data, occupied, capacity)[j])` closes by moving
   the element back.
 - `gather` and `scatter` convert between the fact and the range its elements
   cover when a quantified fact decides every guard, which is what an
   initializer that zeroes the map needs.
 
-No step visits the range. `take` reads one guard cell; a loop that claims a
+No step visits the range. An indexed `unfold` reads one guard cell; a loop that claims a
 run of `M` cells does `M` such steps; folding and unfolding the declaring
 resource move one fact. Because the free cells are simply the cells whose
 flag is clear, freeing two regions and reusing them for a larger run needs no
@@ -1782,8 +1782,8 @@ Click implements:
   `fold(resource)` tactics, including composition over other declared
   resources,
 - iterated guarded ownership in composite bodies, one fact for a bounded
-  family of elements selected by owned guard cells, with checked `take`,
-  `give`, `gather`, and `scatter` steps and a store rule for the guard
+  family of elements selected by owned guard cells, with indexed `unfold` and
+  `fold`, `gather` and `scatter` steps and a store rule for the guard
   cells,
 - one-step fact views for folded composite resources, plus
   `observe(resource)` tactics that explicitly record fact-view projection

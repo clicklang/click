@@ -17,10 +17,10 @@ fn candidate_work(steps: u64, unrelated: u64) -> usize {
         let mut previous = base;
         for i in 0..steps {
             let next = Address::symbolic(Variable(979_000 + i));
-            facts = facts.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::pointer_value_equal(
-                    PointerValue::new(previous, ProgramType::Int32Pointer),
-                    PointerValue::new(next.clone(), ProgramType::Int32Pointer),
+            facts = facts.assume_proposition(Proposition::condition_is(
+                ConditionTerm::pointer_equal(
+                    Pointer::new(previous, ProgramType::Int32Pointer),
+                    Pointer::new(next.clone(), ProgramType::Int32Pointer),
                 ),
                 true,
             ));

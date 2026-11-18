@@ -14,7 +14,11 @@ pub(super) fn construct(
         return None;
     }
     let mut evaluation = ExecutionState::at_point(&state.program_point());
-    bind(definition, instance.arguments(), &mut evaluation)?;
+    bind(
+        definition,
+        &(instance.arguments()).native_values(),
+        &mut evaluation,
+    )?;
     let parameters = definition
         .parameters()
         .iter()
@@ -105,7 +109,7 @@ pub(super) fn construct(
     // Alternatives may repeat a leaf. Exact repetitions were deduplicated;
     // other overlapping/unsupported envelopes remain opaque. No discovery.
     ResourceContext::new_with_equalities(assumptions)
-        .try_compose_without_discovery_and_occurrences(bounds.clone(), assumptions)
+        .try_compose_checked_ownership_and_occurrences(bounds.clone(), assumptions)
         .ok()?;
     Some(bounds)
 }

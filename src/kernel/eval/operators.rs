@@ -106,7 +106,7 @@ fn add_arithmetic_branch_fact(
                     *format, op, left, right,
                 ))
             }
-            OverflowOperation::ShiftLeft => Some(Proposition::ConditionIs(
+            OverflowOperation::ShiftLeft => Some(Proposition::condition_is(
                 ConditionTerm::signed_shift_result_fits(*format, *left.clone(), *right.clone()),
                 true,
             )),
@@ -127,7 +127,7 @@ fn add_arithmetic_branch_fact(
     add_condition_path_fact(facts, assumptions, condition, value)
 }
 
-fn pointer_types_compatible(left: &PointerValue, right: &PointerValue) -> bool {
+fn pointer_types_compatible(left: &Pointer, right: &Pointer) -> bool {
     left.program_type()
         .pointer_types_compatible(right.program_type())
         || left.is_null()
@@ -444,7 +444,7 @@ fn retain_tagged_representation(
             else {
                 continue;
             };
-            if &form.pointer != record.pointer.pointer() {
+            if &form.pointer != record.pointer.address() {
                 continue;
             }
             record.kind = PointerIntegerKind::Tagged;
@@ -1167,7 +1167,7 @@ fn apply_program_int128_multiply(
     let observed = IntegerTerm::from_machine(destination, term.clone()).expect("typed wide result");
     let definition = ConditionTerm::integer_equal(observed, product);
     if definition != ConditionTerm::Constant(true) {
-        facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+        facts.push(ExecutionPureFact::certified(Proposition::condition_is(
             definition, true,
         )));
     }
@@ -1332,23 +1332,23 @@ fn apply_program_int128_division_like(
             (Some(false), _) | (_, Some(false)) => (None, None, Some(false)),
             (Some(true), Some(true)) => (None, None, Some(true)),
             (Some(true), None) => (
-                Some(Proposition::ConditionIs(minus_one.clone(), false)),
-                Some(Proposition::ConditionIs(minus_one, true)),
+                Some(Proposition::condition_is(minus_one.clone(), false)),
+                Some(Proposition::condition_is(minus_one, true)),
                 None,
             ),
             (None, Some(true)) => (
-                Some(Proposition::ConditionIs(min.clone(), false)),
-                Some(Proposition::ConditionIs(min, true)),
+                Some(Proposition::condition_is(min.clone(), false)),
+                Some(Proposition::condition_is(min, true)),
                 None,
             ),
             (None, None) => (
                 Some(Proposition::Or(
-                    Box::new(Proposition::ConditionIs(min.clone(), false)),
-                    Box::new(Proposition::ConditionIs(minus_one.clone(), false)),
+                    Box::new(Proposition::condition_is(min.clone(), false)),
+                    Box::new(Proposition::condition_is(minus_one.clone(), false)),
                 )),
                 Some(Proposition::And(
-                    Box::new(Proposition::ConditionIs(min, true)),
-                    Box::new(Proposition::ConditionIs(minus_one, true)),
+                    Box::new(Proposition::condition_is(min, true)),
+                    Box::new(Proposition::condition_is(minus_one, true)),
                 )),
                 None,
             ),
@@ -1358,27 +1358,27 @@ fn apply_program_int128_division_like(
             // Keep the complete contract guard available even when a known
             // operand simplified the path guard to a single condition.
             let equality_safe = Proposition::Or(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::integer_equal(
                         left.clone(),
                         IntegerTerm::constant(i128::MIN.into()),
                     ),
                     false,
                 )),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1)),
                     false,
                 )),
             );
             let inequality_safe = Proposition::Or(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::integer_not_equal(
                         left.clone(),
                         IntegerTerm::constant(i128::MIN.into()),
                     ),
                     true,
                 )),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(-1)),
                     true,
                 )),
@@ -1449,7 +1449,7 @@ fn apply_program_int128_division_like(
     let observed = IntegerTerm::from_machine(destination, term.clone()).expect("typed wide result");
     let definition = ConditionTerm::integer_equal(observed, result);
     if definition != ConditionTerm::Constant(true) {
-        facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+        facts.push(ExecutionPureFact::certified(Proposition::condition_is(
             definition, true,
         )));
     }
@@ -1734,7 +1734,7 @@ pub(in crate::kernel) fn apply_program_bitwise_binary(
             (ScalarWidth::UInt64, BitwiseOperation::And)
         ) && let Some(equation) = bounded_uint64_tag_equation(&value, assumptions)
         {
-            facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
+            facts.push(ExecutionPureFact::new(Proposition::condition_is(
                 equation, true,
             )));
         }
@@ -1851,7 +1851,7 @@ pub(in crate::kernel) fn apply_program_bitwise_not(
 }
 
 pub(super) fn pointer_value_step_width(
-    pointer: &PointerValue,
+    pointer: &Pointer,
     expression_width: Option<u32>,
 ) -> Option<u32> {
     // GNU C treats void-pointer arithmetic as byte arithmetic. Other
@@ -2045,9 +2045,15 @@ fn pointer_has_object_provenance_evidence(
                 };
                 // A wide fact's count is an unsigned 64-bit term.
                 let positive = if *wide {
-                    ConditionTerm::uint64_less_than(MachineTerm::constant(0), bytes.clone())
+                    ConditionTerm::uint64_less_than(
+                        MachineTerm::constant(0),
+                        bytes.native_compat().clone(),
+                    )
                 } else {
-                    ConditionTerm::signed_greater_than(bytes.clone(), MachineTerm::constant(0))
+                    ConditionTerm::signed_greater_than(
+                        bytes.native_compat().clone(),
+                        MachineTerm::constant(0),
+                    )
                 };
                 crate::kernel::reasoning::memory_range_still_available(
                     memory,
@@ -2096,7 +2102,7 @@ pub(in crate::kernel) fn pointer_object_identity_condition(
     left: &Address,
     right: &Address,
 ) -> ConditionTerm {
-    ConditionTerm::pointer_equal(left.object_identity(), right.object_identity())
+    ConditionTerm::address_equal(left.object_identity(), right.object_identity())
 }
 
 pub(in crate::kernel) fn pointer_object_is_null_condition(pointer: &Address) -> ConditionTerm {
@@ -2108,16 +2114,16 @@ pub(in crate::kernel) fn pointer_same_object_proposition(
     right: &Address,
 ) -> Proposition {
     Proposition::And(
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             pointer_object_is_null_condition(left),
             false,
         )),
         Box::new(Proposition::And(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 pointer_object_is_null_condition(right),
                 false,
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 pointer_object_identity_condition(left, right),
                 true,
             )),
@@ -2165,14 +2171,11 @@ fn compared_pointer_holders_composition(
         left: Box::new(Resource::Memory(left_member.clone())),
         right: Box::new(Resource::Memory(right_member.clone())),
     };
-    let composition = ResourceContext::new()
-        .try_compose_with_facts_delaying_normalization(
-            [left_member, right_member]
-                .into_iter()
-                .map(ResourceFact::own_memory),
-            assumptions,
-        )
-        .ok()?;
+    let composition = ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
+        [left_member, right_member]
+            .into_iter()
+            .map(ResourceFact::own_memory),
+    );
     Some((composition, separation))
 }
 
@@ -2553,7 +2556,7 @@ pub(in crate::kernel) fn pointer_index_term(
 
 fn pointer_offset_by_elements_paths(
     state: &ExecutionState,
-    pointer: PointerValue,
+    pointer: Pointer,
     offset: MachineTerm,
     byte_width: u32,
     unsigned: bool,
@@ -2563,7 +2566,7 @@ fn pointer_offset_by_elements_paths(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let value = pointer;
-    let pointer = value.pointer().clone();
+    let pointer = value.address().clone();
 
     // C11 6.5.6p8 defines additive pointer arithmetic only for a pointer that
     // designates an element of an array object or one past its end. A null
@@ -2577,7 +2580,7 @@ fn pointer_offset_by_elements_paths(
         (true, false) => MachineTerm::int64_constant(0),
         (false, _) => MachineTerm::constant(0),
     };
-    let zero = Proposition::ConditionIs(
+    let zero = Proposition::condition_is(
         if wide {
             ConditionTerm::int64_equal(offset.clone(), zero_term)
         } else {
@@ -2593,7 +2596,7 @@ fn pointer_offset_by_elements_paths(
         context.proves_exact(&zero)
             || context.contains_known(&zero)
             || matches!(&zero, Proposition::ConditionIs(condition, value)
-                if PureFactContext::decide_intrinsically(condition) == Some(*value))
+                if PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value))
             || (wide && context.wide_constant_from_equalities(&offset) == Some(0))
     };
     let displaces = !(zero_is_known(assumptions)
@@ -2610,7 +2613,7 @@ fn pointer_offset_by_elements_paths(
     // Only a literal zero offset spells the result as the pointer itself;
     // an offset the facts prove zero keeps its written displacement.
     let literally_zero = matches!(&zero, Proposition::ConditionIs(condition, value)
-        if PureFactContext::decide_intrinsically(condition) == Some(*value));
+        if PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value));
     let result = if literally_zero {
         pointer.clone()
     } else {
@@ -2799,14 +2802,14 @@ fn byte_product_no_overflow(
 
 pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     state: &ExecutionState,
-    pointer: PointerValue,
+    pointer: Pointer,
     bytes: u32,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let value = pointer;
-    let pointer = value.pointer().clone();
+    let pointer = value.address().clone();
     if pointer.base.is_function() && bytes != 0 {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType),
@@ -2959,7 +2962,10 @@ fn exact_offset_operation(
         let Proposition::ConditionIs(condition, value) = bound else {
             unreachable!("ordinary range bound");
         };
-        guards.push(PointerFormationGuard { condition, value });
+        guards.push(PointerFormationGuard {
+            condition: condition.native_compat().clone(),
+            value,
+        });
     }
     let op = match operation {
         Operation::Add => MachineBinaryOp::Add,
@@ -3695,7 +3701,7 @@ fn held_range_membership(
             facts,
             MachineOperandView::Legacy(&MachineTerm::constant(0)),
             offset.operand_view(),
-            MachineOperandView::Legacy(bytes),
+            bytes.operand_view(),
             true,
             false,
             false,
@@ -3756,7 +3762,7 @@ fn simplify_program_int32_add_operand(
 /// `const` pointee qualifier, as formation always has; the write-through-const
 /// check reads the lvalue's static type.
 fn apply_pointer_formation_guards(
-    pointer: PointerValue,
+    pointer: Pointer,
     guards: Vec<PointerFormationGuard>,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -4231,7 +4237,7 @@ fn apply_program_uint32_division_like(
         MachineTerm::constant(0),
     );
     obligations.push(
-        ProofObligation::verification_condition(Proposition::ConditionIs(zero, false))
+        ProofObligation::verification_condition(Proposition::condition_is(zero, false))
             .with_context("unsigned division requires a nonzero divisor"),
     );
     vec![ExpressionPath {
@@ -5595,7 +5601,7 @@ pub(in crate::kernel) fn evaluate_program_logical_or_paths(
 /// that one past the end of one object may equal the start of another: the
 /// two are equal exactly when the objects are adjacent, which the kernel does
 /// not model. The decision procedure answers a distinct-block
-/// `PointerEqual` false from the blocks alone, so that configuration is
+/// `AddressEqual` false from the blocks alone, so that configuration is
 /// excluded here, before the condition is built: when the facts decide it
 /// the comparison is refused, and when they leave it open a refused path
 /// carrying the configuration is owed beside the comparison, whose own path
@@ -5721,7 +5727,7 @@ pub(in crate::kernel) fn pointer_equality_condition(
     left: Address,
     right: Address,
 ) -> ConditionTerm {
-    ConditionTerm::pointer_equal(left, right)
+    ConditionTerm::address_equal(left, right)
 }
 
 /// What a C `==` between two pointers establishes: their addresses are
@@ -5739,8 +5745,8 @@ pub(in crate::kernel) fn program_pointer_comparison_condition(
         return pointer_equality_condition(left, right);
     }
     ConditionTerm::uint64_equal(
-        MachineTerm::pointer_address(left),
-        MachineTerm::pointer_address(right),
+        MachineTerm::integer_address(left),
+        MachineTerm::integer_address(right),
     )
 }
 
@@ -5814,16 +5820,22 @@ fn subobject_bounds_proven(
 }
 
 /// Refuses a read or write of `bytes` bytes at `pointer` outside the
-/// subobject bounds of the pointer it was reached through.
-pub(in crate::kernel) fn subobject_access_refusal(
+/// subobject bounds of the pointer it was reached through. The caller reuses
+/// its prepared access context for read-only domain lookup.
+pub(in crate::kernel) fn subobject_access_refusal<'a>(
     pointer: &Address,
-    bounds: Option<&SubobjectBounds>,
+    source: impl Into<crate::kernel::assumptions::PointerDomainSource<'a>>,
     bytes: u32,
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
 ) -> Option<UndefinedBehavior> {
-    let bounds = bounds?;
+    let crate::kernel::assumptions::PointerDomain::Selected(bounds) =
+        assumptions.pointer_domain(source)
+    else {
+        return None;
+    };
+    let bounds = &bounds;
     if subobject_bounds_proven(pointer, bounds, bytes, facts, obligations, assumptions) {
         return None;
     }
@@ -5901,17 +5913,26 @@ pub(in crate::kernel) fn effective_type_refusal_of(
 /// subobject bounds. A result whose position cannot be related to the
 /// bounds is refused outright.
 fn subobject_formation_guards(
-    value: &PointerValue,
+    value: &Pointer,
     result: &Address,
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
     resources: &ResourceContext,
 ) -> Result<Vec<PointerFormationGuard>, ()> {
-    let Some(bounds) = value.bounds() else {
-        if value.bounds_are_known()
+    let domain = assumptions.pointer_domain(value);
+    let path_context = (domain == crate::kernel::assumptions::PointerDomain::Unknown)
+        .then(|| assumptions_with_path_context(assumptions, facts, obligations));
+    let context = path_context.as_ref().unwrap_or(assumptions);
+    let domain = if path_context.is_some() {
+        context.pointer_domain(value)
+    } else {
+        domain
+    };
+    let crate::kernel::assumptions::PointerDomain::Selected(bounds) = domain else {
+        if domain == crate::kernel::assumptions::PointerDomain::Root
             || value.bounds_owner().is_none()
-            || result == value.pointer()
+            || result == value.address()
             || assumptions.should_assume_entry_clause_spans()
             // Spec offsets name mathematical addresses, as SpecExpression::PointerOffset
             // does. Executed C arithmetic must establish its bounds here.
@@ -5919,8 +5940,7 @@ fn subobject_formation_guards(
         {
             return Ok(Vec::new());
         }
-        let context = assumptions_with_path_context(assumptions, facts, obligations);
-        if context.pointers_known_equal(result, value.pointer())
+        if context.pointers_known_equal(result, value.address())
             || context.opaque_pointer_covers(value, result, 0)
         {
             return Ok(Vec::new());
@@ -5928,18 +5948,18 @@ fn subobject_formation_guards(
         return resources
             .permits_designated_pointer_position(
                 result,
-                value.pointer(),
+                value.address(),
                 value.access_provenance(),
-                &context,
+                context,
             )
             .then(Vec::new)
             .ok_or(());
     };
     // Address equality establishes position without changing the bounds.
-    if subobject_bounds_proven(result, bounds, 0, facts, obligations, assumptions) {
+    if subobject_bounds_proven(result, &bounds, 0, facts, obligations, assumptions) {
         return Ok(Vec::new());
     }
-    match subobject_bounds_guards(result, bounds, 0) {
+    match subobject_bounds_guards(result, &bounds, 0) {
         Some(guards) => Ok(guards),
         None => Err(()),
     }
@@ -5949,7 +5969,7 @@ fn subobject_formation_guards(
 /// its address. A pointer that already designates a subobject may select
 /// only a part of it.
 pub(in crate::kernel) fn subobject_paths(
-    pointer: PointerValue,
+    pointer: Pointer,
     width: u32,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -5959,12 +5979,17 @@ pub(in crate::kernel) fn subobject_paths(
     // A pointer type alone does not establish the bounds of an enclosing
     // object. Entry clauses establish their selected member's full bounds;
     // subsequent selections consume that evidence or a matching held range.
-    if pointer.bounds().is_none() && !pointer.bounds_are_known() && pointer.bounds_owner().is_some()
+    let domain = assumptions.pointer_domain(&pointer);
+    let path_context = (domain == crate::kernel::assumptions::PointerDomain::Unknown)
+        .then(|| assumptions_with_path_context(assumptions, &facts, &obligations));
+    let context = path_context.as_ref().unwrap_or(assumptions);
+    if context.pointer_domain(&pointer) == crate::kernel::assumptions::PointerDomain::Unknown
+        && pointer.bounds_owner().is_some()
     {
         if assumptions.should_assume_entry_clause_spans() {
             if let Some(coverage) =
                 pointer.opaque_coverage_fact(&MemoryRange::new_with_element_width(
-                    pointer.pointer().clone(),
+                    pointer.address().clone(),
                     0u32.into(),
                     width.into(),
                     1,
@@ -5973,13 +5998,12 @@ pub(in crate::kernel) fn subobject_paths(
                 facts.push(ExecutionPureFact::new(coverage));
             }
         } else {
-            let context = assumptions_with_path_context(assumptions, &facts, &obligations);
-            if !context.opaque_pointer_covers(&pointer, pointer.pointer(), width)
+            if !context.opaque_pointer_covers(&pointer, pointer.address(), width)
                 && !resources.permits_designated_storage_read(
-                    pointer.pointer(),
+                    pointer.address(),
                     Some(pointer.access_provenance()),
                     width,
-                    &context,
+                    context,
                 )
             {
                 return vec![ExpressionPath {
@@ -5988,7 +6012,7 @@ pub(in crate::kernel) fn subobject_paths(
                             required: Box::new(
                                 pointer
                                     .opaque_coverage_fact(&MemoryRange::new_with_element_width(
-                                        pointer.pointer().clone(),
+                                        pointer.address().clone(),
                                         0u32.into(),
                                         width.into(),
                                         1,
@@ -6004,12 +6028,12 @@ pub(in crate::kernel) fn subobject_paths(
         }
     }
     if let Some(refusal) = subobject_access_refusal(
-        pointer.pointer(),
-        pointer.bounds(),
+        pointer.address(),
+        &pointer,
         width,
         &facts,
         &obligations,
-        assumptions,
+        context,
     ) {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::UndefinedBehavior(refusal),
@@ -6017,7 +6041,7 @@ pub(in crate::kernel) fn subobject_paths(
             obligations,
         }];
     }
-    let start = pointer.pointer().clone();
+    let start = pointer.address().clone();
     let narrowed = pointer.with_bounds(Some(SubobjectBounds::constant(start, width)));
     vec![ExpressionPath {
         outcome: ExpressionOutcome::Value(ProgramValue::Pointer(narrowed)),
@@ -6225,3 +6249,89 @@ mod held_range_scaling_tests {
 #[cfg(test)]
 #[path = "operators/retained_formation_tests.rs"]
 mod retained_formation_tests;
+
+#[cfg(test)]
+mod pointer_domain_tests {
+    use super::*;
+    use crate::kernel::assumptions::PointerDomain;
+
+    #[test]
+    fn arithmetic_and_access_check_admitted_bounds_without_adopting_them() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let value = Pointer::new(
+            Address::symbolic(Variable(1013100)),
+            ProgramType::Int32Pointer,
+        );
+        let selected = value.clone().with_bounds(Some(SubobjectBounds {
+            start: value.address().clone(),
+            width: 4u32.into(),
+        }));
+        let facts = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(value.clone(), selected.clone()),
+            true,
+        );
+        let state = ExecutionState::new();
+        let next = pointer_offset_by_bytes_paths(
+            &state,
+            value.clone(),
+            4,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &facts,
+        );
+        assert_eq!(next.len(), 1);
+        assert_eq!(
+            next[0].outcome,
+            ExpressionOutcome::Value(ProgramValue::Pointer(
+                value
+                    .clone()
+                    .with_address(value.address().offset_by_bytes(4))
+            ))
+        );
+        let beyond = pointer_offset_by_bytes_paths(
+            &state,
+            value.clone(),
+            8,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &facts,
+        );
+        assert!(
+            beyond
+                .iter()
+                .all(|p| !matches!(p.outcome, ExpressionOutcome::Value(_)))
+        );
+        assert!(beyond.iter().any(|p| matches!(
+            p.outcome,
+            ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic)
+        )));
+        for (offset, bytes, refused) in [(0, 4, false), (4, 0, false), (4, 4, true), (0, 8, true)] {
+            assert_eq!(
+                subobject_access_refusal(
+                    &value.address().offset_by_bytes(offset),
+                    &value,
+                    bytes,
+                    &ExecutionFacts::new(),
+                    &[],
+                    &facts
+                )
+                .is_some(),
+                refused
+            );
+        }
+        assert_eq!(value.bounds(), None);
+        assert!(matches!(
+            facts.pointer_domain(&value),
+            PointerDomain::Selected(_)
+        ));
+        // Bounds learned on one branch do not authorize another branch.
+        assert_eq!(
+            PureFactContext::new().pointer_domain(&value),
+            PointerDomain::Unknown
+        );
+    }
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/eval/operators/pointer_domains.rs");
+    }
+}

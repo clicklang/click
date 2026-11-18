@@ -6,7 +6,7 @@ it, and the caller receives the run as one `region`. The loop owns an
 the cells `[start, next)` claimed so far, and the per-cell invariant that
 every cell of `[next, end)` is still free. One iteration opens the window,
 reads that the guard `occupied[i] == 0` holds at `i`, takes `data[i]` out
-of the iterated fact, marks the cell (the store closes the hole the take
+of the iterated fact, marks the cell (the store closes the hole the unfold
 opened, because `1` makes the guard false), zeroes it, and refolds the window
 one cell later. Each iteration's resource steps read one guard cell and one
 element; the fact's range is never enumerated.
@@ -109,7 +109,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 }, i);
                 known();
             }
-            take(data[i..i + 1]);
+            unfold(arena_window(data, occupied, capacity, start, end)[i]);
             have start <= i;
             have 0 <= i;
             have i < capacity;

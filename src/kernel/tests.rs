@@ -34,7 +34,7 @@ pub(in crate::kernel) fn explicit_signed_elements(
     facts: PureFactContext,
 ) -> PureFactContext {
     let law = crate::kernel::prove_separation_elements(
-        PointerValue::new(base, ty.pointer_to().unwrap()),
+        Pointer::new(base, ty.pointer_to().unwrap()),
         ty.byte_width(),
         MachineIntegerType::Int32,
         i,
@@ -133,7 +133,7 @@ pub(in crate::kernel) fn explicit_frame(
             ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
         }
         (ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::pointer_value_equal(a.clone(), b.clone())
+            ConditionTerm::pointer_equal(a.clone(), b.clone())
         }
         (ProgramValue::Int32(a), ProgramValue::Int32(b)) => {
             ConditionTerm::equal(a.clone(), b.clone())
@@ -149,7 +149,7 @@ pub(in crate::kernel) fn explicit_frame(
         }
         other => panic!("unsupported test observation: {other:?}"),
     };
-    let result = Proposition::ConditionIs(condition, true);
+    let result = Proposition::condition_is(condition, true);
     crate::kernel::proof::preservation::apply(&separation, None, &result, |p| p == &separation)
         .expect("explicit preservation");
     Some((old, new, result))
