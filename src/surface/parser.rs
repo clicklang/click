@@ -8323,6 +8323,39 @@ impl Parser {
         named
     }
 
+    /// An application (or an `at` around one) followed by an index.
+    fn indexed_resource_target_follows(&self) -> bool {
+        self.peek_ident().is_some()
+            && self.peek_next() == Some(&Token::LParen)
+            && self.matching_parentheses[self.position + 1]
+                .is_some_and(|close| self.tokens.get(close + 1) == Some(&Token::LBracket))
+    }
+
+    fn parse_iterated_slot(&mut self) -> Result<Box<IteratedSlot>, ClickError> {
+        let point = if self.peek_ident() == Some("at") {
+            self.position += 1;
+            self.expect(Token::LParen)?;
+            let point = self.parse_program_point_selector()?;
+            self.expect(Token::Comma)?;
+            Some(point)
+        } else {
+            None
+        };
+        let resource = self.parse_declared_resource_call_with_access(ResourceAccessMode::Own)?;
+        if point.is_some() {
+            self.expect(Token::RParen)?;
+        }
+        self.expect(Token::LBracket)?;
+        let index = self.parse_contract_expression()?;
+        self.expect(Token::RBracket)?;
+        self.expect(Token::RParen)?;
+        Ok(Box::new(IteratedSlot {
+            resource,
+            point,
+            index,
+        }))
+    }
+
     fn parse_owned_resource_target(&mut self) -> Result<ResourceClause, ClickError> {
         if let Some(mut target) = self
             .peek_ident()
@@ -11052,6 +11085,11 @@ impl Parser {
             }
             "unfold" => {
                 self.expect(Token::LParen)?;
+                if self.indexed_resource_target_follows() {
+                    let slot = self.parse_iterated_slot()?;
+                    self.expect(Token::Semicolon)?;
+                    return Ok(ProofTactic::Iterated(IteratedTactic::UnfoldSlot(slot)));
+                }
                 // Look ahead without parsing: parsing an expression may split
                 // generic `>>` tokens, so rewinding only the cursor is unsafe.
                 let mut depth = 0usize;
@@ -11165,28 +11203,6 @@ impl Parser {
                         premises,
                     });
                 }
-            }
-            "take" | "give" => {
-                self.expect(Token::LParen)?;
-                let segment = if matches!(self.peek_ident(), Some("at" | "old"))
-                    && self.peek_next() == Some(&Token::LParen)
-                {
-                    let base = self.parse_contract_primary()?;
-                    self.expect(Token::LBracket)?;
-                    let start = self.parse_contract_expression()?;
-                    self.expect(Token::DotDot)?;
-                    let end = self.parse_contract_expression()?;
-                    self.expect(Token::RBracket)?;
-                    IteratedElement::SavedBase { base, start, end }
-                } else {
-                    IteratedElement::Current(self.parse_current_contract_segment()?)
-                };
-                self.expect(Token::RParen)?;
-                ProofTactic::Iterated(if name == "take" {
-                    IteratedTactic::Take(segment)
-                } else {
-                    IteratedTactic::Give(segment)
-                })
             }
             "gather" | "scatter" => {
                 self.expect(Token::LParen)?;
@@ -11384,6 +11400,11 @@ impl Parser {
             }
             "fold" => {
                 self.expect(Token::LParen)?;
+                if self.indexed_resource_target_follows() {
+                    let slot = self.parse_iterated_slot()?;
+                    self.expect(Token::Semicolon)?;
+                    return Ok(ProofTactic::Iterated(IteratedTactic::FoldSlot(slot)));
+                }
                 if self
                     .peek_ident()
                     .is_some_and(|resource| self.is_hidden_record(resource))
@@ -15331,15 +15352,8 @@ impl Parser {
             self.position = start;
             return Ok(None);
         }
-        let temporary =
-            matches!(self.peek_next(), Some(Token::Ident(selector)) if selector == "temporary");
         let parameter = match (self.peek(), self.peek_next()) {
             (Some(Token::Dot), Some(Token::Ident(selector))) if selector == "local" => false,
-            (Some(Token::Dot), Some(Token::Ident(selector)))
-                if selector == "temporary" && path.is_empty() =>
-            {
-                false
-            }
             (Some(Token::Dot), Some(Token::Ident(selector)))
                 if selector == "parameter" && path.is_empty() =>
             {
@@ -15379,11 +15393,7 @@ impl Parser {
             let ordinal = u32::try_from(self.expect_index("declaration ordinal")?)
                 .map_err(|_| self.error("declaration ordinal exceeds u32"))?;
             let owner = crate::kernel::LocalFunctionId::new(source, function);
-            let query = if temporary {
-                crate::kernel::LocalBindingId::temporary(owner, ordinal)
-            } else {
-                crate::kernel::LocalBindingId::new(owner, parameter, ordinal, None)
-            };
+            let query = crate::kernel::LocalBindingId::new(owner, parameter, ordinal, None);
             self.local_bindings
                 .declarations
                 .get_key_value(&query)
@@ -15876,11 +15886,7 @@ impl Parser {
 
         if self.peek_ident() == Some("byte_offset") && self.peek_next() == Some(&Token::LParen) {
             self.position += 2;
-            let pointer = self.parse_contract_expression()?;
-            let source_pointer = pointer;
-            let Some(pointer) = contract_expression_as_program_expression(&source_pointer) else {
-                return Err(self.error("byte offset expects a current C pointer expression"));
-            };
+            let source_pointer = self.parse_contract_expression()?;
             self.expect(Token::Comma)?;
             let bytes = match self.next() {
                 Some(Token::Number(bytes)) => bytes,
@@ -15895,13 +15901,21 @@ impl Parser {
                 }
             };
             self.expect(Token::RParen)?;
-            return Ok(crate::surface::lowering::contract_c_unary(
-                source_pointer,
-                ProgramExpression::PointerOffsetBytes {
-                    pointer: Box::new(pointer),
-                    bytes,
+            let lowered = |pointer| ProgramExpression::PointerOffsetBytes {
+                pointer: Box::new(pointer),
+                bytes,
+            };
+            return Ok(
+                match contract_expression_as_program_expression(&source_pointer) {
+                    Some(pointer) => {
+                        crate::surface::lowering::contract_c_unary(source_pointer, lowered(pointer))
+                    }
+                    None => ContractExpression::CUnary {
+                        operand: Box::new(source_pointer),
+                        lowered: lowered(ProgramExpression::Value(int32(0))),
+                    },
                 },
-            ));
+            );
         }
 
         let typed_load = typed_load_type_from_name(self.peek_ident());
@@ -18190,8 +18204,8 @@ mod tactic_classification_tests {
         ("unfold-function", "unfold(f(x));"),
         ("unfold-resource", "unfold(reference(p));"),
         ("fold-resource", "fold(reference(p));"),
-        ("take-element", "take(base[0..n]);"),
-        ("give-element", "give(base[0..n]);"),
+        ("unfold-slot", "unfold(reference(p)[0]);"),
+        ("fold-slot", "fold(reference(p)[0]);"),
         ("gather-resource", "gather(reference(p));"),
         ("scatter-resource", "scatter(reference(p));"),
         ("construct-resource", "construct(reference(p));"),

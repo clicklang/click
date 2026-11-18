@@ -1414,7 +1414,7 @@ mod pointer_argument_tests {
                 "argument_source".into(),
                 vec![],
             ),
-            SharedPointerValue::import(&pointer),
+            SharedPointer::import(&pointer),
         );
         let mut state = ExecutionState::new();
         state.locals.set_retained_typed_with_all_qualifiers(
@@ -1465,7 +1465,7 @@ mod pointer_argument_tests {
                 .unwrap()
                 .pointer_payload()
                 .unwrap()
-                .same_source_payload(&SharedPointerValue::import(legacy.pointer().unwrap()))
+                .same_source_payload(&SharedPointer::import(legacy.pointer().unwrap()))
         );
     }
 }
@@ -1488,7 +1488,7 @@ mod pointer_return_tests {
                 "source".into(),
                 vec![],
             ),
-            SharedPointerValue::import(&pointer),
+            SharedPointer::import(&pointer),
         );
         let plain = program_function(
             ProgramType::Int32Pointer,

@@ -4,7 +4,7 @@
 use super::*;
 use crate::kernel::{
     KernelAddressOffset as O, KernelTerm, KernelType, MachineOperandView as V, SharedAddress,
-    SharedAddressOffset, SharedPointerValue,
+    SharedAddressOffset, SharedPointer,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -25,7 +25,7 @@ impl<'a> Origins<'a, Address, MachineTerm> {
     }
 }
 impl<'a> Origins<'a, SharedAddress, KernelTerm> {
-    pub(super) fn shared(value: &'a SharedPointerValue) -> Self {
+    pub(super) fn shared(value: &'a SharedPointer) -> Self {
         let p = value.node();
         let q = p.qualifiers.as_ref();
         Self {
@@ -227,7 +227,7 @@ mod tests {
         widths: HashMap<KernelTerm, MachineTerm>,
     }
     impl<'a> Selected<'a> {
-        fn new(facts: &'a PureFactContext, values: &[(&Pointer, &SharedPointerValue)]) -> Self {
+        fn new(facts: &'a PureFactContext, values: &[(&Pointer, &SharedPointer)]) -> Self {
             let mut result = Self {
                 facts,
                 addresses: HashMap::new(),
@@ -381,9 +381,9 @@ mod tests {
         let left = make(a.clone(), 4);
         let right = make(b.clone(), 4);
         let wrong_width = make(b.clone(), 8);
-        let sl = SharedPointerValue::import(&left);
-        let sr = SharedPointerValue::import(&right);
-        let sw = SharedPointerValue::import(&wrong_width);
+        let sl = SharedPointer::import(&left);
+        let sr = SharedPointer::import(&right);
+        let sw = SharedPointer::import(&wrong_width);
         let before = PureFactContext::new();
         let after = before
             .clone()
@@ -438,9 +438,9 @@ mod tests {
             ConditionTerm::pointer_value_equal(read.clone(), bounded.clone()),
             true,
         );
-        let sr = SharedPointerValue::import(&read);
-        let ss = SharedPointerValue::import(&stored);
-        let sb = SharedPointerValue::import(&bounded);
+        let sr = SharedPointer::import(&read);
+        let ss = SharedPointer::import(&stored);
+        let sb = SharedPointer::import(&bounded);
         let available = SharedAddress::import(&held.provenance);
         for (facts, expected) in [(&before, false), (&after, true), (&bounded_facts, false)] {
             let selected = Selected::new(facts, &[(&read, &sr), (&stored, &ss), (&bounded, &sb)]);

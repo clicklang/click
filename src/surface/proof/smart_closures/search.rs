@@ -3295,6 +3295,28 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery(
             "try_solve_closure_after_direct_with_surfaces_and_function_unfold",
         );
+        if let Some(goal) = search_input.goal()
+            && !(exclude_exact_goal && search_input.facts().contains(goal))
+            && let Some(chain) = crate::kernel::search::ProofSearch::signed_order_chain_premises(
+                search_input.facts().assumptions(),
+                goal,
+            )
+            // Weakening and two-premise transitivity can use one named lemma.
+            // Use a single normalization for longer chains of comparisons.
+            && chain.len() > 2
+            // This path already names its complete evidence. The smart
+            // budget charges selecting and spelling its edges.
+            && let Some(pairs) = Self::resolve_solve_premises_unmeasured(
+                search_input,
+                &chain,
+                introduced_surfaces,
+            )
+            && let Some(closed) = attempt::candidate_outcome(search_input.driver().apply_step(
+                ProofStep::NormalizeUsing(pairs.into_iter().map(|(_, surface)| surface).collect()),
+            ))?
+        {
+            return Ok(Some(closed));
+        }
         // A separating conjunction already states its structural proof tree.
         // Decompose it before selecting ambient arithmetic/history candidates;
         // each child still runs ordinary solve and emits ordinary library steps.
@@ -7303,12 +7325,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // back is refused for that reason, not for the memory history a
         // supplemental explanation may show. Kernel authority is checked
         // context, never a citable premise, so it owes no spelling.
+        let spelled = premise_pairs
+            .iter()
+            .map(|(premise, _)| premise)
+            .collect::<BTreeSet<_>>();
         let unspelled = premises
             .iter()
-            .filter(|premise| {
-                !premise.is_kernel_authority()
-                    && !premise_pairs.iter().any(|(spelled, _)| spelled == *premise)
-            })
+            .filter(|premise| !premise.is_kernel_authority() && !spelled.contains(premise))
             .collect::<Vec<_>>();
         if !crate::instrumentation::deadline_exceeded() && !unspelled.is_empty() {
             let strategy = if matches!(

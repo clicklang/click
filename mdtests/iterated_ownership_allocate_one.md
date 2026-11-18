@@ -56,7 +56,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity, int32 index) {
         let cell = fold(claimed(data, index), { held: 0 });
         solve();
     } else {
-        take(data[index..index + 1]);
+        unfold(arena_cells(data, occupied, capacity)[index]);
         step_until(function.exit);
         fold(arena_cells(data, occupied, capacity));
         let cell = fold(claimed(data, index), { held: 1 });

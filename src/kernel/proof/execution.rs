@@ -117,8 +117,7 @@ pub(crate) enum CheckedExecutionEvent {
     ReturnProposition(Box<CheckedReturnProposition>),
     PopulationAuthorityRewrite(Box<CheckedPopulationAuthorityRewrite>),
     PopulationMemberRewrite(Box<CheckedPopulationMemberRewrite>),
-    /// One iterated guarded-ownership step (`take`, `give`, `gather`,
-    /// `scatter`). Like a lifetime end, it changes only the resource context
+    /// One checked operation on iterated guarded ownership. Like a lifetime end, it changes only the resource context
     /// and is re-derived from its input state when the trace is checked.
     IteratedStep(CheckedIteratedStep),
     /// One application of a user-defined tactic: the verified rule of a

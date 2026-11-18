@@ -1343,22 +1343,21 @@ pub(in crate::surface) fn format_resource_call(resource: &ResourceClause) -> Str
     )
 }
 
-/// One iterated-ownership tactic as it is written: `take(data[j..j + 1])`.
+/// Write one iterated-ownership tactic.
 pub(in crate::surface) fn describe_iterated_tactic(tactic: &IteratedTactic) -> String {
     format!(
         "{}({})",
         tactic.name(),
         match tactic {
-            IteratedTactic::Take(segment) | IteratedTactic::Give(segment) => {
-                match segment {
-                    IteratedElement::Current(segment) => describe_contract_segment(segment),
-                    IteratedElement::SavedBase { base, start, end } => format!(
-                        "{}[{}..{}]",
-                        describe_contract_expression(base),
-                        describe_contract_expression(start),
-                        describe_contract_expression(end),
-                    ),
-                }
+            IteratedTactic::UnfoldSlot(slot) | IteratedTactic::FoldSlot(slot) => {
+                let resource = format_resource_target(&slot.resource);
+                let target = match &slot.point {
+                    Some(point) => {
+                        format!("at({}, {resource})", describe_program_point_selector(point))
+                    }
+                    None => resource,
+                };
+                format!("{target}[{}]", describe_contract_expression(&slot.index))
             }
             IteratedTactic::Gather(resource) | IteratedTactic::Scatter(resource) => {
                 format_resource_target(resource)

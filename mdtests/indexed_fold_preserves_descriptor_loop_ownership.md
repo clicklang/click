@@ -1,6 +1,6 @@
 # Return descriptor-backed elements to iterated ownership across a loop
 
-The occupied-cell store makes the guard true. `give` returns the corresponding
+The occupied-cell store makes the guard true. indexed `fold` returns the corresponding
 owned suffix element through a fresh descriptor read. Keep the descriptor
 access and loop: a single-store control does not reproduce the recovery bug.
 The explicit field and separation facts support the later window fold.
@@ -223,7 +223,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->capacity))); };
             }
             have arena->capacity == at(opened, arena->capacity) by { known(); }
-            give(at(opened, arena->data)[i..i + 1]);
+            fold(at(opened, arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end))[i]);
             step();
             have to_integer(start) <= to_integer(at(opened, i) + 1);
             have forall (k: int32) {

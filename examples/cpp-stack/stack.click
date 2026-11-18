@@ -262,39 +262,7 @@ unsigned long pushed_size(int x) {
     have stack.head == at(region(16).entry, stack.head) by {
         preserve(memory(stack.head), region(16));
     }
-    mark before_size;
-    let { tail: first_tail } = unfold(pushed);
-    let { tail: empty_tail } = unfold(first_tail);
-    unfold(empty_tail);
-    step();
-    have separate(region(17).footprint, memory(stack.head)) by { normalize() using {}; }
-    have stack.head == at(region(17).entry, stack.head) by {
-        preserve(memory(stack.head), region(17));
-    }
-    have separate(region(17).footprint, memory(stack.head->next)) by { normalize() using {}; }
-    have stack.head->next == at(region(17).entry, stack.head->next) by {
-        preserve(memory(stack.head->next), region(17));
-    }
-    have separate(region(17).footprint, memory(stack.head->next->next)) by { normalize() using {}; }
-    have stack.head->next->next == at(region(17).entry, stack.head->next->next) by {
-        preserve(memory(stack.head->next->next), region(17));
-    }
-    step();
-    have separate(region(18).footprint, memory(stack.head)) by { normalize() using {}; }
-    have stack.head == at(region(18).entry, stack.head) by {
-        preserve(memory(stack.head), region(18));
-    }
-    have separate(region(18).footprint, memory(stack.head->next)) by { normalize() using {}; }
-    have stack.head->next == at(region(18).entry, stack.head->next) by {
-        preserve(memory(stack.head->next), region(18));
-    }
-    have separate(region(18).footprint, memory(stack.head->next->next)) by { normalize() using {}; }
-    have stack.head->next->next == at(region(18).entry, stack.head->next->next) by {
-        preserve(memory(stack.head->next->next), region(18));
-    }
-    let empty_tail = fold(nodes(stack.head->next->next), { items: List<int32>::Nil });
-    let first_tail = fold(nodes(stack.head->next), { items: List::Cons(x, List<int32>::Nil) }, { tail: empty_tail });
-    let pushed = fold(nodes(stack.head), { items: List::Cons(x, List::Cons(x, List<int32>::Nil)) }, { tail: first_tail });
+    step(__cpp_q_X10_537461636b3c696e743e_X6_7e537461636b, { list: pushed });
     step_until(function.exit);
     unfold(length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))));
     have length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))) == 2 by solve() using {

@@ -25,7 +25,7 @@ fn memory_matrix(values: &[ProgramValue]) {
             let root = match value {
                 ProgramValue::Parameter(value) => KernelTermImport::default().algebraic(value),
                 ProgramValue::Pointer(value) => {
-                    KernelTerm::shared_pointer_value(SharedPointerValue::import_produced(value))
+                    KernelTerm::shared_pointer_value(SharedPointer::import_produced(value))
                 }
                 _ => KernelTermImport::default()
                     .argument(&PureFunctionArgument::Value(value.clone())),
@@ -511,7 +511,7 @@ fn deep_pointer_storage_keys_use_a_small_stack() {
         .spawn(|| {
             use crate::kernel::{KernelAddressOffset, SharedAddress};
             let _session = VerificationSession::enter();
-            let value = SharedPointerValue::import_produced(&Pointer::new(
+            let value = SharedPointer::import_produced(&Pointer::new(
                 Address::symbolic(Variable(998755)),
                 ProgramType::Int32Pointer,
             ));
@@ -528,7 +528,7 @@ fn deep_pointer_storage_keys_use_a_small_stack() {
             payload.address = SharedAddress::new(payload.address.node().base.clone(), offset);
             payload.provenance = payload.address.clone();
             let stored = StoredExecutionValue::from(ExecutionValue::Shared(
-                KernelTerm::shared_pointer_value(SharedPointerValue::new(payload)),
+                KernelTerm::shared_pointer_value(SharedPointer::new(payload)),
             ));
             let _ = hash(&stored);
             assert!(!stored.shared().unwrap().has_cached_native_argument());

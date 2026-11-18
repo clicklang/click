@@ -113,13 +113,13 @@ fn pointer_index_keys_match_native_arithmetic_and_opaque_binders() {
                 let actual_alpha =
                     alpha_machine_key::<true>(value.operand_view(), &mut bindings(), &mut 0);
                 assert_eq!(expected_alpha, actual_alpha, "{term:?}");
-                let key = memory_erased_pointer_offset_key(&offset(
+                let key = memory_erased_address_offset_key(&offset(
                     value.clone(),
                     4,
                     ty == MachineIntegerType::UInt64,
                 ));
-                let (MemoryErasedPointerOffsetNode::Int32Scaled { value: actual, .. }
-                | MemoryErasedPointerOffsetNode::Int64Scaled { value: actual, .. }) = key.node()
+                let (MemoryErasedAddressOffsetNode::Int32Scaled { value: actual, .. }
+                | MemoryErasedAddressOffsetNode::Int64Scaled { value: actual, .. }) = key.node()
                 else {
                     panic!("scaled key")
                 };

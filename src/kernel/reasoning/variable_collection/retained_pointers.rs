@@ -2,7 +2,7 @@
 //! native distinction between syntax, connections, capture and bound variables.
 use super::retained_folds::{FoldVariableRead, collect_argument, common_variables};
 use super::*;
-use crate::kernel::{KernelAddressOffset, SharedAddress, SharedAddressOffset, SharedPointerValue};
+use crate::kernel::{KernelAddressOffset, SharedAddress, SharedAddressOffset, SharedPointer};
 
 enum Component<'a> {
     Block(&'a AddressBase),
@@ -75,7 +75,7 @@ pub(crate) fn collect_address_variables(
 }
 
 pub(crate) fn collect_pointer_variables(
-    pointer: &SharedPointerValue,
+    pointer: &SharedPointer,
     mode: FoldVariableRead,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -151,7 +151,7 @@ pub(crate) fn address_scope_summary(
     addresses_scope_summary(std::iter::once(address), summaries)
 }
 pub(crate) fn pointer_scope_summary(
-    pointer: &SharedPointerValue,
+    pointer: &SharedPointer,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
     addresses_scope_summary(pointer.addresses(), summaries)
@@ -177,7 +177,7 @@ fn addresses_scope_summary<'a>(
 }
 
 pub(super) fn collect_pointer_bound_identities(
-    pointer: &SharedPointerValue,
+    pointer: &SharedPointer,
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
@@ -310,7 +310,7 @@ mod tests {
             assert_eq!(actual, native_variables(&address, mode), "{mode:?}");
         }
         let source = Pointer::new(address, ProgramType::VoidPointer);
-        let shared = SharedPointerValue::import(&source);
+        let shared = SharedPointer::import(&source);
         let mut expected = BTreeSet::new();
         collect_program_value_bound_identities(
             &ProgramValue::Pointer(source),
@@ -336,7 +336,7 @@ mod tests {
             start: Address::symbolic(Variable(1001013)),
             width: MachineTerm::Variable(Variable(1001014)),
         }));
-        let shared = SharedPointerValue::import(&source);
+        let shared = SharedPointer::import(&source);
         for mode in MODES {
             let mut actual = BTreeSet::new();
             collect_pointer_variables(&shared, mode, &mut actual);

@@ -32,6 +32,7 @@ derive_or_rule
 derive_proposition
 derive_proposition_using
 derive_solve_atomic_proposition
+signed_order_chain_premises
 derive_solve_proposition
 derive_solve_proposition_without_exact_goal
 derive_structural_rule

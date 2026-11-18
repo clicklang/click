@@ -103,30 +103,12 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<Proposition>)> {
-    expand_all_composite_resource_facts_and_propositions_with_state(
-        context,
-        definitions,
-        &state.program_point(),
-        assumptions,
-        Some(state),
-    )
-}
-
-pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
-    context: &ResourceContext,
-    definitions: &[CompositeResourceDefinition],
-    at: &ProgramPoint,
-    assumptions: &PureFactContext,
-    population_state: Option<&ExecutionState>,
-) -> Option<(ResourceContext, Vec<Proposition>)> {
+    let at = state.program_point();
     let memory = at.memory();
-    let (prepared, mut controls) = if let Some(state) = population_state {
-        expand_checked_authority_controls(context, definitions, state, assumptions)?
-    } else {
-        (context.clone(), Vec::new())
-    };
+    let (prepared, mut controls) =
+        expand_checked_authority_controls(context, definitions, state, assumptions)?;
     let (expanded, composites) =
-        expand_composite_resource_context(&prepared, definitions, at, assumptions)?;
+        expand_composite_resource_context(&prepared, definitions, &at, assumptions)?;
     controls.extend(composites);
     let mut propositions = Vec::new();
     // `assumptions` extended by `propositions[..extended]`: each composite's
@@ -144,8 +126,7 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
             assumptions,
         )?;
         propositions.extend(loadable);
-        let relations = if let Some(state) = population_state
-            && let Resource::Composite { name, .. } = composite.resource()
+        let relations = if let Resource::Composite { name, .. } = composite.resource()
             && let Some(definition) = definitions
                 .iter()
                 .find(|definition| definition.name() == name)
@@ -178,7 +159,7 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
             evaluate_composite_resource_relation_propositions(
                 &composite,
                 definitions,
-                at,
+                &at,
                 assumptions,
             )?
         };
@@ -186,13 +167,13 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
         fact_assumptions =
             assumptions_with_propositions(&fact_assumptions, &propositions[extended..]);
         extended = propositions.len();
-        let instantiated = instantiate_composite_resource_facts_with_state(
+        // Evaluate declared facts at the same point as the expanded body.
+        let instantiated = instantiate_composite_resource_facts_in_state(
             &composite,
             definitions,
-            memory,
+            state.clone(),
             &expanded,
             &fact_assumptions,
-            population_state,
         )?;
         propositions.extend(instantiated.propositions);
     }
@@ -667,13 +648,12 @@ pub(crate) fn instantiate_composite_resource_facts(
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
-    instantiate_composite_resource_facts_with_state(
+    instantiate_composite_resource_facts_in_state(
         composite,
         definitions,
-        memory,
+        ExecutionState::new().with_memory(memory.clone()),
         resources,
         assumptions,
-        None,
     )
 }
 
@@ -722,27 +702,6 @@ pub(crate) fn instantiate_private_member_body_facts(
         fact_state,
         &body,
         &assumptions.clone().require_owned_expression_loads(),
-    )
-}
-
-pub(super) fn instantiate_composite_resource_facts_with_state(
-    composite: &ResourceFact,
-    definitions: &[CompositeResourceDefinition],
-    memory: &SymbolicMemory,
-    resources: &ResourceContext,
-    assumptions: &PureFactContext,
-    population_state: Option<&ExecutionState>,
-) -> Option<InstantiatedCompositeResourceFacts> {
-    let state = population_state
-        .cloned()
-        .unwrap_or_else(ExecutionState::new)
-        .with_memory(memory.clone());
-    instantiate_composite_resource_facts_in_state(
-        composite,
-        definitions,
-        state,
-        resources,
-        assumptions,
     )
 }
 

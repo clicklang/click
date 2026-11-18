@@ -2,7 +2,7 @@
 use super::*;
 use crate::kernel::{
     Address, AddressBase, AddressOffset, KernelAddressOffset, Pointer, RetainedPointerMetadata,
-    SharedAddress, SharedAddressOffset, SharedPointerValue,
+    SharedAddress, SharedAddressOffset, SharedPointer,
 };
 use std::borrow::Cow;
 
@@ -117,7 +117,7 @@ impl<'a> Offset<'a> {
 #[derive(Clone, Copy)]
 enum Value<'a> {
     Native(&'a Pointer),
-    Shared(&'a SharedPointerValue),
+    Shared(&'a SharedPointer),
 }
 impl<'a> Value<'a> {
     fn argument(argument: CallArgument<'a>) -> Option<Self> {

@@ -1185,9 +1185,16 @@ impl PureFactContext {
                 })
                 .collect::<Vec<_>>()
         };
-        let mut stack = vec![(key(left), false, Vec::new())];
+        // Keep one predecessor link per queued edge. Copying the entire
+        // prefix per edge makes even a single linear chain quadratic.
+        let mut links: Vec<(Option<usize>, OrderDerivationStep)> = Vec::new();
+        let mut stack = vec![(key(left), false, None::<usize>)];
         let mut seen = BTreeSet::new();
-        while let Some((current, strict_so_far, path)) = stack.pop() {
+        while let Some((current, strict_so_far, predecessor)) = stack.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            if crate::instrumentation::deadline_exceeded() {
+                return None;
+            }
             if !seen.insert((current.clone(), strict_so_far)) {
                 continue;
             }
@@ -1195,25 +1202,85 @@ impl PureFactContext {
             let tail = connection(current, right);
             if (terms_match(current, right) || tail.is_some())
                 && (!require_strict || strict_so_far || tail == Some(true))
-                && !path.is_empty()
+                && let Some(mut link) = predecessor
             {
+                let mut path = Vec::new();
+                loop {
+                    let (previous, edge) = &links[link];
+                    path.push(edge.clone());
+                    let Some(previous) = previous else { break };
+                    link = *previous;
+                }
+                path.reverse();
                 return Some(path);
             }
             for (lower, upper, strict, edge) in edges_from(current) {
+                crate::instrumentation::record_deterministic_work(1);
+                if crate::instrumentation::deadline_exceeded() {
+                    return None;
+                }
                 let link = connection(current, lower.operand_view());
                 if !terms_match(current, lower.operand_view()) && link.is_none() {
                     continue;
                 }
-                let mut extended = path.clone();
-                extended.push(edge);
+                let next = links.len();
+                links.push((predecessor, edge));
                 stack.push((
                     upper,
                     strict_so_far || strict || link == Some(true),
-                    extended,
+                    Some(next),
                 ));
             }
         }
         None
+    }
+
+    /// Check a chain already supplied in order. The caller establishes each
+    /// cited premise separately. Each join is an exact endpoint or an
+    /// intrinsic comparison of signed literals.
+    pub(in crate::kernel) fn checks_listed_signed_order_chain(
+        goal: &Proposition,
+        premises: &[Proposition],
+    ) -> bool {
+        use super::super::checked_scalar_facts::ScalarOperandKey as Key;
+        use crate::kernel::machine_integer::Relation;
+
+        let format = MachineIntegerType::Int32;
+        let order = |claim: &Proposition| {
+            let Proposition::ConditionIs(condition, truth) = claim else {
+                return None;
+            };
+            let view = order_view_at_format(condition, *truth, format)?;
+            Some((
+                Key::for_format(format, view.operands[0].operand_view()),
+                Key::for_format(format, view.operands[1].operand_view()),
+                view.relation == Relation::Less,
+            ))
+        };
+        let connection = |left: &Key, right: &Key| {
+            if left == right {
+                return Some(false);
+            }
+            let left = left.operand_view().word32_constant()? as i32;
+            let right = right.operand_view().word32_constant()? as i32;
+            (left <= right).then_some(left < right)
+        };
+        let Some((mut current, end, require_strict)) = order(goal) else {
+            return false;
+        };
+        let mut strict_so_far = false;
+        for premise in premises {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some((lower, upper, strict)) = order(premise) else {
+                return false;
+            };
+            let Some(link) = connection(&current, &lower) else {
+                return false;
+            };
+            strict_so_far |= link || strict;
+            current = upper;
+        }
+        connection(&current, &end).is_some_and(|tail| !require_strict || strict_so_far || tail)
     }
 
     /// The exact order facts at `format`, one of [`WIDE_ORDER_FORMATS`], that
