@@ -17,25 +17,25 @@ int main(void) { clear(); return read_right() == 19; }
 ```
 
 ```click
-verifying "left.c" as left;
-verifying "right.c" as right;
+verifying "left.c";
+verifying "right.c" as right_file;
 verifying "main.c";
 
 resource both() {
     owns left::count;
-    owns right::count;
-    fact right::count == 19u64;
+    owns right_file::count;
+    fact right_file::count == 19u64;
 }
 
 void clear() {
     owns both();
     ensures left::count == 0u64;
-    ensures right::count == old(right::count);
+    ensures right_file::count == old(right_file::count);
 } by { unfold(both()); step_until(function.exit); fold(both()); solve(); }
 
 unsigned long read_right() {
     owns both();
-    ensures result == old(right::count);
+    ensures result == old(right_file::count);
     ensures result == 19u64;
 } by { unfold(both()); step_until(function.exit); fold(both()); solve(); }
 

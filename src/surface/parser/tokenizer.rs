@@ -526,11 +526,11 @@ fn tokenize_string(chars: &[char], start: usize) -> Result<(String, usize), Clic
     Err(ClickError::new("unterminated string literal"))
 }
 
-fn is_ident_start(ch: char) -> bool {
+pub(super) fn is_ident_start(ch: char) -> bool {
     ch.is_ascii_alphabetic() || ch == '_'
 }
 
-fn is_ident_continue(ch: char) -> bool {
+pub(super) fn is_ident_continue(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
 }
 

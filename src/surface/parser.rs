@@ -890,6 +890,7 @@ struct Parser {
     /// before any library theorem of that name. Empty in a library module.
     symbols: names::SymbolTable,
     source_aliases: BTreeMap<String, String>,
+    ambiguous_default_source_aliases: BTreeMap<String, BTreeSet<String>>,
     qualified_functions: BTreeMap<(String, String), String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     /// Set while a `tactic` declaration's signature is parsed: the name
@@ -1902,6 +1903,7 @@ impl Parser {
             record_spellings: BTreeMap::new(),
             c_typedefs: BTreeMap::new(),
             source_aliases: BTreeMap::new(),
+            ambiguous_default_source_aliases: BTreeMap::new(),
             qualified_functions: BTreeMap::new(),
             qualified_objects: None,
             pending_tactic_signature: false,
@@ -2280,6 +2282,7 @@ impl Parser {
     }
 
     fn parse_file_items(&mut self) -> Result<ClickFile, ClickError> {
+        self.index_default_source_aliases();
         self.index_algebraic_variant_fields();
         let mut imports = Vec::new();
         let mut verifying_sources = Vec::new();
@@ -3112,6 +3115,85 @@ impl Parser {
         Ok(AlgebraicFieldType::Algebraic { name, arguments })
     }
 
+    /// Resolve default names as a group so duplicate stems never pick a
+    /// source based on the order of the verifying declarations.
+    fn index_default_source_aliases(&mut self) {
+        if self.language != SourceLanguage::C {
+            return;
+        }
+        let mut explicit_names = BTreeSet::new();
+        let mut explicitly_aliased_sources = BTreeSet::new();
+        let mut candidates = BTreeMap::<&str, BTreeSet<&str>>::new();
+        crate::instrumentation::record_deterministic_work(self.tokens.len());
+        for (index, window) in self.tokens.windows(3).enumerate() {
+            let [Token::Ident(keyword), Token::String(path), next] = window else {
+                continue;
+            };
+            if keyword != "verifying" || SourceLanguage::of_source_path(path) != SourceLanguage::C {
+                continue;
+            }
+            match next {
+                Token::Semicolon => {
+                    let Some(stem) = std::path::Path::new(path)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                    else {
+                        continue;
+                    };
+                    let mut chars = stem.chars();
+                    if chars.next().is_some_and(tokenizer::is_ident_start)
+                        && chars.all(tokenizer::is_ident_continue)
+                        && !matches!(stem, "click" | "program")
+                        && rust_syntax::click_numeric_cast_type(stem).is_none()
+                        && !self.symbols.declares(names::DeclarationKind::Enum, stem)
+                        && !names::is_library_qualifier(stem)
+                    {
+                        candidates.entry(stem).or_default().insert(path);
+                    }
+                }
+                Token::Ident(word) if word == "as" => {
+                    if let Some(Token::Ident(alias)) = self.tokens.get(index + 3) {
+                        explicit_names.insert(alias.as_str());
+                        explicitly_aliased_sources.insert(path.as_str());
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (alias, mut paths) in candidates {
+            if explicit_names.contains(alias) {
+                continue;
+            }
+            paths.retain(|path| !explicitly_aliased_sources.contains(path));
+            match paths.len() {
+                0 => {}
+                1 => {
+                    let path = paths.first().expect("one default source");
+                    self.source_aliases
+                        .insert(alias.to_string(), path.to_string());
+                }
+                _ => {
+                    self.ambiguous_default_source_aliases.insert(
+                        alias.to_string(),
+                        paths.into_iter().map(str::to_string).collect(),
+                    );
+                }
+            }
+        }
+    }
+
+    fn lookup_source_alias(&self, alias: &str) -> Result<Option<&String>, ClickError> {
+        if let Some(paths) = self.ambiguous_default_source_aliases.get(alias) {
+            let mut paths = paths.iter();
+            let first = paths.next().expect("at least two default sources");
+            let second = paths.next().expect("at least two default sources");
+            return Err(self.error(format!(
+                "ambiguous default C source alias `{alias}` matches `{first}` and `{second}`. Use `as` to give the sources distinct aliases"
+            )));
+        }
+        Ok(self.source_aliases.get(alias))
+    }
+
     fn parse_verifying_source(&mut self) -> Result<String, ClickError> {
         self.expect_ident_spelling("verifying")?;
         let source_path = self.expect_string("C source path")?;
@@ -3199,18 +3281,20 @@ impl Parser {
     }
 
     fn is_qualified_program_name(&self) -> bool {
+        let is_source_alias = |name: &str| {
+            self.source_aliases.contains_key(name)
+                || self.ambiguous_default_source_aliases.contains_key(name)
+        };
         if let Some(written) = self
             .here()
             .and_then(|position| self.symbols.written_path(&position))
         {
             return written
                 .split_once("::")
-                .is_some_and(|(alias, _)| self.source_aliases.contains_key(alias));
+                .is_some_and(|(alias, _)| is_source_alias(alias));
         }
         self.peek_next() == Some(&Token::ColonColon)
-            && self
-                .peek_ident()
-                .is_some_and(|name| self.source_aliases.contains_key(name))
+            && self.peek_ident().is_some_and(is_source_alias)
     }
 
     fn parse_qualified_program_name(&mut self) -> Result<(String, ProgramExpression), ClickError> {
@@ -3229,8 +3313,7 @@ impl Parser {
         }
         let qualified = format!("{alias}::{name}");
         let source = self
-            .source_aliases
-            .get(&alias)
+            .lookup_source_alias(&alias)?
             .ok_or_else(|| self.error(format!("unknown C source alias `{alias}`")))?;
         let expression = match &self.qualified_objects {
             None => ProgramExpression::Variable((qualified.clone()).into()),
@@ -5901,7 +5984,7 @@ impl Parser {
             let name =
                 if let Some((alias, name)) = alias.split_once("::") {
                     c_source =
-                        Some(self.source_aliases.get(alias).cloned().ok_or_else(|| {
+                        Some(self.lookup_source_alias(alias)?.cloned().ok_or_else(|| {
                             self.error(format!("unknown C source alias `{alias}`"))
                         })?);
                     format!("{alias}::{name}")
@@ -5909,7 +5992,7 @@ impl Parser {
                     self.position += 1;
                     let name = self.expect_ident("C function name")?;
                     c_source =
-                        Some(self.source_aliases.get(&alias).cloned().ok_or_else(|| {
+                        Some(self.lookup_source_alias(&alias)?.cloned().ok_or_else(|| {
                             self.error(format!("unknown C source alias `{alias}`"))
                         })?);
                     format!("{alias}::{name}")
@@ -15158,8 +15241,8 @@ impl Parser {
             let source = if first.0 {
                 first.1.clone()
             } else {
-                // An explicit source alias uses the same qualification as C objects.
-                match self.source_aliases.get(&first.1) {
+                // Source aliases use the same qualification as C objects.
+                match self.lookup_source_alias(&first.1)? {
                     Some(source) => source.clone(),
                     None => {
                         self.position = start;
@@ -15174,7 +15257,7 @@ impl Parser {
                 return Ok(None);
             }
             if let Some((alias, name)) = first.1.split_once("::") {
-                let Some(source) = self.source_aliases.get(alias).cloned() else {
+                let Some(source) = self.lookup_source_alias(alias)?.cloned() else {
                     self.position = start;
                     return Ok(None);
                 };
@@ -15274,8 +15357,8 @@ impl Parser {
             let source = if first.0 {
                 first.1.clone()
             } else {
-                // An explicit source alias uses the same qualification as C objects.
-                match self.source_aliases.get(&first.1) {
+                // Source aliases use the same qualification as C objects.
+                match self.lookup_source_alias(&first.1)? {
                     Some(source) => source.clone(),
                     None => {
                         self.position = start;
@@ -15290,7 +15373,7 @@ impl Parser {
                 return Ok(None);
             }
             if let Some((alias, name)) = first.1.split_once("::") {
-                let Some(source) = self.source_aliases.get(alias).cloned() else {
+                let Some(source) = self.lookup_source_alias(alias)?.cloned() else {
                     self.position = start;
                     return Ok(None);
                 };
