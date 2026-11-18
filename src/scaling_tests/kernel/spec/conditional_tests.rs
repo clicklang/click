@@ -407,7 +407,9 @@ fn nested_reflexive_conditionals_lower_with_linear_work() {
             // Grow the explicit source, keeping nesting logarithmic.
             while layer.len() > 1 {
                 layer = layer
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|pair| SpecExpression::If {
                         condition: Box::new(SpecProposition::Comparison {
                             left: guard_value.clone(),
@@ -626,12 +628,12 @@ fn bitwise_guard_comparison(
     let variable = SpecExpression::Value(
         format.value_from_term(MachineTerm::Variable(Variable(1_040_000 + index))),
     );
-    *condition = Box::new(SpecProposition::Comparison {
+    **condition = SpecProposition::Comparison {
         left: bitwise,
         operator: ComparisonOperator::LessThan,
         right: variable.clone(),
-    });
-    *then_branch = Box::new(variable);
+    };
+    **then_branch = variable;
     proposition
 }
 
@@ -663,7 +665,7 @@ fn bitwise_guard_comparisons_ignore_ambient_truth_and_operand_aliases() {
                 )
                 .unwrap();
                 let Some((ConditionTerm::Compare { left, .. }, true)) =
-                    (&original[0].proposition).condition_native()
+                    original[0].proposition.condition_native()
                 else {
                     panic!("native comparison");
                 };

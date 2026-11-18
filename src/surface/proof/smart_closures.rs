@@ -1748,7 +1748,7 @@ impl<'a> Proof<'a> {
                 continue;
             };
             let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
-                (&condition).native_compat(),
+                condition.native_compat(),
             ) else {
                 continue;
             };
@@ -1803,7 +1803,7 @@ impl<'a> Proof<'a> {
             return false;
         };
         let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
-            (&condition).native_compat(),
+            condition.native_compat(),
         ) else {
             return false;
         };
@@ -3060,7 +3060,7 @@ impl<'a> Proof<'a> {
                 _ => continue,
             };
             let Some((crate::kernel::ConditionTerm::IntegerLessEqual(left, right), true)) =
-                (&bound).condition_native()
+                bound.condition_native()
             else {
                 return None;
             };
@@ -4002,7 +4002,7 @@ fn literal_requirement_spelling(
     requirement: &UnresolvedRequirement,
 ) -> Option<RequirementSpelling> {
     let Some((ConditionTerm::Constant(value), polarity)) =
-        (&requirement.proposition).condition_native()
+        requirement.proposition.condition_native()
     else {
         return None;
     };
@@ -4429,7 +4429,7 @@ fn source_backed_call_requirement_surface(
                     .parameters()
                     .iter()
                     .map(|parameter| {
-                        crate::surface::surface_parameter_binding(&parameter.binding_name())
+                        crate::surface::surface_parameter_binding(parameter.binding_name())
                     })
                     .collect::<Vec<_>>(),
                 function

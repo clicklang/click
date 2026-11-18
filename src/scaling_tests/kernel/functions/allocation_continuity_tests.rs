@@ -348,7 +348,7 @@ fn exit_allocation_candidates_ignore_unrelated_token_owners() {
                 .cloned()
                 .collect::<Vec<_>>()
         });
-        assert_eq!(selected, [token.clone()]);
+        assert_eq!(selected, std::slice::from_ref(&token));
         let retired = with_token.without_exact_representation(&token).unwrap();
         let state = ExecutionState::new().with_resource_context(retired);
         let (result, absence_work) = crate::instrumentation::measure_deterministic_work(|| {

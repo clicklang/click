@@ -203,8 +203,7 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                     )
                 {
                     if let Proposition::ConditionIs(reading, true) = reading
-                        && integer_operation_bound_comparison((&reading).native_compat())
-                            == Some(true)
+                        && integer_operation_bound_comparison(reading.native_compat()) == Some(true)
                     {
                         return Some(true);
                     }

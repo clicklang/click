@@ -170,10 +170,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if matches!(
             node,
             PointerAlignment { .. } | PointerWordEquality { .. } | PointerWordFromAlignment { .. }
-        ) {
-            if let Some(closed) = scope.driver().try_address_words_using(&premises)? {
-                return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
-            }
+        ) && let Some(closed) = scope.driver().try_address_words_using(&premises)?
+        {
+            return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
         }
         if polynomial {
             let Some(closed) = scope.driver().try_integer_algebra()? else {

@@ -265,7 +265,7 @@ mod conditional_contract_tests {
             "producer payloads remain distinct"
         );
         let var = IntegerTerm::var(Variable(1009891));
-        let values = vec![
+        let values = [
             IntegerTerm::constant_i64(0),
             var.clone(),
             IntegerTerm::Add(var.clone().into(), IntegerTerm::constant_i64(1).into()),

@@ -2091,9 +2091,7 @@ fn claim_expansion_source(theorem: &VerifiedProgramTheorem) -> Result<String, Cl
     // supplied by the checker and cannot be written in
     // a tactic's proof, which runs no code, so the expansion leaves it out.
     let mut tactics = certificate.to_proof_tactics();
-    let ending = 1
-        + theorem.function_block.ensures().len()
-        + crate::kernel::proof::ContractClosingGoal::COUNT;
+    let ending = super::verification::tactic_procedure_ending_len(&theorem.function_block);
     remove_tactic_procedure_ending(&mut tactics, ending).map_err(|()| {
         ClickError::new(format!(
             "the expanded proof of tactic `{}` does not end in the step and {} closing known step(s) its check supplies",
@@ -3684,7 +3682,7 @@ fn expand_selected_tactics_context(
         if theorem.function_block.is_tactic_procedure() {
             remove_tactic_procedure_ending(
                 &mut tactics,
-                1 + theorem.function_block.ensures().len(),
+                super::verification::tactic_procedure_ending_len(&theorem.function_block),
             )
             .map_err(|()| ClickError::new("expanded tactic procedure lost its checked ending"))?;
         } else {

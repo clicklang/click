@@ -13260,12 +13260,14 @@ impl Term {
             _ => None,
         }
     }
+    #[cfg(test)]
     pub(crate) fn bitvector_native(&self) -> Option<&MachineTerm> {
         match self {
             Self::Bitvector32(value) => Some(value),
             _ => None,
         }
     }
+    #[cfg(test)]
     pub(crate) fn integer_native(&self) -> Option<&IntegerTerm> {
         match self {
             Self::Integer(value) => Some(value),

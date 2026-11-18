@@ -1472,7 +1472,7 @@ impl<'a> Proof<'a> {
             let branch = match self.focused_obligation() {
                 Some(Obligation::Proposition(goal)) => {
                     let Some((ConditionTerm::IntegerEqual(unfolded, replacement), true)) =
-                        (&derived).condition_native()
+                        derived.condition_native()
                     else {
                         return Err(self.step_error(
                             "the restated fold law did not produce an Integer equation",

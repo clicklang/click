@@ -4241,10 +4241,11 @@ theorem nested_sites(x: int32) {
 }
 
 /// A user tactic's proof is checked with an ending the checker supplies: one
-/// step over the empty procedure's `return` and an `known` per claim.
-/// That ending cannot be written in a tactic's proof, so whole-claim
-/// expansion must leave it out; with it, the expanded proof is refused for
-/// using `step`.
+/// step over the empty procedure's `return` and a `known` per claim and per
+/// contract-closing goal. That ending cannot be written in a tactic's proof,
+/// so whole-claim expansion must leave it out; with it, the expanded proof is
+/// refused for using `step`. The targeted recheck, which turns the implicit
+/// closer off, must still find the contract-closing goals closed.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_17")]
 fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
@@ -4260,6 +4261,10 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
     assert!(!proof.contains("step();"), "{proof}");
     assert!(proof.contains("have y.tag == 7 by {"), "{proof}");
     verify_c_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    let position =
+        expansion::position_at_offset(&expanded, expanded.find("have y.tag == 7 by {").unwrap());
+    verify_c_sources_at(&expanded, &sources, position.line, position.column)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 

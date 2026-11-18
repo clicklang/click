@@ -2639,8 +2639,7 @@ mod tests {
             &replacement,
         )
         .expect("the application occurs on the arithmetic spine");
-        let Some((ConditionTerm::IntegerLessEqual(_, right), true)) =
-            (&rewritten).condition_native()
+        let Some((ConditionTerm::IntegerLessEqual(_, right), true)) = rewritten.condition_native()
         else {
             unreachable!()
         };

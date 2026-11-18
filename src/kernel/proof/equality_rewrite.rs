@@ -2813,7 +2813,7 @@ mod tests {
             };
             assert!(matches!(left.as_ref(), MachineTerm::MemoryLoad(..)));
             let observed = crate::kernel::eval::scalar_read_observation(
-                crate::kernel::MachineOperandView::Legacy(&left),
+                crate::kernel::MachineOperandView::Legacy(left),
             )
             .unwrap();
             assert_eq!(observed.bytes, bytes);

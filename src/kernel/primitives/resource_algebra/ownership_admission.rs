@@ -186,11 +186,6 @@ impl ResourceContext {
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod scaling_tests {
-    include!("../../../scaling_tests/kernel/primitives/resource_algebra/ownership_admission.rs");
-}
-
 impl ResourceContext {
     /// Apply a checked loan's restoration recipe. Old separation comes from
     /// the entry partition and the ledger; return-delta checks happen once at
@@ -326,4 +321,9 @@ impl ResourceContext {
         frame.advance_prepared_memory_equalities(assumptions);
         Ok((frame, inserted))
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../../scaling_tests/kernel/primitives/resource_algebra/ownership_admission.rs");
 }

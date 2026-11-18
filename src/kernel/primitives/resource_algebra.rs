@@ -10115,11 +10115,7 @@ fn exact_resources_proven_equal(
                     .iter()
                     .zip(right.payload.arguments())
                     .all(|(a, b)| {
-                        crate::kernel::resource_field_values_proven_equal(
-                            (a).into(),
-                            (b).into(),
-                            assumptions,
-                        )
+                        crate::kernel::resource_field_values_proven_equal(a, b, assumptions)
                     })
         }
         (Resource::Instance(left), Resource::Instance(right)) => {
@@ -10134,11 +10130,7 @@ fn exact_resources_proven_equal(
                     .iter()
                     .zip(right.arguments.iter())
                     .all(|(a, b)| {
-                        crate::kernel::instance_field_values_proven_equal(
-                            (a).into(),
-                            (b).into(),
-                            assumptions,
-                        )
+                        crate::kernel::instance_field_values_proven_equal(a, b, assumptions)
                     })
                 && left.fields.iter().zip(right.fields.iter()).all(|(a, b)| {
                     crate::kernel::resource_field_values_proven_equal(a, b, assumptions)
@@ -10160,11 +10152,7 @@ fn exact_resources_proven_equal(
                     .iter()
                     .zip(right_arguments.iter())
                     .all(|(a, b)| {
-                        crate::kernel::instance_field_values_proven_equal(
-                            (a).into(),
-                            (b).into(),
-                            assumptions,
-                        )
+                        crate::kernel::instance_field_values_proven_equal(a, b, assumptions)
                     })
         }
         (
@@ -10183,11 +10171,7 @@ fn exact_resources_proven_equal(
                     .iter()
                     .zip(right_arguments.iter())
                     .all(|(left, right)| {
-                        crate::kernel::resource_field_values_proven_equal(
-                            (left).into(),
-                            (right).into(),
-                            assumptions,
-                        )
+                        crate::kernel::resource_field_values_proven_equal(left, right, assumptions)
                     })
         }
         _ => false,
