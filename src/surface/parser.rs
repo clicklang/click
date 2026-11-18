@@ -9314,9 +9314,18 @@ impl Parser {
         self.expect(Token::LParen)?;
         // An untyped item binder is contextual sugar for a predicate lambda.
         // A typed literal or another expression is an ordinary predicate value.
+        // The item may be a generated binder, spelled `binder(N)`.
+        let binder_end = if self.tokens.get(self.position + 1)
+            == Some(&Token::Ident("binder".into()))
+            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+        {
+            self.position + 5
+        } else {
+            self.position + 2
+        };
         let untyped_binder = self.peek() == Some(&Token::Pipe)
             && matches!(self.peek_next(), Some(Token::Ident(_)))
-            && self.tokens.get(self.position + 2) == Some(&Token::Pipe);
+            && self.tokens.get(binder_end) == Some(&Token::Pipe);
         if !untyped_binder {
             let predicate = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
