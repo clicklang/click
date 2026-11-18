@@ -93,14 +93,14 @@ impl KernelTerm {
             return None;
         };
         Some(Self::shared_pointer_read(
-            SharedPointerValue::import(value),
+            SharedPointer::import(value),
             point,
             SharedAddress::import(&address),
         ))
     }
 
     pub(crate) fn shared_pointer_read(
-        value: SharedPointerValue,
+        value: SharedPointer,
         point: ProgramPoint,
         address: SharedAddress,
     ) -> Self {
@@ -217,7 +217,7 @@ mod tests {
             let pointer = pointer
                 .with_pointee_constant(true)
                 .with_pointee_volatile(true);
-            let expected = SharedPointerValue::import(&pointer);
+            let expected = SharedPointer::import(&pointer);
             let native = ProgramValue::Pointer(pointer);
             let result = crate::kernel::ExecutionValue::retain_native(native.clone());
             let root = result.shared().expect("retained pointer read");
@@ -241,7 +241,7 @@ mod tests {
             let ProgramValue::Pointer(restored) = result.native_payload().unwrap() else {
                 panic!("compatibility value");
             };
-            assert!(SharedPointerValue::import(restored).same_source_payload(&expected));
+            assert!(SharedPointer::import(restored).same_source_payload(&expected));
             assert_eq!(result.clone().into_native(), native);
             // Locals retain their existing compatibility policy until their slice.
             assert_eq!(
@@ -653,7 +653,7 @@ mod tests {
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));
             let index = AddressOffset::scaled_int64_node(
-                MachineTerm::PointerAddress(
+                MachineTerm::IntegerAddress(
                     Box::new(Address::symbolic(Variable(993161))),
                     crate::kernel::AddressObjectClass::new(expected.clone()),
                 ),
@@ -664,7 +664,7 @@ mod tests {
                 unreachable!()
             };
             assert!(value.shared_operand().is_none());
-            let MachineTerm::PointerAddress(_, actual) = value.structural_value() else {
+            let MachineTerm::IntegerAddress(_, actual) = value.structural_value() else {
                 panic!("address payload")
             };
             assert_eq!(actual.class(), expected);
@@ -679,7 +679,7 @@ mod tests {
         let address = Address {
             base: AddressBase::Symbolic(Variable(993130)),
             offset: AddressOffset::scaled_int32_node(
-                MachineTerm::PointerAddress(
+                MachineTerm::IntegerAddress(
                     Box::new(Address::symbolic(Variable(993131))),
                     crate::kernel::AddressObjectClass::NONE,
                 ),

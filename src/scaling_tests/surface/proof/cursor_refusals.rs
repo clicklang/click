@@ -5,7 +5,7 @@ fn refusal_fact_listing_is_bounded() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut context = PureFactContext::new();
         for index in 0..size {
-            context = context.assume_proposition(Proposition::ConditionIs(
+            context = context.assume_proposition(Proposition::condition_is(
                 ConditionTerm::Variable(Variable(710_000 + index)),
                 true,
             ));

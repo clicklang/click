@@ -6,7 +6,7 @@ use num_bigint::BigInt;
 use num_traits::Zero;
 
 fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
+    Proposition::condition_is(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
 }
 
 fn holds(p: &Proposition, available: &impl Fn(&Proposition) -> bool) -> bool {
@@ -65,7 +65,7 @@ fn integer_arm(
                 .any(|(truth, arm)| {
                     arm.as_ref() == other
                         && holds(
-                            &Proposition::ConditionIs(condition.as_ref().clone(), truth),
+                            &Proposition::condition_is(condition.as_ref().clone(), truth),
                             available,
                         )
                 });
@@ -86,7 +86,7 @@ fn integer_arm(
         .any(|(truth, arm)| {
             arm.as_ref() == Some(other)
                 && holds(
-                    &Proposition::ConditionIs(condition.clone(), truth),
+                    &Proposition::condition_is(condition.clone(), truth),
                     available,
                 )
         })
@@ -257,25 +257,42 @@ pub(crate) fn known_bridge_leaf(
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match goal {
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             identity(a, b, available) || identity(b, a, available)
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             mask_bound(a, b, available)
         }
-        Proposition::ConditionIs(ConditionTerm::BoolEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::BoolEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             bool_arm(a, |arm| arm == b.as_ref(), available)
                 || bool_arm(b, |arm| arm == a.as_ref(), available)
         }
-        Proposition::ConditionIs(condition @ ConditionTerm::BoolIf { .. }, truth) => bool_arm(
-            condition,
-            |arm| holds(&arm.truth_claim(*truth), available),
-            available,
-        ),
+        condition_source_0 @ Proposition::ConditionIs(_, truth)
+            if let Some((condition @ ConditionTerm::BoolIf { .. }, _)) =
+                condition_source_0.condition_native() =>
+        {
+            bool_arm(
+                condition,
+                |arm| holds(&arm.truth_claim(*truth), available),
+                available,
+            )
+        }
         Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
             algebraic_arm(a, b, available) || algebraic_arm(b, a, available)
         }
-        Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             algebraic_arm(a, b, available) || algebraic_arm(b, a, available)
         }
         _ => crate::kernel::proof::arithmetic_special::finite_float_reflexivity_premise(goal)
@@ -293,7 +310,7 @@ mod tests {
         known_bridge_leaf(goal, &|p| facts.pure_known_available(p))
     }
     fn equality(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
+        Proposition::condition_is(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
     }
     fn operation(ty: MachineIntegerType, op: Operation) -> Option<(IntegerTerm, IntegerTerm)> {
         let a = MachineTerm::Variable(Variable(995701));
@@ -373,7 +390,7 @@ mod tests {
             else_term: b.clone().into(),
         };
         for (truth, arm, wrong) in [(true, a.clone(), b.clone()), (false, b, a)] {
-            let premise = Proposition::ConditionIs(guard.clone(), truth);
+            let premise = Proposition::condition_is(guard.clone(), truth);
             assert!(known(
                 &equality(value.clone(), arm.clone()),
                 std::slice::from_ref(&premise)

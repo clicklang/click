@@ -127,7 +127,7 @@ impl IntegerOperationRangeBound {
         };
         let mut facts = forms
             .into_iter()
-            .map(|form| Proposition::ConditionIs(form, true))
+            .map(|form| Proposition::condition_is(form, true))
             .collect::<Vec<_>>();
         // 0 <= (x - y) is exactly y <= x. Retain a comparison view
         // when both observations have the same format, so a direct machine
@@ -486,7 +486,7 @@ fn shared_operation_bounds_keep_legacy_overflow_authority_without_export() {
         bound: i32::MAX.into(),
         lower: false,
     };
-    let source = Proposition::ConditionIs(
+    let source = Proposition::condition_is(
         ConditionTerm::Overflows {
             format,
             op: OverflowOperation::Add,

@@ -29,7 +29,7 @@ pub(super) fn apply(
     let mut obligations = Vec::new();
     let mut domain = Vec::new();
     let mut require = |proposition: Proposition| {
-        if !matches!(&proposition, Proposition::ConditionIs(ConditionTerm::Constant(actual), expected) if actual == expected)
+        if !matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(actual), _)) if (actual == expected)))
         {
             domain.push(proposition);
         }
@@ -37,18 +37,18 @@ pub(super) fn apply(
     let result = if op == MachineBinaryOp::Multiply {
         let product = IntegerTerm::multiply(left, right);
         let (min, max) = destination.format().bounds();
-        require(Proposition::ConditionIs(
+        require(Proposition::condition_is(
             ConditionTerm::integer_greater_equal(product.clone(), IntegerTerm::constant(min)),
             true,
         ));
-        require(Proposition::ConditionIs(
+        require(Proposition::condition_is(
             ConditionTerm::integer_less_equal(product.clone(), IntegerTerm::constant(max)),
             true,
         ));
         product
     } else {
         if SpecDivision::of(budget) == SpecDivision::CDefined {
-            require(Proposition::ConditionIs(
+            require(Proposition::condition_is(
                 ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(0)),
                 false,
             ));
@@ -64,8 +64,8 @@ pub(super) fn apply(
                 && !matches!(minus_one, ConditionTerm::Constant(false))
             {
                 require(Proposition::Or(
-                    Box::new(Proposition::ConditionIs(min, false)),
-                    Box::new(Proposition::ConditionIs(minus_one, false)),
+                    Box::new(Proposition::condition_is(min, false)),
+                    Box::new(Proposition::condition_is(minus_one, false)),
                 ));
             }
         }

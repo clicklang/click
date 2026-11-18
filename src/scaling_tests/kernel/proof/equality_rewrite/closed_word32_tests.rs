@@ -20,7 +20,7 @@ fn newly_closed_word32_rewrite_visits_each_shared_node_once() {
                     [root.clone(), root.clone()],
                 );
             }
-            let goal = Proposition::ConditionIs(
+            let goal = Proposition::condition_is(
                 ConditionTerm::IntegerLessEqual(
                     IntegerTerm::Machine(
                         SharedMachineIntegerTerm::from_shared(format, root).unwrap(),
@@ -30,7 +30,7 @@ fn newly_closed_word32_rewrite_visits_each_shared_node_once() {
                 ),
                 true,
             );
-            let equality = Proposition::ConditionIs(
+            let equality = Proposition::condition_is(
                 ConditionTerm::machine_compare(
                     format,
                     CompareRelation::Equal,
@@ -46,7 +46,7 @@ fn newly_closed_word32_rewrite_visits_each_shared_node_once() {
             });
             assert_eq!(
                 result.proposition(),
-                &Proposition::ConditionIs(
+                &Proposition::condition_is(
                     ConditionTerm::IntegerLessEqual(
                         IntegerTerm::constant_i64(1).into(),
                         IntegerTerm::constant_i64(5).into(),
@@ -75,7 +75,7 @@ fn newly_closed_word32_rewrite_ignores_unrelated_facts() {
             let word = |n: i64| {
                 crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
             };
-            let equality = Proposition::ConditionIs(
+            let equality = Proposition::condition_is(
                 ConditionTerm::machine_compare(
                     format,
                     CompareRelation::Equal,
@@ -102,7 +102,7 @@ fn newly_closed_word32_rewrite_ignores_unrelated_facts() {
                         .unwrap(),
                 ],
             );
-            let goal = Proposition::ConditionIs(
+            let goal = Proposition::condition_is(
                 ConditionTerm::IntegerLessEqual(
                     IntegerTerm::Machine(
                         SharedMachineIntegerTerm::from_shared(format, root).unwrap(),
@@ -118,7 +118,7 @@ fn newly_closed_word32_rewrite_ignores_unrelated_facts() {
             });
             assert_eq!(
                 result.proposition(),
-                &Proposition::ConditionIs(
+                &Proposition::condition_is(
                     ConditionTerm::IntegerLessEqual(
                         IntegerTerm::constant_i64(3).into(),
                         IntegerTerm::constant_i64(5).into(),
@@ -157,7 +157,7 @@ fn selected_word32_literal_comparisons_ignore_unrelated_facts() {
             });
             assert_eq!(
                 result.proposition(),
-                &Proposition::ConditionIs(
+                &Proposition::condition_is(
                     if format == MachineIntegerType::Int32 {
                         // The existing signed rewrite folds closed comparisons.
                         ConditionTerm::Constant(true)
@@ -207,7 +207,7 @@ fn selected_word32_literal_comparisons_scale_with_selected_source() {
             for (i, result) in results.iter().enumerate() {
                 assert_eq!(
                     result,
-                    &Proposition::ConditionIs(
+                    &Proposition::condition_is(
                         if format == MachineIntegerType::Int32 {
                             ConditionTerm::Constant(i <= 100)
                         } else {

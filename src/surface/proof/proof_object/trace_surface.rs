@@ -14,8 +14,8 @@ impl Proof<'_> {
     ) -> Option<[crate::surface::proof_trace::PointerTraceView; 2]> {
         let view = self.execution_fixed_state_view()?;
         let locals = self.proof_local_values();
-        let fact = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(left.clone(), right.clone()),
+        let fact = Proposition::condition_is(
+            ConditionTerm::address_equal(left.clone(), right.clone()),
             true,
         );
         let surface = crate::kernel::search::ProofSearch::available_surface_fact(
@@ -25,8 +25,8 @@ impl Proof<'_> {
             &fact,
         )
         .or_else(|| {
-            let reversed = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(right.clone(), left.clone()),
+            let reversed = Proposition::condition_is(
+                ConditionTerm::address_equal(right.clone(), left.clone()),
                 true,
             );
             crate::kernel::search::ProofSearch::available_surface_fact(

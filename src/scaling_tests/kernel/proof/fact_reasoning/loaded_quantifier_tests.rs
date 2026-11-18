@@ -27,7 +27,7 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             let shared = loaded_fact_of_format(&memory, Variable(920_002), true, format);
             let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&native));
             for index in 0..size {
-                facts = facts.with_fact(Proposition::ConditionIs(
+                facts = facts.with_fact(Proposition::condition_is(
                     ConditionTerm::equal(
                         MachineTerm::Variable(Variable(930_000 + index)),
                         MachineTerm::constant(3),

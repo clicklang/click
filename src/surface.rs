@@ -257,7 +257,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "fn",
     "function",
     "gather",
-    "give",
     "have",
     "if",
     "import",
@@ -316,7 +315,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "step_until",
     "struct",
     "tactic",
-    "take",
     "target",
     "theorem",
     "then",
@@ -2182,33 +2180,30 @@ pub enum ResourceClause {
 /// A proof step on iterated guarded ownership.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IteratedTactic {
-    /// `take(base[a..b]);` moves one element out of the iterated fact whose
-    /// elements live at `base`.
-    Take(IteratedElement),
-    /// `give(base[a..b]);` moves one element back.
-    Give(IteratedElement),
+    /// `unfold(resource(args)[i]);` opens one slot of an exposed clause.
+    UnfoldSlot(Box<IteratedSlot>),
+    /// `fold(resource(args)[i]);` restores that slot.
+    FoldSlot(Box<IteratedSlot>),
     /// `gather(resource(...));` forms the named resource's iterated fact.
     Gather(ResourceClause),
     /// `scatter(resource(...));` dissolves it.
     Scatter(ResourceClause),
 }
 
-/// A current range or a range through an explicitly selected saved pointer.
+/// One index in a resource's exposed iterated clause. A saved point selects
+/// the resource arguments only; the index and guard use the current state.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IteratedElement {
-    Current(ContractSegment),
-    SavedBase {
-        base: ContractExpression,
-        start: ContractExpression,
-        end: ContractExpression,
-    },
+pub struct IteratedSlot {
+    resource: ResourceClause,
+    point: Option<ProgramPointSelector>,
+    index: ContractExpression,
 }
 
 impl IteratedTactic {
     pub fn name(&self) -> &'static str {
         match self {
-            Self::Take(_) => "take",
-            Self::Give(_) => "give",
+            Self::UnfoldSlot(_) => "unfold",
+            Self::FoldSlot(_) => "fold",
             Self::Gather(_) => "gather",
             Self::Scatter(_) => "scatter",
         }
@@ -3649,7 +3644,7 @@ struct RecordedStates {
     allocation_results: crate::persistent::PersistentMap<crate::kernel::Address, CodeRegionRef>,
     /// Values produced at call exits, independent of destination locals.
     call_results: RecordedCallResults,
-    /// Capture-producing functions retain the call table at each citable
+    /// Prelowered result steps retain their result table at each citable
     /// state. An `at` expression selects a table by its program point.
     call_result_snapshots: imbl::OrdMap<ProgramPointSelector, RecordedCallResults>,
     /// The points inside a loop that left at several places, by the loop
@@ -4062,11 +4057,11 @@ impl RecordedStates {
     }
 
     fn record_read_events(&mut self, index: usize, facts: &crate::kernel::ExecutionFacts) {
-        self.record_read_event_values(
+        self.record_read_retained_event_values(
             index,
             facts.iter().filter_map(|fact| {
                 crate::instrumentation::record_deterministic_work(1);
-                fact.volatile_read_result()
+                fact.volatile_read_retained_result().cloned()
             }),
         );
     }
@@ -4075,6 +4070,14 @@ impl RecordedStates {
         &mut self,
         index: usize,
         values: impl Iterator<Item = &'a ProgramValue>,
+    ) {
+        self.record_read_retained_event_values(index, values.map(|value| value.clone().into()));
+    }
+
+    fn record_read_retained_event_values(
+        &mut self,
+        index: usize,
+        values: impl Iterator<Item = crate::kernel::ExecutionValue>,
     ) {
         // Only this completed statement's output is visited, never prior facts.
         for event in 0..self.read_event_counts.get(&index).copied().unwrap_or(0) {
@@ -4102,7 +4105,8 @@ impl RecordedStates {
         for value in values {
             crate::instrumentation::record_deterministic_work(1);
             let key = (index, count);
-            self.read_event_results.insert(key, value.clone().into());
+            let retained = RetainedProgramValue::from(value);
+            let value = retained.native_compat();
             Self::add_read_event_name(&mut self.read_event_names, value, key);
             match value {
                 ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
@@ -4117,6 +4121,7 @@ impl RecordedStates {
                 }
                 _ => {}
             }
+            self.read_event_results.insert(key, retained);
             count += 1;
         }
         if count == 0 {
@@ -4167,7 +4172,7 @@ impl RecordedStates {
     fn records_call_snapshots(&self) -> bool {
         self.source_layout
             .as_ref()
-            .is_some_and(lowering::SourceExecutionLayout::has_call_captures)
+            .is_some_and(lowering::SourceExecutionLayout::snapshots_step_results)
     }
 
     fn region_result_value_at(
@@ -4889,6 +4894,64 @@ impl RecordedStates {
         self.allocation_results.get(pointer).cloned()
     }
 
+    /// Name the address of frontend-owned storage by its producing region.
+    fn produced_address_expression(
+        &self,
+        pointer: &crate::kernel::Address,
+    ) -> Option<ContractExpression> {
+        use crate::kernel::AddressBase;
+        match &pointer.base {
+            AddressBase::AutomaticLocal { binding, .. } if binding.is_temporary() => {
+                self.call_result_address_expression(pointer)
+            }
+            AddressBase::Heap(_) => Self::displaced_result_address(pointer, |base| {
+                Some(ContractExpression::RegionAllocation(
+                    self.allocation_result(base)?,
+                ))
+            }),
+            _ => None,
+        }
+    }
+
+    fn call_result_address_expression(
+        &self,
+        pointer: &crate::kernel::Address,
+    ) -> Option<ContractExpression> {
+        if let Some(region) = self.call_result_naming_pointer(pointer) {
+            return Some(ContractExpression::RegionResult(region));
+        }
+        Self::displaced_result_address(pointer, |base| {
+            Some(ContractExpression::RegionResult(
+                self.call_result_naming_pointer(base)?,
+            ))
+        })
+    }
+
+    fn displaced_result_address(
+        pointer: &crate::kernel::Address,
+        name_base: impl FnOnce(&crate::kernel::Address) -> Option<ContractExpression>,
+    ) -> Option<ContractExpression> {
+        use crate::kernel::{Address, AddressOffset};
+        let AddressOffset::Constant(bytes) = pointer.offset else {
+            return None;
+        };
+        let bytes = u32::try_from(bytes).ok()?;
+        if bytes == 0 {
+            return name_base(pointer);
+        }
+        let base = Address {
+            base: pointer.base.clone(),
+            offset: AddressOffset::Constant(0),
+        };
+        Some(ContractExpression::CUnary {
+            operand: Box::new(name_base(&base)?),
+            lowered: ProgramExpression::PointerOffsetBytes {
+                pointer: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
+                bytes,
+            },
+        })
+    }
+
     /// The recorded points at which some local held a pointer into `block`,
     /// with their states, in the locals' name order: at most
     /// [`POINTER_POINTS_OFFERED`], each checked against its state.
@@ -4998,10 +5061,20 @@ impl RecordedStates {
                         Some(call) => state
                             .step_result(call)
                             .map(|value| RetainedProgramValue::from(value.clone().into_value())),
-                        None => layout
-                            .call_result_local(*index)
-                            .and_then(|local| state.locals().get(local))
-                            .map(|value| RetainedProgramValue::from(value.clone().into_value())),
+                        None => {
+                            let local = layout.call_result_local(*index)?;
+                            if let Some(value) = state.locals().get(local) {
+                                return Some(RetainedProgramValue::from(
+                                    value.clone().into_value(),
+                                ));
+                            }
+                            local.local_id().filter(|id| id.is_temporary())?;
+                            let address = state.locals().aggregate_object_pointer(local)?;
+                            Some(RetainedProgramValue::from(ProgramValue::typed_pointer(
+                                address.clone(),
+                                crate::kernel::ProgramType::UInt8Pointer,
+                            )))
+                        }
                     });
             self.record_retained_call_result(*index, result);
         }
@@ -5956,7 +6029,7 @@ pub enum ProofTactic {
         start: ContractExpression,
         end: ContractExpression,
     },
-    /// `take`, `give`, `gather`, or `scatter` on iterated guarded ownership.
+    /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
     ConstructResource(ResourceClause),
     Witness(ProofWitness),
@@ -6260,13 +6333,13 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "take-element",
-        syntax: "take(base[a..b])",
+        id: "unfold-slot",
+        syntax: "unfold(resource(args)[i])",
         class: "simple",
     },
     PublicTacticForm {
-        id: "give-element",
-        syntax: "give(base[a..b])",
+        id: "fold-slot",
+        syntax: "fold(resource(args)[i])",
         class: "simple",
     },
     PublicTacticForm {
@@ -10639,14 +10712,10 @@ impl ClickError {
                 if !requirement.is_empty() {
                     context.push(requirement);
                 }
-                if let Some(goal) = state
-                    .kernel_goal()
-                    .filter(|_| !proof_diagnostics::requirement_is_goal(state.as_ref()))
+                if !proof_diagnostics::requirement_is_goal(state.as_ref())
+                    && let Some(goal) = diagnostic.render_goal(&mut labels)
                 {
-                    context.push(format!(
-                        "goal: {}",
-                        proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)
-                    ));
+                    context.push(format!("goal: {goal}"));
                 }
                 if diagnostic.checks.is_some() {
                     let recent = state

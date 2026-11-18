@@ -412,6 +412,23 @@ fn resolve(
             }
             _ => false,
         },
+        // A shared slice of a local array, `&words[..]`: the array's address
+        // and length never change while the slice lives.
+        E::ArrayToSlice {
+            array,
+            mutable: false,
+        } => {
+            matches!(
+                types.get(&name.to_string()),
+                Some(
+                    super::super::schema::Type::ByteSlice { mutable: false }
+                        | super::super::schema::Type::ScalarSlice { mutable: false, .. }
+                )
+            ) && match array.as_ref() {
+                E::Borrow { place, .. } => place_root(place).is_some(),
+                _ => false,
+            }
+        }
         value => unchanging_scalar(value, unchanged),
     };
     let result = unchanging.then_some(value);
@@ -727,6 +744,14 @@ pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock], re
             let S::Assign { value, .. } = blocks[block].statements.remove(position) else {
                 unreachable!("the return place's write is an assignment")
             };
+            // The return reads the value where the write did: the storage
+            // ends between them, which the return performs anyway, would
+            // otherwise end a local the value reads first.
+            let tail = blocks[block].statements.split_off(position);
+            blocks[block].statements.extend(
+                tail.into_iter()
+                    .filter(|statement| !matches!(statement, S::EndStorage { .. })),
+            );
             blocks[block].terminator = T::ReturnValue { value };
         }
         None => {
@@ -801,13 +826,61 @@ fn returned_directly(value_type: &super::super::schema::Type) -> bool {
     )
 }
 
-/// Binds a slice loop's variable where `next` yields, as
-/// [`bind_range_payloads`] does for a range: once the protocol has split a
-/// slice iterator's `next` into its two outcomes, the `Option` it returns is
-/// read only by the `Some` arm's first statement, `x = (opt as Some).0`, and
-/// by the tag test the split left unreachable. The yielding outcome then
-/// assigns `x` the element's reference itself (`payload: Some(x)`), the
-/// other outcome is nothing, and the `Option`, its tag test and its
+/// What a split `next` of a slice, enumerated slice or chunk iterator
+/// yields into its `Some` arm, read from its `Option`.
+#[derive(Clone, Copy, PartialEq)]
+enum Yielded {
+    /// The element's reference, `SharedArrayOptionElement`.
+    Element,
+    /// An enumeration's index, `EnumerateOptionIndex`.
+    Index,
+    /// A chunk, `ChunkOptionSlice`.
+    Chunk,
+}
+
+/// The `Option` a split `next` builds, whether its `for` header decided it
+/// yields, and what its `Some` arm may read: the element of a slice
+/// iterator, the index and element of an enumeration, the chunk of a chunk
+/// iterator.
+fn split_next(statement: &S) -> Option<(&String, Option<bool>, &'static [Yielded])> {
+    match statement {
+        S::SharedArrayNext {
+            option: Some(option),
+            taken,
+            ..
+        } => Some((option, *taken, &[Yielded::Element])),
+        S::EnumerateNext {
+            option: Some(option),
+            taken,
+            ..
+        } => Some((option, *taken, &[Yielded::Index, Yielded::Element])),
+        S::ChunkNext {
+            option: Some(option),
+            taken,
+            ..
+        } => Some((option, *taken, &[Yielded::Chunk])),
+        _ => None,
+    }
+}
+
+/// What `value` reads from `option`, when it reads one yielded value.
+fn yielded_read(value: &E, option: &str) -> Option<Yielded> {
+    match value {
+        E::SharedArrayOptionElement { option: read } if read == option => Some(Yielded::Element),
+        E::EnumerateOptionIndex { option: read } if read == option => Some(Yielded::Index),
+        E::ChunkOptionSlice { option: read } if read == option => Some(Yielded::Chunk),
+        _ => None,
+    }
+}
+
+/// Binds a slice, enumerated slice or chunk loop's variables where `next`
+/// yields, as [`bind_range_payloads`] does for a range: once the protocol has
+/// split `next` into its two outcomes, the `Option` it returns is read only
+/// by the `Some` arm's first statements, `x = (opt as Some).0`, and by the
+/// tag test the split left unreachable. The yielding outcome then assigns
+/// those locals itself (`payload`, or an enumeration's `index` and
+/// `element`), or only moves on when the arm binds nothing (`Some(_)`); the
+/// other outcome is nothing; and the `Option`, its tag test and its
 /// temporary go.
 pub(super) fn bind_slice_payloads(
     locals: &mut Vec<Place>,
@@ -821,39 +894,64 @@ pub(super) fn bind_slice_payloads(
         )
     };
     // A block that tests the `Option`'s tag, which the split replaced.
-    let tests = |block: &MirBlock, option: &str| matches!(&block.terminator, T::If { condition: E::SharedArrayOptionTag { option: tested }, .. } if tested == option);
+    let tests = |block: &MirBlock, option: &str| {
+        matches!(
+            &block.terminator,
+            T::If {
+                condition: E::SharedArrayOptionTag { option: tested }
+                    | E::ChunkOptionTag { option: tested },
+                ..
+            } if tested == option
+        )
+    };
+    let tag_copy = |statement: &S, option: &str| {
+        matches!(
+            statement,
+            S::Assign {
+                value: E::SharedArrayOptionTag { option: tag } | E::ChunkOptionTag { option: tag },
+                ..
+            } if tag == option
+        )
+    };
     let mut removed = BTreeSet::new();
     for index in 0..blocks.len() {
-        let (option, target) = match (blocks[index].statements.last(), &blocks[index].terminator) {
-            (
-                Some(S::SharedArrayNext {
-                    option: Some(option),
-                    payload: None,
-                    taken: Some(true),
-                    ..
-                }),
-                T::Goto { target },
-            ) => (option.clone(), *target),
+        let (option, yields, target) = match (
+            blocks[index].statements.last().and_then(split_next),
+            &blocks[index].terminator,
+        ) {
+            (Some((option, Some(true), yields)), T::Goto { target }) => {
+                (option.clone(), yields, *target)
+            }
             _ => continue,
         };
         if !temporaries.contains(&option) || removed.contains(&option) {
             continue;
         }
-        // The `Some` arm's binding of the element, `x = (opt as Some).0`,
-        // when its first statement is one; a `Some(_)` arm binds nothing.
-        let binding = blocks[target]
-            .statements
-            .iter()
-            .position(|statement| !transparent(statement))
-            .and_then(|position| match &blocks[target].statements[position] {
+        // The `Some` arm's leading bindings of what it yields, `x = (opt as
+        // Some).0`, each at most once; a `Some(_)` arm binds nothing.
+        let mut bindings = Vec::<(usize, Yielded, String)>::new();
+        for (position, statement) in blocks[target].statements.iter().enumerate() {
+            if transparent(statement) {
+                continue;
+            }
+            match statement {
                 S::Assign {
-                    target: E::Local { name: payload },
-                    value: E::SharedArrayOptionElement { option: read },
-                } if *read == option => Some((position, payload.clone())),
-                _ => None,
-            });
+                    target: E::Local { name },
+                    value,
+                } => match yielded_read(value, &option) {
+                    Some(read)
+                        if yields.contains(&read)
+                            && !bindings.iter().any(|(_, bound, _)| *bound == read) =>
+                    {
+                        bindings.push((position, read, name.clone()));
+                    }
+                    _ => break,
+                },
+                _ => break,
+            }
+        }
         // Nothing else names the `Option`: its `next` outcomes, each decided,
-        // the binding, and the replaced tag test and its tag copies.
+        // the bindings, and the replaced tag test and its tag copies.
         let mut nexts = 0;
         let mut others = 0;
         for (number, block) in blocks.iter().enumerate() {
@@ -862,16 +960,14 @@ pub(super) fn bind_slice_payloads(
                 if transparent(statement) || !mentioned_locals(statement).contains(&option) {
                     continue;
                 }
-                match statement {
-                    S::SharedArrayNext { taken: Some(_), .. } => nexts += 1,
-                    S::Assign {
-                        value: E::SharedArrayOptionTag { .. },
-                        ..
-                    } if replaced => {}
-                    _ if binding
-                        .as_ref()
-                        .is_some_and(|(position, _)| number == target && place == *position) => {}
-                    _ => others += 1,
+                if split_next(statement).is_some_and(|(_, taken, _)| taken.is_some()) {
+                    nexts += 1;
+                } else if (replaced && tag_copy(statement, &option))
+                    || (number == target
+                        && bindings.iter().any(|(position, _, _)| *position == place))
+                {
+                } else {
+                    others += 1;
                 }
             }
             if !replaced {
@@ -886,28 +982,70 @@ pub(super) fn bind_slice_payloads(
         if others != 0 || nexts != 2 {
             continue;
         }
-        if let Some((position, _)) = &binding {
+        for (position, _, _) in bindings.iter().rev() {
             blocks[target].statements.remove(*position);
         }
-        let payload = binding.map(|(_, payload)| payload);
+        start_storage_at_next(
+            blocks,
+            index,
+            target,
+            bindings.iter().map(|(_, _, name)| name.as_str()),
+        );
+        let bound = |read: Yielded| {
+            bindings
+                .iter()
+                .find(|(_, bound, _)| *bound == read)
+                .map(|(_, _, name)| name.clone())
+        };
         for block in blocks.iter_mut() {
             if tests(block, &option) {
-                block.statements.retain(|statement| !matches!(statement, S::Assign { value: E::SharedArrayOptionTag { option: tag }, .. } if *tag == option));
+                block
+                    .statements
+                    .retain(|statement| !tag_copy(statement, &option));
                 block.terminator = T::Unreachable;
             }
             for statement in &mut block.statements {
-                if let S::SharedArrayNext {
-                    option: next_option,
-                    payload: next_payload,
-                    taken,
-                    ..
-                } = statement
-                    && next_option.as_deref() == Some(option.as_str())
+                if !split_next(statement).is_some_and(|(next_option, _, _)| *next_option == option)
                 {
-                    *next_option = None;
-                    if *taken == Some(true) {
-                        next_payload.clone_from(&payload);
+                    continue;
+                }
+                match statement {
+                    S::SharedArrayNext {
+                        option: next_option,
+                        payload,
+                        taken,
+                        ..
+                    } => {
+                        *next_option = None;
+                        if *taken == Some(true) {
+                            *payload = bound(Yielded::Element);
+                        }
                     }
+                    S::EnumerateNext {
+                        option: next_option,
+                        index,
+                        element,
+                        taken,
+                        ..
+                    } => {
+                        *next_option = None;
+                        if *taken == Some(true) {
+                            *index = bound(Yielded::Index);
+                            *element = bound(Yielded::Element);
+                        }
+                    }
+                    S::ChunkNext {
+                        option: next_option,
+                        payload,
+                        taken,
+                        ..
+                    } => {
+                        *next_option = None;
+                        if *taken == Some(true) {
+                            *payload = bound(Yielded::Chunk);
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -923,6 +1061,37 @@ pub(super) fn bind_slice_payloads(
         });
     }
     locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// Starts the storage of the locals the taken `next` ending block `next`
+/// now binds there, rather than in the `Some` arm `arm` that bound them: a
+/// binding's storage starts before its first write. Only the arm's leading
+/// storage markers move; the block holding the taken `next` leads only to
+/// the arm.
+fn start_storage_at_next<'a>(
+    blocks: &mut [MirBlock],
+    next: usize,
+    arm: usize,
+    bound: impl IntoIterator<Item = &'a str>,
+) {
+    for name in bound {
+        let Some(position) = blocks[arm]
+            .statements
+            .iter()
+            .take_while(|statement| {
+                matches!(
+                    statement,
+                    S::BeginStorage { .. } | S::EndStorage { .. } | S::Site { .. }
+                )
+            })
+            .position(|statement| matches!(statement, S::BeginStorage { local } if local == name))
+        else {
+            continue;
+        };
+        let start = blocks[arm].statements.remove(position);
+        let at = blocks[next].statements.len() - 1;
+        blocks[next].statements.insert(at, start);
+    }
 }
 
 /// The iterator `statement` moves: its kind, the local it moves into, and
@@ -1009,6 +1178,7 @@ pub(super) fn bind_range_payloads(
         }
         let payload = payload.clone();
         blocks[target].statements.remove(position);
+        start_storage_at_next(blocks, index, target, [payload.as_str()]);
         for block in blocks.iter_mut() {
             for statement in &mut block.statements {
                 if let S::RangeNext {
@@ -1548,9 +1718,26 @@ fn statement_named_locals(statement: &S) -> Vec<&String> {
         | S::ChunkMove { target, source }
         | S::Move { target, source, .. }
         | S::Copy { target, source, .. } => vec![target, source],
-        S::EnumerateNext { iterator, option } | S::ChunkNext { iterator, option } => {
-            vec![iterator, option]
-        }
+        S::EnumerateNext {
+            iterator,
+            option,
+            index,
+            element,
+            ..
+        } => std::iter::once(iterator)
+            .chain(option)
+            .chain(index)
+            .chain(element)
+            .collect(),
+        S::ChunkNext {
+            iterator,
+            option,
+            payload,
+            ..
+        } => std::iter::once(iterator)
+            .chain(option)
+            .chain(payload)
+            .collect(),
         S::SharedArrayNext {
             iterator,
             option,
@@ -2660,6 +2847,63 @@ mod tests {
             [S::Assign { value: E::SliceLength { slice }, .. }]
                 if matches!(slice.as_ref(), E::Borrow { place, .. }
                     if matches!(place.as_ref(), E::Local { name } if name == "bytes"))
+        ));
+    }
+
+    #[test]
+    fn a_shared_slice_of_a_local_array_is_read_in_place() {
+        // `t1 = &words[..]; x = len(t1)` is `x = len(&words[..])`.
+        let slice = Type::ScalarSlice {
+            element: Box::new(Type::U32),
+            mutable: false,
+        };
+        let mut locals = vec![
+            place("x"),
+            place("words"),
+            Place {
+                value_type: slice.clone(),
+                ..place("t1")
+            },
+        ];
+        let mut blocks = vec![block(
+            vec![
+                assign(
+                    "t1",
+                    E::ArrayToSlice {
+                        array: Box::new(E::Borrow {
+                            place: Box::new(local("words")),
+                            value_type: Type::Reference {
+                                mutable: false,
+                                pointee: Box::new(Type::Array {
+                                    element: Box::new(Type::U32),
+                                    length: 4,
+                                }),
+                            },
+                        }),
+                        mutable: false,
+                    },
+                ),
+                assign(
+                    "x",
+                    E::SliceLength {
+                        slice: Box::new(local("t1")),
+                    },
+                ),
+            ],
+            T::Return,
+        )];
+        super::substitute_literals(
+            &mut locals,
+            &mut blocks,
+            &BTreeSet::from(["t1".into()]),
+            &BTreeMap::new(),
+        );
+        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        assert_eq!(names, ["x", "words"]);
+        assert!(matches!(
+            blocks[0].statements.as_slice(),
+            [S::Assign { value: E::SliceLength { slice }, .. }]
+                if matches!(slice.as_ref(), E::ArrayToSlice { .. })
         ));
     }
 }

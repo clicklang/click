@@ -1334,7 +1334,7 @@ fn condition_fact_queries_ignore_unrelated_facts() {
             )
             .assume_condition(ConditionTerm::equal(alias.clone(), low.clone()), true)
             .assume_condition(
-                ConditionTerm::pointer_equal(symbolic.clone(), argument.clone()),
+                ConditionTerm::address_equal(symbolic.clone(), argument.clone()),
                 true,
             );
         let visits = |query: &dyn Fn() -> bool, expected: bool| {
@@ -1813,8 +1813,8 @@ fn a_kept_range_base_equality_is_proved_once_per_fact_set() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut assumptions = PureFactContext::new();
         for index in 0..size as u64 {
-            assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(
+            assumptions = assumptions.assume_proposition(Proposition::condition_is(
+                ConditionTerm::address_equal(
                     external_object(2 * index + 1),
                     external_object(2 * index + 2),
                 ),
@@ -1854,8 +1854,8 @@ fn an_aliased_field_inside_a_range_is_not_searched_for_a_separation() {
     let mut samples = Vec::new();
     for size in HEAP_SIZES {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(external_object(OBJECT), external_object(ALIAS)),
+        let mut assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
+            ConditionTerm::address_equal(external_object(OBJECT), external_object(ALIAS)),
             true,
         ));
         for index in 0..size as u64 {
@@ -2967,12 +2967,12 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
                 } else {
                     &previous
                 };
-                let source = Proposition::ConditionIs(
-                    ConditionTerm::pointer_value_equal(reference.clone(), reference.clone()),
+                let source = Proposition::condition_is(
+                    ConditionTerm::pointer_equal(reference.clone(), reference.clone()),
                     true,
                 );
-                let target = Proposition::ConditionIs(
-                    ConditionTerm::pointer_value_equal(current.clone(), reference.clone()),
+                let target = Proposition::condition_is(
+                    ConditionTerm::pointer_equal(current.clone(), reference.clone()),
                     true,
                 );
                 let proved = crate::kernel::api::program_condition_fact_target_reaches_in_context(
@@ -2986,8 +2986,8 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
                     facts = facts.clone().assume_proposition(target);
                 }
                 if compose {
-                    let composed = Proposition::ConditionIs(
-                        ConditionTerm::pointer_value_equal(current.clone(), original.clone()),
+                    let composed = Proposition::condition_is(
+                        ConditionTerm::pointer_equal(current.clone(), original.clone()),
                         true,
                     );
                     assert!(
@@ -3450,7 +3450,7 @@ fn compact_run_store_declines_crowded_anchor_buckets() {
             "stated run member must cover the complete run"
         );
         let aliased = selected.assume_condition(
-            ConditionTerm::pointer_equal(base.clone(), write.clone()),
+            ConditionTerm::address_equal(base.clone(), write.clone()),
             true,
         );
         assert!(

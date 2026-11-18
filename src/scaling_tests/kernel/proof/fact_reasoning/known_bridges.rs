@@ -76,7 +76,7 @@ fn observation_leaves_keep_growing_arithmetic_and_comparison_dags_shared() {
         let conditional =
             IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, conditional).unwrap());
         let mut premises = bounds(&exact, ty).to_vec();
-        premises.push(Proposition::ConditionIs(condition, true));
+        premises.push(Proposition::condition_is(condition, true));
         let facts = PureFactStore::from_ordered(&premises);
         let missing = PureFactStore::from_ordered(&[]);
         let operation_goal = equality(observed, exact);
@@ -148,7 +148,7 @@ fn neutral_bitwise_leaves_keep_large_operands_shared_without_fact_queries() {
 fn finite_float_reflexivity_uses_one_exact_classification() {
     let _session = VerificationSession::enter();
     let finite = |id| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::float32_classification(
                 MachineTerm::Variable(Variable(id)),
                 FloatClassification::Finite,
@@ -157,7 +157,7 @@ fn finite_float_reflexivity_uses_one_exact_classification() {
         )
     };
     let operand = MachineTerm::Variable(Variable(996800));
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::float32_compare(operand.clone(), operand, ComparisonOperator::Equal),
         true,
     );
@@ -192,7 +192,7 @@ fn non_numeric_arm_equations_use_only_the_written_guard() {
     let guard = ConditionTerm::Variable(Variable(998000));
     let a = ConditionTerm::Variable(Variable(998001));
     let b = ConditionTerm::Variable(Variable(998002));
-    let boolean = Proposition::ConditionIs(
+    let boolean = Proposition::condition_is(
         ConditionTerm::bool_equal(ConditionTerm::bool_if(guard.clone(), a.clone(), b), a),
         true,
     );

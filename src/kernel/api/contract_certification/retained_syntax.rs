@@ -567,7 +567,7 @@ mod tests {
     fn shared_pointer_certification_preserves_complete_metadata_and_bounds_admission() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         use crate::kernel::{
-            Address, IntegerTerm, ObjectTypeEvidence, Pointer, SharedPointerValue, SubobjectBounds,
+            Address, IntegerTerm, ObjectTypeEvidence, Pointer, SharedPointer, SubobjectBounds,
         };
         let _session = VerificationSession::enter();
         let base = Pointer::new(
@@ -618,8 +618,8 @@ mod tests {
             for b in &values {
                 let expected = Comparison::default().pointer_value(a, b);
                 let (ar, br) = (
-                    KernelTerm::shared_pointer_value(SharedPointerValue::import(a)),
-                    KernelTerm::shared_pointer_value(SharedPointerValue::import(b)),
+                    KernelTerm::shared_pointer_value(SharedPointer::import(a)),
+                    KernelTerm::shared_pointer_value(SharedPointer::import(b)),
                 );
                 let (an, bn) = (
                     A::Value(ProgramValue::Pointer(a.clone())),
@@ -640,7 +640,7 @@ mod tests {
 
     #[test]
     fn shared_captured_pointer_certification_preserves_memory_state() {
-        use crate::kernel::{Address, Pointer, SharedPointerValue, SymbolicMemory};
+        use crate::kernel::{Address, Pointer, SharedPointer, SymbolicMemory};
         let _session = VerificationSession::enter();
         let memory = SymbolicMemory::new();
         let changed = memory.clone().store(
@@ -651,7 +651,7 @@ mod tests {
             Address::symbolic(Variable(999976)),
             ProgramType::Int32Pointer,
         );
-        let root = KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer));
+        let root = KernelTerm::shared_pointer_value(SharedPointer::import(&pointer));
         let shared = |memory: &SymbolicMemory| {
             KernelTerm::shared_array_reference(
                 crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
@@ -730,7 +730,7 @@ mod tests {
     #[test]
     fn shared_pointer_opaque_indices_keep_the_native_refusal() {
         use crate::kernel::{
-            Address, IntegerTerm, KernelAddressOffset, Pointer, SharedAddress, SharedPointerValue,
+            Address, IntegerTerm, KernelAddressOffset, Pointer, SharedAddress, SharedPointer,
         };
         let _session = VerificationSession::enter();
         let native = MachineTerm::PureFunctionApplication {
@@ -742,8 +742,7 @@ mod tests {
         };
         let index = KernelTerm::retained_native_machine_operand(MachineIntegerType::Int32, &native);
         assert!(matches!(index.node(), N::Legacy(_)));
-        let base =
-            SharedPointerValue::import(&Pointer::new(Address::null(), ProgramType::Int32Pointer));
+        let base = SharedPointer::import(&Pointer::new(Address::null(), ProgramType::Int32Pointer));
         let mut value = base.node().clone();
         value.address = SharedAddress::new(
             value.address.node().base.clone(),
@@ -755,7 +754,7 @@ mod tests {
             .unwrap(),
         );
         value.provenance = value.address.clone();
-        let root = KernelTerm::shared_pointer_value(SharedPointerValue::new(value));
+        let root = KernelTerm::shared_pointer_value(SharedPointer::new(value));
         assert!(
             !Comparison::default()
                 .call_argument(CallArgument::Shared(&root), CallArgument::Shared(&root))
@@ -1002,8 +1001,8 @@ mod tests {
         assert_ne!(left, right, "exercise distinct producer IDs");
         let exports = KernelTermExport::machine_export_count();
         assert!(conditions_equal(&left, &right));
-        let left = Proposition::ConditionIs(left, true);
-        let right = Proposition::ConditionIs(right, true);
+        let left = Proposition::condition_is(left, true);
+        let right = Proposition::condition_is(right, true);
         assert!(propositions_alpha_equivalent(&left, &right));
         let lines = crate::kernel::fact_stability::capture(|| {
             crate::kernel::fact_stability::compare(

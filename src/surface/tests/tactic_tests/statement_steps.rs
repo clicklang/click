@@ -299,7 +299,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
                 MachineTerm::constant(2),
             )),
         ));
-    let fact = Proposition::ConditionIs(
+    let fact = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -341,7 +341,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
     let StatementOutcome::Normal(post_state) = &transition.outcome else {
         panic!("expected a normal transition")
     };
-    let transported = Proposition::ConditionIs(
+    let transported = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -1152,8 +1152,8 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
         offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4),
     };
     let read = Address::loaded_value(&crate::kernel::intern_memory(SymbolicMemory::new()), &owner);
-    let proposition = Proposition::ConditionIs(
-        ConditionTerm::pointer_value_equal(
+    let proposition = Proposition::condition_is(
+        ConditionTerm::pointer_equal(
             crate::kernel::Pointer::new(read, ProgramType::Int32Pointer),
             crate::kernel::Pointer::new(data.clone(), ProgramType::Int32Pointer),
         ),
@@ -1207,8 +1207,8 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
         offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(43)), 4),
     };
     let current = Address::symbolic(Variable(44));
-    let proposition = Proposition::ConditionIs(
-        ConditionTerm::pointer_value_equal(
+    let proposition = Proposition::condition_is(
+        ConditionTerm::pointer_equal(
             crate::kernel::Pointer::new(passed.clone(), ProgramType::Int32Pointer),
             crate::kernel::Pointer::new(current.clone(), ProgramType::Int32Pointer),
         ),
@@ -1245,8 +1245,8 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
     let owner_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
     let data_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
     let index = MachineTerm::Variable(Variable(43));
-    let proposition = Proposition::ConditionIs(
-        ConditionTerm::PointerOffsetEqual(
+    let proposition = Proposition::condition_is(
+        ConditionTerm::AddressOffsetEqual(
             Box::new(AddressOffset::Add(
                 Box::new(data_offset.clone()),
                 Box::new(AddressOffset::scaled_int32_node(index.clone(), 4)),

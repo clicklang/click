@@ -121,20 +121,20 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         base: AddressBase::Symbolic(Variable(9_300_100)),
         offset: AddressOffset::Constant(0),
     };
-    let equality = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(result.clone(), storage.clone()),
+    let equality = Proposition::condition_is(
+        ConditionTerm::address_equal(result.clone(), storage.clone()),
         true,
     );
     let view = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: storage.clone(),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: result.clone(),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     assert!(!crate::kernel::search::ProofSearch::proves(
@@ -156,7 +156,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
                     base: format!("unrelated-view-{index}").into(),
                     offset: AddressOffset::Constant(0),
                 },
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             });
         }
@@ -169,7 +169,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
             &Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: result.offset_by_bytes(4),
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             }
         ));
@@ -184,14 +184,14 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
     let before = SymbolicMemory::new().with_block("local:expired-view", 4);
     let after = before.without_local_block(&local.base);
     let context = PureFactContext::new()
-        .assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(result.clone(), local.clone()),
+        .assume_proposition(Proposition::condition_is(
+            ConditionTerm::address_equal(result.clone(), local.clone()),
             true,
         ))
         .assume_proposition(Proposition::MemoryLoadable {
             memory: before,
             base: local,
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         });
     assert!(!crate::kernel::search::ProofSearch::proves(
@@ -199,7 +199,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         &Proposition::MemoryLoadable {
             memory: after,
             base: result,
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -219,7 +219,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: target.clone(),
-                    bytes: MachineTerm::constant(8),
+                    bytes: (MachineTerm::constant(8)).into(),
                     wide: false,
                 });
             for index in 0..size {
@@ -229,7 +229,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                         base: target.base.clone(),
                         offset: AddressOffset::Constant(index as i64),
                     },
-                    bytes: MachineTerm::constant(4),
+                    bytes: (MachineTerm::constant(4)).into(),
                     wide: false,
                 });
             }
@@ -239,7 +239,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                     &Proposition::MemoryLoadable {
                         memory: memory.clone(),
                         base: target.clone(),
-                        bytes: MachineTerm::constant(4),
+                        bytes: (MachineTerm::constant(4)).into(),
                         wide: false,
                     },
                 )
@@ -266,7 +266,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
     let write_base = parameter(95_001);
     let read = parameter(95_002);
     let owner = Address::symbolic(Variable(95_003));
-    let alias = ConditionTerm::pointer_equal(write_base.clone(), owner.clone());
+    let alias = ConditionTerm::address_equal(write_base.clone(), owner.clone());
     for offset in [0, 8] {
         let write = write_base.offset_by_bytes(offset);
         let mut samples = Vec::new();
@@ -313,7 +313,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
             };
             assert!(!hop.checks(&wider_store, &read, 4, &assumptions));
             let equal = assumptions.assume_condition(
-                ConditionTerm::pointer_equal(write.clone(), read.clone()),
+                ConditionTerm::address_equal(write.clone(), read.clone()),
                 true,
             );
             assert!(
@@ -398,10 +398,10 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
             Box::new(index.clone()),
         )
     };
-    let source = |bytes| Proposition::MemoryLoadable {
+    let source = |bytes: MachineTerm| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
-        bytes,
+        bytes: (bytes).into(),
         wide: false,
     };
     for width in [1, 2, 4, 8, 16] {
@@ -691,8 +691,8 @@ fn store_separation_work_is_independent_of_earlier_compositions() {
 fn written_store_separation_and_alias_refusal_ignore_unrelated_objects() {
     let pointer = |index: u64| Address::symbolic(Variable(97_100 + index));
     let equal = |left: &Address, right: &Address| {
-        Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(left.clone(), right.clone()),
+        Proposition::condition_is(
+            ConditionTerm::address_equal(left.clone(), right.clone()),
             true,
         )
     };
@@ -754,7 +754,7 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
         };
         let left = pointer(1, false);
         let right = pointer(2, true);
-        let comparison = ConditionTerm::pointer_equal(left.clone(), right.clone());
+        let comparison = ConditionTerm::address_equal(left.clone(), right.clone());
         let mut overhead = Vec::new();
         let mut proof_overhead = Vec::new();
         for size in [16u64, 64, 256, 1024] {
@@ -782,7 +782,7 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
             assert_eq!(result, Some(false));
             assert!(work >= comparisons);
             overhead.push(work - comparisons);
-            let goal = Proposition::ConditionIs(comparison.clone(), false);
+            let goal = Proposition::condition_is(comparison.clone(), false);
             let (known, proof_work) =
                 crate::persistent::measure_persistent_work(|| context.contains_known(&goal));
             assert!(known);
@@ -816,10 +816,10 @@ fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
     let owner = pointer(951_003);
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::pointer_equal(queried.clone(), middle.clone()),
+            ConditionTerm::address_equal(queried.clone(), middle.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::pointer_equal(middle, owner.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(middle, owner.clone()), true);
     let fact = |base| {
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
@@ -871,16 +871,16 @@ fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inpu
         let inputs = || {
             let mut facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::pointer_equal(queried.clone(), middle.clone()),
+                    ConditionTerm::address_equal(queried.clone(), middle.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::pointer_equal(middle.clone(), owner.clone()),
+                    ConditionTerm::address_equal(middle.clone(), owner.clone()),
                     true,
                 );
             for index in 0..size {
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         pointer(955_000 + index),
                         pointer(957_000 + index),
                     ),

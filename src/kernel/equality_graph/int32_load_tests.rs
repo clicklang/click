@@ -244,7 +244,7 @@ fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
         base: block.into(),
         offset: AddressOffset::Constant(bytes),
     };
-    let address_of = |pointer: Address| MachineTerm::pointer_address(pointer);
+    let address_of = |pointer: Address| MachineTerm::integer_address(pointer);
     let after = intern_memory(
         memory
             .memory()
@@ -356,7 +356,7 @@ fn a_late_zero_index_alias_transfers_an_admitted_read_order() {
     let target = ConditionTerm::signed_less_than(next, direct);
     let root = PureFactContext::new().assume_condition(known, true);
     assert_eq!(root.decide(&target), None);
-    let zero = Proposition::ConditionIs(ConditionTerm::equal(index, 0u32.into()), true);
+    let zero = Proposition::condition_is(ConditionTerm::equal(index, 0u32.into()), true);
     let equal = root.assume_proposition(zero.clone());
     assert_eq!(equal.decide(&target), Some(true));
     assert_eq!(

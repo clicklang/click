@@ -127,7 +127,8 @@ implementation:
   - broader memory-reading siblings;
   - nontrivial embedded destruction;
   - header destructor bodies;
-  - omitted default arguments.
+  - default arguments beyond integral constants and direct, argument-free
+    runtime helpers returning integral values.
 
   Record (struct/class) reference locals now bind existing objects and keep
   mutable/const aliases, permissions, and storage lifetimes distinct. Proofs

@@ -45,7 +45,7 @@ fn eq(a: &AlgebraicTerm, b: &AlgebraicTerm) -> Proposition {
     Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()))
 }
 fn condition(a: &AlgebraicTerm, b: &AlgebraicTerm, truth: bool) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone())),
         truth,
     )
@@ -224,7 +224,7 @@ fn algebraic_closure_pointer_payloads_require_full_value_equality() {
     let mut graph = EqualityGraph::default();
     graph.add_equality(&pointer("a"), &pointer("b"));
     assert!(!graph.are_algebraic_equal(&node(pointer("a")), &node(pointer("b"))));
-    graph.add_pointer_value_equality(
+    graph.add_pointer_equality(
         &Pointer::new(pointer("a"), ProgramType::Int32Pointer),
         &Pointer::new(pointer("b"), ProgramType::Int32Pointer),
     );
@@ -261,7 +261,7 @@ fn scalar_conflicts_follow_model_congruence() {
         arguments: vec![PureFunctionArgument::Algebraic(v)],
     };
     let value = |v, n| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::equal(getter(v), MachineTerm::constant(n)),
             true,
         )
@@ -278,7 +278,7 @@ fn scalar_conflicts_follow_model_congruence() {
     assert!(child.contains_known(&value(a.clone(), 0)));
     assert!(child.equality_graph.has_scalar_constant_conflict());
     assert!(child.is_inconsistent());
-    assert!(child.contains_known(&Proposition::ConditionIs(
+    assert!(child.contains_known(&Proposition::condition_is(
         ConditionTerm::Constant(false),
         true
     )));
@@ -336,7 +336,7 @@ fn scalar_read_conflicts_require_the_same_state() {
         ))
     };
     let value = |term, n| {
-        Proposition::ConditionIs(ConditionTerm::equal(term, MachineTerm::constant(n)), true)
+        Proposition::condition_is(ConditionTerm::equal(term, MachineTerm::constant(n)), true)
     };
     for (right_memory, conflict) in [(memory.clone(), true), (changed, false)] {
         let context = PureFactContext::new()
@@ -429,7 +429,7 @@ fn constructor_classes_join_fields_and_refute_distinct_variants() {
     let (model, alias) = (variable(&ty, 90), variable(&ty, 91));
     let first = eq(&model, &constructor(&ty, "Node", vec![scalar(92)]));
     let second = eq(&constructor(&ty, "Node", vec![scalar(93)]), &alias);
-    let fields = Proposition::ConditionIs(
+    let fields = Proposition::condition_is(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(92)),
             MachineTerm::Variable(Variable(93)),

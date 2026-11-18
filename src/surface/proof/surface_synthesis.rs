@@ -1081,7 +1081,7 @@ fn bitvector_term_exceeds_depth_limit(root: &MachineTerm) -> bool {
                     pending.push((value.structural_value(), depth + 1));
                 }
             }
-            MachineTerm::PointerAddress(pointer, _) => {
+            MachineTerm::IntegerAddress(pointer, _) => {
                 if let AddressOffset::Int32Scaled { value, .. }
                 | AddressOffset::Int64Scaled { value, .. } = &pointer.offset
                 {
@@ -1290,50 +1290,16 @@ pub(in crate::surface) fn with_proof_local_value_names<R>(
     operation()
 }
 
-/// A source expression for a semantic C value, such as a resource witness
-/// inferred from memory: the proof local that names it, else a pointer or an
-/// `int32` as the proof would write it at `state`.
-fn synthesize_surface_pointer_address(
-    pointer: &Address,
-    parameter_binding: ParameterBinding<'_>,
-    state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
-) -> Option<ContractExpression> {
-    let operand =
-        synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
-    // The address is spelled over the operand's own C expression when it has
-    // one, such as a parameter name; only a Surface-only operand keeps the
-    // operand beside a cast of the value it denotes.
-    let (operand, expression) = match operand {
-        ContractExpression::ProgramExpression(expression) => (None, expression),
-        operand => (
-            Some(operand),
-            ProgramExpression::Value(ProgramValue::typed_pointer(
-                pointer.clone(),
-                ProgramType::VoidPointer,
-            )),
-        ),
-    };
-    let cast = ProgramExpression::Cast {
-        expression: Box::new(expression),
-        target_type: ProgramType::UInt64,
-        integer_mode: crate::kernel::IntegerCastMode::Standard,
-        pointee_struct: None,
-        pointee_volatile: false,
-        pointee_constant: false,
-        explicit_qualification: false,
-    };
-    Some(match operand {
-        None => ContractExpression::ProgramExpression(cast),
-        Some(operand) => crate::surface::lowering::contract_c_unary(operand, cast),
-    })
-}
-
 pub(in crate::surface) fn synthesize_surface_value(
     value: &ProgramValue,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
+    if let ProgramValue::Pointer(pointer) = value
+        && is_materialized_address(pointer.address())
+    {
+        return synthesize_materialized_result(pointer.address());
+    }
     if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.address().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
@@ -1398,7 +1364,7 @@ pub(in crate::surface::proof) fn synthesize_source_projection_proposition_with_b
     if let Proposition::MemoryLoadable { base, bytes, .. } = proposition {
         match synthesize_exact_external_zero_based_byte_range(
             base,
-            bytes,
+            bytes.native_compat(),
             parameter_binding,
             state,
             bound_variables,
@@ -2366,7 +2332,7 @@ fn synthesize_surface_bool(
             .ok()
         }
         _ => proposition_bool_value(synthesize_surface_atomic_proposition(
-            &Proposition::ConditionIs(condition.clone(), true),
+            &Proposition::condition_is(condition.clone(), true),
             parameter_binding,
             state,
             bound_variables,
@@ -2401,7 +2367,7 @@ fn synthesize_surface_atomic_proposition(
     // A `bool` local's truth, C's test `w != 0` at `uint8` of its carrier:
     // the claim on the local, `w` or `not w`, which is what a claim on it
     // lowers to. Compared with an integer, as `w != 0`, it would not lower.
-    if let Proposition::ConditionIs(
+    if let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt8,
             relation: CompareRelation::Equal,
@@ -2409,7 +2375,7 @@ fn synthesize_surface_atomic_proposition(
             right,
         },
         value,
-    ) = proposition
+    )) = (proposition).condition_native()
         && right.bool_constant_value() == Some(false)
         && let Some(word) =
             synthesize_surface_bitvector(left, parameter_binding, state, bound_variables)
@@ -2422,7 +2388,7 @@ fn synthesize_surface_atomic_proposition(
             claim
         });
     }
-    if let Proposition::ConditionIs(
+    if let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -2430,7 +2396,7 @@ fn synthesize_surface_atomic_proposition(
             right,
         },
         true,
-    ) = proposition
+    )) = (proposition).condition_native()
         && let (MachineTerm::Variable(variable), MachineTerm::MemoryLoad(memory, pointer, kind)) =
             (left.as_ref(), right.as_ref())
         && crate::kernel::is_load_variable(variable)
@@ -2534,14 +2500,12 @@ fn synthesize_surface_atomic_proposition(
                     index += 2;
                 }
                 Term::ProgramValue(ProgramValue::Pointer(pointer)) => {
-                    call_arguments.push(ContractExpression::ProgramExpression(
-                        synthesize_surface_pointer(
-                            pointer,
-                            parameter_binding,
-                            state,
-                            bound_variables,
-                        )?,
-                    ));
+                    call_arguments.push(synthesize_surface_pointer_expression(
+                        pointer,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?);
                     index += 1;
                 }
                 Term::ProgramValue(
@@ -2683,17 +2647,14 @@ fn synthesize_surface_atomic_proposition(
             )
         };
         let read_state = historical.as_ref().map_or(state, |(_, state)| state);
-        let pointer =
-            synthesize_surface_pointer(pointer, parameter_binding, read_state, bound_variables)?;
+        let pointer = synthesize_surface_pointer_expression(
+            pointer,
+            parameter_binding,
+            read_state,
+            bound_variables,
+        )?;
         let validity = ClickProposition::Defined {
-            expression: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
-                pointer: Box::new(pointer),
-                value_type: *value_type,
-                volatile: false,
-                pointee_constant: false,
-                access_class: None,
-                source: crate::kernel::ExpressionLoadSource::none(),
-            }),
+            expression: synthesize_typed_load(pointer, *value_type),
         };
         return Some(match historical {
             Some((selector, _)) => ClickProposition::At {
@@ -2712,7 +2673,7 @@ fn synthesize_surface_atomic_proposition(
     {
         let loadable = synthesize_zero_based_loadable_segment(
             base,
-            bytes,
+            bytes.native_compat(),
             parameter_binding,
             state,
             bound_variables,
@@ -2720,7 +2681,7 @@ fn synthesize_surface_atomic_proposition(
         .or_else(|| {
             synthesize_named_range_loadable_segment(
                 base,
-                bytes,
+                bytes.native_compat(),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -2772,7 +2733,7 @@ fn synthesize_surface_atomic_proposition(
     };
     // A closed `bool` comparison is spelled as written: `true == false`
     // lowers back to exactly this retained comparison.
-    if let ConditionTerm::BoolEqual(left, right) = condition
+    if let ConditionTerm::BoolEqual(left, right) = condition.native_compat()
         && let (ConditionTerm::Constant(left), ConditionTerm::Constant(right)) =
             (left.as_ref(), right.as_ref())
     {
@@ -2787,14 +2748,14 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if matches!(
-        condition,
+        condition.native_compat(),
         ConditionTerm::Variable(_)
             | ConditionTerm::BoolApplication(_)
             | ConditionTerm::BoolIf { .. }
             | ConditionTerm::BoolEqual(..)
     ) {
         let claim = bool_truth(synthesize_surface_bool(
-            condition,
+            condition.native_compat(),
             parameter_binding,
             state,
             bound_variables,
@@ -2811,7 +2772,7 @@ fn synthesize_surface_atomic_proposition(
             op @ (OverflowOperation::Add | OverflowOperation::Subtract | OverflowOperation::Multiply),
         left,
         right,
-    } = condition
+    } = condition.native_compat()
     {
         // Definedness names this operation, not a local that already holds
         // its result. `defined(result)` would lose the operation's domain.
@@ -2840,7 +2801,7 @@ fn synthesize_surface_atomic_proposition(
             defined
         });
     }
-    if let ConditionTerm::Constant(condition) = condition {
+    if let ConditionTerm::Constant(condition) = condition.native_compat() {
         // The `bool` literal lowers to exactly this constant condition. A
         // closed comparison such as `0 == 1` does not: lowering retains it.
         let literal = ClickProposition::Value(crate::surface::bool_literal(*condition));
@@ -2850,7 +2811,7 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(literal))
         });
     }
-    if let ConditionTerm::PointerOffsetEqual(left, right) = condition {
+    if let ConditionTerm::AddressOffsetEqual(left, right) = condition.native_compat() {
         return Some(ClickProposition::Comparison {
             left: synthesize_surface_pointer_offset(
                 left,
@@ -2871,7 +2832,7 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
-    if let ConditionTerm::PointerValueEqual(left, right) = condition {
+    if let ConditionTerm::PointerEqual(left, right) = condition.native_compat() {
         return Some(ClickProposition::Comparison {
             left: synthesize_pointer_equality_operand(
                 left,
@@ -2892,12 +2853,11 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
-    if let ConditionTerm::PointerEqual(left, right) = condition {
-        let pointer = if **left == Address::null() || **right == Address::null() {
-            synthesize_surface_pointer_expression
-        } else {
-            synthesize_surface_pointer_address
-        };
+    // A pointer equality raises as contract `p == q`, which lowers to it; the
+    // weaker `address(p) == address(q)` is the address-word equality a C
+    // comparison states (`design/pointer-subobject-bounds.md`, Phase B).
+    if let ConditionTerm::AddressEqual(left, right) = condition.native_compat() {
+        let pointer = synthesize_surface_pointer_expression;
         return Some(ClickProposition::Comparison {
             left: pointer(left, parameter_binding, state, bound_variables)?,
             operator: if *value {
@@ -2908,9 +2868,12 @@ fn synthesize_surface_atomic_proposition(
             right: pointer(right, parameter_binding, state, bound_variables)?,
         });
     }
-    if let Some(comparison) =
-        synthesize_unsigned_comparison(condition, parameter_binding, state, bound_variables)
-    {
+    if let Some(comparison) = synthesize_unsigned_comparison(
+        condition.native_compat(),
+        parameter_binding,
+        state,
+        bound_variables,
+    ) {
         return Some(if *value {
             comparison
         } else {
@@ -2920,9 +2883,10 @@ fn synthesize_surface_atomic_proposition(
     // Arithmetic-producing comparisons keep machine Surface operands. Atomic
     // observations and casts still need explicit `to_integer`: re-lowering a
     // native atomic comparison would otherwise change its condition family.
-    if !matches!(condition, ConditionTerm::Compare { .. })
-        && let Some(view) =
-            crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+    if !matches!(condition.native_compat(), ConditionTerm::Compare { .. })
+        && let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
+            condition.native_compat(),
+        )
         && matches!(
             view.format,
             MachineIntegerType::Int32
@@ -2976,7 +2940,7 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
-    let integer_comparison = match condition {
+    let integer_comparison = match condition.native_compat() {
         ConditionTerm::IntegerLessThan(left, right) => {
             Some((left, ComparisonOperator::LessThan, right))
         }
@@ -3025,7 +2989,7 @@ fn synthesize_surface_atomic_proposition(
         relation,
         left,
         right,
-    } = condition
+    } = condition.native_compat()
     {
         // Symbolic observations retain their established Integer spelling.
         // A literal beside one such observation is recovered at that format.
@@ -3042,7 +3006,7 @@ fn synthesize_surface_atomic_proposition(
                 CompareRelation::Equal => ConditionTerm::IntegerEqual(l, r),
             };
             return synthesize_surface_atomic_proposition(
-                &Proposition::ConditionIs(integer, *value),
+                &Proposition::condition_is(integer, *value),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -3081,7 +3045,7 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
-    let (left, operator, right) = match condition {
+    let (left, operator, right) = match condition.native_compat() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -3173,7 +3137,7 @@ fn synthesize_surface_atomic_proposition(
     // cast compared signed) would make the spelled comparison unsigned, a
     // different fact, so it is written converted, as `u as int32 < 0`.
     let signed_order = matches!(
-        condition,
+        condition.native_compat(),
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan
@@ -3183,8 +3147,15 @@ fn synthesize_surface_atomic_proposition(
             ..
         }
     );
+    let signed_word = matches!(
+        condition.native_compat(),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            ..
+        }
+    );
     let unsigned_word_equality = matches!(
-        condition,
+        condition.native_compat(),
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -3199,7 +3170,7 @@ fn synthesize_surface_atomic_proposition(
             format: format @ (MachineIntegerType::Int64 | MachineIntegerType::UInt64),
             relation,
             ..
-        } = condition
+        } = condition.native_compat()
         {
             let root = crate::kernel::KernelTermImport::default().machine(*format, term);
             match root.node() {
@@ -3233,6 +3204,10 @@ fn synthesize_surface_atomic_proposition(
         } else {
             synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?
         };
+        let mut expression = expression;
+        if signed_word {
+            spell_signed_low_word_operand(term, &mut expression);
+        }
         // A bare arithmetic expression in a reparsed equality can become Integer arithmetic.
         // Give the generated uint32 word expression an explicit machine context.
         if unsigned_word_equality
@@ -3290,6 +3265,40 @@ fn synthesize_surface_atomic_proposition(
         })
     } else {
         Some(ClickProposition::Not(Box::new(comparison)))
+    }
+}
+
+/// The low-word node carries no destination signedness. Retarget its cast
+/// in a signed comparison or its immediate conditional arms.
+fn spell_signed_low_word_operand(term: &MachineTerm, expression: &mut ContractExpression) {
+    let low_word = |term: &MachineTerm, expression: &mut ContractExpression| {
+        if matches!(term, cast_term!(UInt32From64, _))
+            && let ContractExpression::CUnary {
+                lowered: ProgramExpression::Cast { target_type, .. },
+                ..
+            } = expression
+            && *target_type == ProgramType::UInt32
+        {
+            *target_type = ProgramType::Int32;
+        }
+    };
+    if let (
+        MachineTerm::If {
+            then_term,
+            else_term,
+            ..
+        },
+        ContractExpression::If {
+            then_branch,
+            else_branch,
+            ..
+        },
+    ) = (term, &mut *expression)
+    {
+        low_word(then_term, then_branch);
+        low_word(else_term, else_branch);
+    } else {
+        low_word(term, expression);
     }
 }
 
@@ -3496,8 +3505,8 @@ fn raise_pointer_comparison(
 ) -> Option<SurfaceTerm> {
     use crate::kernel::{KernelAddressOffset, KernelTermNode as Node};
     let (left, right) = match term.node() {
-        Node::PointerValueEqual(pair) => {
-            let operand = |value: &crate::kernel::SharedPointerValue| {
+        Node::PointerEqual(pair) => {
+            let operand = |value: &crate::kernel::SharedPointer| {
                 synthesize_pointer_equality_address(
                     &value.node().address.export().ok()?,
                     value.node().program_type,
@@ -3511,20 +3520,17 @@ fn raise_pointer_comparison(
                 operand(&pair.arguments()[1])?,
             )
         }
-        Node::PointerEqual { arguments } => {
+        Node::AddressEqual { arguments } => {
             let left = arguments[0].export().ok()?;
             let right = arguments[1].export().ok()?;
-            let pointer = if left == Address::null() || right == Address::null() {
-                synthesize_surface_pointer_expression
-            } else {
-                synthesize_surface_pointer_address
-            };
+            // As the condition form above: a pointer equality is `p == q`.
+            let pointer = synthesize_surface_pointer_expression;
             (
                 pointer(&left, parameter_binding, state, bound_variables)?,
                 pointer(&right, parameter_binding, state, bound_variables)?,
             )
         }
-        Node::PointerOffsetEqual { arguments } => (
+        Node::AddressOffsetEqual { arguments } => (
             synthesize_surface_pointer_offset(
                 &KernelAddressOffset::export(&arguments[0]).ok()?,
                 parameter_binding,
@@ -3789,24 +3795,39 @@ fn raise_integer_operation(
 
 // A printed comparison operand or conditional arm can reparse arithmetic as
 // Integer. Keep the machine context of the bounded unsigned operation there.
-fn spell_wrapping_uint64_operand(
+fn spell_bounded_uint64_operand(
     term: &crate::kernel::KernelTerm,
     expression: SurfaceTerm,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelTermNode as Node;
     if let Node::MachineBinary {
         format: MachineIntegerType::UInt64,
-        operator: MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply,
+        operator,
         arguments,
     } = term.node()
-        && matches!(
-            arguments.each_ref().map(|child| child.node()),
-            [Node::Variable(_), Node::MachineLiteral(_)]
-                | [Node::MachineLiteral(_), Node::Variable(_)]
-        )
+        && match operator {
+            MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply => {
+                matches!(
+                    arguments.each_ref().map(|child| child.node()),
+                    [Node::Variable(_), Node::MachineLiteral(_)]
+                        | [Node::MachineLiteral(_), Node::Variable(_)]
+                )
+            }
+            MachineBinaryOp::Divide | MachineBinaryOp::Remainder => {
+                matches!(arguments[0].node(), Node::Variable(_))
+                    && crate::kernel::MachineOperandView::Shared(&arguments[1])
+                        .uint64_constant()
+                        .is_some_and(|divisor| divisor != 0)
+            }
+            _ => false,
+        }
         && matches!(
             expression,
-            SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..) | SurfaceTerm::Multiply(..)
+            SurfaceTerm::Add(..)
+                | SurfaceTerm::Subtract(..)
+                | SurfaceTerm::Multiply(..)
+                | SurfaceTerm::Divide(..)
+                | SurfaceTerm::Remainder(..)
         )
     {
         synthesize_observation_operand(expression, ProgramType::UInt64)
@@ -3914,7 +3935,7 @@ fn raise_kernel_term_dispatch(
         }
         Node::BoolLiteral(value) => bool_literal(*value),
         Node::BoolIf { arguments } | Node::MachineIf { arguments } => {
-            let arm = |term| spell_wrapping_uint64_operand(term, recurse(term)?);
+            let arm = |term| spell_bounded_uint64_operand(term, recurse(term)?);
             SurfaceTerm::If {
                 condition: Box::new(bool_truth(recurse(&arguments[0])?)),
                 then_branch: Box::new(arm(&arguments[1])?),
@@ -3953,19 +3974,42 @@ fn raise_kernel_term_dispatch(
         } => {
             // Wide equality reads unsigned literals as the same words. Keep
             // their payloads even beside a variable: signed casts change literals.
-            let unsigned_literal = *relation == CompareRelation::Equal
-                && format.format().bits() == 64
+            use crate::kernel::MachineOperandView as V;
+            let wide_equality = *relation == CompareRelation::Equal && format.format().bits() == 64;
+            let unsigned_literal = wide_equality
                 && arguments.iter().any(|term| {
-                    crate::kernel::MachineOperandView::Shared(term)
+                    V::Shared(term)
                         .literal()
                         .is_some_and(|value| value.uint64_as_const().is_some())
                 });
+            let unsigned_widening = |operand: V<'_>| {
+                operand.cast().is_some_and(|(spelling, _, _, child)| {
+                    matches!(
+                        spelling,
+                        MachineCastSpelling::UInt64FromInt32 | MachineCastSpelling::UInt64From32
+                    ) && (child.variable().is_some() || child.literal().is_some())
+                })
+            };
+            let operands = arguments.each_ref().map(V::Shared);
+            // Equality compares bits. Casting an unsigned widening to the
+            // Int64 filing type would rebuild it as a signed widening.
+            let unsigned_word = wide_equality
+                && operands.iter().copied().any(unsigned_widening)
+                && operands
+                    .iter()
+                    .copied()
+                    .all(|operand| unsigned_widening(operand) || operand.variable().is_some());
             let operand = |term| {
-                let expression = spell_wrapping_uint64_operand(term, recurse(term)?)?;
-                if unsigned_literal {
+                let expression = spell_bounded_uint64_operand(term, recurse(term)?)?;
+                if unsigned_literal || (unsigned_word && unsigned_widening(V::Shared(term))) {
                     Some(expression)
                 } else {
-                    synthesize_observation_operand(expression, format.program_type())
+                    let ty = if unsigned_word {
+                        ProgramType::UInt64
+                    } else {
+                        format.program_type()
+                    };
+                    synthesize_observation_operand(expression, ty)
                 }
             };
             proposition_bool_value(ClickProposition::Comparison {
@@ -4018,9 +4062,7 @@ fn raise_kernel_term_dispatch(
             };
             synthesize_surface_bool(value, parameter_binding, state, bound_variables)?
         }
-        Node::PointerValueEqual(_)
-        | Node::PointerEqual { .. }
-        | Node::PointerOffsetEqual { .. } => {
+        Node::PointerEqual(_) | Node::AddressEqual { .. } | Node::AddressOffsetEqual { .. } => {
             raise_pointer_comparison(term, parameter_binding, state, bound_variables)?
         }
         Node::Variable(variable) if term.ty() == &KernelType::Bool => synthesize_surface_bool(
@@ -4138,7 +4180,7 @@ fn raise_kernel_term_dispatch(
             }
         }
         Node::MachineUnary { operand, .. } => SurfaceTerm::BitwiseNot(Box::new(recurse(operand)?)),
-        Node::PointerAddress { .. } | Node::ThreadHandle(_) => {
+        Node::IntegerAddress { .. } | Node::ThreadHandle(_) => {
             let expression = synthesize_surface_bitvector(
                 term.machine_conversion_leaf()?,
                 parameter_binding,
@@ -4396,7 +4438,9 @@ pub(super) fn synthesize_surface_resource_subject(
     };
     // A scalar's storage is its address, not its current value or the zero
     // offset within its block. The slot index supplies the exact local name.
-    let surface_base = if let Some(name) = state.locals().name_for_slot(range.base()) {
+    let surface_base = if is_materialized_address(range.base()) {
+        synthesize_materialized_result(range.base())?
+    } else if let Some(name) = state.locals().name_for_slot(range.base()) {
         let object = ProgramExpression::Variable(surface_local_name(name));
         let address = if state.locals().array_object_element_type(name).is_some() {
             object
@@ -4415,6 +4459,14 @@ pub(super) fn synthesize_surface_resource_subject(
     // A range counts its retained element width, which need not be the
     // pointee width of the name (for example, a struct field's backing).
     // Spell scalar coordinates explicitly; pointer casts retain provenance.
+    // A character-to-character cast preserves a narrow byte view. For a
+    // range that already names root byte coordinates, the void cast makes
+    // that root explicit regardless of the source pointer's type.
+    let surface_base = if range.element_width() == 1 && range.carrier_has_known_bounds() {
+        synthesize_observation_operand(surface_base, ProgramType::VoidPointer)?
+    } else {
+        surface_base
+    };
     let scalar_pointer_type = match range.element_width() {
         1 => Some(ProgramType::UInt8Pointer),
         2 => Some(ProgramType::UInt16Pointer),
@@ -4423,18 +4475,7 @@ pub(super) fn synthesize_surface_resource_subject(
         _ => None,
     };
     let surface_base = match scalar_pointer_type {
-        Some(target_type) => ContractExpression::CUnary {
-            operand: Box::new(surface_base),
-            lowered: ProgramExpression::Cast {
-                expression: Box::new(ProgramExpression::Value(int32(0))),
-                target_type,
-                integer_mode: crate::kernel::IntegerCastMode::Standard,
-                pointee_struct: None,
-                pointee_volatile: false,
-                pointee_constant: false,
-                explicit_qualification: false,
-            },
-        },
+        Some(target_type) => synthesize_observation_operand(surface_base, target_type)?,
         None => surface_base,
     };
     // The bounds are spelled as the terms they are, in either index kind.
@@ -4803,7 +4844,9 @@ fn synthesize_population_entry_count(
         return None;
     };
     let population = state.population_with_entry_count(*variable)?;
-    let [AlgebraicValue::Program(ProgramValue::Pointer(anchor))] = population.arguments() else {
+    let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(anchor))]) =
+        (population.arguments()).fixed_values::<1>()
+    else {
         return None;
     };
     let anchor = synthesize_surface_pointer_expression(
@@ -5192,7 +5235,7 @@ fn synthesize_surface_bitvector(
         | MachineTerm::Float32Binary { .. }
         | MachineTerm::Float64Negate(_)
         | MachineTerm::Float64Binary { .. } => None,
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             let pointer =
                 synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
             Some(ContractExpression::ProgramExpression(
@@ -5601,7 +5644,7 @@ fn synthesize_surface_bitvector(
             else_term,
         } => Some(ContractExpression::If {
             condition: Box::new(synthesize_surface_proposition_with_bound_variables(
-                &Proposition::ConditionIs((**condition).clone(), true),
+                &Proposition::condition_is((**condition).clone(), true),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -6362,6 +6405,29 @@ fn synthesize_struct_field_load(
         .or_else(|| synthesize_local_field_load(pointer, value_type, parameter_binding, state))
 }
 
+fn synthesize_typed_load(
+    pointer: ContractExpression,
+    value_type: ProgramType,
+) -> ContractExpression {
+    let lowered = |pointer| ProgramExpression::TypedLoad {
+        pointer: Box::new(pointer),
+        value_type,
+        volatile: false,
+        pointee_constant: false,
+        access_class: None,
+        source: Default::default(),
+    };
+    match pointer {
+        ContractExpression::ProgramExpression(pointer) => {
+            ContractExpression::ProgramExpression(lowered(pointer))
+        }
+        operand => ContractExpression::CUnary {
+            operand: Box::new(operand),
+            lowered: lowered(ProgramExpression::Value(int32(0))),
+        },
+    }
+}
+
 /// Recover source syntax for an opaque pointer value read from an owned
 /// aggregate field. Offset-based synthesis cannot name its distinct block.
 /// This is a candidate spelling; callers must re-lower it to the exact fact.
@@ -6380,6 +6446,12 @@ fn synthesize_owned_field_at_address(
     let field = layout.fields().iter().find(|field| {
         field.program_type() == value_type && slot.offset_by_bytes(field.offset_bytes()) == *address
     })?;
+    if is_materialized_address(address) {
+        return Some(synthesize_typed_load(
+            synthesize_materialized_result(address)?,
+            value_type,
+        ));
+    }
     let base = ProgramExpression::Variable(surface_local_name(&name));
     Some(ContractExpression::Field {
         pointee_struct: None,
@@ -6438,6 +6510,12 @@ fn synthesize_owned_pointer_field(
     let field = layout.fields().iter().find(|field| {
         field.program_type().is_pointer() && slot.offset_by_bytes(field.offset_bytes()) == address
     })?;
+    if is_materialized_address(&address) {
+        return Some(synthesize_typed_load(
+            synthesize_materialized_result(&address)?,
+            field.program_type(),
+        ));
+    }
     let base = ProgramExpression::Variable(surface_local_name(&name));
     Some(ContractExpression::Field {
         pointee_struct: None,
@@ -6511,6 +6589,9 @@ fn synthesize_surface_pointer(
     let _frame = SurfaceSynthesisFrame::enter("pointer")?;
     if pointer == &Address::null() {
         return Some(ProgramExpression::Value(int32(0)));
+    }
+    if is_materialized_address(pointer) {
+        return None;
     }
     if matches!(
         pointer.base,
@@ -6918,6 +6999,19 @@ fn synthesize_pointer_equality_address(
     }
 }
 
+fn is_materialized_address(pointer: &Address) -> bool {
+    matches!(&pointer.base, AddressBase::AutomaticLocal { binding, .. } if binding.is_temporary())
+}
+
+fn synthesize_materialized_result(pointer: &Address) -> Option<ContractExpression> {
+    SYNTHESIS_RECORDED_POINTS.with(|points| {
+        points
+            .borrow()
+            .as_ref()?
+            .produced_address_expression(pointer)
+    })
+}
+
 fn synthesize_surface_pointer_expression(
     pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
@@ -6930,10 +7024,13 @@ fn synthesize_surface_pointer_expression(
     {
         return Some(ContractExpression::RegionResult(region));
     }
-    if let Some(region) = SYNTHESIS_RECORDED_POINTS
-        .with(|points| points.borrow().as_ref()?.allocation_result(pointer))
-    {
-        return Some(ContractExpression::RegionAllocation(region));
+    if let Some(expression) = SYNTHESIS_RECORDED_POINTS.with(|points| {
+        points
+            .borrow()
+            .as_ref()?
+            .produced_address_expression(pointer)
+    }) {
+        return Some(expression);
     }
     if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
         return Some(field);
@@ -6966,15 +7063,15 @@ fn synthesize_surface_pointer_expression(
     ) {
         return Some(result);
     }
-    // A pointer an earlier call returned, which no local here holds, is that
-    // call's result.
-    if let Some(region) = SYNTHESIS_RECORDED_POINTS.with(|points| {
+    // A pointer an earlier call returned can also name an address at a
+    // fixed byte displacement from that result.
+    if let Some(expression) = SYNTHESIS_RECORDED_POINTS.with(|points| {
         points
             .borrow()
             .as_ref()?
-            .call_result_naming_pointer(pointer)
+            .call_result_address_expression(pointer)
     }) {
-        return Some(ContractExpression::RegionResult(region));
+        return Some(expression);
     }
     if parameter_binding.arguments.iter().any(|argument| {
         matches!(

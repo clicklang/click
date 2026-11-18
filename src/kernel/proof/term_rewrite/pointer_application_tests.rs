@@ -151,7 +151,7 @@ fn pure_pointer_capture_cache_does_not_hide_a_free_occurrence_after_a_fold() {
         item,
         body: Box::new(observed.clone()),
     };
-    let proposition = Proposition::ConditionIs(
+    let proposition = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -554,7 +554,7 @@ fn rewriting_integer_address_zero_keeps_canonical_null_and_displacement() {
     let bits = MachineTerm::uint64_bitwise_and(word.clone(), MachineTerm::uint64_constant(!3));
     for value in [0, 1, 2, 3, 4, 5, u64::MAX] {
         for displacement in [0, 8] {
-            let mut input = Address::integer_address(bits.clone());
+            let mut input = Address::from_integer_address(bits.clone());
             input.offset = AddressOffset::Constant(displacement);
             let replacement = MachineTerm::uint64_constant(value);
             let mut rewrite = TermRewrite::for_bits(&word, &replacement);

@@ -1,4 +1,4 @@
-//! Immutable resource fields. Program producers keep their execution carrier;
+//! Immutable resource fields. Producers keep their common roots;
 //! native input lists and selected compatibility readers stay explicit.
 use super::*;
 use crate::kernel::{ExecutionValue, RetainedProgramValue};
@@ -21,7 +21,13 @@ impl<'a> From<&'a AlgebraicValue> for ResourceFieldValue<'a> {
         }
     }
 }
-impl ResourceFieldValue<'_> {
+impl<'a> ResourceFieldValue<'a> {
+    pub fn as_program_value(self) -> Option<&'a ProgramValue> {
+        match self {
+            Self::Program(value) => Some(value),
+            _ => None,
+        }
+    }
     pub(crate) fn into_native(self) -> AlgebraicValue {
         match self {
             Self::Program(value) => AlgebraicValue::Program(value.clone()),
@@ -35,6 +41,8 @@ impl ResourceFieldValue<'_> {
 pub(crate) enum StoredResourceField {
     Input(AlgebraicValue),
     Program(RetainedProgramValue),
+    Integer(KernelTerm),
+    Algebraic(KernelTerm),
 }
 impl StoredResourceField {
     pub(crate) fn from_minted(value: AlgebraicValue) -> Self {
@@ -44,7 +52,12 @@ impl StoredResourceField {
                     KernelTermImport::default().argument(&PureFunctionArgument::Value(value));
                 Self::from_program(ExecutionValue::Shared(root))
             }
-            value => Self::Input(value),
+            AlgebraicValue::Integer(value) => {
+                Self::Integer(KernelTermImport::for_exact_field_inputs().integer(&value.into()))
+            }
+            AlgebraicValue::Algebraic(value) => {
+                Self::Algebraic(KernelTermImport::for_exact_field_inputs().algebraic(&value))
+            }
         }
     }
     pub(crate) fn from_program(value: ExecutionValue) -> Self {
@@ -57,6 +70,17 @@ impl StoredResourceField {
         match self {
             Self::Input(value) => value.into(),
             Self::Program(value) => ResourceFieldValue::Program(value.native_compat()),
+            Self::Integer(root) => {
+                ResourceFieldValue::Integer(root.integer_native_compat().expect("Integer field"))
+            }
+            Self::Algebraic(root) => {
+                let ProgramValue::Parameter(value) =
+                    root.algebraic_native_value().expect("algebraic field")
+                else {
+                    unreachable!()
+                };
+                ResourceFieldValue::Algebraic(value)
+            }
         }
     }
 }
@@ -64,8 +88,18 @@ impl StoredResourceField {
 #[derive(Clone)]
 pub struct ResourceFieldValues(Arc<FieldStorage>);
 enum FieldStorage {
-    Input(ResourceArguments),
+    Input(NativeResourceArguments),
     Retained(Box<[StoredResourceField]>),
+}
+impl AsRef<ResourceFieldValues> for ResourceFieldValues {
+    fn as_ref(&self) -> &ResourceFieldValues {
+        self
+    }
+}
+impl Default for ResourceFieldValues {
+    fn default() -> Self {
+        Self::from(Vec::<AlgebraicValue>::new())
+    }
 }
 impl ResourceFieldValues {
     pub fn len(&self) -> usize {
@@ -82,6 +116,15 @@ impl ResourceFieldValues {
             FieldStorage::Input(values) => values.get(index).map(ResourceFieldValue::from),
             FieldStorage::Retained(values) => values.get(index).map(StoredResourceField::native),
         }
+    }
+    pub fn first(&self) -> Option<ResourceFieldValue<'_>> {
+        self.get(0)
+    }
+    pub fn last(&self) -> Option<ResourceFieldValue<'_>> {
+        self.len().checked_sub(1).and_then(|index| self.get(index))
+    }
+    pub(crate) fn fixed_values<const N: usize>(&self) -> Option<[ResourceFieldValue<'_>; N]> {
+        (self.len() == N).then(|| std::array::from_fn(|index| self.get(index).unwrap()))
     }
     pub fn iter(&self) -> ResourceFieldIter<'_> {
         ResourceFieldIter {
@@ -117,8 +160,8 @@ impl ResourceFieldValues {
             values.into_iter().collect(),
         )))
     }
-    /// Fresh fields are typed symbolic leaves minted by the existing factory.
-    /// Native public inputs use `From<ResourceArguments>` instead.
+    /// Values minted by the existing typed field producers. Native public
+    /// inputs use `From<NativeResourceArguments>` and retain their admission checks.
     pub(crate) fn from_minted(values: Vec<AlgebraicValue>) -> Self {
         Self::from_stored(values.into_iter().map(StoredResourceField::from_minted))
     }
@@ -126,6 +169,24 @@ impl ResourceFieldValues {
         match self.0.as_ref() {
             FieldStorage::Retained(values) => match values.get(index)? {
                 StoredResourceField::Program(value) => Some(value.value()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub(crate) fn retained_integer(&self, index: usize) -> Option<&KernelTerm> {
+        match self.0.as_ref() {
+            FieldStorage::Retained(values) => match values.get(index)? {
+                StoredResourceField::Integer(root) => Some(root),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub(crate) fn retained_algebraic(&self, index: usize) -> Option<&KernelTerm> {
+        match self.0.as_ref() {
+            FieldStorage::Retained(values) => match values.get(index)? {
+                StoredResourceField::Algebraic(root) => Some(root),
                 _ => None,
             },
             _ => None,
@@ -147,10 +208,15 @@ impl ResourceFieldValues {
             return false;
         }
         schema.fields().iter().enumerate().all(|(index, (_, ty))| {
-            if let FieldStorage::Retained(values) = self.0.as_ref()
-                && let StoredResourceField::Program(value) = &values[index]
-            {
-                return matches!(ty, ResourceFieldType::Program(expected) if *expected == value.program_type());
+            if let FieldStorage::Retained(values) = self.0.as_ref() {
+                // Retained values come from the existing typed producers. Raw
+                // public inputs still take the native admission checks below.
+                match &values[index] {
+                    StoredResourceField::Program(value) => return matches!(ty, ResourceFieldType::Program(expected) if *expected == value.program_type()),
+                    StoredResourceField::Integer(root) => return *ty == ResourceFieldType::Integer && root.ty() == &KernelType::Integer,
+                    StoredResourceField::Algebraic(root) => return matches!((ty,root.ty()), (ResourceFieldType::Algebraic(expected),KernelType::Algebraic(actual)) if expected==actual),
+                    StoredResourceField::Input(_) => {},
+                }
             }
             match (ty, self.get(index).expect("field index")) {
                 (ResourceFieldType::Integer, ResourceFieldValue::Integer(_)) => true,
@@ -164,14 +230,19 @@ impl ResourceFieldValues {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
-impl From<ResourceArguments> for ResourceFieldValues {
-    fn from(values: ResourceArguments) -> Self {
+impl From<NativeResourceArguments> for ResourceFieldValues {
+    fn from(values: NativeResourceArguments) -> Self {
         Self(Arc::new(FieldStorage::Input(values)))
+    }
+}
+impl From<&[AlgebraicValue]> for ResourceFieldValues {
+    fn from(values: &[AlgebraicValue]) -> Self {
+        values.to_vec().into()
     }
 }
 impl From<Vec<AlgebraicValue>> for ResourceFieldValues {
     fn from(values: Vec<AlgebraicValue>) -> Self {
-        ResourceArguments::from(values).into()
+        NativeResourceArguments::from(values).into()
     }
 }
 impl<const N: usize> From<[AlgebraicValue; N]> for ResourceFieldValues {
@@ -181,7 +252,10 @@ impl<const N: usize> From<[AlgebraicValue; N]> for ResourceFieldValues {
 }
 impl FromIterator<AlgebraicValue> for ResourceFieldValues {
     fn from_iter<T: IntoIterator<Item = AlgebraicValue>>(values: T) -> Self {
-        values.into_iter().collect::<ResourceArguments>().into()
+        values
+            .into_iter()
+            .collect::<NativeResourceArguments>()
+            .into()
     }
 }
 impl std::fmt::Debug for ResourceFieldValues {
@@ -229,8 +303,8 @@ impl PartialEq<Vec<AlgebraicValue>> for ResourceFieldValues {
         self == other.as_slice()
     }
 }
-impl PartialEq<ResourceArguments> for ResourceFieldValues {
-    fn eq(&self, other: &ResourceArguments) -> bool {
+impl PartialEq<NativeResourceArguments> for ResourceFieldValues {
+    fn eq(&self, other: &NativeResourceArguments) -> bool {
         self == other.as_ref()
     }
 }
@@ -338,13 +412,13 @@ mod tests {
             ),
         ];
         for a in &values {
-            let native: ResourceArguments = vec![a.clone()].into();
+            let native: NativeResourceArguments = vec![a.clone()].into();
             let fields = ResourceFieldValues::from(native.clone());
             assert_eq!(hash(&fields), hash(&native));
             assert_eq!(format!("{fields:?}"), format!("{native:?}"));
             assert_eq!(fields.get(0).unwrap().into_native(), *a);
             for b in &values {
-                let other: ResourceArguments = vec![b.clone()].into();
+                let other: NativeResourceArguments = vec![b.clone()].into();
                 let stored = ResourceFieldValues::from(other.clone());
                 assert_eq!(fields == stored, native == other);
                 assert_eq!(fields.cmp(&stored), native.cmp(&other));
@@ -353,7 +427,7 @@ mod tests {
         let fields = ResourceFieldValues::from_minted(vec![AlgebraicValue::Program(
             ProgramValue::UInt32(MachineTerm::Variable(Variable(10993305))),
         )]);
-        let native: ResourceArguments = fields.to_vec().into();
+        let native: NativeResourceArguments = fields.to_vec().into();
         assert_eq!(hash(&fields), hash(&native));
         assert_eq!(fields, ResourceFieldValues::from(native));
     }
@@ -446,6 +520,78 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn logical_field_storage_releases_native_integer_children() {
+        for algebraic in [false, true] {
+            let _session = VerificationSession::enter();
+            let child: SharedIntegerTerm = IntegerTerm::Add(
+                IntegerTerm::var(Variable(10993501)).into(),
+                IntegerTerm::constant_i64(7).into(),
+            )
+            .into();
+            let weak = child.downgrade();
+            let expression = IntegerTerm::Multiply(child.clone(), child);
+            let (value, ty) = if algebraic {
+                let ty =
+                    KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]).algebraic_type;
+                (
+                    AlgebraicValue::Algebraic(AlgebraicTerm {
+                        algebraic_type: ty.clone(),
+                        node: AlgebraicTermNode::Constructor {
+                            variant: "Arm".into(),
+                            fields: vec![AlgebraicValue::Integer(expression)],
+                        },
+                    }),
+                    ResourceFieldType::Algebraic(ty),
+                )
+            } else {
+                (
+                    AlgebraicValue::Integer(expression),
+                    ResourceFieldType::Integer,
+                )
+            };
+            let fields = ResourceFieldValues::from_minted(vec![value]);
+            let schema = ResourceFieldSchema::new(vec![("value".into(), ty)]).unwrap();
+            assert!(fields.matches_schema(&schema));
+            assert!(weak.upgrade().is_none(), "algebraic={algebraic}");
+        }
+    }
+
+    #[test]
+    fn native_logical_field_inputs_keep_their_admission_and_identity() {
+        let _session = VerificationSession::enter();
+        let ty = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]).algebraic_type;
+        let invalid = AlgebraicValue::Algebraic(AlgebraicTerm {
+            algebraic_type: ty.clone(),
+            node: AlgebraicTermNode::Constructor {
+                variant: "Missing".into(),
+                fields: vec![],
+            },
+        });
+        let schema = ResourceFieldSchema::new(vec![(
+            "value".into(),
+            ResourceFieldType::Algebraic(ty.clone()),
+        )])
+        .unwrap();
+        let fields = ResourceFieldValues::from(vec![invalid]);
+        assert!(!fields.matches_schema(&schema));
+        let values = vec![
+            AlgebraicValue::Integer(IntegerTerm::Add(
+                IntegerTerm::var(Variable(10993502)).into(),
+                IntegerTerm::constant_i64(7).into(),
+            )),
+            AlgebraicValue::Algebraic(AlgebraicTerm {
+                algebraic_type: ty,
+                node: AlgebraicTermNode::Variable(Variable(10993503)),
+            }),
+        ];
+        let native: NativeResourceArguments = values.clone().into();
+        let retained = ResourceFieldValues::from_minted(values);
+        assert_eq!(retained, ResourceFieldValues::from(native.clone()));
+        assert_eq!(hash(&retained), hash(&native));
+        assert_eq!(format!("{retained:?}"), format!("{native:?}"));
     }
 
     mod scaling_tests {

@@ -212,7 +212,7 @@ mod tests {
             )],
             false,
         ));
-        let truth = Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true);
+        let truth = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
         let root = Root::root(
             (),
             ProofBranch::new(
@@ -285,7 +285,7 @@ mod tests {
             KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(996902)),
             KernelTerm::variable(KernelType::Program(ProgramType::Float64), Variable(996903)),
             KernelTermImport::default().condition(&ConditionTerm::Variable(Variable(996904))),
-            KernelTerm::shared_pointer_value(crate::kernel::SharedPointerValue::import(&pointer)),
+            KernelTerm::shared_pointer_value(crate::kernel::SharedPointer::import(&pointer)),
             KernelTerm::variable(
                 KernelType::Algebraic(crate::kernel::AlgebraicType::parameter("T".into())),
                 Variable(996905),
@@ -317,7 +317,7 @@ mod tests {
     fn close_claim(root: &Root) -> Root {
         let claim = ContractClaimGoal {
             target: FunctionContractClaimTarget::EnsureProposition(0),
-            proposition: Proposition::ConditionIs(
+            proposition: Proposition::condition_is(
                 crate::kernel::ConditionTerm::Constant(true),
                 true,
             ),
@@ -408,7 +408,7 @@ mod tests {
         );
         let claim = ContractClaimGoal {
             target: FunctionContractClaimTarget::EnsureProposition(0),
-            proposition: Proposition::ConditionIs(
+            proposition: Proposition::condition_is(
                 crate::kernel::ConditionTerm::Constant(true),
                 true,
             ),

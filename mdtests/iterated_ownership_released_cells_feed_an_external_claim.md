@@ -80,8 +80,8 @@ void recycle(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) {
     step();
     have occupied[b] == 0;
     have occupied[a] == 0;
-    give(data[b..b + 1]);
-    give(data[a..a + 1]);
+    fold(arena_window(data, occupied, capacity, a + 1, b)[b]);
+    fold(arena_window(data, occupied, capacity, a + 1, b)[a]);
     let w = fold(arena_window(data, occupied, capacity, a, b + 1), { next: a });
     have separate(memory(data[a..b + 1]), memory(occupied[0..capacity])) by solve();
     step(claim_run, { w: w });

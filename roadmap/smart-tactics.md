@@ -195,10 +195,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 4 | 11 |
-| `examples/` | 16 | 105 |
+| `mdtests/` | 1 | 1 |
+| `examples/` | 12 | 93 |
 | `library/` | 0 | 0 |
-| Total | 20 | 116 |
+| Total | 13 | 94 |
 
 Positive fixtures also supply exact input text to expansion and mutation tests.
 Migrate those inputs together with their tests and keep the smart proof inputs.
@@ -221,8 +221,6 @@ pattern is understood but the complete family has not yet been validated.
 | ID | Work | Confidence |
 | --- | --- | --- |
 | 11 | Remaining loop-frame mdtests | Medium |
-| 13 | Named-root aliased-pointer baseline diagnosis/repair | Uncertain |
-| 14 | Named-root fixture migration after baseline repair | Medium |
 | 15 | Remaining fold, resource-observation, count mdtests | Medium |
 | 17 | Red-black insertion baseline diagnosis/repair | Uncertain |
 | 18 | Insertion: field and parent-link preservation | Medium |
@@ -256,11 +254,6 @@ pattern is understood but the complete family has not yet been validated.
 ### Excluded or still unconfirmed
 
 Do not count these as additional confirmed generated-output families:
-
-- `named_root_call_preserves_aliased_pointer_field` reaches its unchanged
-  deterministic smart-work limit while proving `cursor->left == rid` after the
-  helper call. Repair that proof explicitly before migrating its written sites;
-  a successful expansion prefix is not a passing whole-fixture regression.
 
 - Computed lower endpoint `p[index + 1..length]`, nested upper endpoint
   `p[index..index + 1 + 1]`, and native upper endpoint
@@ -422,8 +415,8 @@ one-level composite children to consumed input clauses. Unguarded parameter-only
 children keep entry origin; conversions, loads, and unmatched footprints
 retain their boundary checks. Composite scaling grows selected body parts as
 well as retained same-block owners and both alias shapes at 4/16/64.
-Iterated `take`/`scatter` now construct their exposed ownership from the checked
-hole/guard exchange without admission or block normalization; their exposure
+Indexed `unfold` and `scatter` construct their exposed ownership from the checked
+hole/guard exchange without admission or block normalization. Their exposure
 regression grows retained owners and aliases and retains occurrence support.
 Scatter guard preparation now selects an indexed whole-range equality source
 without enumerating universals or replaying its conclusion. Its regression

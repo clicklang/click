@@ -143,7 +143,7 @@ fn machine_comparison_alpha_keys_retain_shared_dags() {
             var: Variable(98123),
             name: crate::kernel::BinderName::written("i"),
             sort: Sort::ProgramInteger(format),
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 ConditionTerm::IntegerLessThan(
                     IntegerTerm::Machine(operand.clone()).into(),
                     IntegerTerm::Constant(BigInt::from(100)).into(),

@@ -150,12 +150,12 @@ fn retained_constant_call_arguments_keep_existing_decision_identity() {
     let known = ConditionTerm::equal(native, MachineTerm::constant(0));
     let required = ConditionTerm::equal(produced.clone(), MachineTerm::constant(0));
     let proof_facts =
-        crate::kernel::proof::PureFactStore::from_ordered(&[Proposition::ConditionIs(
+        crate::kernel::proof::PureFactStore::from_ordered(&[Proposition::condition_is(
             known.clone(),
             true,
         )]);
     assert!(
-        proof_facts.introduced_goal_available(&Proposition::ConditionIs(required.clone(), true))
+        proof_facts.introduced_goal_available(&Proposition::condition_is(required.clone(), true))
     );
     let facts = PureFactContext::new().assume_condition(known, true);
     assert_eq!(facts.decide(&required), Some(true));

@@ -7,7 +7,7 @@ disjunction, `f.model == holder_reroot(f.model, parent) or parent == 0`, so
 nothing states exactly that `identity` and `parent` are one address.
 
 Retargeting a matched arm's ownership reads the index of *assumed*
-`PointerEqual` facts and nothing else (package A22). A disjunction is not such
+`AddressEqual` facts and nothing else (package A22). A disjunction is not such
 a fact, and neither is a disequality: an arm whose payload the path only
 constrains keeps its own symbolic spelling, so the cells stay where the arm put
 them and the read through `parent` is refused, naming the cell it wanted. That

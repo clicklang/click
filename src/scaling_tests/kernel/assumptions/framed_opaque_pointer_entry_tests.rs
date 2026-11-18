@@ -22,7 +22,7 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
         );
         assert!(!alias.bounds_are_known());
         let context = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_value_equal(previous, alias), true);
+            .assume_condition(ConditionTerm::pointer_equal(previous, alias), true);
         let mut memory = base;
         for index in 0..size {
             memory = memory.store(
@@ -55,10 +55,8 @@ fn provenance_misses_do_not_enumerate_direct_alias_stars() {
         let value = |id| Pointer::new(pointer(id), ProgramType::Int32Pointer);
         let mut facts = PureFactContext::new();
         for index in 1..=size {
-            facts = facts.assume_condition(
-                ConditionTerm::pointer_value_equal(value(0), value(index)),
-                true,
-            );
+            facts =
+                facts.assume_condition(ConditionTerm::pointer_equal(value(0), value(index)), true);
         }
         assert!(facts.provenance_equal(&pointer(0), &pointer(size)));
         assert!(facts.bounds_owners_equal(&pointer(0), &pointer(size)));
@@ -99,10 +97,8 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
                 ProgramType::Int32Pointer,
             )
             .with_address(raw.clone());
-            facts = facts.assume_condition(
-                ConditionTerm::pointer_value_equal(source, alias.clone()),
-                true,
-            );
+            facts =
+                facts.assume_condition(ConditionTerm::pointer_equal(source, alias.clone()), true);
         }
         let current = Pointer::new(
             Address::loaded_value(&intern_memory_ref(&SymbolicMemory::new()), &field),

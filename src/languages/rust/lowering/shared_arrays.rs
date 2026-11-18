@@ -20,6 +20,42 @@ fn pointer_type(element: &Type) -> Result<ProgramType, String> {
 pub(super) const SLICE_ITERATOR_FIELDS: [&str; 2] = ["ptr", "len"];
 
 impl Context<'_> {
+    /// `name = value` for a local `next` binds, as `assign` assigns a local:
+    /// stored to its object when it is memory-backed.
+    pub(super) fn bind_local(
+        &mut self,
+        name: &str,
+        value: ProgramExpression,
+    ) -> Result<ProgramStatement, String> {
+        if !self.locals.contains(name) {
+            return Err(format!("unknown Rust local `{name}`"));
+        }
+        Ok(match self.memory_values.get(name).copied() {
+            Some(value_type) => program_typed_store(
+                self.address(&E::Local { name: name.into() })?,
+                value,
+                value_type,
+            ),
+            None => program_assign(self.binding(&name), value),
+        })
+    }
+
+    /// Moves a slice iterator on by one element.
+    pub(super) fn shared_array_advance(&self, iterator: &str) -> ProgramStatement {
+        use crate::kernel::program_expression::{add, subtract, uint64_literal, variable};
+        let field = |suffix: &str| format!("{iterator}_{suffix}");
+        program_seq(
+            program_assign(
+                self.binding(&field("ptr")),
+                add(variable(self.binding(&field("ptr"))), uint64_literal(1)),
+            ),
+            program_assign(
+                self.binding(&field("len")),
+                subtract(variable(self.binding(&field("len"))), uint64_literal(1)),
+            ),
+        )
+    }
+
     pub(super) fn shared_array_storage(
         &mut self,
         name: &str,
@@ -51,7 +87,7 @@ impl Context<'_> {
             result = program_seq(
                 result,
                 program_declare_with_all_qualifiers(
-                    field.clone(),
+                    self.binding(&field.clone()),
                     ty,
                     false,
                     false,
@@ -62,7 +98,10 @@ impl Context<'_> {
             if suffix == "some" {
                 result = program_seq(
                     result,
-                    program_assign(field, crate::kernel::program_expression::int32_literal(0)),
+                    program_assign(
+                        self.binding(&field),
+                        crate::kernel::program_expression::int32_literal(0),
+                    ),
                 );
             }
         }
@@ -97,14 +136,8 @@ impl Context<'_> {
         Ok(program_seq(
             program_seq(p_capture, l_capture),
             program_seq(
-                program_assign(
-                    format!("{target}_ptr"),
-                    crate::kernel::program_expression::variable(&p),
-                ),
-                program_assign(
-                    format!("{target}_len"),
-                    crate::kernel::program_expression::variable(&l),
-                ),
+                program_assign(self.binding(&format!("{target}_ptr")), p),
+                program_assign(self.binding(&format!("{target}_len")), l),
             ),
         ))
     }
@@ -119,7 +152,7 @@ impl Context<'_> {
         }
         Ok(crate::kernel::program_expression::less_than(
             crate::kernel::program_expression::uint64_literal(0),
-            crate::kernel::program_expression::variable(format!("{iterator}_len")),
+            crate::kernel::program_expression::variable(self.binding(&format!("{iterator}_len"))),
         ))
     }
 
@@ -139,8 +172,10 @@ impl Context<'_> {
             result = program_seq(
                 result,
                 program_assign(
-                    format!("{target}_{suffix}"),
-                    crate::kernel::program_expression::variable(format!("{source}_{suffix}")),
+                    self.binding(&format!("{target}_{suffix}")),
+                    crate::kernel::program_expression::variable(
+                        self.binding(&format!("{source}_{suffix}")),
+                    ),
                 ),
             );
         }
@@ -169,31 +204,17 @@ impl Context<'_> {
                 }
                 use crate::kernel::program_expression::{add, subtract, uint64_literal, variable};
                 let field = |suffix: &str| format!("{iterator}_{suffix}");
-                if !self.locals.contains(payload) {
-                    return Err(format!("unknown Rust local `{payload}`"));
-                }
-                // The element's reference, assigned as `assign` assigns a
-                // local: stored to its object when it is memory-backed.
-                let bind = match self.memory_values.get(payload).copied() {
-                    Some(value_type) => program_typed_store(
-                        self.address(&E::Local {
-                            name: payload.into(),
-                        })?,
-                        variable(field("ptr")),
-                        value_type,
-                    ),
-                    None => program_assign(payload, variable(field("ptr"))),
-                };
+                let bind = self.bind_local(payload, variable(self.binding(&field("ptr"))))?;
                 let some = program_seq(
                     bind,
                     program_seq(
                         program_assign(
-                            field("ptr"),
-                            add(variable(field("ptr")), uint64_literal(1)),
+                            self.binding(&field("ptr")),
+                            add(variable(self.binding(&field("ptr"))), uint64_literal(1)),
                         ),
                         program_assign(
-                            field("len"),
-                            subtract(variable(field("len")), uint64_literal(1)),
+                            self.binding(&field("len")),
+                            subtract(variable(self.binding(&field("len"))), uint64_literal(1)),
                         ),
                     ),
                 );
@@ -219,10 +240,13 @@ impl Context<'_> {
                 use crate::kernel::program_expression::{add, subtract, uint64_literal, variable};
                 let field = |suffix: &str| format!("{iterator}_{suffix}");
                 Ok(program_seq(
-                    program_assign(field("ptr"), add(variable(field("ptr")), uint64_literal(1))),
                     program_assign(
-                        field("len"),
-                        subtract(variable(field("len")), uint64_literal(1)),
+                        self.binding(&field("ptr")),
+                        add(variable(self.binding(&field("ptr"))), uint64_literal(1)),
+                    ),
+                    program_assign(
+                        self.binding(&field("len")),
+                        subtract(variable(self.binding(&field("len"))), uint64_literal(1)),
                     ),
                 ))
             }
@@ -247,14 +271,20 @@ impl Context<'_> {
             add, int32_literal, subtract, uint64_literal, variable,
         };
         let field = |suffix: &str| format!("{iterator}_{suffix}");
-        let mut some = program_assign(format!("{option}_some"), int32_literal(1));
+        let mut some = program_assign(self.binding(&format!("{option}_some")), int32_literal(1));
         for statement in [
-            program_assign(format!("{option}_pointer"), variable(field("ptr"))),
-            yielded,
-            program_assign(field("ptr"), add(variable(field("ptr")), uint64_literal(1))),
             program_assign(
-                field("len"),
-                subtract(variable(field("len")), uint64_literal(1)),
+                self.binding(&format!("{option}_pointer")),
+                variable(self.binding(&field("ptr"))),
+            ),
+            yielded,
+            program_assign(
+                self.binding(&field("ptr")),
+                add(variable(self.binding(&field("ptr"))), uint64_literal(1)),
+            ),
+            program_assign(
+                self.binding(&field("len")),
+                subtract(variable(self.binding(&field("len"))), uint64_literal(1)),
             ),
         ] {
             some = program_seq(some, statement);
@@ -262,7 +292,7 @@ impl Context<'_> {
         Ok(program_if(
             self.shared_array_has_next(iterator)?,
             some,
-            program_assign(format!("{option}_some"), int32_literal(0)),
+            program_assign(self.binding(&format!("{option}_some")), int32_literal(0)),
         ))
     }
 }

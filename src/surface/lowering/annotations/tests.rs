@@ -579,7 +579,7 @@ fn common_integer_comparisons_keep_operands_and_native_fact_shape() {
         };
         assert_eq!(
             lower_integer_arithmetic_proposition(&source, &bindings).unwrap(),
-            Proposition::ConditionIs(expected, true)
+            Proposition::condition_is(expected, true)
         );
     }
 }

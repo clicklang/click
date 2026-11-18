@@ -5,8 +5,8 @@ use std::sync::{Mutex, OnceLock};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum Node {
-    Load(Box<MemoryErasedPointerKey>, LoadKind),
-    Address(Box<MemoryErasedPointerKey>),
+    Load(Box<MemoryErasedAddressKey>, LoadKind),
+    Address(Box<MemoryErasedAddressKey>),
     Binary(
         BitvectorBinaryOp,
         MemoryErasedBitvectorKey,
@@ -127,11 +127,11 @@ pub(super) fn written(term: &MachineTerm) -> MemoryErasedBitvectorKey {
         return operand(crate::kernel::MachineOperandView::Shared(&root));
     }
     let node = match term {
-        MachineTerm::PointerAddress(pointer, _) => {
-            Node::Address(Box::new(memory_erased_pointer_key(pointer)))
+        MachineTerm::IntegerAddress(pointer, _) => {
+            Node::Address(Box::new(memory_erased_address_key(pointer)))
         }
         MachineTerm::MemoryLoad(_, pointer, kind) => {
-            Node::Load(Box::new(memory_erased_pointer_key(pointer)), *kind)
+            Node::Load(Box::new(memory_erased_address_key(pointer)), *kind)
         }
         MachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable) => {
             match (
@@ -139,7 +139,7 @@ pub(super) fn written(term: &MachineTerm) -> MemoryErasedBitvectorKey {
                 crate::kernel::registered_load_kind_for_variable(variable),
             ) {
                 (Some((_, pointer)), Some(kind)) => {
-                    Node::Load(Box::new(memory_erased_pointer_key(&pointer)), kind)
+                    Node::Load(Box::new(memory_erased_address_key(&pointer)), kind)
                 }
                 _ => Node::Exact(term.clone()),
             }
@@ -241,7 +241,7 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> MemoryEras
         };
         let key = if let Some((_, address, kind)) = view.read() {
             intern(Node::Load(
-                Box::new(memory_erased_pointer_key(address)),
+                Box::new(memory_erased_address_key(address)),
                 kind,
             ))
         } else if matches!(
@@ -432,12 +432,12 @@ mod tests {
             CompareRelation::LessThan,
             CompareRelation::LessEqual,
         ] {
-            let native = Proposition::ConditionIs(
+            let native = Proposition::condition_is(
                 ConditionTerm::machine_compare(format, relation, native.clone(), limit.clone()),
                 true,
             );
             let exports = KernelTermExport::machine_export_count();
-            let shared = Proposition::ConditionIs(
+            let shared = Proposition::condition_is(
                 condition_for_operand_views(
                     format,
                     relation,

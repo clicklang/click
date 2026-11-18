@@ -7,7 +7,7 @@ fn certified_fact_merge_work(
     let context = PureFactContext::new();
     let prefix: ExecutionFacts = (0..prefix_size)
         .map(|i| {
-            ExecutionPureFact::new(Proposition::ConditionIs(
+            ExecutionPureFact::new(Proposition::condition_is(
                 ConditionTerm::signed_less_equal(
                     MachineTerm::Variable(Variable(if related {
                         1025100
@@ -23,7 +23,7 @@ fn certified_fact_merge_work(
         .into();
     let produced: ExecutionFacts = (0..additions)
         .map(|i| {
-            ExecutionPureFact::certified(Proposition::ConditionIs(
+            ExecutionPureFact::certified(Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::Variable(Variable(1025100 + i as u64)),
                     MachineTerm::constant(7),

@@ -274,7 +274,7 @@ fn existential_binding_retains_the_recorded_word_origin() {
                 "existential_return".into(),
                 vec![
                     ProgramValue::pointer(pointer),
-                    ProgramValue::UInt64(MachineTerm::pointer_address(hidden.clone())),
+                    ProgramValue::UInt64(MachineTerm::integer_address(hidden.clone())),
                 ],
             ),
             ReturnOwnershipOrigin::Description,

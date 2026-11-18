@@ -264,15 +264,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(goal) = input.goal() else {
             return Ok(None);
         };
-        if !matches!(
-            goal,
-            Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(..)
-                    | ConditionTerm::PointerValueEqual(..)
-                    | ConditionTerm::PointerOffsetEqual(..),
+        if !matches!(&goal, condition_source_0 @ Proposition::ConditionIs(
+                _,
                 true
-            )
-        ) {
+            ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(..)
+                    | ConditionTerm::PointerEqual(..)
+                    | ConditionTerm::AddressOffsetEqual(..), _))))
+        {
             return Ok(None);
         }
         let Some(ClickProposition::Comparison {
@@ -318,15 +316,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_pointer_translation_using");
-        if !matches!(
-            input.goal(),
-            Some(Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(..)
-                    | ConditionTerm::PointerValueEqual(..)
-                    | ConditionTerm::PointerOffsetEqual(..),
+        if !matches!(&input.goal(), Some(condition_source_0 @ Proposition::ConditionIs(
+                _,
                 true
-            ))
-        ) {
+            )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(..)
+                    | ConditionTerm::PointerEqual(..)
+                    | ConditionTerm::AddressOffsetEqual(..), _))))
+        {
             return Ok(None);
         }
         let Some(ClickProposition::Comparison {

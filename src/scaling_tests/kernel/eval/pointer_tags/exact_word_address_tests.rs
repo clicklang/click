@@ -62,10 +62,10 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
         MachineTerm::uint64_bitwise_or(word, MachineTerm::Variable(Variable(960003))),
     ];
     for expression in expressions {
-        let fact = Proposition::ConditionIs(
+        let fact = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 expression.clone(),
-                MachineTerm::PointerAddress(
+                MachineTerm::IntegerAddress(
                     Box::new(pointer.clone()),
                     crate::kernel::AddressObjectClass::NONE,
                 ),
@@ -142,7 +142,7 @@ fn bounded_symbolic_tag_lookup_ignores_unrelated_facts() {
         }
         let cleared = MachineTerm::uint64_bitwise_and(
             MachineTerm::uint64_bitwise_or(
-                MachineTerm::pointer_address(pointer.clone()),
+                MachineTerm::integer_address(pointer.clone()),
                 MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt32, Box::new(tag)),
             ),
             MachineTerm::uint64_constant(!3),
@@ -287,7 +287,7 @@ fn cited_shared_tag_bounds_retain_growing_prefixes_and_selected_sources() {
                 );
                 assert!(
                     used.premises
-                        .contains(&Proposition::ConditionIs(upper, true))
+                        .contains(&Proposition::condition_is(upper, true))
                 );
                 assert!(used.complete);
             }
@@ -314,7 +314,7 @@ fn retained_tag_forms_visit_shared_nodes_once_and_reuse_prefixes() {
         let context = PureFactContext::new().assume_condition(
             ConditionTerm::uint64_equal(
                 MachineTerm::Variable(Variable(986021)),
-                MachineTerm::pointer_address(Address::symbolic(Variable(986022))),
+                MachineTerm::integer_address(Address::symbolic(Variable(986022))),
             ),
             true,
         );
@@ -355,7 +355,7 @@ fn mixed_tag_syntax_comparison_reuses_growing_shared_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let opaque = MachineTerm::pointer_address(Address::symbolic(Variable(986050)));
+        let opaque = MachineTerm::integer_address(Address::symbolic(Variable(986050)));
         let mut left =
             KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&opaque));
         let mut right =

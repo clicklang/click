@@ -859,7 +859,7 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::MemoryLoad { .. }
                 | KernelTermNode::Legacy(_)
-                | KernelTermNode::PointerAddress { .. }
+                | KernelTermNode::IntegerAddress { .. }
                 | KernelTermNode::Fold(_)
                 | KernelTermNode::Match(_) => false,
                 _ => nodes.iter().all(|node| cache[&node.id()]),
@@ -1005,18 +1005,18 @@ mod tests {
                     item: Variable(1006415),
                     body: body.clone(),
                 };
-                let goal = Proposition::ConditionIs(
+                let goal = Proposition::condition_is(
                     ConditionTerm::integer_equal(fold, IntegerTerm::constant_i64(0)),
                     true,
                 );
                 let equality =
-                    Proposition::ConditionIs(ConditionTerm::equal(x.clone(), to.clone()), true);
+                    Proposition::condition_is(ConditionTerm::equal(x.clone(), to.clone()), true);
                 let exports = KernelTermExport::machine_export_count();
                 let result =
                     super::super::rewrite_with_admitted_equality_as_written(&goal, &equality)
                         .unwrap();
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
-                let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) = result
+                let Some((ConditionTerm::IntegerEqual(left, _), true)) = result.condition_native()
                 else {
                     panic!("integer equality")
                 };
@@ -1068,14 +1068,14 @@ mod tests {
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert!(rewrite.refusal().is_none());
         }
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::integer_equal(input, IntegerTerm::constant_i64(0)),
             true,
         );
-        let equality = Proposition::ConditionIs(ConditionTerm::equal(source, replacement), true);
+        let equality = Proposition::condition_is(ConditionTerm::equal(source, replacement), true);
         assert_eq!(
             super::super::rewrite_with_admitted_equality_as_written(&goal, &equality).unwrap(),
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::IntegerEqual(
                     IntegerTerm::constant_i64(7).into(),
                     IntegerTerm::constant_i64(0).into()
@@ -1133,7 +1133,7 @@ mod tests {
     fn opaque_address_sources_keep_the_native_mask_matching_rule() {
         let _session = VerificationSession::enter();
         let pointer = Address::symbolic(Variable(1006440));
-        let plain = MachineTerm::pointer_address(pointer.clone());
+        let plain = MachineTerm::integer_address(pointer.clone());
         let annotated = MachineTerm::object_pointer_address(
             pointer,
             Some(crate::kernel::effective_type::CAccessClass::Struct(

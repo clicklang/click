@@ -2476,8 +2476,8 @@ mod tests {
         let Proposition::Implies(_, conclusion) = empty.proposition() else {
             unreachable!()
         };
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-            conclusion.as_ref()
+        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().condition_native()
         else {
             unreachable!()
         };
@@ -2495,8 +2495,8 @@ mod tests {
             unreachable!()
         };
         assert!(matches!(guard.as_ref(), Proposition::ConditionIs(_, true)));
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) =
-            conclusion.as_ref()
+        let Some((ConditionTerm::IntegerEqual(left, _), true)) =
+            conclusion.as_ref().condition_native()
         else {
             unreachable!()
         };
@@ -2548,24 +2548,22 @@ mod tests {
         let Proposition::And(defining, ordering) = guard.as_ref() else {
             unreachable!("the empty form carries the defining equation beside its guard")
         };
-        assert!(matches!(
-            defining.as_ref(),
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, _), true)
-        ));
-        assert!(matches!(
-            ordering.as_ref(),
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
+        assert!(
+            matches!(&defining.as_ref(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))
+        );
+        assert!(
+            matches!(&ordering.as_ref(), condition_source_0 @ Proposition::ConditionIs(
+                _,
+                true
+            ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: _,
                     right: _
-                },
-                true
-            )
-        ));
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-            conclusion.as_ref()
+                }, _))))
+        );
+        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().condition_native()
         else {
             unreachable!()
         };
@@ -2603,20 +2601,13 @@ mod tests {
         let defining = premises
             .iter()
             .filter(|premise| {
-                matches!(
-                    premise,
-                    Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, _), true)
-                )
+                matches!(&premise, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))
             })
             .count();
         assert_eq!(defining, 2, "both defining equations must be premises");
-        assert!(premises.iter().any(|premise| matches!(
-            premise,
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true)
-                if left.as_ref() == &prior
-        )));
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-            conclusion.as_ref()
+        assert!(premises.iter().any(|premise| matches!(&premise, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(left, _), _)) if (left.as_ref() == &prior)))));
+        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().condition_native()
         else {
             unreachable!()
         };
@@ -2632,7 +2623,7 @@ mod tests {
             SharedPureApplication::intern("counted".to_string(), Vec::new()),
         ));
         let replacement = SharedIntegerTerm::from(IntegerTerm::constant_i64(7));
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(
                 SharedIntegerTerm::from(IntegerTerm::constant_i64(0)),
                 SharedIntegerTerm::from(IntegerTerm::Add(
@@ -2648,7 +2639,8 @@ mod tests {
             &replacement,
         )
         .expect("the application occurs on the arithmetic spine");
-        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(_, right), true) = &rewritten
+        let Some((ConditionTerm::IntegerLessEqual(_, right), true)) =
+            (&rewritten).condition_native()
         else {
             unreachable!()
         };
@@ -2799,8 +2791,8 @@ mod tests {
             let Proposition::Implies(_, conclusion) = theorem.proposition() else {
                 unreachable!()
             };
-            let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-                conclusion.as_ref()
+            let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+                conclusion.as_ref().condition_native()
             else {
                 unreachable!()
             };
@@ -2826,8 +2818,8 @@ mod tests {
         let Proposition::Implies(_, conclusion) = theorem.proposition() else {
             unreachable!()
         };
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-            conclusion.as_ref()
+        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().condition_native()
         else {
             unreachable!()
         };
@@ -2857,8 +2849,8 @@ mod tests {
         let Proposition::Implies(_, conclusion) = theorem.proposition() else {
             unreachable!()
         };
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) =
-            conclusion.as_ref()
+        let Some((ConditionTerm::IntegerEqual(left, _), true)) =
+            conclusion.as_ref().condition_native()
         else {
             unreachable!()
         };
@@ -3099,7 +3091,7 @@ mod tests {
             } else {
                 IntegerTerm::TruncatingQuotient(x.clone(), y.clone())
             };
-            let proposition = Proposition::ConditionIs(
+            let proposition = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(term.into(), IntegerTerm::constant_i64(99).into()),
                 true,
             );
@@ -3115,7 +3107,7 @@ mod tests {
                 &IntegerTerm::constant_i64(3).into(),
             )
             .unwrap();
-            let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) = rewritten
+            let Some((ConditionTerm::IntegerEqual(left, _), true)) = rewritten.condition_native()
             else {
                 unreachable!()
             };
@@ -3129,7 +3121,7 @@ mod tests {
                 &IntegerTerm::constant_i64(0).into(),
             )
             .unwrap();
-            let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) = zero else {
+            let Some((ConditionTerm::IntegerEqual(left, _), true)) = zero.condition_native() else {
                 unreachable!()
             };
             assert!(left.as_const().is_none(), "zero substitution stays opaque");

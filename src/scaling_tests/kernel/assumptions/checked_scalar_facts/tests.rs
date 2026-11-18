@@ -36,7 +36,7 @@ fn shared_scalar_sources_keep_identity_and_branch_locality() {
             assert_eq!(
                 SignedConstantEvidence::exact_equality_value_view(
                     operand.operand_view(),
-                    &Proposition::ConditionIs(fact.clone(), *truth)
+                    &Proposition::condition_is(fact.clone(), *truth)
                 ),
                 Some(7)
             );
@@ -99,14 +99,14 @@ fn shared_scalar_premise_selection_keeps_written_truth() {
         MachineIntegerType::Int32,
         x,
     ));
-    let source = Proposition::ConditionIs(
+    let source = Proposition::condition_is(
         ConditionTerm::IntegerNotEqual(
             observed.clone().into(),
             IntegerTerm::constant(7.into()).into(),
         ),
         false,
     );
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::IntegerEqual(observed.into(), IntegerTerm::constant(7.into()).into()),
         true,
     );

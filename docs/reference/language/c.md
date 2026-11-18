@@ -990,6 +990,15 @@ Supported C surface includes:
 - `p[i]` indexing for all modeled scalar pointers
 - pointer-array indexing such as `p[i]` for every modeled `T**`
 - row-major indexing for multidimensional scalar local arrays
+- fixed-width local row pointers such as `int (*row)[3] = matrix;`
+  for compatible two-dimensional automatic arrays of unqualified arithmetic
+  elements. A declaration or assignment can use a compatible matrix,
+  `&matrix[i]`, or another local row pointer, with one optional additive
+  offset. Standalone increments, decrements, and additive updates advance
+  in rows. `row[i][j]` selects one row, then accesses an element within that
+  row's own bounds. Row offsets use modeled integers up to 32 bits
+<!-- verified-example: mdtests/c_local_row_pointer.md -->
+<!-- verified-example: mdtests/c_local_row_pointer_offset.md -->
 - one-dimensional array parameters of supported structs, with `items[i].field`
   accesses using the complete ABI struct stride
 - heap arrays of supported structs, allocated with `malloc` or `calloc` using

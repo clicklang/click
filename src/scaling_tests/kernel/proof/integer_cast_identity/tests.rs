@@ -15,7 +15,7 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
     let word = MachineTerm::Variable(Variable(168_010));
     let observation = |ty, value| IntegerTerm::from_machine(ty, value).unwrap();
     let equal =
-        |left, right| Proposition::ConditionIs(ConditionTerm::integer_equal(left, right), true);
+        |left, right| Proposition::condition_is(ConditionTerm::integer_equal(left, right), true);
     for source in [Ty::UInt8, Ty::UInt16, Ty::Int8, Ty::Int16] {
         let narrow = MachineTerm::machine_integer_cast(Ty::Int32, source, word.clone());
         let original = observation(source, narrow.clone());
@@ -37,7 +37,7 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
             let mut costs = Vec::new();
             for ambient in [0, 16, 64, 256, 1024] {
                 premises.resize_with(ambient + 2, || {
-                    Proposition::ConditionIs(ConditionTerm::Variable(Variable(168_011)), true)
+                    Proposition::condition_is(ConditionTerm::Variable(Variable(168_011)), true)
                 });
 
                 let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -84,7 +84,7 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
 #[test]
 fn integer_conversion_identity_ignores_unrelated_premises_and_operand_size() {
     let equal =
-        |left, right| Proposition::ConditionIs(ConditionTerm::integer_equal(left, right), true);
+        |left, right| Proposition::condition_is(ConditionTerm::integer_equal(left, right), true);
     for destination in [Ty::Int8, Ty::UInt64, Ty::UInt128] {
         let (lo, hi) = destination.format().bounds();
         let mut costs = Vec::new();
@@ -107,7 +107,7 @@ fn integer_conversion_identity_ignores_unrelated_premises_and_operand_size() {
                 le(z.clone(), IntegerTerm::constant(hi.clone())),
             ];
             premises.resize_with(ambient + 2, || {
-                Proposition::ConditionIs(ConditionTerm::Variable(Variable(168_202)), true)
+                Proposition::condition_is(ConditionTerm::Variable(Variable(168_202)), true)
             });
 
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {

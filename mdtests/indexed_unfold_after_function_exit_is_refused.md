@@ -1,8 +1,8 @@
-# take after function exit says to move it
+# Indexed unfold must run before function exit
 
-`take` moves an element at the execution frontier. After `step_until(function.exit)` reaches the exit there is none, and the refusal says so instead of reporting an unsupported proof shape.
+indexed `unfold` moves an element at the execution frontier. After `step_until(function.exit)` reaches the exit there is none, and the refusal says so instead of reporting an unsupported proof shape.
 
-```c filename=take_after_function_exit_says_to_move_it.c
+```c filename=indexed_unfold_after_function_exit_is_refused.c
 void f(int *data, int *occupied, int capacity, int index) { }
 ```
 
@@ -16,7 +16,7 @@ resource cells(data: int32*, occupied: int32*, capacity: int32) {
     }
 }
 
-verifying "take_after_function_exit_says_to_move_it.c";
+verifying "indexed_unfold_after_function_exit_is_refused.c";
 
 void f(int32* data, int32* occupied, int32 capacity, int32 index) {
     owns cells(data, occupied, capacity);
@@ -24,13 +24,13 @@ void f(int32* data, int32* occupied, int32 capacity, int32 index) {
 } by {
     unfold(cells(data, occupied, capacity));
     step_until(function.exit);
-    take(data[index..index + 1]);
-    give(data[index..index + 1]);
+    unfold(cells(data, occupied, capacity)[index]);
+    fold(cells(data, occupied, capacity)[index]);
     fold(cells(data, occupied, capacity));
     solve();
 }
 ```
 
 ```expect
-fail: `take(data[index..(index + 1)])` must run before execution reaches function exit
+fail: `unfold(cells(data, occupied, capacity)[index])` must run before execution reaches function exit
 ```

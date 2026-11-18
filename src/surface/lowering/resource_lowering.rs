@@ -660,7 +660,7 @@ pub(in crate::surface) fn initial_call_state(
             }
             let scope = crate::kernel::ResourceDescription::new(
                 name.clone(),
-                vec![arguments[0].clone()].into(),
+                vec![arguments.get(0).expect("argument index").into_native()].into(),
                 ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
             )
             .with_population_arity(arguments.len());
@@ -1192,7 +1192,7 @@ fn check_segment_base_loadability(
     let obligation = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: cell.into_pointer(),
-        bytes: MachineTerm::constant(value_type.byte_width()),
+        bytes: (MachineTerm::constant(value_type.byte_width())).into(),
         wide: false,
     };
     if crate::kernel::execution_state_justifies_loadability_obligation(
@@ -3149,7 +3149,7 @@ fn loadable_requirement_props(
     let mut propositions = vec![Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes,
+        bytes: (bytes).into(),
         wide: false,
     }];
     propositions.extend(guards);
@@ -3230,8 +3230,15 @@ fn reject_impossible_range_guards(
     assumptions: &PureFactContext,
 ) -> Result<(), ClickError> {
     if guards.iter().any(|guard| match guard {
-        Proposition::ConditionIs(ConditionTerm::Constant(false), true) => true,
-        Proposition::ConditionIs(condition, true) => assumptions.decide(condition) == Some(false),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::Constant(false), _)) =
+                condition_source_0.condition_native() =>
+        {
+            true
+        }
+        Proposition::ConditionIs(condition, true) => {
+            assumptions.decide(condition.native_compat()) == Some(false)
+        }
         _ => false,
     }) {
         return Err(ClickError::new(
@@ -3296,7 +3303,7 @@ pub(in crate::surface) fn memory_range_loadable_atom_prop(
     Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes,
+        bytes: (bytes).into(),
         wide: false,
     }
 }
@@ -3601,6 +3608,35 @@ pub(in crate::surface) fn contract_segment_element_width_for_result_type(
     segment: &ContractSegment,
     result_type: Option<ProgramType>,
 ) -> u32 {
+    contract_segment_element_width_with_parameter(segment, result_type, &|name| {
+        parameters
+            .iter()
+            .find(|parameter| parameter.matches_binding(name))
+    })
+}
+
+pub(in crate::surface) fn contract_segment_element_width_with_binding(
+    binding: ParameterBinding<'_>,
+    segment: &ContractSegment,
+) -> u32 {
+    let Some(index) = binding.index else {
+        return contract_segment_element_width(binding.parameters, segment);
+    };
+    contract_segment_element_width_with_parameter(segment, None, &|name| {
+        binding
+            .parameters
+            .get(index.position(name.source_name())?)
+            .filter(|parameter| parameter.matches_binding(name))
+    })
+}
+
+fn contract_segment_element_width_with_parameter<'a>(
+    segment: &ContractSegment,
+    result_type: Option<ProgramType>,
+    parameter: &impl Fn(
+        &crate::kernel::BindingName,
+    ) -> Option<&'a crate::languages::interface::ImportedParameter>,
+) -> u32 {
     if matches!(
         segment.surface,
         ContractSegmentSurface::Object(_) | ContractSegmentSurface::ObjectPlace { .. }
@@ -3620,7 +3656,7 @@ pub(in crate::surface) fn contract_segment_element_width_for_result_type(
     {
         return element_width;
     }
-    contract_expression_element_width(parameters, &segment.base).unwrap_or(4)
+    contract_expression_element_width_with_parameter(&segment.base, parameter).unwrap_or(4)
 }
 
 /// Loop locals have frontend-declared types even before execution binds values.
@@ -3801,10 +3837,23 @@ pub(in crate::surface) fn contract_expression_element_width(
     parameters: &[crate::languages::interface::ImportedParameter],
     expression: &ProgramExpression,
 ) -> Option<u32> {
+    contract_expression_element_width_with_parameter(expression, &|name| {
+        parameters
+            .iter()
+            .find(|parameter| parameter.matches_binding(name))
+    })
+}
+
+fn contract_expression_element_width_with_parameter<'a>(
+    expression: &ProgramExpression,
+    parameter: &impl Fn(
+        &crate::kernel::BindingName,
+    ) -> Option<&'a crate::languages::interface::ImportedParameter>,
+) -> Option<u32> {
     match expression {
         ProgramExpression::AddressOf(place) => match place.as_ref() {
             ProgramExpression::Index(base, _) => {
-                contract_expression_element_width(parameters, base)
+                contract_expression_element_width_with_parameter(base, parameter)
             }
             _ => None,
         },
@@ -3815,44 +3864,43 @@ pub(in crate::surface) fn contract_expression_element_width(
         ProgramExpression::Cast { target_type, .. } => {
             target_type.pointee_type().map(ProgramType::byte_width)
         }
-        ProgramExpression::Variable(name) => parameters
-            .iter()
-            .find(|parameter| parameter.matches_binding(name))
-            .and_then(|parameter| {
-                if parameter.is_struct_value() {
-                    Some(4)
-                } else {
-                    parameter
-                        .array_element_width()
-                        .or_else(|| match parameter.interface_type() {
-                            interface_type if interface_type.is_pointer() => interface_type
-                                .pointee_type()
-                                .map(InterfaceType::to_kernel_type)
-                                .map(ProgramType::byte_width),
-                            // Abstract values and enums use their model
-                            // width, as do the cells that hold them.
-                            InterfaceType::ParameterPointer(name) => {
-                                Some(ProgramType::Parameter(name).byte_width())
-                            }
-                            InterfaceType::Int32Array(_) => Some(4),
-                            InterfaceType::CharArray(_, _) => Some(1),
-                            InterfaceType::UInt8Array(_) => Some(1),
-                            InterfaceType::Int8Array(_) => Some(1),
-                            InterfaceType::Int16Array(_) | InterfaceType::UInt16Array(_) => Some(2),
-                            InterfaceType::UInt32Array(_) => Some(4),
-                            InterfaceType::Int64Array(_, _) | InterfaceType::UInt64Array(_, _) => {
-                                Some(8)
-                            }
-                            InterfaceType::Int128Array(_) | InterfaceType::UInt128Array(_) => {
-                                Some(16)
-                            }
-                            _ => None,
-                        })
-                }
-            }),
-        ProgramExpression::Add(left, right) => contract_expression_element_width(parameters, left)
-            .or_else(|| contract_expression_element_width(parameters, right)),
-        ProgramExpression::Subtract(left, _) => contract_expression_element_width(parameters, left),
+        ProgramExpression::Variable(name) => parameter(name).and_then(|parameter| {
+            if parameter.is_struct_value() {
+                Some(4)
+            } else {
+                parameter
+                    .array_element_width()
+                    .or_else(|| match parameter.interface_type() {
+                        interface_type if interface_type.is_pointer() => interface_type
+                            .pointee_type()
+                            .map(InterfaceType::to_kernel_type)
+                            .map(ProgramType::byte_width),
+                        // Abstract values and enums use their model
+                        // width, as do the cells that hold them.
+                        InterfaceType::ParameterPointer(name) => {
+                            Some(ProgramType::Parameter(name).byte_width())
+                        }
+                        InterfaceType::Int32Array(_) => Some(4),
+                        InterfaceType::CharArray(_, _) => Some(1),
+                        InterfaceType::UInt8Array(_) => Some(1),
+                        InterfaceType::Int8Array(_) => Some(1),
+                        InterfaceType::Int16Array(_) | InterfaceType::UInt16Array(_) => Some(2),
+                        InterfaceType::UInt32Array(_) => Some(4),
+                        InterfaceType::Int64Array(_, _) | InterfaceType::UInt64Array(_, _) => {
+                            Some(8)
+                        }
+                        InterfaceType::Int128Array(_) | InterfaceType::UInt128Array(_) => Some(16),
+                        _ => None,
+                    })
+            }
+        }),
+        ProgramExpression::Add(left, right) => {
+            contract_expression_element_width_with_parameter(left, parameter)
+                .or_else(|| contract_expression_element_width_with_parameter(right, parameter))
+        }
+        ProgramExpression::Subtract(left, _) => {
+            contract_expression_element_width_with_parameter(left, parameter)
+        }
         ProgramExpression::TypedLoad { value_type, .. } => match value_type {
             interface_type if interface_type.is_pointer() => {
                 interface_type.pointee_type().map(ProgramType::byte_width)

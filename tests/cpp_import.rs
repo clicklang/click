@@ -4821,15 +4821,14 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     assert!(matches!(
         lowered.kernel_function().body(),
         ProgramStatement::Seq(sequence)
-            if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
-                returned.as_ref(),
-                ProgramStatement::Seq(sequence)
-                    if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
-                        returned.as_ref(),
-                        ProgramStatement::Return(ProgramExpression::Variable(name))
-                            if name.local_id().is_some_and(|id| id.is_temporary())
-                    ) }
-            ) }
+            if matches!(
+                sequence.iter().last().map(|stmt| stmt.as_ref()),
+                Some(ProgramStatement::Return(ProgramExpression::StepResult {
+                    origin: click::kernel::StepOrigin::Value(_),
+                    ends: true,
+                    ..
+                }))
+            )
     ));
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -4857,6 +4856,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
         !expanded.contains("__click_cpp_unwind_exception"),
         "{expanded}"
     );
+    assert!(!expanded.contains(".temporary("), "{expanded}");
     click::surface::without_implicit_solve_for_claim("capture.contract", || {
         verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
             .map_err(|error| error.report())
@@ -4887,6 +4887,70 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     let wrong_project = read_click_project(&sidecar, &wrong_capture).unwrap();
     verify_program_prepared_project(&wrong_project, &import)
         .expect_err("the return value must be captured before destruction");
+}
+
+#[test]
+#[ignore = "nightly: C++ early void return proof and replay"]
+fn cpp_void_early_return_skips_following_statements() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/cpp-verification/void-early-return");
+    let cpp = fs::read_to_string(fixture.join("advance.cpp")).unwrap();
+    let project = Project::with_fixture("advance.cpp", "advance", &cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [CppStatement::If { then_branch, .. }, _] = import.export().functions[0].body.as_slice()
+    else {
+        panic!("expected the early exit and the following cursor write");
+    };
+    assert!(matches!(
+        then_branch.as_slice(),
+        [CppStatement::ReturnVoid { cleanups, .. }] if cleanups.is_empty()
+    ));
+    let source = fs::read_to_string(fixture.join("advance.click")).unwrap();
+    check_selected_claim_certificate(&project, &import, &source);
+}
+
+#[test]
+#[ignore = "nightly: C++ void return with checked cleanup on both paths"]
+fn cpp_void_early_return_runs_destructors() {
+    let cpp = EARLY_RETURN_DESTRUCTOR_SOURCE
+        .replace("int with_restore(", "void with_restore(")
+        .replace("return value;", "return;");
+    let project = Project::with_fixture("with_restore.cpp", "with_restore", &cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [
+        CppStatement::Declare { local, .. },
+        CppStatement::If { then_branch, .. },
+        _,
+        CppStatement::ReturnVoid {
+            cleanups: final_cleanups,
+            ..
+        },
+    ] = import.export().functions[0].body.as_slice()
+    else {
+        panic!("expected destruction on both return edges");
+    };
+    let [
+        CppStatement::ReturnVoid {
+            cleanups: early_cleanups,
+            ..
+        },
+    ] = then_branch.as_slice()
+    else {
+        panic!("expected a value-free early return");
+    };
+    for cleanups in [early_cleanups, final_cleanups] {
+        assert!(matches!(
+            cleanups.as_slice(),
+            [CppCleanup::Destructor { object, .. }] if object.declaration_id == local.declaration_id
+        ));
+    }
+    let source = EARLY_RETURN_DESTRUCTOR_SIDECAR
+        .replace("int32 with_restore(", "void with_restore(")
+        .replace("    ensures early implies result == 7;\n", "")
+        .replace("    ensures not early implies result == 9;\n", "");
+    check_selected_claim_certificate(&project, &import, &source);
 }
 
 #[test]
@@ -9559,6 +9623,92 @@ int32 collision(int32 __click_cpp_nested_value_0, int32 __click_cpp_nested_value
 }
 "#,
     );
+}
+
+#[test]
+#[ignore = "nightly: imported runtime default and explicit override with proof replay"]
+fn runtime_default_arguments_evaluate_the_helper_only_when_omitted() {
+    let cpp = r#"#include "defaults.h"
+int default_limit() noexcept { return 100; }
+int limit(int value) noexcept { return value; }
+int omitted() noexcept { return limit(); }
+int overridden() noexcept { return limit(7); }
+"#;
+    for (selected, result, expected_calls) in [
+        ("omitted", 100, &["default_limit", "limit"][..]),
+        ("overridden", 7, &["limit"][..]),
+    ] {
+        let mut project = Project::with_fixture("default-use.cpp", selected, cpp);
+        fs::write(
+            project.directory.join("defaults.h"),
+            "int default_limit() noexcept; int limit(int value = default_limit()) noexcept;",
+        )
+        .unwrap();
+        if selected == "omitted" {
+            project.dependencies.push("defaults.h".into());
+        }
+        project.write_config(selected);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let [CppStatement::ReturnCall { arguments, .. }] =
+            import.export().functions[0].body.as_slice()
+        else {
+            panic!("expected a return call to limit");
+        };
+        match (selected, arguments.as_slice()) {
+            ("omitted", [CppCallArgument::Call { callee, span, .. }]) => {
+                assert_eq!(span.file, "default-use.cpp");
+                assert_eq!(span.start_line, 4);
+                assert_eq!(callee.span, *span);
+                assert!(
+                    import
+                        .export()
+                        .dependencies
+                        .iter()
+                        .any(|name| name == "defaults.h")
+                );
+            }
+            ("overridden", [CppCallArgument::Value { .. }]) => {
+                assert!(import.export().dependencies.is_empty());
+            }
+            _ => panic!("expected the selected argument form"),
+        }
+
+        let lowered = lower_import(&import).unwrap();
+        let mut pending = vec![lowered.kernel_function().body()];
+        let mut calls = Vec::new();
+        while let Some(statement) = pending.pop() {
+            match statement {
+                ProgramStatement::Seq(body) => pending.extend(body.iter().rev().map(AsRef::as_ref)),
+                ProgramStatement::CallResult { function_name, .. } => {
+                    calls.push(
+                        click::surface::source_display_name(function_name)
+                            .unwrap_or_else(|| function_name.clone()),
+                    );
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(calls, expected_calls);
+        let mut source = String::from(
+            "verifying \"default-use.cpp\";\nint32 limit(int32 value) { ensures result == value; }\n",
+        );
+        if selected == "omitted" {
+            source.push_str("int32 default_limit() { ensures result == 100; }\n");
+        }
+        source.push_str(&format!(
+            "int32 {selected}() {{ ensures result == {result}; }}\n"
+        ));
+        check_selected_claim_certificate(&project, &import, &source);
+    }
+
+    let ambiguous = Project::with_fixture(
+        "ambiguous.cpp",
+        "run",
+        "int next() noexcept { return 1; } int pair(int a, int b = next()) noexcept { return a; } int run() noexcept { return pair(next()); }",
+    );
+    let error = refresh_import(&ambiguous.config()).unwrap_err();
+    assert!(error.contains("preserve evaluation order"), "{error}");
 }
 
 #[test]
@@ -19974,6 +20124,15 @@ int32 probe(struct Sink& sink, int32 input) {
     }
     click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, &import))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    assert!(!expanded.contains(".temporary("), "{expanded}");
+    let explicit_materialization = source.replace(
+        "    ensures sink.total == input;\n}\nint32 probe(",
+        "    ensures sink.total == input;\n} by {\n    step_until(call(0));\n    have byte_offset(region(0).result, 0) == region(0).result;\n    step(); step();\n    have region(0).result == region(2).result;\n    have region(2).result.value == input;\n}\nint32 probe(",
+    );
+    assert_ne!(explicit_materialization, source);
+    let explicit_project = parsed.with_entry_source(explicit_materialization);
+    verify_program_prepared_project(&explicit_project, &import)
+        .expect("cite the object materialized by the void constructor");
     let false_value = source.replace("ensures result == input;", "ensures result == 7;");
     let sidecar = project.directory.join("false.click");
     fs::write(&sidecar, &false_value).unwrap();
@@ -21443,7 +21602,7 @@ fn cpp_record_reference_results_read_and_write_direct_fields() {
     while let Some(statement) = pending.pop() {
         match statement {
             ProgramStatement::Seq(body) => pending.extend(body.iter().rev().map(AsRef::as_ref)),
-            ProgramStatement::Assign {
+            ProgramStatement::StepValue {
                 expression: ProgramExpression::TypedLoad { .. },
                 ..
             } => operations.push("read right operand".to_owned()),

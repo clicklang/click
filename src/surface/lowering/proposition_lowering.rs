@@ -47,8 +47,8 @@ pub(in crate::surface) fn comparison_proposition(
                 ));
             }
         };
-        return Ok(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(left, right),
+        return Ok(Proposition::condition_is(
+            ConditionTerm::address_equal(left, right),
             value,
         ));
     }
@@ -69,13 +69,13 @@ pub(in crate::surface) fn comparison_proposition(
             }
         };
         if !left.is_null() && !right.is_null() {
-            return Ok(Proposition::ConditionIs(
-                ConditionTerm::pointer_value_equal(left.clone(), right.clone()),
+            return Ok(Proposition::condition_is(
+                ConditionTerm::pointer_equal(left.clone(), right.clone()),
                 value,
             ));
         }
-        return Ok(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(left.address().clone(), right.address().clone()),
+        return Ok(Proposition::condition_is(
+            ConditionTerm::address_equal(left.address().clone(), right.address().clone()),
             value,
         ));
     }
@@ -96,7 +96,7 @@ pub(in crate::surface) fn comparison_proposition(
                 return Err(ClickError::new("membership is not a scalar comparison"));
             }
         };
-        return Ok(Proposition::ConditionIs(
+        return Ok(Proposition::condition_is(
             condition,
             !matches!(operator, ComparisonOperator::NotEqual),
         ));
@@ -122,7 +122,7 @@ pub(in crate::surface) fn comparison_proposition(
                 return Err(ClickError::new("membership is not a scalar comparison"));
             }
         };
-        return Ok(Proposition::ConditionIs(
+        return Ok(Proposition::condition_is(
             condition,
             !matches!(operator, ComparisonOperator::NotEqual),
         ));
@@ -148,7 +148,7 @@ pub(in crate::surface) fn comparison_proposition(
         else {
             return Err(ClickError::new("unsupported proposition comparison"));
         };
-        Ok(Proposition::ConditionIs(condition, value))
+        Ok(Proposition::condition_is(condition, value))
     } else {
         Err(incomparable_values(&left, &right))
     }

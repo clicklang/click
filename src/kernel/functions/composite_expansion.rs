@@ -10,7 +10,8 @@ pub(super) fn composite_names_pointer_base(composite: &ResourceFact, pointer: &A
         return false;
     };
     arguments.iter().any(|argument| {
-        let AlgebraicValue::Program(ProgramValue::Pointer(argument)) = argument else {
+        let crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(argument)) = argument
+        else {
             return false;
         };
         argument.address() == pointer
@@ -102,30 +103,11 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<Proposition>)> {
-    expand_all_composite_resource_facts_and_propositions_with_state(
-        context,
-        definitions,
-        &state.program_point(),
-        assumptions,
-        Some(state),
-    )
-}
-
-pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
-    context: &ResourceContext,
-    definitions: &[CompositeResourceDefinition],
-    at: &ProgramPoint,
-    assumptions: &PureFactContext,
-    population_state: Option<&ExecutionState>,
-) -> Option<(ResourceContext, Vec<Proposition>)> {
-    let memory = at.memory();
-    let (prepared, mut controls) = if let Some(state) = population_state {
-        expand_checked_authority_controls(context, definitions, state, assumptions)?
-    } else {
-        (context.clone(), Vec::new())
-    };
+    let at = state.program_point();
+    let (prepared, mut controls) =
+        expand_checked_authority_controls(context, definitions, state, assumptions)?;
     let (expanded, composites) =
-        expand_composite_resource_context(&prepared, definitions, at, assumptions)?;
+        expand_composite_resource_context(&prepared, definitions, &at, assumptions)?;
     controls.extend(composites);
     let mut propositions = Vec::new();
     // `assumptions` extended by `propositions[..extended]`: each composite's
@@ -139,12 +121,11 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
         let loadable = evaluate_composite_resource_loadable_propositions(
             &composite,
             definitions,
-            memory,
+            &at,
             assumptions,
         )?;
         propositions.extend(loadable);
-        let relations = if let Some(state) = population_state
-            && let Resource::Composite { name, .. } = composite.resource()
+        let relations = if let Resource::Composite { name, .. } = composite.resource()
             && let Some(definition) = definitions
                 .iter()
                 .find(|definition| definition.name() == name)
@@ -177,7 +158,7 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
             evaluate_composite_resource_relation_propositions(
                 &composite,
                 definitions,
-                at,
+                &at,
                 assumptions,
             )?
         };
@@ -185,13 +166,13 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
         fact_assumptions =
             assumptions_with_propositions(&fact_assumptions, &propositions[extended..]);
         extended = propositions.len();
-        let instantiated = instantiate_composite_resource_facts_with_state(
+        // Evaluate declared facts at the same point as the expanded body.
+        let instantiated = instantiate_composite_resource_facts_in_state(
             &composite,
             definitions,
-            memory,
+            state.clone(),
             &expanded,
             &fact_assumptions,
-            population_state,
         )?;
         propositions.extend(instantiated.propositions);
     }
@@ -258,7 +239,12 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                     parameter.program_type(),
                 );
             }
-            bind_composite_witnesses(definition, &arguments, &mut population_state, assumptions)?;
+            bind_composite_witnesses(
+                definition,
+                &(&arguments).native_values(),
+                &mut population_state,
+                assumptions,
+            )?;
             let mut budget = ExecutionBudget::beside_live_state();
             let evaluation_assumptions = assumptions
                 .clone()
@@ -289,7 +275,12 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 parameter.program_type(),
             );
         }
-        bind_composite_witnesses(definition, &arguments, &mut population_state, assumptions)?;
+        bind_composite_witnesses(
+            definition,
+            &(&arguments).native_values(),
+            &mut population_state,
+            assumptions,
+        )?;
         let mut budget = ExecutionBudget::beside_live_state();
         let evaluation_assumptions = assumptions
             .clone()
@@ -461,7 +452,12 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )?;
     let mut budget = ExecutionBudget::beside_live_state();
     let evaluation_assumptions = assumptions
         .clone()
@@ -554,7 +550,12 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )?;
     let mut budget = ExecutionBudget::beside_live_state();
     let evaluation_assumptions = assumptions
         .clone()
@@ -603,19 +604,15 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
 pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &SymbolicMemory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
-    let ranges = evaluate_composite_resource_memory_ranges(
-        composite,
-        definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
-        assumptions,
-    )?;
+    let ranges =
+        evaluate_composite_resource_memory_ranges(composite, definitions, at, assumptions)?;
     let mut propositions = Vec::new();
     for range in ranges {
         propositions.extend(crate::kernel::admitted_memory_range_span_facts(&range));
-        propositions.push(range.loadable_fact(memory));
+        propositions.push(range.loadable_fact(at.memory()));
     }
     Some(propositions)
 }
@@ -646,13 +643,12 @@ pub(crate) fn instantiate_composite_resource_facts(
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
-    instantiate_composite_resource_facts_with_state(
+    instantiate_composite_resource_facts_in_state(
         composite,
         definitions,
-        memory,
+        ExecutionState::new().with_memory(memory.clone()),
         resources,
         assumptions,
-        None,
     )
 }
 
@@ -704,27 +700,6 @@ pub(crate) fn instantiate_private_member_body_facts(
     )
 }
 
-pub(super) fn instantiate_composite_resource_facts_with_state(
-    composite: &ResourceFact,
-    definitions: &[CompositeResourceDefinition],
-    memory: &SymbolicMemory,
-    resources: &ResourceContext,
-    assumptions: &PureFactContext,
-    population_state: Option<&ExecutionState>,
-) -> Option<InstantiatedCompositeResourceFacts> {
-    let state = population_state
-        .cloned()
-        .unwrap_or_else(ExecutionState::new)
-        .with_memory(memory.clone());
-    instantiate_composite_resource_facts_in_state(
-        composite,
-        definitions,
-        state,
-        resources,
-        assumptions,
-    )
-}
-
 fn instantiate_composite_resource_facts_in_state(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
@@ -753,7 +728,12 @@ fn instantiate_composite_resource_facts_in_state(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )?;
     let mut result = Vec::new();
     let mut declared = Vec::new();
     let mut budget = ExecutionBudget::beside_live_state();

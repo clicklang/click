@@ -138,7 +138,10 @@ impl ExecutionState {
 mod tests {
     use super::*;
     fn key(index: usize) -> Key {
-        (format!("population-{index:08}"), Arc::from([]))
+        (
+            format!("population-{index:08}"),
+            ResourceArguments::default(),
+        )
     }
     #[test]
     fn scopes_are_exclusive_ordered_and_cannot_reuse_an_old_epoch() {

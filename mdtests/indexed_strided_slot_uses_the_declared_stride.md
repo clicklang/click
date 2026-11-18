@@ -1,11 +1,9 @@
-# A strided element takes in any spelling of its offset
+# An indexed slot uses the declared stride
 
-The clause `owns data[2 * k..2 * k + 2];` names one element per `k`.
-`take` and `give` accept that element with its offset in the clause's own
-order `2 * index`, as `index * 2`, or as `index + index`: each has the affine
-form `2 * index`.
+An indexed unfold exposes the two-cell element from the clause. Its matching
+fold restores it. Each tactic supplies only the logical index.
 
-```c filename=a_strided_element_takes_in_any_spelling_of_its_offset.c
+```c filename=indexed_strided_slot_uses_the_declared_stride.c
 void f(int *data, int *occupied, int capacity, int index) { }
 ```
 
@@ -19,15 +17,15 @@ resource pairs(data: int32*, occupied: int32*, capacity: int32) {
     }
 }
 
-verifying "a_strided_element_takes_in_any_spelling_of_its_offset.c";
+verifying "indexed_strided_slot_uses_the_declared_stride.c";
 
 void f(int32* data, int32* occupied, int32 capacity, int32 index) {
     owns pairs(data, occupied, capacity);
     requires 0 <= index; requires index < capacity; requires occupied[index] == 0;
 } by {
     unfold(pairs(data, occupied, capacity));
-    take(data[2 * index..2 * index + 2]);
-    give(data[index + index..index + index + 2]);
+    unfold(pairs(data, occupied, capacity)[index]);
+    fold(pairs(data, occupied, capacity)[index]);
     fold(pairs(data, occupied, capacity));
 }
 ```

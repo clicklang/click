@@ -8,14 +8,28 @@ type Bounds = (i128, i128);
 
 fn parts(p: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm, bool)> {
     match p {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((a, b, false))
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerLessThan(a, b), true) => Some((a, b, true)),
-        Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessThan(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some((a, b, true))
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerGreaterEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((b, a, false))
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerGreaterThan(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerGreaterThan(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((b, a, true))
         }
         _ => None,
@@ -223,15 +237,17 @@ pub(super) fn reduces_one_operation(goal: &Proposition, premises: &[Proposition]
             let Proposition::ConditionIs(condition, truth) = goal else {
                 return false;
             };
-            if !crate::kernel::machine_integer::comparison::comparison_view(condition, *truth)
-                .is_some_and(|view| {
-                    matches!(
-                        view.relation,
-                        crate::kernel::machine_integer::Relation::Less
-                            | crate::kernel::machine_integer::Relation::LessEqual
-                    )
-                })
-            {
+            if !crate::kernel::machine_integer::comparison::comparison_view(
+                condition.native_compat(),
+                *truth,
+            )
+            .is_some_and(|view| {
+                matches!(
+                    view.relation,
+                    crate::kernel::machine_integer::Relation::Less
+                        | crate::kernel::machine_integer::Relation::LessEqual
+                )
+            }) {
                 return false;
             }
         }
@@ -306,7 +322,7 @@ mod tests {
         IntegerTerm::constant_i64(n).into()
     }
     fn le(a: SharedIntegerTerm, b: SharedIntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true)
+        Proposition::condition_is(ConditionTerm::IntegerLessEqual(a, b), true)
     }
     fn observe(value: MachineTerm) -> SharedIntegerTerm {
         IntegerTerm::from_machine(MachineIntegerType::Int32, value)
@@ -375,7 +391,7 @@ mod tests {
             } else {
                 (x.clone(), endpoint)
             };
-            let premise = Proposition::ConditionIs(ConditionTerm::IntegerLessThan(a, b), true);
+            let premise = Proposition::condition_is(ConditionTerm::IntegerLessThan(a, b), true);
             assert!(!reduces_one_operation(&goal, &[premise]));
         }
     }

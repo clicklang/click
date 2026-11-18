@@ -253,7 +253,7 @@ fn recorded_qualified_cells(
                 .expect("the comparison lowers to matching logical structure");
             // The load term as lowering produced it: a registered load
             // variable, one of the two forms an emitted requirement carries.
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -261,11 +261,11 @@ fn recorded_qualified_cells(
                     right: _,
                 },
                 _,
-            ) = lowered
+            )) = lowered.condition_native()
             else {
                 panic!("a qualified cell comparison lowers to one load equality");
             };
-            *load
+            load.as_ref().clone()
         })
         .collect();
     (state, sources, loads)
@@ -278,7 +278,7 @@ fn recorded_qualified_cells(
 fn cells_within_bounds(loads: &[MachineTerm]) -> Proposition {
     let clauses = loads.iter().flat_map(|load| {
         [
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
@@ -287,7 +287,7 @@ fn cells_within_bounds(loads: &[MachineTerm]) -> Proposition {
                 },
                 true,
             ),
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -473,7 +473,7 @@ fn qualified_static_read_spellings_retain_entry_and_current_epochs() {
         address,
         crate::kernel::LoadKind::Int32,
     );
-    let named = Proposition::ConditionIs(
+    let named = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -483,7 +483,7 @@ fn qualified_static_read_spellings_retain_entry_and_current_epochs() {
         true,
     );
     let resolve = crate::kernel::resolve_load_variables_from_registry;
-    let shared = Proposition::ConditionIs(
+    let shared = Proposition::condition_is(
         ConditionTerm::integer_equal(
             crate::kernel::IntegerTerm::from_machine(MachineIntegerType::Int32, current).unwrap(),
             crate::kernel::IntegerTerm::add(
@@ -734,7 +734,8 @@ fn exact_external_zero_based_byte_range_round_trips_symbolic_end() {
             ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
             _ => unreachable!(),
         },
-        bytes: MachineTerm::add(MachineTerm::Variable(Variable(1)), MachineTerm::constant(1)),
+        bytes: (MachineTerm::add(MachineTerm::Variable(Variable(1)), MachineTerm::constant(1)))
+            .into(),
         wide: false,
     };
     let synthesized = synthesize_source_projection_proposition_with_bound_variable_names(
@@ -773,7 +774,8 @@ fn exact_external_zero_based_byte_range_resolves_direct_variable_argument() {
     let requirement = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base,
-        bytes: MachineTerm::add(MachineTerm::Variable(Variable(1)), MachineTerm::constant(1)),
+        bytes: (MachineTerm::add(MachineTerm::Variable(Variable(1)), MachineTerm::constant(1)))
+            .into(),
         wide: false,
     };
     let synthesized = synthesize_source_projection_proposition_with_bound_variable_names(
@@ -804,7 +806,7 @@ fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
             ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
             _ => unreachable!(),
         },
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     assert!(
@@ -830,7 +832,7 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
         sort: Sort::ProgramInt32,
         body: Box::new(Proposition::Implies(
             Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
@@ -839,7 +841,7 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
                     },
                     true,
                 )),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
@@ -861,7 +863,7 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
                         Box::new(AddressOffset::scaled_int32_node(index.clone(), 1)),
                     ),
                 },
-                bytes: binary_node!(
+                bytes: (binary_node!(
                     Int32,
                     Subtract,
                     Box::new(binary_node!(
@@ -871,7 +873,8 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
                         Box::new(MachineTerm::constant(1)),
                     )),
                     Box::new(index),
-                ),
+                ))
+                .into(),
                 wide: false,
             }),
         )),
@@ -934,7 +937,7 @@ fn external_symbolic_element_requirement_term(
                 Box::new(AddressOffset::scaled_int32_node(index.clone(), 1)),
             ),
         },
-        bytes: binary_node!(
+        bytes: (binary_node!(
             Int32,
             Subtract,
             Box::new(binary_node!(
@@ -944,7 +947,8 @@ fn external_symbolic_element_requirement_term(
                 Box::new(MachineTerm::constant(1)),
             )),
             Box::new(index),
-        ),
+        ))
+        .into(),
         wide: false,
     }
 }
@@ -957,7 +961,7 @@ fn external_symbolic_element_constant_byte_requirement(
     let Proposition::MemoryLoadable { bytes, .. } = &mut requirement else {
         unreachable!();
     };
-    *bytes = MachineTerm::constant(1);
+    *bytes = MachineTerm::constant(1).into();
     requirement
 }
 
@@ -1036,7 +1040,7 @@ fn replace_full_external_cstr_range_with_constant_byte_count(requirement: &mut P
     fn replace(proposition: &mut Proposition, inside_forall: bool) -> bool {
         match proposition {
             Proposition::MemoryLoadable { bytes, .. } if inside_forall => {
-                *bytes = MachineTerm::constant(1);
+                *bytes = MachineTerm::constant(1).into();
                 true
             }
             Proposition::And(left, right)
@@ -1234,7 +1238,7 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
                 )),
             ),
         },
-        bytes: binary_node!(
+        bytes: (binary_node!(
             Int32,
             Subtract,
             Box::new(binary_node!(
@@ -1244,7 +1248,8 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
                 Box::new(MachineTerm::constant(1)),
             )),
             Box::new(MachineTerm::Variable(Variable(100_001))),
-        ),
+        ))
+        .into(),
         wide: false,
     };
     assert!(
@@ -1325,7 +1330,7 @@ fn strlen_constant_element_range_falls_back_to_general_synthesis() {
     let Proposition::MemoryLoadable { base, bytes, .. } = lowered else {
         panic!("the lowered fallback must remain one viewability");
     };
-    assert_eq!(bytes, MachineTerm::constant(1));
+    assert_eq!(bytes.native_compat(), &MachineTerm::constant(1));
     assert_eq!(
         base.offset,
         AddressOffset::Add(
@@ -1401,7 +1406,7 @@ fn non_external_named_range_still_uses_general_synthesis() {
             base: AddressBase::Concrete("local:elements".into()),
             offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100_001)), 1),
         },
-        bytes: binary_node!(
+        bytes: (binary_node!(
             Int32,
             Subtract,
             Box::new(binary_node!(
@@ -1411,7 +1416,8 @@ fn non_external_named_range_still_uses_general_synthesis() {
                 Box::new(MachineTerm::constant(1)),
             )),
             Box::new(MachineTerm::Variable(Variable(100_001))),
-        ),
+        ))
+        .into(),
         wide: false,
     };
     let synthesized =
@@ -1445,7 +1451,7 @@ fn strlen_quantified_element_range_requirement_round_trips() {
         sort: Sort::ProgramInt32,
         body: Box::new(Proposition::Implies(
             Box::new(Proposition::And(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
@@ -1454,7 +1460,7 @@ fn strlen_quantified_element_range_requirement_round_trips() {
                     },
                     true,
                 )),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
@@ -1562,7 +1568,7 @@ fn external_element_range_requirement(
                 )),
             ),
         },
-        bytes: binary_node!(
+        bytes: (binary_node!(
             Int32,
             Multiply,
             Box::new(binary_node!(
@@ -1572,7 +1578,8 @@ fn external_element_range_requirement(
                 Box::new(start)
             )),
             Box::new(MachineTerm::constant(width)),
-        ),
+        ))
+        .into(),
         wide: false,
     }
 }
@@ -1758,7 +1765,7 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
     else {
         panic!("the folded range must remain a memory-viewability requirement");
     };
-    assert_eq!(bytes, MachineTerm::constant(20));
+    assert_eq!(bytes.native_compat(), &MachineTerm::constant(20));
     assert_eq!(
         base.offset,
         AddressOffset::Add(
@@ -2005,7 +2012,7 @@ fn nested_propositions_synthesize_with_small_frames_and_linear_work() {
         .spawn(|| {
             let state = ExecutionState::new();
             let atom = || {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -2092,7 +2099,7 @@ fn load_defining_equation_round_trips() {
     };
     let defining_load =
         crate::kernel::canonical_form_of_load(memory.into_shared_memory(), *address, kind);
-    let requirement = Proposition::ConditionIs(
+    let requirement = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2137,7 +2144,7 @@ fn load_defining_equation_uses_entry_state() {
         "result",
         ProgramValue::Int32(MachineTerm::Variable(variable)),
     );
-    let requirement = Proposition::ConditionIs(
+    let requirement = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2205,7 +2212,7 @@ fn load_defining_equation_uses_saved_state() {
             .with_block("load-definition-saved", 4)
             .store(pointer, int32(2)),
     );
-    let requirement = Proposition::ConditionIs(
+    let requirement = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2278,7 +2285,7 @@ fn example_load_defining_requirement(
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
     (
         state,
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2344,7 +2351,7 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
         base: AddressBase::Concrete("owned-string:wrong-retained_state".into()),
         offset: AddressOffset::Constant(4),
     };
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2352,11 +2359,11 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
             right: _,
         },
         true,
-    ) = &requirement
+    )) = (&requirement).condition_native()
     else {
         unreachable!()
     };
-    let wrong_pointer_requirement = Proposition::ConditionIs(
+    let wrong_pointer_requirement = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2380,7 +2387,7 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
         .is_none()
     );
 
-    let wrong_epoch = Proposition::ConditionIs(
+    let wrong_epoch = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2400,7 +2407,7 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
         synthesize_surface_proposition(&wrong_epoch, ParameterBinding::default(), &state).is_none()
     );
 
-    let unresolvable = Proposition::ConditionIs(
+    let unresolvable = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2439,7 +2446,7 @@ fn actual_struct_field_load_equation(
         crate::kernel::LoadKind::Int32,
     );
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
-    let requirement = Proposition::ConditionIs(
+    let requirement = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2596,7 +2603,7 @@ fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
 #[test]
 fn constant_integer_domain_requirements_round_trip() {
     for (condition, truth) in [(false, false), (false, true), (true, false), (true, true)] {
-        let requirement = Proposition::ConditionIs(ConditionTerm::Constant(condition), truth);
+        let requirement = Proposition::condition_is(ConditionTerm::Constant(condition), truth);
         let state = ExecutionState::new();
         let surface =
             synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
@@ -2628,7 +2635,7 @@ fn strlen_existential_guard_round_trips_without_duplicate_guard() {
                 &MachineTerm::Variable(variable),
                 &MachineTerm::constant(1),
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -2671,7 +2678,7 @@ fn strlen_guard_is_retained_when_the_sibling_does_not_regenerate_it() {
                 &MachineTerm::Variable(variable),
                 &MachineTerm::constant(1),
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
@@ -2704,7 +2711,7 @@ fn strlen_guard_is_retained_when_the_sibling_does_not_regenerate_it() {
 fn strlen_guard_prefix_synthesis_scales_linearly_and_fails_closed() {
     fn requirement(guard_count: usize) -> Proposition {
         let variable = Variable(1);
-        let guard = Proposition::ConditionIs(
+        let guard = Proposition::condition_is(
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
@@ -2713,7 +2720,7 @@ fn strlen_guard_prefix_synthesis_scales_linearly_and_fails_closed() {
             },
             false,
         );
-        let comparison = Proposition::ConditionIs(
+        let comparison = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -2938,7 +2945,7 @@ fn unsigned_comparison_is_spelled_over_uint32_operands() {
         ),
     ] {
         for value in [true, false] {
-            let fact = Proposition::ConditionIs(condition.clone(), value);
+            let fact = Proposition::condition_is(condition.clone(), value);
             let synthesized =
                 synthesize_surface_proposition(&fact, ParameterBinding::default(), &state)
                     .expect("an unsigned comparison over a uint32 local is spellable");
@@ -2956,7 +2963,7 @@ fn unsigned_comparison_is_spelled_over_uint32_operands() {
     }
     let signed = ExecutionState::new().with_local("y", ProgramValue::Int32(x.clone()));
     // The signed local's unsigned reading is σ, a node of its own.
-    let fact = Proposition::ConditionIs(
+    let fact = Proposition::condition_is(
         ConditionTerm::unsigned_less_than(
             MachineTerm::sign_cast32(MachineIntegerType::Int32, MachineIntegerType::UInt32, x),
             MachineTerm::constant(4),
@@ -3012,7 +3019,7 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
         ConditionTerm::unsigned_less_equal(unsigned(x), quotient),
     ] {
         for polarity in [true, false] {
-            let fact = Proposition::ConditionIs(condition.clone(), polarity);
+            let fact = Proposition::condition_is(condition.clone(), polarity);
             let surface =
                 synthesize_surface_proposition(&fact, ParameterBinding::default(), &state).unwrap();
             let lowered = relower_written_proposition(&surface, &state).unwrap();
@@ -3023,7 +3030,7 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
                 crate::kernel::machine_integer::comparison::comparison_view(&condition, polarity)
                     .unwrap();
             let actual = crate::kernel::machine_integer::comparison::comparison_view(
-                &lowered,
+                (&lowered).native_compat(),
                 lowered_truth,
             )
             .unwrap();
@@ -3128,7 +3135,7 @@ fn wide_memory_selectors_preserve_width_and_signedness() {
                 panic!("native order")
             };
             for truth in [true, false] {
-                let fact = Proposition::ConditionIs(condition.clone(), truth);
+                let fact = Proposition::condition_is(condition.clone(), truth);
                 let surface = synthesize_surface_proposition(
                     &fact,
                     ParameterBinding::new(
@@ -3262,8 +3269,8 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
         },
         now.clone(),
     );
-    let fact = Proposition::ConditionIs(
-        ConditionTerm::PointerEqual(Box::new(returned), Box::new(Address::null())),
+    let fact = Proposition::condition_is(
+        ConditionTerm::AddressEqual(Box::new(returned), Box::new(Address::null())),
         false,
     );
     let spelled = {
@@ -3343,7 +3350,7 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
     let mut recorded_states = RecordedStates::new();
     recorded_states.insert(point(0), holding(earlier));
     recorded_states.insert(point(1), now.clone());
-    let fact = Proposition::ConditionIs(
+    let fact = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -3487,9 +3494,14 @@ fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
     let lowered =
         relower_written_proposition_with_states(&surface, &current, &current, &retained_states)
             .unwrap();
+    // Lowering is structural: the two spellings of one allocation keep
+    // their comparison, which checking decides.
     assert_eq!(
         lowered,
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+        Proposition::condition_is(
+            ConditionTerm::AddressEqual(Box::new(first.clone()), Box::new(first.clone())),
+            true
+        )
     );
     retained_states.insert(point.clone(), state(&second));
     assert!(retained_states.allocation_result(&first).is_none());
@@ -3683,7 +3695,7 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     operator: ComparisonOperator::Equal,
                     right: right.clone(),
                 };
-                let expected = Proposition::ConditionIs(
+                let expected = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: element_format,
                         relation: CompareRelation::Equal,
@@ -3930,7 +3942,7 @@ fn mathematical_constant_goals_keep_structure_and_type() {
             ConditionTerm::IntegerGreaterEqual,
         ] {
             for truth in [false, true] {
-                let goal = Proposition::ConditionIs(
+                let goal = Proposition::condition_is(
                     constructor(left.clone().into(), right.clone().into()),
                     truth,
                 );
@@ -4121,7 +4133,7 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
         right: ContractExpression::IntegerLiteral("20".into()),
     };
     let lowered = relower_written_proposition(&claim, &state).unwrap();
-    let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) = lowered else {
+    let Some((ConditionTerm::Compare { left, .. }, true)) = lowered.condition_native() else {
         panic!("read comparison")
     };
     // Both native lowering and checker observations enter the same structural
@@ -4188,7 +4200,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
             *value
         );
         let expected = match value {
-            ProgramValue::Int32(term) => Proposition::ConditionIs(
+            ProgramValue::Int32(term) => Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: crate::kernel::MachineIntegerType::Int32,
                     relation: crate::kernel::CompareRelation::Equal,
@@ -4197,8 +4209,11 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
                 },
                 true,
             ),
-            ProgramValue::Pointer(pointer) => Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(pointer.address().clone(), pointer.address().clone()),
+            ProgramValue::Pointer(pointer) => Proposition::condition_is(
+                ConditionTerm::AddressEqual(
+                    Box::new(pointer.address().clone()),
+                    Box::new(pointer.address().clone()),
+                ),
                 true,
             ),
             _ => unreachable!(),
@@ -4326,8 +4341,10 @@ fn shared_arithmetic_raising_does_not_export_operand_trees() {
     let Proposition::ConditionIs(condition, true) = lowered else {
         panic!("comparison")
     };
-    let view =
-        crate::kernel::machine_integer::comparison::structural_comparison_view(&condition).unwrap();
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
+        (&condition).native_compat(),
+    )
+    .unwrap();
     assert_eq!(view.format, MachineIntegerType::Int32);
     assert_eq!(view.relation, crate::kernel::CompareRelation::LessEqual);
     assert_eq!(
@@ -4546,7 +4563,7 @@ fn range_fold_surface_separates_integer_and_machine_binder_ids() {
         )
         .into(),
     };
-    let proposition = Proposition::ConditionIs(
+    let proposition = Proposition::condition_is(
         ConditionTerm::integer_equal(fold, IntegerTerm::constant_i64(0)),
         true,
     );
@@ -4652,8 +4669,7 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
 #[test]
 fn common_pointer_calls_round_trip_nested_source_calls() {
     use crate::kernel::{
-        AddressBase, KernelTerm, KernelTermImport, Pointer, PureFunctionArgument,
-        SharedPointerValue,
+        AddressBase, KernelTerm, KernelTermImport, Pointer, PureFunctionArgument, SharedPointer,
     };
     let _session = crate::kernel::VerificationSession::enter();
     let declarations = "function select(p: int32*) -> int32* { p }";
@@ -4708,7 +4724,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
         // Reconstruct the same nested common roots that the producer test
         // checks, keeping inner calls as children rather than exporting them.
         fn common(pointer: &Pointer) -> KernelTerm {
-            let value = SharedPointerValue::import(pointer);
+            let value = SharedPointer::import(pointer);
             let AddressBase::PureFunctionApplication(application) = &pointer.base else {
                 return KernelTerm::shared_pointer_value(value);
             };
@@ -4795,7 +4811,7 @@ fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
             crate::kernel::LoadKind::Bits64,
         );
         let value = IntegerTerm::from_machine(format, read).unwrap();
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::IntegerLessThan(value.into(), IntegerTerm::constant_i64(1).into()),
             true,
         );
@@ -6136,7 +6152,7 @@ fn comparison_over_named_word_round_trip(
             _ => unreachable!(),
         },
     );
-    let original = Proposition::ConditionIs(
+    let original = Proposition::condition_is(
         ConditionTerm::Compare {
             format: comparison_type,
             relation: CompareRelation::LessEqual,
@@ -6163,7 +6179,7 @@ fn unsigned_comparison_over_an_unsigned_local_round_trips() {
 }
 
 fn raw_signed_nonnegative(word: MachineTerm) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
@@ -6196,7 +6212,7 @@ fn unsigned_small_bound_produces_round_tripping_signed_facts() {
         MachineIntegerType::Int32,
         word.clone(),
     );
-    let upper = Proposition::ConditionIs(
+    let upper = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
@@ -6418,12 +6434,12 @@ fn shared_pointer_comparisons_preserve_native_spelling() {
     let state = ExecutionState::new();
     let names = BTreeMap::<Variable, SurfaceBinder>::new();
     for native in [
-        ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())),
-        ConditionTerm::PointerEqual(
+        ConditionTerm::PointerEqual(Box::new(left.clone()), Box::new(right.clone())),
+        ConditionTerm::AddressEqual(
             Box::new(left.address().clone()),
             Box::new(right.address().clone()),
         ),
-        ConditionTerm::PointerEqual(Box::new(left.address().clone()), Box::new(Address::null())),
+        ConditionTerm::AddressEqual(Box::new(left.address().clone()), Box::new(Address::null())),
     ] {
         let expected = synthesize_surface_bool(&native, binding, &state, &names).unwrap();
         let root = KernelTermImport::default().condition(&native);
@@ -6481,8 +6497,8 @@ fn closed_machine_orders_round_trip_after_checked_rewrite() {
                 .unwrap()
                 .proposition()
                 .clone();
-            let Proposition::ConditionIs(condition @ ConditionTerm::Compare { .. }, true) =
-                &produced
+            let Some((condition @ ConditionTerm::Compare { .. }, true)) =
+                (&produced).condition_native()
             else {
                 panic!("retained native comparison: {produced:?}")
             };
@@ -6531,17 +6547,16 @@ fn closed_machine_order_short_circuits_undefined_right_operand() {
         panic!("requirement")
     };
     let lowered = relower_written_proposition(written, &ExecutionState::new()).unwrap();
-    assert!(matches!(
-        lowered,
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
+    assert!(
+        matches!(&lowered, condition_source_0 @ Proposition::ConditionIs(
+            _,
+            true
+        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::UInt64,
                 relation: CompareRelation::GreaterEqual,
                 ..
-            },
-            true
-        )
-    ));
+            }, _))))
+    );
 }
 
 #[test]
@@ -6566,14 +6581,14 @@ fn closed_machine_order_lowering_preserves_relations_and_truth_checking() {
                 panic!("requirement")
             };
             let lowered = relower_written_proposition(written, &state).unwrap();
-            let Proposition::ConditionIs(
+            let Some((
                 condition @ ConditionTerm::Compare {
                     format: actual,
                     relation: actual_relation,
                     ..
                 },
                 true,
-            ) = &lowered
+            )) = (&lowered).condition_native()
             else {
                 panic!("{spelling} {operator}: {lowered:?}")
             };
@@ -6670,7 +6685,7 @@ fn machine_arithmetic_round_trips_after_checked_rewrite() {
                 };
                 assert_eq!(
                     PureFactContext::new()
-                        .decide(condition)
+                        .decide(condition.native_compat())
                         .map(|value| value == *truth),
                     Some(value <= bound)
                 );
@@ -6716,7 +6731,7 @@ fn assert_narrow_comparison_round_trip(
     state: &ExecutionState,
     lower: impl Fn(&ClickProposition) -> Proposition,
 ) {
-    let Proposition::ConditionIs(ConditionTerm::Compare { format: actual, .. }, _) = proposition
+    let Some((ConditionTerm::Compare { format: actual, .. }, _)) = proposition.condition_native()
     else {
         panic!("expected a retained {format:?} comparison: {proposition:?}")
     };
@@ -6812,7 +6827,7 @@ fn narrow_comparison_literals_preserve_format_polarity_and_builtin_truth() {
                     panic!()
                 };
                 for truth in [true, false] {
-                    let proposition = Proposition::ConditionIs(condition.clone(), truth);
+                    let proposition = Proposition::condition_is(condition.clone(), truth);
                     assert_narrow_comparison_round_trip(&proposition, format, &state, |p| {
                         relower_written_proposition(p, &state).unwrap()
                     });
@@ -6855,7 +6870,7 @@ fn narrow_symbolic_comparisons_keep_their_existing_normal_forms() {
                 panic!()
             };
             for truth in [true, false] {
-                let proposition = Proposition::ConditionIs(condition.clone(), truth);
+                let proposition = Proposition::condition_is(condition.clone(), truth);
                 assert_narrow_comparison_round_trip(&proposition, format, &state, |p| {
                     relower_written_proposition(p, &state).unwrap()
                 });
@@ -6898,8 +6913,10 @@ fn pthread_handle_words_use_c_names_and_retained_states() {
     let Proposition::ConditionIs(condition, true) = lowered else {
         panic!("comparison")
     };
-    let view =
-        crate::kernel::machine_integer::comparison::structural_comparison_view(&condition).unwrap();
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
+        (&condition).native_compat(),
+    )
+    .unwrap();
     assert_eq!(view.format, MachineIntegerType::Int64);
     assert_eq!(
         crate::kernel::KernelTerm::retained_machine_operand(
@@ -6951,7 +6968,7 @@ fn check_int64_literal_comparison_round_trips(values: &[i64]) {
                     panic!("expected a comparison")
                 };
                 for truth in [true, false] {
-                    let produced = Proposition::ConditionIs(condition.clone(), truth);
+                    let produced = Proposition::condition_is(condition.clone(), truth);
                     let raised = synthesize_surface_proposition(
                         &produced,
                         ParameterBinding::default(),
@@ -7147,7 +7164,7 @@ impl<'a> ConditionalRoundTrip<'a> {
             panic!("expected a comparison");
         };
         for truth in [true, false] {
-            let produced = Proposition::ConditionIs(condition.clone(), truth);
+            let produced = Proposition::condition_is(condition.clone(), truth);
             let raised =
                 synthesize_surface_proposition(&produced, ParameterBinding::default(), &self.state)
                     .unwrap();
@@ -7352,14 +7369,14 @@ fn closed_machine_equality_lowering_retains_its_comparison() {
                 panic!("requirement")
             };
             let lowered = relower_written_proposition(written, &state).unwrap();
-            let Proposition::ConditionIs(
+            let Some((
                 condition @ ConditionTerm::Compare {
                     format: actual,
                     relation: CompareRelation::Equal,
                     ..
                 },
                 actual_held,
-            ) = &lowered
+            )) = (&lowered).condition_native()
             else {
                 panic!("{source}: {lowered:?}")
             };
@@ -7393,7 +7410,7 @@ fn a_constant_condition_raises_as_a_bool_literal_that_lowers_back() {
     let state = ExecutionState::new();
     for constant in [false, true] {
         for held in [false, true] {
-            let kernel = Proposition::ConditionIs(ConditionTerm::Constant(constant), held);
+            let kernel = Proposition::condition_is(ConditionTerm::Constant(constant), held);
             let raised =
                 synthesize_surface_proposition(&kernel, ParameterBinding::default(), &state)
                     .unwrap();
@@ -7443,8 +7460,8 @@ fn closed_bool_literal_comparison_lowering_retains_its_comparison() {
             panic!("requirement")
         };
         let lowered = relower_written_proposition(written, &state).unwrap();
-        let Proposition::ConditionIs(condition @ ConditionTerm::BoolEqual(..), actual_held) =
-            &lowered
+        let Some((condition @ ConditionTerm::BoolEqual(..), actual_held)) =
+            (&lowered).condition_native()
         else {
             panic!("{source}: {lowered:?}")
         };
@@ -7569,8 +7586,7 @@ fn intrinsically_decided_bitwise_guards_retain_their_conditionals() {
             };
             let original = relower_written_proposition(written, &state).unwrap();
             assert!(
-                matches!(&original, Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true)
-                if matches!(left.as_ref(), MachineTerm::If { .. })),
+                matches!(&original, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), MachineTerm::If { .. })))),
                 "{text}: {original:?}"
             );
             let raised =
@@ -7629,11 +7645,13 @@ fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
                 panic!()
             };
             let native = relower_written_proposition(written, &state).unwrap();
-            let Proposition::ConditionIs(ConditionTerm::Compare { left, right, .. }, true) = native
+            let Some((ConditionTerm::Compare { left, right, .. }, true)) =
+                native.condition_native()
             else {
                 panic!("native bitwise comparison");
             };
-            let left = crate::kernel::IntegerTerm::from_machine(format, *left).unwrap();
+            let left =
+                crate::kernel::IntegerTerm::from_machine(format, left.as_ref().clone()).unwrap();
             // Same-format observations canonically use a native comparison.
             // A mixed-format observation pair must retain its Integer form.
             let other_format = if format.format().bits() == 32 {
@@ -7641,7 +7659,9 @@ fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
             } else {
                 T::Int32
             };
-            let right = crate::kernel::IntegerTerm::from_machine(other_format, *right).unwrap();
+            let right =
+                crate::kernel::IntegerTerm::from_machine(other_format, right.as_ref().clone())
+                    .unwrap();
             let state = state.clone().with_local(
                 "y",
                 other_format.value_from_term(MachineTerm::Variable(Variable(999709))),
@@ -7651,7 +7671,7 @@ fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
                 ConditionTerm::integer_equal(left, right),
             ] {
                 for truth in [true, false] {
-                    let original = Proposition::ConditionIs(condition.clone(), truth);
+                    let original = Proposition::condition_is(condition.clone(), truth);
                     let raised = synthesize_surface_proposition(
                         &original,
                         ParameterBinding::default(),
@@ -7776,6 +7796,34 @@ fn wrapping_add_subtract_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+fn literal_divisors_in_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling, boundary) in [
+        (T::UInt32, "uint32", u64::from(u32::MAX)),
+        (T::UInt64, "uint64", u64::MAX),
+    ] {
+        for (op, value) in ["/", "%"]
+            .into_iter()
+            .flat_map(|op| [3, 7, boundary].map(|value| (op, value)))
+        {
+            let equality = format!("x == (z {op} ({value} as {spelling}))");
+            for reverse in [false, true] {
+                for guard in ["flag", "not flag"] {
+                    check_conditional_round_trip_using_equality(
+                        format, spelling, guard, reverse, &equality,
+                    );
+                }
+                for guard in ["x < y", "x == y", "y <= x", "y != x"] {
+                    check_conditional_round_trip_with_arm(
+                        format, spelling, guard, reverse, &equality, "z",
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn wrapping_product_in_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling, boundary) in [
@@ -7806,7 +7854,7 @@ fn wrapping_product_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
-fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
+fn a_reflexive_pointer_equality_raises_as_contract_equality_that_lowers_back() {
     use crate::kernel::Pointer;
     let _session = crate::kernel::VerificationSession::enter();
     let node = Pointer::new(
@@ -7822,19 +7870,29 @@ fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
         node.clone(),
     ))];
     let binding = ParameterBinding::new(&parameters, &arguments);
-    let state = ExecutionState::new();
-    let equality = Proposition::ConditionIs(
-        ConditionTerm::PointerEqual(
-            Box::new(node.address().clone()),
-            Box::new(node.address().clone()),
-        ),
-        true,
-    );
-    let surface = synthesize_surface_proposition(&equality, binding, &state).unwrap();
-    assert_eq!(
-        crate::surface::printing::source_click_proposition(&surface),
-        "address(node) == address(node)"
-    );
+    let state = ExecutionState::new().with_local("node", ProgramValue::Pointer(node.clone()));
+    // A fold of `fact p == identity` with both sides `node` owes this
+    // pointer equality. It raises as contract `==`, not as the weaker
+    // address-word equality, and lowering keeps its node.
+    for (held, expected) in [(true, "node == node"), (false, "node != node")] {
+        let equality = Proposition::condition_is(
+            ConditionTerm::AddressEqual(
+                Box::new(node.address().clone()),
+                Box::new(node.address().clone()),
+            ),
+            held,
+        );
+        let surface = synthesize_surface_proposition(&equality, binding, &state).unwrap();
+        assert_eq!(
+            crate::surface::printing::source_click_proposition(&surface),
+            expected
+        );
+        assert_eq!(
+            relower_written_proposition(&surface, &state).unwrap(),
+            equality,
+            "{expected}"
+        );
+    }
 }
 
 #[test]
@@ -7918,4 +7976,88 @@ fn call_capture_names_the_selected_result_at_its_declared_type() {
 
     points.record_call_result(0, Some(ProgramValue::UInt32(term.clone())));
     assert_ne!(raise(&points, &term, &state), Some(expected));
+}
+
+#[test]
+fn widening_casts_in_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (destination, spelling) in [(T::Int64, "int64"), (T::UInt64, "uint64")] {
+        for source in [T::Int32, T::UInt32] {
+            let mut fixture = ConditionalRoundTrip::new(destination, spelling);
+            fixture.state = fixture.state.with_local(
+                "w",
+                source.value_from_term(MachineTerm::Variable(Variable(999712))),
+            );
+            let equality = fixture.lower(&format!("x == (w as {spelling})"));
+            for reverse in [false, true] {
+                for (guard, arm) in [
+                    ("flag", "x"),
+                    ("not flag", "x"),
+                    ("x < y", "z"),
+                    ("x == y", "z"),
+                    ("y <= x", "z"),
+                    ("y != x", "z"),
+                ] {
+                    fixture.check(
+                        &fixture.goal(guard, reverse, arm),
+                        &equality,
+                        guard,
+                        reverse,
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn low_word_casts_in_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (destination, spelling) in [(T::Int32, "int32"), (T::UInt32, "uint32")] {
+        for source in [T::Int64, T::UInt64] {
+            let mut fixture = ConditionalRoundTrip::new(destination, spelling);
+            fixture.state = fixture.state.with_local(
+                "w",
+                source.value_from_term(MachineTerm::Variable(Variable(999712))),
+            );
+            let equality = fixture.lower(&format!("x == (w as {spelling})"));
+            for reverse in [false, true] {
+                for (guard, arm) in [
+                    ("flag", "x"),
+                    ("not flag", "x"),
+                    ("x < y", "z"),
+                    ("x == y", "z"),
+                    ("y <= x", "z"),
+                    ("y != x", "z"),
+                ] {
+                    fixture.check(
+                        &fixture.goal(guard, reverse, arm),
+                        &equality,
+                        guard,
+                        reverse,
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn recorded_volatile_read_slots_retain_the_producer_value() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let root = crate::kernel::KernelTerm::variable(
+        crate::kernel::KernelType::Program(ProgramType::Float32),
+        Variable(10993674),
+    );
+    let mut points = RecordedStates::new();
+    points.record_read_retained_event_values(3, std::iter::once(root.clone().into()));
+    assert_eq!(
+        points.read_event_results.get(&(3, 0)).unwrap().root(),
+        Some(&root)
+    );
+    let branch = points.clone();
+    assert_eq!(
+        branch.read_event_results.get(&(3, 0)).unwrap().root(),
+        Some(&root)
+    );
 }

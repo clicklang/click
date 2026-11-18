@@ -15,8 +15,8 @@ pub(super) fn apply_nonzero(
         ConditionTerm::signed_division_exception_tests(format, &left, &right);
     let safe = Proposition::signed_division_exclusion(format, &left, &right);
     let exceptional = Proposition::And(
-        Box::new(Proposition::ConditionIs(minimum.clone(), true)),
-        Box::new(Proposition::ConditionIs(minus_one.clone(), true)),
+        Box::new(Proposition::condition_is(minimum.clone(), true)),
+        Box::new(Proposition::condition_is(minus_one.clone(), true)),
     );
     let known = if assumptions.proves_exact(&safe) {
         Some(false)
@@ -102,8 +102,8 @@ mod tests {
             &right,
         );
         let exceptional = Proposition::And(
-            Box::new(Proposition::ConditionIs(minimum, true)),
-            Box::new(Proposition::ConditionIs(minus_one, true)),
+            Box::new(Proposition::condition_is(minimum, true)),
+            Box::new(Proposition::condition_is(minus_one, true)),
         );
         let paths = apply_nonzero(
             MachineIntegerType::Int32,

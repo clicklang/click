@@ -29,8 +29,8 @@ fn pure_pointer_dag_substitution_and_capture_collection_scale_linearly() {
             assert_eq!(variables.program_values, BTreeSet::from([source]));
             let mut captured = BTreeSet::new();
             crate::kernel::prelude::collect_proposition_capture_variables(
-                &Proposition::ConditionIs(
-                    ConditionTerm::PointerEqual(Box::new(input.clone()), Box::new(input.clone())),
+                &Proposition::condition_is(
+                    ConditionTerm::AddressEqual(Box::new(input.clone()), Box::new(input.clone())),
                     true,
                 ),
                 &mut captured,
@@ -234,7 +234,7 @@ fn integer_address_rewrite_visits_a_shared_pointer_dag_once() {
     let replacement = MachineTerm::uint64_constant(1);
     let mut costs = Vec::new();
     for depth in [8, 16, 32] {
-        let mut input = Address::integer_address(MachineTerm::uint64_bitwise_and(
+        let mut input = Address::from_integer_address(MachineTerm::uint64_bitwise_and(
             word.clone(),
             MachineTerm::uint64_constant(!3),
         ));
@@ -285,7 +285,7 @@ fn integer_address_rewrite_ignores_unrelated_interned_applications() {
         // Compare cold queries at each size, and repeated queries separately.
         // Typed application keys populate the session's observation cache.
         let _session = crate::kernel::VerificationSession::enter();
-        let input = Address::integer_address(MachineTerm::uint64_bitwise_and(
+        let input = Address::from_integer_address(MachineTerm::uint64_bitwise_and(
             word.clone(),
             MachineTerm::uint64_constant(!3),
         ));

@@ -2171,14 +2171,15 @@ private:
       return Json(std::move(result));
     }
     if (const auto *returned = llvm::dyn_cast<clang::ReturnStmt>(statement)) {
-      if (returned->getRetValue() == nullptr) {
-        fail(returned->getReturnLoc(),
-             "the first C++ slice requires an int return value");
-        return std::nullopt;
-      }
       llvm::json::Object result;
-      const auto *reference_return = function->getReturnType()->getAs<clang::LValueReferenceType>();
-      if (function->getReturnType()->isRecordType() &&
+      if (returned->getRetValue() == nullptr) {
+        if (!function->getReturnType()->isVoidType() ||
+            llvm::isa<clang::CXXConstructorDecl, clang::CXXDestructorDecl>(function)) {
+          fail(returned->getReturnLoc(), "C++ value-free returns require an ordinary void function");
+          return std::nullopt;
+        }
+        result["kind"] = "return_void";
+      } else if (function->getReturnType()->isRecordType() &&
           archetype_name(function->getReturnType()) == nullptr) {
         const auto *operand = returned->getRetValue()->IgnoreParenImpCasts();
         if (const auto *cast = llvm::dyn_cast<clang::CXXFunctionalCastExpr>(operand);
@@ -2263,6 +2264,7 @@ private:
         }
         result["value_type"] = std::move(*value_type);
       } else {
+        const auto *reference_return = function->getReturnType()->getAs<clang::LValueReferenceType>();
         auto scalar_call = lower_scalar_call_source(returned->getRetValue());
         if (!scalar_call) return std::nullopt;
         const auto *call = scalar_call->call;
@@ -3192,6 +3194,26 @@ private:
     return false;
   }
 
+  const clang::CallExpr *nested_argument_call(const clang::Expr *argument) const {
+    argument = argument->IgnoreParens();
+    const auto *defaulted = llvm::dyn_cast<clang::CXXDefaultArgExpr>(argument);
+    if (defaulted == nullptr) return llvm::dyn_cast<clang::CallExpr>(argument);
+
+    // Keep constant defaults on the existing constant-evaluation path.
+    // Select only a direct runtime call with no argument subexpressions.
+    const auto *call = llvm::dyn_cast<clang::CallExpr>(defaulted->getExpr()->IgnoreParens());
+    if (call == nullptr || call->getNumArgs() != 0) return nullptr;
+    const auto *callee = call->getDirectCallee();
+    const auto *prototype = callee == nullptr ? nullptr :
+        callee->getType()->getAs<clang::FunctionProtoType>();
+    if (prototype == nullptr || !prototype->isNothrow() ||
+        callee->isConstexpr() || callee->getBuiltinID() != 0 ||
+        !supported_integer_type(call->getType()))
+      return nullptr;
+    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(callee);
+    return method == nullptr || method->isStatic() ? call : nullptr;
+  }
+
   bool scalar_only_call(const clang::CallExpr *call) const {
     const auto *callee = call->getDirectCallee();
     if (callee == nullptr) return false;
@@ -3201,7 +3223,7 @@ private:
       if (!parameter->getType()->isIntegerType()) return false;
     for (const auto *argument : call->arguments()) {
       if (!argument->getType()->isIntegerType()) return false;
-      if (const auto *nested = llvm::dyn_cast<clang::CallExpr>(argument->IgnoreParens()))
+      if (const auto *nested = nested_argument_call(argument))
         if (!is_numeric_limits_max_call(nested)) return false;
     }
     return true;
@@ -3391,7 +3413,8 @@ private:
   std::optional<LoweredCall>
   lower_call_operation(const clang::CallExpr *call,
                        const clang::FunctionDecl *caller,
-                       bool allow_nested = false) {
+                       bool allow_nested = false,
+                       clang::SourceLocation default_use = {}) {
     const clang::FunctionDecl *callee = call->getDirectCallee();
     // A value of an abstract type argument is passed only to a method of a
     // template at abstract arguments, which is that template's method at
@@ -3491,8 +3514,7 @@ private:
       unsigned nested_calls = 0;
       for (unsigned index = argument_offset; index < call->getNumArgs();
            ++index) {
-        const auto *nested = llvm::dyn_cast<clang::CallExpr>(
-            call->getArg(index)->IgnoreParens());
+        const auto *nested = nested_argument_call(call->getArg(index));
         if (nested != nullptr && nested->getDirectCallee() == nullptr) {
           fail(nested->getExprLoc(),
                "a call through a function pointer is not admitted as a call argument");
@@ -3510,15 +3532,14 @@ private:
       if (nested_calls == 1) {
         bool isolated = false;
         for (unsigned index = argument_offset; index < call->getNumArgs(); ++index) {
-          const auto *nested = llvm::dyn_cast<clang::CallExpr>(call->getArg(index)->IgnoreParens());
+          const auto *nested = nested_argument_call(call->getArg(index));
           if (nested != nullptr && !is_numeric_limits_max_call(nested))
             isolated = scalar_only_call(nested);
         }
         for (unsigned index = argument_offset; index < call->getNumArgs();
              ++index) {
           const auto *argument = call->getArg(index);
-          const auto *nested =
-              llvm::dyn_cast<clang::CallExpr>(argument->IgnoreParens());
+          const auto *nested = nested_argument_call(argument);
           if (nested != nullptr && !is_numeric_limits_max_call(nested))
             continue;
           if (!stable_scalar_argument(argument, caller) &&
@@ -3544,8 +3565,7 @@ private:
     }
     for (unsigned index = 0; index < definition->getNumParams(); ++index) {
       const auto *source_argument = call->getArg(index + argument_offset);
-      const auto *nested =
-          llvm::dyn_cast<clang::CallExpr>(source_argument->IgnoreParens());
+      const auto *nested = nested_argument_call(source_argument);
       std::optional<Json> argument;
       if (allow_nested && nested != nullptr &&
           !is_numeric_limits_max_call(nested)) {
@@ -3558,8 +3578,21 @@ private:
                "argument to preserve evaluation order");
           return std::nullopt;
         }
-        auto operation = lower_call_operation(nested, caller, true);
-        auto value_type = lower_type(nested->getType(), nested->getExprLoc());
+        clang::SourceLocation use_location;
+        if (const auto *defaulted = llvm::dyn_cast<clang::CXXDefaultArgExpr>(
+                source_argument->IgnoreParens())) {
+          use_location = defaulted->getUsedLocation();
+          const auto source = executable_source(
+              source_manager_.getSpellingLoc(nested->getExprLoc()));
+          if (!source) {
+            fail(use_location, "C++ runtime default arguments require a selected or dependency source");
+            return std::nullopt;
+          }
+          if (*source != logical_source_) dependency_sources_.insert(*source);
+        }
+        auto operation = lower_call_operation(nested, caller, true, use_location);
+        auto value_type = lower_type(nested->getType(),
+                                     use_location.isValid() ? use_location : nested->getExprLoc());
         if (!operation || !value_type)
           return std::nullopt;
         llvm::json::Object value;
@@ -3587,13 +3620,15 @@ private:
     reference["declaration_id"] = declaration_id(definition);
     reference["name"] =
         method != nullptr ? method_name(method) : function_name(definition);
-    reference["span"] = span(call->getCallee()->getSourceRange());
+    reference["span"] = span(default_use.isValid() ? clang::SourceRange(default_use)
+                                                   : call->getCallee()->getSourceRange());
     // A qualified call of a virtual method runs that method, whatever the
     // receiver's dynamic type.
     if (qualified && method != nullptr && method->isVirtual())
       reference["qualified"] = true;
 
-    Json call_span = span(call->getSourceRange());
+    Json call_span = span(default_use.isValid() ? clang::SourceRange(default_use)
+                                                : call->getSourceRange());
     if (!state_.error.empty()) {
       return std::nullopt;
     }

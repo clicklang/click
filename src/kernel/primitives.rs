@@ -1,7 +1,7 @@
 use super::api::{
     int8, int16, int32, normalize_exact_memory_loads_in_pointer_offset, uint8, uint16, uint32,
 };
-use super::memory_history::{AtomicMemoryLoadEqualityEvidence, PointerOffsetEqualityEvidence};
+use super::memory_history::{AddressOffsetEqualityEvidence, AtomicMemoryLoadEqualityEvidence};
 use super::reasoning::{
     collect_or_cases, instantiate_range_fold_step, memory_states_proven_equal_at_pointer,
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
@@ -89,7 +89,7 @@ pub(crate) use kernel_term::{
 };
 // Prepared rewrite interface for the following scoped consumers.
 pub(crate) use kernel_term::{
-    KernelAddressOffset, KernelMatchArm, SharedAddress, SharedAddressOffset, SharedPointerValue,
+    KernelAddressOffset, KernelMatchArm, SharedAddress, SharedAddressOffset, SharedPointer,
 };
 pub use kernel_term::{
     KernelFloatType, KernelIntegerOperator, KernelLegacyTerm, KernelMachineLiteral, KernelTerm,
@@ -158,6 +158,8 @@ mod composition_member_index;
 mod memory_equality_index;
 mod sequence_values;
 pub use sequence_values::{SequenceValues, SequenceValuesIter};
+mod descriptor_values;
+pub use descriptor_values::{StoredConditionTerm, StoredMachineTerm, StoredProgramValue};
 mod resource_fields;
 pub(crate) use resource_fields::StoredResourceField;
 pub use resource_fields::{ResourceFieldValue, ResourceFieldValues};
@@ -826,7 +828,7 @@ pub enum MachineTerm {
     /// Checked tag identities can recover address bits, never pointer bounds.
     /// The annotation retains the source object class for a later cast and
     /// does not participate in equality, ordering, or hashing.
-    PointerAddress(Box<Address>, AddressObjectClass),
+    IntegerAddress(Box<Address>, AddressObjectClass),
     IntegerToMachine {
         value: SharedIntegerTerm,
         destination: MachineIntegerType,
@@ -982,8 +984,8 @@ impl std::fmt::Debug for MachineTerm {
                 .field(pointer)
                 .field(kind)
                 .finish(),
-            Self::PointerAddress(pointer, class) => f
-                .debug_tuple("PointerAddress")
+            Self::IntegerAddress(pointer, class) => f
+                .debug_tuple("IntegerAddress")
                 .field(pointer)
                 .field(class)
                 .finish(),
@@ -1059,6 +1061,17 @@ pub enum AddressOffset {
 }
 
 impl AddressOffset {
+    /// A small address index can carry arbitrarily deep *retained* operands.
+    /// Its offset structure itself must stay bounded for source publication.
+    pub(crate) fn is_shallow(&self) -> bool {
+        match self {
+            Self::Add(left, right) => {
+                !matches!(**left, Self::Add(..)) && !matches!(**right, Self::Add(..))
+            }
+            _ => true,
+        }
+    }
+
     /// Preserve the written index node, including a zero scale; the smart
     /// `scale_int32` constructor may separately fold literal displacements.
     pub(crate) fn scaled_int32_node(value: MachineTerm, byte_width: i64) -> Self {
@@ -1275,10 +1288,10 @@ pub enum ConditionTerm {
     },
     Float32(FloatCondition),
     Float64(FloatCondition),
-    PointerOffsetEqual(Box<AddressOffset>, Box<AddressOffset>),
-    PointerEqual(Box<Address>, Box<Address>),
+    AddressOffsetEqual(Box<AddressOffset>, Box<AddressOffset>),
+    AddressEqual(Box<Address>, Box<Address>),
     /// Specification pointer equality includes the designated object and bounds.
-    PointerValueEqual(Box<Pointer>, Box<Pointer>),
+    PointerEqual(Box<Pointer>, Box<Pointer>),
     IntegerLessThan(SharedIntegerTerm, SharedIntegerTerm),
     IntegerLessEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerGreaterThan(SharedIntegerTerm, SharedIntegerTerm),
@@ -1337,9 +1350,9 @@ enum ConditionIdentity<'a> {
     },
     Float32(&'a FloatCondition),
     Float64(&'a FloatCondition),
-    PointerOffsetEqual(&'a AddressOffset, &'a AddressOffset),
-    PointerEqual(&'a Address, &'a Address),
-    PointerValueEqual(&'a Pointer, &'a Pointer),
+    AddressOffsetEqual(&'a AddressOffset, &'a AddressOffset),
+    AddressEqual(&'a Address, &'a Address),
+    PointerEqual(&'a Pointer, &'a Pointer),
     IntegerLessThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerLessEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerGreaterThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
@@ -1529,9 +1542,9 @@ impl ConditionTerm {
             },
             Self::Float32(condition) => I::Float32(condition),
             Self::Float64(condition) => I::Float64(condition),
-            Self::PointerOffsetEqual(left, right) => I::PointerOffsetEqual(left, right),
+            Self::AddressOffsetEqual(left, right) => I::AddressOffsetEqual(left, right),
+            Self::AddressEqual(left, right) => I::AddressEqual(left, right),
             Self::PointerEqual(left, right) => I::PointerEqual(left, right),
-            Self::PointerValueEqual(left, right) => I::PointerValueEqual(left, right),
             // An Integer comparison is one fact with the comparison of its
             // sides read through their observations' value relations
             // (rule W): `to_integer(x as int32) <= 7` and
@@ -5978,8 +5991,8 @@ pub struct MemoryRange {
     /// and [`MemoryRange::end`], which hold only for an `Int32` range, or
     /// through [`MemoryRange::wide_bounds`]: a term carries no width, so a
     /// wide bound read as a signed 32-bit index is a different number.
-    start_bound: MachineTerm,
-    end_bound: MachineTerm,
+    start_bound: StoredMachineTerm,
+    end_bound: StoredMachineTerm,
     /// The size in bytes of one logical element in `start..end`.
     ///
     /// Resource ranges remain expressed in logical element coordinates, but
@@ -6003,8 +6016,8 @@ impl MemoryRange {
         &Address,
         &Address,
         Option<&Address>,
-        &MachineTerm,
-        &MachineTerm,
+        &StoredMachineTerm,
+        &StoredMachineTerm,
         u32,
         RangeIndexKind,
     ) {
@@ -6674,6 +6687,9 @@ pub struct FunctionContractInterface {
     pub(crate) contract_claims: Vec<FunctionContractClaim>,
     pub(crate) opaque_contract_supported: bool,
     pub(crate) composite_resource_definitions: Vec<CompositeResourceDefinition>,
+    /// Shape summary built with the registered definitions. Substitution
+    /// changes operands without changing guard presence or recursion.
+    pub(crate) composite_definitions_need_entry_cases: bool,
     /// Sorted names of the abstract families that are not `authorized`.
     /// Abstract families have no definition here, so only a name on this list
     /// is known to take no part in population accounting.
@@ -9037,7 +9053,7 @@ pub enum AllocationSizeKind {
 /// `UInt64` size hashes and prints its kind as well.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct AllocationSize {
-    bytes: MachineTerm,
+    bytes: StoredMachineTerm,
     kind: AllocationSizeKind,
 }
 
@@ -9062,8 +9078,29 @@ impl std::fmt::Debug for AllocationSize {
 }
 
 impl AllocationSize {
+    pub(crate) fn from_value(value: crate::kernel::ExecutionValue) -> Option<Self> {
+        let kind = match value.program_type() {
+            ProgramType::Int32 => AllocationSizeKind::Int32,
+            ProgramType::UInt64 => AllocationSizeKind::UInt64,
+            _ => return None,
+        };
+        Some(Self {
+            bytes: StoredMachineTerm::from_value(value)?,
+            kind,
+        })
+    }
+
     pub fn new(bytes: MachineTerm, kind: AllocationSizeKind) -> Self {
-        Self { bytes, kind }
+        Self {
+            bytes: StoredMachineTerm::new(
+                match kind {
+                    AllocationSizeKind::Int32 => MachineIntegerType::Int32,
+                    AllocationSizeKind::UInt64 => MachineIntegerType::UInt64,
+                },
+                bytes,
+            ),
+            kind,
+        }
     }
 
     /// A 32-bit byte count in `0..=INT32_MAX`.
@@ -9072,7 +9109,7 @@ impl AllocationSize {
     }
 
     pub fn bytes(&self) -> &MachineTerm {
-        &self.bytes
+        self.bytes.native_compat()
     }
 
     pub fn kind(&self) -> AllocationSizeKind {
@@ -9081,25 +9118,16 @@ impl AllocationSize {
 
     /// The same kind of size over rewritten bytes.
     pub(crate) fn map_bytes(&self, rewrite: impl FnOnce(&MachineTerm) -> MachineTerm) -> Self {
-        Self::new(rewrite(&self.bytes), self.kind)
+        // Equal observations may have different producer payloads. Keep the
+        // native mapper's exact result at this compatibility boundary.
+        Self::new(rewrite(self.bytes.native_compat()), self.kind)
     }
 
     /// The `allocation` token's byte-count argument: an `int32` or a `uint64`.
     pub(crate) fn token_value(&self) -> ProgramValue {
         match self.kind {
-            AllocationSizeKind::Int32 => ProgramValue::Int32(self.bytes.clone()),
-            AllocationSizeKind::UInt64 => ProgramValue::UInt64(self.bytes.clone()),
-        }
-    }
-
-    /// The size an `allocation` token's byte-count argument states.
-    pub(crate) fn from_token_value(value: &ProgramValue) -> Option<Self> {
-        match value {
-            ProgramValue::Int32(bytes) => Some(Self::int32(bytes.clone())),
-            ProgramValue::UInt64(bytes) => {
-                Some(Self::new(bytes.clone(), AllocationSizeKind::UInt64))
-            }
-            _ => None,
+            AllocationSizeKind::Int32 => ProgramValue::Int32(self.bytes.native_compat().clone()),
+            AllocationSizeKind::UInt64 => ProgramValue::UInt64(self.bytes.native_compat().clone()),
         }
     }
 
@@ -9107,8 +9135,10 @@ impl AllocationSize {
     /// extended (it is nonnegative), a 64-bit one as it is.
     pub(crate) fn uint64_bytes(&self) -> MachineTerm {
         match self.kind {
-            AllocationSizeKind::Int32 => MachineTerm::uint64_from_32(self.bytes.clone()),
-            AllocationSizeKind::UInt64 => self.bytes.clone(),
+            AllocationSizeKind::Int32 => {
+                MachineTerm::uint64_from_32(self.bytes.native_compat().clone())
+            }
+            AllocationSizeKind::UInt64 => self.bytes.native_compat().clone(),
         }
     }
 
@@ -9116,15 +9146,19 @@ impl AllocationSize {
     /// extended, a 64-bit one reinterpreted (it is at most `PTRDIFF_MAX`).
     pub(crate) fn int64_bytes(&self) -> MachineTerm {
         match self.kind {
-            AllocationSizeKind::Int32 => MachineTerm::int64_from_uint32(self.bytes.clone()),
-            AllocationSizeKind::UInt64 => MachineTerm::int64_from_uint64_bits(self.bytes.clone()),
+            AllocationSizeKind::Int32 => {
+                MachineTerm::int64_from_uint32(self.bytes.native_compat().clone())
+            }
+            AllocationSizeKind::UInt64 => {
+                MachineTerm::int64_from_uint64_bits(self.bytes.native_compat().clone())
+            }
         }
     }
 
     /// The byte count as a 32-bit word, for a 32-bit size only. A 32-bit
     /// comparison against a 64-bit size has no meaning.
     pub(crate) fn int32_bytes(&self) -> Option<&MachineTerm> {
-        (self.kind == AllocationSizeKind::Int32).then_some(&self.bytes)
+        (self.kind == AllocationSizeKind::Int32).then(|| self.bytes.native_compat())
     }
 
     /// A constant byte count in this size's format.
@@ -9174,12 +9208,13 @@ impl AllocationSize {
     /// through [`crate::kernel::reasoning::uint64_element_count_from_bytes`].
     pub(crate) fn element_count(&self, element_width: u32) -> Option<MachineTerm> {
         match self.kind {
-            AllocationSizeKind::Int32 => {
-                crate::kernel::reasoning::element_count_from_bytes(&self.bytes, element_width)
-            }
+            AllocationSizeKind::Int32 => crate::kernel::reasoning::element_count_from_bytes(
+                self.bytes.native_compat(),
+                element_width,
+            ),
             AllocationSizeKind::UInt64 => {
                 crate::kernel::reasoning::uint64_element_count_from_bytes(
-                    &self.bytes,
+                    self.bytes.native_compat(),
                     element_width,
                 )
             }
@@ -9188,7 +9223,7 @@ impl AllocationSize {
 
     /// The block's complete byte range, `base[0..bytes]`.
     pub(crate) fn byte_range(&self, base: Address) -> MemoryRange {
-        self.range(base, self.bytes.clone(), 1)
+        self.range(base, self.bytes.native_compat().clone(), 1)
     }
 }
 
@@ -11190,6 +11225,9 @@ pub(super) struct ResourceContextIndex {
     /// denotation depends on: the element base and the guard cells. A store,
     /// havoc, or free visits only the facts filed under its own block.
     pub(super) iterated_by_block: PersistentMap<AddressBase, ResourceEntryIds>,
+    /// Owned iterated facts keyed by their instantiated clause without holes.
+    /// Membership changes at individual indices do not change this key.
+    pub(super) owned_iterated_by_clause: PersistentMap<IteratedMemory, ResourceEntryIds>,
     /// SymbolicMemory facts keyed by their exact base spelling. Direct pointer
     /// equalities can then find only the facts whose bases they identify,
     /// without scanning every resource in an aliased block.
@@ -11563,13 +11601,16 @@ fn compare_support_graph(left: &ResourceContext, right: &ResourceContext) -> std
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ResourceFact {
-    Own(Resource, Box<MachineTerm>),
+    Own(Resource, Box<StoredMachineTerm>),
     View(Resource),
 }
 
 /// Immutable logical indices shared by resource states and population keys.
 /// Cloning a resource must not clone a recursive model stored in its indices.
-pub type ResourceArguments = std::sync::Arc<[AlgebraicValue]>;
+/// Explicit native argument input/output DTO.
+pub type NativeResourceArguments = std::sync::Arc<[AlgebraicValue]>;
+/// Immutable resource arguments retain the same typed carriers as fields.
+pub type ResourceArguments = ResourceFieldValues;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Resource {
@@ -11643,7 +11684,7 @@ pub struct PublicationRight {
     pub(in crate::kernel) payload: super::ResourceDescription,
     /// A subscriber right an acquire load has read `observed` through, until
     /// a C branch decides whether that value is zero.
-    pub(in crate::kernel) observed: Option<ProgramValue>,
+    pub(in crate::kernel) observed: Option<StoredProgramValue>,
 }
 
 impl PublicationRight {
@@ -11660,7 +11701,9 @@ impl PublicationRight {
         }
     }
     pub(crate) fn observed(&self) -> Option<&ProgramValue> {
-        self.observed.as_ref()
+        self.observed
+            .as_ref()
+            .map(StoredProgramValue::native_compat)
     }
     pub(crate) fn side(&self) -> PublicationSide {
         self.side
@@ -11693,7 +11736,7 @@ pub struct ConditionalMutexGuard {
     pub(in crate::kernel) identity: Variable,
     pub(in crate::kernel) guard: MutexIdentity,
     pub(in crate::kernel) initialization: MutexIdentity,
-    pub(in crate::kernel) held: ConditionTerm,
+    pub(in crate::kernel) held: StoredConditionTerm,
 }
 
 impl ConditionalMutexGuard {
@@ -11701,7 +11744,7 @@ impl ConditionalMutexGuard {
         self.guard.mutex()
     }
     pub(crate) fn condition(&self) -> &ConditionTerm {
-        &self.held
+        self.held.native_compat()
     }
 }
 
@@ -11831,7 +11874,7 @@ impl ResourceInstance {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn arguments(&self) -> &[AlgebraicValue] {
+    pub fn arguments(&self) -> &ResourceArguments {
         &self.arguments
     }
     pub fn fields(&self) -> &ResourceFieldValues {
@@ -13112,7 +13155,7 @@ mod population_authority_spec_tests {
     fn authority_cannot_be_composed_twice_or_split() {
         let description = super::super::ResourceDescription::new(
             "node".into(),
-            Arc::from([]),
+            Vec::<AlgebraicValue>::new().into(),
             ResourceFieldSchema::new(vec![]).unwrap(),
         );
         let fact = ResourceFact::own(Resource::PopulationAuthority(description.clone()));
@@ -13140,7 +13183,7 @@ mod population_authority_spec_tests {
                 .try_compose_with_fact(
                     ResourceFact::Own(
                         Resource::PopulationAuthority(description.clone()),
-                        Box::new(MachineTerm::constant(2)),
+                        Box::new(MachineTerm::constant(2).into()),
                     ),
                     &assumptions,
                 )
@@ -13291,14 +13334,14 @@ pub struct VolatileAccess {
     pub(crate) kind: VolatileAccessKind,
     pub(crate) pointer: Address,
     pub(crate) value_type: ProgramType,
-    pub(crate) value: ProgramValue,
+    pub(crate) value: StoredProgramValue,
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Proposition {
     VolatileAccess(Arc<VolatileAccess>),
     Equal(Term, Term),
-    ConditionIs(ConditionTerm, bool),
+    ConditionIs(StoredConditionTerm, bool),
     Predicate {
         name: String,
         arguments: Vec<Term>,
@@ -13306,7 +13349,7 @@ pub enum Proposition {
     ProgramExpressionEvaluates {
         state: Box<ExecutionState>,
         expression: ProgramExpression,
-        outcome: ExpressionOutcome,
+        outcome: ExpressionOutcome<StoredProgramValue>,
     },
     ProgramConditionEvaluates {
         state: Box<ExecutionState>,
@@ -13339,7 +13382,7 @@ pub enum Proposition {
     MemoryLoads {
         memory: SymbolicMemory,
         pointer: Address,
-        outcome: ExpressionOutcome,
+        outcome: ExpressionOutcome<StoredProgramValue>,
     },
     MemoryCanStore {
         memory: SymbolicMemory,
@@ -13352,7 +13395,7 @@ pub enum Proposition {
     MemoryLoadable {
         memory: SymbolicMemory,
         base: Address,
-        bytes: MachineTerm,
+        bytes: StoredMachineTerm,
         wide: bool,
     },
     /// A typed read is valid in this state, including initialization.
@@ -13426,6 +13469,20 @@ pub enum Proposition {
 }
 
 impl Proposition {
+    /// Store an exact native input or an already-retained logical condition.
+    pub fn condition_is(condition: impl Into<StoredConditionTerm>, truth: bool) -> Self {
+        Self::ConditionIs(condition.into(), truth)
+    }
+
+    /// Selected native condition-payload inspection. This view borrows the
+    /// original payload and truth marker without rebuilding a proposition.
+    pub(crate) fn condition_native(&self) -> Option<(&ConditionTerm, &bool)> {
+        match self {
+            Self::ConditionIs(condition, truth) => Some((condition.native_compat(), truth)),
+            _ => None,
+        }
+    }
+
     /// The two ranges of a separation between two memory resources.
     pub(crate) fn memory_separation(&self) -> Option<(&MemoryRange, &MemoryRange)> {
         match self {
@@ -13811,7 +13868,7 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
         Proposition::VolatileAccess(event) => Proposition::VolatileAccess(event.clone()),
         Proposition::Equal(left, right) => Proposition::Equal(left.clone(), right.clone()),
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(condition.clone(), *value)
+            Proposition::condition_is(condition.clone(), *value)
         }
         Proposition::Predicate { name, arguments } => Proposition::Predicate {
             name: name.clone(),
@@ -14372,7 +14429,7 @@ pub(crate) enum AtomicPropositionDerivationEvidence {
     WidenedUnsignedSumBound,
     MemoryDag(Box<AtomicMemoryLoadEqualityEvidence>),
     LoadAddressCongruence(Box<LoadAddressCongruenceEvidence>),
-    PointerOffsetMemoryDag(Box<PointerOffsetEqualityEvidence>),
+    PointerOffsetMemoryDag(Box<AddressOffsetEqualityEvidence>),
     BitvectorEqualityPath(Vec<BitvectorEqualityDerivationStep>),
     Int32PinnedConstantEquality(Box<DirectBitvectorEqualityEvidence>),
     ForallInt32Instantiation(Box<ForallInt32InstantiationEvidence>),
@@ -14504,7 +14561,7 @@ impl AtomicConnectedFact<'_> {
     pub(crate) fn matches(&self, goal: &Proposition) -> bool {
         match self {
             Self::Condition(condition, value) => {
-                matches!(goal, Proposition::ConditionIs(c,v) if c == *condition && v == value)
+                matches!(goal, Proposition::ConditionIs(c,v) if c.native_compat() == *condition && v == value)
             }
             Self::Proposition(proposition) => *proposition == goal,
         }
@@ -14512,7 +14569,7 @@ impl AtomicConnectedFact<'_> {
     pub(crate) fn to_proposition(&self) -> Proposition {
         match self {
             Self::Condition(condition, value) => {
-                Proposition::ConditionIs((*condition).clone(), *value)
+                Proposition::condition_is((*condition).clone(), *value)
             }
             Self::Proposition(proposition) => (*proposition).clone(),
         }
@@ -14668,7 +14725,7 @@ pub struct PureFactContext {
     /// together with the fact itself. Derived incrementally from
     /// `condition_facts`: every equality against the null pointer files its
     /// other side here. A comparison of two pointers in one block is a
-    /// `PointerOffsetEqual` that no longer names the block, so this index is
+    /// `AddressOffsetEqual` that no longer names the block, so this index is
     /// what lets "one of these is null and the other is not" be two keyed
     /// lookups instead of a scan. The conclusion is about the offset terms
     /// alone: if `B + left` is null and `B + right` is not, then `left` and
@@ -14710,10 +14767,10 @@ pub struct PureFactContext {
     /// from, each filed as its own condition so a walk can cite it exactly:
     /// [`super::assumptions::OrderFactsByLower`].
     pub(super) order_facts_by_lower: super::assumptions::OrderFactsByLower,
-    /// True `PointerOffsetEqual` facts by each side's state shape
+    /// True `AddressOffsetEqual` facts by each side's state shape
     /// (`offset_state_shape`), the candidates
     /// `has_pointer_offset_state_fact` checks.
-    pub(super) pointer_offset_equalities_by_shape:
+    pub(super) address_offset_equalities_by_shape:
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<ConditionTerm>>,
     pub(super) observation_comparisons:
         super::assumptions::observation_comparisons::ObservationComparisons,
@@ -15167,7 +15224,9 @@ pub(super) struct CertifiedMemoryStore {
     pub(super) value: ProgramValue,
     pub(super) authorized_range: Option<MemoryRange>,
     pub(super) source: super::StatementStoreSource,
-    pub(super) value_equation: Option<Proposition>,
+    pub(super) value_equation: Option<Arc<Proposition>>,
+    /// Evaluated lvalue coordinates, before ownership may rebase the write.
+    pub(super) source_address: Option<Address>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

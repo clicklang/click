@@ -9,7 +9,10 @@ use num_bigint::BigInt;
 /// The two sides of an Integer `<=` fact.
 pub(super) fn order(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm)> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((left, right))
         }
         _ => None,
@@ -104,7 +107,7 @@ mod tests {
     use crate::kernel::Variable;
 
     fn le(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(left.into(), right.into()),
             true,
         )

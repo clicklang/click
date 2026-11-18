@@ -103,7 +103,7 @@ fn pointer_disequality_projection_ignores_unrelated_pointer_predicates() {
         let mut facts = PureFactContext::new();
         for i in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(74000 + i)),
                     Address::symbolic(Variable(75000 + i)),
                 ),
@@ -114,21 +114,21 @@ fn pointer_disequality_projection_ignores_unrelated_pointer_predicates() {
             crate::instrumentation::measure_deterministic_work(|| {
                 let source = Address::symbolic(Variable(72999));
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         source.clone(),
                         coordinate_pointer("storage".into(), 73000),
                     ),
                     false,
                 );
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         source,
                         coordinate_pointer("storage".into(), 73001),
                     ),
                     true,
                 );
-                assert!(facts.contains_known(&Proposition::ConditionIs(
-                    ConditionTerm::pointer_offset_equal(
+                assert!(facts.contains_known(&Proposition::condition_is(
+                    ConditionTerm::address_offset_equal(
                         AddressOffset::Variable(Variable(73000)),
                         AddressOffset::Variable(Variable(73001))
                     ),
@@ -151,7 +151,7 @@ fn pointer_comparison_evidence_work_ignores_unrelated_facts() {
         let mut facts = PureFactContext::new();
         for i in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     coordinate_pointer(AddressBase::ExternalArgument, 79000 + i * 2),
                     coordinate_pointer(AddressBase::ExternalArgument, 79001 + i * 2),
                 ),
@@ -165,14 +165,14 @@ fn pointer_comparison_evidence_work_ignores_unrelated_facts() {
                 let alias = Address::symbolic(Variable(78003));
                 // Registering the query before the premise must not choose a
                 // canonical base that later loses the admitted comparison.
-                let goal = Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(left.clone(), alias.clone()),
+                let goal = Proposition::condition_is(
+                    ConditionTerm::address_equal(left.clone(), alias.clone()),
                     false,
                 );
                 assert!(!facts.contains_known(&goal));
                 facts = facts
-                    .assume_condition(ConditionTerm::pointer_equal(left, right.clone()), false)
-                    .assume_condition(ConditionTerm::pointer_equal(right, alias), true);
+                    .assume_condition(ConditionTerm::address_equal(left, right.clone()), false)
+                    .assume_condition(ConditionTerm::address_equal(right, alias), true);
                 assert!(facts.contains_known(&goal));
             })
         });
@@ -206,7 +206,9 @@ fn full_pointer_alias_queries_do_not_walk_unrelated_conditions() {
             unreachable!()
         };
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.equality_graph.knows_condition(&condition, value)
+            context
+                .equality_graph
+                .knows_condition((&condition).native_compat(), value)
         });
         assert!(proved);
         costs.push(work);
@@ -221,7 +223,7 @@ fn cited_pointer_context_construction_scales_with_selected_conditions() {
     for size in [8_u64, 32, 128] {
         let (goal, mut selected) = selected_cursor_chain();
         for index in 0..size {
-            selected.push(Proposition::ConditionIs(
+            selected.push(Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::Variable(Variable(9_100_000 + index)),
                     MachineTerm::constant(index as u32),
@@ -383,7 +385,7 @@ fn complete_pointer_read_registration_scales_with_new_definitions() {
                     ProgramType::Int32Pointer,
                 );
                 assert!(facts.equality_graph.knows_condition(
-                    &ConditionTerm::PointerValueEqual(Box::new(next.clone()), Box::new(value)),
+                    &ConditionTerm::PointerEqual(Box::new(next.clone()), Box::new(value)),
                     true
                 ));
                 value = next;

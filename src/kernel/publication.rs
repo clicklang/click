@@ -284,7 +284,12 @@ fn initialize(
 fn payload_fact(right: &PublicationRight) -> ResourceFact {
     ResourceFact::own(Resource::Composite {
         name: right.payload().family().to_string(),
-        arguments: right.payload().arguments().iter().cloned().collect(),
+        arguments: right
+            .payload()
+            .arguments()
+            .iter()
+            .map(ResourceFieldValue::into_native)
+            .collect(),
     })
 }
 
@@ -394,10 +399,8 @@ fn acquire_load(
     {
         return Ok(Err(outcome));
     }
-    let value = super::functions::symbolic_call_result(
-        ProgramType::Int32,
-        budget.allocate_kernel_variable()?,
-    );
+    let variable = budget.allocate_kernel_variable()?;
+    let value = super::functions::symbolic_call_result(ProgramType::Int32, variable);
     let Some(right_fact) = state
         .resources
         .publication_right_at(PublicationSide::Subscriber, flag)
@@ -421,7 +424,9 @@ fn acquire_load(
         return Ok(Err(refusal("the subscriber right could not be consumed")));
     };
     let mut observed = right.clone();
-    observed.observed = Some(value.clone());
+    observed.observed = Some(StoredProgramValue::from(ExecutionValue::Shared(
+        KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable),
+    )));
     let Ok(resources) = resources.try_compose_with_facts_delaying_normalization(
         [ResourceFact::own(Resource::Publication(observed))],
         assumptions,
@@ -452,7 +457,7 @@ pub(crate) fn resolve_observed_publications(
         let Resource::Publication(right) = fact.resource() else {
             continue;
         };
-        let Some(ProgramValue::Int32(term)) = &right.observed else {
+        let Some(ProgramValue::Int32(term)) = right.observed() else {
             continue;
         };
         let zero = ConditionTerm::Compare {
@@ -544,6 +549,33 @@ mod tests {
             .with_resource_context(resources)
     }
 
+    #[test]
+    fn acquire_observation_retains_the_minted_result_root() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (next, value) = acquire_load(
+            &state(1, 0),
+            &flag(0),
+            &int32(2),
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap()
+        .unwrap();
+        let right = next
+            .resources
+            .publication_right_at(PublicationSide::Subscriber, &flag(0))
+            .unwrap();
+        let Resource::Publication(right) = right.resource() else {
+            panic!("publication");
+        };
+        let stored = right.observed.as_ref().unwrap();
+        assert!(
+            stored.root().is_some(),
+            "the minted observation stays common"
+        );
+        assert_eq!(stored.native_compat(), &value);
+    }
+
     /// Acquire-loads every subscriber flag, then settles them all as
     /// published, returning the deterministic work of each phase.
     fn acquire_and_settle(subscribers: usize, unrelated: usize) -> (usize, usize) {
@@ -569,7 +601,7 @@ mod tests {
                 let ProgramValue::Int32(term) = value else {
                     unreachable!()
                 };
-                facts.assume_proposition(Proposition::ConditionIs(
+                facts.assume_proposition(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,

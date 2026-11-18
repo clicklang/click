@@ -82,7 +82,7 @@ pub(super) fn kind(proposition: &Proposition) -> String {
             }
         ),
         Proposition::ConditionIs(condition, _) => {
-            format!("condition:{}", condition_kind(condition))
+            format!("condition:{}", condition_kind(condition.native_compat()))
         }
         Proposition::Predicate { name, .. } if name.starts_with("__click") => {
             "predicate:internal".into()
@@ -664,7 +664,7 @@ theorem add3_adds_four() {
 
     #[test]
     fn a_censused_fact_is_classified_by_the_atom_it_concludes() {
-        let atom = Proposition::ConditionIs(
+        let atom = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

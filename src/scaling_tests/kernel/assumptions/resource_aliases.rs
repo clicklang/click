@@ -44,7 +44,7 @@ fn kept_frame_misses_do_not_walk_aliases_or_unrelated_ranges() {
             for index in 1..=size {
                 if aliases {
                     context = context.assume_condition(
-                        ConditionTerm::pointer_equal(query.clone(), pointer(index)),
+                        ConditionTerm::address_equal(query.clone(), pointer(index)),
                         true,
                     );
                 } else {
@@ -103,7 +103,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
         for index in 0..size {
             query = Address::symbolic(Variable(900_001 + index));
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(source.clone(), query.clone()),
+                ConditionTerm::address_equal(source.clone(), query.clone()),
                 true,
             );
             context = context.assume_proposition(Proposition::MemoryReadDefined {

@@ -39,7 +39,7 @@ pub(crate) use addresses::{SharedAddress, SharedAddressBase};
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
 pub(crate) use offsets::{KernelAddressOffset, SharedAddressOffset};
-pub(crate) use pointers::{PointerRewrite, PointerRewriteError, SharedPointerValue};
+pub(crate) use pointers::{PointerRewrite, PointerRewriteError, SharedPointer};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, Weak};
 
@@ -102,11 +102,11 @@ pub enum KernelTermNode {
         relation: CompareRelation,
         arguments: [KernelTerm; 2],
     },
-    PointerValueEqual(KernelPointerEquality),
-    PointerEqual {
+    PointerEqual(KernelPointerEquality),
+    AddressEqual {
         arguments: [SharedAddress; 2],
     },
-    PointerOffsetEqual {
+    AddressOffsetEqual {
         arguments: [SharedAddressOffset; 2],
     },
     IntegerCompare {
@@ -169,7 +169,7 @@ pub enum KernelTermNode {
         kind: LoadKind,
     },
     /// Complete formed pointer value with prepared address and metadata children.
-    Pointer(SharedPointerValue),
+    Pointer(SharedPointer),
     /// A pointer argument with the point its array is read at.
     ArrayReference {
         point: ProgramPoint,
@@ -179,7 +179,7 @@ pub enum KernelTermNode {
     /// Generic call structure plus the complete checked pointer result.
     PointerCall {
         call: KernelTerm,
-        value: SharedPointerValue,
+        value: SharedPointer,
     },
     /// Pointer arithmetic keeps its exact input roots beside the complete
     /// checked result payload. Formation evidence stays on the execution path.
@@ -187,17 +187,17 @@ pub enum KernelTermNode {
         operation: MachineBinaryOp,
         byte_width: u32,
         operands: [KernelTerm; 2],
-        value: SharedPointerValue,
+        value: SharedPointer,
     },
     /// Complete pointer read result and its producer-retained definition.
     /// Access authority and read-over-write evidence remain outside the term.
     PointerRead {
-        value: SharedPointerValue,
+        value: SharedPointer,
         point: ProgramPoint,
         address: SharedAddress,
     },
     /// Address observation retains its exact prepared address and object annotation.
-    PointerAddress {
+    IntegerAddress {
         address: SharedAddress,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
@@ -424,10 +424,10 @@ impl NodeKey {
             | KernelTermNode::PointerCall { .. }
             | KernelTermNode::ArrayReference { .. }
             | KernelTermNode::MemoryLoad { .. }
-            | KernelTermNode::PointerAddress { .. }
-            | KernelTermNode::PointerOffsetEqual { .. }
-            | KernelTermNode::PointerEqual { .. }
-            | KernelTermNode::PointerValueEqual(_)
+            | KernelTermNode::IntegerAddress { .. }
+            | KernelTermNode::AddressOffsetEqual { .. }
+            | KernelTermNode::AddressEqual { .. }
+            | KernelTermNode::PointerEqual(_)
             | KernelTermNode::BoolRead(_)
             | KernelTermNode::AlgebraicRead(_)
             | KernelTermNode::FloatRead(_) => true,
@@ -512,7 +512,7 @@ impl NodeKey {
             KernelTermNode::MachineLiteral(_)
             | KernelTermNode::ThreadHandle(_)
             | KernelTermNode::MemoryLoad { .. }
-            | KernelTermNode::PointerAddress { .. } => true,
+            | KernelTermNode::IntegerAddress { .. } => true,
             KernelTermNode::FloatConvert { destination, .. } => {
                 MachineIntegerType::from_program_type(*destination).is_some()
             }
@@ -536,7 +536,7 @@ impl NodeKey {
             _ => false,
         };
         let machine_conversions = match &node {
-            KernelTermNode::PointerAddress { .. } => true,
+            KernelTermNode::IntegerAddress { .. } => true,
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
@@ -769,6 +769,34 @@ impl KernelTerm {
             .as_ref()
         else {
             unreachable!("program value output cache")
+        };
+        Some(value)
+    }
+
+    /// Borrow the selected native Integer output from the existing root slot.
+    /// Storage and producer handoffs never request this compatibility reading.
+    pub(crate) fn integer_native_compat(&self) -> Option<&IntegerTerm> {
+        if self.ty() != &KernelType::Integer {
+            return None;
+        }
+        if let KernelTermNode::Legacy(legacy) = self.node()
+            && let PureFunctionArgument::Integer(value) = legacy.value()
+        {
+            return Some(value);
+        }
+        let PureFunctionArgument::Integer(value) = self
+            .0
+            .argument_leaf
+            .get_or_init(|| {
+                Box::new(PureFunctionArgument::Integer(
+                    KernelTermExport::default()
+                        .integer(self)
+                        .expect("Integer field output"),
+                ))
+            })
+            .as_ref()
+        else {
+            unreachable!("Integer output cache")
         };
         Some(value)
     }
@@ -1073,7 +1101,7 @@ impl KernelTerm {
             self.node(),
             KernelTermNode::Legacy(_)
                 | KernelTermNode::Call { .. }
-                | KernelTermNode::PointerAddress { .. }
+                | KernelTermNode::IntegerAddress { .. }
         ) && rewritten == original
         {
             return self.clone();
@@ -1212,7 +1240,7 @@ impl KernelTermImport {
                     KernelTerm::program_parameter(self.algebraic(value))
                 }
                 ProgramValue::Pointer(value) => {
-                    KernelTerm::shared_pointer_value(SharedPointerValue::import(value))
+                    KernelTerm::shared_pointer_value(SharedPointer::import(value))
                 }
                 // Void has no expression. A complete pointer/integer record is
                 // the package-7 value descriptor, not its numeric projection.
@@ -1227,7 +1255,7 @@ impl KernelTermImport {
             } => match pointer {
                 ProgramValue::Pointer(pointer) => KernelTerm::shared_array_reference(
                     ProgramPoint::of_memory(memory),
-                    KernelTerm::shared_pointer_value(SharedPointerValue::import(pointer)),
+                    KernelTerm::shared_pointer_value(SharedPointer::import(pointer)),
                     *element_type,
                 ),
                 // Preserve the existing refusal boundary for a non-pointer

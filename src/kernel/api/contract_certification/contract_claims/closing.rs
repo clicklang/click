@@ -899,12 +899,12 @@ mod tests {
         for i in 0..size {
             let next = Address::symbolic(Variable(988_001 + u64::from(i)));
             assumptions = assumptions
-                .assume_condition(ConditionTerm::pointer_equal(previous, next.clone()), true);
+                .assume_condition(ConditionTerm::address_equal(previous, next.clone()), true);
             previous = next;
             memory = memory.with_block(format!("unrelated-write-{i}"), 4);
         }
         assumptions =
-            assumptions.assume_condition(ConditionTerm::pointer_equal(previous, anchor), true);
+            assumptions.assume_condition(ConditionTerm::address_equal(previous, anchor), true);
         let effects = vec![crate::kernel::ExecutionPureFact::certified(
             Proposition::MemoryEffectSummary {
                 before: memory.clone(),

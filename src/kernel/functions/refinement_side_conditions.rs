@@ -143,10 +143,12 @@ pub(super) fn refinement_route_proves(
         return true;
     }
     match proposition {
-        Proposition::ConditionIs(condition, value) => assumptions.decide(condition) == Some(*value),
+        Proposition::ConditionIs(condition, value) => {
+            assumptions.decide(condition.native_compat()) == Some(*value)
+        }
         Proposition::Not(body) => match body.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                assumptions.decide(condition) == Some(!*value)
+                assumptions.decide(condition.native_compat()) == Some(!*value)
             }
             _ => false,
         },

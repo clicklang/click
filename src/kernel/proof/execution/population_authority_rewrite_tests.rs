@@ -149,7 +149,7 @@ fn checked_authority_events_reject_forged_deltas() {
         )
         .is_err()
     );
-    let forged_facts = facts.clone().with_fact(Proposition::ConditionIs(
+    let forged_facts = facts.clone().with_fact(Proposition::condition_is(
         crate::kernel::ConditionTerm::Constant(true),
         true,
     ));
@@ -354,7 +354,7 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_span() {
     let span = |bytes| Proposition::MemoryLoadable {
         memory: owned.memory().clone(),
         base: external.clone(),
-        bytes: MachineTerm::constant(bytes),
+        bytes: (MachineTerm::constant(bytes)).into(),
         wide: false,
     };
     let small = PureFactStore::default().with_fact(span(1));
@@ -608,7 +608,7 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
         &function, &one, &facts, &member, false, &death, &zero, &exposed,
     )
     .unwrap();
-    let forged_facts = exposed.with_fact(Proposition::ConditionIs(
+    let forged_facts = exposed.with_fact(Proposition::condition_is(
         crate::kernel::ConditionTerm::Constant(false),
         true,
     ));
@@ -728,8 +728,8 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
         name: description.family().to_owned(),
         arguments: description.arguments().to_vec().into(),
     });
-    let [crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
-        description.arguments()
+    let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+        (description.arguments()).fixed_values::<1>()
     else {
         unreachable!()
     };

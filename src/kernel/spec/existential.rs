@@ -137,7 +137,7 @@ mod tests {
     use super::*;
 
     fn equality(variable: Variable, value: u32) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

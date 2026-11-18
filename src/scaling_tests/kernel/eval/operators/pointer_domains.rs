@@ -8,13 +8,13 @@ fn known_domains_do_not_readmit_unrelated_path_facts() {
         );
         let root = opaque.clone().with_root_bounds();
         let cached = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_value_equal(opaque.clone(), root.clone()),
+            ConditionTerm::pointer_equal(opaque.clone(), root.clone()),
             true,
         );
         for (pointer, context) in [(root, PureFactContext::new()), (opaque, cached)] {
             let facts: ExecutionFacts = (0..count)
                 .map(|i| {
-                    ExecutionPureFact::new(Proposition::ConditionIs(
+                    ExecutionPureFact::new(Proposition::condition_is(
                         ConditionTerm::Variable(Variable(1013400 + i)),
                         true,
                     ))
@@ -66,7 +66,7 @@ fn known_domains_do_not_readmit_unrelated_path_facts() {
         let context = PureFactContext::new();
         let facts: ExecutionFacts = (0..count)
             .map(|i| {
-                ExecutionPureFact::new(Proposition::ConditionIs(
+                ExecutionPureFact::new(Proposition::condition_is(
                     ConditionTerm::Variable(Variable(1013800 + i)),
                     true,
                 ))

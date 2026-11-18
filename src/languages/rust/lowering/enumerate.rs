@@ -22,7 +22,7 @@ impl Context<'_> {
         }
         Ok(program_seq(
             storage,
-            program_declare(field, ProgramType::UInt64),
+            program_declare(self.binding(&field), ProgramType::UInt64),
         ))
     }
 
@@ -48,7 +48,7 @@ impl Context<'_> {
         Ok(program_seq(
             self.shared_array_move(target, source)?,
             program_assign(
-                format!("{target}_count"),
+                self.binding(&format!("{target}_count")),
                 crate::kernel::program_expression::uint64_literal(0),
             ),
         ))
@@ -64,28 +64,74 @@ impl Context<'_> {
         Ok(program_seq(
             self.shared_array_move(target, source)?,
             program_assign(
-                format!("{target}_count"),
-                crate::kernel::program_expression::variable(format!("{source}_count")),
+                self.binding(&format!("{target}_count")),
+                crate::kernel::program_expression::variable(
+                    self.binding(&format!("{source}_count")),
+                ),
             ),
         ))
     }
 
     /// The slice iterator's `next`, which also yields the index `count` and
     /// counts the element.
+    /// `next` of an enumerated slice iterator: the `Option` built in
+    /// `option`, or, once the loop reads only what it yields, the index
+    /// assigned to `index` and the element's reference to `element`. When the
+    /// `for` header's test decided whether it yields (`taken`), only that arm
+    /// runs; the arm that does not yield is nothing.
     pub(super) fn enumerate_next(
-        &self,
+        &mut self,
         iterator: &str,
-        option: &str,
+        option: Option<&str>,
+        index: Option<&str>,
+        element: Option<&str>,
+        taken: Option<bool>,
     ) -> Result<ProgramStatement, String> {
         self.enumerated_iterator(iterator)?;
+        use crate::kernel::program_expression::{add, uint64_literal, variable};
+        let count = format!("{iterator}_count");
+        let Some(option) = option else {
+            if taken == Some(false) {
+                return Ok(program_skip());
+            }
+            let mut some = program_skip();
+            if let Some(index) = index {
+                some = program_seq(
+                    some,
+                    self.bind_local(index, variable(self.binding(&count)))?,
+                );
+            }
+            some = program_seq(
+                some,
+                program_assign(
+                    self.binding(&count),
+                    add(variable(self.binding(&count)), uint64_literal(1)),
+                ),
+            );
+            if let Some(element) = element {
+                some = program_seq(
+                    some,
+                    self.bind_local(element, variable(self.binding(&format!("{iterator}_ptr"))))?,
+                );
+            }
+            some = program_seq(some, self.shared_array_advance(iterator));
+            return Ok(match taken {
+                Some(_) => some,
+                None => program_if(self.shared_array_has_next(iterator)?, some, program_skip()),
+            });
+        };
         if !self.enumerated.contains(option) || !self.shared_array_options.contains_key(option) {
             return Err("unknown enumerated iterator Option".into());
         }
-        use crate::kernel::program_expression::{add, uint64_literal, variable};
-        let count = format!("{iterator}_count");
         let yielded = program_seq(
-            program_assign(format!("{option}_index"), variable(&count)),
-            program_assign(&count, add(variable(&count), uint64_literal(1))),
+            program_assign(
+                self.binding(&format!("{option}_index")),
+                variable(self.binding(&count)),
+            ),
+            program_assign(
+                self.binding(&count),
+                add(variable(self.binding(&count)), uint64_literal(1)),
+            ),
         );
         self.shared_array_next_with(iterator, option, yielded)
     }
@@ -100,10 +146,12 @@ impl Context<'_> {
         }
         Ok((
             program_assert(crate::kernel::program_expression::equal(
-                crate::kernel::program_expression::variable(format!("{option}_some")),
+                crate::kernel::program_expression::variable(
+                    self.binding(&format!("{option}_some")),
+                ),
                 crate::kernel::program_expression::int32_literal(1),
             )),
-            crate::kernel::program_expression::variable(format!("{option}_index")),
+            crate::kernel::program_expression::variable(self.binding(&format!("{option}_index"))),
         ))
     }
 }

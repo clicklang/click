@@ -138,6 +138,7 @@ struct SourceExecutionLayoutData {
     /// result is the state's call result of that number while its statement
     /// runs.
     call_numbers: BTreeMap<usize, u32>,
+    snapshot_step_results: bool,
     aggregate_results:
         BTreeMap<usize, std::sync::Arc<BTreeMap<String, crate::kernel::AggregateField>>>,
     full_expression_ends: BTreeSet<usize>,
@@ -287,6 +288,7 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
 fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
     match statement {
         ProgramStatement::Assign { expression, .. }
+        | ProgramStatement::StepValue { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression)
         | ProgramStatement::Assert {
@@ -598,6 +600,19 @@ impl SourceExecutionLayout {
             }
         }
 
+        // A frontend can lower a conditional value to two arms that publish
+        // the same result. That result belongs to the join, not either arm.
+        fn terminal_value_steps(statement: &ProgramStatement) -> Option<&[u32]> {
+            let tail = match statement {
+                ProgramStatement::Seq(statements) => statements.get(statements.len() - 1)?.as_ref(),
+                statement => statement,
+            };
+            match tail {
+                ProgramStatement::StepValue { steps, .. } => Some(steps),
+                _ => None,
+            }
+        }
+
         fn visit(
             statement: &ProgramStatement,
             next_statement_index: &mut usize,
@@ -627,6 +642,16 @@ impl SourceExecutionLayout {
                 } => {
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
+                    if let (Some(yes), Some(no)) = (
+                        terminal_value_steps(then_branch),
+                        terminal_value_steps(else_branch),
+                    ) && yes == no
+                    {
+                        for step in yes {
+                            layout.step_regions.insert(*step, statement_index);
+                            layout.call_numbers.entry(statement_index).or_insert(*step);
+                        }
+                    }
                     let then_statement_index = *next_statement_index;
                     let then_last =
                         visit(then_branch, next_statement_index, layout, aggregate_objects)?;
@@ -784,6 +809,15 @@ impl SourceExecutionLayout {
                     {
                         aggregate_objects
                             .insert(name.binding().clone(), aggregate_result_fields(declared));
+                        // Construction can require proofs about the destination before
+                        // it has initialized fields or published the constructed value.
+                        let binding = name.binding();
+                        if binding
+                            .local_id()
+                            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                        {
+                            layout.call_results.insert(statement_index, binding.clone());
+                        }
                     }
                     if let ProgramStatement::CallConstruct { target, .. } = statement {
                         let fields = aggregate_objects.get(target).ok_or_else(|| {
@@ -807,6 +841,29 @@ impl SourceExecutionLayout {
                     if let ProgramStatement::CallResult { call, .. } = statement {
                         layout.call_numbers.insert(statement_index, *call);
                         layout.step_regions.insert(*call, statement_index);
+                    }
+                    if let ProgramStatement::StepValue {
+                        steps, expression, ..
+                    } = statement
+                    {
+                        if let ProgramExpression::Variable(name) = expression
+                            && name
+                                .local_id()
+                                .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                            && let Some(fields) = aggregate_objects.get(name)
+                        {
+                            layout
+                                .aggregate_results
+                                .insert(statement_index, fields.clone());
+                        }
+                        for step in steps {
+                            if let std::collections::btree_map::Entry::Vacant(entry) =
+                                layout.step_regions.entry(*step)
+                            {
+                                entry.insert(statement_index);
+                                layout.call_numbers.entry(statement_index).or_insert(*step);
+                            }
+                        }
                     }
                     if let ProgramStatement::Call { .. }
                     | ProgramStatement::CallResult { .. }
@@ -897,6 +954,7 @@ impl SourceExecutionLayout {
             &mut layout,
             &mut aggregate_objects,
         )?;
+        layout.snapshot_step_results = !layout.call_numbers.is_empty();
         // The statements as written its front end says each region comes
         // from, which name them as C's do.
         if let Some(sites) = imported.source_sites() {
@@ -936,7 +994,7 @@ impl SourceExecutionLayout {
                 .collect::<Vec<_>>();
             layout.loop_paths.extend(loops);
         }
-        if !layout.call_captures.is_empty() {
+        if layout.snapshot_step_results {
             let mut named = NamedCalls::default();
             for (region, callee) in &layout.call_targets {
                 crate::instrumentation::record_deterministic_work(1);
@@ -1631,6 +1689,10 @@ impl SourceExecutionLayout {
         !self.data.call_captures.is_empty()
     }
 
+    pub(in crate::surface) fn snapshots_step_results(&self) -> bool {
+        self.data.snapshot_step_results
+    }
+
     /// The source selector of the call that produced a frontend capture.
     pub(in crate::surface) fn call_capture_source(
         &self,
@@ -1669,6 +1731,24 @@ impl SourceExecutionLayout {
 
     pub(in crate::surface) fn call_number(&self, region: usize) -> Option<u32> {
         self.data.call_numbers.get(&region).copied()
+    }
+
+    /// A retained result’s source region. Compiler bodies without statement
+    /// provenance expose their numbered regions as `region(N)`.
+    /// Choose by retained provenance, rather than trying alternate spellings.
+    pub(in crate::surface) fn result_code_region(
+        &self,
+        region: usize,
+    ) -> Option<crate::surface::CodeRegionRef> {
+        if self.data.region_paths.contains_key(&region) || self.data.calls.contains(&region) {
+            self.source_path_spelling(region, crate::surface::ProgramPointKind::Exit)
+                .map(crate::surface::CodeRegionRef::Path)
+        } else {
+            self.data
+                .statements
+                .contains_key(&region)
+                .then_some(crate::surface::CodeRegionRef::Region(region))
+        }
     }
 
     /// The region of the step numbered `step`.
@@ -1955,9 +2035,12 @@ impl SourceExecutionLayout {
             let steps = vec![match data.call_targets.get(&region) {
                 Some(function) => SourcePathStep::Call(
                     function.clone(),
-                    earlier
-                        .filter(|earlier| data.call_targets.get(earlier) == Some(function))
-                        .count(),
+                    match &data.named_calls {
+                        Some(named) => named.regions(None, function).binary_search(&region).ok()?,
+                        None => earlier
+                            .filter(|earlier| data.call_targets.get(earlier) == Some(function))
+                            .count(),
+                    },
                 ),
                 None => SourcePathStep::AnyCall(earlier.count()),
             }];
@@ -2900,6 +2983,7 @@ mod source_execution_layout_tests {
                 calls: BTreeSet::new(),
                 loop_tests: BTreeSet::new(),
                 call_numbers: BTreeMap::new(),
+                snapshot_step_results: false,
                 aggregate_results: BTreeMap::new(),
                 full_expression_ends: BTreeSet::new(),
                 step_regions: BTreeMap::new(),

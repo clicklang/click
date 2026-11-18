@@ -34,7 +34,7 @@ fn retained_pure_citations_use_singletons_without_scanning_related_or_unrelated_
             let root = Proof::for_pure_goal(
                 "retained citation",
                 &context.requires,
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(ConditionTerm::Constant(true), true),
                 &context,
                 SpecDefinitions::new(&predicates, &functions),
                 &theorems,
@@ -48,7 +48,7 @@ fn retained_pure_citations_use_singletons_without_scanning_related_or_unrelated_
                     operator: ComparisonOperator::GreaterEqual,
                     right: ContractExpression::IntegerLiteral((index + 1).to_string()),
                 };
-                let fact = Proposition::ConditionIs(
+                let fact = Proposition::condition_is(
                     ConditionTerm::IntegerLessEqual(
                         crate::kernel::IntegerTerm::constant_i64(index + 1).into(),
                         crate::kernel::IntegerTerm::var(Variable(988_000 + index as u64)).into(),
@@ -67,7 +67,7 @@ fn retained_pure_citations_use_singletons_without_scanning_related_or_unrelated_
             let missing = Proof::for_pure_goal(
                 "missing citation",
                 &[],
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(ConditionTerm::Constant(true), true),
                 &context,
                 SpecDefinitions::new(&predicates, &functions),
                 &theorems,

@@ -15,9 +15,9 @@ fn pending_status_resolution_scales_with_explicit_intervening_work() {
         right: Box::new(MachineTerm::constant(0)),
     };
     let success_assumptions =
-        PureFactContext::new().assume_proposition(Proposition::ConditionIs(zero.clone(), true));
+        PureFactContext::new().assume_proposition(Proposition::condition_is(zero.clone(), true));
     let failure_assumptions =
-        PureFactContext::new().assume_proposition(Proposition::ConditionIs(zero, false));
+        PureFactContext::new().assume_proposition(Proposition::condition_is(zero, false));
     let base = parent(1);
     let mut samples = Vec::new();
     for size in [8usize, 16, 32, 64] {
@@ -192,7 +192,7 @@ fn joining_one_worker_keeps_the_current_frame_as_owners_and_aliases_grow() {
             if aliases {
                 for index in 0..size {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             pointer(0),
                             Address::symbolic(Variable(8_796_000 + index as u64)),
                         ),

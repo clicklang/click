@@ -426,6 +426,17 @@ Lowering never folds a comparison of two literals.
 - A comparison of the same variable at 32/64 bits retains its comparison
   node: recognition compares the two variable IDs, without consulting facts
   or walking expression trees.
+- A contract `p == p` (or `p != p`) of one non-null pointer value retains a
+  `AddressEqual` node rather than folding to `true` (`false`), and
+  `address(p) == address(p)` retains its `int64` address-word comparison.
+  Lowering and the producers whose results must match a lowered goal
+  (`preserve`) build the pointer equality with
+  `ConditionTerm::logical_pointer_equal`. A pointer equality raises as
+  contract `p == q`, which lowers back to it; the weaker
+  `address(p) == address(q)` is the address-word equality a C comparison
+  states (`design/pointer-subobject-bounds.md`, Phase B). A `AddressEqual`
+  between two pointer values of different provenance has no Surface form yet:
+  `p == q` lowers to `PointerEqual` for them, and the round trip refuses.
 - A comparison of two `bool` literals, `true == false`, retains a
   `BoolEqual` of the two constants.
 - A written `true` or `false` is a literal proposition, not `literal ==
@@ -458,9 +469,13 @@ The comparison boundary recognizes fixed-size native conditionals. The guard can
 be a Boolean variable or a 32/64-bit comparison, and the comparison operands and
 arms can be literal or variable leaves, one bitwise operation (`&`, `|`, `^`, `~`)
 over such leaves, a right shift or unsigned left shift by an in-range literal
-count, or an unsigned sum, difference, or product over a variable and a literal. The
-comparison or conditional result type can identify a `uint32` operation whose
-node carries the shared 32-bit word encoding.
+count, an unsigned sum, difference, or product over a variable and a literal,
+an unsigned quotient or remainder of a variable by a nonzero literal,
+or a 32-to-64-bit widening or 64-to-32-bit low-word cast of a leaf. A signed
+comparison spells the low-word cast with its signed destination. Wide equality retains an unsigned
+widening in its original type, even though the equality is filed as `Int64`.
+The comparison or conditional result type can identify a `uint32` operation
+whose node carries the shared 32-bit word encoding.
 Standalone comparisons also recognize the bounded bitwise and shift operands.
 Even intrinsically decided guards in these forms retain their conditional;
 checking selects the arm. The
@@ -546,7 +561,7 @@ graph then joins that offset to element `i` at stride four; memory resolution
 asks the same overflow question itself within the statement that forms it
 (`a_word_read_through_a_byte_offset_is_the_element_read.md`).
 Literal-mask bounds are recorded when the graph introduces the index node;
-address equalities over a common exact wide stride retain full-width index
+integer address equalities over a common exact wide stride retain full-width index
 equalities. A table-read branch extends its context with its one new address
 disequality before considering the next cell.
 

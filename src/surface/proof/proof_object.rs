@@ -1187,7 +1187,7 @@ impl ProofExecutionView<'_> {
                 };
                 Some((|| {
                     let condition = synthesize_surface_proposition(
-                        &Proposition::ConditionIs(condition.clone(), true),
+                        &Proposition::condition_is(condition.clone(), true),
                         self.context.parameter_binding(),
                         &case.state,
                     )
@@ -1773,11 +1773,15 @@ fn register_state_names(
             // local's value, or a pointer local's whole address, is exactly
             // the local.
             // A temporary the translation introduced has no source spelling.
-            if name.named().is_some_and(|name| {
-                name.starts_with("__click")
-                    || name.starts_with("__rust_")
-                    || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-            }) {
+            if name
+                .local_id()
+                .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                || name.named().is_some_and(|name| {
+                    name.starts_with("__click")
+                        || name.starts_with("__rust_")
+                        || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                })
+            {
                 continue;
             }
             let name = name
@@ -1961,6 +1965,23 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             Obligation::Proposition(goal) => Some(goal.proposition()),
             _ => None,
         }
+    }
+
+    fn written_pointer_goal(&self) -> Option<&ClickProposition> {
+        let branch = self
+            .0
+            .state()
+            .open_branches()
+            .get(self.0.focused_branch())?;
+        let Obligation::Proposition(goal) = &branch.obligation else {
+            return None;
+        };
+        if goal.generated_surface
+            || !matches!(&goal.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(left, right), _)) if left != right && left.address() == right.address()))
+        {
+            return None;
+        }
+        goal.surface.as_deref()
     }
 
     fn premises(&self, limit: usize) -> Vec<&Proposition> {

@@ -21,8 +21,8 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
     let field_alias = alias.offset_by_bytes(4);
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
-        let mut unrelated = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(alias.clone(), pointer.clone()),
+        let mut unrelated = PureFactContext::new().assume_proposition(Proposition::condition_is(
+            ConditionTerm::address_equal(alias.clone(), pointer.clone()),
             true,
         ));
         for index in 1..=count {
@@ -283,7 +283,7 @@ fn heap_free_loan_obligation_ignores_unrelated_aliases_and_loans() {
             if grow_aliases {
                 for i in 0..count {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             backing_base.clone(),
                             Address::symbolic(Variable(950_000 + i)),
                         ),
@@ -355,7 +355,7 @@ fn realloc_loan_requirement_work_is_bounded_by_the_pending_result() {
             if grow_aliases {
                 for i in 0..count {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             loan_base.clone(),
                             Address::symbolic(Variable(955_000 + i)),
                         ),
@@ -662,8 +662,8 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
         let mut facts = PureFactContext::new();
         for index in 0..count {
             let alias = Address::symbolic(Variable(960_000 + index));
-            facts = facts.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(alias, base.clone()),
+            facts = facts.assume_proposition(Proposition::condition_is(
+                ConditionTerm::address_equal(alias, base.clone()),
                 true,
             ));
             memory = memory.store(
@@ -678,7 +678,7 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
         facts = facts.assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: query.clone(),
-            bytes: MachineTerm::constant(8),
+            bytes: (MachineTerm::constant(8)).into(),
             wide: false,
         });
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {

@@ -23,7 +23,8 @@ fn growing_shared_range_certificates_reuse_endpoints_without_exports() {
                     IntegerTerm::Machine(observation.clone()),
                     IntegerTerm::constant_i64(7),
                 );
-                facts = facts.assume_proposition(Proposition::ConditionIs(condition.clone(), true));
+                facts =
+                    facts.assume_proposition(Proposition::condition_is(condition.clone(), true));
                 let evidence = RangeBoundEvidence::for_true_condition(&condition, &facts).unwrap();
                 assert!(evidence.checks(&condition, &facts));
                 assert!(!observation.has_boxed_operand());

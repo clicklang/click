@@ -10,7 +10,7 @@ fn shared_wide_constant_capture_scales_with_dag_and_selected_sources() {
             let variable =
                 |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
             let mut root = variable(998771);
-            let source = Proposition::ConditionIs(
+            let source = Proposition::condition_is(
                 ConditionTerm::integer_equal(
                     IntegerTerm::Machine(
                         SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap(),

@@ -457,7 +457,7 @@ fn authority_identity_cannot_be_recovered_through_a_pointer_alias() {
     let pointer = anchor(8_870_040);
     let alias = anchor(8_870_041);
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(pointer.clone(), alias.clone()),
+        ConditionTerm::address_equal(pointer.clone(), alias.clone()),
         true,
     );
     let state = ledger(pointer);

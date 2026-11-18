@@ -273,7 +273,7 @@ pub(super) fn incompatible_pointer_argument(
             if pointee.may_designate(&object) || pointer.is_null() {
                 return None;
             }
-            if assumptions.decide(&ConditionTerm::pointer_equal(
+            if assumptions.decide(&ConditionTerm::address_equal(
                 pointer.address().clone(),
                 Address::null(),
             )) == Some(true)
@@ -315,7 +315,7 @@ pub(super) fn incompatible_pointer_return(
     if pointee.may_designate(&object) || pointer.is_null() {
         return None;
     }
-    if assumptions.decide(&ConditionTerm::pointer_equal(
+    if assumptions.decide(&ConditionTerm::address_equal(
         pointer.address().clone(),
         Address::null(),
     )) == Some(true)
@@ -773,7 +773,7 @@ pub(super) fn append_string_literal_loadable_facts(
         let proposition = Proposition::MemoryLoadable {
             memory: state.memory.clone(),
             base,
-            bytes: MachineTerm::constant(literal.bytes().len() as u32),
+            bytes: (MachineTerm::constant(literal.bytes().len() as u32)).into(),
             wide: false,
         };
         if !facts.iter().any(|fact| fact.proposition() == &proposition) {
@@ -1423,7 +1423,7 @@ mod pointer_argument_tests {
                 "argument_source".into(),
                 vec![],
             ),
-            SharedPointerValue::import(&pointer),
+            SharedPointer::import(&pointer),
         );
         let mut state = ExecutionState::new();
         state.locals.set_retained_typed_with_all_qualifiers(
@@ -1474,7 +1474,7 @@ mod pointer_argument_tests {
                 .unwrap()
                 .pointer_payload()
                 .unwrap()
-                .same_source_payload(&SharedPointerValue::import(legacy.pointer().unwrap()))
+                .same_source_payload(&SharedPointer::import(legacy.pointer().unwrap()))
         );
     }
 }
@@ -1497,7 +1497,7 @@ mod pointer_return_tests {
                 "source".into(),
                 vec![],
             ),
-            SharedPointerValue::import(&pointer),
+            SharedPointer::import(&pointer),
         );
         let plain = program_function(
             ProgramType::Int32Pointer,

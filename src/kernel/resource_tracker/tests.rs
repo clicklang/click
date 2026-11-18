@@ -693,7 +693,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         )
     };
     let fact = |memory: &SymbolicMemory| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -718,7 +718,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
     );
     assert_eq!(version_mismatch(&fact(&entry), &fact(&entry)), None);
 
-    let other = Proposition::ConditionIs(
+    let other = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -1083,7 +1083,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     assert_eq!(after.known_value(&cell), None, "the store dropped the cell");
     let after = intern_memory(after);
     let index_is_zero = |value| {
-        PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::equal(index.clone(), MachineTerm::constant(0)),
             value,
         ))
@@ -1119,14 +1119,14 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     else {
         panic!("complete int32 observations");
     };
-    let source = Proposition::ConditionIs(ConditionTerm::equal(old, three.clone()), true);
+    let source = Proposition::condition_is(ConditionTerm::equal(old, three.clone()), true);
     assert!(crate::kernel::eval::holds_by_read_over_write(&source));
     let premises = [source, equality];
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
     let condition = ConditionTerm::equal(new, three);
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-            &Proposition::ConditionIs(condition.clone(), true),
+            &Proposition::condition_is(condition.clone(), true),
             &premises,
             &facts,
         )
@@ -1135,7 +1135,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     );
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-            &Proposition::ConditionIs(condition, false),
+            &Proposition::condition_is(condition, false),
             &premises,
             &facts,
         )
@@ -1273,7 +1273,7 @@ fn branch_join_typed_agreement_checks_alias_premises_and_access_width() {
     let right = intern_memory(before.store(alias.clone(), one()));
     let bare = PureFactContext::new();
     let separated = bare.clone().assume_condition(
-        ConditionTerm::pointer_equal(alias, at(cell.base.clone(), 8)),
+        ConditionTerm::address_equal(alias, at(cell.base.clone(), 8)),
         true,
     );
     let query = |facts: &PureFactContext, bytes| {
@@ -1492,7 +1492,7 @@ fn structural_read_dependencies_keep_the_observed_point_and_exact_width() {
         &origin,
         "selection should cross the unrelated store"
     );
-    let fact = Proposition::ConditionIs(ConditionTerm::equal(read.clone(), 0u32.into()), true);
+    let fact = Proposition::condition_is(ConditionTerm::equal(read.clone(), 0u32.into()), true);
     let reads = reads_of_proposition(&fact);
     assert_eq!(reads.len(), 1);
     assert_eq!(reads[0].resource, OwnedResource::Cell { pointer, bytes: 4 });
@@ -1595,7 +1595,7 @@ fn shared_offset_condition_resource_reads_keep_native_right_first_order() {
             4,
         )
     };
-    let source = ConditionTerm::PointerOffsetEqual(
+    let source = ConditionTerm::AddressOffsetEqual(
         Box::new(AddressOffset::Add(
             Box::new(offset("global:g")),
             Box::new(offset("global:h")),
@@ -1629,7 +1629,7 @@ fn raw_pointer_condition_reads_keep_block_and_displacement_order() {
     left.offset = AddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
     let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.offset = offset("local:f:i");
-    let source = ConditionTerm::PointerEqual(Box::new(left), Box::new(right));
+    let source = ConditionTerm::AddressEqual(Box::new(left), Box::new(right));
     let root = KernelTermImport::default().condition(&source);
     let mut expected = Vec::new();
     let mut actual = Vec::new();
@@ -1657,7 +1657,7 @@ fn complete_pointer_conditions_keep_read_order() {
     left.offset = AddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
     let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.offset = offset("local:f:i");
-    let source = ConditionTerm::PointerValueEqual(
+    let source = ConditionTerm::PointerEqual(
         Box::new(Pointer::new(left, ProgramType::Int32Pointer)),
         Box::new(Pointer::new(right, ProgramType::Int32Pointer)),
     );

@@ -374,25 +374,25 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
         arguments: vec![],
     };
     // An exactly available bare condition.
-    let exact = Proposition::ConditionIs(equality.clone(), true);
+    let exact = Proposition::condition_is(equality.clone(), true);
     // A bare condition the frozen checker decides against, read through `not`.
-    let negated = Proposition::Not(Box::new(Proposition::ConditionIs(refuted.clone(), true)));
+    let negated = Proposition::Not(Box::new(Proposition::condition_is(refuted.clone(), true)));
     // Compound clauses no exact route establishes. The logical descent that
     // used to split these now belongs to the refinement theorem's proof, so
     // the kernel answers no — and must do so without an ambient scan.
     let structural = Proposition::And(
-        Box::new(Proposition::ConditionIs(bound.clone(), true)),
+        Box::new(Proposition::condition_is(bound.clone(), true)),
         Box::new(Proposition::Or(
-            Box::new(Proposition::ConditionIs(equality.clone(), true)),
+            Box::new(Proposition::condition_is(equality.clone(), true)),
             Box::new(unproved.clone()),
         )),
     );
     let guarded = Proposition::Implies(
-        Box::new(Proposition::ConditionIs(refuted.clone(), true)),
+        Box::new(Proposition::condition_is(refuted.clone(), true)),
         Box::new(unproved),
     );
-    let integer_exact = Proposition::ConditionIs(size_invariant.clone(), true);
-    let integer_unproved = Proposition::ConditionIs(unrelated_size, true);
+    let integer_exact = Proposition::condition_is(size_invariant.clone(), true);
+    let integer_unproved = Proposition::condition_is(unrelated_size, true);
 
     let samples = [4, 16, 64, 256]
         .into_iter()
@@ -467,7 +467,7 @@ fn established_callback_frame_rule_ignores_unrelated_owners_and_aliases() {
             if aliases {
                 for i in 0..count {
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             Address::symbolic(Variable(8_960_000)),
                             Address::symbolic(Variable(8_962_000 + i)),
                         ),

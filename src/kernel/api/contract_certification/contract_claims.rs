@@ -11,6 +11,7 @@ pub(crate) use completion::{
 };
 
 mod retained_context;
+use retained_context::expand_certification_exit;
 pub(crate) use retained_context::{RetainedClosingEntry, RetainedClosingFootprint};
 
 mod closing;
@@ -312,7 +313,7 @@ mod cached_read_completion_tests {
         memory: SymbolicMemory,
         published: SymbolicMemory,
     ) -> Result<CheckedFunctionProposition, String> {
-        let proposition = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let proposition = Proposition::condition_is(ConditionTerm::Constant(true), true);
         let state = ExecutionState::new().with_memory(published);
         let function = program_function(
             ProgramType::Int32,
@@ -394,7 +395,7 @@ mod cached_read_completion_tests {
         let strengthened = FunctionSpecification::new(
             specification.state().clone(),
             specification.arguments().to_vec(),
-            vec![Proposition::ConditionIs(
+            vec![Proposition::condition_is(
                 ConditionTerm::Constant(false),
                 true,
             )],
@@ -1324,6 +1325,7 @@ fn prepare_function_claim_path(
         assumptions,
         facts: facts.into(),
         projection: None,
+        exit: Default::default(),
     };
     prepare_closing_path(
         function,
@@ -1584,20 +1586,15 @@ fn prepare_closing_path(
         )
         .map_err(|error| error.to_string())?
     };
-    let mut claim_exit_state = raw_exit_state.clone();
-    claim_exit_state.set_memory(exit_memory.clone());
-    let Some(post_resources) =
-        super::super::super::functions::expand_all_composite_resource_facts_at_state(
-            claim_exit_state.resources(),
-            function.composite_resource_definitions(),
-            &claim_exit_state,
+    let mut claim_exit_state = (**raw_exit_state).clone().with_memory(exit_memory.clone());
+    let post_resources = entry
+        .prepare_exit_projection(
+            function,
+            raw_exit_state,
+            &mut claim_exit_state,
             &assumptions,
         )
-    else {
-        return Err("the exit resource context cannot be expanded"
-            .to_string()
-            .into());
-    };
+        .ok_or_else(|| "the exit resource context cannot be expanded".to_string())?;
     let post_resources = with_unmatched_instance_body_views(
         post_resources,
         claim_exit_state.resources().facts(),
@@ -1706,7 +1703,7 @@ fn prepare_closing_path(
         caller_state: caller_state.clone(),
         arguments: arguments.to_vec(),
         outcome: outcome.clone(),
-        exit_state: Some(*claim_exit_state),
+        exit_state: Some(claim_exit_state),
         entry_state,
         required_resources,
         checked_required_resources,
@@ -1776,7 +1773,7 @@ fn obligation_has_known_condition_consequent(
     }
     match obligation {
         Proposition::ConditionIs(condition, value) => {
-            assumptions.difference_decision(condition, &[]) == Some(*value)
+            assumptions.difference_decision(condition.native_compat(), &[]) == Some(*value)
         }
         _ => false,
     }
@@ -2555,7 +2552,14 @@ impl<'a> FunctionEnsureGoalContext<'a> {
                 assumptions,
             )?;
         entry_state = entry_state.with_resource_context(expanded_entry_resources);
-        Self::at_entry(function, caller_state, entry_state, outcome, assumptions)
+        Self::at_entry(
+            function,
+            caller_state,
+            entry_state,
+            outcome,
+            assumptions,
+            None,
+        )
     }
 
     pub(crate) fn from_retained_entry(
@@ -2570,6 +2574,7 @@ impl<'a> FunctionEnsureGoalContext<'a> {
             entry.state.clone(),
             outcome,
             assumptions,
+            Some(entry),
         )
     }
 
@@ -2579,6 +2584,7 @@ impl<'a> FunctionEnsureGoalContext<'a> {
         entry_state: ExecutionState,
         outcome: &FunctionOutcome,
         assumptions: &PureFactContext,
+        retained_entry: Option<&RetainedClosingEntry>,
     ) -> Option<Self> {
         let FunctionOutcome::Return {
             value,
@@ -2594,16 +2600,18 @@ impl<'a> FunctionEnsureGoalContext<'a> {
             function,
         )
         .ok()?;
-        let claim_return_state = return_state.clone().with_memory(exit_memory.clone());
-        let post_resources =
-            crate::kernel::functions::expand_all_composite_resource_facts_at_state(
-                claim_return_state.resources(),
-                function.composite_resource_definitions(),
-                &claim_return_state,
+        let mut claim_return_state = (**return_state).clone().with_memory(exit_memory.clone());
+        let resources = match retained_entry {
+            Some(entry) => entry.prepare_exit_projection(
+                function,
+                return_state,
+                &mut claim_return_state,
                 assumptions,
-            )?;
+            )?,
+            None => expand_certification_exit(function, &claim_return_state, assumptions)?,
+        };
         let mut post_state = entry_state.clone().with_memory(exit_memory);
-        post_state = post_state.with_resource_context(post_resources);
+        post_state = post_state.with_resource_context(resources);
         post_state.observed_population_families = return_state.observed_population_families.clone();
         // Preserve checked body consumption evidence when reconstructing the exit.
         post_state.population_effects = return_state.population_effects.clone();
@@ -2790,12 +2798,7 @@ fn exceptional_goals_at_entry(
 /// Whether a lowered ensure folded to a constant truth: the kernel's own
 /// evaluation at the outcome decided it, so it needs no completion.
 fn lowered_goal_is_constant_true(proposition: &Proposition) -> bool {
-    let constant_true = |proposition: &Proposition| {
-        matches!(
-            completion_key(proposition),
-            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-        )
-    };
+    let constant_true = |proposition: &Proposition| matches!(&completion_key(proposition), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _))));
     // Evaluation includes the read-over-write authority: a read of a
     // stored cell is the value stored there.
     constant_true(proposition)
@@ -2810,11 +2813,14 @@ fn lowered_goal_is_constant_true(proposition: &Proposition) -> bool {
 /// one form by exact structural rules: no fact is consulted.
 pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
     fn truth(value: bool) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::Constant(value), true)
+        Proposition::condition_is(ConditionTerm::Constant(value), true)
     }
     fn as_truth(proposition: &Proposition) -> Option<bool> {
         match proposition {
-            Proposition::ConditionIs(ConditionTerm::Constant(constant), value) => {
+            condition_source_0 @ Proposition::ConditionIs(_, value)
+                if let Some((ConditionTerm::Constant(constant), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 Some(constant == value)
             }
             _ => None,
@@ -2828,17 +2834,17 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
                 left,
                 right,
             } => left == right,
+            ConditionTerm::AddressEqual(left, right) => left == right,
             ConditionTerm::PointerEqual(left, right) => left == right,
-            ConditionTerm::PointerValueEqual(left, right) => left == right,
-            ConditionTerm::PointerOffsetEqual(left, right) => left == right,
+            ConditionTerm::AddressOffsetEqual(left, right) => left == right,
             _ => false,
         }
     }
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            if let ConditionTerm::Constant(constant) = condition {
+            if let ConditionTerm::Constant(constant) = condition.native_compat() {
                 truth(constant == value)
-            } else if reflexive(condition) {
+            } else if reflexive(condition.native_compat()) {
                 truth(*value)
             } else {
                 proposition.clone()
@@ -2863,7 +2869,7 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
             match (as_truth(&body), body) {
                 (Some(value), _) => truth(!value),
                 (None, Proposition::ConditionIs(condition, value)) => {
-                    Proposition::ConditionIs(condition, !value)
+                    Proposition::condition_is(condition, !value)
                 }
                 (None, body) => Proposition::Not(Box::new(body)),
             }
@@ -3155,7 +3161,7 @@ mod checked_proposition_index_tests {
     use super::*;
 
     fn route(variable: u64, value: bool) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3168,7 +3174,7 @@ mod checked_proposition_index_tests {
 
     fn lowering_candidate(marker: bool, facts: Vec<Proposition>) -> SpecPropositionPath {
         SpecPropositionPath {
-            proposition: Proposition::ConditionIs(ConditionTerm::Constant(marker), true),
+            proposition: Proposition::condition_is(ConditionTerm::Constant(marker), true),
             facts: facts.into_iter().map(ExecutionPureFact::new).collect(),
             obligations: Vec::new(),
             introductions: LoweringIntroductions::new(),
@@ -3266,7 +3272,7 @@ mod checked_proposition_index_tests {
 
     #[test]
     fn completions_are_indexed_by_the_claim_they_closed() {
-        let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
         let checked = |claim: Option<FunctionContractClaimTarget>| {
             let function = ProgramFunction::new(
                 ProgramType::Void,
@@ -3316,7 +3322,7 @@ mod checked_proposition_index_tests {
         // This is deliberately a fact recorded by execution after entry.  It
         // must not make an entry-dependent resource term evaluable during
         // certification setup.
-        let body_fact = Proposition::ConditionIs(
+        let body_fact = Proposition::condition_is(
             ConditionTerm::signed_less_than(
                 MachineTerm::Variable(Variable(93_001)),
                 MachineTerm::constant(8),
@@ -3421,7 +3427,7 @@ mod unproved_path_obligation_message_tests {
     /// lowering wrote, never as a kernel term dump.
     #[test]
     fn names_the_obligation_by_its_context_without_a_term_dump() {
-        let condition = Proposition::ConditionIs(
+        let condition = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -3601,14 +3607,14 @@ mod claim_requirement_tests {
 
     #[test]
     fn claim_identity_requires_its_evaluation_obligations_in_this_context() {
-        let domain = Proposition::ConditionIs(
+        let domain = Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::Variable(Variable(991_001)),
                 MachineTerm::constant(1),
             ),
             true,
         );
-        let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
         let empty = PureFactStore::from_ordered(std::slice::from_ref(&truth));
         let established = empty.with_kernel_checked_fact(domain.clone());
         for (target, is_exceptional) in [
@@ -3725,7 +3731,7 @@ mod retained_contract_input_tests {
     use super::*;
     use crate::kernel::{
         AlgebraicType, ExecutionValue, KernelTermExport, KernelTermImport, KernelType,
-        LocalBinding, SharedPointerValue, StoredExecutionValue,
+        LocalBinding, SharedPointer, StoredExecutionValue,
     };
 
     fn prepared_input(value: StoredExecutionValue) -> StoredExecutionValue {
@@ -3746,6 +3752,7 @@ mod retained_contract_input_tests {
             state.clone(),
             &outcome,
             &PureFactContext::new(),
+            None,
         )
         .unwrap();
         assert!(
@@ -3778,8 +3785,8 @@ mod retained_contract_input_tests {
                 KernelType::Algebraic(AlgebraicType::parameter("T".into())),
                 Variable(996805),
             ),
-            KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer)),
-            KernelTerm::shared_pointer_value(SharedPointerValue::import(
+            KernelTerm::shared_pointer_value(SharedPointer::import(&pointer)),
+            KernelTerm::shared_pointer_value(SharedPointer::import(
                 &pointer.with_pointee_constant(true),
             )),
         ];
@@ -3807,7 +3814,7 @@ mod retained_contract_input_tests {
                         .unwrap()
                         .pointer_payload()
                         .unwrap()
-                        .same_source_payload(&SharedPointerValue::import(pointer))
+                        .same_source_payload(&SharedPointer::import(pointer))
                 );
             } else {
                 assert_eq!(actual.shared(), Some(&root));

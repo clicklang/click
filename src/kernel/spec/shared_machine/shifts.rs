@@ -95,7 +95,7 @@ fn with_count_width(
     let mut domain = Vec::new();
     let mut require_false = |condition| {
         if PureFactContext::decide_intrinsically(&condition) != Some(false) {
-            domain.push(Proposition::ConditionIs(condition, false));
+            domain.push(Proposition::condition_is(condition, false));
         }
     };
     if count_format.format().is_signed() {
@@ -113,7 +113,7 @@ fn with_count_width(
     }
     if op == MachineBinaryOp::ShiftLeft && format.format().is_signed() {
         require_false(compare(format, &left, CompareRelation::LessThan, 0));
-        domain.push(Proposition::ConditionIs(
+        domain.push(Proposition::condition_is(
             ConditionTerm::signed_shift_result_fits_views(
                 format,
                 MachineOperandView::Shared(&left),

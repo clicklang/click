@@ -187,101 +187,87 @@ fn assert_loan_write_rejected(outcome: &StatementOutcome) {
     assert!(diagnostic.subject().conflicting_resource_fact().is_some());
 }
 
-fn assert_loan_write_obligation_is_unprovable(path: &StatementExecutionPath) {
+fn loan_write_separation(path: &StatementExecutionPath) -> (&Resource, &Resource) {
     assert!(matches!(path.outcome, StatementOutcome::Normal(_)));
-    let separation = path
-        .obligations
-        .iter()
-        .find_map(|obligation| match obligation.proposition() {
-            Proposition::ResourceSeparate { left, right } => Some((left, right)),
-            _ => None,
-        })
-        .expect("the scalar write must retain its loan separation obligation");
-    assert!(!PureFactContext::new().proves_resource_separate(separation.0, separation.1));
+    let [obligation] = path.obligations.as_slice() else {
+        panic!(
+            "expected one scalar write obligation, got {:?}",
+            path.obligations
+        );
+    };
+    let Proposition::ResourceSeparate { left, right } = obligation.proposition() else {
+        panic!(
+            "expected loan separation, got {:?}",
+            obligation.proposition()
+        );
+    };
+    (left, right)
 }
 
 #[test]
 fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store() {
     let _session = crate::kernel::VerificationSession::enter();
-    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".into()]));
-    let declared = execute_execution_statement_paths(
-        &ExecutionState::new(),
-        &ProgramStatement::Declare {
-            name: ("x".to_string()).into(),
-            program_type: ProgramType::Int32,
-            volatile: false,
-            pointee_volatile: false,
-            constant: false,
-            pointee_constant: false,
-            initializer: None,
-            zero_fill: None,
-            declared_class: None,
-        },
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("local declaration should execute");
-    let state = normal_state(&declared);
-    let pointer = state.locals().slot("x").cloned().expect("local pointer");
-    let loan = active_memory_loan(MemoryRange::new(
+    let declaration = program_declare("x", ProgramType::Int32);
+    let execute = |state: &ExecutionState, statement: &ProgramStatement| {
+        execute_execution_statement_paths(
+            state,
+            statement,
+            &PureFactContext::new(),
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap()
+    };
+    let state = normal_state(&execute(&ExecutionState::new(), &declaration));
+    let state = normal_state(&execute(&state, &program_declare("y", ProgramType::Int32)));
+    let pointer = state.locals().slot("x").unwrap().clone();
+    let write = program_assign("x", crate::kernel::program_expression::int32_literal(1));
+    let store = program_store(
+        crate::kernel::program_expression::addr_of("x"),
+        crate::kernel::program_expression::int32_literal(1),
+    );
+    assert!(execute(&state, &write)[0].obligations.is_empty());
+
+    let overlapping = active_memory_loan(MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));
-    let state = state.with_loan_ledger(Some(loan));
-
-    let direct = execute_execution_statement_paths(
-        &state,
-        &ProgramStatement::Assign {
-            source: Default::default(),
-            name: ("x".to_string()).into(),
-            expression: crate::kernel::program_expression::int32_literal(1),
-            prior_result: None,
-        },
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("direct assignment should return a checked refusal");
-    assert_loan_write_rejected(&direct[0].outcome);
-
-    let reused = execute_execution_statement_paths(
-        &state,
-        &ProgramStatement::Declare {
-            name: ("x".to_string()).into(),
-            program_type: ProgramType::Int32,
-            volatile: false,
-            pointee_volatile: false,
-            constant: false,
-            pointee_constant: false,
-            initializer: None,
-            zero_fill: None,
-            declared_class: None,
-        },
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("name reuse should return a checked refusal");
-    assert_loan_write_rejected(&reused[0].outcome);
-
-    let alias_state = state.with_local(
-        "p",
-        ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
+    let loaned = state.clone().with_loan_ledger(Some(overlapping));
+    let direct = execute(&loaned, &write);
+    let indirect = execute(&loaned, &store);
+    let (written, protected) = loan_write_separation(&direct[0]);
+    assert_eq!((written, protected), loan_write_separation(&indirect[0]));
+    assert_eq!(
+        written,
+        &Resource::Memory(MemoryRange::from_pointer_value(
+            &Pointer::new(pointer, ProgramType::Int32Pointer),
+            0u32.into(),
+            1u32.into(),
+            4,
+        )),
     );
-    let indirect = execute_execution_statement_paths(
-        &alias_state,
-        &program_store(
-            crate::kernel::program_expression::variable("p"),
-            crate::kernel::program_expression::int32_literal(2),
-        ),
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("alias store should return its loan obligation");
-    assert_loan_write_obligation_is_unprovable(&indirect[0]);
+    assert!(!PureFactContext::new().proves_resource_separate(written, protected));
+    assert_loan_write_rejected(&execute(&loaned, &declaration)[0].outcome);
+
+    let disjoint = active_memory_loan(MemoryRange::new(
+        state.locals().slot("y").unwrap().clone(),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
+    ));
+    let loaned = state.with_loan_ledger(Some(disjoint));
+    let unowned = loaned.clone().with_resource_context(ResourceContext::new());
+    assert!(matches!(
+        execute(&unowned, &write)[0].outcome,
+        StatementOutcome::RuntimeError(RuntimeError::MissingResource { .. })
+    ));
+    let direct = execute(&loaned, &write);
+    let (written, protected) = loan_write_separation(&direct[0]);
+    assert!(PureFactContext::new().proves_resource_separate(written, protected));
+    assert_eq!(
+        normal_state(&direct).locals().get_native("x").as_deref(),
+        Some(&int32(1))
+    );
 }
 
 #[test]
@@ -735,7 +721,7 @@ fn symbolic_address_bases_do_not_imply_non_aliasing() {
     };
 
     assert_eq!(
-        PureFactContext::new().decide(&ConditionTerm::pointer_equal(symbolic, concrete)),
+        PureFactContext::new().decide(&ConditionTerm::address_equal(symbolic, concrete)),
         None
     );
 }
@@ -836,7 +822,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition.clone(), true)),
+            Box::new(Proposition::condition_is(condition.clone(), true)),
             Box::new(Proposition::ProgramFunctionVerifies {
                 state: Box::new(state.clone()),
                 function: Box::new(function.clone()),
@@ -860,7 +846,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
     assert_eq!(
         execution.paths()[1].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition, false)),
+            Box::new(Proposition::condition_is(condition, false)),
             Box::new(Proposition::ProgramFunctionVerifies {
                 state: Box::new(state.clone()),
                 function: Box::new(function),
@@ -2094,7 +2080,7 @@ fn while_invariant_is_proof_obligation() {
     let invariant = Proposition::MemoryLoadable {
         memory: SymbolicMemory::new(),
         base: pointer,
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let state = ExecutionState::new().with_local("x", int32(0));
@@ -2435,10 +2421,9 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
         goals.declarations()[0][0].proposition(),
         goals.declarations()[1][0].proposition()
     );
-    assert!(matches!(
-        goals.declarations()[0][0].proposition(),
-        Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
-    ));
+    assert!(
+        matches!(&goals.declarations()[0][0].proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+    );
     assert!(
         loop_invariant_obligations_at_entry(&state, &checks, &assumptions)
             .unwrap()
@@ -2487,7 +2472,7 @@ fn loop_entry_goals_preserve_guarded_judgments() {
 
 /// `a != 0` as the kernel spells a short-circuit guard operand's fact.
 fn guard_operand_fact(variable: u64, nonzero: bool) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -3434,7 +3419,7 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     let null = Pointer::new(Address::null(), ProgramType::Int32Pointer);
     let empty = PureFactContext::new();
     let known_null = empty.clone().assume_condition(
-        ConditionTerm::pointer_equal(unknown.address().clone(), Address::null()),
+        ConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         true,
     );
     for (pointer, facts) in [(null, &empty), (unknown.clone(), &known_null)] {
@@ -3447,7 +3432,7 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     let back = ExecutionState::new().with_local("parent", ProgramValue::Pointer(unknown.clone()));
     assert!(loop_state_components_match_at_back_edge(&head, &back, &empty, &[]).is_err());
     let nonnull = empty.assume_condition(
-        ConditionTerm::pointer_equal(unknown.address().clone(), Address::null()),
+        ConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         false,
     );
     assert!(loop_state_components_match_at_back_edge(&head, &back, &nonnull, &[]).is_err());

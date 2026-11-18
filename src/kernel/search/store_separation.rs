@@ -78,7 +78,7 @@ pub(crate) fn cells_forgotten_beside_stores(
             pairs.push(ForgottenStoreCell {
                 cell: cell.clone(),
                 store: (*store).clone(),
-                indices_differ: Proposition::ConditionIs(equal, false),
+                indices_differ: Proposition::condition_is(equal, false),
                 store_index: indices.right,
                 cell_index: indices.left,
                 format: indices.format,
@@ -102,8 +102,8 @@ pub(crate) fn element_address_disequality_indices(
     SharedMachineIntegerTerm,
     MachineIntegerType,
 )> {
-    let Proposition::ConditionIs(crate::kernel::ConditionTerm::PointerEqual(left, right), false) =
-        goal
+    let Some((crate::kernel::ConditionTerm::AddressEqual(left, right), false)) =
+        goal.condition_native()
     else {
         return None;
     };

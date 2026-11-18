@@ -181,10 +181,10 @@ pub(crate) fn transport_address(
         .ok()
 }
 pub(crate) fn transport_pointer(
-    source: &SharedPointerValue,
+    source: &SharedPointer,
     after: &SymbolicMemory,
     assumptions: Option<(&PureFactContext, bool)>,
-) -> Option<SharedPointerValue> {
+) -> Option<SharedPointer> {
     let reconstructed = matches!(
         source.node().address.node().offset.node(),
         KernelAddressOffset::Constant(0)
@@ -330,7 +330,7 @@ mod tests {
                 LoadKind::Int32,
             ),
         }));
-        let shared = SharedPointerValue::import(&source);
+        let shared = SharedPointer::import(&source);
         let output = transport_pointer(&shared, &after, None).unwrap();
         assert_eq!(output, shared);
         assert!(Arc::ptr_eq(
@@ -351,7 +351,7 @@ mod tests {
             .clone()
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
         let loaded = Arc::new(Address::loaded_value(&before, &field));
-        let base = Address::integer_address(MachineTerm::MemoryLoad(
+        let base = Address::from_integer_address(MachineTerm::MemoryLoad(
             ProgramPoint::at(&before),
             Box::new(field),
             LoadKind::Bits64,
@@ -373,7 +373,7 @@ mod tests {
             .with_provenance(loaded.clone())
             .with_bounds_owner(Some(loaded.clone()));
             assert!(source.address().integer_address_bits().is_none());
-            let shared = SharedPointerValue::import(&source);
+            let shared = SharedPointer::import(&source);
             let expected = transport_framed_atomic_pointer_value(&source, &after, None)
                 .expect("ordinary origin requires no new complete-word evidence");
             let output = transport_pointer(&shared, &after, None).unwrap();
@@ -392,7 +392,7 @@ mod tests {
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
         let loaded = Arc::new(Address::loaded_value(&before, &field));
         let source = Pointer::new(
-            Address::integer_address(MachineTerm::MemoryLoad(
+            Address::from_integer_address(MachineTerm::MemoryLoad(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),
                 LoadKind::Bits64,
@@ -401,7 +401,7 @@ mod tests {
         )
         .with_provenance(loaded.clone())
         .with_bounds_owner(Some(loaded));
-        let shared = SharedPointerValue::import(&source);
+        let shared = SharedPointer::import(&source);
         let context = PureFactContext::new();
         let expected =
             transport_framed_atomic_pointer_value(&source, &after, Some((&context, true)));
