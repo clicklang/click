@@ -191,7 +191,9 @@ planning as proven overlaps. For a composite lend, the planner checks the
 selected body frontier against the original entry partition, which still
 indexes the owners removed by reservation. The check visits the explicit
 frontier and uses indexed boundary queries. An undecided boundary retains
-its ordinary separation obligation.
+its ordinary separation obligation. A view adapter that materializes a head
+from the caller's own pieces carries the partition established by consuming
+those pieces into the loan.
 
 A declared mutable effect is a consequence of the transferred authority.
 Each effect range is compared with the full checked view frontier; an effect

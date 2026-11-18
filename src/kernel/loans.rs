@@ -3766,14 +3766,21 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 // an owned requirement cannot overlap a composite view even
                 // after reservation removed it from the residual. The
                 // frontier's internal partition was checked at expansion.
-                match caller_resources
-                    .checked_frontier_boundary_conflict(&backing.pieces, assumptions)
-                {
-                    Ok(None) => {}
-                    Ok(Some(_)) => {
-                        return Err(StableViewPlanError::ConflictingRequirement(selected));
+                // A materialized adapter already consumed these pieces
+                // from this partition before inserting the head. Its
+                // restoration recipe carries that separation through the
+                // lend. The ordinary and folded-owner adapter paths still
+                // check the boundary for their described backing.
+                if backing.restored.is_empty() {
+                    match caller_resources
+                        .checked_frontier_boundary_conflict(&backing.pieces, assumptions)
+                    {
+                        Ok(None) => {}
+                        Ok(Some(_)) => {
+                            return Err(StableViewPlanError::ConflictingRequirement(selected));
+                        }
+                        Err(error) => return Err(composition_conflict(error, &selected)),
                     }
-                    Err(error) => return Err(composition_conflict(error, &selected)),
                 }
                 planned_ledger.lend_composite(
                     caller,
