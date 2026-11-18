@@ -7968,3 +7968,35 @@ fn widening_casts_in_conditionals_round_trip_after_rewrite() {
         }
     }
 }
+
+#[test]
+fn low_word_casts_in_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (destination, spelling) in [(T::Int32, "int32"), (T::UInt32, "uint32")] {
+        for source in [T::Int64, T::UInt64] {
+            let mut fixture = ConditionalRoundTrip::new(destination, spelling);
+            fixture.state = fixture.state.with_local(
+                "w",
+                source.value_from_term(MachineTerm::Variable(Variable(999712))),
+            );
+            let equality = fixture.lower(&format!("x == (w as {spelling})"));
+            for reverse in [false, true] {
+                for (guard, arm) in [
+                    ("flag", "x"),
+                    ("not flag", "x"),
+                    ("x < y", "z"),
+                    ("x == y", "z"),
+                    ("y <= x", "z"),
+                    ("y != x", "z"),
+                ] {
+                    fixture.check(
+                        &fixture.goal(guard, reverse, arm),
+                        &equality,
+                        guard,
+                        reverse,
+                    );
+                }
+            }
+        }
+    }
+}

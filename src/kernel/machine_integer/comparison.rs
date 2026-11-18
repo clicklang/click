@@ -346,7 +346,7 @@ fn comparison_leaf_operand(operand: crate::kernel::MachineOperandView<'_>) -> Op
         .or_else(|| operand.variable().copied().map(MachineTerm::Variable))
 }
 
-/// Read a bounded bitwise, shift, wrapping arithmetic, or widening cast operand.
+/// Read a bounded bitwise, shift, wrapping arithmetic, or word cast operand.
 /// Inspect only immediate leaves. Use the established word encoding for
 /// unsigned 32-bit arithmetic.
 fn bounded_comparison_operand(
@@ -365,14 +365,15 @@ fn bounded_comparison_operand(
         });
     }
     if in_conditional
-        && observation.format().bits() == 64
         && let Some((spelling, source, destination, child)) = operand.cast()
+        && observation.format().bits() == destination.format().bits()
         && matches!(
             spelling,
             crate::kernel::MachineCastSpelling::Int64From32
                 | crate::kernel::MachineCastSpelling::Int64FromUInt32
                 | crate::kernel::MachineCastSpelling::UInt64FromInt32
                 | crate::kernel::MachineCastSpelling::UInt64From32
+                | crate::kernel::MachineCastSpelling::UInt32From64
         )
     {
         crate::instrumentation::record_deterministic_work(1);
