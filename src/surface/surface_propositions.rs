@@ -972,7 +972,7 @@ impl SurfacePropositionMap {
                             right: b,
                         },
                         _,
-                    )) = (&resolved).condition_native()
+                    )) = resolved.condition_native()
                     {
                         for (expression, term) in qualified.into_iter().zip([a, b]) {
                             if let Some(expression) = expression

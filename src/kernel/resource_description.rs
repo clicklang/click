@@ -249,11 +249,7 @@ impl ResourceDescription {
                 .zip(instance.arguments())
                 .all(|(left, right)| {
                     left == right
-                        || super::resource_field_values_proven_equal(
-                            (left).into(),
-                            (right).into(),
-                            assumptions,
-                        )
+                        || super::resource_field_values_proven_equal(left, right, assumptions)
                 })
     }
 }

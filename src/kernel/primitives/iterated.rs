@@ -140,8 +140,8 @@ impl IteratedMemory {
             stride,
             start_offset,
             end_offset,
-            lower: lower.into(),
-            upper: upper.into(),
+            lower,
+            upper,
             guard,
             holes: Arc::from(Vec::new()),
         })
@@ -257,7 +257,7 @@ impl IteratedMemory {
 
     pub(crate) fn with_stored_hole(&self, index: StoredMachineTerm) -> Self {
         let mut holes = self.holes.to_vec();
-        holes.push(index.into());
+        holes.push(index);
         Self {
             holes: Arc::from(holes),
             ..self.clone()
@@ -350,7 +350,7 @@ impl IteratedGuard {
             cell_type,
             cell_width,
             holds_when_equal,
-            value: value.into(),
+            value,
         }
     }
 

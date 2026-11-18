@@ -1632,7 +1632,7 @@ impl Context<'_> {
                 return Err("shared scalar slice assignment element mismatch".into());
             }
             return Ok(program_seq(
-                program_assign(self.binding(&name), pointer),
+                program_assign(self.binding(name), pointer),
                 program_assign(self.binding(&length), source_length),
             ));
         }
@@ -1647,7 +1647,7 @@ impl Context<'_> {
                 checks,
                 program_seq(
                     program_assign(
-                        self.binding(&name),
+                        self.binding(name),
                         reference_view(pointer, ProgramType::UInt8Pointer, false, constant),
                     ),
                     program_assign(self.binding(&length), length_value),
@@ -1668,7 +1668,7 @@ impl Context<'_> {
                 _ => return Err("unsupported fixed array element".into()),
             };
             return Ok(program_assign(
-                self.binding(&name),
+                self.binding(name),
                 reference_view(pointer, pointer_type, false, constant),
             ));
         }
@@ -1685,7 +1685,7 @@ impl Context<'_> {
             }
             _ => {
                 let (checks, value) = self.prepared_expr(e)?;
-                let mut assignment = program_assign(self.binding(&name), value);
+                let mut assignment = program_assign(self.binding(name), value);
                 if let (
                     Some(import_identity),
                     Some(point),
@@ -1762,7 +1762,7 @@ impl Context<'_> {
                     return Err("owned call operand has no local storage".into());
                 }
                 values.push(crate::kernel::program_expression::variable(
-                    self.binding(&name),
+                    self.binding(name),
                 ));
                 pieces.push((checks, values, None));
                 continue;
@@ -2337,8 +2337,8 @@ impl Context<'_> {
             .get(name)
             .ok_or("unknown Rust slice reference")?;
         Ok((
-            crate::kernel::program_expression::variable(self.binding(&name)),
-            crate::kernel::program_expression::variable(self.binding(&length)),
+            crate::kernel::program_expression::variable(self.binding(name)),
+            crate::kernel::program_expression::variable(self.binding(length)),
         ))
     }
     fn array_source_is_constant(&self, e: &E) -> Result<bool, String> {
@@ -2387,7 +2387,7 @@ impl Context<'_> {
             E::Local { name } if self.shared_scalar_slices.contains_key(name) => {
                 let (length, element) = self.shared_scalar_slices[name].clone();
                 Ok((
-                    crate::kernel::program_expression::variable(self.binding(&name)),
+                    crate::kernel::program_expression::variable(self.binding(name)),
                     crate::kernel::program_expression::variable(self.binding(&length)),
                     element,
                 ))
@@ -2440,7 +2440,7 @@ impl Context<'_> {
             _ => return Err("unsupported fixed array element".into()),
         };
         Ok(reference_view(
-            crate::kernel::program_expression::variable(self.binding(&name)),
+            crate::kernel::program_expression::variable(self.binding(name)),
             pointer_type,
             false,
             *constant,
@@ -2503,13 +2503,13 @@ impl Context<'_> {
             }
             E::Local { name } if self.owned_locals.contains(name) => {
                 Ok(crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(self.binding(&name)),
+                    crate::kernel::program_expression::variable(self.binding(name)),
                     ProgramType::Int32Pointer,
                 ))
             }
             E::Local { name } if self.addressable_locals.contains(name) => {
                 Ok(ProgramExpression::AddressOf(Box::new(
-                    crate::kernel::program_expression::variable(self.binding(&name)),
+                    crate::kernel::program_expression::variable(self.binding(name)),
                 )))
             }
             E::Local { name } if self.memory_values.contains_key(name) => {
@@ -2519,7 +2519,7 @@ impl Context<'_> {
                     );
                 };
                 Ok(crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(self.binding(&name)),
+                    crate::kernel::program_expression::variable(self.binding(name)),
                     ProgramType::ParameterPointer(value_type),
                 ))
             }
@@ -2709,7 +2709,7 @@ impl Context<'_> {
                     return Err(format!("unknown Rust local `{name}`"));
                 }
                 Ok(crate::kernel::program_expression::variable(
-                    self.binding(&name),
+                    self.binding(name),
                 ))
             }
             E::Not { value } => Ok(crate::kernel::program_expression::bool_value(

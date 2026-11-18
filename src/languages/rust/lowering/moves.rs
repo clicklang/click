@@ -471,16 +471,16 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
             // effect.
             T::BoxFree { local, glue, .. } => {
                 let free = crate::kernel::program_heap_free(
-                    crate::kernel::program_expression::variable(cx.binding(&local)),
+                    crate::kernel::program_expression::variable(cx.binding(local)),
                 );
                 match glue {
                     Some(glue) => program_seq(
                         crate::kernel::program_if(
-                            crate::kernel::program_expression::variable(cx.binding(&local)),
+                            crate::kernel::program_expression::variable(cx.binding(local)),
                             program_call(
                                 glue,
                                 vec![crate::kernel::program_expression::variable(
-                                    cx.binding(&local),
+                                    cx.binding(local),
                                 )],
                             ),
                             program_skip(),
@@ -498,7 +498,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     Some(dtor) if cx.functions.contains_key(dtor.as_str()) => program_call(
                         dtor,
                         vec![crate::kernel::program_expression::cast(
-                            crate::kernel::program_expression::variable(cx.binding(&local)),
+                            crate::kernel::program_expression::variable(cx.binding(local)),
                             ProgramType::Int32Pointer,
                         )],
                     ),
@@ -598,7 +598,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         .to_kernel_aggregate_layout();
                     let (call, result) = cx.call_value(function, arguments_values);
                     let copy = crate::kernel::program_copy_aggregate(
-                        crate::kernel::program_expression::variable(cx.binding(&destination)),
+                        crate::kernel::program_expression::variable(cx.binding(destination)),
                         result,
                         layout,
                     );
@@ -887,12 +887,12 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     for field in &record_fields {
                         let source_address =
                             crate::kernel::program_expression::pointer_offset_bytes(
-                                crate::kernel::program_expression::variable(cx.binding(&source)),
+                                crate::kernel::program_expression::variable(cx.binding(source)),
                                 field.offset,
                             );
                         let target_address =
                             crate::kernel::program_expression::pointer_offset_bytes(
-                                crate::kernel::program_expression::variable(cx.binding(&target)),
+                                crate::kernel::program_expression::variable(cx.binding(target)),
                                 field.offset,
                             );
                         let write = if let Type::Array { element, length } = &field.value_type {

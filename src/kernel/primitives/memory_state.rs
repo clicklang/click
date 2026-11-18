@@ -8834,7 +8834,7 @@ impl ExecutionState {
         };
         if authority_quantity.as_const() != Some(1)
             || name != description.family()
-            || arguments.as_ref() != description.arguments()
+            || arguments != description.arguments()
             || !self.resources.contains_exact_representation(authority)
             || !self.resources.contains_exact_representation(member)
         {
@@ -9270,7 +9270,7 @@ impl ExecutionState {
             let ResourceFact::Own(Resource::Composite { arguments, .. }, _) = selected else {
                 return Err("Requires owns control resource".into());
             };
-            if arguments.as_ref() != description.arguments() || definition.parameters().len() != 1 {
+            if arguments != description.arguments() || definition.parameters().len() != 1 {
                 return Err("control and authority need the same pointer argument".into());
             }
             let parameter = definition.parameters()[0].name();

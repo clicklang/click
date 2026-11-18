@@ -38,7 +38,7 @@ impl Context<'_> {
         self.arrays.insert(name.into(), (length, element, false));
         Ok(program_seq(
             // Fresh storage supplies transferable authority for helper calls.
-            program_begin_aggregate_construction(self.binding(&name), layout),
+            program_begin_aggregate_construction(self.binding(name), layout),
             self.assign_array(self.array_pointer(name)?, element, length, initializer)?,
         ))
     }

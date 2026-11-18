@@ -693,7 +693,7 @@ mod tests {
             // named as a read: the read-over-write authority relates it to
             // the latest overwrite stored there.
             let Some((ConditionTerm::Compare { left, right, .. }, true)) =
-                (&rewritten).condition_native()
+                rewritten.condition_native()
             else {
                 panic!("the rewrite keeps the comparison: {rewritten:?}");
             };

@@ -427,15 +427,8 @@ pub(crate) fn resources_directly_match(
                 && left
                     .arguments()
                     .iter()
-                    .map(crate::kernel::ResourceFieldValue::from)
                     .chain(left.fields())
-                    .zip(
-                        right
-                            .arguments()
-                            .iter()
-                            .map(crate::kernel::ResourceFieldValue::from)
-                            .chain(right.fields()),
-                    )
+                    .zip(right.arguments().iter().chain(right.fields()))
                     .all(|(a, b)| resource_field_values_proven_equal(a, b, assumptions))
         }
         (

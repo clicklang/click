@@ -1828,7 +1828,7 @@ fn synthesize_exact_external_zero_based_byte_range(
     let end = synthesize_surface_bitvector(bytes, parameter_binding, state, bound_variables)
         .and_then(|end| contract_expression_to_program_expression(&end))
         .ok_or(())?;
-    let named = ProgramExpression::Variable((name).into());
+    let named = ProgramExpression::Variable(name);
     let start = ProgramExpression::Value(int32(0));
     Ok(Some(ClickProposition::Loadable {
         segment: ContractSegment {

@@ -1507,7 +1507,7 @@ mod tests {
                     let Proposition::ConditionIs(condition, true) = normalized else {
                         unreachable!()
                     };
-                    facts.decide((&condition).native_compat())
+                    facts.decide(condition.native_compat())
                 },
                 expected,
                 "{left:?} == {right:?}"

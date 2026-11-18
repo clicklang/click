@@ -3941,7 +3941,7 @@ pub(in crate::kernel) fn program_truthiness_paths(
             else {
                 unreachable!("a truth claim is a condition claim");
             };
-            match decide_with_facts(assumptions, &facts, (&condition).native_compat()) {
+            match decide_with_facts(assumptions, &facts, condition.native_compat()) {
                 Some(value) => vec![TruthinessPath {
                     is_true: value == holds,
                     facts,

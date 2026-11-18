@@ -76,7 +76,7 @@ mod tests {
                     root,
                     KernelTerm::float_read(
                         format,
-                        crate::kernel::ProgramPoint::at(&memory),
+                        crate::kernel::ProgramPoint::at(memory),
                         address.clone()
                     )
                 );

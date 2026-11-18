@@ -2826,10 +2826,10 @@ fn indexed_loop_exit_load_equality(
     else {
         return None;
     };
-    if let Some(answer) = context.exact_condition_value((&condition).native_compat()) {
+    if let Some(answer) = context.exact_condition_value(condition.native_compat()) {
         return Some(answer == expected);
     }
-    match (&condition).native_compat() {
+    match condition.native_compat() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -3260,7 +3260,7 @@ fn loop_exit_local_arguments(
                 let held = project(&exit.locals().get(name)?.native())?;
                 let argument = instance.arguments().get(position)?;
                 if !crate::kernel::resource_field_values_proven_equal(
-                    (argument).into(),
+                    argument,
                     (&AlgebraicValue::Program(held.clone())).into(),
                     context,
                 ) {
@@ -7057,11 +7057,7 @@ fn rebind_one_loop_binder_instance(
                 .iter()
                 .zip(arguments.iter())
                 .all(|(held, declared)| {
-                    crate::kernel::resource_field_values_proven_equal(
-                        (held).into(),
-                        (declared).into(),
-                        assumptions,
-                    )
+                    crate::kernel::resource_field_values_proven_equal(held, declared, assumptions)
                 })
     };
     let selected = if let Some(instance) = state

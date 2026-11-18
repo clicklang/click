@@ -363,16 +363,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 operator: ComparisonOperator::Equal,
                 right,
             } = source
-            {
-                if let (Ok(a), Ok(b)) = (
+                && let (Ok(a), Ok(b)) = (
                     input.capture_native_argument(left),
                     input.capture_native_argument(right),
-                ) && scalar_pointer(&a)
-                    && scalar_pointer(&b)
-                    && let (Some(a), Some(b)) = (chain(left), chain(right))
-                {
-                    relations.push((a, b));
-                }
+                )
+                && scalar_pointer(&a)
+                && scalar_pointer(&b)
+                && let (Some(a), Some(b)) = (chain(left), chain(right))
+            {
+                relations.push((a, b));
             }
         }
         let mut kind = None;

@@ -10269,6 +10269,7 @@ impl ProofObligation {
 
 impl ExecutionPureFact {
     /// The value observed by this producer's completed volatile read.
+    #[cfg(test)]
     pub(crate) fn volatile_read_result(&self) -> Option<&ProgramValue> {
         crate::instrumentation::record_deterministic_work(1);
         if !self.is_certified() {
@@ -11536,7 +11537,7 @@ mod integer_observation_tests {
             let Proposition::ConditionIs(condition, truth) = bound else {
                 unreachable!()
             };
-            assert_eq!(facts.decide((&condition).native_compat()), Some(truth));
+            assert_eq!(facts.decide(condition.native_compat()), Some(truth));
         }
         assert_eq!(
             PureFactContext::new().signed_interval_past_exclusions(&word(1879)),
@@ -12177,7 +12178,7 @@ mod integer_observation_tests {
                 // Each reading files exactly the native fact it came from.
                 assert_eq!(
                     native_comparison_of_integer_observation(
-                        (&reading).native_compat(),
+                        reading.native_compat(),
                         reading_truth
                     ),
                     Some((native.clone(), native_truth))
@@ -12290,24 +12291,24 @@ mod integer_observation_tests {
                             unreachable!()
                         };
                         assert_eq!(
-                            parent.decide((&query).native_compat()),
+                            parent.decide(query.native_compat()),
                             None,
                             "{ty:?} {relation:?}"
                         );
                         assert!(
                             child
                                 .equality_graph
-                                .knows_condition((&query).native_compat(), value),
+                                .knows_condition(query.native_compat(), value),
                             "{ty:?} {relation:?} {truth}"
                         );
                         assert!(
                             !child
                                 .equality_graph
-                                .knows_condition((&query).native_compat(), !value),
+                                .knows_condition(query.native_compat(), !value),
                             "{ty:?} {relation:?} {truth}"
                         );
                         assert_eq!(
-                            child.decide((&query).native_compat()),
+                            child.decide(query.native_compat()),
                             Some(value),
                             "{ty:?} {relation:?} {truth}"
                         );
@@ -12344,7 +12345,7 @@ mod integer_observation_tests {
                     unreachable!()
                 };
                 assert_eq!(
-                    context.decide((&query).native_compat()),
+                    context.decide(query.native_compat()),
                     Some(value),
                     "{query:?}"
                 );
@@ -12369,7 +12370,7 @@ mod integer_observation_tests {
                 unreachable!()
             };
             assert_eq!(
-                constants.decide((&query).native_compat()),
+                constants.decide(query.native_compat()),
                 Some(value),
                 "{query:?}"
             );

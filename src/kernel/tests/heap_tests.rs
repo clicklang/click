@@ -1568,11 +1568,8 @@ fn realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation()
     };
     let success_assumptions = PureFactContext::new()
         .assume_condition(pointer_is_null_condition(result.address().clone()), false);
-    let checked = crate::kernel::resolve_pending_heap_allocations_with(
-        &pending,
-        &success_assumptions,
-        |requirement| Err(requirement),
-    );
+    let checked =
+        crate::kernel::resolve_pending_heap_allocations_with(&pending, &success_assumptions, Err);
     assert_eq!(checked.unwrap_err().proposition(), obligation.proposition());
     assert!(pending.memory().live_heap_block_size(&base).is_some());
 }

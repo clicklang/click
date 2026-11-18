@@ -645,8 +645,8 @@ fn operation_bounds_hold_at_every_format() {
                 for x in samples(ty) {
                     let result = divide(division, &x, &divisor);
                     assert!(
-                        evaluate(&low, &machine, &result, &x)
-                            <= evaluate(&high, &machine, &result, &x),
+                        evaluate(low, &machine, &result, &x)
+                            <= evaluate(high, &machine, &result, &x),
                         "{ty:?} {division:?} upper {upper}: {x} gives {result}"
                     );
                 }

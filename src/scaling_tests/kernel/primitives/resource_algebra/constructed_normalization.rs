@@ -112,7 +112,7 @@ fn constructed_normalization_omits_only_proven_empty_ranges() {
                 )
         });
         let retained = coalesce_written_resource_descriptions(vec![range.clone()], &facts);
-        assert_eq!(retained, [range.clone()]);
+        assert_eq!(retained, std::slice::from_ref(&range));
         let facts = facts.assume_condition(equal(start.clone(), end.clone()), true);
         let (empty, work) = crate::instrumentation::measure_deterministic_work(|| {
             coalesce_written_resource_descriptions(vec![range.clone()], &facts)

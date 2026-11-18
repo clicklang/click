@@ -14421,7 +14421,7 @@ impl Parser {
         let carrier = self.reference_binding_carrier(name);
         self.position += 2;
         Ok(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable((carrier).into()),
+            ProgramExpression::Variable(carrier),
         ))
     }
 
@@ -14449,9 +14449,8 @@ impl Parser {
                     "`{name}` is a struct reference; name a field as `{name}.field`, or its address as `&{name}`"
                 )));
             }
-            expression = ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                (carrier).into(),
-            ));
+            expression =
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(carrier));
             if !is_struct {
                 if self.peek() == Some(&Token::LBracket) {
                     return Err(self.error(format!(
@@ -16893,7 +16892,7 @@ impl Parser {
             };
             let carrier = self.reference_binding_carrier(name);
             self.position += 2;
-            return Ok(CExpression::Variable((carrier).into()));
+            return Ok(CExpression::Variable(carrier));
         }
         if self.peek() == Some(&Token::Amp) {
             self.check_unary_nesting_limit(depth)?;
@@ -16946,7 +16945,7 @@ impl Parser {
             Some(Token::Ident(name)) if self.is_reference_binding(&name) => {
                 let carrier = self.reference_binding_carrier(&name);
                 let is_struct = self.names.struct_params.contains_key(carrier.source_name());
-                let carrier = CExpression::Variable((carrier).into());
+                let carrier = CExpression::Variable(carrier);
                 Ok(if is_struct {
                     carrier
                 } else {

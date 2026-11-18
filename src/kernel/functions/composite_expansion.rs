@@ -241,7 +241,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
             }
             bind_composite_witnesses(
                 definition,
-                &(&arguments).native_values(),
+                &arguments.native_values(),
                 &mut population_state,
                 assumptions,
             )?;
@@ -277,7 +277,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
         }
         bind_composite_witnesses(
             definition,
-            &(&arguments).native_values(),
+            &arguments.native_values(),
             &mut population_state,
             assumptions,
         )?;

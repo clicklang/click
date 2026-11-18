@@ -9447,7 +9447,7 @@ impl AnnotationLowerer<'_> {
         // namespace. Their pointer is fixed when the reference is initialized;
         // old-state reads change the referent's memory, never that pointer.
         if let Some(referent) = name.reference_referent() {
-            let state = environment.reference_state.as_ref().or_else(|| {
+            let state = environment.reference_state.as_ref().or({
                 if environment.at_function_entry {
                     Some(self.entry_state)
                 } else {

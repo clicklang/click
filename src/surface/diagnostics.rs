@@ -235,18 +235,11 @@ impl ParameterPlaceScope {
         let mut shapes: BTreeMap<_, _> = parameters
             .iter()
             .filter(|parameter| parameter.is_reference() && parameter.struct_name().is_none())
-            .map(|parameter| {
-                (
-                    crate::kernel::BindingName::from(variable(parameter.name())),
-                    PointeeShape::ScalarReferent,
-                )
-            })
+            .map(|parameter| (variable(parameter.name()), PointeeShape::ScalarReferent))
             .collect();
         for (name, fields) in block.parameter_field_places() {
             shapes.insert(
-                name.named()
-                    .map(|name| crate::kernel::BindingName::from(variable(name)))
-                    .unwrap_or_else(|| name.clone()),
+                name.named().map(&variable).unwrap_or_else(|| name.clone()),
                 PointeeShape::Struct {
                     fields: fields.clone(),
                 },

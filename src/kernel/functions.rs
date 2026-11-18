@@ -270,12 +270,10 @@ impl<'a> ReturnResourceComposition<'a> {
     }
 
     fn restores_entry_borrows(self) -> bool {
-        match self {
-            Self::ApplyTransfers(_) | Self::FramedTransfers { .. } | Self::BodyReturn { .. } => {
-                true
-            }
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::ApplyTransfers(_) | Self::FramedTransfers { .. } | Self::BodyReturn { .. }
+        )
     }
 
     fn origin_for_return(
@@ -14915,13 +14913,7 @@ fn check_instance_resource_arguments(
                 .arguments()
                 .iter()
                 .zip(arguments.iter())
-                .all(|(a, b)| {
-                    crate::kernel::resource_field_values_proven_equal(
-                        (a).into(),
-                        (b).into(),
-                        assumptions,
-                    )
-                })
+                .all(|(a, b)| crate::kernel::resource_field_values_proven_equal(a, b, assumptions))
         {
             let binder = formal.binding_name().unwrap_or("resource");
             let spelling = formal
@@ -17980,7 +17972,6 @@ fn resource_clause_read_supply(fact: &ResourceFact, assumptions: &PureFactContex
 /// readable so a later clause's base load denotes, while every owned resource
 /// stays exactly where the clause set put it. This state is a scratch
 /// evaluation frame and is never the section's result.
-
 pub(in crate::kernel) fn resource_clause_section_supply(
     state: &ExecutionState,
     supplied: &[ResourceFact],
@@ -21533,7 +21524,7 @@ pub(crate) fn check_acquired_control_member_effects(
         };
         let governed = match fact.resource() {
             Resource::Composite { name, arguments } => acquired.iter().any(|description| {
-                description.family() == name && description.arguments() == arguments.as_ref()
+                description.family() == name && description.arguments() == arguments
             }),
             _ => false,
         };
@@ -21578,7 +21569,7 @@ pub(crate) fn check_acquired_control_member_effects(
             let Resource::Composite { arguments, .. } = fact.resource() else {
                 continue;
             };
-            if arguments.as_ref() != description.arguments()
+            if arguments != description.arguments()
                 || fact.owned_quantity_term().and_then(MachineTerm::as_const) != Some(1)
                 || declared.replace(produce).is_some()
             {

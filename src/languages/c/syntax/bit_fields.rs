@@ -362,7 +362,7 @@ impl Parser {
             if let Some((previous, mask)) = members.last_mut()
                 && *previous == offset
             {
-                *mask = *mask | bits;
+                *mask |= bits;
             } else {
                 members.push((offset, bits));
             }

@@ -2359,7 +2359,7 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
             right: _,
         },
         true,
-    )) = (&requirement).condition_native()
+    )) = requirement.condition_native()
     else {
         unreachable!()
     };
@@ -3030,7 +3030,7 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
                 crate::kernel::machine_integer::comparison::comparison_view(&condition, polarity)
                     .unwrap();
             let actual = crate::kernel::machine_integer::comparison::comparison_view(
-                (&lowered).native_compat(),
+                lowered.native_compat(),
                 lowered_truth,
             )
             .unwrap();
@@ -4139,12 +4139,12 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
     // Both native lowering and checker observations enter the same structural
     // boundary; the test needs no special registered-name conversion.
     assert_eq!(
-        crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &left),
+        crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, left),
         root
     );
     assert_eq!(
         crate::kernel::KernelTermImport::default()
-            .machine_arithmetic(MachineIntegerType::Int32, &left),
+            .machine_arithmetic(MachineIntegerType::Int32, left),
         Some(root)
     );
 }
@@ -4342,7 +4342,7 @@ fn shared_arithmetic_raising_does_not_export_operand_trees() {
         panic!("comparison")
     };
     let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
-        (&condition).native_compat(),
+        condition.native_compat(),
     )
     .unwrap();
     assert_eq!(view.format, MachineIntegerType::Int32);
@@ -6498,7 +6498,7 @@ fn closed_machine_orders_round_trip_after_checked_rewrite() {
                 .proposition()
                 .clone();
             let Some((condition @ ConditionTerm::Compare { .. }, true)) =
-                (&produced).condition_native()
+                produced.condition_native()
             else {
                 panic!("retained native comparison: {produced:?}")
             };
@@ -6588,7 +6588,7 @@ fn closed_machine_order_lowering_preserves_relations_and_truth_checking() {
                     ..
                 },
                 true,
-            )) = (&lowered).condition_native()
+            )) = lowered.condition_native()
             else {
                 panic!("{spelling} {operator}: {lowered:?}")
             };
@@ -6914,7 +6914,7 @@ fn pthread_handle_words_use_c_names_and_retained_states() {
         panic!("comparison")
     };
     let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
-        (&condition).native_compat(),
+        condition.native_compat(),
     )
     .unwrap();
     assert_eq!(view.format, MachineIntegerType::Int64);
@@ -7376,7 +7376,7 @@ fn closed_machine_equality_lowering_retains_its_comparison() {
                     ..
                 },
                 actual_held,
-            )) = (&lowered).condition_native()
+            )) = lowered.condition_native()
             else {
                 panic!("{source}: {lowered:?}")
             };
@@ -7461,7 +7461,7 @@ fn closed_bool_literal_comparison_lowering_retains_its_comparison() {
         };
         let lowered = relower_written_proposition(written, &state).unwrap();
         let Some((condition @ ConditionTerm::BoolEqual(..), actual_held)) =
-            (&lowered).condition_native()
+            lowered.condition_native()
         else {
             panic!("{source}: {lowered:?}")
         };

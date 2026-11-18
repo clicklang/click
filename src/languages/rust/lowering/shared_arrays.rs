@@ -36,7 +36,7 @@ impl Context<'_> {
                 value,
                 value_type,
             ),
-            None => program_assign(self.binding(&name), value),
+            None => program_assign(self.binding(name), value),
         })
     }
 
