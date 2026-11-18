@@ -1522,6 +1522,24 @@ Validation is in progress. The separate 10q3d producer handoffs and 10q4
 expression-bearing `Term` outputs remain required; storage support alone does
 not close either boundary.
 
+### 10q3d Evaluated condition producer handoffs (in progress)
+
+Logical Boolean equality forwards its already-produced root directly. Integer
+comparisons retain their evaluated Integer operands; the existing native
+observation-spelling rule runs only on atomic observation/literal inputs.
+Machine comparison outputs retain the comparison just minted by the existing
+canonical constructor. Same-format shared float comparisons and classifications
+retain their operands and preserve the existing IEEE literal-folding rules.
+The selected float literal read uses a query-local DAG memo, including refused
+nonconstant results, so duplicate children are not expanded into a tree. It
+uses the existing bit operations and adds no persistent cache or search index.
+Native float inputs keep their exact native-input policy.
+
+Validation is pending. Existing native numeric-coercion/compatibility readers
+remain explicit adapters for the later 10r–10t audit; this slice does not change
+mixed-format conversion rules. Expression-bearing equality and predicate Term
+payloads remain assigned to 10q4.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

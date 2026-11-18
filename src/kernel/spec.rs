@@ -1470,47 +1470,8 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     else {
                         continue;
                     };
-                    let condition = match operator {
-                        IntegerComparisonOperator::Equal => ConditionTerm::IntegerEqual(
-                            left_path.value.native_compat(),
-                            right_path.value.native_compat(),
-                        ),
-                        IntegerComparisonOperator::NotEqual => ConditionTerm::IntegerNotEqual(
-                            left_path.value.native_compat(),
-                            right_path.value.native_compat(),
-                        ),
-                        IntegerComparisonOperator::LessThan => ConditionTerm::IntegerLessThan(
-                            left_path.value.native_compat(),
-                            right_path.value.native_compat(),
-                        ),
-                        IntegerComparisonOperator::LessEqual => ConditionTerm::IntegerLessEqual(
-                            left_path.value.native_compat(),
-                            right_path.value.native_compat(),
-                        ),
-                        IntegerComparisonOperator::GreaterThan => {
-                            ConditionTerm::IntegerGreaterThan(
-                                left_path.value.native_compat(),
-                                right_path.value.native_compat(),
-                            )
-                        }
-                        IntegerComparisonOperator::GreaterEqual => {
-                            ConditionTerm::IntegerGreaterEqual(
-                                left_path.value.native_compat(),
-                                right_path.value.native_compat(),
-                            )
-                        }
-                    };
-                    // One fact, one form: an Integer comparison of exact
-                    // observations of one machine type holds exactly when
-                    // the native comparison of their carriers does, so it is
-                    // that native comparison. A type-range bound such as
-                    // `to_integer(x) <= 4294967295` is trivially true of the
-                    // carrier but is what Integer reasoning cites, so it
-                    // keeps its Integer form.
-                    let (condition, truth) = match crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(&condition, true) {
-                        Some((ConditionTerm::Constant(_), _)) | None => (condition, true),
-                        Some(native) => native,
-                    };
+                    let (condition, truth) =
+                        retained_integer_comparison(&left_path.value, *operator, &right_path.value);
                     result.push(SpecPropositionPath {
                         introductions: Vec::new(),
                         proposition: Proposition::condition_is(condition, truth),
@@ -4860,14 +4821,37 @@ fn lower_spec_float_classification_proposition_at_state_in(
     )?
     .into_iter()
     .filter_map(|path| {
-        let condition = match path.value.into_native() {
-            ProgramValue::Float32(value) => {
-                ConditionTerm::float32_classification(value, classification)
-            }
-            ProgramValue::Float64(value) => {
-                ConditionTerm::float64_classification(value, classification)
-            }
-            _ => return None,
+        let operand = path.value.float()?;
+        let format = operand.format();
+        let condition = if path.value.shared().is_none() {
+            let native = match path.value.native() {
+                ProgramValue::Float32(value) => {
+                    ConditionTerm::float32_classification(value, classification)
+                }
+                ProgramValue::Float64(value) => {
+                    ConditionTerm::float64_classification(value, classification)
+                }
+                _ => unreachable!("float value"),
+            };
+            StoredConditionTerm::from(native)
+        } else if let Some(bits) = result::float_condition_constant_bits(operand) {
+            let native = match format {
+                KernelFloatType::Float32 => ConditionTerm::float32_classification(
+                    MachineTerm::uint32_constant(bits as u32),
+                    classification,
+                ),
+                KernelFloatType::Float64 => ConditionTerm::float64_classification(
+                    MachineTerm::uint64_constant(bits),
+                    classification,
+                ),
+            };
+            StoredConditionTerm::from_minted(native)
+        } else {
+            StoredConditionTerm::from_root(
+                KernelTerm::float_classify(format, classification, path.value.common_operand())
+                    .expect("float classification operand"),
+            )
+            .expect("logical float classification")
         };
         Some(SpecPropositionPath {
             introductions: Vec::new(),
@@ -5603,6 +5587,34 @@ fn lower_spec_disjunction_at_state_in(
         }
     }
     Ok(paths)
+}
+
+/// Keep Integer operands in the output. Only two atomic observation/literal
+/// roots can use the existing machine-comparison spelling rule; that selected
+/// reader never needs an arithmetic, call, fold or match prefix.
+fn retained_integer_comparison(
+    left: &IntegerResult,
+    operator: IntegerComparisonOperator,
+    right: &IntegerResult,
+) -> (StoredConditionTerm, bool) {
+    let arguments = [left.clone().into_kernel(), right.clone().into_kernel()];
+    let may_spell_natively = arguments.iter().all(|root| {
+        matches!(
+            root.node(),
+            KernelTermNode::MachineObservation { .. } | KernelTermNode::IntegerLiteral(_)
+        )
+    });
+    let root = KernelTerm::integer_comparison(operator, arguments).expect("Integer operands");
+    let condition = StoredConditionTerm::from_root(root).expect("logical comparison");
+    if may_spell_natively {
+        match crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(
+            condition.native_compat(), true,
+        ) {
+            Some((ConditionTerm::Constant(_), _)) | None => {},
+            Some((native, truth)) => return (StoredConditionTerm::from_minted(native), truth),
+        }
+    }
+    (condition, true)
 }
 
 fn lower_spec_comparison_proposition_at_state_in(
