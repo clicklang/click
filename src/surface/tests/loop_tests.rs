@@ -681,7 +681,10 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
             .unwrap_or_else(|e| panic!("index {index}: {}", e.message()));
         let expanded = expand_checked_grouped_claim(&click, &verified, "swap")
             .unwrap_or_else(|e| panic!("index {index}: {}", e.message()));
-        assert!(!expanded.contains("transport("), "index {index}: {expanded}");
+        assert!(
+            !expanded.contains("transport("),
+            "index {index}: {expanded}"
+        );
         without_implicit_solve_for_claim("swap.contract", || {
             verify_c_sources(&expanded, &sources).map_err(|error| error.report())
         })
