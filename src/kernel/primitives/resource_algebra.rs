@@ -3570,24 +3570,6 @@ impl ResourceContext {
         entries.into_iter().map(|entry| self.fact(entry)).collect()
     }
 
-    /// The owned memory facts the address index selects for `range`: those
-    /// at its footprint, covering its start, or starting inside it. Distinct
-    /// pointer parameters are distinct address classes here, so this never
-    /// visits every range in a shared block. Callers still check coverage.
-    pub(in crate::kernel) fn owned_memory_candidates_for(
-        &self,
-        range: &MemoryRange,
-        assumptions: &PureFactContext,
-    ) -> Vec<ResourceFact> {
-        let candidates = self.memory_fact_candidates(range, true, assumptions);
-        candidates
-            .entries
-            .iter()
-            .map(|entry| self.fact(entry).clone())
-            .filter(ResourceFact::is_own)
-            .collect()
-    }
-
     /// Select a deterministic owned candidate from the pointer index. Multiple
     /// returned sibling shares are legitimate. This lookup grants no authority:
     /// callers must still check the selected loan, initialization, and type.
@@ -3984,6 +3966,77 @@ impl ResourceContext {
         let entry = self.storage.entry_by_occurrence.get(&occurrence)?;
         let fact = self.storage.facts.get(entry)?;
         fact.is_view().then_some(fact)
+    }
+
+    /// An already exposed child may be represented by one live occurrence
+    /// or by exact adjacent fragments. Read that partition in place. A
+    /// covering owner that extends outside the child is not an exact match.
+    pub(in crate::kernel) fn covers_exact_owned_piece(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        if !required.is_own() {
+            return false;
+        }
+        if let Some((_, available)) = self.directly_supporting_owned_entry(required, assumptions) {
+            return match (required.memory_own_range(), available.memory_own_range()) {
+                (Some(required), Some(available)) => {
+                    memory_range_covers(required, available, assumptions)
+                }
+                (None, None) => resource_fact_entails(required, available, assumptions),
+                _ => false,
+            };
+        }
+        self.exact_owned_fragment_cover(required, assumptions)
+            .is_some()
+    }
+
+    fn exact_owned_fragment_cover(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<()> {
+        if required.owned_quantity_term()?.as_const()? != 1 {
+            return None;
+        }
+        let range = required.memory_own_range()?;
+        let (start, end) = constant_relative_byte_endpoints(range);
+        let length = i64::try_from(end?.checked_sub(start?)?).ok()?;
+        if length <= 0 {
+            return None;
+        }
+        let start = range.start_pointer();
+        let mut cursor = 0i64;
+        while cursor < length {
+            crate::instrumentation::record_deterministic_work(1);
+            let point = Address {
+                base: start.base.clone(),
+                offset: AddressOffset::add(start.offset.clone(), AddressOffset::Constant(cursor)),
+            };
+            let selected = self.write_access(&point, 1, assumptions)?;
+            let owner = self.fact(selected.entry());
+            let piece = owner.memory_own_range()?;
+            let address = selected.address()?;
+            if !owner.has_proven_positive_quantity(assumptions)
+                || !assumptions.pointers_known_equal(&address, &piece.start_pointer())
+                || (range.typed_carrier
+                    && !assumptions.access_provenance_matches_range(
+                        range.access_provenance(),
+                        range,
+                        piece,
+                    ))
+            {
+                return None;
+            }
+            let (lo, hi) = constant_relative_byte_endpoints(piece);
+            let bytes = i64::try_from(hi?.checked_sub(lo?)?).ok()?;
+            if bytes <= 0 {
+                return None;
+            }
+            cursor = cursor.checked_add(bytes)?;
+        }
+        (cursor == length).then_some(())
     }
 
     /// Reserve a constant-length owned footprint from its live byte fragments. Each

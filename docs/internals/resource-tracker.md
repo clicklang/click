@@ -1981,6 +1981,13 @@ occurrences. Selected return construction preserves raw clause order and
 multiplicity. Optional normalization visits only the explicit body. Arbitrary
 return descriptions still establish their cross-head and caller boundaries;
 they do not acquire the held parent's frame rule merely from a role marker.
+Cached expansion and live authority control expansion check reuse against the
+retained ownership partition. Exact representations use the exact fact index.
+For a split memory child, the indexed write supplier at each successive
+address must start there, have positive quantity and compatible provenance,
+and end at or before the child's end. The walk stops at an exact cover and
+retains the existing occurrences and their lineage. No scratch context or
+ownership validation is needed to establish coverage.
 Generic expansion also serves contract entry/certification, folding and
 observations, whose remaining caller-specific work stays source pinned. Footprint projection
 coalesces the explicit ranges derived from its selected head without admitting
