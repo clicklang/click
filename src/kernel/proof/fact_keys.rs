@@ -2401,7 +2401,10 @@ fn alpha_algebraic_key_with_bindings<const ALLOW_LOADS: bool>(
                     .collect::<Option<Vec<_>>>()?,
             }
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => AlphaAlgebraicKey::MemoryLoad {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => AlphaAlgebraicKey::MemoryLoad {
             algebraic_type: term.algebraic_type.clone(),
             carrier: alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
                 &AlgebraicTermNode::memory_load_carrier(memory, pointer),

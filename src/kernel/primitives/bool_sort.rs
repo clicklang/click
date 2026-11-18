@@ -91,7 +91,7 @@ impl ConditionTerm {
     // (Stage 5, PR5) or a proof step asks for them.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn bool_load(memory: SharedMemory, pointer: Address) -> Self {
-        Self::BoolLoad(memory, Box::new(pointer))
+        Self::BoolLoad(crate::kernel::ProgramPoint::at(&memory), Box::new(pointer))
     }
 
     /// Rule L-If: the case split `ConditionIs(self, value)` means, for a
@@ -190,8 +190,8 @@ impl ConditionTerm {
                 Self::BoolEqual(Box::new(child(left)), Box::new(child(right)))
             }
             Self::BoolLoad(memory, pointer) => {
-                let (memory, pointer) = read(memory, pointer);
-                Self::BoolLoad(memory, Box::new(pointer))
+                let (memory, pointer) = read(memory.shared_memory(), pointer);
+                Self::BoolLoad(crate::kernel::ProgramPoint::at(&memory), Box::new(pointer))
             }
             _ => return None,
         })

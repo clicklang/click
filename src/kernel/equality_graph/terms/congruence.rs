@@ -822,10 +822,13 @@ impl TermClasses {
                             pending.extend(arguments.iter().rev().map(Work::Argument));
                             continue;
                         }
-                        N::MemoryLoad { memory, pointer } => {
+                        N::MemoryLoad {
+                            point: memory,
+                            pointer,
+                        } => {
                             let head = self.intern_node(Node::AlgebraicMemoryRead(
                                 ty.clone(),
-                                memory.read_identity(),
+                                memory.shared_memory().read_identity(),
                             ));
                             let address = self.numeric_address(pointer);
                             let node = Node::Apply(head, address);
@@ -835,7 +838,8 @@ impl TermClasses {
                             // the memory history or choosing a term from facts.
                             if let Some(source) =
                                 crate::kernel::prelude::canonical_load_projection_source(
-                                    memory, pointer,
+                                    memory.shared_memory(),
+                                    pointer,
                                 )
                             {
                                 let source_head = self.intern_node(Node::AlgebraicMemoryRead(
@@ -847,7 +851,7 @@ impl TermClasses {
                                 self.close(vec![(read, source_read)]);
                             }
                             if let Some(origin) = crate::kernel::prelude::value_load_origin(
-                                memory,
+                                memory.shared_memory(),
                                 pointer,
                                 crate::kernel::ABSTRACT_VALUE_WIDTH,
                             ) {
@@ -2188,7 +2192,7 @@ impl TermClasses {
                 self.intern_node(Node::Condition(ConditionKind::BoolEq, left, right))
             }
             C::BoolLoad(memory, pointer) => {
-                let head = self.intern_node(Node::BoolRead(memory.read_identity()));
+                let head = self.intern_node(Node::BoolRead(memory.shared_memory().read_identity()));
                 let address = self.address(pointer.base.clone(), pointer.offset.clone()).0;
                 self.intern_node(Node::Apply(head, address))
             }

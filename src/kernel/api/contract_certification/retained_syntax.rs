@@ -50,14 +50,17 @@ impl Comparison {
             }
             (
                 T::MemoryLoad {
-                    memory: am,
+                    point: am,
                     pointer: ap,
                 },
                 T::MemoryLoad {
-                    memory: bm,
+                    point: bm,
                     pointer: bp,
                 },
-            ) => am.arena_id() == bm.arena_id() && self.pointer(ap, bp),
+            ) => {
+                am.shared_memory().arena_id() == bm.shared_memory().arena_id()
+                    && self.pointer(ap, bp)
+            }
             // Match/conditional/constructor payloads keep their existing
             // certification route. This boundary admits only call syntax.
             _ => false,
@@ -710,7 +713,7 @@ mod tests {
             let native = AlgebraicTerm {
                 algebraic_type: ty.clone(),
                 node: AlgebraicTermNode::MemoryLoad {
-                    memory: state.clone(),
+                    point: crate::kernel::ProgramPoint::at(&state.clone()),
                     pointer: Box::new(address.clone()),
                 },
             };
@@ -984,7 +987,7 @@ mod tests {
         let read = |memory: &SymbolicMemory| AlgebraicTerm {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory: crate::kernel::intern_memory_ref(memory),
+                point: crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
                 pointer: Box::new(Address::null()),
             },
         };

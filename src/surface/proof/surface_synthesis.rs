@@ -729,7 +729,7 @@ fn synthesize_recorded_held_value_local(
     pointer: &Address,
 ) -> Option<ContractExpression> {
     let crate::kernel::AlgebraicTermNode::MemoryLoad {
-        memory,
+        point: memory,
         pointer: address,
     } = &term.node
     else {
@@ -737,7 +737,9 @@ fn synthesize_recorded_held_value_local(
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let (selector, recorded) = slot.as_ref()?.point_reading_load(memory, address)?;
+        let (selector, recorded) = slot
+            .as_ref()?
+            .point_reading_load(memory.shared_memory(), address)?;
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(synthesize_held_value_local(term, pointer, recorded)?),
@@ -3628,14 +3630,16 @@ fn raise_algebraic_read(
             return None;
         };
         let AlgebraicTermNode::MemoryLoad {
-            memory: held_memory,
+            point: held_memory,
             pointer,
         } = &held.node
         else {
             return None;
         };
-        (ty == &held.algebraic_type && memory == held_memory && same_address(pointer))
-            .then(|| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())))
+        (ty == &held.algebraic_type
+            && memory == held_memory.shared_memory()
+            && same_address(pointer))
+        .then(|| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())))
     };
     held_at(state).or_else(|| {
         SYNTHESIS_RECORDED_POINTS.with(|slot| {

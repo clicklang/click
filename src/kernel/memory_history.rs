@@ -6535,8 +6535,8 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
             collect_condition_memories(right, memories);
         }
         ConditionTerm::BoolLoad(memory, pointer) => {
-            if !memories.contains(memory) {
-                memories.push(memory.clone());
+            if !memories.contains(memory.shared_memory()) {
+                memories.push(memory.shared_memory().clone());
             }
             collect_pointer_offset_memories(&pointer.offset, memories);
         }
@@ -9437,7 +9437,10 @@ mod common_boolean_transport_tests {
                 Box::new(ConditionTerm::Constant(true)),
                 Box::new(ConditionTerm::Constant(false)),
             ),
-            ConditionTerm::BoolLoad(memory, Box::new(Address::symbolic(Variable(972_003)))),
+            ConditionTerm::BoolLoad(
+                crate::kernel::ProgramPoint::at(&memory),
+                Box::new(Address::symbolic(Variable(972_003))),
+            ),
         ] {
             assert!(
                 transport_framed_atomic_condition(&source, &SymbolicMemory::new(), None).is_none()
@@ -9466,7 +9469,7 @@ mod common_boolean_read_tests {
         let old = crate::kernel::intern_memory(before);
         let new = crate::kernel::intern_memory(after);
         let source = ConditionTerm::BoolLoad(
-            new.clone(),
+            crate::kernel::ProgramPoint::at(&new.clone()),
             Box::new(Address {
                 base: AddressBase::Symbolic(Variable(999370)),
                 offset: AddressOffset::scaled_int32_node(
