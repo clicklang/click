@@ -1780,6 +1780,10 @@ It decides conditions in the goal from the cited premises and the equality
 graph, then applies `normalize()`'s check (see
 [Context-free normalization](#context-free-normalization)) to the result.
 
+For a signed `int32` order goal, the cited comparisons can form a chain in
+list order from the goal's lower endpoint to its upper endpoint. A strict
+goal needs at least one strict link. Replay checks the listed links directly.
+
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.
 Both must lie within the operation or destination format. A bound on one

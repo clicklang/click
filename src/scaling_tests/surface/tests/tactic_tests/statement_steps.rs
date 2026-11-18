@@ -1,9 +1,10 @@
 use super::*;
 
 #[test]
-#[ignore = "nightly: eight source-level store preparations across context sizes"]
+#[ignore = "nightly: source-level store proofs across context sizes"]
 fn indexed_store_bounds_preparation_ignores_order_chain_length() {
     let mut samples = Vec::new();
+    let mut solver_samples = Vec::new();
     for related in [false, true] {
         for size in [16, 31, 32, 64] {
             let parameters = (1..=size)
@@ -52,12 +53,59 @@ void set(int32* data, int32 len, int32 x0{parameters}) {{
                 panic!("expected one store preparation at size {size}: {work:?}");
             };
             samples.push((related, size, *work));
+
+            if related {
+                let sources = [("store.c", c.as_str())];
+                let (result, events) =
+                    crate::instrumentation::collect(|| verify_c_sources(&click, &sources));
+                result.unwrap_or_else(|error| panic!("size {size}: {error}"));
+                let solver_work = events
+                    .iter()
+                    .find_map(|event| match event {
+                        crate::instrumentation::VerificationEvent::TacticFinished {
+                            tactic,
+                            work,
+                            ..
+                        } if tactic.tactic_name == "implicit closer"
+                            && tactic.source_index == 0 =>
+                        {
+                            Some(*work)
+                        }
+                        _ => None,
+                    })
+                    .expect("the store has an implicit bounds proof");
+                solver_samples.push((size, solver_work));
+
+                if size == 64 {
+                    let expanded = expand_function_proof_source(&click, &sources, "set").unwrap();
+                    assert!(expanded.contains("normalize() using"), "{expanded}");
+                    crate::surface::without_implicit_solve(|| {
+                        verify_c_sources(&expanded, &sources)
+                    })
+                    .unwrap();
+                    let missing_link = expanded.replace("requires x32 < x33;\n", "");
+                    assert_ne!(expanded, missing_link);
+                    assert!(
+                        crate::surface::without_implicit_solve(|| {
+                            verify_c_sources(&missing_link, &sources)
+                        })
+                        .is_err()
+                    );
+                }
+            }
         }
     }
     eprintln!("indexed store preparation: {samples:?}");
     assert!(
         samples.iter().all(|(_, _, work)| *work < samples[0].2 * 2),
         "{samples:?}"
+    );
+    eprintln!("indexed store bounds solver: {solver_samples:?}");
+    assert!(
+        solver_samples
+            .iter()
+            .all(|(size, work)| *work < 1000 * (size + 10)),
+        "{solver_samples:?}"
     );
 }
 
