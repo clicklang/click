@@ -3768,7 +3768,7 @@ impl SymbolicMemory {
         self.freeze_declared_object(block, declared_class)
     }
 
-    fn freeze_declared_object(
+    pub(in crate::kernel) fn freeze_declared_object(
         mut self,
         block: &AddressBase,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -5934,7 +5934,7 @@ impl SymbolicMemory {
     /// views to displace, or a base in a live allocation are refused, and
     /// `Err` hands the memory back unchanged for the caller's own stores.
     pub(crate) fn with_constant_runs(
-        mut self,
+        self,
         base: &Address,
         runs: &[ConstantRun],
     ) -> Result<Self, Self> {
@@ -5951,6 +5951,16 @@ impl SymbolicMemory {
         {
             return Err(self);
         }
+        Ok(self.seed_fresh_declared_runs(base, runs))
+    }
+
+    /// Installs disjoint initial cells in an object just minted by a declaration.
+    /// The declaration establishes freshness and supplies the typed run layout.
+    pub(in crate::kernel) fn seed_fresh_declared_runs(
+        mut self,
+        base: &Address,
+        runs: &[ConstantRun],
+    ) -> Self {
         let source = crate::kernel::intern_memory(SymbolicMemory::new());
         for run in runs.iter().filter(|run| run.count > 0) {
             crate::instrumentation::record_deterministic_work(1);
@@ -5973,7 +5983,7 @@ impl SymbolicMemory {
                 },
             );
         }
-        Ok(self)
+        self
     }
 
     /// Checked compact initialization of one fresh automatic scalar array.
@@ -8126,11 +8136,12 @@ impl SymbolicMemory {
         pointer: &Address,
         byte_width: u32,
     ) -> bool {
-        // Read-only blocks are created only for fully materialized C string
-        // literals. Their bytes are stable for the lifetime of the program,
-        // so any in-bounds byte range is loadable even when it spans the
-        // literal's individual uint8 cells.
-        if self.is_read_only_block(&pointer.base) {
+        // Static read-only objects have complete initialization. Local
+        // read-only objects can also be declared without an initializer.
+        if self.is_read_only_block(&pointer.base)
+            && (!pointer.base.is_local_block()
+                || self.has_initialized_bytes_at(pointer, byte_width))
+        {
             return self.access_in_bounds(pointer, byte_width);
         }
         // The width alone decides, so a run slot's value is not named: a

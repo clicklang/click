@@ -6300,6 +6300,8 @@ pub struct ZeroFill {
     pub(super) stride: u32,
     pub(super) count: u32,
     pub(super) cells: std::sync::Arc<[ZeroCell]>,
+    /// Explicit values constructed inside a const scalar-array declaration.
+    pub(crate) written_elements: std::sync::Arc<[(u32, ProgramExpression)]>,
 }
 
 /// One zero store of every element of a [`ZeroFill`]: `zero`, the zero
@@ -6319,7 +6321,19 @@ impl ZeroFill {
             stride,
             count,
             cells: cells.into(),
+            written_elements: Default::default(),
         }
+    }
+
+    pub(crate) fn expressions(&self) -> impl Iterator<Item = &ProgramExpression> {
+        self.written_elements
+            .iter()
+            .map(|(_, expression)| expression)
+    }
+
+    pub(crate) fn with_written_elements(mut self, written: Vec<(u32, ProgramExpression)>) -> Self {
+        self.written_elements = written.into();
+        self
     }
 }
 

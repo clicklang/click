@@ -78,7 +78,7 @@ in [file-scope objects](c.md#file-scope-scalar-globals) and the struct
 reference. Mutable block-scope struct compound literals reuse automatic struct
 initialization and live until the enclosing block ends; see
 [compound literals](c.md#block-scope-struct-compound-literals) for their
-initializer-order and qualified-type limits. Automatic/local const aggregates,
+initializer-order and qualified-type limits. Automatic const struct objects,
 whole-union initialization, and broader aggregate initializer forms remain
 outside the documented subset.
 
@@ -147,8 +147,9 @@ only; other inline attributes and function definitions in headers
 remain unsupported. The exact trailing struct attribute
 `__attribute__((aligned(sizeof(long))))` (and `__aligned__`) is supported as an
 LP64 eight-byte alignment requirement; other alignment forms remain
-unsupported. Const-qualified static-storage aggregates are read-only, while
-automatic/local const aggregates remain unsupported.
+unsupported. Const-qualified static-storage aggregates are read-only.
+[Local scalar arrays](c.md) with arithmetic elements can
+also be constructed as read-only objects.
 System header includes other than the modeled `<stdint.h>`, `<inttypes.h>`,
 `<stdbool.h>`, and `<limits.h>` (and, for the user-space target, `<stddef.h>`,
 the declaration-only `<string.h>` and `<stdlib.h>` subsets, `<pthread.h>`, and

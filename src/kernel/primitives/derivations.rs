@@ -1969,16 +1969,22 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
             | ProgramStatement::Break
             | ProgramStatement::Continue
             | ProgramStatement::Goto { .. }
-            | ProgramStatement::Declare {
-                initializer: None, ..
-            }
             | ProgramStatement::DeclareAggregate { .. } => {}
 
             ProgramStatement::Declare {
-                initializer: Some(expression),
+                initializer,
+                zero_fill,
                 ..
+            } => {
+                if let Some(expression) = initializer {
+                    cost.add_expression(1); // assignment target lvalue
+                    cost.add_expression(program_expression_source_steps(expression));
+                }
+                for expression in zero_fill.iter().flat_map(ZeroFill::expressions) {
+                    cost.add_expression(program_expression_source_steps(expression));
+                }
             }
-            | ProgramStatement::Assign { expression, .. } => {
+            ProgramStatement::Assign { expression, .. } => {
                 cost.add_expression(1); // assignment target lvalue
                 cost.add_expression(program_expression_source_steps(expression));
             }

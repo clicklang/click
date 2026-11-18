@@ -1569,6 +1569,7 @@ pub struct CZeroFill {
     stride: u32,
     count: u32,
     cells: std::sync::Arc<[(u32, InterfaceType, bool, CExpression)]>,
+    pub(crate) written_elements: std::sync::Arc<[(u32, CExpression)]>,
 }
 
 impl CZeroFill {
@@ -1601,6 +1602,7 @@ impl CZeroFill {
             stride,
             count,
             cells: cells.into(),
+            written_elements: Default::default(),
         })
     }
 
@@ -1663,6 +1665,12 @@ impl CZeroFill {
                         zero,
                     )
                 })
+                .collect(),
+        )
+        .with_written_elements(
+            self.written_elements
+                .iter()
+                .map(|(index, value)| (*index, value.to_kernel_expression()))
                 .collect(),
         )
     }
@@ -12546,9 +12554,6 @@ impl Parser {
             }
             let mut inferred_initializer = None;
             if incomplete_array {
-                if object_constant {
-                    return Err(self.error_here("const automatic array initialization is outside the scalar initialization slice"));
-                }
                 if self.peek() != Some(&Token::Equal) || self.peek_next() != Some(&Token::LBrace) {
                     return Err(
                         self.error_here("inferred local arrays require a brace initializer")
@@ -12614,20 +12619,30 @@ impl Parser {
                     self.position += 1;
                 }
                 if supports_local_array_initializer(interface_type) {
-                    if object_constant {
-                        return Err(self.error_here("const automatic array initialization is outside the scalar initialization slice"));
+                    if object_constant
+                        && (!is_arithmetic_type(parsed_type.interface_type)
+                            || is_plain_struct_type(&parsed_type)
+                            || parsed_type.union_name.is_some()
+                            || parsed_type.long_double
+                            || object_volatile
+                            || pointee_volatile)
+                    {
+                        return Err(self.error_here(
+                            "const automatic array initialization requires non-volatile arithmetic elements",
+                        ));
                     }
                     // A volatile object keeps one access per element.
                     let compact = !object_volatile && !pointee_volatile;
                     let (zero_fill, initializer) =
                         if let Some((length, written)) = inferred_initializer {
-                            self.finish_local_array_initializer(
+                            self.finish_local_array_declaration(
                                 &name,
                                 parsed_type.interface_type,
                                 length,
                                 written,
                                 compact,
-                            )
+                                object_constant,
+                            )?
                         } else if is_plain_struct_type(&parsed_type) {
                             let struct_name = parsed_type.struct_name.as_deref().unwrap();
                             let dimensions = array_shape.as_deref().expect(
@@ -12645,6 +12660,7 @@ impl Parser {
                                 interface_type,
                                 array_shape.as_deref(),
                                 compact,
+                                object_constant,
                             )?
                         };
                     let declaration = match declaration {
@@ -12672,7 +12688,11 @@ impl Parser {
                         },
                         _ => unreachable!("an array declaration is a plain declaration"),
                     };
-                    CStatement::Seq(Box::new(declaration), Box::new(initializer))
+                    if object_constant {
+                        declaration
+                    } else {
+                        CStatement::Seq(Box::new(declaration), Box::new(initializer))
+                    }
                 } else if !object_constant
                     && matches!(self.peek(), Some(Token::Ident(_)))
                     && !matches!(

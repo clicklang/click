@@ -348,6 +348,13 @@ through two calls to a pointer-taking helper without resetting the state.
   `int32 a[3];`, `int32 matrix[3][4];`, `uint64 values[2];`, and
   `double samples[2];`. Fixed pointer arrays such as `int *slots[2]` are
   supported in local, static, and file-scope storage and as struct fields.
+  For supported arithmetic element types, a local `const` array accepts
+  explicit or inferred bounds and positional runtime initializers without
+  calls, updates, or references to the array under construction. Omitted
+  elements are zero-filled. The stored elements are read-only through aliases,
+  including pointers produced by casts that drop `const`.
+<!-- verified-example: mdtests/c_const_automatic_array.md -->
+<!-- verified-example: mdtests/c_const_automatic_array_cast_write.md -->
 - Fixed-dimensional local arrays of copyable structs with nested positional
   element initializers and integer array-element designators at each dimension;
   omitted fields and elements are zero-filled.
@@ -3136,7 +3143,7 @@ These are not general C features yet:
   addresses, and variadic function-pointer signatures; only the body-less
   prototype is retained
 - volatile forms outside the sequential scalar model described above
-- const-qualified automatic/local aggregate objects, and broader qualifier
+- const-qualified automatic struct objects, and broader qualifier
   conversions beyond scalar globals, scalar tables, const static-storage
   aggregates, pointer-to-const views, and one-level pointee-const casts,
   including explicit casts that drop one-level pointee `const`

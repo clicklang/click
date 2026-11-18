@@ -931,18 +931,28 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. } => statement.clone(),
 
-        ProgramStatement::Declare {
-            initializer: Some(expression),
-            ..
-        } => {
+        ProgramStatement::Declare { .. } => {
             let mut statement = statement.clone();
-            if let ProgramStatement::Declare { initializer, .. } = &mut statement {
-                *initializer = Some(s.program_expression(expression));
+            if let ProgramStatement::Declare {
+                initializer,
+                zero_fill,
+                ..
+            } = &mut statement
+            {
+                *initializer = initializer
+                    .as_ref()
+                    .map(|value| s.program_expression(value));
+                if let Some(fill) = zero_fill
+                    && !fill.written_elements.is_empty()
+                {
+                    fill.written_elements = fill
+                        .written_elements
+                        .iter()
+                        .map(|(index, value)| (*index, s.program_expression(value)))
+                        .collect();
+                }
             }
             statement
         }
@@ -2693,16 +2703,21 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. } => {}
 
         ProgramStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            for expression in initializer
+                .iter()
+                .chain(zero_fill.iter().flat_map(ZeroFill::expressions))
+            {
+                collect_program_expression_bound_variables(expression, variables);
+            }
         }
-        | ProgramStatement::Assign { expression, .. }
+        ProgramStatement::Assign { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression)
         | ProgramStatement::Assert {

@@ -1385,16 +1385,21 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. } => {}
 
         ProgramStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            for expression in initializer
+                .iter()
+                .chain(zero_fill.iter().flat_map(ZeroFill::expressions))
+            {
+                escapes(expression);
+            }
         }
-        | ProgramStatement::Assign { expression, .. }
+        ProgramStatement::Assign { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression) => escapes(expression),
         ProgramStatement::CallConstruct { arguments, .. }
@@ -4433,15 +4438,20 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. } => {}
         ProgramStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            for expression in initializer
+                .iter()
+                .chain(zero_fill.iter().flat_map(ZeroFill::expressions))
+            {
+                visit(expression);
+            }
         }
-        | ProgramStatement::Assign { expression, .. }
+        ProgramStatement::Assign { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression) => visit(expression),
         ProgramStatement::CallConstruct { arguments, .. }
