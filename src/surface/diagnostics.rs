@@ -1461,7 +1461,8 @@ pub(super) fn local_naming_tables(
 /// step's `<call>.result`, or `at(<assignment>.entry, x)` for the value an
 /// assignment step replaced in `x`.
 pub(in crate::surface) fn step_result_expression(step: u32) -> Option<ContractExpression> {
-    let layout = spelling_layout()?;
+    let layout =
+        spelling_layout().or_else(|| STEP_RESULT_LAYOUT.with(|slot| slot.borrow().clone()))?;
     let region = layout.step_region(step)?;
     match layout.prior_step_local(step) {
         Some(local) => {
@@ -6106,6 +6107,12 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             rust_binding_spelling(name).unwrap_or_else(|| name.to_string())
         }
         ProgramExpression::FunctionAddress(name) => format!("&{name}"),
+        // A step's result is spelled by its step, as lowering reads it back.
+        ProgramExpression::StepResult { step, .. }
+            if let Some(spelled) = step_result_expression(*step) =>
+        {
+            describe_contract_expression(&spelled)
+        }
         ProgramExpression::StepResult {
             origin: crate::kernel::StepOrigin::Call(function_name),
             ..
@@ -7889,6 +7896,33 @@ thread_local! {
     /// the path through the statements as written that names it.
     static SPELLING_LAYOUT: std::cell::RefCell<Option<crate::surface::lowering::SourceExecutionLayout>> =
         const { std::cell::RefCell::new(None) };
+    /// The layout that spells step results while a [`StepResultSpellingScope`]
+    /// is alive, without changing how points print.
+    static STEP_RESULT_LAYOUT: std::cell::RefCell<Option<crate::surface::lowering::SourceExecutionLayout>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Spells step results by a checked function's layout while alive, for a
+/// certificate rendered after its check ended. Points keep the spelling the
+/// certificate recorded.
+pub(in crate::surface) struct StepResultSpellingScope(
+    Option<crate::surface::lowering::SourceExecutionLayout>,
+);
+
+impl StepResultSpellingScope {
+    pub(in crate::surface) fn enter(
+        layout: &crate::surface::lowering::SourceExecutionLayout,
+    ) -> Self {
+        Self(STEP_RESULT_LAYOUT.with(|slot| slot.replace(Some(layout.clone()))))
+    }
+}
+
+impl Drop for StepResultSpellingScope {
+    fn drop(&mut self) {
+        STEP_RESULT_LAYOUT.with(|slot| {
+            slot.replace(self.0.take());
+        });
+    }
 }
 
 /// The source layout of the function whose proof is being checked, if any.
