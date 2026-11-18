@@ -4011,7 +4011,9 @@ fn c_statement_calls_recording(
             | syntax::CStatement::Skip
             | syntax::CStatement::Break
             | syntax::CStatement::Continue => {}
-            syntax::CStatement::Goto { .. } => calls.push(BTreeSet::new()),
+            syntax::CStatement::Goto { .. } | syntax::CStatement::FillArrayTail { .. } => {
+                calls.push(BTreeSet::new());
+            }
             syntax::CStatement::Label { statement, .. } => {
                 visit(statement, calls, function_pointer_names, allocator)
             }
@@ -4130,8 +4132,7 @@ fn c_statement_calls_recording(
             syntax::CStatement::Declare {
                 initializer: None, ..
             }
-            | syntax::CStatement::DeclareStructValue { .. }
-            | syntax::CStatement::FillArrayTail { .. } => calls.push(BTreeSet::new()),
+            | syntax::CStatement::DeclareStructValue { .. } => calls.push(BTreeSet::new()),
             syntax::CStatement::Declare {
                 initializer: Some(expression),
                 ..
