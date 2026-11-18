@@ -3577,9 +3577,9 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 &lowered,
                 parameter_binding.parameters,
             );
-            // Naming cells during a proof rewrite is not a C write. Keep
-            // unrelated memory-backed views and their support identities.
-            state = state.with_materialized_memory(memory);
+            // Keep the program point and unrelated memory-backed views when
+            // the proof rewrite gives cells names.
+            state = state.with_materialized_memory_at_current_point(memory);
         }
         // The selected child was already lowered in the current state.
         // Re-lowering from memory alone loses locals such as a callback's
@@ -6169,6 +6169,93 @@ mod wide_range_reader_tests {
 #[cfg(test)]
 mod guarded_unmatched_materialization_tests {
     use super::*;
+
+    #[test]
+    fn composite_unfold_keeps_the_point_while_naming_a_cell() {
+        check_composite_body_point(ResourceBodyAccess::Finalize);
+    }
+
+    #[test]
+    fn composite_open_keeps_the_point_while_naming_a_cell() {
+        check_composite_body_point(ResourceBodyAccess::Open);
+    }
+
+    fn check_composite_body_point(access: ResourceBodyAccess) {
+        let _session = crate::kernel::VerificationSession::enter();
+        let file = crate::surface::parse(
+            r#"
+            resource initialized_cell(p: int32*) { owns *p; fact defined(*p); }
+            verifying "read.c";
+            int32 read(int32* p) { owns initialized_cell(p); ensures true; }
+            "#,
+        )
+        .unwrap();
+        let [Requirement::Resource(resource)] = file.function_blocks()[0].requires() else {
+            panic!("expected the cell resource as the only requirement");
+        };
+        let parsed = syntax::parse_function("int32 read(int32* p) { return *p; }").unwrap();
+        let resources = ResourceEnvironment::new(file.resource_definitions());
+        let functions = ClickFunctionEnvironment::new(&[]);
+        let predicates = PredicateEnvironment::new(&[]);
+        let specs = SpecDefinitions::new(&predicates, &functions);
+        let pointer = Address::symbolic(crate::kernel::Variable(88_023));
+        let arguments = [ProgramExpression::Value(ProgramValue::typed_pointer(
+            pointer.clone(),
+            ProgramType::Int32Pointer,
+        ))];
+        let state = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4))
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                ResourceFact::own_composite(
+                    "initialized_cell".into(),
+                    vec![ProgramValue::typed_pointer(
+                        pointer.clone(),
+                        ProgramType::Int32Pointer,
+                    )],
+                ),
+            ));
+        let point = state.observation_point_id().unwrap();
+        assert!(!matches!(
+            state.memory().load(&pointer),
+            ExpressionOutcome::Value(_)
+        ));
+
+        let checked = unfold_composite_resource_for_proof_with_access(
+            &resources,
+            resource,
+            resource,
+            ParameterBinding::new(parsed.parameters(), &arguments),
+            state,
+            PureFactStore::default(),
+            &mut SurfacePropositionMap::default(),
+            specs,
+            "expose a defined cell",
+            0,
+            access,
+            true,
+        )
+        .unwrap();
+        let after = &checked.state;
+        assert!(matches!(
+            after.memory().load(&pointer),
+            ExpressionOutcome::Value(_)
+        ));
+        assert!(after.resources().facts().iter().any(|fact| {
+            fact.memory_own_range()
+                .is_some_and(|range| range.base() == &pointer)
+        }));
+        assert_eq!(after.observation_point_id(), Some(point));
+        assert!(
+            checked
+                .added_facts
+                .contains(&Proposition::MemoryReadDefined {
+                    at: Some(point),
+                    memory: after.memory().clone(),
+                    pointer,
+                    value_type: ProgramType::Int32,
+                })
+        );
+    }
 
     #[test]
     fn implicit_projection_keeps_the_point_of_an_already_named_cell() {
