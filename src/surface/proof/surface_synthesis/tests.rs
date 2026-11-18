@@ -4652,8 +4652,7 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
 #[test]
 fn common_pointer_calls_round_trip_nested_source_calls() {
     use crate::kernel::{
-        AddressBase, KernelTerm, KernelTermImport, Pointer, PureFunctionArgument,
-        SharedPointerValue,
+        AddressBase, KernelTerm, KernelTermImport, Pointer, PureFunctionArgument, SharedPointer,
     };
     let _session = crate::kernel::VerificationSession::enter();
     let declarations = "function select(p: int32*) -> int32* { p }";
@@ -4708,7 +4707,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
         // Reconstruct the same nested common roots that the producer test
         // checks, keeping inner calls as children rather than exporting them.
         fn common(pointer: &Pointer) -> KernelTerm {
-            let value = SharedPointerValue::import(pointer);
+            let value = SharedPointer::import(pointer);
             let AddressBase::PureFunctionApplication(application) = &pointer.base else {
                 return KernelTerm::shared_pointer_value(value);
             };

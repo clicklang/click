@@ -15,7 +15,7 @@ struct PointerIdentity {
 
 #[derive(Clone, Debug)]
 pub struct KernelPointerEquality {
-    arguments: [SharedPointerValue; 2],
+    arguments: [SharedPointer; 2],
     observation: Option<Arc<[PointerIdentity; 2]>>,
 }
 impl PartialEq for KernelPointerEquality {
@@ -39,7 +39,7 @@ impl Hash for KernelPointerEquality {
     }
 }
 impl KernelPointerEquality {
-    pub(crate) fn arguments(&self) -> &[SharedPointerValue; 2] {
+    pub(crate) fn arguments(&self) -> &[SharedPointer; 2] {
         &self.arguments
     }
     pub(crate) fn observe(
@@ -74,7 +74,7 @@ impl KernelPointerEquality {
     }
 }
 
-impl SharedPointerValue {
+impl SharedPointer {
     pub(crate) fn condition_syntax_equal(&self, other: &Self) -> bool {
         if self == other {
             return true;
@@ -143,7 +143,7 @@ impl SharedPointerValue {
     }
 }
 impl KernelTerm {
-    pub(crate) fn pointer_value_equal_raw(arguments: [SharedPointerValue; 2]) -> Self {
+    pub(crate) fn pointer_value_equal_raw(arguments: [SharedPointer; 2]) -> Self {
         Self::intern(
             KernelType::Bool,
             KernelTermNode::PointerValueEqual(KernelPointerEquality {
@@ -155,7 +155,7 @@ impl KernelTerm {
 }
 
 impl KernelTerm {
-    pub(crate) fn pointer_value_equal(arguments: [SharedPointerValue; 2]) -> Self {
+    pub(crate) fn pointer_value_equal(arguments: [SharedPointer; 2]) -> Self {
         let [left, right] = arguments.each_ref();
         let (a, b) = (left.node(), right.node());
         let (aq, bq) = (a.qualifiers.as_ref(), b.qualifiers.as_ref());
@@ -277,7 +277,7 @@ mod tests {
         let values = values();
         for a in &values {
             for b in &values {
-                let shared = [SharedPointerValue::import(a), SharedPointerValue::import(b)];
+                let shared = [SharedPointer::import(a), SharedPointer::import(b)];
                 assert_eq!(shared[0].condition_syntax_equal(&shared[1]), a == b);
                 let expected = ConditionTerm::pointer_value_equal(a.clone(), b.clone());
                 let root = KernelTerm::pointer_value_equal(shared);

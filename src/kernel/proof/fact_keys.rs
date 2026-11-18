@@ -66,7 +66,7 @@ pub(crate) enum MemoryErasedPropositionKey {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct MemoryErasedMemoryRangeKey {
     block: AddressBase,
-    offset: MemoryErasedPointerOffsetKey,
+    offset: MemoryErasedAddressOffsetKey,
     start: MemoryErasedBitvectorKey,
     end: MemoryErasedBitvectorKey,
     wide: bool,
@@ -74,7 +74,7 @@ pub(crate) struct MemoryErasedMemoryRangeKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum MemoryErasedConditionKey {
-    PointerValueEqual(MemoryErasedPointerValueKey, MemoryErasedPointerValueKey),
+    PointerValueEqual(MemoryErasedPointerKey, MemoryErasedPointerKey),
     AlgebraicEqual(Box<AlgebraicTerm>, Box<AlgebraicTerm>),
     Constant(bool),
     Variable(Variable),
@@ -85,8 +85,8 @@ pub(crate) enum MemoryErasedConditionKey {
     ),
     Float32(MemoryErasedFloatConditionKey),
     Float64(MemoryErasedFloatConditionKey),
-    PointerOffsetEqual(MemoryErasedPointerOffsetKey, MemoryErasedPointerOffsetKey),
-    PointerEqual(MemoryErasedPointerKey, MemoryErasedPointerKey),
+    PointerOffsetEqual(MemoryErasedAddressOffsetKey, MemoryErasedAddressOffsetKey),
+    PointerEqual(MemoryErasedAddressKey, MemoryErasedAddressKey),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -115,42 +115,42 @@ pub(crate) fn clear_state_operand_keys() {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(crate) struct MemoryErasedPointerValueKey {
+pub(crate) struct MemoryErasedPointerKey {
     program_type: ProgramType,
-    address: MemoryErasedPointerKey,
-    provenance: MemoryErasedPointerKey,
-    bounds_owner: Option<MemoryErasedPointerKey>,
-    bounds: Option<(MemoryErasedPointerKey, MemoryErasedBitvectorKey)>,
+    address: MemoryErasedAddressKey,
+    provenance: MemoryErasedAddressKey,
+    bounds_owner: Option<MemoryErasedAddressKey>,
+    bounds: Option<(MemoryErasedAddressKey, MemoryErasedBitvectorKey)>,
     bounds_known: bool,
 }
 
-impl MemoryErasedPointerValueKey {
+impl MemoryErasedPointerKey {
     fn requires_checked_match(&self) -> bool {
         self.address.requires_checked_match()
             || self.provenance.requires_checked_match()
             || self
                 .bounds_owner
                 .as_ref()
-                .is_some_and(MemoryErasedPointerKey::requires_checked_match)
+                .is_some_and(MemoryErasedAddressKey::requires_checked_match)
             || self.bounds.as_ref().is_some_and(|(start, width)| {
                 start.requires_checked_match() || width.requires_checked_match()
             })
     }
 }
 
-fn memory_erased_pointer_value_key(pointer: &Pointer) -> MemoryErasedPointerValueKey {
-    MemoryErasedPointerValueKey {
+fn memory_erased_pointer_key(pointer: &Pointer) -> MemoryErasedPointerKey {
+    MemoryErasedPointerKey {
         program_type: pointer.program_type(),
-        address: memory_erased_pointer_key(pointer.address()),
-        provenance: memory_erased_pointer_key(pointer.provenance()),
+        address: memory_erased_address_key(pointer.address()),
+        provenance: memory_erased_address_key(pointer.provenance()),
         bounds_owner: if pointer.bounds_are_known() {
             None
         } else {
-            pointer.bounds_owner().map(memory_erased_pointer_key)
+            pointer.bounds_owner().map(memory_erased_address_key)
         },
         bounds: pointer.bounds().map(|bounds| {
             (
-                memory_erased_pointer_key(&bounds.start),
+                memory_erased_address_key(&bounds.start),
                 memory_erased_bitvector_key(&bounds.width),
             )
         }),
@@ -159,20 +159,20 @@ fn memory_erased_pointer_value_key(pointer: &Pointer) -> MemoryErasedPointerValu
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(crate) struct MemoryErasedPointerKey {
-    block: MemoryErasedAddressBaseKey,
-    offset: Box<MemoryErasedPointerOffsetKey>,
+pub(crate) struct MemoryErasedAddressKey {
+    base: MemoryErasedAddressBaseKey,
+    offset: Box<MemoryErasedAddressOffsetKey>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum MemoryErasedAddressBaseKey {
     Exact(AddressBase),
-    Read(Box<MemoryErasedPointerKey>),
+    Read(Box<MemoryErasedAddressKey>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(crate) enum MemoryErasedPointerOffsetNode {
-    Add(MemoryErasedPointerOffsetKey, MemoryErasedPointerOffsetKey),
+pub(crate) enum MemoryErasedAddressOffsetNode {
+    Add(MemoryErasedAddressOffsetKey, MemoryErasedAddressOffsetKey),
     Int32Scaled {
         value: MemoryErasedBitvectorKey,
         byte_width: i64,
@@ -244,17 +244,17 @@ impl MemoryErasedFloatConditionKey {
     }
 }
 
-impl MemoryErasedPointerKey {
+impl MemoryErasedAddressKey {
     fn requires_checked_match(&self) -> bool {
-        matches!(self.block, MemoryErasedAddressBaseKey::Read(_))
+        matches!(self.base, MemoryErasedAddressBaseKey::Read(_))
             || self.offset.requires_checked_match()
     }
 }
 
-type MemoryErasedPointerOffsetKey = Canonical<MemoryErasedPointerOffsetNode>;
+type MemoryErasedAddressOffsetKey = Canonical<MemoryErasedAddressOffsetNode>;
 type AlphaPointerOffsetKey = Canonical<AlphaPointerOffsetNode>;
 
-impl MemoryErasedPointerOffsetNode {
+impl MemoryErasedAddressOffsetNode {
     fn requires_checked_match(&self) -> bool {
         match self {
             Self::Add(left, right) => {
@@ -395,7 +395,7 @@ fn memory_erased_proposition_key_one(proposition: &Proposition) -> MemoryErasedP
 fn memory_erased_memory_range_key(range: &MemoryRange) -> Box<MemoryErasedMemoryRangeKey> {
     Box::new(MemoryErasedMemoryRangeKey {
         block: range.base().base.clone(),
-        offset: memory_erased_pointer_offset_key(&range.base().offset),
+        offset: memory_erased_address_offset_key(&range.base().offset),
         start: memory_erased_bitvector_key(range.bound_terms().0),
         end: memory_erased_bitvector_key(range.bound_terms().1),
         // One untyped term can bound a range of either kind, and the two
@@ -517,8 +517,8 @@ fn memory_erased_condition_key(condition: &ConditionTerm) -> MemoryErasedConditi
     match condition {
         ConditionTerm::PointerValueEqual(left, right) => {
             MemoryErasedConditionKey::PointerValueEqual(
-                memory_erased_pointer_value_key(left),
-                memory_erased_pointer_value_key(right),
+                memory_erased_pointer_key(left),
+                memory_erased_pointer_key(right),
             )
         }
 
@@ -535,13 +535,13 @@ fn memory_erased_condition_key(condition: &ConditionTerm) -> MemoryErasedConditi
         }
         ConditionTerm::PointerOffsetEqual(left, right) => {
             MemoryErasedConditionKey::PointerOffsetEqual(
-                memory_erased_pointer_offset_key(left),
-                memory_erased_pointer_offset_key(right),
+                memory_erased_address_offset_key(left),
+                memory_erased_address_offset_key(right),
             )
         }
         ConditionTerm::PointerEqual(left, right) => MemoryErasedConditionKey::PointerEqual(
-            memory_erased_pointer_key(left),
-            memory_erased_pointer_key(right),
+            memory_erased_address_key(left),
+            memory_erased_address_key(right),
         ),
         crate::kernel::ConditionTerm::Compare { .. }
         | crate::kernel::ConditionTerm::Overflows { .. } => {
@@ -595,7 +595,7 @@ impl Drop for PointerReadKeyDepth {
     }
 }
 
-fn memory_erased_pointer_key(pointer: &Address) -> MemoryErasedPointerKey {
+fn memory_erased_address_key(pointer: &Address) -> MemoryErasedAddressKey {
     let depth = POINTER_READ_KEY_DEPTH.with(|depth| depth.replace(depth.get() + 1));
     let _restore = PointerReadKeyDepth(depth);
     // This candidate key forgets states, never proof authority. Bound
@@ -609,24 +609,24 @@ fn memory_erased_pointer_key(pointer: &Address) -> MemoryErasedPointerKey {
         }
         _ => None,
     };
-    MemoryErasedPointerKey {
-        block: read
+    MemoryErasedAddressKey {
+        base: read
             .map(|source| {
-                MemoryErasedAddressBaseKey::Read(Box::new(memory_erased_pointer_key(&source)))
+                MemoryErasedAddressBaseKey::Read(Box::new(memory_erased_address_key(&source)))
             })
             .unwrap_or_else(|| MemoryErasedAddressBaseKey::Exact(pointer.base.clone())),
-        offset: Box::new(memory_erased_pointer_offset_key(&pointer.offset)),
+        offset: Box::new(memory_erased_address_offset_key(&pointer.offset)),
     }
 }
 
-fn memory_erased_pointer_offset_key(offset: &AddressOffset) -> MemoryErasedPointerOffsetKey {
+fn memory_erased_address_offset_key(offset: &AddressOffset) -> MemoryErasedAddressOffsetKey {
     Canonical::new(match offset {
-        AddressOffset::Add(left, right) => MemoryErasedPointerOffsetNode::Add(
-            memory_erased_pointer_offset_key(left),
-            memory_erased_pointer_offset_key(right),
+        AddressOffset::Add(left, right) => MemoryErasedAddressOffsetNode::Add(
+            memory_erased_address_offset_key(left),
+            memory_erased_address_offset_key(right),
         ),
         AddressOffset::Int32Scaled { value, byte_width } => {
-            MemoryErasedPointerOffsetNode::Int32Scaled {
+            MemoryErasedAddressOffsetNode::Int32Scaled {
                 value: memory_operands::operand(value.operand_view()),
                 byte_width: *byte_width,
             }
@@ -635,12 +635,12 @@ fn memory_erased_pointer_offset_key(offset: &AddressOffset) -> MemoryErasedPoint
             value,
             byte_width,
             unsigned,
-        } => MemoryErasedPointerOffsetNode::Int64Scaled {
+        } => MemoryErasedAddressOffsetNode::Int64Scaled {
             value: memory_operands::operand(value.operand_view()),
             byte_width: *byte_width,
             unsigned: *unsigned,
         },
-        offset => MemoryErasedPointerOffsetNode::Exact(offset.clone()),
+        offset => MemoryErasedAddressOffsetNode::Exact(offset.clone()),
     })
 }
 

@@ -7845,7 +7845,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                     .pointer_call(
                         &application,
                         retained,
-                        SharedPointerValue::import_produced(&value),
+                        SharedPointer::import_produced(&value),
                     )
                     .into()
             } else {

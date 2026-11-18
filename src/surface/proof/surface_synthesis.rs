@@ -3497,7 +3497,7 @@ fn raise_pointer_comparison(
     use crate::kernel::{KernelAddressOffset, KernelTermNode as Node};
     let (left, right) = match term.node() {
         Node::PointerValueEqual(pair) => {
-            let operand = |value: &crate::kernel::SharedPointerValue| {
+            let operand = |value: &crate::kernel::SharedPointer| {
                 synthesize_pointer_equality_address(
                     &value.node().address.export().ok()?,
                     value.node().program_type,

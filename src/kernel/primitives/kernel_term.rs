@@ -39,7 +39,7 @@ pub(crate) use addresses::{SharedAddress, SharedAddressBase};
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
 pub(crate) use offsets::{KernelAddressOffset, SharedAddressOffset};
-pub(crate) use pointers::{PointerRewrite, PointerRewriteError, SharedPointerValue};
+pub(crate) use pointers::{PointerRewrite, PointerRewriteError, SharedPointer};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, Weak};
 
@@ -169,7 +169,7 @@ pub enum KernelTermNode {
         kind: LoadKind,
     },
     /// Complete formed pointer value with prepared address and metadata children.
-    Pointer(SharedPointerValue),
+    Pointer(SharedPointer),
     /// A pointer argument with the point its array is read at.
     ArrayReference {
         point: ProgramPoint,
@@ -179,7 +179,7 @@ pub enum KernelTermNode {
     /// Generic call structure plus the complete checked pointer result.
     PointerCall {
         call: KernelTerm,
-        value: SharedPointerValue,
+        value: SharedPointer,
     },
     /// Pointer arithmetic keeps its exact input roots beside the complete
     /// checked result payload. Formation evidence stays on the execution path.
@@ -187,12 +187,12 @@ pub enum KernelTermNode {
         operation: MachineBinaryOp,
         byte_width: u32,
         operands: [KernelTerm; 2],
-        value: SharedPointerValue,
+        value: SharedPointer,
     },
     /// Complete pointer read result and its producer-retained definition.
     /// Access authority and read-over-write evidence remain outside the term.
     PointerRead {
-        value: SharedPointerValue,
+        value: SharedPointer,
         point: ProgramPoint,
         address: SharedAddress,
     },
@@ -1212,7 +1212,7 @@ impl KernelTermImport {
                     KernelTerm::program_parameter(self.algebraic(value))
                 }
                 ProgramValue::Pointer(value) => {
-                    KernelTerm::shared_pointer_value(SharedPointerValue::import(value))
+                    KernelTerm::shared_pointer_value(SharedPointer::import(value))
                 }
                 // Void has no expression. A complete pointer/integer record is
                 // the package-7 value descriptor, not its numeric projection.
@@ -1227,7 +1227,7 @@ impl KernelTermImport {
             } => match pointer {
                 ProgramValue::Pointer(pointer) => KernelTerm::shared_array_reference(
                     ProgramPoint::of_memory(memory),
-                    KernelTerm::shared_pointer_value(SharedPointerValue::import(pointer)),
+                    KernelTerm::shared_pointer_value(SharedPointer::import(pointer)),
                     *element_type,
                 ),
                 // Preserve the existing refusal boundary for a non-pointer
