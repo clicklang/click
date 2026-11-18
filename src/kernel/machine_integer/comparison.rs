@@ -252,6 +252,12 @@ fn retained_comparison_for_operand_views(
         && left == right
     {
         [MachineTerm::Variable(left), MachineTerm::Variable(right)]
+    } else if format.format().bits() == 64
+        && let [Some(left), Some(right)] = operands.map(pointer_address_operand)
+        && left == right
+    {
+        // `address(p) == address(p)` names one address word twice.
+        [left, right]
     } else if let [Some(left), Some(right)] = operands.map(|operand| operand.literal()) {
         [left, right]
     } else {
@@ -317,6 +323,23 @@ pub(crate) fn is_bounded_machine_comparison(condition: &crate::kernel::Condition
 }
 
 /// Read one literal/variable leaf without exporting an arithmetic root.
+/// An address word `address(p)` as its comparison atom.
+fn pointer_address_operand(operand: crate::kernel::MachineOperandView<'_>) -> Option<MachineTerm> {
+    use crate::kernel::MachineOperandView as V;
+    match operand {
+        V::Shared(root)
+            if matches!(
+                root.node(),
+                crate::kernel::KernelTermNode::PointerAddress { .. }
+            ) =>
+        {
+            root.machine_conversion_leaf().cloned()
+        }
+        V::Legacy(term @ MachineTerm::PointerAddress(..)) => Some(term.clone()),
+        _ => None,
+    }
+}
+
 fn comparison_leaf_operand(operand: crate::kernel::MachineOperandView<'_>) -> Option<MachineTerm> {
     operand
         .literal()

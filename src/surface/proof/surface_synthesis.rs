@@ -1290,45 +1290,6 @@ pub(in crate::surface) fn with_proof_local_value_names<R>(
     operation()
 }
 
-/// A source expression for a semantic C value, such as a resource witness
-/// inferred from memory: the proof local that names it, else a pointer or an
-/// `int32` as the proof would write it at `state`.
-fn synthesize_surface_pointer_address(
-    pointer: &Address,
-    parameter_binding: ParameterBinding<'_>,
-    state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
-) -> Option<ContractExpression> {
-    let operand =
-        synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
-    // The address is spelled over the operand's own C expression when it has
-    // one, such as a parameter name; only a Surface-only operand keeps the
-    // operand beside a cast of the value it denotes.
-    let (operand, expression) = match operand {
-        ContractExpression::ProgramExpression(expression) => (None, expression),
-        operand => (
-            Some(operand),
-            ProgramExpression::Value(ProgramValue::typed_pointer(
-                pointer.clone(),
-                ProgramType::VoidPointer,
-            )),
-        ),
-    };
-    let cast = ProgramExpression::Cast {
-        expression: Box::new(expression),
-        target_type: ProgramType::UInt64,
-        integer_mode: crate::kernel::IntegerCastMode::Standard,
-        pointee_struct: None,
-        pointee_volatile: false,
-        pointee_constant: false,
-        explicit_qualification: false,
-    };
-    Some(match operand {
-        None => ContractExpression::ProgramExpression(cast),
-        Some(operand) => crate::surface::lowering::contract_c_unary(operand, cast),
-    })
-}
-
 pub(in crate::surface) fn synthesize_surface_value(
     value: &ProgramValue,
     parameter_binding: ParameterBinding<'_>,
@@ -2892,12 +2853,11 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
+    // A pointer equality raises as contract `p == q`, which lowers to it; the
+    // weaker `address(p) == address(q)` is the address-word equality a C
+    // comparison states (`design/pointer-subobject-bounds.md`, Phase B).
     if let ConditionTerm::PointerEqual(left, right) = condition {
-        let pointer = if **left == Address::null() || **right == Address::null() {
-            synthesize_surface_pointer_expression
-        } else {
-            synthesize_surface_pointer_address
-        };
+        let pointer = synthesize_surface_pointer_expression;
         return Some(ClickProposition::Comparison {
             left: pointer(left, parameter_binding, state, bound_variables)?,
             operator: if *value {
@@ -3514,11 +3474,8 @@ fn raise_pointer_comparison(
         Node::PointerEqual { arguments } => {
             let left = arguments[0].export().ok()?;
             let right = arguments[1].export().ok()?;
-            let pointer = if left == Address::null() || right == Address::null() {
-                synthesize_surface_pointer_expression
-            } else {
-                synthesize_surface_pointer_address
-            };
+            // As the condition form above: a pointer equality is `p == q`.
+            let pointer = synthesize_surface_pointer_expression;
             (
                 pointer(&left, parameter_binding, state, bound_variables)?,
                 pointer(&right, parameter_binding, state, bound_variables)?,
