@@ -6,6 +6,11 @@ use crate::kernel::{ExecutionValue, RetainedProgramValue};
 
 #[derive(Clone)]
 pub struct StoredMachineTerm(RetainedProgramValue);
+impl From<MachineTerm> for StoredMachineTerm {
+    fn from(value: MachineTerm) -> Self {
+        Self::new(MachineIntegerType::Int32, value)
+    }
+}
 impl StoredMachineTerm {
     pub(crate) fn new(ty: MachineIntegerType, value: MachineTerm) -> Self {
         let value = match ty {
@@ -42,6 +47,19 @@ impl StoredMachineTerm {
             }
         }
         Some(Self(value.into()))
+    }
+    pub(crate) fn map_native(&self, rewrite: impl FnOnce(&MachineTerm) -> MachineTerm) -> Self {
+        Self::new(
+            MachineIntegerType::from_program_type(self.0.program_type())
+                .expect("machine descriptor"),
+            rewrite(self.native_compat()),
+        )
+    }
+    pub(crate) fn operand_view(&self) -> MachineOperandView<'_> {
+        match self.root() {
+            Some(root) => MachineOperandView::Shared(root),
+            None => MachineOperandView::Legacy(self.native_compat()),
+        }
     }
     pub(crate) fn value(&self) -> &ExecutionValue {
         self.0.value()

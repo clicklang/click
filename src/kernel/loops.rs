@@ -7951,13 +7951,55 @@ fn evaluate_loop_effect_segment_value_capturing(
     budget: &mut ExecutionBudget,
     diagnostic: Option<&mut Option<RuntimeError>>,
 ) -> ExecutionResult<Result<(ProgramValue, ExecutionFacts), ValueRefusal>> {
+    Ok(evaluate_loop_effect_segment_value_retained_capturing(
+        state,
+        expression,
+        assumptions,
+        label,
+        budget,
+        diagnostic,
+    )?
+    .map(|(value, facts)| (value.into_native(), facts)))
+}
+
+pub(super) fn evaluate_loop_effect_segment_value_retained(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    assumptions: &PureFactContext,
+    label: &str,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<ExecutionValue, ValueRefusal>> {
+    Ok(evaluate_loop_effect_segment_value_retained_capturing(
+        state,
+        expression,
+        assumptions,
+        label,
+        budget,
+        None,
+    )?
+    .map(|(value, _)| value))
+}
+
+fn evaluate_loop_effect_segment_value_retained_capturing(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    assumptions: &PureFactContext,
+    label: &str,
+    budget: &mut ExecutionBudget,
+    diagnostic: Option<&mut Option<RuntimeError>>,
+) -> ExecutionResult<Result<(ExecutionValue, ExecutionFacts), ValueRefusal>> {
     // A contract's operand, such as a resource argument, is a specification:
     // its reads are not C accesses, and facts must not replace pointer metadata.
     // Use the same fact-stable evaluation as written proof propositions so a
     // resource footprint and its explicit memory(...) spelling have one identity.
     let paths = {
         let _specification = crate::kernel::eval::SpecificationReadScope::enter();
-        evaluate_program_expression_paths(state, expression, assumptions, budget)?
+        crate::kernel::eval::evaluate_expression_value_paths(
+            state,
+            expression,
+            assumptions,
+            budget,
+        )?
     };
     // An endpoint the facts do not keep defined splits into its defined value
     // and the undefined behavior beside it: name that behavior, which a

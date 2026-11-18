@@ -2659,7 +2659,7 @@ impl Renderer<'_> {
                     if index > 0 {
                         self.push(", ");
                     }
-                    self.bitvector(hole);
+                    self.bitvector(hole.native_compat());
                 }
                 self.push("])");
             }

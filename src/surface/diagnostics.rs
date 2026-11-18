@@ -1063,7 +1063,7 @@ pub(super) fn describe_missing_resource_fact(
                 .iter()
                 .map(|hole| format!(
                     "`{}`",
-                    describe_bitvector_with_context(hole, parameter_binding)
+                    describe_bitvector_with_context(hole.native_compat(), parameter_binding)
                 ))
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -2181,7 +2181,10 @@ pub(in crate::surface) fn describe_iterated_memory(
             iterated
                 .holes()
                 .iter()
-                .map(|hole| describe_bitvector_with_context(hole, parameter_binding))
+                .map(|hole| describe_bitvector_with_context(
+                    hole.native_compat(),
+                    parameter_binding
+                ))
                 .collect::<Vec<_>>()
                 .join(", ")
         ));

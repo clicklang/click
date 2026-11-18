@@ -611,7 +611,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four pushed commits verified on upstream. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
-| 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | In progress; family split below is authoritative. 10p1 and 10p2a landed; 10p2b landed in PR #3233; 10p3 is PR #3246; 10p4–10p6 remain. |
+| 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | In progress; family split below is authoritative. 10p1 and 10p2a landed; 10p2b landed in PR #3233; 10p3 landed in PR #3246; 10p4–10p6 remain. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
 | 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
@@ -1066,8 +1066,8 @@ not a change to proof rules or snapshot architecture.
 | --- | --- | --- |
 | 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Landed in [PR #3217](https://github.com/clicklang/click/pull/3217); all pushed commits verified upstream; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b landed in [PR #3233](https://github.com/clicklang/click/pull/3233), with all six pushed commits verified upstream; it implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
-| 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Published as [PR #3246](https://github.com/clicklang/click/pull/3246), with auto-merge requested; 525 focused checks, all 1,919 regular scaling cases, 14 selected proofs, fact stability and quality passed; isolated upstream baseline limitation below. |
-| 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
+| 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Landed in [PR #3246](https://github.com/clicklang/click/pull/3246); all eight pushed commits verified upstream; 525 focused checks, all 1,919 regular scaling cases, 14 selected proofs, fact stability and quality passed; isolated upstream baseline limitation below. |
+| 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Published as [PR #3261](https://github.com/clicklang/click/pull/3261), with auto-merge requested; 590 focused checks, all 1,926 regular scaling cases, indexed/resource-field proofs, fact stability and quality passed; one isolated upstream baseline failure. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
 | 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
 
@@ -1192,6 +1192,48 @@ upstream tree with the same separation obligation; it is a baseline limitation,
 not counted as a passing check. The direct-reader and native-producer isolation
 experiments were reverted, and its C/proof source remains unchanged. No new
 checker rule, index, budget, syntax or snapshot change was introduced.
+
+### 10p4 Iterated ownership operands
+
+Bounds, guard comparison values and ordered selected holes use the existing
+common machine carrier. Explicit native constructors preserve exact input
+syntax; stored constructors accept existing shared producers. Descriptor clone,
+hole insertion and removal retain those carriers. Existing native arithmetic,
+resource comparison, traversal and diagnostic consumers select native output
+explicitly; the existing machine-view consumer reads a common hole directly.
+Native rewrite callbacks retain their exact returned producer payload, never
+reuse an equal previous payload merely because its observations agree.
+
+The declared guard evaluator is the direct common-producer handoff in this
+slice. Declared endpoint formation still supplies the native
+`EvaluatedMemorySegment` compatibility result, used by existing span/domain
+and formation checks; record this live input boundary rather than claiming it
+was erased. Native checked element-index APIs also remain explicit inputs.
+These are selected compatibility boundaries, not extra parallel payloads in
+`IteratedMemory`. Nominal owner/address identities, hole order and checked
+indexed fold/unfold and scatter/gather rules remain unchanged.
+
+The actual guard evaluator regression was red with three machine exports and
+now passes without exporting or replacing its root. After integrating upstream
+`58b0c2c9e`, all 590 focused checks, all 1,926 regular scaling cases (two
+isolated and 1,924 remaining), 18 indexed-operation proofs and
+15 resource-field proofs passed. The iterated selection passed 26 of 27:
+the external-claim fixture fails identically on unchanged upstream, with the
+same field-dependent empty-range separation obligation. Its source and all
+checker limits remain unchanged; it is not counted as a passing check.
+Fact stability recorded zero changed terms/paths; quality passed. Full nightly
+was not run. The preceding pre-integration 589 focused/1,920 scaling checks also
+passed. Temporary reader/producer isolation experiments were reverted in 10p3.
+
+After merging upstream `a4094e114`, all 590 focused checks, indexed and
+resource-field proof selections, fact stability and quality passed again.
+The range parent PR's eight pushed commits were verified upstream before
+integration. Full nightly was not run.
+
+After integrating upstream `cc0f851400`, the address-comparison change is
+preserved alongside stored operand readers. All 81 affected checks, the indexed
+proof selection, fact stability and quality passed. A first filter spelling
+matched no fixtures; the corrected `indexed` selection passed.
 
 ## Chunk 3: machine-valued pure-function results
 

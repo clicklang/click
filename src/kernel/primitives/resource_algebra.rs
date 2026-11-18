@@ -4654,7 +4654,7 @@ impl ResourceContext {
                                         )
                                         .is_some_and(|index| {
                                             iterated.holes().iter().any(|hole| {
-                                                MachineOperandView::Legacy(hole)
+                                                hole.operand_view()
                                                     .retain(MachineIntegerType::Int32)
                                                     == index
                                             })
@@ -11067,14 +11067,17 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
         && left.holes.len() == right.holes.len()
         && address_equal(&left.element_base, &right.element_base)
         && address_equal(&left.guard.base, &right.guard.base)
-        && term_equal(&left.lower, &right.lower)
-        && term_equal(&left.upper, &right.upper)
-        && term_equal(&left.guard.value, &right.guard.value)
+        && term_equal(left.lower.native_compat(), right.lower.native_compat())
+        && term_equal(left.upper.native_compat(), right.upper.native_compat())
+        && term_equal(
+            left.guard.value.native_compat(),
+            right.guard.value.native_compat(),
+        )
         && left
             .holes
             .iter()
             .zip(right.holes.iter())
-            .all(|(a, b)| term_equal(a, b))
+            .all(|(a, b)| term_equal(a.native_compat(), b.native_compat()))
 }
 
 pub(super) fn resource_fact_read_core_range(resource: &ResourceFact) -> Option<MemoryRange> {
