@@ -19817,14 +19817,19 @@ pub(super) fn evaluate_iterated_resource_spec(
         Ok(ProgramValue::Pointer(pointer)) => pointer.into_pointer(),
         _ => return failure("guard base"),
     };
-    let guard_value = match evaluate_loop_effect_segment_value(
+    let guard_value = match evaluate_loop_effect_segment_value_retained(
         state,
         &spec.guard_value,
         assumptions,
         "iterated guard value",
         budget,
     )? {
-        Ok(ProgramValue::Int32(value)) => value,
+        Ok(value) if value.program_type() == ProgramType::Int32 => {
+            let Some(value) = StoredMachineTerm::from_value(value) else {
+                return failure("guard value");
+            };
+            value
+        }
         _ => return failure("guard value"),
     };
     let Some(iterated) = crate::kernel::IteratedMemory::new(
@@ -19836,7 +19841,7 @@ pub(super) fn evaluate_iterated_resource_spec(
         spec.end_offset,
         element.start,
         element.end,
-        crate::kernel::IteratedGuard::new(
+        crate::kernel::IteratedGuard::new_stored(
             guard_base,
             spec.guard_cell_type,
             spec.guard_cell_width,

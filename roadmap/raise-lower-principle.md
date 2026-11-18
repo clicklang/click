@@ -1067,7 +1067,7 @@ not a change to proof rules or snapshot architecture.
 | 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Landed in [PR #3217](https://github.com/clicklang/click/pull/3217); all pushed commits verified upstream; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Implemented locally; final 525 focused checks, all 1,919 regular scaling cases, 14 wide-range/allocation proofs, fact stability and quality passed. |
-| 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Common stores and selected-reader adapters implemented locally; evaluator regression and validation pending. |
+| 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Common stores and direct guard handoff implemented locally; 589 focused checks and all 1,920 regular scaling cases passed; one of 27 selected proofs is being isolated. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
 | 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
 
@@ -1203,6 +1203,14 @@ was erased. Native checked element-index APIs also remain explicit inputs.
 These are selected compatibility boundaries, not extra parallel payloads in
 `IteratedMemory`. Nominal owner/address identities, hole order and checked
 take/give/scatter/gather rules remain unchanged.
+
+The actual guard evaluator regression was red with three machine exports and
+now passes without exporting or replacing its root. All 589 focused checks and
+all 1,920 regular scaling cases passed; quality passed. The iterated proof
+selection passed 26 of 27 fixtures. The external-claim fixture has an unresolved
+separation from a field-dependent empty range; preserve its source and isolate
+against the current upstream/range-only tree before claiming completion. Logs
+are `/tmp/package10p4-proofs.log`; no proof or checker limit has been changed.
 
 ## Chunk 3: machine-valued pure-function results
 
