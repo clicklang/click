@@ -4268,6 +4268,10 @@ pub enum SpecExpression {
         point: SpecPoint,
         pointer: Box<SpecExpression>,
         value_type: ProgramType,
+        /// Surface `exact(place)`: the read named by the selected state's own
+        /// memory, with no version walk (`design/exact-reads.md`). An ordinary
+        /// read (`false`) names the cell's version point.
+        exact: bool,
     },
     /// A field of a by-value parameter, not a dereference of a C pointer.
     /// Its logical value remains available after the parameter storage ends.
@@ -11180,6 +11184,8 @@ pub(super) struct ResourceContextIndex {
     /// non-memory members a composition is listed under
     /// (`CompositionMemberIndex`).
     pub(super) owned_non_memory_facts: HashedOrdMap<ResourceFact, ()>,
+    /// Exact occurrences of owning allocation tokens, in resource order.
+    pub(super) owned_allocation_tokens: ResourceEntryIds,
     pub(super) owned_memory_ranges: HashedOrdMap<MemoryRange, ()>,
     pub(super) owned_memory_range_counts: PersistentMap<MemoryRange, usize>,
     owned_count: usize,
@@ -11215,6 +11221,10 @@ pub(super) struct ResourceContextIndex {
     /// (`memory_state::CallKeptRanges::range_holding`).
     pub(super) owned_composites_by_pointer_argument: PersistentMap<Address, ResourceEntryIds>,
     pub(super) owned_composites_by_argument_block: PersistentMap<AddressBase, ResourceEntryIds>,
+    /// Owned unit heads with exactly one argument, a nominal heap pointer.
+    /// The count for a typed family can cover its whole shape without
+    /// enumerating the occurrences the caller kept.
+    heap_anchored_composite_counts: PersistentMap<(String, ProgramType), usize>,
     /// The owned folded composites with their multiplicity, content-hashed,
     /// so a kept set's identity can name them in constant work.
     pub(super) owned_composite_facts: HashedOrdMap<ResourceFact, usize>,

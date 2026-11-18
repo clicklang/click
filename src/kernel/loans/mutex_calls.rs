@@ -100,9 +100,8 @@ impl MutexUseCallTransfer {
             .without_fact_delaying_normalization(source, assumptions)
             .ok_or_else(|| MutexUseCallError::MissingResource(source.clone()))?;
         let use_fact = ledger.mutex_use_resource(loan.usage, callee)?;
-        let callee_resources = ResourceContext::new()
-            .try_compose_with_facts_delaying_normalization([use_fact], assumptions)
-            .map_err(MutexUseCallError::InvalidResources)?;
+        let callee_resources =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(use_fact);
         Ok(Self {
             caller_resources,
             callee_resources,
@@ -176,17 +175,10 @@ impl MutexUseCallTransfer {
             .clone()
             .without_fact_delaying_normalization(source, assumptions)
             .ok_or_else(|| MutexUseCallError::MissingResource(source.clone()))?
-            .try_compose_with_facts_delaying_normalization(
-                [ledger.mutex_use_resource(retained, caller)?],
-                assumptions,
-            )
+            .insert_checked_mutex_authority(ledger.mutex_use_resource(retained, caller)?)
             .map_err(MutexUseCallError::InvalidResources)?;
-        let callee_resources = ResourceContext::new()
-            .try_compose_with_facts_delaying_normalization(
-                [ledger.mutex_use_resource(loan.usage, callee)?],
-                assumptions,
-            )
-            .map_err(MutexUseCallError::InvalidResources)?;
+        let callee_resources = ResourceContext::new_with_equalities(assumptions)
+            .unchecked_with_fact(ledger.mutex_use_resource(loan.usage, callee)?);
         let retained_resource = Some(ledger.mutex_use_resource(retained, caller)?);
         Ok(Self {
             caller_resources,
@@ -344,7 +336,7 @@ impl MutexUseCallTransfer {
             })
             .collect();
         caller_resources = caller_resources
-            .try_compose_with_facts_delaying_normalization([restored], assumptions)
+            .insert_checked_mutex_authority(restored)
             .map_err(MutexUseCallError::InvalidResources)?;
         Ok(MutexUseCallReturn {
             ledger,
@@ -552,7 +544,7 @@ impl MutexUseCallTransfer {
         let caller_resources = self
             .caller_resources
             .clone()
-            .try_compose_with_facts_delaying_normalization([restored], assumptions)
+            .insert_checked_mutex_authority(restored)
             .map_err(MutexUseCallError::InvalidResources)?;
         Ok(MutexUseCallReturn {
             ledger,

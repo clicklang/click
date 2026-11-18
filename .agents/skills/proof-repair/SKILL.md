@@ -1,14 +1,14 @@
 ---
-name: tracing
+name: proof-repair
 description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` reports a proof error, or an omitted proof, `solve()`, `step()`, or `step_until(...)` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
 ---
 
-# Tracing a failed proof
+# Repairing a failed proof
 
-Follow this loop until it ends at one of the outcomes below. `click docs
-tracing` prints Click's documentation of this procedure, with the trace
-notation, and `click docs NAME` prints any tactic's forms, class, and
-documented behavior.
+Follow the proof repair procedure until it reaches one of the outcomes
+below. `click docs tracing` shows the procedure and explains how to read a
+trace. `click docs NAME` prints a tactic's forms, class, and documented
+behavior.
 
 ## Crashes and hangs
 

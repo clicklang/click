@@ -1,4 +1,4 @@
-# Tracing a failed proof
+# Repairing a failed proof
 
 This page is the procedure for repairing a failed proof from its diagnostic
 and `--trace-proof` output: find the goal that could not be proved, prove it
@@ -118,7 +118,7 @@ When adding a primitive, document its premises, conclusion, explicit Click
 form, supported types and states, and checking-cost bound in its reference
 entry. Include a passing example and controls for invalid premises, and
 expansion/replay coverage when search can produce the step. A tactic name
-without this rule contract is not enough guidance for tracing.
+without this rule contract is not enough guidance for proof repair.
 
 Do not invent a library law because its mathematical statement seems familiar.
 Find the declaration or documented kernel rule, instantiate its premises, and

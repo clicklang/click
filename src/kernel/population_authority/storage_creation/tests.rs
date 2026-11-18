@@ -1267,6 +1267,7 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
             byte_width: 4,
         }),
         value_type: ProgramType::Int32,
+        exact: false,
     };
     let count = SpecExpression::CountedResourceCount {
         name: "reference".into(),
@@ -1504,6 +1505,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
             byte_width: 4,
         }),
         value_type: ProgramType::Int32,
+        exact: false,
     };
     let count = SpecExpression::CountedResourceCount {
         name: "reference".into(),

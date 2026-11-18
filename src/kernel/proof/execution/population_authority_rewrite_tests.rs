@@ -71,135 +71,61 @@ fn source_state() -> (ExecutionState, ResourceFact) {
 }
 
 #[test]
-fn checked_authority_events_reject_forged_deltas() {
+fn checked_authority_events_require_their_exact_predecessor() {
     let (before, selected) = source_state();
-    let facts = PureFactStore::default();
-    let (established, witness) = before
-        .checked_population_authority_exchange(&selected, true, facts.assumptions())
-        .unwrap();
-    let event = CheckedPopulationAuthorityRewrite::check(
-        &before,
-        &facts,
-        &selected,
-        true,
-        &witness,
-        &established,
-        &facts,
-    )
-    .unwrap();
-    let forged_memory = established
-        .clone()
-        .with_memory(SymbolicMemory::new().with_block("local:forged", 4));
+    let assumptions = PureFactContext::new();
+    let event =
+        CheckedPopulationAuthorityRewrite::construct(&before, &selected, true, &assumptions)
+            .unwrap();
+    let established = event.advance_checked(&before).unwrap();
     assert!(
-        CheckedPopulationAuthorityRewrite::check(
-            &before,
-            &facts,
+        established
+            .resources()
+            .contains_exact_representation(&selected)
+    );
+
+    let missing_storage = before.clone().with_memory(SymbolicMemory::new());
+    assert!(event.advance_checked(&missing_storage).is_none());
+    assert!(
+        CheckedPopulationAuthorityRewrite::construct(
+            &missing_storage,
             &selected,
             true,
-            &witness,
-            &forged_memory,
-            &facts,
+            &assumptions
         )
         .is_err()
     );
-    let mut forged_event = event.clone();
-    forged_event.after_state = forged_memory;
-    assert!(forged_event.advance_checked(&before, &facts).is_none());
-    let missing_storage_before = before.clone().with_memory(SymbolicMemory::new());
-    let missing_storage_after = established.clone().with_memory(SymbolicMemory::new());
-    assert!(
-        CheckedPopulationAuthorityRewrite::check(
-            &missing_storage_before,
-            &facts,
-            &selected,
-            true,
-            &witness,
-            &missing_storage_after,
-            &facts,
-        )
-        .is_err()
-    );
-    let forged_resources = established
-        .clone()
-        .with_resource_context(ResourceContext::new());
-    assert!(
-        CheckedPopulationAuthorityRewrite::check(
-            &before,
-            &facts,
-            &selected,
-            true,
-            &witness,
-            &forged_resources,
-            &facts,
-        )
-        .is_err()
-    );
-    let forged_observation = established
-        .clone()
-        .with_observed_population_family("reference");
-    assert!(
-        CheckedPopulationAuthorityRewrite::check(
-            &before,
-            &facts,
-            &selected,
-            true,
-            &witness,
-            &forged_observation,
-            &facts,
-        )
-        .is_err()
-    );
-    let forged_facts = facts.clone().with_fact(Proposition::condition_is(
-        crate::kernel::ConditionTerm::Constant(true),
-        true,
-    ));
-    assert!(
-        CheckedPopulationAuthorityRewrite::check(
-            &before,
-            &facts,
-            &selected,
-            true,
-            &witness,
-            &established,
-            &forged_facts,
-        )
-        .is_err()
-    );
-    let (retired, retire_witness) = established
-        .checked_population_authority_exchange(&selected, false, facts.assumptions())
-        .unwrap();
-    assert!(
-        CheckedPopulationAuthorityRewrite::check(
-            &established,
-            &facts,
-            &selected,
-            false,
-            &retire_witness,
-            &retired,
-            &facts,
-        )
-        .is_ok()
-    );
-    assert!(
-        CheckedPopulationAuthorityRewrite::check(
-            &established,
-            &facts,
-            &selected,
-            false,
-            &witness,
-            &retired,
-            &facts,
-        )
-        .is_err()
-    );
-    assert!(
+
+    let other_resources = before.clone().with_resource_context(
         before
-            .checked_population_authority_exchange(&selected, true, facts.assumptions())
-            .is_ok()
+            .resources()
+            .clone()
+            .unchecked_with_fact(ResourceFact::own_token("other".into(), vec![])),
+    );
+    assert!(event.advance_checked(&other_resources).is_none());
+    let other_observations = before.clone().with_observed_population_family("reference");
+    assert!(event.advance_checked(&other_observations).is_none());
+
+    let retirement =
+        CheckedPopulationAuthorityRewrite::construct(established, &selected, false, &assumptions)
+            .unwrap();
+    let retired = retirement.advance_checked(established).unwrap();
+    assert!(!retired.resources().contains_exact_representation(&selected));
+    assert!(retirement.advance_checked(&before).is_none());
+    assert!(event.advance_checked(retired).is_none());
+
+    // A second checked exchange from the same predecessor issues a distinct
+    // creation history, even though its authority has the same spelling.
+    let sibling =
+        CheckedPopulationAuthorityRewrite::construct(&before, &selected, true, &assumptions)
+            .unwrap();
+    assert!(
+        retirement
+            .advance_checked(sibling.advance_checked(&before).unwrap())
+            .is_none()
     );
     assert!(
-        retired
-            .checked_population_authority_exchange(&selected, true, facts.assumptions())
+        CheckedPopulationAuthorityRewrite::construct(retired, &selected, true, &assumptions)
             .is_err()
     );
 }
@@ -667,6 +593,7 @@ fn consuming_private_member_publishes_definedness_at_the_current_point() {
                 program_expression::variable("p"),
             )),
             value_type: ProgramType::Int32,
+            exact: false,
         })],
     )
     .with_authorized(true);

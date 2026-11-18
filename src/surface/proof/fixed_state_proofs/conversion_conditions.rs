@@ -893,6 +893,7 @@ pub(in crate::surface) fn walk_written_expressions(
         | ContractExpression::Negate(inner)
         | ContractExpression::BitwiseNot(inner)
         | ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         }

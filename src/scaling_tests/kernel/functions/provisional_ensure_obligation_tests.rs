@@ -27,6 +27,7 @@ fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
                 byte_width: 4,
             }),
             value_type: ProgramType::Int32,
+            exact: false,
         },
         operator: ComparisonOperator::Equal,
         right: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(

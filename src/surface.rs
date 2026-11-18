@@ -245,6 +245,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "entry",
     "enum",
     "enumerate",
+    "exact",
     "execute",
     "execute_until",
     "exists",
@@ -354,6 +355,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "any",
     "at",
     "at-expression",
+    "exact-expression",
     "region-allocation",
     "region-footprint",
     "region-parameter",
@@ -681,16 +683,12 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         include_str!("../library/c/string.click"),
     ),
     (
-        "library/c/stdio.click",
-        include_str!("../library/c/stdio.click"),
-    ),
-    (
         "library/integer.click",
         include_str!("../library/integer.click"),
     ),
     (
-        "library/format.click",
-        include_str!("../library/format.click"),
+        "library/c/stdio.click",
+        include_str!("../library/c/stdio.click"),
     ),
     (
         "library/rust/i8.click",
@@ -3105,7 +3103,9 @@ pub(crate) fn collect_current_contract_expression_variables(
         ContractExpression::BitwiseNot(inner) => {
             collect_current_contract_expression_variables(inner, names);
         }
-        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
+        ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::Negate(inner)
+        | ContractExpression::Exact(inner) => {
             collect_current_contract_expression_variables(inner, names);
         }
         crate::surface::binary_contract_expression!(left, right) => {
@@ -3351,6 +3351,11 @@ pub enum SurfaceTerm {
         selector: ProgramPointSelector,
         expression: Box<ContractExpression>,
     },
+    /// `exact(place)`: the read of `place` named by the state in scope
+    /// itself, with no version walk (`design/exact-reads.md`). It applies to
+    /// the outermost read only; reads computing the place's address stay
+    /// ordinary. It grants no access and adds no facts.
+    Exact(Box<ContractExpression>),
     Negate(Box<ContractExpression>),
     Add(Box<ContractExpression>, Box<ContractExpression>),
     Subtract(Box<ContractExpression>, Box<ContractExpression>),
@@ -8073,6 +8078,7 @@ fn contract_expression_reads_memory(
         | ContractExpression::Index(_, _)
         | ContractExpression::ArrayIndex { .. }
         | ContractExpression::Old(_)
+        | ContractExpression::Exact(_)
         | ContractExpression::At { .. } => true,
         ContractExpression::AlgebraicConstructor { arguments, .. }
         | ContractExpression::SequenceLiteral(arguments) => arguments

@@ -427,17 +427,26 @@ fn acquire_load(
     observed.observed = Some(StoredProgramValue::from(ExecutionValue::Shared(
         KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable),
     )));
-    let Ok(resources) = resources.try_compose_with_facts_delaying_normalization(
-        [ResourceFact::own(Resource::Publication(observed))],
-        assumptions,
-    ) else {
-        return Ok(Err(refusal(
-            "the observed subscriber right conflicts with current resources",
-        )));
-    };
     let mut next = state.clone();
-    next.resources = resources;
+    // The load changes only the selected subscriber's observation value.
+    // The flag, side, and custody were already established by that right.
+    next.resources =
+        resources.unchecked_with_fact(ResourceFact::own(Resource::Publication(observed)));
     Ok(Ok((next, value)))
+}
+
+/// The nonzero acquire selects the unique release of this right's payload.
+/// Spending its subscriber occurrence authorizes installing the folded
+/// payload beside that occurrence's residual frame.
+pub(in crate::kernel) struct PublishedPayloadReceipt {
+    residual: ResourceContext,
+    payload: ResourceFact,
+}
+
+impl PublishedPayloadReceipt {
+    pub(in crate::kernel) fn into_parts(self) -> (ResourceContext, ResourceFact) {
+        (self.residual, self.payload)
+    }
 }
 
 /// Settles each subscriber right read by an acquire load whose value the
@@ -469,13 +478,6 @@ pub(crate) fn resolve_observed_publications(
         let Some(unpublished) = assumptions.decide(&zero) else {
             continue;
         };
-        let replacement = if unpublished {
-            let mut kept = right.clone();
-            kept.observed = None;
-            ResourceFact::own(Resource::Publication(kept))
-        } else {
-            payload_fact(right)
-        };
         let Some(resources) = next
             .resources
             .clone()
@@ -483,10 +485,19 @@ pub(crate) fn resolve_observed_publications(
         else {
             continue;
         };
-        if let Ok(resources) =
-            resources.try_compose_with_facts_delaying_normalization([replacement], assumptions)
-        {
-            next.resources = resources;
+        if unpublished {
+            let mut kept = right.clone();
+            kept.observed = None;
+            next.resources =
+                resources.unchecked_with_fact(ResourceFact::own(Resource::Publication(kept)));
+        } else {
+            next.resources = ResourceContext::receive_published_payload(
+                PublishedPayloadReceipt {
+                    residual: resources,
+                    payload: payload_fact(right),
+                },
+                assumptions,
+            );
         }
     }
     next
