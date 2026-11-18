@@ -23,7 +23,7 @@ fn late_conflict_uses_only_affected_predicate_parents() {
         }
         let (conflicting, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.clone().assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(p.clone(), q.clone()),
+                ConditionTerm::address_equal(p.clone(), q.clone()),
                 true,
             ))
         });

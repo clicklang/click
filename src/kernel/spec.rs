@@ -2879,7 +2879,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
 
     fn condition_contains(condition: &ConditionTerm, variable: Variable) -> bool {
         match condition {
-            ConditionTerm::PointerValueEqual(left, right) => left
+            ConditionTerm::PointerEqual(left, right) => left
                 .pointers()
                 .chain(right.pointers())
                 .any(|p| integer_carrier_in_pointer(p, variable)),
@@ -2904,11 +2904,11 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
                 integer_carrier_in_algebraic(left, variable)
                     || integer_carrier_in_algebraic(right, variable)
             }
-            ConditionTerm::PointerOffsetEqual(left, right) => {
+            ConditionTerm::AddressOffsetEqual(left, right) => {
                 integer_carrier_in_pointer_offset(left, variable)
                     || integer_carrier_in_pointer_offset(right, variable)
             }
-            ConditionTerm::PointerEqual(left, right) => {
+            ConditionTerm::AddressEqual(left, right) => {
                 integer_carrier_in_pointer(left, variable)
                     || integer_carrier_in_pointer(right, variable)
             }
@@ -8067,7 +8067,7 @@ pub(crate) fn refine_object_pointer_argument(
         memory,
         assumptions,
         |facts, pointer| {
-            facts.decide(&ConditionTerm::pointer_equal(
+            facts.decide(&ConditionTerm::address_equal(
                 pointer.clone(),
                 Address::null(),
             )) == Some(true)
@@ -8089,7 +8089,7 @@ pub(crate) fn refine_object_pointer_argument_using_facts(
         memory,
         assumptions,
         |facts, pointer| {
-            facts.exact_condition_value(&ConditionTerm::pointer_equal(
+            facts.exact_condition_value(&ConditionTerm::address_equal(
                 pointer.clone(),
                 Address::null(),
             )) == Some(true)
@@ -10020,7 +10020,7 @@ pub(super) fn program_value_comparison_proposition(
             ComparisonOperator::Equal | ComparisonOperator::NotEqual
         )
     {
-        let condition = ConditionTerm::pointer_value_equal(a.clone(), b.clone());
+        let condition = ConditionTerm::pointer_equal(a.clone(), b.clone());
         return Some(Proposition::ConditionIs(
             condition,
             operator == ComparisonOperator::Equal,

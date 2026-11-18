@@ -498,11 +498,11 @@ pub(in crate::kernel) fn conditions_equal_with_load_atoms(
         return left_operator == right_operator && terms(&ll, &rl, &lr, &rr);
     }
     match (left, right) {
-        (ConditionTerm::PointerOffsetEqual(ll, lr), ConditionTerm::PointerOffsetEqual(rl, rr)) => {
+        (ConditionTerm::AddressOffsetEqual(ll, lr), ConditionTerm::AddressOffsetEqual(rl, rr)) => {
             offsets_equal_with_load_atoms(ll, rl, loads_match)
                 && offsets_equal_with_load_atoms(lr, rr, loads_match)
         }
-        (ConditionTerm::PointerEqual(ll, lr), ConditionTerm::PointerEqual(rl, rr)) => {
+        (ConditionTerm::AddressEqual(ll, lr), ConditionTerm::AddressEqual(rl, rr)) => {
             pointers_equal_with_load_atoms(ll, rl, loads_match)
                 && pointers_equal_with_load_atoms(lr, rr, loads_match)
         }
@@ -608,9 +608,7 @@ pub(crate) fn pointers_equal_ignoring_memories(left: &Address, right: &Address) 
 /// availability on its own — it only narrows the candidate set before the
 /// proving comparison runs.
 pub fn conditions_equal_ignoring_memories(left: &ConditionTerm, right: &ConditionTerm) -> bool {
-    if let (ConditionTerm::PointerValueEqual(a, b), ConditionTerm::PointerValueEqual(c, d)) =
-        (left, right)
-    {
+    if let (ConditionTerm::PointerEqual(a, b), ConditionTerm::PointerEqual(c, d)) = (left, right) {
         // Candidate selection only. The context's state bridge separately
         // compares both complete provenances before accepting this candidate.
         return a.program_type() == c.program_type()
@@ -689,7 +687,7 @@ pub(in crate::kernel) fn condition_match_key(
             let (left, right) = ordered(canonical(left), canonical(right));
             ConditionMatchKey::OverflowAdd(left, right)
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             let left = crate::kernel::eval::canonical_offset_term(left);
             let right = crate::kernel::eval::canonical_offset_term(right);
             if left <= right {
@@ -787,7 +785,7 @@ fn condition_has_an_open_side(condition: &ConditionTerm) -> bool {
             left,
             right,
         } => open(MachineOperandView::Legacy(left)) || open(MachineOperandView::Legacy(right)),
-        ConditionTerm::PointerOffsetEqual(left, right) => open_offset(left) || open_offset(right),
+        ConditionTerm::AddressOffsetEqual(left, right) => open_offset(left) || open_offset(right),
         _ => false,
     }
 }
@@ -2201,7 +2199,7 @@ fn operand_fingerprint(root: MachineOperandView<'_>, policy: OperandFingerprintP
 fn hash_memory_blind_condition<H: std::hash::Hasher>(condition: &ConditionTerm, hasher: &mut H) {
     std::hash::Hash::hash(&std::mem::discriminant(condition), hasher);
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             std::hash::Hash::hash(left, hasher);
             std::hash::Hash::hash(right, hasher);
         }
@@ -2219,11 +2217,11 @@ fn hash_memory_blind_condition<H: std::hash::Hasher>(condition: &ConditionTerm, 
         ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
             std::hash::Hash::hash(float_condition, hasher);
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             hash_memory_blind_pointer_offset(left, hasher);
             hash_memory_blind_pointer_offset(right, hasher);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             hash_memory_blind_pointer(left, hasher);
             hash_memory_blind_pointer(right, hasher);
         }
@@ -2294,7 +2292,7 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &MachineTerm, hasher:
             std::hash::Hash::hash(kind, hasher);
             hash_memory_blind_pointer(pointer, hasher)
         }
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             std::hash::Hash::hash("address", hasher);
             hash_memory_blind_pointer(pointer, hasher)
         }
@@ -2386,7 +2384,7 @@ fn collect_condition_memory_load_keys(
         collect_bitvector_memory_load_keys(right, keys);
     };
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
             }
@@ -2409,11 +2407,11 @@ fn collect_condition_memory_load_keys(
             float_condition
                 .for_each_bitvector_term(|term| collect_bitvector_memory_load_keys(term, keys));
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_memory_load_keys(left, keys);
             collect_pointer_offset_memory_load_keys(right, keys);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_offset_memory_load_keys(&left.offset, keys);
             collect_pointer_offset_memory_load_keys(&right.offset, keys);
         }
@@ -2502,7 +2500,7 @@ fn collect_bitvector_memory_load_keys(term: &MachineTerm, keys: &mut BTreeSet<(A
             ));
             collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
         }
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
         }
         MachineTerm::If {
@@ -2601,7 +2599,7 @@ fn collect_condition_memory_loads(
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_offset_memory_loads(
                     &pointer.offset,
@@ -2653,11 +2651,11 @@ fn collect_condition_memory_loads(
             });
             result
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_memory_loads(left, current_memory, loads, seen_integers)?;
             collect_pointer_offset_memory_loads(right, current_memory, loads, seen_integers)
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_offset_memory_loads(
                 &left.offset,
                 current_memory,
@@ -2802,7 +2800,7 @@ fn collect_bitvector_memory_loads_with_width(
             width,
             seen_integers,
         ),
-        MachineTerm::PointerAddress(pointer, _) => collect_pointer_offset_memory_loads(
+        MachineTerm::IntegerAddress(pointer, _) => collect_pointer_offset_memory_loads(
             &pointer.offset,
             current_memory,
             loads,
@@ -3678,7 +3676,7 @@ impl PureFactContext {
     /// already displaced from null is not a null test, and a fact relating
     /// two pointers of the null block says nothing about either being null.
     fn condition_as_null_pointer_fact(condition: &ConditionTerm) -> Option<&Address> {
-        let ConditionTerm::PointerEqual(left, right) = condition else {
+        let ConditionTerm::AddressEqual(left, right) = condition else {
             return None;
         };
         let null = Address::null();
@@ -3771,17 +3769,17 @@ impl PureFactContext {
             return;
         }
         let (left, right) = match condition {
-            ConditionTerm::PointerEqual(left, right) => (left.as_ref(), right.as_ref()),
-            ConditionTerm::PointerValueEqual(left, right) => (left.address(), right.address()),
+            ConditionTerm::AddressEqual(left, right) => (left.as_ref(), right.as_ref()),
+            ConditionTerm::PointerEqual(left, right) => (left.address(), right.address()),
             _ => return,
         };
         if !value || left == right {
             return;
         }
         let key = if left < right {
-            ConditionTerm::pointer_equal(left.clone(), right.clone())
+            ConditionTerm::address_equal(left.clone(), right.clone())
         } else {
-            ConditionTerm::pointer_equal(right.clone(), left.clone())
+            ConditionTerm::address_equal(right.clone(), left.clone())
         };
         let source = self.adjust_pointer_address_source(key.clone(), condition);
         if left.base.is_local_block() || right.base.is_local_block() {
@@ -3947,7 +3945,7 @@ impl PureFactContext {
                 .pointer_value_classes
                 .equal(left, right)
             || self.equality_graph.knows_condition(
-                &ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())),
+                &ConditionTerm::PointerEqual(Box::new(left.clone()), Box::new(right.clone())),
                 true,
             )
             || pointer_checks::origins_match(
@@ -3957,22 +3955,22 @@ impl PureFactContext {
             )
     }
 
-    fn adjust_pointer_value_equality(&mut self, proposition: &Proposition) {
+    fn adjust_pointer_equality(&mut self, proposition: &Proposition) {
         let (left, right) = match proposition {
             Proposition::Equal(
                 Term::ProgramValue(ProgramValue::Pointer(left)),
                 Term::ProgramValue(ProgramValue::Pointer(right)),
             ) => (left, right),
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
                 (left.as_ref(), right.as_ref())
             }
             _ => return,
         };
         let key = (left.clone(), right.clone());
-        self.equality_graph.admitted.pointer_value_equalities = self
+        self.equality_graph.admitted.pointer_equalities = self
             .equality_graph
             .admitted
-            .pointer_value_equalities
+            .pointer_equalities
             .with_value(key);
         self.equality_graph.admitted.provenance_graph.insert(
             left.provenance(),
@@ -3995,7 +3993,7 @@ impl PureFactContext {
             right,
             super::pointer_provenance::prefer_pointer,
         );
-        self.equality_graph.add_pointer_value_equality(left, right);
+        self.equality_graph.add_pointer_equality(left, right);
     }
 
     fn adjust_algebraic_graph_equality(&mut self, proposition: &Proposition) {
@@ -4240,7 +4238,7 @@ impl PureFactContext {
             .unwrap_or_else(|| memory.clone());
         for spelling in self.equality_graph.pointer_spellings(address) {
             if let Some(ProgramValue::Pointer(value)) = start.known_value(&spelling) {
-                self.equality_graph.add_checked_pointer_value_equality(
+                self.equality_graph.add_checked_pointer_equality(
                     &Pointer::new(Address::loaded_value(memory, address), value.program_type()),
                     &value,
                 );
@@ -4351,8 +4349,8 @@ impl PureFactContext {
 
     fn adjust_pointer_offset_alias(&mut self, condition: &ConditionTerm, value: bool) {
         let (left, right) = match condition {
-            ConditionTerm::PointerOffsetEqual(left, right) => (left.as_ref(), right.as_ref()),
-            ConditionTerm::PointerValueEqual(left, right) if left.base == right.base => {
+            ConditionTerm::AddressOffsetEqual(left, right) => (left.as_ref(), right.as_ref()),
+            ConditionTerm::PointerEqual(left, right) if left.base == right.base => {
                 (&left.offset, &right.offset)
             }
             _ => return,
@@ -4361,9 +4359,9 @@ impl PureFactContext {
             return;
         }
         let key = if left < right {
-            ConditionTerm::PointerOffsetEqual(Box::new(left.clone()), Box::new(right.clone()))
+            ConditionTerm::AddressOffsetEqual(Box::new(left.clone()), Box::new(right.clone()))
         } else {
-            ConditionTerm::PointerOffsetEqual(Box::new(right.clone()), Box::new(left.clone()))
+            ConditionTerm::AddressOffsetEqual(Box::new(right.clone()), Box::new(left.clone()))
         };
         let source = self.adjust_pointer_address_source(key, condition);
         let retained = source.is_some();
@@ -4740,7 +4738,7 @@ impl PureFactContext {
         self.observation_comparisons = Default::default();
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
         self.bool_equation_partners = crate::persistent::PersistentMap::default();
-        self.pointer_offset_equalities_by_shape = crate::persistent::PersistentMap::default();
+        self.address_offset_equalities_by_shape = crate::persistent::PersistentMap::default();
         self.shared_condition_variables = Default::default();
         self.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         self.state_condition_variable_base = crate::persistent::PersistentMap::default();
@@ -4778,15 +4776,12 @@ impl PureFactContext {
         self.equality_graph.admitted.provenance_graph = Default::default();
         self.equality_graph.admitted.bounds_graph = Default::default();
         self.equality_graph.admitted.pointer_value_classes = Default::default();
-        self.equality_graph.admitted.pointer_value_equalities = Default::default();
+        self.equality_graph.admitted.pointer_equalities = Default::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.scan_for_upkeep() {
             self.adjust_pointer_class_fact(&Proposition::ConditionIs(condition.clone(), *value));
-            if matches!(condition, ConditionTerm::PointerValueEqual(..)) {
-                self.adjust_pointer_value_equality(&Proposition::ConditionIs(
-                    condition.clone(),
-                    *value,
-                ));
+            if matches!(condition, ConditionTerm::PointerEqual(..)) {
+                self.adjust_pointer_equality(&Proposition::ConditionIs(condition.clone(), *value));
             }
             self.adjust_scalar_evidence_input(condition, *value);
             self.adjust_condition_variable_index(condition, *value, false);
@@ -4855,15 +4850,15 @@ impl PureFactContext {
         for proposition in propositions.scan_for_upkeep() {
             self.adjust_algebraic_graph_equality(proposition);
             self.adjust_pointer_class_fact(proposition);
-            self.adjust_pointer_value_equality(proposition);
+            self.adjust_pointer_equality(proposition);
         }
     }
 
     /// Files one condition fact under its match key and, when
     /// a side is not an atom, among the open facts of its family.
     fn adjust_condition_match_indexes(&mut self, condition: &ConditionTerm, value: bool) {
-        if matches!(condition, ConditionTerm::PointerValueEqual(..)) {
-            self.adjust_pointer_value_equality(&Proposition::ConditionIs(condition.clone(), value));
+        if matches!(condition, ConditionTerm::PointerEqual(..)) {
+            self.adjust_pointer_equality(&Proposition::ConditionIs(condition.clone(), value));
         }
         let proposition = Proposition::ConditionIs(condition.clone(), value);
         self.adjust_condition_variable_index(condition, value, true);
@@ -4934,18 +4929,18 @@ impl PureFactContext {
         self.observation_comparisons
             .adjust_native_equality(condition, value);
         self.contradictions.adjust(condition, value);
-        if let (ConditionTerm::PointerOffsetEqual(left, right), true) = (condition, value) {
+        if let (ConditionTerm::AddressOffsetEqual(left, right), true) = (condition, value) {
             for shape in [offset_state_shape(left), offset_state_shape(right)] {
                 let filed = self
-                    .pointer_offset_equalities_by_shape
+                    .address_offset_equalities_by_shape
                     .get(&shape)
                     .cloned()
                     .unwrap_or_default();
                 let filed = filed.with_value(condition.clone());
-                self.pointer_offset_equalities_by_shape = if filed.is_empty() {
-                    self.pointer_offset_equalities_by_shape.without_key(&shape)
+                self.address_offset_equalities_by_shape = if filed.is_empty() {
+                    self.address_offset_equalities_by_shape.without_key(&shape)
                 } else {
-                    self.pointer_offset_equalities_by_shape
+                    self.address_offset_equalities_by_shape
                         .with_inserted(shape, filed)
                 };
             }
@@ -5498,7 +5493,7 @@ impl PureFactContext {
                 | Proposition::Predicate { .. }
                 | Proposition::ResourceSeparate { .. }
                 | Proposition::ConditionIs(
-                    ConditionTerm::AlgebraicEqual(..) | ConditionTerm::PointerValueEqual(..),
+                    ConditionTerm::AlgebraicEqual(..) | ConditionTerm::PointerEqual(..),
                     true
                 )
         ) {
@@ -6629,7 +6624,7 @@ impl PureFactContext {
             self.adjust_algebraic_constructor_conflict(proposition);
             self.adjust_algebraic_variable_constructor(proposition);
             self.adjust_algebraic_graph_equality(proposition);
-            self.adjust_pointer_value_equality(proposition);
+            self.adjust_pointer_equality(proposition);
             self.adjust_algebraic_variable_variant_evidence(proposition);
             self.adjust_memory_loadable_fact(proposition);
             self.adjust_separation_block_fact(proposition);
@@ -7006,7 +7001,7 @@ impl PureFactContext {
     ) -> Option<bool> {
         if matches!(
             condition,
-            ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..)
+            ConditionTerm::AddressEqual(..) | ConditionTerm::AddressOffsetEqual(..)
         ) && (self
             .equality_graph
             .admitted
@@ -7058,7 +7053,7 @@ impl PureFactContext {
         // unequal by the keyed null-ness and separation indexes
         // (`decide_pointer_disequality`), which search nothing.
         let pointer_disequality = || match condition {
-            ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..) => {
+            ConditionTerm::AddressEqual(..) | ConditionTerm::AddressOffsetEqual(..) => {
                 self.decide_pointer_disequality(condition)
             }
             // `left != INT_MIN or right != -1` kept whole as a fact: two
@@ -7113,7 +7108,7 @@ impl PureFactContext {
         // equality. Retain the actual source premise for proof reconstruction; this
         // projection never runs in the reverse direction.
         if let Proposition::ConditionIs(
-            condition @ (ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..)),
+            condition @ (ConditionTerm::AddressEqual(..) | ConditionTerm::AddressOffsetEqual(..)),
             true,
         ) = proposition
             && let Some(source) = self
@@ -7259,7 +7254,7 @@ impl PureFactContext {
             Proposition::Predicate { .. } => {
                 self.equality_graph.knows_pointer_predicate(proposition)
             }
-            Proposition::ConditionIs(condition @ ConditionTerm::PointerValueEqual(..), value) => {
+            Proposition::ConditionIs(condition @ ConditionTerm::PointerEqual(..), value) => {
                 self.decide(condition) == Some(*value)
             }
             Proposition::ConditionIs(condition, value) => {
@@ -7633,7 +7628,7 @@ impl PureFactContext {
         if value
             && matches!(
                 condition,
-                ConditionTerm::PointerEqual(..) | ConditionTerm::PointerValueEqual(..)
+                ConditionTerm::AddressEqual(..) | ConditionTerm::PointerEqual(..)
             )
         {
             self.composition_object_resources
@@ -8738,7 +8733,7 @@ impl PropositionDerivation {
 fn mentions_pointer_address(term: &MachineTerm) -> bool {
     let mut pending = vec![term];
     while let Some(term) = pending.pop() {
-        if matches!(term, MachineTerm::PointerAddress(..)) {
+        if matches!(term, MachineTerm::IntegerAddress(..)) {
             return true;
         }
         if let Some((_, left, right)) = term.as_binary() {
@@ -10278,16 +10273,16 @@ impl ExecutionPureFact {
         }
         if self.is_logical_read_equation() {
             match self.proposition() {
-                Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
+                Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
                     context
                         .equality_graph
-                        .add_checked_pointer_value_equality(left, right);
+                        .add_checked_pointer_equality(left, right);
                     return;
                 }
                 // A complete value equation simplifies to address equality
                 // when its provenance and bounds already match. Retain that
                 // exact producer conclusion without adding object authority.
-                Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
+                Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) => {
                     context
                         .equality_graph
                         .add_checked_read_equality(left, right);
@@ -10427,7 +10422,7 @@ impl ExecutionPureFact {
         Self {
             logical_read_equation: true,
             ..Self::certified(Proposition::ConditionIs(
-                ConditionTerm::pointer_value_equal(left, right),
+                ConditionTerm::pointer_equal(left, right),
                 true,
             ))
         }
@@ -11089,12 +11084,12 @@ fn aliased_operands(
     }
     let (left_memory, left_pointer) = crate::kernel::registered_load_for_variable(left)?;
     let (right_memory, right_pointer) = crate::kernel::registered_load_for_variable(right)?;
-    let same_cell = graph.decide(&C::PointerEqual(
+    let same_cell = graph.decide(&C::AddressEqual(
         Box::new(left_pointer.clone()),
         Box::new(right_pointer.clone()),
     )) == Some(true)
         || (left_pointer.base == right_pointer.base
-            && graph.decide(&C::PointerOffsetEqual(
+            && graph.decide(&C::AddressOffsetEqual(
                 Box::new(left_pointer.offset.clone()),
                 Box::new(right_pointer.offset.clone()),
             )) == Some(true));
@@ -12869,7 +12864,7 @@ pub(in crate::kernel) enum UniversalConclusionKey {
     /// A mathematical integer equality.
     IntegerEqual,
     /// A pointer value equality.
-    PointerValueEqual,
+    PointerEqual,
     /// A pointer offset equality.
     OffsetEqual,
     /// Any other condition, which matches only itself.
@@ -12904,8 +12899,8 @@ impl UniversalConclusionKey {
                 ..
             } => Self::OverflowAdd,
             ConditionTerm::IntegerEqual(_, _) => Self::IntegerEqual,
-            ConditionTerm::PointerValueEqual(_, _) => Self::PointerValueEqual,
-            ConditionTerm::PointerOffsetEqual(_, _) => Self::OffsetEqual,
+            ConditionTerm::PointerEqual(_, _) => Self::PointerEqual,
+            ConditionTerm::AddressOffsetEqual(_, _) => Self::OffsetEqual,
             _ => Self::OtherCondition,
         }
     }

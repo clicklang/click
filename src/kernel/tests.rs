@@ -133,7 +133,7 @@ pub(in crate::kernel) fn explicit_frame(
             ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
         }
         (ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::pointer_value_equal(a.clone(), b.clone())
+            ConditionTerm::pointer_equal(a.clone(), b.clone())
         }
         (ProgramValue::Int32(a), ProgramValue::Int32(b)) => {
             ConditionTerm::equal(a.clone(), b.clone())

@@ -76,21 +76,21 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
                 },
                 true,
             ),
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
-                Proposition::ConditionIs(
-                    ConditionTerm::PointerValueEqual(right.clone(), left.clone()),
-                    true,
-                )
-            }
             Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
                 Proposition::ConditionIs(
                     ConditionTerm::PointerEqual(right.clone(), left.clone()),
                     true,
                 )
             }
-            Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
+            Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) => {
                 Proposition::ConditionIs(
-                    ConditionTerm::PointerOffsetEqual(right.clone(), left.clone()),
+                    ConditionTerm::AddressEqual(right.clone(), left.clone()),
+                    true,
+                )
+            }
+            Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(left, right), true) => {
+                Proposition::ConditionIs(
+                    ConditionTerm::AddressOffsetEqual(right.clone(), left.clone()),
                     true,
                 )
             }

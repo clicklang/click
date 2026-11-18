@@ -318,7 +318,7 @@ pub(super) fn common_variables(
                     _ => {}
                 }
             }
-            KernelTermNode::PointerValueEqual(pair) => {
+            KernelTermNode::PointerEqual(pair) => {
                 for value in pair.arguments() {
                     for address in value.addresses() {
                         super::retained_pointers::collect_address_variables_with_summaries(
@@ -330,7 +330,7 @@ pub(super) fn common_variables(
                     }
                 }
             }
-            KernelTermNode::PointerEqual { arguments } => {
+            KernelTermNode::AddressEqual { arguments } => {
                 for address in arguments {
                     super::retained_pointers::collect_address_variables_with_summaries(
                         address,
@@ -340,7 +340,7 @@ pub(super) fn common_variables(
                     );
                 }
             }
-            KernelTermNode::PointerOffsetEqual { arguments } => {
+            KernelTermNode::AddressOffsetEqual { arguments } => {
                 super::retained_pointers::collect_offset_variables_with_summaries(
                     arguments,
                     mode,
@@ -366,7 +366,7 @@ pub(super) fn common_variables(
                     &mut leaf_variables,
                 );
             }
-            KernelTermNode::PointerAddress { address, .. } => {
+            KernelTermNode::IntegerAddress { address, .. } => {
                 if !matches!(
                     mode,
                     FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders
@@ -1085,7 +1085,7 @@ mod tests {
                 }),
                 right: Box::new(MachineTerm::Variable(Variable(970_021))),
             },
-            ConditionTerm::PointerValueEqual(
+            ConditionTerm::PointerEqual(
                 Box::new(
                     Pointer::new(
                         Address::symbolic(Variable(970_010)),
@@ -1098,7 +1098,7 @@ mod tests {
                 ),
                 Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
             ),
-            ConditionTerm::PointerOffsetEqual(
+            ConditionTerm::AddressOffsetEqual(
                 Box::new(AddressOffset::Add(
                     Box::new(AddressOffset::Variable(Variable(970_005))),
                     Box::new(AddressOffset::scaled_int32_node(
@@ -1115,7 +1115,7 @@ mod tests {
                     true,
                 )),
             ),
-            ConditionTerm::PointerEqual(
+            ConditionTerm::AddressEqual(
                 Box::new(Address {
                     base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                         "raw_pointer_dependency".into(),

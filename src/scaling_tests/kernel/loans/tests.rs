@@ -1008,7 +1008,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
             (-1, 2, true),
             (4_294_967_297, 8, false),
         ] {
-            let equality = ConditionTerm::pointer_offset_equal(
+            let equality = ConditionTerm::address_offset_equal(
                 q.offset.clone(),
                 AddressOffset::Constant(offset),
             );
@@ -1431,7 +1431,7 @@ fn writes_without_active_memory_loans_do_not_walk_pointer_aliases() {
                 let mut facts = PureFactContext::new();
                 for index in 0..count {
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             base.clone(),
                             Address::symbolic(Variable(980_001 + index as u64)),
                         ),
@@ -1524,7 +1524,7 @@ fn returned_view_recovery_retains_the_constructed_frame_as_aliases_and_owners_gr
             for index in 0..count {
                 if aliases {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             base.clone(),
                             Address::symbolic(Variable(8_799_000 + u64::from(index))),
                         ),

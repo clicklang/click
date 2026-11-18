@@ -29,7 +29,7 @@ fn resolved_malloc(pending: &ExecutionState, success: bool) -> ExecutionState {
         panic!("pending allocation has a result pointer");
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(pointer.address().clone(), Address::null()),
+        ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
         !success,
     ));
     crate::kernel::resolve_pending_heap_allocations(pending, &assumptions)
@@ -2558,7 +2558,7 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
         );
     Arc::make_mut(&mut state.population_effects).creation = Some(events);
     let equal = PureFactContext::new().assume_condition(
-        ConditionTerm::PointerValueEqual(
+        ConditionTerm::PointerEqual(
             Box::new(Pointer::new(alias, ProgramType::Int32Pointer)),
             Box::new(anchor.clone()),
         ),

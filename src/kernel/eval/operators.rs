@@ -2096,7 +2096,7 @@ pub(in crate::kernel) fn pointer_object_identity_condition(
     left: &Address,
     right: &Address,
 ) -> ConditionTerm {
-    ConditionTerm::pointer_equal(left.object_identity(), right.object_identity())
+    ConditionTerm::address_equal(left.object_identity(), right.object_identity())
 }
 
 pub(in crate::kernel) fn pointer_object_is_null_condition(pointer: &Address) -> ConditionTerm {
@@ -5592,7 +5592,7 @@ pub(in crate::kernel) fn evaluate_program_logical_or_paths(
 /// that one past the end of one object may equal the start of another: the
 /// two are equal exactly when the objects are adjacent, which the kernel does
 /// not model. The decision procedure answers a distinct-block
-/// `PointerEqual` false from the blocks alone, so that configuration is
+/// `AddressEqual` false from the blocks alone, so that configuration is
 /// excluded here, before the condition is built: when the facts decide it
 /// the comparison is refused, and when they leave it open a refused path
 /// carrying the configuration is owed beside the comparison, whose own path
@@ -5718,7 +5718,7 @@ pub(in crate::kernel) fn pointer_equality_condition(
     left: Address,
     right: Address,
 ) -> ConditionTerm {
-    ConditionTerm::pointer_equal(left, right)
+    ConditionTerm::address_equal(left, right)
 }
 
 /// What a C `==` between two pointers establishes: their addresses are
@@ -5736,8 +5736,8 @@ pub(in crate::kernel) fn program_pointer_comparison_condition(
         return pointer_equality_condition(left, right);
     }
     ConditionTerm::uint64_equal(
-        MachineTerm::pointer_address(left),
-        MachineTerm::pointer_address(right),
+        MachineTerm::integer_address(left),
+        MachineTerm::integer_address(right),
     )
 }
 
@@ -6258,7 +6258,7 @@ mod pointer_domain_tests {
             width: 4u32.into(),
         }));
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_value_equal(value.clone(), selected.clone()),
+            ConditionTerm::pointer_equal(value.clone(), selected.clone()),
             true,
         );
         let state = ExecutionState::new();

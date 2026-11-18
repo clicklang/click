@@ -16,7 +16,7 @@ fn pointer_values_do_not_adopt_fact_supplied_bounds() {
     }));
     let empty = PureFactContext::new();
     let facts = empty.assume_condition(
-        ConditionTerm::PointerValueEqual(Box::new(value.clone()), Box::new(bounded)),
+        ConditionTerm::PointerEqual(Box::new(value.clone()), Box::new(bounded)),
         true,
     );
     assert!(matches!(
@@ -1616,7 +1616,7 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
 fn spec_pointer_equality_lowers_to_a_pure_fact() {
     let left = Address::symbolic(Variable(22_100));
     let right = Address::symbolic(Variable(22_101));
-    let equality = ConditionTerm::PointerValueEqual(
+    let equality = ConditionTerm::PointerEqual(
         Box::new(Pointer::new(left.clone(), ProgramType::Int32Pointer)),
         Box::new(Pointer::new(right.clone(), ProgramType::Int32Pointer)),
     );
@@ -4750,7 +4750,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     assert!(!context.pointer_provenance_match(&read(&partial, &a), &stored));
     let numeric = SymbolicMemory::new().store(
         a.clone(),
-        ProgramValue::UInt64(MachineTerm::pointer_address(stored.address().clone())),
+        ProgramValue::UInt64(MachineTerm::integer_address(stored.address().clone())),
     );
     assert!(!context.pointer_provenance_match(&read(&numeric, &a), &stored));
 }

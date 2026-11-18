@@ -4560,7 +4560,7 @@ pub(super) fn plan_pointer_advanced_load_equality(
     );
 
     for (pointer_kernel, pointer_surface) in premise_pairs {
-        let Proposition::ConditionIs(ConditionTerm::PointerEqual(fact_left, fact_right), true) =
+        let Proposition::ConditionIs(ConditionTerm::AddressEqual(fact_left, fact_right), true) =
             pointer_kernel
         else {
             continue;

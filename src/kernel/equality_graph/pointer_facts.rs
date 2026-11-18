@@ -44,7 +44,7 @@ impl EqualityGraph {
         let mut pending = match proposition {
             Proposition::Equal(a, b) => vec![Work::Term(a), Work::Term(b)],
             Proposition::Predicate { arguments, .. } => arguments.iter().map(Work::Term).collect(),
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(a, b), true) => {
                 vec![Work::Pointer(a), Work::Pointer(b)]
             }
             Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true) => {
@@ -265,7 +265,7 @@ impl EqualityGraph {
                                 left.program_type() == right.program_type()
                                     && left.pointee_volatile() == right.pointee_volatile()
                                     && self.knows_condition(
-                                        &crate::kernel::ConditionTerm::PointerValueEqual(
+                                        &crate::kernel::ConditionTerm::PointerEqual(
                                             Box::new(left.clone()),
                                             Box::new(right.clone()),
                                         ),

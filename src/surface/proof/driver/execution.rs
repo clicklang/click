@@ -2327,7 +2327,7 @@ pub(in crate::surface::proof) fn source_have_error(
     let pointer_equality = matches!(
         goal,
         Some(Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(_, _),
+            ConditionTerm::AddressEqual(_, _),
             true
         ))
     );

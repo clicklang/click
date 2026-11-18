@@ -771,15 +771,11 @@ impl EqualityGraph {
 
     /// Retain the complete value supplied by the selected typed read producer.
     /// The equality and its memo invalidation stay local to this branch.
-    pub(in crate::kernel) fn add_checked_pointer_value_equality(
-        &self,
-        left: &Pointer,
-        right: &Pointer,
-    ) {
+    pub(in crate::kernel) fn add_checked_pointer_equality(&self, left: &Pointer, right: &Pointer) {
         self.add_checked_read_equality(left.address(), right.address());
         let mut state = self.state.lock().expect("equality graph");
         state.remember_input(inputs::Input::Pointer(left.clone(), right.clone()));
-        if state.terms.add_pointer_value_equality(left, right) {
+        if state.terms.add_pointer_equality(left, right) {
             state.checked_read_generation =
                 NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -981,7 +977,7 @@ impl EqualityGraph {
         for (read, stored) in stored_values {
             state
                 .terms
-                .add_pointer_value_equality(&Pointer::new(read, stored.program_type()), &stored);
+                .add_pointer_equality(&Pointer::new(read, stored.program_type()), &stored);
         }
         state.close(definitions);
     }
@@ -1636,11 +1632,7 @@ impl EqualityGraph {
         state.terms.pointer_value_representative(value)
     }
 
-    pub(in crate::kernel) fn add_pointer_value_equality(
-        &mut self,
-        left: &Pointer,
-        right: &Pointer,
-    ) {
+    pub(in crate::kernel) fn add_pointer_equality(&mut self, left: &Pointer, right: &Pointer) {
         self.add_equality(left.address(), right.address());
         if left.address().base == right.address().base {
             self.add_offset_equality(&left.address().offset, &right.address().offset);
@@ -1649,7 +1641,7 @@ impl EqualityGraph {
         let origins_changed = state
             .terms
             .merge_provenance(left.provenance(), right.provenance());
-        let changed = state.terms.add_pointer_value_equality(left, right) || origins_changed;
+        let changed = state.terms.add_pointer_equality(left, right) || origins_changed;
         state.close(Vec::new());
         if changed {
             state.remember_input(inputs::Input::Pointer(left.clone(), right.clone()));
@@ -1952,7 +1944,7 @@ impl EqualityGraph {
                         N::IntegerToMachine { .. }
                         | N::Legacy(_)
                         | N::Call { .. }
-                        | N::PointerAddress { .. } => pending.push(Work::Machine(
+                        | N::IntegerAddress { .. } => pending.push(Work::Machine(
                             term.machine_conversion_leaf().expect("conversion leaf"),
                         )),
                         _ => unreachable!("shared machine operand fragment"),
@@ -2120,8 +2112,8 @@ impl EqualityGraph {
         left: &Address,
         right: &Address,
     ) -> (Address, Address) {
-        let a = MachineTerm::pointer_address(left.clone());
-        let b = MachineTerm::pointer_address(right.clone());
+        let a = MachineTerm::integer_address(left.clone());
+        let b = MachineTerm::integer_address(right.clone());
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &a, &b);
         // Register both before selecting: the second registration can close
@@ -2303,7 +2295,7 @@ impl EqualityGraph {
             ConditionTerm::AlgebraicEqual(a, b) => {
                 self.register_expression_operands(state, [], [a.as_ref(), b.as_ref()], []);
             }
-            ConditionTerm::PointerValueEqual(a, b) => {
+            ConditionTerm::PointerEqual(a, b) => {
                 self.register_logical_read_values(state, a.pointers().chain(b.pointers()));
                 state.register_blocks(a.pointers().chain(b.pointers()).map(|p| p.base.clone()));
                 // Late value queries need the current address-class bridges,
@@ -2312,7 +2304,7 @@ impl EqualityGraph {
                 state.register_pointer_address(b.address());
                 state.close(Vec::new());
             }
-            ConditionTerm::PointerEqual(a, b) => {
+            ConditionTerm::AddressEqual(a, b) => {
                 self.register_logical_read_values(state, [a.as_ref(), b.as_ref()]);
                 state.register_blocks([a.base.clone(), b.base.clone()]);
                 state.register_pointer_address(a);
@@ -2377,9 +2369,9 @@ impl EqualityGraph {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     ..
-                } | ConditionTerm::PointerEqual(..)
-                    | ConditionTerm::PointerValueEqual(..)
-                    | ConditionTerm::PointerOffsetEqual(..)
+                } | ConditionTerm::AddressEqual(..)
+                    | ConditionTerm::PointerEqual(..)
+                    | ConditionTerm::AddressOffsetEqual(..)
                     | ConditionTerm::AlgebraicEqual(..)
             )
         {
@@ -2444,7 +2436,7 @@ impl EqualityGraph {
         // nodes. A miss must not register an unrelated condition application.
         if value {
             match condition {
-                ConditionTerm::PointerValueEqual(a, b) => {
+                ConditionTerm::PointerEqual(a, b) => {
                     let mut state = self.state.lock().expect("equality graph");
                     self.prepare_condition(&mut state, condition);
                     return state.terms.pointer_values_equal(a, b);
@@ -2463,8 +2455,8 @@ impl EqualityGraph {
                     left: a,
                     right: b,
                 } => return self.are_uint64_equal(a, b),
-                ConditionTerm::PointerEqual(a, b) => return self.are_equal(a, b),
-                ConditionTerm::PointerOffsetEqual(a, b) => return self.are_offsets_equal(a, b),
+                ConditionTerm::AddressEqual(a, b) => return self.are_equal(a, b),
+                ConditionTerm::AddressOffsetEqual(a, b) => return self.are_offsets_equal(a, b),
                 _ => {}
             }
         }
@@ -3625,7 +3617,7 @@ mod tests {
         assert_eq!(
             context
                 .selected_for_test()
-                .decide_selected_condition(&ConditionTerm::pointer_equal(
+                .decide_selected_condition(&ConditionTerm::address_equal(
                     at_offset(base.clone(), nested.clone()),
                     at_offset(base.clone(), reordered.clone()),
                 )),
@@ -3635,7 +3627,7 @@ mod tests {
         assert_ne!(
             context
                 .selected_for_test()
-                .decide_selected_condition(&ConditionTerm::pointer_equal(
+                .decide_selected_condition(&ConditionTerm::address_equal(
                     at_offset(base.clone(), nested),
                     at_offset(base, wrong),
                 )),
@@ -3668,8 +3660,8 @@ mod tests {
         let z = AddressOffset::Variable(Variable(11_023));
         let left = at_offset(block.clone(), x.clone());
         let middle = at_offset(block, y.clone());
-        let pointer_fact = ConditionTerm::pointer_equal(left.clone(), middle.clone());
-        let offset_fact = ConditionTerm::pointer_offset_equal(y.clone(), z.clone());
+        let pointer_fact = ConditionTerm::address_equal(left.clone(), middle.clone());
+        let offset_fact = ConditionTerm::address_offset_equal(y.clone(), z.clone());
         let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
         let branch = trunk.clone().assume_condition(pointer_fact.clone(), true);
         assert!(!trunk.equality_graph.are_offsets_equal(&x, &z));
@@ -3699,9 +3691,9 @@ mod tests {
         let c = symbolic(11_042);
         let x = AddressOffset::Variable(Variable(11_043));
         let y = AddressOffset::Variable(Variable(11_044));
-        let offset_fact = ConditionTerm::pointer_offset_equal(x.clone(), y.clone());
-        let ab = ConditionTerm::pointer_equal(at(a.clone(), 0), at(b.clone(), 0));
-        let bc = ConditionTerm::pointer_equal(at(b.clone(), 0), at(c.clone(), 0));
+        let offset_fact = ConditionTerm::address_offset_equal(x.clone(), y.clone());
+        let ab = ConditionTerm::address_equal(at(a.clone(), 0), at(b.clone(), 0));
+        let bc = ConditionTerm::address_equal(at(b.clone(), 0), at(c.clone(), 0));
         let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
         let branch = trunk
             .clone()
@@ -3727,8 +3719,8 @@ mod tests {
         let x = AddressOffset::Variable(Variable(11_062));
         let y = AddressOffset::Variable(Variable(11_063));
         let translated = AddressOffset::add(x.clone(), AddressOffset::Constant(8));
-        let offset_fact = ConditionTerm::pointer_offset_equal(translated, y.clone());
-        let pointer_fact = ConditionTerm::pointer_equal(at(a.clone(), 0), at(b.clone(), 8));
+        let offset_fact = ConditionTerm::address_offset_equal(translated, y.clone());
+        let pointer_fact = ConditionTerm::address_equal(at(a.clone(), 0), at(b.clone(), 8));
         let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
         let branch = trunk.clone().assume_condition(pointer_fact.clone(), true);
         let left = at_offset(a.clone(), x.clone());
@@ -3737,7 +3729,7 @@ mod tests {
         assert!(branch.equality_graph.are_equal(&left, &right));
         assert!(branch.equality_graph.are_equal(&right, &left));
         assert_eq!(
-            branch.decide(&ConditionTerm::pointer_equal(left.clone(), right.clone())),
+            branch.decide(&ConditionTerm::address_equal(left.clone(), right.clone())),
             Some(true)
         );
         assert!(
@@ -4184,7 +4176,7 @@ mod tests {
         // separate frame derivation could prove the cell unchanged.
         assert!(!classes.are_equal(&left, &right));
         let separated = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(other, cell.clone()), false);
+            .assume_condition(ConditionTerm::address_equal(other, cell.clone()), false);
         let load = |pointer: &Address| {
             let AddressBase::Symbolic(variable) = &pointer.base else {
                 unreachable!()
@@ -4329,10 +4321,10 @@ mod tests {
         let y = at(symbolic(805), 0);
         let lp = named_load(&memory, &p);
         let lq = named_load(&memory, &q);
-        let address = ConditionTerm::pointer_equal(p, q);
+        let address = ConditionTerm::address_equal(p, q);
         let selected = [
-            (ConditionTerm::pointer_equal(lp, x.clone()), true),
-            (ConditionTerm::pointer_equal(lq, y.clone()), true),
+            (ConditionTerm::address_equal(lp, x.clone()), true),
+            (ConditionTerm::address_equal(lq, y.clone()), true),
         ];
         let mut context = PureFactContext::new().assume_condition(address.clone(), true);
         for (condition, value) in &selected {
@@ -4506,7 +4498,7 @@ mod boolean_cast_dependency_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let native = MachineTerm::bool_cast(
             MachineIntegerType::Int32,
-            ConditionTerm::PointerEqual(
+            ConditionTerm::AddressEqual(
                 Box::new(Address::symbolic(Variable(999462))),
                 Box::new(Address::symbolic(Variable(999463))),
             ),

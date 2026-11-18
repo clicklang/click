@@ -244,14 +244,14 @@ impl MachineTerm {
 impl MachineTerm {
     /// Keep pointer-to-integer casts canonical when checked rewriting turns
     /// a symbolic pointer into null, just as C cast evaluation does.
-    pub(crate) fn pointer_address(pointer: Address) -> Self {
+    pub(crate) fn integer_address(pointer: Address) -> Self {
         if let Some(bits) = pointer.integer_address_bits() {
             return bits.clone();
         }
         if pointer == Address::null() {
             Self::uint64_constant(0)
         } else {
-            Self::PointerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
+            Self::IntegerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
         }
     }
 
@@ -262,7 +262,7 @@ impl MachineTerm {
         if pointer == Address::null() {
             Self::uint64_constant(0)
         } else {
-            Self::PointerAddress(
+            Self::IntegerAddress(
                 Box::new(pointer),
                 crate::kernel::AddressObjectClass::new(class),
             )
@@ -271,7 +271,7 @@ impl MachineTerm {
 
     pub(crate) fn address_pointer(&self) -> Option<&Address> {
         match self {
-            Self::PointerAddress(pointer, _) => Some(pointer),
+            Self::IntegerAddress(pointer, _) => Some(pointer),
             _ => None,
         }
     }
@@ -362,7 +362,7 @@ impl MachineTerm {
             bits32_constant!(value) => Some(constant_u32(*value)),
             Self::Variable(_)
             | Self::MemoryLoad(_, _, _)
-            | Self::PointerAddress(_, _)
+            | Self::IntegerAddress(_, _)
             | Self::IntegerToMachine { .. }
             | Self::PureFunctionApplication { .. }
             | Self::ClickFunctionApplication { .. }
@@ -1106,7 +1106,7 @@ fn uint64_constant(term: &MachineTerm) -> Option<u64> {
         // Null converts to the integer zero, exactly as evaluating the C
         // cast `(uint64)p` yields it. The address term reaches a proof only
         // when a pointer proved null is substituted into `(uint64)p`.
-        MachineTerm::PointerAddress(pointer, _) if **pointer == Address::null() => Some(0),
+        MachineTerm::IntegerAddress(pointer, _) if **pointer == Address::null() => Some(0),
         cast_term!(UInt64From32, value) => match value.as_ref() {
             bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
             _ => uint64_constant(value),
@@ -2628,7 +2628,7 @@ impl ConditionTerm {
     /// be a malformed application the kernel deliberately leaves undecided.
     pub(crate) fn reflexive_value(&self) -> Option<bool> {
         match self {
-            Self::PointerValueEqual(left, right) => (left == right).then_some(true),
+            Self::PointerEqual(left, right) => (left == right).then_some(true),
 
             Self::Compare {
                 relation,
@@ -2645,8 +2645,8 @@ impl ConditionTerm {
             Self::IntegerLessThan(left, right)
             | Self::IntegerGreaterThan(left, right)
             | Self::IntegerNotEqual(left, right) => (left == right).then_some(false),
-            Self::PointerOffsetEqual(left, right) => (left == right).then_some(true),
-            Self::PointerEqual(left, right) => (left == right).then_some(true),
+            Self::AddressOffsetEqual(left, right) => (left == right).then_some(true),
+            Self::AddressEqual(left, right) => (left == right).then_some(true),
             // A `Bool` value is two-valued, so it is equivalent to itself.
             Self::BoolEqual(left, right) => (left == right).then_some(true),
             Self::AlgebraicEqual(_, _)
@@ -3276,14 +3276,14 @@ impl ConditionTerm {
         right: &MachineTerm,
     ) -> Option<Self> {
         match (left, right) {
-            (MachineTerm::PointerAddress(left, _), MachineTerm::PointerAddress(right, _)) => Some(
-                Self::pointer_equal(left.as_ref().clone(), right.as_ref().clone()),
+            (MachineTerm::IntegerAddress(left, _), MachineTerm::IntegerAddress(right, _)) => Some(
+                Self::address_equal(left.as_ref().clone(), right.as_ref().clone()),
             ),
-            (MachineTerm::PointerAddress(pointer, _), other)
-            | (other, MachineTerm::PointerAddress(pointer, _))
+            (MachineTerm::IntegerAddress(pointer, _), other)
+            | (other, MachineTerm::IntegerAddress(pointer, _))
                 if other.uint64_as_const() == Some(0) =>
             {
-                Some(Self::pointer_equal(
+                Some(Self::address_equal(
                     pointer.as_ref().clone(),
                     Address::null(),
                 ))
@@ -3319,12 +3319,10 @@ impl ConditionTerm {
                 left: right.clone(),
                 right: left.clone(),
             },
+            Self::AddressEqual(left, right) => Self::AddressEqual(right.clone(), left.clone()),
             Self::PointerEqual(left, right) => Self::PointerEqual(right.clone(), left.clone()),
-            Self::PointerValueEqual(left, right) => {
-                Self::PointerValueEqual(right.clone(), left.clone())
-            }
-            Self::PointerOffsetEqual(left, right) => {
-                Self::PointerOffsetEqual(right.clone(), left.clone())
+            Self::AddressOffsetEqual(left, right) => {
+                Self::AddressOffsetEqual(right.clone(), left.clone())
             }
             other => other.clone(),
         }
@@ -3337,7 +3335,7 @@ impl ConditionTerm {
         debug_assert!(alignment.is_power_of_two());
         Self::uint64_equal(
             MachineTerm::uint64_bitwise_and(
-                MachineTerm::PointerAddress(
+                MachineTerm::IntegerAddress(
                     Box::new(pointer),
                     crate::kernel::AddressObjectClass::NONE,
                 ),
@@ -3394,7 +3392,7 @@ impl ConditionTerm {
                 V::Legacy(native) => Some(native),
                 V::Shared(root) => root.machine_conversion_leaf(),
             }?;
-            if let MachineTerm::PointerAddress(pointer, _) = native {
+            if let MachineTerm::IntegerAddress(pointer, _) = native {
                 Some(pointer.as_ref())
             } else {
                 None
@@ -3415,11 +3413,11 @@ impl ConditionTerm {
         }
         // An address is zero exactly when its pointer is null. Two addresses
         // stay an address equality: equal addresses are not equal pointers.
-        if let (MachineTerm::PointerAddress(pointer, _), other)
-        | (other, MachineTerm::PointerAddress(pointer, _)) = (&left, &right)
+        if let (MachineTerm::IntegerAddress(pointer, _), other)
+        | (other, MachineTerm::IntegerAddress(pointer, _)) = (&left, &right)
             && other.uint64_as_const() == Some(0)
         {
-            return Self::pointer_equal(pointer.as_ref().clone(), Address::null());
+            return Self::address_equal(pointer.as_ref().clone(), Address::null());
         }
         match (left.bitvector64_as_const(), right.bitvector64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
@@ -3440,7 +3438,7 @@ impl ConditionTerm {
                         left: Box::new(MachineTerm::Binary {
                             format: MachineIntegerType::UInt64,
                             op: MachineBinaryOp::BitwiseAnd,
-                            left: Box::new(MachineTerm::PointerAddress(
+                            left: Box::new(MachineTerm::IntegerAddress(
                                 Box::new(pointer.clone()),
                                 crate::kernel::AddressObjectClass::NONE,
                             )),
@@ -3783,14 +3781,14 @@ impl ConditionTerm {
         }
     }
 
-    pub(in crate::kernel) fn pointer_offset_equal(
+    pub(in crate::kernel) fn address_offset_equal(
         left: AddressOffset,
         right: AddressOffset,
     ) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
             _ if pointer_offsets_differ_by_residue(&left, &right) => Self::Constant(false),
-            _ => Self::PointerOffsetEqual(Box::new(left), Box::new(right)),
+            _ => Self::AddressOffsetEqual(Box::new(left), Box::new(right)),
         }
     }
 
@@ -3799,7 +3797,7 @@ impl ConditionTerm {
     /// proposition: equal addresses alone cannot prove full-value equality.
     pub(crate) fn true_pointer_offset_sides(&self) -> Option<(&AddressOffset, &AddressOffset)> {
         match self {
-            Self::PointerValueEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
+            Self::PointerEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
             _ => self.pointer_offset_sides(),
         }
     }
@@ -3808,9 +3806,9 @@ impl ConditionTerm {
     /// condition as the supporting premise in callers' indexes.
     pub(crate) fn pointer_offset_sides(&self) -> Option<(&AddressOffset, &AddressOffset)> {
         match self {
-            Self::PointerOffsetEqual(a, b) => Some((a, b)),
-            Self::PointerEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
-            Self::PointerValueEqual(a, b)
+            Self::AddressOffsetEqual(a, b) => Some((a, b)),
+            Self::AddressEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
+            Self::PointerEqual(a, b)
                 if a.base == b.base
                     && a.provenance() == b.provenance()
                     && a.bounds() == b.bounds() =>
@@ -3822,20 +3820,20 @@ impl ConditionTerm {
     }
 
     /// Pointer equality as logical lowering states it: a non-null pointer
-    /// value compared with itself keeps its `PointerEqual` node instead of
+    /// value compared with itself keeps its `AddressEqual` node instead of
     /// folding to `true`, so the fact raises to `p == p` and lowers back
     /// (`docs/internals/raise-lower-principle.md`, "Lowering is structural").
     /// Producers whose result must match a lowered goal use it too; checking
     /// decides the reflexive comparison (`ConditionTerm::reflexive_value`).
-    pub(crate) fn logical_pointer_value_equal(left: Pointer, right: Pointer) -> Self {
+    pub(crate) fn logical_pointer_equal(left: Pointer, right: Pointer) -> Self {
         if left == right && !left.is_null() {
             let address = left.address().clone();
-            return Self::PointerEqual(Box::new(address.clone()), Box::new(address));
+            return Self::AddressEqual(Box::new(address.clone()), Box::new(address));
         }
-        Self::pointer_value_equal(left, right)
+        Self::pointer_equal(left, right)
     }
 
-    pub(crate) fn pointer_value_equal(left: Pointer, right: Pointer) -> Self {
+    pub(crate) fn pointer_equal(left: Pointer, right: Pointer) -> Self {
         if (left.provenance() == right.provenance()
             && left.bounds() == right.bounds()
             && left.bounds_are_known() == right.bounds_are_known()
@@ -3852,23 +3850,23 @@ impl ConditionTerm {
                 || right.address().integer_address_bits().is_some()
             {
                 return Self::uint64_equal(
-                    MachineTerm::pointer_address(left.address().clone()),
-                    MachineTerm::pointer_address(right.address().clone()),
+                    MachineTerm::integer_address(left.address().clone()),
+                    MachineTerm::integer_address(right.address().clone()),
                 );
             }
-            Self::pointer_equal(left.address().clone(), right.address().clone())
+            Self::address_equal(left.address().clone(), right.address().clone())
         } else {
             // Whether two pointers are equal does not depend on the `const`
             // of the expressions that named them, and one proposition must
             // be one term however its operands were read.
-            Self::PointerValueEqual(
+            Self::PointerEqual(
                 Box::new(left.with_pointee_constant(false)),
                 Box::new(right.with_pointee_constant(false)),
             )
         }
     }
 
-    pub fn pointer_equal(left: Address, right: Address) -> Self {
+    pub fn address_equal(left: Address, right: Address) -> Self {
         if left.blocks_proven_distinct(&right) {
             Self::Constant(false)
         } else {
@@ -3882,12 +3880,12 @@ impl ConditionTerm {
             // displacements in it are a symbolic reflexive comparison too.
             if left.base == right.base
                 && let Self::Constant(value) =
-                    Self::pointer_offset_equal(left.offset.clone(), right.offset.clone())
+                    Self::address_offset_equal(left.offset.clone(), right.offset.clone())
                 && !(value && matches!(left.base, AddressBase::LoadedPointer(_)))
             {
                 return Self::Constant(value);
             }
-            Self::PointerEqual(Box::new(left), Box::new(right))
+            Self::AddressEqual(Box::new(left), Box::new(right))
         }
     }
 }
@@ -4923,7 +4921,7 @@ impl Address {
 
     /// Numeric LP64 reconstruction. This application is only an address;
     /// a complete C word carries its independent provenance beside it.
-    pub(in crate::kernel) fn integer_address(bits: MachineTerm) -> Self {
+    pub(in crate::kernel) fn from_integer_address(bits: MachineTerm) -> Self {
         if bits.uint64_as_const() == Some(0) {
             return Self::null();
         }
@@ -6070,14 +6068,14 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
             left: right.clone(),
             right: left.clone(),
         },
-        ConditionTerm::PointerOffsetEqual(left, right) => {
-            ConditionTerm::PointerOffsetEqual(right.clone(), left.clone())
+        ConditionTerm::AddressOffsetEqual(left, right) => {
+            ConditionTerm::AddressOffsetEqual(right.clone(), left.clone())
+        }
+        ConditionTerm::AddressEqual(left, right) => {
+            ConditionTerm::AddressEqual(right.clone(), left.clone())
         }
         ConditionTerm::PointerEqual(left, right) => {
             ConditionTerm::PointerEqual(right.clone(), left.clone())
-        }
-        ConditionTerm::PointerValueEqual(left, right) => {
-            ConditionTerm::PointerValueEqual(right.clone(), left.clone())
         }
         _ => return None,
     };

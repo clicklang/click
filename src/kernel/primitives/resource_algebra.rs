@@ -1615,7 +1615,7 @@ fn collect_memory_load_work<'a>(
                         ));
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
                     }
-                    MachineTerm::PointerAddress(pointer, _) => {
+                    MachineTerm::IntegerAddress(pointer, _) => {
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
                     }
                     crate::kernel::binary_machine_term!(left, right)
@@ -11034,7 +11034,7 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
                 right: Box::new(b.clone()),
             }) == Some(true)
     };
-    let pointer_equal = |a: &Address, b: &Address| {
+    let address_equal = |a: &Address, b: &Address| {
         crate::kernel::prelude::pointers_proven_equal_for_memory_resolution(a, b, assumptions)
     };
     left.element_width == right.element_width
@@ -11045,8 +11045,8 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
         && left.guard.cell_width == right.guard.cell_width
         && left.guard.holds_when_equal == right.guard.holds_when_equal
         && left.holes.len() == right.holes.len()
-        && pointer_equal(&left.element_base, &right.element_base)
-        && pointer_equal(&left.guard.base, &right.guard.base)
+        && address_equal(&left.element_base, &right.element_base)
+        && address_equal(&left.guard.base, &right.guard.base)
         && term_equal(&left.lower, &right.lower)
         && term_equal(&left.upper, &right.upper)
         && term_equal(&left.guard.value, &right.guard.value)
@@ -11157,12 +11157,12 @@ fn owned_cell_access_uses_transitive_graph_address_equality() {
         MemoryRange::new_with_element_width(a.clone(), 0u32.into(), 1u32.into(), 4),
     ));
     let facts = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
-        .assume_condition(ConditionTerm::pointer_equal(c.clone(), d.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(a.clone(), b.clone()), true)
+        .assume_condition(ConditionTerm::address_equal(c.clone(), d.clone()), true);
     assert!(!owner.permits_memory_read(&d, 4, &facts));
     let connected = facts
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(b, c), true);
+        .assume_condition(ConditionTerm::address_equal(b, c), true);
     assert!(connected.pointers_known_equal(&a, &d));
     assert!(owner.permits_memory_read(&d, 4, &connected));
     assert!(owner.memory_write_range(&d, 4, &connected).is_some());
@@ -14119,7 +14119,7 @@ mod related_pointer_root_tests {
         let base = external(0);
         let assumptions = (1..=count).fold(PureFactContext::new(), |assumptions, index| {
             assumptions.assume_condition(
-                ConditionTerm::pointer_equal(external(index), base.clone()),
+                ConditionTerm::address_equal(external(index), base.clone()),
                 true,
             )
         });
@@ -14303,7 +14303,7 @@ mod constructed_normalization_tests {
         let pointer = Address::symbolic(Variable(8_853_001));
         let alias = Address::symbolic(Variable(8_853_002));
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(pointer.clone(), alias.clone()),
+            ConditionTerm::address_equal(pointer.clone(), alias.clone()),
             true,
         );
         let pieces = [

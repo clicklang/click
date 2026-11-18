@@ -86,7 +86,7 @@ impl MachineTerm {
             | Self::ClickFunctionApplication { .. }
             | Self::AlgebraicMatch { .. }
             | Self::MemoryLoad(..)
-            | Self::PointerAddress(_, _)
+            | Self::IntegerAddress(_, _)
             | Self::IntegerToMachine { .. }
             | unary_term!(Int32, BitwiseNot, _)
             | Self::Unary { .. }
@@ -130,7 +130,7 @@ impl MachineTerm {
             | Self::ClickFunctionApplication { .. }
             | Self::AlgebraicMatch { .. }
             | Self::MemoryLoad(..)
-            | Self::PointerAddress(_, _)
+            | Self::IntegerAddress(_, _)
             | Self::IntegerToMachine { .. }
             | crate::kernel::binary_machine_term!(..)
             | Self::Float32Binary { .. }
@@ -406,9 +406,9 @@ impl ConditionTerm {
             | Self::AlgebraicEqual(..)
             | Self::Float32(_)
             | Self::Float64(_)
-            | Self::PointerOffsetEqual(..)
+            | Self::AddressOffsetEqual(..)
+            | Self::AddressEqual(..)
             | Self::PointerEqual(..)
-            | Self::PointerValueEqual(..)
             | crate::kernel::integer_comparison_condition!(_, _)
             | Self::BoolApplication(_)
             | Self::BoolIf { .. }

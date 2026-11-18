@@ -122,7 +122,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         offset: AddressOffset::Constant(0),
     };
     let equality = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(result.clone(), storage.clone()),
+        ConditionTerm::address_equal(result.clone(), storage.clone()),
         true,
     );
     let view = Proposition::MemoryLoadable {
@@ -185,7 +185,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
     let after = before.without_local_block(&local.base);
     let context = PureFactContext::new()
         .assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(result.clone(), local.clone()),
+            ConditionTerm::address_equal(result.clone(), local.clone()),
             true,
         ))
         .assume_proposition(Proposition::MemoryLoadable {
@@ -266,7 +266,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
     let write_base = parameter(95_001);
     let read = parameter(95_002);
     let owner = Address::symbolic(Variable(95_003));
-    let alias = ConditionTerm::pointer_equal(write_base.clone(), owner.clone());
+    let alias = ConditionTerm::address_equal(write_base.clone(), owner.clone());
     for offset in [0, 8] {
         let write = write_base.offset_by_bytes(offset);
         let mut samples = Vec::new();
@@ -313,7 +313,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
             };
             assert!(!hop.checks(&wider_store, &read, 4, &assumptions));
             let equal = assumptions.assume_condition(
-                ConditionTerm::pointer_equal(write.clone(), read.clone()),
+                ConditionTerm::address_equal(write.clone(), read.clone()),
                 true,
             );
             assert!(
@@ -692,7 +692,7 @@ fn written_store_separation_and_alias_refusal_ignore_unrelated_objects() {
     let pointer = |index: u64| Address::symbolic(Variable(97_100 + index));
     let equal = |left: &Address, right: &Address| {
         Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(left.clone(), right.clone()),
+            ConditionTerm::address_equal(left.clone(), right.clone()),
             true,
         )
     };
@@ -754,7 +754,7 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
         };
         let left = pointer(1, false);
         let right = pointer(2, true);
-        let comparison = ConditionTerm::pointer_equal(left.clone(), right.clone());
+        let comparison = ConditionTerm::address_equal(left.clone(), right.clone());
         let mut overhead = Vec::new();
         let mut proof_overhead = Vec::new();
         for size in [16u64, 64, 256, 1024] {
@@ -816,10 +816,10 @@ fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
     let owner = pointer(951_003);
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::pointer_equal(queried.clone(), middle.clone()),
+            ConditionTerm::address_equal(queried.clone(), middle.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::pointer_equal(middle, owner.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(middle, owner.clone()), true);
     let fact = |base| {
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
@@ -871,16 +871,16 @@ fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inpu
         let inputs = || {
             let mut facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::pointer_equal(queried.clone(), middle.clone()),
+                    ConditionTerm::address_equal(queried.clone(), middle.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::pointer_equal(middle.clone(), owner.clone()),
+                    ConditionTerm::address_equal(middle.clone(), owner.clone()),
                     true,
                 );
             for index in 0..size {
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         pointer(955_000 + index),
                         pointer(957_000 + index),
                     ),

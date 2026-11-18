@@ -47,7 +47,7 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                             }
                         };
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(base.clone(), alias),
+                            ConditionTerm::address_equal(base.clone(), alias),
                             true,
                         );
                     }

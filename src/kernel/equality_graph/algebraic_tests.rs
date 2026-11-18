@@ -224,7 +224,7 @@ fn algebraic_closure_pointer_payloads_require_full_value_equality() {
     let mut graph = EqualityGraph::default();
     graph.add_equality(&pointer("a"), &pointer("b"));
     assert!(!graph.are_algebraic_equal(&node(pointer("a")), &node(pointer("b"))));
-    graph.add_pointer_value_equality(
+    graph.add_pointer_equality(
         &Pointer::new(pointer("a"), ProgramType::Int32Pointer),
         &Pointer::new(pointer("b"), ProgramType::Int32Pointer),
     );

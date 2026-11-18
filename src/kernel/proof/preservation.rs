@@ -94,10 +94,10 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
         {
             Some(ReadType::Abstract)
         }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(..), true) => {
-            Some(ReadType::PointerAddress)
+        Proposition::ConditionIs(ConditionTerm::AddressEqual(..), true) => {
+            Some(ReadType::IntegerAddress)
         }
-        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true)
+        Proposition::ConditionIs(ConditionTerm::PointerEqual(a, b), true)
             if a.program_type() == b.program_type() =>
         {
             Some(ReadType::Pointer(a.program_type()))
@@ -239,7 +239,7 @@ fn preserve_field(
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(b)),
         ) if a.program_type() == b.program_type() => {
-            ConditionTerm::logical_pointer_value_equal(a.clone(), b.clone())
+            ConditionTerm::logical_pointer_equal(a.clone(), b.clone())
         }
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(a)),
@@ -306,10 +306,10 @@ fn observation_equality(
     }
     let condition = match (kind, after, before) {
         (ReadType::Pointer(_), ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::logical_pointer_value_equal(a, b)
+            ConditionTerm::logical_pointer_equal(a, b)
         }
-        (ReadType::PointerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::pointer_equal(a.address().clone(), b.address().clone())
+        (ReadType::IntegerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
+            ConditionTerm::address_equal(a.address().clone(), b.address().clone())
         }
         (ReadType::Abstract, ProgramValue::Parameter(a), ProgramValue::Parameter(b))
             if a.algebraic_type == b.algebraic_type =>
@@ -809,7 +809,7 @@ mod tests {
             unreachable!()
         };
         let result = Proposition::ConditionIs(
-            ConditionTerm::pointer_value_equal(after_value, before_value),
+            ConditionTerm::pointer_equal(after_value, before_value),
             true,
         );
         (
@@ -872,7 +872,7 @@ mod tests {
             Some(goal)
         );
         let mut wrong_domain = preservation.clone();
-        let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, _), true) =
+        let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, _), true) =
             &mut wrong_domain.result
         else {
             panic!("distinct complete read domains");
@@ -888,7 +888,7 @@ mod tests {
         );
         let result = &mut preservation.result;
         *result = Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(
+            ConditionTerm::AddressEqual(
                 Box::new(Address::symbolic(Variable(8_399_000))),
                 Box::new(Address::symbolic(Variable(8_399_001))),
             ),
@@ -917,7 +917,7 @@ mod tests {
                 typed_reads::get(&memory, &address, kind),
                 Some(value.numeric_value().clone())
             );
-            assert!(typed_reads::get(&memory, &address, ReadType::PointerAddress).is_none());
+            assert!(typed_reads::get(&memory, &address, ReadType::IntegerAddress).is_none());
             assert!(
                 typed_reads::get(
                     &memory,

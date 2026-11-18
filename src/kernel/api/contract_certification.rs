@@ -814,7 +814,7 @@ fn collect_shallow_term_variables(term: &MachineTerm, variables: &mut BTreeSet<V
         // the base expression (for example the owner parameter), not to
         // that index.
         MachineTerm::MemoryLoad(_, _, _) => {}
-        MachineTerm::PointerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {}
+        MachineTerm::IntegerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {}
     }
 }
 
@@ -3158,11 +3158,11 @@ fn pointer_offsets_equal_with_resolved_atoms(
     };
     let atoms_match = |left: &AddressOffset, right: &AddressOffset| {
         if left == right
-            || assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+            || assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
                 left.clone(),
                 right.clone(),
             )) == Some(true)
-            || assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+            || assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
                 right.clone(),
                 left.clone(),
             )) == Some(true)
@@ -3306,7 +3306,7 @@ pub(crate) fn condition_holds_by_memory_resolution(
         // Two complete reads of one cell carry one value even where each spells
         // its coordinate from its own base (`n + 8` and `old(n) + 8`), as the
         // state-modulo condition matchers already accept.
-        (ConditionTerm::PointerValueEqual(left, right), true) => assumptions
+        (ConditionTerm::PointerEqual(left, right), true) => assumptions
             .contains_known(&Proposition::ConditionIs(condition.clone(), true))
             || (assumptions.pointer_provenance_match(left, right)
                 && (pointers_proven_equal_for_memory_resolution(
@@ -3318,12 +3318,12 @@ pub(crate) fn condition_holds_by_memory_resolution(
                     right.address(),
                     assumptions,
                 ))),
-        (ConditionTerm::PointerEqual(left, right), true) => {
+        (ConditionTerm::AddressEqual(left, right), true) => {
             pointers_proven_equal_for_memory_resolution(left, right, assumptions)
                 || assumptions.pointers_known_equal(left, right)
                 || pointer_read_has_recorded_value(left, right, assumptions)
         }
-        (ConditionTerm::PointerOffsetEqual(left, right), true) => {
+        (ConditionTerm::AddressOffsetEqual(left, right), true) => {
             pointer_offsets_proven_equal_for_memory_resolution(left, right, assumptions)
                 || pointer_offsets_equal_with_resolved_atoms(left, right, assumptions)
         }

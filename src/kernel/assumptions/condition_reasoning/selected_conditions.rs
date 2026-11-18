@@ -28,7 +28,7 @@ fn memory_match_operands(condition: &ConditionTerm) -> MemoryMatchOperands<'_> {
             left,
             right,
         } => MemoryMatchOperands::Words(*format, *relation, left, right),
-        ConditionTerm::PointerOffsetEqual(left, right) => MemoryMatchOperands::Offsets(left, right),
+        ConditionTerm::AddressOffsetEqual(left, right) => MemoryMatchOperands::Offsets(left, right),
         _ => MemoryMatchOperands::Exact,
     }
 }
@@ -105,7 +105,7 @@ impl PureFactContext {
                 }
             }
             MemoryMatchOperands::Offsets(left, right) => {
-                ConditionTerm::PointerOffsetEqual(Box::new(right.clone()), Box::new(left.clone()))
+                ConditionTerm::AddressOffsetEqual(Box::new(right.clone()), Box::new(left.clone()))
             }
             MemoryMatchOperands::Exact => unreachable!("exact-only kinds returned above"),
         };
@@ -274,11 +274,11 @@ mod memory_condition_match_tests {
             &comparison(UInt32, Equal, 960_005, 960_004),
             true
         ));
-        let offsets = ConditionTerm::pointer_offset_equal(
+        let offsets = ConditionTerm::address_offset_equal(
             AddressOffset::Variable(Variable(960_006)),
             AddressOffset::Variable(Variable(960_007)),
         );
-        let reversed = ConditionTerm::pointer_offset_equal(
+        let reversed = ConditionTerm::address_offset_equal(
             AddressOffset::Variable(Variable(960_007)),
             AddressOffset::Variable(Variable(960_006)),
         );
@@ -344,7 +344,7 @@ mod memory_condition_match_tests {
             match kind {
                 0 => ConditionTerm::signed_less_than(left, right),
                 1 => ConditionTerm::unsigned_less_than(left, right),
-                _ => ConditionTerm::pointer_offset_equal(
+                _ => ConditionTerm::address_offset_equal(
                     AddressOffset::scale_int32(left, 4),
                     AddressOffset::scale_int32(right, 4),
                 ),
@@ -379,7 +379,7 @@ mod memory_condition_match_tests {
             match kind {
                 0 => ConditionTerm::signed_less_than(left, right),
                 1 => ConditionTerm::unsigned_less_than(left, right),
-                _ => ConditionTerm::pointer_offset_equal(
+                _ => ConditionTerm::address_offset_equal(
                     AddressOffset::scale_int32(left, 4),
                     AddressOffset::scale_int32(right, 4),
                 ),
@@ -454,7 +454,7 @@ impl SelectedFacts<'_> {
             return Some(value);
         }
 
-        if matches!(condition, ConditionTerm::PointerValueEqual(..)) {
+        if matches!(condition, ConditionTerm::PointerEqual(..)) {
             return self.decide(condition);
         }
         match condition {
@@ -462,15 +462,15 @@ impl SelectedFacts<'_> {
                 self.decide_algebraic_equality(left, right)
             }
             ConditionTerm::Constant(value) => Some(*value),
-            ConditionTerm::PointerEqual(left, right) if left == right => Some(true),
-            ConditionTerm::PointerEqual(left, right) if self.pointers_known_equal(left, right) => {
+            ConditionTerm::AddressEqual(left, right) if left == right => Some(true),
+            ConditionTerm::AddressEqual(left, right) if self.pointers_known_equal(left, right) => {
                 Some(true)
             }
-            ConditionTerm::PointerEqual(left, right) if left.blocks_proven_distinct(right) => {
+            ConditionTerm::AddressEqual(left, right) if left.blocks_proven_distinct(right) => {
                 Some(false)
             }
-            ConditionTerm::PointerEqual(left, right) if left.base == right.base => self
-                .decide_selected_condition(&ConditionTerm::pointer_offset_equal(
+            ConditionTerm::AddressEqual(left, right) if left.base == right.base => self
+                .decide_selected_condition(&ConditionTerm::address_offset_equal(
                     left.offset.clone(),
                     right.offset.clone(),
                 )),
@@ -509,7 +509,7 @@ impl SelectedFacts<'_> {
                     _ => self.decide_uint64_equality_extras(left, right),
                 }
             }
-            ConditionTerm::PointerOffsetEqual(left, right) => {
+            ConditionTerm::AddressOffsetEqual(left, right) => {
                 if self.equality_graph.are_offsets_equal(left, right)
                     || pointer_offsets_proven_equal_for_memory_resolution(left, right, self)
                 {

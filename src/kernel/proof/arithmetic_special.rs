@@ -181,7 +181,7 @@ fn bitvector_payload(root: &MachineTerm) -> Option<usize> {
                 payload = payload.checked_add(name.len())?;
                 pending.extend(arguments.iter());
             }
-            MachineTerm::PointerAddress(pointer, _) | MachineTerm::MemoryLoad(_, pointer, _) => {
+            MachineTerm::IntegerAddress(pointer, _) | MachineTerm::MemoryLoad(_, pointer, _) => {
                 // A read owns an interned state; only its written address
                 // contributes syntax payload, never the state contents.
                 payload = payload.checked_add(pointer_payload(pointer)?)?;
@@ -331,7 +331,7 @@ fn pointer_index_equal(
     true
 }
 
-fn pointer_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
+fn address_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         match (left, right) {
@@ -388,11 +388,11 @@ fn pointer_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
     true
 }
 
-fn pointer_equal(left: &Address, right: &Address) -> bool {
+fn address_equal(left: &Address, right: &Address) -> bool {
     charge_pointer(left)
         && charge_pointer(right)
         && address_base_equal(&left.base, &right.base)
-        && pointer_offset_equal(&left.offset, &right.offset)
+        && address_offset_equal(&left.offset, &right.offset)
 }
 
 mod operand_identity;
@@ -444,7 +444,7 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
                 }
             }
             (MachineTerm::MemoryLoad(lm, lp, lk), MachineTerm::MemoryLoad(rm, rp, rk)) => {
-                if lm != rm || lk != rk || !pointer_equal(lp, rp) {
+                if lm != rm || lk != rk || !address_equal(lp, rp) {
                     return false;
                 }
             }
@@ -498,8 +498,8 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
             ) if left_name == right_name && left_arguments.len() == right_arguments.len() => {
                 pending.extend(left_arguments.iter().zip(right_arguments.iter()));
             }
-            (MachineTerm::PointerAddress(left, _), MachineTerm::PointerAddress(right, _)) => {
-                if !pointer_equal(left, right) {
+            (MachineTerm::IntegerAddress(left, _), MachineTerm::IntegerAddress(right, _)) => {
+                if !address_equal(left, right) {
                     return false;
                 }
             }
@@ -871,13 +871,13 @@ fn pointer_sides(
     Option<(&AddressBase, &AddressBase)>,
 )> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
-            Some((&left.offset, &right.offset, Some((&left.base, &right.base))))
-        }
         Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
             Some((&left.offset, &right.offset, Some((&left.base, &right.base))))
         }
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
+        Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) => {
+            Some((&left.offset, &right.offset, Some((&left.base, &right.base))))
+        }
+        Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(left, right), true) => {
             Some((left, right, None))
         }
         _ => None,
@@ -1191,14 +1191,14 @@ fn pointer_translation(
     bound_propositions: &[&Proposition],
     goal: &Proposition,
 ) -> bool {
-    if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = goal {
+    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = goal {
         let same_domain = |a: &Pointer, b: &Pointer| {
             a.provenance() == b.provenance()
                 && a.bounds() == b.bounds()
                 && a.bounds_are_known() == b.bounds_are_known()
         };
         let linked = match relation {
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(a, b), true) => {
                 (same_domain(left, a) && same_domain(right, b))
                     || (same_domain(left, b) && same_domain(right, a))
             }
@@ -1507,7 +1507,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         };
         aligned
     } else {
-        let intrinsic_alignment = if pointer_equal(goal_pointer, &Address::null()) {
+        let intrinsic_alignment = if address_equal(goal_pointer, &Address::null()) {
             // The null address is zero, so every valid power-of-two alignment
             // divides it; use the largest possible bound as an intrinsic
             // alignment sentinel.
@@ -1765,7 +1765,7 @@ impl<'a> AlignmentIndex<'a> {
                 if crate::instrumentation::deadline_exceeded_with_work(1) {
                     return None;
                 }
-                if pointer_equal(pointer, candidate.pointer) {
+                if address_equal(pointer, candidate.pointer) {
                     candidate.max_alignment = candidate.max_alignment.max(*alignment);
                     matched = true;
                     break;
@@ -1790,7 +1790,7 @@ impl<'a> AlignmentIndex<'a> {
                 if crate::instrumentation::deadline_exceeded_with_work(1) {
                     return false;
                 }
-                candidate.max_alignment >= required && pointer_equal(pointer, candidate.pointer)
+                candidate.max_alignment >= required && address_equal(pointer, candidate.pointer)
             })
         })
     }
@@ -1826,7 +1826,7 @@ fn bounded_term_hashes(roots: &[&MachineTerm]) -> Option<HashMap<usize, u64>> {
                     kind.hash(&mut hasher);
                     pointer_identity_hash(pointer)?.hash(&mut hasher);
                 }
-                MachineTerm::PointerAddress(pointer, _) => {
+                MachineTerm::IntegerAddress(pointer, _) => {
                     pointer_identity_hash(pointer)?.hash(&mut hasher)
                 }
                 binary_term!(Int32, Add, left, right)
@@ -1953,8 +1953,8 @@ fn pointer_or_masked_tag<'a>(
     right: Word<'a>,
 ) -> Option<(&'a Address, Word<'a>, u64)> {
     let (pointer, tag) = match (left.node(), right.node()) {
-        (WordNode::PointerAddress(pointer), _) => (pointer, right),
-        (_, WordNode::PointerAddress(pointer)) => (pointer, left),
+        (WordNode::IntegerAddress(pointer), _) => (pointer, right),
+        (_, WordNode::IntegerAddress(pointer)) => (pointer, left),
         _ => return None,
     };
     let (_, mask) = masked_source(tag)?;
@@ -2067,7 +2067,7 @@ fn tagged_form_inner<'a>(
                 }
                 active.insert(identity);
                 match current.node() {
-                    WordNode::PointerAddress(pointer) => store(
+                    WordNode::IntegerAddress(pointer) => store(
                         identity,
                         Some(TaggedAddress {
                             pointer: Arc::new(pointer.clone()),
@@ -2470,7 +2470,7 @@ fn pointer_word_equality(
     let goal_right_form = tagged_form(goal_right, (left, right), &alignment_index);
     let equal = match (goal_left_form, goal_right_form) {
         (Some(goal_left), Some(goal_right)) => {
-            pointer_equal(goal_left.pointer.as_ref(), goal_right.pointer.as_ref())
+            address_equal(goal_left.pointer.as_ref(), goal_right.pointer.as_ref())
                 && tagged_tag_equal(&goal_left.tag, &goal_right.tag)
         }
         _ => false,
@@ -2483,7 +2483,7 @@ fn pointer_word_equality(
             tagged_form(goal_right, (left, right), &alignment_index),
         ) {
             (Some(goal_left), Some(goal_right))
-                if pointer_equal(goal_left.pointer.as_ref(), goal_right.pointer.as_ref()) =>
+                if address_equal(goal_left.pointer.as_ref(), goal_right.pointer.as_ref()) =>
             {
                 matches!(
                     (goal_left.tag_constant, goal_right.tag_constant),
@@ -2542,12 +2542,12 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
     let Some(right_form) = right_form else {
         return false;
     };
-    let equal = pointer_equal(left_form.pointer.as_ref(), right_form.pointer.as_ref())
+    let equal = address_equal(left_form.pointer.as_ref(), right_form.pointer.as_ref())
         && tagged_tag_equal(&left_form.tag, &right_form.tag);
     if expected {
         equal
     } else {
-        pointer_equal(left_form.pointer.as_ref(), right_form.pointer.as_ref())
+        address_equal(left_form.pointer.as_ref(), right_form.pointer.as_ref())
             && matches!(
                 (left_form.tag_constant, right_form.tag_constant),
                 (Some(left), Some(right)) if left != right
@@ -2671,7 +2671,7 @@ mod tests {
                     bounded_term_hash(&native)
                 );
             }
-            let equal = pointer_offset_equal(&pointer.offset, &pointer.offset);
+            let equal = address_offset_equal(&pointer.offset, &pointer.offset);
             assert_eq!(equal, bitvector_payload(&native).is_some());
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             root = KernelTerm::machine_binary_shared(
@@ -2936,7 +2936,7 @@ mod tests {
     }
 
     fn measured_tagged_form(pointer_depth: usize, tag_depth: usize) -> (bool, usize, usize) {
-        let address = MachineTerm::PointerAddress(
+        let address = MachineTerm::IntegerAddress(
             Box::new(deep_pointer(pointer_depth)),
             crate::kernel::AddressObjectClass::NONE,
         );
@@ -2992,7 +2992,7 @@ mod tests {
         use crate::kernel::MachineOperandView;
         let _session = crate::kernel::VerificationSession::enter();
         let next = pointer(AddressOffset::Constant(0));
-        let address = MachineTerm::pointer_address(next.clone());
+        let address = MachineTerm::integer_address(next.clone());
         let raw = MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(
                 &(crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new())),
@@ -3039,7 +3039,7 @@ mod tests {
         let alignments = AlignmentIndex::new(&[]).expect("empty alignment index");
         let mut previous = 0;
         for depth in [4, 16, 64, 256, 1024] {
-            let address = MachineTerm::PointerAddress(
+            let address = MachineTerm::IntegerAddress(
                 Box::new(pointer(AddressOffset::Constant(0))),
                 crate::kernel::AddressObjectClass::NONE,
             );

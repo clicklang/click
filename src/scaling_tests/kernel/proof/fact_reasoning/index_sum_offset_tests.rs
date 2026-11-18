@@ -43,7 +43,7 @@ fn an_index_sum_offset_reads_only_the_cited_premise_and_its_own_terms() {
     }
     let mut shared = Vec::new();
     for size in [4, 16, 64] {
-        let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) =
+        let Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) =
             address_goal(size, 1)
         else {
             unreachable!("the goal is a pointer equality");
@@ -70,7 +70,7 @@ fn offset_equality_work_is_linear_in_shared_offset_terms() {
     // The pair the general check leaves open, and an unequal one: the same
     // sums with a constant byte added to one side.
     let pairs = |size: u64| {
-        let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) =
+        let Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) =
             address_goal(size, 1)
         else {
             unreachable!("the goal is a pointer equality");
