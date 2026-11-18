@@ -1385,7 +1385,10 @@ reads it, or with the condition that decides a branch.
 #### Where the implementation departs from this
 
 The Rust importer gives every MIR local the user did not name a local
-`__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR is three-address code,
+`__rust_mir_<N>` (`src/languages/rust/charon.rs`). A source name bound more
+than once keeps that key in the MIR only; `MirBody::spellings` gives its
+source name, and the lowering declares it as a `LocalBindingId` with that
+spelling, where its storage starts, as C declares a block's locals. MIR is three-address code,
 so most of these hold one operand of a larger source expression.
 
 `src/languages/rust/charon/temporaries.rs` puts a pure value back into the

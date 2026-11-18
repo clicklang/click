@@ -140,6 +140,9 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         .collect();
     let mut records = BTreeMap::new();
     let mut declarations = program_skip();
+    // The declarations of the locals `Context::bindings` spells, which run
+    // where their storage starts.
+    let mut scoped = BTreeMap::new();
     let owned_parameter_count = f
         .parameters
         .iter()
@@ -216,7 +219,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     program_skip()
                 } else {
                     program_begin_aggregate_construction(
-                        local.name.clone(),
+                        cx.binding(&local.name),
                         cx.layouts
                             .get(name.as_str())
                             .ok_or("missing owned record layout")?
@@ -239,14 +242,14 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     .insert(local.name.clone(), (length.clone(), element_type));
                 program_seq(
                     program_declare_with_all_qualifiers(
-                        &local.name,
+                        cx.binding(&local.name),
                         pointer_type,
                         false,
                         false,
                         false,
                         !mutable,
                     ),
-                    program_declare(length, ProgramType::UInt64),
+                    program_declare(cx.binding(&length), ProgramType::UInt64),
                 )
             }
             Type::ByteSlice { mutable } => {
@@ -258,14 +261,14 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     .insert(local.name.clone(), (length.clone(), !mutable));
                 program_seq(
                     program_declare_with_all_qualifiers(
-                        &local.name,
+                        cx.binding(&local.name),
                         ProgramType::UInt8Pointer,
                         false,
                         false,
                         false,
                         !mutable,
                     ),
-                    program_declare(length, ProgramType::UInt64),
+                    program_declare(cx.binding(&length), ProgramType::UInt64),
                 )
             }
             Type::Reference { mutable, pointee }
@@ -278,7 +281,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                 cx.arrays
                     .insert(local.name.clone(), (*length, element, !mutable));
                 program_declare_with_all_qualifiers(
-                    &local.name,
+                    cx.binding(&local.name),
                     scalar_type(&local.value_type)?.to_kernel_type(),
                     false,
                     false,
@@ -304,7 +307,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     program_skip()
                 } else {
                     program_begin_aggregate_construction(
-                        local.name.clone(),
+                        cx.binding(&local.name),
                         AggregateLayout::new(
                             *length as u32 * element.byte_width(),
                             element.byte_width(),
@@ -314,7 +317,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                 }
             }
             Type::Reference { mutable, .. } => program_declare_with_all_qualifiers(
-                local.name.clone(),
+                cx.binding(&local.name),
                 scalar_type(&local.value_type)?.to_kernel_type(),
                 false,
                 false,
@@ -329,7 +332,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                 let value_type = scalar_type(t)?.to_kernel_type();
                 cx.memory_values.insert(local.name.clone(), value_type);
                 program_begin_aggregate_construction(
-                    local.name.clone(),
+                    cx.binding(&local.name),
                     AggregateLayout::holding_value(value_type),
                 )
             }
@@ -342,10 +345,17 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                 if t.is_scalar() {
                     cx.addressable_locals.insert(local.name.clone());
                 }
-                program_declare(local.name.clone(), scalar_type(t)?.to_kernel_type())
+                program_declare(cx.binding(&local.name), scalar_type(t)?.to_kernel_type())
             }
         };
-        declarations = program_seq(declarations, statement);
+        if cx.bindings.contains_key(&local.name)
+            && !matches!(local.value_type, Type::Record { .. } | Type::Array { .. })
+            && storage_starts.contains(local.name.as_str())
+        {
+            scoped.insert(local.name.clone(), statement);
+        } else {
+            declarations = program_seq(declarations, statement);
+        }
     }
     if mir.blocks.is_empty() {
         return Err("MIR body has no entry block".into());
@@ -385,7 +395,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         check(&mir.return_place, name)?;
                     }
                     program_return(crate::kernel::program_expression::variable(
-                        &mir.return_place,
+                        cx.binding(&mir.return_place),
                     ))
                 }
             }
@@ -434,9 +444,9 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         ends_program_on_failure: true,
                     },
                     crate::kernel::program_copy_aggregate(
-                        crate::kernel::program_expression::variable(destination),
+                        crate::kernel::program_expression::variable(cx.binding(&destination)),
                         crate::kernel::program_expression::cast(
-                            crate::kernel::program_expression::variable(source),
+                            crate::kernel::program_expression::variable(cx.binding(&source)),
                             ProgramType::Int32Pointer,
                         ),
                         layout.to_kernel_aggregate_layout(),
@@ -448,15 +458,17 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
             // effect.
             T::BoxFree { local, glue, .. } => {
                 let free = crate::kernel::program_heap_free(
-                    crate::kernel::program_expression::variable(local),
+                    crate::kernel::program_expression::variable(cx.binding(&local)),
                 );
                 match glue {
                     Some(glue) => program_seq(
                         crate::kernel::program_if(
-                            crate::kernel::program_expression::variable(local),
+                            crate::kernel::program_expression::variable(cx.binding(&local)),
                             program_call(
                                 glue,
-                                vec![crate::kernel::program_expression::variable(local)],
+                                vec![crate::kernel::program_expression::variable(
+                                    cx.binding(&local),
+                                )],
                             ),
                             program_skip(),
                         ),
@@ -473,7 +485,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     Some(dtor) if cx.functions.contains_key(dtor.as_str()) => program_call(
                         dtor,
                         vec![crate::kernel::program_expression::cast(
-                            crate::kernel::program_expression::variable(local),
+                            crate::kernel::program_expression::variable(cx.binding(&local)),
                             ProgramType::Int32Pointer,
                         )],
                     ),
@@ -573,7 +585,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         .to_kernel_aggregate_layout();
                     let (call, result) = cx.call_value(function, arguments_values);
                     let copy = crate::kernel::program_copy_aggregate(
-                        crate::kernel::program_expression::variable(destination),
+                        crate::kernel::program_expression::variable(cx.binding(&destination)),
                         result,
                         layout,
                     );
@@ -837,7 +849,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     let record_fields = r.fields.clone();
                     for (value, field) in fields.iter().zip(&record_fields) {
                         let address = crate::kernel::program_expression::pointer_offset_bytes(
-                            crate::kernel::program_expression::variable(target),
+                            crate::kernel::program_expression::variable(cx.binding(&target)),
                             field.offset,
                         );
                         let write = if let Type::Array { element, length } = &field.value_type {
@@ -891,12 +903,12 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     for field in &record_fields {
                         let source_address =
                             crate::kernel::program_expression::pointer_offset_bytes(
-                                crate::kernel::program_expression::variable(source),
+                                crate::kernel::program_expression::variable(cx.binding(&source)),
                                 field.offset,
                             );
                         let target_address =
                             crate::kernel::program_expression::pointer_offset_bytes(
-                                crate::kernel::program_expression::variable(target),
+                                crate::kernel::program_expression::variable(cx.binding(&target)),
                                 field.offset,
                             );
                         let write = if let Type::Array { element, length } = &field.value_type {
@@ -928,13 +940,34 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     }
                     copy
                 }
+                // A source name bound more than once is declared where its
+                // storage starts and ends where it does, as a C block's
+                // locals are, so a proof's name is the live binding.
+                S::BeginStorage { local } if scoped.contains_key(local) => {
+                    if let Some(site) = site {
+                        cx.declaration_sites.push((cx.binding(local), site));
+                    }
+                    scoped[local].clone()
+                }
+                S::EndStorage { local } if scoped.contains_key(local) => {
+                    program_end_automatic_lifetimes(vec![cx.binding(local)])
+                }
+                // Any other repeated name's storage start, as an iterator's
+                // whose fields are its own locals, runs nothing.
+                S::BeginStorage { local }
+                    if cx.bindings.contains_key(local)
+                        && !records.contains_key(local.as_str())
+                        && !cx.local_arrays.contains(local) =>
+                {
+                    program_skip()
+                }
                 S::BeginStorage { local } if cx.local_arrays.contains(local) => {
                     let (length, element, _) = cx.arrays[local];
                     // Mint checked fresh automatic storage at the compiler's
                     // lifetime start, including each symbolic loop iteration.
                     // Re-entry retires the old object and checks live loans.
                     program_begin_aggregate_construction(
-                        local.clone(),
+                        cx.binding(&local.clone()),
                         AggregateLayout::new(
                             arrays::array_length(element, length)? * element.byte_width(),
                             element.byte_width(),
@@ -952,7 +985,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     // storage they were declared with.
                     if check_copyable(cx, record).is_ok() {
                         program_begin_aggregate_construction(
-                            local.clone(),
+                            cx.binding(&local.clone()),
                             cx.layouts
                                 .get(*record)
                                 .ok_or("missing record storage layout")?
@@ -1623,6 +1656,7 @@ mod tests {
             span: span.clone(),
             mir: Some(MirBody {
                 return_place: "__rust_mir_0".into(),
+                spellings: Default::default(),
                 locals: vec![Place {
                     name: "value".into(),
                     value_type: Type::Record {
@@ -1713,6 +1747,7 @@ mod tests {
             });
             let mir = MirBody {
                 return_place: "__rust_mir_0".into(),
+                spellings: Default::default(),
                 locals: vec![],
                 blocks,
             };
@@ -1726,6 +1761,8 @@ mod tests {
             let records = BTreeMap::new();
             let functions = BTreeMap::new();
             let mut cx = Context {
+                bindings: BTreeMap::new(),
+                declaration_sites: Vec::new(),
                 references: BTreeMap::new(),
                 shared_array_iterators: BTreeMap::new(),
                 ranges: BTreeMap::new(),

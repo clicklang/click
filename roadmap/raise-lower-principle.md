@@ -1345,7 +1345,8 @@ quality passed. Full nightly was not run.
 
 After integrating upstream `9c6b250ee`, including its memory-load changes,
 all 793 affected expression/wide-value/memory/collection checks and quality
-passed again. All twelve quantity-parent commits were verified upstream
+passed again. This landed in [PR #3271](https://github.com/clicklang/click/pull/3271);
+all ten pushed commits were verified upstream. All twelve quantity-parent commits were verified upstream
 before the clean primary advanced through Git.
 
 The native load-result-to-`Term::ProgramValue` reader in surface resource proofs
@@ -1375,9 +1376,17 @@ The local stack-memory compatibility conversion remains unchanged. Event
 capture/cloning is measured separately from that existing memory boundary;
 the actual write regression still checks producer-root retention.
 
-The initial post-switch selection passed 208/209 checks: the broader assignment
-scaler included the existing stack-memory export. It now isolates the event
-capture/clone operation; final focused validation is running.
+The initial assignment-wide scaler included the existing stack-memory export;
+the event capture/clone operation is now isolated, while the end-to-end write
+root assertion remains. All 209 focused checks passed. After parent integration,
+all 316 selected checks, all 1,937 regular scaling cases and all 5,621 regular
+proof fixtures passed. Fact stability recorded 121 refusals and zero changed
+terms/paths; quality passed. Full nightly was not run.
+
+After integrating upstream `2d5b4c37a` and its Rust frontend changes, all 245
+selected volatile, substitution, collection and frontend checks passed again,
+followed by quality. The outcome parent's ten pushed commits were verified
+upstream before the clean primary advanced through Git.
 
 ### 10q2b1 Loadability-count storage (in progress)
 
