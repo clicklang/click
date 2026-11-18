@@ -76,8 +76,23 @@ fn owned_resource_quantity_handoffs_share_growing_machine_dags() {
             )
             .unwrap()
             .unwrap();
+            let deferred = crate::kernel::threads::DeferredMemberExchange {
+                block: AddressBase::ExternalArgument,
+                description: ResourceDescription::new(
+                    "quantity".into(),
+                    vec![].into(),
+                    ResourceFieldSchema::new(vec![]).unwrap(),
+                ),
+                produce: true,
+                quantity: quantity.clone(),
+                exclusive: false,
+            };
             let fact = ResourceFact::own_quantity_stored(Resource::Emp, quantity);
             for _ in 0..32 {
+                let copy = deferred.clone();
+                assert_eq!(copy.quantity.root(), Some(&root));
+                assert_eq!(copy.block, deferred.block);
+                assert_eq!(copy.produce, deferred.produce);
                 let ResourceFact::Own(_, value) = fact.clone() else {
                     panic!("owned");
                 };

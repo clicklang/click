@@ -4471,7 +4471,7 @@ fn execute_verified_function_applications_with_suspension(
                         block: anchor.base.clone(),
                         description,
                         produce,
-                        quantity: quantity.native_compat().clone(),
+                        quantity: quantity.as_ref().clone(),
                         exclusive,
                     });
                     continue;

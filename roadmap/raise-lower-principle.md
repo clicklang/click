@@ -1273,8 +1273,9 @@ Producer-root and growing-DAG handoff regressions cover retained quantities.
 All 245 focused checks, all 1,933 regular scaling cases and 38 quantity proofs
 passed. Authority proofs passed 319/320; `authority_pool_control_two_members.md`
 fails identically on the unchanged protocol-storage parent at the same
-`checkout.contract` conjunction and missing defined-read premise. No proof or
-checker change is made for that baseline limitation. Fact stability recorded
+`checkout.contract` conjunction and missing defined-read premise. The fixture is explicitly nightly-only in `tests/mdtests.rs`; per the user
+instruction, it does not block this work. No proof or checker change is made
+for that baseline limitation. Fact stability recorded
 89 refusals and no changed terms/paths. Quality passed. Final focused validation
 of the exact input-refusal guard is running.
 
