@@ -744,6 +744,14 @@ pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock], re
             let S::Assign { value, .. } = blocks[block].statements.remove(position) else {
                 unreachable!("the return place's write is an assignment")
             };
+            // The return reads the value where the write did: the storage
+            // ends between them, which the return performs anyway, would
+            // otherwise end a local the value reads first.
+            let tail = blocks[block].statements.split_off(position);
+            blocks[block].statements.extend(
+                tail.into_iter()
+                    .filter(|statement| !matches!(statement, S::EndStorage { .. })),
+            );
             blocks[block].terminator = T::ReturnValue { value };
         }
         None => {
@@ -977,6 +985,12 @@ pub(super) fn bind_slice_payloads(
         for (position, _, _) in bindings.iter().rev() {
             blocks[target].statements.remove(*position);
         }
+        start_storage_at_next(
+            blocks,
+            index,
+            target,
+            bindings.iter().map(|(_, _, name)| name.as_str()),
+        );
         let bound = |read: Yielded| {
             bindings
                 .iter()
@@ -1047,6 +1061,37 @@ pub(super) fn bind_slice_payloads(
         });
     }
     locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// Starts the storage of the locals the taken `next` ending block `next`
+/// now binds there, rather than in the `Some` arm `arm` that bound them: a
+/// binding's storage starts before its first write. Only the arm's leading
+/// storage markers move; the block holding the taken `next` leads only to
+/// the arm.
+fn start_storage_at_next<'a>(
+    blocks: &mut [MirBlock],
+    next: usize,
+    arm: usize,
+    bound: impl IntoIterator<Item = &'a str>,
+) {
+    for name in bound {
+        let Some(position) = blocks[arm]
+            .statements
+            .iter()
+            .take_while(|statement| {
+                matches!(
+                    statement,
+                    S::BeginStorage { .. } | S::EndStorage { .. } | S::Site { .. }
+                )
+            })
+            .position(|statement| matches!(statement, S::BeginStorage { local } if local == name))
+        else {
+            continue;
+        };
+        let start = blocks[arm].statements.remove(position);
+        let at = blocks[next].statements.len() - 1;
+        blocks[next].statements.insert(at, start);
+    }
 }
 
 /// The iterator `statement` moves: its kind, the local it moves into, and
@@ -1133,6 +1178,7 @@ pub(super) fn bind_range_payloads(
         }
         let payload = payload.clone();
         blocks[target].statements.remove(position);
+        start_storage_at_next(blocks, index, target, [payload.as_str()]);
         for block in blocks.iter_mut() {
             for statement in &mut block.statements {
                 if let S::RangeNext {

@@ -834,6 +834,7 @@ mod tests {
             span: Span { line: 1, column: 1 },
             mir: Some(MirBody {
                 return_place: "__rust_mir_0".into(),
+                spellings: Default::default(),
                 locals: vec![
                     place("child", reference_type()),
                     place("alias", reference_type()),
