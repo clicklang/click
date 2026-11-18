@@ -1963,6 +1963,29 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         }
     }
 
+    fn written_pointer_goal(&self) -> Option<&ClickProposition> {
+        let branch = self
+            .0
+            .state()
+            .open_branches()
+            .get(self.0.focused_branch())?;
+        let Obligation::Proposition(goal) = &branch.obligation else {
+            return None;
+        };
+        if goal.generated_surface
+            || !matches!(
+                goal.proposition(),
+                Proposition::ConditionIs(
+                    ConditionTerm::PointerValueEqual(..) | ConditionTerm::PointerEqual(..),
+                    _
+                )
+            )
+        {
+            return None;
+        }
+        goal.surface.as_deref()
+    }
+
     fn premises(&self, limit: usize) -> Vec<&Proposition> {
         let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch()) else {
             return Vec::new();
