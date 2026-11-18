@@ -2940,7 +2940,16 @@ private:
                                    ? nullptr
                                    : llvm::dyn_cast_or_null<clang::CXXConstructorDecl>(
                                          constructor->getDefinition());
-      if (local->getInitStyle() != clang::VarDecl::CallInit ||
+      // Copy initialization of an opaque object invokes the resolved copy
+      // constructor. Preserve that call so its contract can establish the
+      // destination's logical state.
+      const bool opaque_copy =
+          local->getInitStyle() == clang::VarDecl::CInit &&
+          constructor != nullptr && constructor->isCopyConstructor() &&
+          constructor->isTrivial() && !constructor->isDeleted() &&
+          is_axiom(constructor) && construction->getNumArgs() == 1 &&
+          construction->getArg(0)->isLValue();
+      if ((local->getInitStyle() != clang::VarDecl::CallInit && !opaque_copy) ||
           construction == nullptr || definition == nullptr ||
           construction->getConstructionKind() != clang::CXXConstructionKind::Complete ||
           definition->getParent()->getCanonicalDecl() !=
