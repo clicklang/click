@@ -300,7 +300,33 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let driver_proof = self.proof;
         // An obligation the implicit `solve` cannot spell or prove refuses the
         // step with the fast path's own diagnostic, naming that obligation.
-        let (probe, recorded) = driver_proof.prepare_step(&step);
+        let ((probe, recorded), suppliers) =
+            if matches!(step, ProofStep::Step) && !implicit_solve_disabled() {
+                crate::kernel::call_supplier_selection::capture(|| driver_proof.prepare_step(&step))
+            } else {
+                (driver_proof.prepare_step(&step), Vec::new())
+            };
+        if let [head] = suppliers.as_slice()
+            && probe.is_ok()
+            && recorded.recorded.is_empty()
+            && let Some(unfold) = crate::kernel::search::ProofSearch::selected_call_supplier_unfold(
+                driver_proof,
+                head,
+            )
+            && let Ok(opened) = driver_proof.driver().apply_step(unfold)
+        {
+            // The chosen head is only a hint for the certificate. Check the
+            // same step after the written unfold with supplier lookup disabled.
+            let (attempt, obligations) =
+                crate::kernel::call_supplier_selection::without_search(|| {
+                    opened.prepare_step(&step)
+                });
+            if let Ok(stepped) = attempt
+                && obligations.recorded.is_empty()
+            {
+                return Ok(stepped);
+            }
+        }
         let prepared_frontier =
             driver_proof.with_prepared_call_parameters(probe.as_ref().map_err(Clone::clone)?);
         if recorded.recorded.is_empty() {

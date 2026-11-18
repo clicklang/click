@@ -2,6 +2,69 @@
 use super::*;
 
 /// Reuse the selected call reservation beside a growing folded caller frame.
+/// A view of cell(p) borrows wide(p), even when unrelated folds were
+/// inserted first. Supplier selection must not open their bodies.
+#[test]
+fn folded_view_preparation_uses_the_indexed_owner() {
+    let cell = cell_definition(1, Vec::new());
+    let wide = wide_definition(2);
+    let decoy = CompositeResourceDefinition::new(
+        "decoy",
+        vec![program_parameter("k", ProgramType::Int32)],
+        None,
+        false,
+        Vec::new(),
+        Vec::new(),
+    );
+    let function = adapter_reader("indexed_adapter_reader", cell.clone(), wide.clone())
+        .with_composite_resource_definitions(vec![cell, decoy, wide]);
+    let samples = [4, 16, 64].map(|count| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let pointer = Address::symbolic(Variable(890_001));
+        let owner = ResourceFact::own_composite(
+            "wide".into(),
+            vec![ProgramValue::pointer(pointer.clone())],
+        );
+        let frame = ResourceContext::new()
+            .unchecked_with_facts(
+                (0..count).map(|i| ResourceFact::own_composite("decoy".into(), vec![int32(i)])),
+            )
+            .unchecked_with_fact(owner);
+        let caller = adapter_caller(&pointer).with_resource_context(frame);
+        let callee = bind_program_function_arguments(
+            &caller,
+            &function,
+            &[ProgramValue::pointer(pointer.clone())],
+        )
+        .expect("bind arguments");
+        let (transfer, work) = crate::instrumentation::measure_deterministic_work(|| {
+            prepare_function_resource_transfer(
+                &caller,
+                &callee,
+                &function,
+                &assumptions,
+                &mut ExecutionBudget::new(),
+                false,
+                ResourceTransitionPurpose::CallSite,
+            )
+            .expect("prepare call")
+            .expect("held wide range supplies the cell view")
+        });
+
+        assert!(!caller.resources().facts_are_materialized());
+        let plan = transfer.stable_view_plan.expect("one checked loan");
+        assert_eq!(plan.stable_views().len(), 1);
+        let tail = MemoryRange::new(pointer, 1u32.into(), 2u32.into());
+        assert_eq!(
+            plan.ledger.permits_memory_access(&tail),
+            Err(LoanRefusal::ActiveDependency)
+        );
+        work
+    });
+    assert_eq!(samples, [samples[0]; 3]);
+}
+
 #[test]
 fn preparing_a_reserved_fold_leaves_unrelated_caller_heads_unmaterialized() {
     use crate::kernel::program_expression::{int32_literal, variable};

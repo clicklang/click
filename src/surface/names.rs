@@ -530,6 +530,26 @@ fn short_module_name(identity: &str) -> &str {
         .unwrap_or(identity)
 }
 
+/// Names that an inferred source alias must not shadow.
+pub(super) fn is_library_qualifier(name: &str) -> bool {
+    static QUALIFIERS: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    QUALIFIERS
+        .get_or_init(|| {
+            library_declarations()
+                .iter()
+                .flat_map(|(identity, declarations)| {
+                    std::iter::once(short_module_name(identity).to_string()).chain(
+                        declarations
+                            .iter()
+                            .filter(|declaration| declaration.kind == DeclarationKind::Enum)
+                            .map(|declaration| declaration.name.clone()),
+                    )
+                })
+                .collect()
+        })
+        .contains(name)
+}
+
 /// What a qualified library name names.
 enum LibraryPath {
     /// The declaration's resolved name.
