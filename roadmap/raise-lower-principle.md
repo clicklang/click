@@ -1323,6 +1323,22 @@ opaque state/event/resource identities and existing proof rules are not payloads
 to erase. Selected native checking/rewriting/raising adapters stay explicit and
 are accounted for in 10r–10t; they are not evidence that a store is migrated.
 
+The condition-output inventory includes hundreds of existing structural
+patterns. Keep 10q3 sequential and reviewable rather than switching its schema
+before those consumers are ready:
+
+| Subslice | Boundary | Acceptance |
+| --- | --- | --- |
+| 10q3a | Native condition destructuring in `let` readers | Selected payload inspection is explicit; each existing match/refusal and exact native spelling is preserved. |
+| 10q3b | Native condition patterns in match/conditional readers | Preserve arm ordering, guards and owned/borrowed payload contracts through explicit selected views. |
+| 10q3c | `ConditionIs` storage, constructors and ordinary readers | Use the existing exact condition carrier; root-aware visitors retain logical operands and native DTO reads stay explicit. |
+| 10q3d | Evaluated logical/comparison producer handoffs | Forward the actual produced roots without export/reimport; preserve canonical comparison and fact identity rules. |
+
+These prepare and complete the existing 10q3 family; they do not add language
+behavior, proof rules, search indexes or search budgets. The first inventory
+found 135 direct nested `let` readers in 51 Rust files, plus match/conditional
+and macro consumers; the latter are audited in 10q3b before the storage switch.
+
 ### 10q1 Evaluated proposition outcomes (landed)
 
 The expression-evaluation and memory-load proposition schemas use
@@ -1388,10 +1404,7 @@ selected volatile, substitution, collection and frontend checks passed again,
 followed by quality. The outcome parent's ten pushed commits were verified
 upstream before the clean primary advanced through Git.
 
-The volatile-event slice landed in [PR #3273](https://github.com/clicklang/click/pull/3273);
-all six pushed commits were verified upstream.
-
-### 10q2b1 Loadability-count storage (in progress)
+### 10q2b1 Loadability-count storage (landed)
 
 `MemoryLoadable::bytes` uses the existing machine carrier. Native constructor
 fields retain their prior structure and explicitly select Int32 or UInt64
@@ -1403,9 +1416,32 @@ This PR prepares storage and consumers. Range count producers keep their
 existing native arithmetic until 10q2b2, which owns canonical subtraction,
 common-base cancellation, multiplication and wide product spelling. Native
 format/hash and growing-root clone regressions cover the carrier boundary.
-All 409 affected checks, 1,938 regular scaling cases and quality passed.
-The regular proof/fact-stability suite is running; its result will be recorded
-before this slice is marked complete. Full nightly is excluded.
+All 409 affected checks, all 1,938 regular scaling cases and all 5,623 regular
+proof fixtures passed. Fact stability recorded 121 refusals and zero changed
+terms/paths; quality passed. Full nightly was not run. This is
+[PR #3275](https://github.com/clicklang/click/pull/3275); all three pushed
+commits were verified upstream before the clean primary advanced through Git.
+
+### 10q2b2 Retained loadability-count production (in progress)
+
+Range-to-loadability production retains machine bounds directly when either
+endpoint already has a common root. Native-only ranges retain the original
+constructor path. The retained path mirrors the exact existing narrow
+subtraction, common-base cancellation and byte scaling rules; wide subtraction
+keeps its atomic/cancel-constant reductions and the unfused right-width product
+shape. The existing syntax correspondence helper checks shared operands; no
+new search index, budget or arithmetic rule is added.
+
+A native-constructor oracle checks both widths, four element widths, all
+native/shared input combinations, literal-format distinctions and additive
+base cancellation. The actual loadability producer is measured against growing
+shared endpoint DAGs without native export. All 45 focused checks and quality
+passed. All 1,939 regular scaling cases and all 5,623 regular proof fixtures
+passed. Fact stability recorded 121 refusals and zero changed terms/paths;
+quality passed. Full nightly was not run.
+
+After integrating upstream `2ada6bd35`, all 1,143 affected function, execution,
+loadability and memory-reasoning checks passed, followed by quality.
 
 ## Chunk 3: machine-valued pure-function results
 

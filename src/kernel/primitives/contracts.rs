@@ -2617,29 +2617,126 @@ impl MemoryRange {
     /// [`wide_loadable_byte_count`] and read back by
     /// [`wide_loadable_element_count`].
     pub(crate) fn loadable_fact(&self, memory: &SymbolicMemory) -> Proposition {
-        match self.wide_bounds() {
-            None => {
-                let (base, bytes) = self.byte_footprint();
-                Proposition::MemoryLoadable {
-                    memory: memory.clone(),
-                    base,
-                    bytes: (bytes).into(),
-                    wide: false,
-                }
-            }
-            Some((start, end)) => Proposition::MemoryLoadable {
-                memory: memory.clone(),
-                base: self.start_pointer(),
-                bytes: crate::kernel::StoredMachineTerm::new(
-                    crate::kernel::MachineIntegerType::UInt64,
-                    wide_loadable_byte_count(
-                        MachineTerm::uint64_subtract(end.clone(), start.clone()),
-                        self.element_width,
-                    ),
-                ),
-                wide: true,
-            },
+        Proposition::MemoryLoadable {
+            memory: memory.clone(),
+            base: self.start_pointer(),
+            bytes: self.loadable_byte_count(),
+            wide: self.kind == RangeIndexKind::UInt64,
         }
+    }
+
+    /// Keep the existing native count spelling while retaining shared bounds.
+    fn loadable_byte_count(&self) -> StoredMachineTerm {
+        use crate::kernel::{ExecutionValue, KernelTerm};
+        let wide = self.kind == RangeIndexKind::UInt64;
+        let format = if wide {
+            MachineIntegerType::UInt64
+        } else {
+            MachineIntegerType::Int32
+        };
+        let (start, end) = self.retained_bounds();
+        if start.root().is_none() && end.root().is_none() {
+            return StoredMachineTerm::new(
+                format,
+                if wide {
+                    wide_loadable_byte_count(
+                        MachineTerm::uint64_subtract(
+                            end.native_compat().clone(),
+                            start.native_compat().clone(),
+                        ),
+                        self.element_width,
+                    )
+                } else {
+                    memory_range_byte_count(
+                        start.native_compat().clone(),
+                        end.native_compat().clone(),
+                        self.element_width,
+                    )
+                },
+            );
+        }
+        let root =
+            |view: MachineOperandView<'_>| KernelTerm::retained_machine_operand(format, view);
+        let mut left = end.operand_view();
+        let mut right = start.operand_view();
+        let count = if wide {
+            let a = left.literal();
+            let b = right.literal();
+            if matches!(b, Some(uint64_constant!(0))) {
+                root(left)
+            } else if matches!((left.variable(), right.variable()), (Some(a), Some(b)) if a == b) {
+                root(MachineOperandView::Legacy(&MachineTerm::uint64_constant(0)))
+            } else if let Some((MachineIntegerType::UInt64, MachineBinaryOp::Add, [inner, added])) =
+                left.binary()
+                && let (Some(uint64_constant!(a)), Some(uint64_constant!(b))) =
+                    (added.literal(), b.as_ref())
+                && constant_u64(a) == constant_u64(*b)
+            {
+                root(inner)
+            } else if let (Some(uint64_constant!(a)), Some(uint64_constant!(b))) = (a, b) {
+                root(MachineOperandView::Legacy(&MachineTerm::uint64_constant(
+                    constant_u64(a).wrapping_sub(constant_u64(b)),
+                )))
+            } else {
+                KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Subtract,
+                    [root(left), root(right)],
+                )
+            }
+        } else {
+            loop {
+                if let (Some(bits32_constant!(a)), Some(bits32_constant!(b))) =
+                    (left.literal(), right.literal())
+                {
+                    break root(MachineOperandView::Legacy(&MachineTerm::constant(
+                        constant_u32(a).wrapping_sub(constant_u32(b)),
+                    )));
+                }
+                if matches!(right.literal(), Some(bits32_constant!(0))) {
+                    break root(left);
+                }
+                if crate::kernel::shared_machine_syntax_equal(&root(left), &root(right)) {
+                    break root(MachineOperandView::Legacy(&MachineTerm::constant(0)));
+                }
+                if let (
+                    Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [a, x])),
+                    Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [b, y])),
+                ) = (left.binary(), right.binary())
+                    && crate::kernel::shared_machine_syntax_equal(&root(a), &root(b))
+                {
+                    left = x;
+                    right = y;
+                    continue;
+                }
+                break KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Subtract,
+                    [root(left), root(right)],
+                );
+            }
+        };
+        let result = if self.element_width == 1 {
+            count
+        } else if !wide
+            && let Some(bits32_constant!(a)) = MachineOperandView::Shared(&count).literal()
+        {
+            root(MachineOperandView::Legacy(&MachineTerm::constant(
+                constant_u32(a).wrapping_mul(self.element_width),
+            )))
+        } else {
+            let width = if wide {
+                MachineTerm::uint64_constant(u64::from(self.element_width))
+            } else {
+                MachineTerm::constant(self.element_width)
+            };
+            KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Multiply,
+                [count, root(MachineOperandView::Legacy(&width))],
+            )
+        };
+        StoredMachineTerm::from_value(ExecutionValue::Shared(result)).expect("machine count")
     }
 
     /// The bound terms themselves, in either kind: for a traversal that
@@ -4220,5 +4317,108 @@ mod guarded_quantified_cell_tests {
             MemoryRange::guarded_quantified_cells(&moving, index(), &bound, 1),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod retained_loadable_count_tests {
+    use super::*;
+    use crate::kernel::{ExecutionValue, KernelTerm, VerificationSession};
+
+    #[test]
+    fn retained_loadable_counts_match_native_canonical_spelling() {
+        let _session = VerificationSession::enter();
+        for wide in [false, true] {
+            let format = if wide {
+                MachineIntegerType::UInt64
+            } else {
+                MachineIntegerType::Int32
+            };
+            let constant = |x| {
+                if wide {
+                    MachineTerm::uint64_constant(x)
+                } else {
+                    MachineTerm::constant(x as u32)
+                }
+            };
+            let x = MachineTerm::Variable(Variable(10993700));
+            let add = |a, b| MachineTerm::Binary {
+                format,
+                op: MachineBinaryOp::Add,
+                left: Box::new(a),
+                right: Box::new(b),
+            };
+            let inputs = [
+                constant(0),
+                constant(1),
+                constant(7),
+                MachineTerm::uint32_constant(0),
+                MachineTerm::uint32_constant(1),
+                MachineTerm::uint32_constant(7),
+                x.clone(),
+                add(x.clone(), constant(1)),
+                add(x.clone(), constant(7)),
+            ];
+            for width in [1, 2, 4, 8] {
+                for start in &inputs {
+                    for end in &inputs {
+                        let expected = if wide {
+                            wide_loadable_byte_count(
+                                MachineTerm::uint64_subtract(end.clone(), start.clone()),
+                                width,
+                            )
+                        } else {
+                            memory_range_byte_count(start.clone(), end.clone(), width)
+                        };
+                        for retain_start in [false, true] {
+                            for retain_end in [false, true] {
+                                let mut range = if wide {
+                                    MemoryRange::new_wide(
+                                        Address::symbolic(Variable(10993701)),
+                                        start.clone(),
+                                        end.clone(),
+                                        width,
+                                    )
+                                } else {
+                                    MemoryRange::new_with_element_width(
+                                        Address::symbolic(Variable(10993701)),
+                                        start.clone(),
+                                        end.clone(),
+                                        width,
+                                    )
+                                };
+                                let retained = |term: &MachineTerm| {
+                                    StoredMachineTerm::from_value(ExecutionValue::Shared(
+                                        KernelTerm::retained_machine_operand(
+                                            format,
+                                            MachineOperandView::Legacy(term),
+                                        ),
+                                    ))
+                                    .unwrap()
+                                };
+                                if retain_start {
+                                    range.start_bound = retained(start);
+                                }
+                                if retain_end {
+                                    range.end_bound = retained(end);
+                                }
+                                let actual = range.loadable_byte_count();
+                                assert_eq!(
+                                    actual.native_compat(),
+                                    &expected,
+                                    "wide={wide}, width={width}, start={start:?}, end={end:?}"
+                                );
+                                assert_eq!(actual.root().is_some(), retain_start || retain_end);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/primitives/contracts.rs");
     }
 }
