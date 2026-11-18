@@ -1270,7 +1270,18 @@ shared roots through the existing expression rewrite. This changes storage,
 not quantity arithmetic, nonnegativity admission or resource identity.
 
 Producer-root and growing-DAG handoff regressions cover retained quantities.
-Validation is pending.
+All 245 focused checks, all 1,933 regular scaling cases and 38 quantity proofs
+passed. Authority proofs passed 319/320; `authority_pool_control_two_members.md`
+fails identically on the unchanged protocol-storage parent at the same
+`checkout.contract` conjunction and missing defined-read premise. No proof or
+checker change is made for that baseline limitation. Fact stability recorded
+89 refusals and no changed terms/paths. Quality passed. Final focused validation
+of the exact input-refusal guard is running.
+
+The producer audit also found `DeferredMemberExchange::quantity`: a delayed
+handoff of this same owned quantity. It belongs with this slice rather than
+exporting a root merely to retain it in a deferred store; include it before
+publication, preserving the existing join-time ledger checks.
 
 ### 10q Proposition-output inventory and sequential families
 
