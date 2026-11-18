@@ -471,7 +471,7 @@ arms can be literal or variable leaves, one bitwise operation (`&`, `|`, `^`, `~
 over such leaves, a right shift or unsigned left shift by an in-range literal
 count, an unsigned sum, difference, or product over two variables or a variable
 and a literal,
-an unsigned quotient or remainder of a variable by a nonzero literal,
+a quotient or remainder of a variable by a nonzero literal (excluding signed `-1`),
 or a 32-to-64-bit widening or 64-to-32-bit low-word cast of a leaf. A signed
 comparison spells the low-word cast with its signed destination. Wide equality retains an unsigned
 widening in its original type, even though the equality is filed as `Int64`.

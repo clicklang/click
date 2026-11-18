@@ -105,7 +105,7 @@ documentation inventory keep the following accepted words synchronized.
 | `by`, `using` | Proof introduction and exact-premise syntax. |
 | `mark`, `step`, `step_until` | Execution tactics. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
-| Indexed `unfold` and `fold`, `gather`, `scatter` | Expose or restore an iterated ownership slot, or form or dissolve the whole iterated fact. `forall` inside a resource body starts the iterated clause itself. |
+| `unfold` and `fold` with `[i]` or `[..]` | Expose or restore an iterated ownership slot, or form or dissolve the whole iterated fact. `forall` inside a resource body starts the iterated clause itself. |
 | `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `known`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |

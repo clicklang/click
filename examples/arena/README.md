@@ -55,11 +55,11 @@ the separations of the arena object and the two backing ranges.
 `region->start == start`, `region->end == end`, and `0 <= start < end`.
 Nothing mentions a prefix.
 
-- `arena_init` zeroes the map, forms the iterated fact with `gather`, and
+- `arena_init` zeroes the map, forms the iterated clause with `fold(...[..])`, and
   returns `arena_init_outcome`: the untouched descriptor on failure, the
   state at `live == 0` on success, with every occupancy cell `0`.
 - `arena_destroy` requires every occupancy cell `0`, dissolves the fact with
-  `scatter`, and frees both allocations. The state cannot count occupied
+  `unfold(...[..])`, and frees both allocations. The state cannot count occupied
   cells, so this all-free precondition, not `live == 0`, is what makes the
   free safe.
 - `arena_alloc` places the region anywhere: failure returns the state at

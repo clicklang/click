@@ -1302,7 +1302,7 @@ keeping that invariant with local steps.
   nothing for `j`. Clearing a cell whose element the caller owns
   (`occupied[j] = 0`) opens one, which `fold(arena_cells(data, occupied, capacity)[j])` closes by moving
   the element back.
-- `gather` and `scatter` convert between the fact and the range its elements
+- Whole-clause `fold` and `unfold` convert between the fact and the range its elements
   cover when a quantified fact decides every guard, which is what an
   initializer that zeroes the map needs.
 
@@ -1782,9 +1782,8 @@ Click implements:
   `fold(resource)` tactics, including composition over other declared
   resources,
 - iterated guarded ownership in composite bodies, one fact for a bounded
-  family of elements selected by owned guard cells, with indexed `unfold` and
-  `fold`, `gather` and `scatter` steps and a store rule for the guard
-  cells,
+  family of elements selected by owned guard cells, with `unfold` and `fold`
+  steps for single slots and whole clauses, plus a store rule for the guard cells,
 - one-step fact views for folded composite resources, plus
   `observe(resource)` tactics that explicitly record fact-view projection
   without exposing contained owned resource facts,

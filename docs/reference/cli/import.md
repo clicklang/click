@@ -2086,6 +2086,11 @@ Limits:
   (`mdtests/cpp_class_object_state_override_keeps_the_interface.md`,
   `tests/cpp_import.rs::class_object_state_refuses_undefined_overrides_and_inherited_methods`).
 
+For discarded-result copy assignment between live lvalues, a resolved
+`operator=` from a system header or declared in another translation unit is
+checked as a call. An `extern` contract can describe the destination's
+updated logical state, the source's state, and the returned reference.
+
 Discarded-result trivial copy assignment between live lvalues of the same
 nominal record lowers to shared C aggregate field copies. Clang must resolve a
 non-deleted, non-virtual trivial copy assignment; the record and embedded
@@ -2492,13 +2497,13 @@ state accessors, as described below. This is an implementation dependency, liste
 among the [departures](../../concepts/library-interfaces.md#where-the-implementation-departs-from-this);
 the contract boundary above is the target for replacing it.
 
-The pinned libc++ test `libcxx_span_empty_checks_abstract_state` exercises the
-contract boundary with an explicit `extern` for `std::span<int>::empty()`.
-Its contract takes the receiver's count from a Click abstract resource. The
-same count is available to the caller, and the call is refused when the
-caller lacks that resource. To migrate the built-in span contracts, Click
-also needs to establish that logical state at construction, preserve it
-through C++ copies, and transfer it to returned spans.
+The pinned libc++ tests `libcxx_span_empty_checks_abstract_state` and
+`libcxx_span_assignment_carries_abstract_state` exercise this boundary with
+explicit `extern` contracts. The observers use state in a Click abstract
+resource, and the assignment contract updates the destination's resource
+with the source's pointer and count. A caller without the required state is
+refused. The built-in span contracts still use the layout to establish
+descriptor state for constructed and returned spans.
 
 A function declared in a system header (one reached through `-isystem`, a
 system include path, or `#pragma clang system_header`) is an axiom. The
@@ -2518,7 +2523,9 @@ contract:
   unsigned long std::span<T, N>::size() const { ensures result == N; }`.
   The dynamic pointer/count constructor is also a library interface,
   `template<class T> extern std::span<T>::span<T *>(T* first, unsigned long count)`.
-  It consumes unwritten descriptor storage, produces it initialized and
+  Its Click contract has no exceptional outcome, including on standard
+  libraries that omit `noexcept` on this overload. It consumes unwritten
+  descriptor storage, produces it initialized and
   establishes the data pointer and count, without granting backing authority.
   Static-extent constructors and iterator-pair overloads are outside that model.
   `library/cpp/array.click` states `std::array<T, N>`, whose element
@@ -2544,11 +2551,13 @@ contract:
   written out the same way, at the arguments its instance's segment names.
 - A call to a standard function with no catalog contract is refused, naming
   the function. A sidecar may state its own `extern` contract instead, which is
-  an assumption like any other external contract. Its head is the C++
-  declaration, as a verified function's is: `extern int* ministd::identity(int* p)`,
-  or, for a member, `extern int ministd::Box::get() const` with `this`
-  implicit (`tests/cpp_import.rs`, `axiomatic_*`).
-- A standard function must be `noexcept`; throwing contracts are not modeled.
+  an assumption like any other external contract. Its head matches the C++
+  declaration's parameter types in order and provides names for the contract.
+  For example, `extern int* ministd::identity(int* p)` names its parameter
+  `p`, and `extern int ministd::Box::get() const` has an implicit `this`
+  (`tests/cpp_import.rs`, `axiomatic_*`).
+- This slice admits a standard function when its declaration is `noexcept`
+  or a matching Click catalog contract establishes that it cannot throw.
   One returning a record by value constructs it in the caller's destination.
 
 A sidecar writes a standard type as C++ does,

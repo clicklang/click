@@ -103,7 +103,7 @@ pub(super) fn validate_returns<'a>(
                                                 "span<T *>",
                                             ])
                                     });
-                                if !target.declared_noexcept
+                                if !target.has_nonthrowing_interface()
                                     || (!selected_span_constructor
                                         && !eligibility.function(callee)?)
                                 {

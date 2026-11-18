@@ -175,18 +175,19 @@ impl Parser {
             }
             if self.peek_ident() == Some("operator") {
                 self.position += 1;
-                let operator = match (self.peek(), self.peek_next()) {
-                    (Some(Token::Plus), Some(Token::Equal)) => "operator+=",
-                    (Some(Token::Minus), Some(Token::Equal)) => "operator-=",
-                    (Some(Token::LBracket), Some(Token::RBracket)) => "operator[]",
+                let (operator, tokens) = match (self.peek(), self.peek_next()) {
+                    (Some(Token::Equal), _) => ("operator=", 1),
+                    (Some(Token::Plus), Some(Token::Equal)) => ("operator+=", 2),
+                    (Some(Token::Minus), Some(Token::Equal)) => ("operator-=", 2),
+                    (Some(Token::LBracket), Some(Token::RBracket)) => ("operator[]", 2),
                     _ => {
                         return Err(self.error(
-                            "the supported C++ operator methods are `operator+=`, \
-                             `operator-=` and `operator[]`",
+                            "the supported C++ operator methods are `operator=`, \
+                             `operator+=`, `operator-=` and `operator[]`",
                         ));
                     }
                 };
-                self.position += 2;
+                self.position += tokens;
                 path.push(operator.to_string());
                 special_member = Some(false);
                 break;
@@ -332,6 +333,12 @@ pub(super) fn cpp_path_at(tokens: &[Token], start: usize) -> Option<(Vec<String>
             (Some(Token::Tilde), Some(Token::Ident(name)), _) if !segments.is_empty() => {
                 index += 2;
                 format!("~{name}")
+            }
+            (Some(Token::Ident(word)), Some(Token::Equal), _)
+                if word == "operator" && !segments.is_empty() =>
+            {
+                index += 2;
+                "operator=".to_string()
             }
             (Some(Token::Ident(word)), Some(Token::Plus), Some(Token::Equal))
                 if word == "operator" && !segments.is_empty() =>

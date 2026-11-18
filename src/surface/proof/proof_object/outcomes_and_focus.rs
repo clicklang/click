@@ -131,7 +131,11 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error("outcome refresh cannot change the checked result"));
         }
-        self.with_outcome_state(&root.focused_outcome_state()?)
+        // The root is addressed to the tactic about to run; a claim proof
+        // opened by an earlier tactic would otherwise report that one.
+        Ok(self
+            .with_outcome_state(&root.focused_outcome_state()?)?
+            .at_site(root.site()))
     }
 
     pub(in crate::surface::proof) fn apply_outcome_contract_resources(

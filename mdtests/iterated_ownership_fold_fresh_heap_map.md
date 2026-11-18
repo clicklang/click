@@ -1,11 +1,11 @@
-# Iterated ownership: gather over a freshly allocated guard map
+# Iterated ownership: fold the whole clause over a freshly allocated guard map
 
 The C loop initializes an occupancy map. Its quantified value invariant lets
-`gather` decide the logical guard for every index and rearrange the owned
-resources. Gathering does not execute a C read or publish initialization
+whole-clause `fold` decide the logical guard for every index and rearrange the owned
+resources. Folding the clause does not execute a C read or publish initialization
 facts. A subsequent C load still needs independent validity evidence.
 
-```c filename=iterated_ownership_gather_fresh_heap_map.c
+```c filename=iterated_ownership_fold_fresh_heap_map.c
 void with_fresh_map(int32* data, int32 capacity) {
     int32* occupied;
     int32 i;
@@ -33,7 +33,7 @@ resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     }
 }
 
-verifying "iterated_ownership_gather_fresh_heap_map.c";
+verifying "iterated_ownership_fold_fresh_heap_map.c";
 
 void with_fresh_map(int32* data, int32 capacity) {
     requires 1 <= capacity;
@@ -66,8 +66,8 @@ void with_fresh_map(int32* data, int32 capacity) {
         rewrite(capacity, i);
         known();
     }
-    gather(arena_cells(data, occupied, capacity));
-    scatter(arena_cells(data, occupied, capacity));
+    fold(arena_cells(data, occupied, capacity)[..]);
+    unfold(arena_cells(data, occupied, capacity)[..]);
     step_until(function.exit);
     solve();
 }
