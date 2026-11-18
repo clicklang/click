@@ -6840,6 +6840,8 @@ impl ResourceContext {
             let owned_entries = entries
                 .iter()
                 .filter_map(|entry| {
+                    #[cfg(test)]
+                    crate::instrumentation::record_deterministic_work(1);
                     let fact = self.fact(*entry);
                     fact.memory_own_range().map(|range| (*entry, range))
                 })
