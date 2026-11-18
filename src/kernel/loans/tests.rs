@@ -3798,6 +3798,42 @@ fn joint_planner_empty_views_need_no_backing_or_loan() {
 }
 
 #[test]
+fn joint_planner_proven_empty_owners_need_no_supplier_or_effect() {
+    let assumptions = PureFactContext::new();
+    let resources = ResourceContext::new();
+    let (ledger, caller, callee) = participants();
+    let end = MachineTerm::Variable(Variable(71_004));
+    let range = symbolic_memory(0u32.into(), end.clone(), true);
+    let empty = assumptions
+        .clone()
+        .assume_condition(ConditionTerm::equal(end, 0u32.into()), true);
+    for role in [ResourceTransferRole::Borrow, ResourceTransferRole::Consume] {
+        let mut requirement = checked(range.clone());
+        requirement.role = role;
+        let requirements = [requirement];
+        let plan =
+            plan_stable_view_transfer(&resources, &requirements, &empty, &ledger, caller, callee)
+                .unwrap();
+        assert!(plan.callee_resources.satisfies_fact(&range, &empty));
+        assert!(plan.caller_resources_after_requirements.is_empty());
+        assert!(plan.transferred_ownership.is_empty());
+        assert!(plan.memory_effects.is_empty());
+        assert_eq!(plan.recheck_entry(&ledger).unwrap(), ledger);
+        assert_eq!(
+            plan_stable_view_transfer(
+                &resources,
+                &requirements,
+                &assumptions,
+                &ledger,
+                caller,
+                callee,
+            ),
+            Err(StableViewPlanError::MissingResource(range.clone()))
+        );
+    }
+}
+
+#[test]
 fn joint_planner_refuses_an_uncovered_symbolic_view_without_consuming_state() {
     let assumptions = PureFactContext::new();
     let owner = memory(0, 8, true);

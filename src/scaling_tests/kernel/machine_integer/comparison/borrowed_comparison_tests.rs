@@ -300,27 +300,40 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                 );
             }
             let wrapping_cases = [O::Add, O::Subtract, O::Multiply].map(|op| {
-                let encoding = if format == MachineIntegerType::UInt32 {
+                let word_encoding = if format == MachineIntegerType::UInt32 {
                     MachineIntegerType::Int32
                 } else {
                     format
                 };
-                let operation =
-                    |left, right| KernelTerm::machine_binary_shared(encoding, op, [left, right]);
-                (
-                    operation(variable.clone(), literal(7)),
-                    operation(arithmetic.clone(), literal(7)),
-                    operation(variable.clone(), other.clone()),
-                )
+                let operation = |encoding, left, right| {
+                    KernelTerm::machine_binary_shared(encoding, op, [left, right])
+                };
+                let variable_pair = operation(format, variable.clone(), other.clone());
+                assert!(
+                    bounded_comparison_operand(format, V::Shared(&variable_pair), false).is_none()
+                );
+                [
+                    (
+                        operation(word_encoding, variable.clone(), literal(7)),
+                        operation(word_encoding, arithmetic.clone(), literal(7)),
+                        operation(word_encoding, literal(7), arithmetic.clone()),
+                    ),
+                    (
+                        variable_pair,
+                        operation(format, arithmetic.clone(), other.clone()),
+                        operation(format, variable.clone(), arithmetic.clone()),
+                    ),
+                ]
             });
-            let (wrapping_hits, wrapping_misses) = if format.format().is_signed() {
-                (&wrapping_cases[..0], &wrapping_cases[..])
+            let wrapping_cases = wrapping_cases.as_flattened();
+            let wrapping_hits = if format.format().is_signed() {
+                for (signed, ..) in wrapping_cases {
+                    assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
+                }
+                &wrapping_cases[..0]
             } else {
-                (&wrapping_cases[..], &wrapping_cases[..0])
+                wrapping_cases
             };
-            for (signed, ..) in wrapping_misses {
-                assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
-            }
             let division_cases = [O::Divide, O::Remainder].map(|op| {
                 let operation =
                     |left, right| KernelTerm::machine_binary_shared(format, op, [left, right]);

@@ -390,18 +390,19 @@ fn bounded_comparison_operand(
         return None;
     }
     use crate::kernel::MachineBinaryOp as O;
-    let word32_arithmetic = observation == MachineIntegerType::UInt32
-        && width == 32
-        && matches!(operator, O::Add | O::Subtract | O::Multiply);
-    match operator {
-        O::BitwiseAnd | O::BitwiseOr | O::BitwiseXor => {}
-        // Unsigned 32-bit arithmetic can carry the sign-free Int32 word
-        // encoding. An explicitly unsigned operation carries its own type,
-        // including under the Int64 filing format of wide equality.
-        O::Add | O::Subtract | O::Multiply
-            if in_conditional
-                && (!format.format().is_signed() || word32_arithmetic)
-                && (arguments[0].variable().is_some() != arguments[1].variable().is_some()) => {}
+    let normalize_word32 = match operator {
+        O::BitwiseAnd | O::BitwiseOr | O::BitwiseXor => false,
+        O::Add | O::Subtract | O::Multiply if in_conditional => {
+            let word32 = observation == MachineIntegerType::UInt32 && width == 32;
+            let unsigned = !format.format().is_signed();
+            match arguments.map(|argument| argument.variable().is_some()) {
+                // Exact rewriting keeps the explicit operator format for
+                // two variables. Arithmetic with a literal can use word32.
+                [true, true] if unsigned => false,
+                [true, false] | [false, true] if unsigned || word32 => word32,
+                _ => return None,
+            }
+        }
         O::Divide | O::Remainder
             if in_conditional
                 && !format.format().is_signed()
@@ -409,20 +410,24 @@ fn bounded_comparison_operand(
                 && arguments[1]
                     .literal()
                     .and_then(|literal| format.constant_from_term(&literal))
-                    .is_some_and(|constant| constant.bits() != 0) => {}
+                    .is_some_and(|constant| constant.bits() != 0) =>
+        {
+            false
+        }
         O::ShiftRight | O::ShiftLeft
             if operator == O::ShiftRight || !format.format().is_signed() =>
         {
             if super::bounds::constant_shift_count(arguments[1])? >= width {
                 return None;
             }
+            false
         }
         _ => return None,
-    }
+    };
     crate::instrumentation::record_deterministic_work(1);
     let [left, right] = arguments.map(comparison_leaf_operand);
     let (left, right) = (left?, right?);
-    let (format, left, right) = if word32_arithmetic {
+    let (format, left, right) = if normalize_word32 {
         (
             MachineIntegerType::Int32,
             left.into_word32(),

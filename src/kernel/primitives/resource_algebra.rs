@@ -9552,8 +9552,13 @@ pub(crate) fn coalesce_written_resource_descriptions(
         .into_iter()
         .map(|fact| {
             crate::instrumentation::record_deterministic_work(1);
+            // An empty owned range has no footprint to publish, including
+            // when a field supplies an endpoint proved equal to the other.
             if fact.has_valid_exclusive_access()
-                && fact.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0)
+                && (fact.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0)
+                    || fact
+                        .memory_own_range()
+                        .is_some_and(|range| memory_range_is_proven_empty(range, assumptions)))
             {
                 None
             } else {

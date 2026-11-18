@@ -3784,7 +3784,7 @@ impl SymbolicMemory {
         self.freeze_declared_object(block, declared_class)
     }
 
-    fn freeze_declared_object(
+    pub(in crate::kernel) fn freeze_declared_object(
         mut self,
         block: &AddressBase,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -5950,7 +5950,7 @@ impl SymbolicMemory {
     /// views to displace, or a base in a live allocation are refused, and
     /// `Err` hands the memory back unchanged for the caller's own stores.
     pub(crate) fn with_constant_runs(
-        mut self,
+        self,
         base: &Address,
         runs: &[ConstantRun],
     ) -> Result<Self, Self> {
@@ -5967,6 +5967,16 @@ impl SymbolicMemory {
         {
             return Err(self);
         }
+        Ok(self.seed_fresh_declared_runs(base, runs))
+    }
+
+    /// Installs disjoint initial cells in an object just minted by a declaration.
+    /// The declaration establishes freshness and supplies the typed run layout.
+    pub(in crate::kernel) fn seed_fresh_declared_runs(
+        mut self,
+        base: &Address,
+        runs: &[ConstantRun],
+    ) -> Self {
         let source = crate::kernel::intern_memory(SymbolicMemory::new());
         for run in runs.iter().filter(|run| run.count > 0) {
             crate::instrumentation::record_deterministic_work(1);
@@ -5989,7 +5999,7 @@ impl SymbolicMemory {
                 },
             );
         }
-        Ok(self)
+        self
     }
 
     /// Checked compact initialization of one fresh automatic scalar array.
@@ -6058,10 +6068,8 @@ impl SymbolicMemory {
                             })
                 })
         };
-        if !matches!(
-            element_type,
-            ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
-        ) || !valid_region(base)
+        if !element_type.supports_scalar_array_write(copy)
+            || !valid_region(base)
             || !self.run_can_stand_for_cells_at(base)
             || (fresh
                 && (base.offset != AddressOffset::Constant(0)
@@ -6271,10 +6279,7 @@ impl SymbolicMemory {
             .checked_mul(element.byte_width())
             .filter(|bytes| *bytes <= i32::MAX as u32)
             .ok_or(RuntimeError::TypeMismatch)?;
-        if !matches!(
-            element,
-            ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
-        ) {
+        if !element.supports_scalar_array_write(copy) {
             return Err(RuntimeError::TypeMismatch);
         }
         if count == 0 {
@@ -6469,10 +6474,10 @@ impl SymbolicMemory {
     /// else to do: no typed union view to displace, and no live allocation
     /// the base may lie in to mark initialized.
     fn run_can_stand_for_cells_at(&self, base: &Address) -> bool {
-        self.heap.uninitialized_objects.is_empty()
-            && self.union_cells.is_empty()
-            && !AliasCandidates::of_block(&base.base)
-                .any_entry(&self.heap.live_allocations, |_, _| true)
+        let candidates = AliasCandidates::of_block(&base.base);
+        !candidates.any_entry(&self.heap.uninitialized_objects, |_, _| true)
+            && !candidates.any_entry(&self.union_cells, |_, _| true)
+            && !candidates.any_entry(&self.heap.live_allocations, |_, _| true)
     }
 
     /// The run of [`Self::with_seeded_cells`], its preconditions checked.
@@ -8142,11 +8147,12 @@ impl SymbolicMemory {
         pointer: &Address,
         byte_width: u32,
     ) -> bool {
-        // Read-only blocks are created only for fully materialized C string
-        // literals. Their bytes are stable for the lifetime of the program,
-        // so any in-bounds byte range is loadable even when it spans the
-        // literal's individual uint8 cells.
-        if self.is_read_only_block(&pointer.base) {
+        // Static read-only objects have complete initialization. Local
+        // read-only objects can also be declared without an initializer.
+        if self.is_read_only_block(&pointer.base)
+            && (!pointer.base.is_local_block()
+                || self.has_initialized_bytes_at(pointer, byte_width))
+        {
             return self.access_in_bounds(pointer, byte_width);
         }
         // The width alone decides, so a run slot's value is not named: a
