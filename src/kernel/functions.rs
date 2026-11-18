@@ -19948,12 +19948,13 @@ fn evaluate_declared_quantity(
             budget,
             &mut diagnostic,
         )? {
-            Ok(value) if value.program_type() == ProgramType::Int32 => {
-                Ok(crate::kernel::StoredMachineTerm::from_value(value).expect("int32 quantity"))
-            }
-            Ok(_) => Err(RuntimeError::FunctionContract(
-                "declared resource quantity must evaluate to int32".to_string(),
-            )),
+            Ok(value) => crate::kernel::StoredMachineTerm::from_value(value)
+                .filter(|quantity| quantity.value().program_type() == ProgramType::Int32)
+                .ok_or_else(|| {
+                    RuntimeError::FunctionContract(
+                        "declared resource quantity must evaluate to int32".to_string(),
+                    )
+                }),
             Err(message) => Err(match diagnostic {
                 Some(RuntimeError::ContractResourceDiagnostic {
                     reason,
