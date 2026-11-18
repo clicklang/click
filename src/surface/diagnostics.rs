@@ -7429,6 +7429,18 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             format!("{}.{field}", describe_contract_expression(base))
         }
         ContractExpression::Field { base, field, .. } => match base.as_ref() {
+            // A static struct's declaration reference names the object, so
+            // its fields are read with `.`, as `"file.c"::static(0).field`.
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(binding))
+                if binding
+                    .static_id()
+                    .and_then(|id| id.metadata())
+                    .is_some_and(|metadata| {
+                        metadata.aggregate && metadata.array_shape.is_none()
+                    }) =>
+            {
+                format!("{}.{field}", describe_contract_expression(base))
+            }
             // A member of an embedded struct member is reached with `.`:
             // the inner member is an object, which lowers to its address
             // rather than to a load of a pointer.

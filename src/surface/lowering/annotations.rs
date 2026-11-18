@@ -10719,6 +10719,10 @@ fn aggregate_projection_root(
     expression: &ProgramExpression,
 ) -> Option<&crate::kernel::BindingName> {
     match expression {
+        // A static object is storage, read from memory at the selected
+        // state, not a by-value parameter's entry value. The entry state
+        // binds it as an aggregate, so name it here rather than there.
+        ProgramExpression::Variable(name) if name.static_id().is_some() => None,
         ProgramExpression::Variable(name) => Some(name),
         ProgramExpression::PointerOffsetBytes { pointer, .. }
         | ProgramExpression::Subobject { pointer, .. } => aggregate_projection_root(pointer),
