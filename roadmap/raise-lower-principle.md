@@ -1426,7 +1426,7 @@ terms/paths; quality passed. Full nightly was not run. This is
 [PR #3275](https://github.com/clicklang/click/pull/3275); all three pushed
 commits were verified upstream before the clean primary advanced through Git.
 
-### 10q2b2 Retained loadability-count production (in progress)
+### 10q2b2 Retained loadability-count production (landed)
 
 Range-to-loadability production retains machine bounds directly when either
 endpoint already has a common root. Native-only ranges retain the original
@@ -1440,9 +1440,16 @@ A native-constructor oracle checks both widths, four element widths, all
 native/shared input combinations, literal-format distinctions and additive
 base cancellation. The actual loadability producer is measured against growing
 shared endpoint DAGs without native export. All 45 focused checks and quality
-passed; the regular scaling and proof/fact-stability suites are running.
+passed. All 1,939 regular scaling cases and all 5,623 regular proof fixtures
+passed. Fact stability recorded 121 refusals and zero changed terms/paths;
+quality passed. Full nightly was not run.
 
-### 10q3a Explicit native condition destructuring (in progress)
+After integrating upstream `2ada6bd35`, all 1,143 affected function, execution,
+loadability and memory-reasoning checks passed, followed by quality. This landed
+in [PR #3276](https://github.com/clicklang/click/pull/3276); all four pushed
+commits were verified upstream before the clean primary advanced through Git.
+
+### 10q3a Explicit native condition destructuring (landed)
 
 Selected nested `let` readers inspect `Proposition::condition_native()` rather
 than destructuring its condition storage directly. The view borrows the exact
@@ -1453,6 +1460,8 @@ results retain a local owner while their payload is inspected. All 675 selected
 condition/proposition/substitution checks passed, followed by 618 selected
 preservation, rewrite, Integer, surface synthesis and smart-closure checks.
 Quality passed. These prepare consumers; the output schema is unchanged.
+This landed in [PR #3277](https://github.com/clicklang/click/pull/3277); all seven
+pushed commits were verified upstream before the clean primary advanced through Git.
 
 ### 10q3b Condition pattern readers (in progress)
 
@@ -1463,8 +1472,19 @@ ordinary match guards and nested `matches!` expressions preserve their existing
 fallthrough and refusal behavior. Extracted observation handles retain an owner
 when they outlive a local proposition. Native rebuilt equalities copy the same
 exact field payloads. The output schema is unchanged. All 767 selected
-condition/proposition/substitution/arithmetic checks passed; broader ownership,
-scaling and regular proof checks remain pending.
+condition/proposition/substitution/arithmetic checks passed, followed by all
+669 selected ownership-sensitive checks and all 1,939 regular scaling cases.
+All 5,623 regular proof fixtures passed. Fact stability recorded 121 refusals
+and zero changed terms/paths; quality passed. Full nightly was not run.
+
+Additional execution checks exposed a predicate-grouping regression: a negated
+mixed predicate had been split into two `matches!` expressions without keeping
+the surrounding parentheses, so pointer-equality type evidence was discarded.
+The existing historical struct-pointer constructor test was red on this slice.
+Restoring the original Boolean grouping made it and all 62 selected pointer/field
+checks pass. The other split predicates were audited for the same issue.
+Broader regular unit, scaling, proof/fact-stability and quality validation is
+running again before publication. No proof rules or source proofs changed.
 
 The initial inventory considered named syntax children and missed anonymous
 wildcard truth markers. The corrected inventory records 47 further patterns
