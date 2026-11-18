@@ -677,12 +677,12 @@ mod condition_output_tests {
             IntegerTerm::constant_i64(7),
             IntegerTerm::from_machine(
                 MachineIntegerType::Int32,
-                &MachineTerm::Variable(Variable(10993726)),
+                MachineTerm::Variable(Variable(10993726)),
             )
             .unwrap(),
             IntegerTerm::from_machine(
                 MachineIntegerType::UInt64,
-                &MachineTerm::Variable(Variable(10993727)),
+                MachineTerm::Variable(Variable(10993727)),
             )
             .unwrap(),
             IntegerTerm::Add(

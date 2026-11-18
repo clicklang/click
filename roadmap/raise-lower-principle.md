@@ -1518,9 +1518,11 @@ visit retained conditions directly with the existing common-term operations.
 There is no implicit dereference, cross-representation equality or additional
 native expression cache.
 
-Validation is in progress. The separate 10q3d producer handoffs and 10q4
-expression-bearing `Term` outputs remain required; storage support alone does
-not close either boundary.
+All four focused storage/identity/visitor/DAG checks, all 6,737 regular unit
+checks, all 1,940 scaling checks and quality passed. The regular proof and
+fact-stability audit is in progress. The separate 10q3d producer handoffs and
+10q4 expression-bearing `Term` outputs remain required; storage support alone
+does not close either boundary.
 
 ### 10q3d Evaluated condition producer handoffs (in progress)
 

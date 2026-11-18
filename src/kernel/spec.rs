@@ -4824,7 +4824,7 @@ fn lower_spec_float_classification_proposition_at_state_in(
         let operand = path.value.float()?;
         let format = operand.format();
         let condition = if path.value.shared().is_none() {
-            let native = match path.value.native() {
+            let native = match path.value.clone().into_native() {
                 ProgramValue::Float32(value) => {
                     ConditionTerm::float32_classification(value, classification)
                 }
