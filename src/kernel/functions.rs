@@ -4844,7 +4844,7 @@ fn execute_verified_function_applications_with_suspension(
                 super::threads::WorkerCompletion::checked(
                     plan,
                     output_resources,
-                    post_state.memory.clone(),
+                    &post_state,
                     worker_effects,
                     facts,
                     post_state.mutex_ledger.clone(),
