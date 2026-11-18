@@ -127,8 +127,7 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
             retired_allocations: retired,
             ..
         } = apply_verified_heap_allocation_delta(
-            memory.clone(),
-            &memory,
+            &state,
             &input,
             &ResourceContext::new(),
             &output,
@@ -201,8 +200,7 @@ fn contract_allocation_retirement_respects_initialized_mutex_storage() {
                 .unwrap()
                 .into_state();
             let result = apply_verified_heap_allocation_delta(
-                state.memory.clone(),
-                &state.memory,
+                &state,
                 &input,
                 &empty,
                 &output,
