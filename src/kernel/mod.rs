@@ -32,6 +32,7 @@ pub(crate) use eval::typed_reads::{
     FieldScope as TransportFieldScope, ReadScope as TransportReadScope,
     record_field as record_transport_field,
 };
+pub(crate) use execution_value::RetainedProgramValue;
 pub use execution_value::{ExecutionValue, StoredExecutionValue, StoredMemoryValue};
 pub(crate) mod fact_collections;
 pub(crate) mod fact_stability;

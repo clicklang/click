@@ -834,7 +834,7 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     click_function_environment: &ClickFunctionEnvironment,
     instance: &ResourceInstance,
     records: &[crate::kernel::ResourceBodyClauseRecord],
-    function_values: &BTreeMap<String, ProgramValue>,
+    function_values: &ProgramValueBindings,
     proof_bindings: Option<&[String]>,
 ) -> Result<Vec<ResourceClausePresentation>, ClickError> {
     let Some(first) = records.first() else {

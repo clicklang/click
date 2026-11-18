@@ -239,7 +239,7 @@ pub(super) struct PureTheoremContext {
     pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
     pub(super) memory: SymbolicMemory,
-    pub(super) values: BTreeMap<String, ProgramValue>,
+    pub(super) values: ProgramValueBindings,
     pub(super) integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     pub(super) array_refs: ClickArrayRefs,
     pub(super) requires: Vec<Proposition>,
@@ -322,7 +322,7 @@ impl PureTheoremContext {
                                 left: promoted,
                                 operator: ComparisonOperator::Equal,
                                 right: ContractExpression::IntegerLiteral("0".into()),
-                            }, BTreeMap::new(), BTreeMap::new(), &state, &state, BTreeMap::new(), BTreeMap::new(),
+                            }, BTreeMap::new(), BTreeMap::new(), &state, &state, ProgramValueBindings::new(), ProgramValueBindings::new(),
                             BTreeMap::new(), &integer_values, None, &RecordedStates::new(), spec_definitions,
                             BTreeSet::new(), BTreeMap::new(),).map_err(ClickError::new)?;
                         let crate::kernel::SpecProposition::IntegerComparison { left, .. } = spec
@@ -1589,14 +1589,14 @@ fn pure_theorem_parameter_integer_values(
 
 pub(in crate::surface) fn pure_theorem_parameter_values(
     parameters: &[FunctionParameter],
-) -> BTreeMap<String, ProgramValue> {
+) -> ProgramValueBindings {
     pure_theorem_parameter_values_with_generic_pointers(parameters, &BTreeSet::new())
 }
 
 fn pure_theorem_parameter_values_with_generic_pointers(
     parameters: &[FunctionParameter],
     generic_pointers: &BTreeSet<String>,
-) -> BTreeMap<String, ProgramValue> {
+) -> ProgramValueBindings {
     parameters
         .iter()
         .enumerate()
@@ -1926,7 +1926,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
 
 pub(in crate::surface) fn pure_theorem_array_refs(
     parameters: &[FunctionParameter],
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     memory: &SymbolicMemory,
 ) -> ClickArrayRefs {
     parameters

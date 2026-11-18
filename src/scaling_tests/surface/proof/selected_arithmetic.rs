@@ -37,7 +37,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             memory: SymbolicMemory::new(),
-            values: BTreeMap::from([("x".into(), ProgramValue::Int32(value))]),
+            values: ProgramValueBindings::from([("x".into(), ProgramValue::Int32(value))]),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
             surface_requirements: surfaces,
@@ -173,7 +173,7 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             memory: SymbolicMemory::new(),
-            values: BTreeMap::from([
+            values: ProgramValueBindings::from([
                 ("k".into(), ProgramValue::Int32(k)),
                 ("j".into(), ProgramValue::Int32(j)),
                 ("y".into(), ProgramValue::Int32(y)),
