@@ -161,7 +161,7 @@ fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Propos
     }
     let (address, bytes) = observation_footprint(kept)?;
     let observed = observation_type(kind, bytes)?;
-    observation_equality(&footprint.before, &footprint.after, address, observed, kind)
+    observation_equality(footprint, address, observed, kind)
 }
 
 /// The footprint and separated cell determine both endpoints. The goal selects
@@ -291,14 +291,13 @@ fn observation_type(comparison: ReadType, bytes: u32) -> Option<ReadType> {
 }
 
 fn observation_equality(
-    before: &SymbolicMemory,
-    after: &SymbolicMemory,
+    footprint: &crate::kernel::RegionFootprint,
     address: Address,
     kind: ReadType,
     comparison: ReadType,
 ) -> Option<Proposition> {
-    let after = typed_reads::get(after, &address, kind)?;
-    let before = typed_reads::get(before, &address, kind)?;
+    let after = typed_reads::get_at(&footprint.after_point, &footprint.after, &address, kind)?;
+    let before = typed_reads::get_at(&footprint.before_point, &footprint.before, &address, kind)?;
     // A promoted comparison of a byte read compares the reads' widenings.
     if let (ReadType::Integer(narrow), ReadType::Integer(MachineIntegerType::Int32)) =
         (kind, comparison)
