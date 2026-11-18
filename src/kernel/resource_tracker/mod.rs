@@ -907,7 +907,7 @@ fn version_at_state(resource: TrackedResource<'_>, point: StatePoint<'_>) -> Opt
             .state()
             .resource_instance_at_path(identity, children)
             .and_then(|instance| instance.fields().get(field_index))
-            .cloned()
+            .map(ResourceFieldValue::into_native)
             .map(Version::Field),
         // A memory resource's version is a program point, not a value.
         TrackedResource::Cell { .. }

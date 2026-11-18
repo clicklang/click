@@ -7916,7 +7916,9 @@ fn matched_instance_body_ownership(
     {
         return None;
     }
-    let AlgebraicValue::Algebraic(model) = instance.fields().get(matched.field_index)? else {
+    let crate::kernel::ResourceFieldValue::Algebraic(model) =
+        instance.fields().get(matched.field_index)?
+    else {
         return None;
     };
     let projection = ResourceFieldProjection {
@@ -8384,7 +8386,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 let fields = instance
                     .fields()
                     .iter()
-                    .cloned()
+                    .map(ResourceFieldValue::into_native)
                     .map(Some)
                     .collect::<Vec<_>>();
                 self.instance(definition, instance.arguments(), &fields);
@@ -15228,13 +15230,16 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             .iter()
             .map(|source| {
                 match source {
-                    ResourceChildField::Constructor(index) => constructor_fields.get(*index),
-                    ResourceChildField::Parent(index) => instance.fields.get(*index),
+                    ResourceChildField::Constructor(index) => constructor_fields
+                        .get(*index)
+                        .cloned()
+                        .map(StoredResourceField::Input),
+                    ResourceChildField::Parent(index) => instance.fields.stored_field(*index),
                 }
-                .cloned()
                 .ok_or("invalid child field binding")
             })
-            .collect::<Result<ResourceArguments, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
+        let fields = ResourceFieldValues::from_stored(fields);
         let identity = explicit_children[child.name.as_str()];
         if unfold && state.resources.owned_instance(identity).is_some() {
             return Err("unfold child result identity is already in use".into());
@@ -15307,7 +15312,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 .iter()
                 .zip(actual.fields.iter().zip(child_instance.fields.iter()))
                 .find(|(_, (a, b))| {
-                    !crate::kernel::resource_arguments_proven_equal(a, b, assumptions)
+                    !crate::kernel::resource_field_values_proven_equal(*a, *b, assumptions)
                 })
             {
                 return Err(ResourceRewriteRefusal::OwnedMessage(format!(
@@ -17927,7 +17932,9 @@ pub(super) fn instance_arm_read_authority(
     let Some(body) = definition.matched.as_ref() else {
         return Vec::new();
     };
-    let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        instance.fields().get(body.field_index)
+    else {
         return Vec::new();
     };
     let variants = match decide_resource_model_arm(model, assumptions) {
@@ -18173,7 +18180,9 @@ fn instance_arm_refutation_facts(
     let Some(body) = definition.matched.as_ref() else {
         return Vec::new();
     };
-    let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        instance.fields().get(body.field_index)
+    else {
         return Vec::new();
     };
     // A model that already carries a constructor needs no exclusion, and only
@@ -18521,7 +18530,9 @@ fn decided_instance_arm_facts(
     let Some(body) = definition.matched.as_ref() else {
         return Vec::new();
     };
-    let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        instance.fields().get(body.field_index)
+    else {
         return Vec::new();
     };
     let Some(selection) = select_resource_model_arm(model, assumptions) else {

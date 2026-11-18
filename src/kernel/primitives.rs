@@ -156,6 +156,9 @@ pub use iterated::{IteratedGuard, IteratedMemory};
 pub(in crate::kernel) mod canonical_fact_set;
 mod composition_member_index;
 mod memory_equality_index;
+mod resource_fields;
+pub(crate) use resource_fields::StoredResourceField;
+pub use resource_fields::{ResourceFieldValue, ResourceFieldValues};
 mod resource_algebra;
 #[cfg(test)]
 pub(crate) use resource_algebra::take_whole_normalization_facts;
@@ -11701,7 +11704,7 @@ pub struct ResourceInstance {
     pub(super) name: String,
     pub(super) arguments: ResourceArguments,
     pub(super) schema: ResourceFieldSchema,
-    pub(super) fields: ResourceArguments,
+    pub(super) fields: ResourceFieldValues,
     pub(super) resource_arguments: Arc<[super::ResourceReference]>,
 }
 
@@ -11711,7 +11714,7 @@ impl ResourceInstance {
         name: String,
         arguments: ResourceArguments,
         schema: ResourceFieldSchema,
-        fields: ResourceArguments,
+        fields: ResourceFieldValues,
     ) -> Option<Self> {
         Self::new_with_resource_arguments(identity, name, arguments, schema, fields, Vec::new())
     }
@@ -11723,26 +11726,14 @@ impl ResourceInstance {
         name: String,
         arguments: ResourceArguments,
         schema: ResourceFieldSchema,
-        fields: ResourceArguments,
+        fields: ResourceFieldValues,
         resource_arguments: Vec<super::ResourceReference>,
     ) -> Option<Self> {
         if schema.is_fieldless() || schema.fields().len() != fields.len() {
             return None;
         }
-        for ((_, ty), value) in schema.fields().iter().zip(fields.iter()) {
-            let valid = match (ty, value) {
-                (ResourceFieldType::Integer, AlgebraicValue::Integer(_)) => true,
-                (ResourceFieldType::Program(ty), AlgebraicValue::Program(value)) => {
-                    *ty == value.program_type()
-                }
-                (ResourceFieldType::Algebraic(ty), AlgebraicValue::Algebraic(value)) => {
-                    *ty == value.algebraic_type && value.is_well_formed()
-                }
-                _ => false,
-            };
-            if !valid {
-                return None;
-            }
+        if !fields.matches_schema(&schema) {
+            return None;
         }
         Some(Self {
             identity,
@@ -11773,7 +11764,7 @@ impl ResourceInstance {
     pub fn arguments(&self) -> &[AlgebraicValue] {
         &self.arguments
     }
-    pub fn fields(&self) -> &[AlgebraicValue] {
+    pub fn fields(&self) -> &ResourceFieldValues {
         &self.fields
     }
     pub fn schema(&self) -> &ResourceFieldSchema {

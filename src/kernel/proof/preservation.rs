@@ -184,50 +184,52 @@ fn preserve_field(
     let a = after.fields().get(field.index)?;
     let b = before.fields().get(field.index)?;
     let condition = match (a, b) {
-        (AlgebraicValue::Algebraic(a), AlgebraicValue::Algebraic(b))
-            if a.algebraic_type == b.algebraic_type =>
-        {
+        (
+            crate::kernel::ResourceFieldValue::Algebraic(a),
+            crate::kernel::ResourceFieldValue::Algebraic(b),
+        ) if a.algebraic_type == b.algebraic_type => {
             return Some(if a == b {
                 Proposition::ConditionIs(ConditionTerm::Constant(true), true)
             } else {
                 Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()))
             });
         }
-        (AlgebraicValue::Integer(a), AlgebraicValue::Integer(b)) => {
-            ConditionTerm::integer_equal(a.clone(), b.clone())
-        }
         (
-            AlgebraicValue::Program(ProgramValue::Parameter(a)),
-            AlgebraicValue::Program(ProgramValue::Parameter(b)),
+            crate::kernel::ResourceFieldValue::Integer(a),
+            crate::kernel::ResourceFieldValue::Integer(b),
+        ) => ConditionTerm::integer_equal(a.clone(), b.clone()),
+        (
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(b)),
         ) if a.algebraic_type == b.algebraic_type => {
             ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
         }
         (
-            AlgebraicValue::Program(ProgramValue::Pointer(a)),
-            AlgebraicValue::Program(ProgramValue::Pointer(b)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(b)),
         ) if a.program_type() == b.program_type() => {
             ConditionTerm::pointer_value_equal(a.clone(), b.clone())
         }
         (
-            AlgebraicValue::Program(ProgramValue::Int32(a)),
-            AlgebraicValue::Program(ProgramValue::Int32(b)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(b)),
         ) => ConditionTerm::equal(a.clone(), b.clone()),
         // An 8-bit field value is native: its equality is at its own format.
         (
-            AlgebraicValue::Program(ProgramValue::UInt8(a)),
-            AlgebraicValue::Program(ProgramValue::UInt8(b)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt8(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt8(b)),
         ) => integer_equality(MachineIntegerType::UInt8, a.clone(), b.clone())?,
         (
-            AlgebraicValue::Program(ProgramValue::UInt32(a)),
-            AlgebraicValue::Program(ProgramValue::UInt32(b)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt32(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt32(b)),
         ) => ConditionTerm::uint32_equal(a.clone(), b.clone()),
         (
-            AlgebraicValue::Program(ProgramValue::Int64(a)),
-            AlgebraicValue::Program(ProgramValue::Int64(b)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Int64(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Int64(b)),
         ) => integer_equality(MachineIntegerType::Int64, a.clone(), b.clone())?,
         (
-            AlgebraicValue::Program(ProgramValue::UInt64(a)),
-            AlgebraicValue::Program(ProgramValue::UInt64(b)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt64(a)),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt64(b)),
         ) => integer_equality(MachineIntegerType::UInt64, a.clone(), b.clone())?,
         _ => return None,
     };

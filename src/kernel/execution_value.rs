@@ -1200,6 +1200,13 @@ impl From<ExecutionValue> for RetainedProgramValue {
     }
 }
 impl RetainedProgramValue {
+    pub(crate) fn value(&self) -> &ExecutionValue {
+        &self.0
+    }
+
+    pub(crate) fn program_type(&self) -> ProgramType {
+        self.0.program_type()
+    }
     pub(crate) fn root(&self) -> Option<&KernelTerm> {
         self.0.shared()
     }

@@ -544,3 +544,5 @@ pub use execution_facts::{ExecutionFactSource, ExecutionFacts, ExecutionFactsIte
 pub(crate) mod search;
 
 pub(crate) use spec::prepare_spec_integer_argument;
+
+pub(crate) use memory_history::resource_field_values_proven_equal;

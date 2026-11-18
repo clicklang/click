@@ -1,7 +1,9 @@
 //! Named program-value storage. Native lookups are selected compatibility
 //! outputs; the map owns common roots and never exports an ambient environment.
 use super::*;
-use crate::kernel::{ExecutionValue, RetainedProgramValue};
+#[cfg(test)]
+use crate::kernel::ExecutionValue;
+use crate::kernel::RetainedProgramValue;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct ProgramValueBindings(BTreeMap<String, RetainedProgramValue>);
@@ -36,6 +38,7 @@ impl ProgramValueBindings {
     ) -> Option<RetainedProgramValue> {
         self.0.insert(name, value.into())
     }
+    #[cfg(test)]
     pub(super) fn keys(&self) -> impl DoubleEndedIterator<Item = &String> + ExactSizeIterator {
         self.0.keys()
     }

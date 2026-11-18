@@ -607,7 +607,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five pushed commits verified on upstream. |
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four pushed commits verified on upstream. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Implemented; [PR #3181](https://github.com/clicklang/click/pull/3181) has auto-merge requested. 287 focused checks, all 1,890 scaling cases, the regular proof corpus, fact stability and quality passed on integrated upstream. Integration pending. |
-| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Planned. |
+| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Implemented; reader type check, 383 focused checks and quality passed; integrated scaling/corpus validation pending. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Planned; family split may be needed. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
@@ -995,6 +995,40 @@ the final aggregate validation exit is zero. The incremental compiler cache
 fingerprint error was resolved with a fresh crate cache and unchanged settings.
 [PR #3181](https://github.com/clicklang/click/pull/3181) has auto-merge requested.
 Full nightly was not run.
+
+### 10o Program-valued resource fields
+
+The inventory has two owning stores: kernel `ResourceInstance::fields` and the
+Surface `ResourceInstanceBinding::fields` counterpart. Both now use immutable
+`ResourceFieldValues`. Explicit native input lists keep their original input
+contract; program fields minted by the kernel retain existing execution-value
+carriers under the same family-admission policy as stored execution values.
+Integer and algebraic input fields remain explicit input DTOs in this slice.
+Resource arguments are a separate store assigned to 10p.
+
+Borrowed `ResourceFieldValue` views expose selected native readings without a
+second cached native field list. Program projection can read the retained
+producer directly. Parent/child field handoffs and unchanged loop-join fields
+copy their existing producer handles; substitutions and variable collection use
+the existing execution-value operations. Whole-list native diagnostics and
+other slice APIs request an explicit borrowed/owned native output. Resource
+identity, schema, source names, type/qualifier policy and native field equality,
+ordering and hash contracts are preserved.
+
+A new input-boundary regression reproduced an earlier imported-field mismatch:
+boxed and shared word arguments in a native machine call collapsed to one root,
+although native `ProgramValue` equality distinguishes their carrier forms.
+Imported field inputs now preserve the shared-word argument envelope through the
+existing exact application-argument descriptor. Numeric checking and retained
+producer imports keep their previous argument policy. The reproduction failed
+before the fix; it and 326 related checks passed afterward. Nested input forms
+and constructor round trips are included in the broader validation.
+
+The store/reader migration type-checks. All 383 focused storage, projection,
+substitution, identity/hash, growing-DAG and related resource/API checks passed,
+as did quality checks. Integrated scaling/corpus validation and PR delivery
+are pending. Live native views, whole-list outputs and identity readers remain
+compatibility consumers for 10r–10t, not proof or search changes.
 
 ## Chunk 3: machine-valued pure-function results
 

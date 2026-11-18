@@ -1151,11 +1151,21 @@ impl KernelTerm {
 #[derive(Default)]
 pub(crate) struct KernelTermImport {
     integers: HashMap<SharedIntegerTerm, KernelTerm>,
+    // Stored native field inputs preserve argument carrier forms. Numeric
+    // checking/producer imports keep their existing common-operand policy.
+    exact_field_inputs: bool,
     // Index producers can retain their supplied native tree unless import
     // expanded a registered read.
     pub(super) machine_input_requires_export: bool,
 }
 impl KernelTermImport {
+    pub(crate) fn for_exact_field_inputs() -> Self {
+        Self {
+            exact_field_inputs: true,
+            ..Self::default()
+        }
+    }
+
     /// Every argument family is explicit here. Native fallbacks preserve C
     /// carrier records and out-of-domain inputs; migrated expressions expose
     /// their children through the common nodes.

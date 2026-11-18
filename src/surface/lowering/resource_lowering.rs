@@ -1240,7 +1240,7 @@ pub(in crate::surface) fn folded_matched_instance_note(
             .iter()
             .zip(instance.fields())
             .filter_map(|((name, _), value)| match value {
-                AlgebraicValue::Algebraic(model) => Some((name.as_str(), model)),
+                crate::kernel::ResourceFieldValue::Algebraic(model) => Some((name.as_str(), model)),
                 _ => None,
             })
             .find_map(|(name, model)| {

@@ -10207,7 +10207,7 @@ impl ExecutionProofCore {
                 .is_some_and(|field| {
                     matches!(
                         field,
-                        crate::kernel::AlgebraicValue::Algebraic(model) if model == value
+                        crate::kernel::ResourceFieldValue::Algebraic(model) if model == value
                     )
                 })
             {
@@ -10229,7 +10229,7 @@ impl ExecutionProofCore {
             if !instance.fields().iter().any(|field| {
                 matches!(
                     field,
-                    crate::kernel::AlgebraicValue::Algebraic(model)
+                    crate::kernel::ResourceFieldValue::Algebraic(model)
                         if model.node == crate::kernel::AlgebraicTermNode::Variable(variable)
                 )
             }) {

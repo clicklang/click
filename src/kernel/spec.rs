@@ -2185,7 +2185,7 @@ fn evaluate_spec_integer_expression_paths_in(
             } else {
                 state
             };
-            let Some(AlgebraicValue::Integer(value)) = retained_state
+            let Some(crate::kernel::ResourceFieldValue::Integer(value)) = retained_state
                 .resource_instance_at_path(projection.identity, &projection.children)
                 .and_then(|instance| {
                     crate::kernel::eval::typed_reads::record_field(
@@ -3788,7 +3788,7 @@ fn evaluate_spec_algebraic_non_call_in(
             } else {
                 state
             };
-            let Some(AlgebraicValue::Algebraic(value)) = retained_state
+            let Some(crate::kernel::ResourceFieldValue::Algebraic(value)) = retained_state
                 .resource_instance_at_path(projection.identity, &projection.children)
                 .and_then(|instance| {
                     crate::kernel::eval::typed_reads::record_field(
@@ -6652,14 +6652,14 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             } else {
                 state
             };
-            let Some(AlgebraicValue::Program(value)) = retained_state
+            let Some(value) = retained_state
                 .resource_instance_at_path(projection.identity, &projection.children)
                 .and_then(|instance| {
                     crate::kernel::eval::typed_reads::record_field(
                         instance,
                         projection.field_index,
                     );
-                    instance.fields().get(projection.field_index)
+                    instance.fields().program_value(projection.field_index)
                 })
             else {
                 return Err(ExecutionLimit::ResourceFieldInstanceUnavailable);
@@ -6669,9 +6669,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             }
             vec![SpecExpressionPath {
                 value: if budget.machine_result_production_disabled {
-                    value.clone().into()
+                    value.into_native().into()
                 } else {
-                    SpecValue::from(value.clone())
+                    value
                         .retain_pointer_result()
                         .retain_algebraic_result()
                         .retain_float_result()

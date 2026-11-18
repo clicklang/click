@@ -712,11 +712,17 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                 .iter()
                 .map(|value| walk_algebraic_value(value, s))
                 .collect();
-            result.fields = instance
-                .fields
-                .iter()
-                .map(|value| walk_algebraic_value(value, s))
-                .collect();
+            result.fields =
+                ResourceFieldValues::from_stored((0..instance.fields.len()).map(|index| {
+                    match instance.fields.stored_field(index).expect("field index") {
+                        StoredResourceField::Input(value) => {
+                            StoredResourceField::Input(walk_algebraic_value(&value, s))
+                        }
+                        StoredResourceField::Program(value) => {
+                            StoredResourceField::from_program(s.expression_value(value.value()))
+                        }
+                    }
+                }));
             result.resource_arguments = crate::kernel::ResourceReference::map_captured_values(
                 instance.resource_arguments(),
                 |value| walk_algebraic_value(value, s),
@@ -2583,14 +2589,16 @@ fn collect_program_value_bound_variables(value: &ProgramValue, variables: &mut B
     }
 }
 
-fn collect_algebraic_value_bound_variables(
-    value: &AlgebraicValue,
+fn collect_algebraic_value_bound_variables<'a>(
+    value: impl Into<ResourceFieldValue<'a>>,
     variables: &mut BTreeSet<Variable>,
 ) {
-    match value {
-        AlgebraicValue::Program(value) => collect_program_value_bound_variables(value, variables),
-        AlgebraicValue::Integer(value) => collect_integer_bound_variables(value, variables),
-        AlgebraicValue::Algebraic(value) => collect_algebraic_bound_variables(value, variables),
+    match value.into() {
+        ResourceFieldValue::Program(value) => {
+            collect_program_value_bound_variables(value, variables)
+        }
+        ResourceFieldValue::Integer(value) => collect_integer_bound_variables(value, variables),
+        ResourceFieldValue::Algebraic(value) => collect_algebraic_bound_variables(value, variables),
     }
 }
 
@@ -3225,8 +3233,18 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
             }
         }
         Resource::Instance(instance) => {
-            for value in instance.arguments.iter().chain(instance.fields.iter()) {
+            for value in instance.arguments.iter() {
                 collect_algebraic_value_bound_variables(value, variables);
+            }
+            for index in 0..instance.fields.len() {
+                if let Some(value) = instance.fields.retained_program(index) {
+                    collect_expression_value_bound_variables(value, variables);
+                } else {
+                    collect_algebraic_value_bound_variables(
+                        instance.fields.get(index).expect("field index"),
+                        variables,
+                    );
+                }
             }
             crate::kernel::ResourceReference::visit_captured_values(
                 instance.resource_arguments(),

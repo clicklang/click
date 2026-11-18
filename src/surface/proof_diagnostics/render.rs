@@ -2537,7 +2537,7 @@ impl Renderer<'_> {
                 self.push(instance.name());
                 self.resource_arguments(instance.arguments());
                 self.push(", fields=");
-                self.resource_arguments(instance.fields());
+                self.resource_arguments(&instance.fields().native_values());
                 if !instance.resource_arguments().is_empty() {
                     self.fmt(format_args!(
                         ", {} resource references omitted",
