@@ -6660,6 +6660,9 @@ pub struct FunctionContractInterface {
     pub(crate) contract_claims: Vec<FunctionContractClaim>,
     pub(crate) opaque_contract_supported: bool,
     pub(crate) composite_resource_definitions: Vec<CompositeResourceDefinition>,
+    /// Shape summary built with the registered definitions. Substitution
+    /// changes operands without changing guard presence or recursion.
+    pub(crate) composite_definitions_need_entry_cases: bool,
     /// Sorted names of the abstract families that are not `authorized`.
     /// Abstract families have no definition here, so only a name on this list
     /// is known to take no part in population accounting.

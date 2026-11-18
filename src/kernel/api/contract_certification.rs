@@ -96,6 +96,19 @@ pub(crate) fn prepare_function_contract_entry_cases(
         })
         .map(|fact| fact.proposition().clone())
         .collect();
+    // An unconditional finite entry has one case and its producer already
+    // expanded it. Guarded and recursive definitions use the existing
+    // case-specific route, where a branch can expose a different body.
+    let reuse_entry = !function
+        .contract_interface()
+        .composite_definitions_need_entry_cases
+        && function
+            .resource_requires()
+            .iter()
+            .chain(function.resource_ensures())
+            .all(|clause| clause.guard().is_none());
+    #[cfg(test)]
+    let produced_state = resources.state.clone();
     let closing_entry = Arc::new(RetainedClosingEntry::from_producer(
         state.clone(),
         function,
@@ -106,6 +119,22 @@ pub(crate) fn prepare_function_contract_entry_cases(
         base_assumptions.clone(),
         closing_facts,
     ));
+    if reuse_entry {
+        return Ok(PreparedContractEntryCases {
+            identity: Arc::new(()),
+            guard_cases: vec![Vec::new()],
+            function: function.clone(),
+            closing_entry: closing_entry.clone(),
+            closing_footprint: std::sync::OnceLock::new(),
+            cases: vec![PreparedContractEntryCase {
+                #[cfg(test)]
+                assumptions: base_assumptions,
+                #[cfg(test)]
+                entry_state: produced_state,
+                closing_entry,
+            }],
+        });
+    }
     let resource_condition_cases = contract_resource_condition_cases(
         state,
         function,
@@ -3629,6 +3658,25 @@ mod prepared_entry_cases_tests {
             function,
             arguments,
         )
+    }
+
+    #[test]
+    fn unconditional_case_shares_the_produced_closing_entry() {
+        let (state, function, arguments) = fixture(0, 0);
+        let opened = crate::kernel::proof::OpenedContractEntry::open(
+            &state,
+            &function,
+            &arguments,
+            &Vec::<Proposition>::new(),
+            &ExecutionEnvironment::new(),
+        )
+        .unwrap();
+        let prepared = opened.prepared_cases();
+        assert_eq!(prepared.case_count(), 1);
+        assert!(Arc::ptr_eq(
+            &prepared.cases[0].closing_entry,
+            &prepared.closing_entry
+        ));
     }
 
     #[test]

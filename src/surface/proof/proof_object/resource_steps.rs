@@ -2475,20 +2475,20 @@ impl<'a> Proof<'a> {
             context.claim_label,
             context.tactic_index,
         )?;
-        execution
+        let state = execution
             .core
             .record_resource_observation(
                 context.function,
                 context.arguments,
                 &before_facts,
                 &checked.observed_resource,
-                &checked.state,
+                checked.successor.input(),
                 &checked.facts,
             )
             .map_err(|message| {
                 self.step_error(format!("kernel rejected checked `observe`: {message}"))
             })?;
-        execution.core.state = checked.state.into();
+        execution.core.state = state.into();
         let branch = self
             .focused_branch()
             .expect("resource observation requires an open goal")
