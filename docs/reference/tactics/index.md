@@ -345,7 +345,7 @@ the one execution transition that fails.
 | --- | --- | --- | --- | --- |
 | `mark name;` | simple | Specialized | Name the current execution state. | [Reference](#proof-marks) |
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
-| `let { result: name } = step()` | simple | Specialized | Bind the checked value of an assignment or a call. | [Reference](#binding-a-statement-result) |
+| `let { result: name } = step()` | simple | Specialized | Bind a checked assignment, call, or scalar step result. | [Reference](#binding-a-statement-result) |
 | `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
@@ -545,16 +545,18 @@ separate smart `implicit closer` row at the step.
 
 **Form:** `let { result: name } = step()`
 
-**Specialized.** Bind the checked value from the next assignment or call to
-an immutable proof name. The name can refer to the value after C overwrites
-the local, leaves its scope, or uses the result of the call.
+**Specialized.** Bind the checked value from the next assignment, call, or
+scalar evaluation step to an immutable proof name. The name still refers to
+that value after the program overwrites the local, leaves its scope, or uses
+the step result.
 
 **Accepts** a scalar or pointer local assignment such as `y = e;`,
 `x += e;`, or the initializing assignment of `int32 y = e;`. It also accepts
 a call whose result is used, including `y = g(x);`, `if (g(x))`, or
 `return g(x);` at the call step. Bare `step()` must be able to resolve the
-call in the current proof context. A proof name may be rebound, and the
-newest binding wins.
+call in the current proof context. It also accepts a scalar value that the
+front end retains in a separate step, such as a Rust load followed by an
+arithmetic check. A proof name may be rebound, and the newest binding wins.
 
 **Outside it**, with what to write instead:
 

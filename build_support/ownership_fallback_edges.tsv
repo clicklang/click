@@ -36,7 +36,6 @@ src/kernel/functions/contract_refinement.rs	legacy-caller	::framed_resource_tran
 src/kernel/functions/named_contract_refinement.rs	legacy-caller	::state_with_refinement_instances	try_compose_into_valid_context_delaying_normalization	1
 src/kernel/loans.rs	legacy-caller	::lend_owned_view_to_suspended_worker	try_compose_with_fact_with_occurrence	1
 src/kernel/loans.rs	legacy-caller	::plan_stable_view_transfer_with_protocol_effect	try_compose_with_fact_with_occurrence	3
-src/kernel/loans.rs	legacy-caller	::plan_stable_view_transfer_with_protocol_effect	validity_error	1
 src/kernel/loans.rs	legacy-caller	StableViewTransferPlan::lend_local_views_with_worker_shares	try_compose_with_fact_with_occurrence	1
 src/kernel/loans/mutex_calls.rs	legacy-caller	MutexUseCallTransfer::finish_checked_ledger	try_compose_with_facts_delaying_normalization	1
 src/kernel/loans/mutex_calls.rs	legacy-caller	MutexUseCallTransfer::finish_suspended_checked_ledger	try_compose_with_facts_delaying_normalization	1

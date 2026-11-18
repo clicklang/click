@@ -13833,14 +13833,15 @@ fn produced_composite_frontier_conflict<'a>(
         }
         // Construction established the body's internal partition. Only its
         // boundary with the retained caller frame is new information.
-        let (piece, held) = match destination.returned_boundary_conflict(frontier, assumptions) {
-            Ok(Some(conflict)) => conflict,
-            Ok(None) => {
-                destination = destination.unchecked_with_facts(frontier.iter().cloned());
-                continue;
-            }
-            Err(error) => return Some(resource_context_runtime_error(error)),
-        };
+        let (piece, held) =
+            match destination.checked_frontier_boundary_conflict(frontier, assumptions) {
+                Ok(Some(conflict)) => conflict,
+                Ok(None) => {
+                    destination = destination.unchecked_with_facts(frontier.iter().cloned());
+                    continue;
+                }
+                Err(error) => return Some(resource_context_runtime_error(error)),
+            };
         return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
             produced: Box::new(produced.clone()),
             piece: Box::new(piece),

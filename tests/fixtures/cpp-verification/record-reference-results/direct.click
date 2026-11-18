@@ -19,14 +19,14 @@ int32 probe(Outer& outer) {
     ensures outer.first == old(outer.first);
     ensures outer.child.sibling == old(outer.child.sibling);
 } by {
-    step(); step(); step(); step(); step();
-    have "direct.cpp"::probe.temporary(1) == &outer.child by { known(); }
+    step(); step();
+    have call(0).result == &outer.child by { known(); }
     // The two adjacent views occupy one range ending before the written field.
     have separate(memory((&outer as (int32 *))[2..3]), memory((&outer as (int32 *))[0..2])) by {
         normalize() using {};
     }
     step() by {
-        rewrite("direct.cpp"::probe.temporary(1), &outer.child);
+        rewrite(call(0).result, &outer.child);
         known();
     }
 }
