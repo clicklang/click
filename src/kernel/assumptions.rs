@@ -10444,7 +10444,8 @@ impl ExecutionPureFact {
         value: ProgramValue,
         authorized_range: Option<MemoryRange>,
     ) -> Self {
-        let value_equation = super::memory_history::store_value_equation(&after, &pointer, &value);
+        let value_equation = super::memory_history::store_value_equation(&after, &pointer, &value)
+            .map(std::sync::Arc::new);
         Self {
             proposition: std::sync::Arc::new(Proposition::MemoryMutatesOnly {
                 before: before.clone(),
@@ -10574,6 +10575,10 @@ impl ExecutionPureFact {
 
     pub(crate) fn is_certified(&self) -> bool {
         self.certified
+    }
+
+    pub(crate) fn certified_store_equation(&self) -> Option<&std::sync::Arc<Proposition>> {
+        self.certified_store_data()?.value_equation.as_ref()
     }
 
     pub(super) fn certified_store_data(&self) -> Option<&CertifiedMemoryStore> {
