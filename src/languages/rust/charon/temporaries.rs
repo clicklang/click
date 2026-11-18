@@ -106,6 +106,22 @@ pub(super) fn substitute_pure_values(
                     _ => None,
                 }),
         );
+        // An array value, `[v; 4]` or `[a, b]`, is the value its one read
+        // takes whole: a field of a record the block initializes, which the
+        // lowering writes from the array expression itself.
+        let field_readers = block
+            .statements
+            .iter()
+            .filter_map(|statement| match statement {
+                S::Initialize { fields, .. } => Some(fields),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|field| match field {
+                E::Local { name } => Some(name.clone()),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
         // The pending borrows of a place rooted at a local, by that local:
         // the place's address is the same until a statement names the local.
         let mut rooted = BTreeMap::<String, String>::new();
@@ -124,7 +140,8 @@ pub(super) fn substitute_pure_values(
                 } if substitutable(name)
                     && (pure(value)
                         || (matches!(value, E::Borrow { place, .. } if pure(place))
-                            && borrow_readers.contains(name))) =>
+                            && borrow_readers.contains(name))
+                        || (pure_array(value) && field_readers.contains(name))) =>
                 {
                     if let E::Borrow { place, .. } = value
                         && let Some(root) = place_root(place)
@@ -192,6 +209,100 @@ pub(super) fn substitute_pure_values(
     locals.retain(|local| !removed.contains(&local.name));
 }
 
+/// Builds a boxed record in its allocation. MIR builds `Box::new(R { a, b })`
+/// in a temporary record and moves it into the box. When the record's
+/// initialization ends the block whose terminator boxes it, past nothing but
+/// storage markers and source sites, and nothing else names the temporary,
+/// the box writes the field values itself and the temporary is gone.
+pub(super) fn box_initializers(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    let marker = |statement: &S| {
+        matches!(
+            statement,
+            S::BeginStorage { .. } | S::EndStorage { .. } | S::Site { .. }
+        )
+    };
+    // How many statements and terminators name each local, apart from its
+    // storage markers.
+    let mut mentions = BTreeMap::<String, usize>::new();
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            if marker(statement) {
+                continue;
+            }
+            for name in mentioned_locals(statement) {
+                *mentions.entry(name).or_default() += 1;
+            }
+        }
+        let mut reads = BTreeMap::new();
+        let mut named = BTreeSet::new();
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        named.extend(reads.into_keys());
+        for name in named {
+            *mentions.entry(name).or_default() += 1;
+        }
+    }
+    let mut removed = BTreeSet::new();
+    for block in blocks.iter_mut() {
+        let T::BoxNew {
+            source: Some(source),
+            record,
+            ..
+        } = &block.terminator
+        else {
+            continue;
+        };
+        if !temporaries.contains(source) || mentions.get(source) != Some(&2) {
+            continue;
+        }
+        let Some(position) = block
+            .statements
+            .iter()
+            .rposition(|statement| !marker(statement))
+        else {
+            continue;
+        };
+        let S::Initialize {
+            target,
+            record: initialized,
+            ..
+        } = &block.statements[position]
+        else {
+            continue;
+        };
+        if target != source || initialized != record {
+            continue;
+        }
+        let source = source.clone();
+        let S::Initialize { fields, .. } = block.statements.remove(position) else {
+            unreachable!("the boxed record's initialization")
+        };
+        if let T::BoxNew {
+            source: boxed,
+            fields: written,
+            ..
+        } = &mut block.terminator
+        {
+            *boxed = None;
+            *written = fields;
+        }
+        removed.insert(source);
+    }
+    if removed.is_empty() {
+        return;
+    }
+    for block in blocks.iter_mut() {
+        block.statements.retain(|statement| match statement {
+            S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !removed.contains(&local.name));
+}
+
 /// The kind of iterator an iterator statement builds or moves.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum IteratorKind {
@@ -199,6 +310,9 @@ enum IteratorKind {
     Enumerate,
     Range,
     Chunk,
+    /// A crate struct, built by `Initialize` or moved by `Move`, as `for` over
+    /// `Countdown { n }` builds the iterator and moves it into the loop's.
+    Record,
 }
 
 /// The iterator `statement` builds, as its kind and the local it builds.
@@ -215,6 +329,9 @@ fn iterator_definition(statement: &mut S) -> Option<(IteratorKind, &mut String)>
         }
         S::ChunkInitialize { target, .. } | S::ChunkMove { target, .. } => {
             Some((IteratorKind::Chunk, target))
+        }
+        S::Initialize { target, .. } | S::Move { target, .. } => {
+            Some((IteratorKind::Record, target))
         }
         _ => None,
     }
@@ -588,7 +705,7 @@ pub(super) fn remove_unused(
             ..
         } = &block.terminator
         {
-            used.insert(source.clone());
+            used.extend(source.iter().cloned());
             used.insert(destination.clone());
         }
     }
@@ -1221,6 +1338,7 @@ fn iterator_move(statement: &S) -> Option<(IteratorKind, &String, &String)> {
         S::EnumerateMove { target, source } => Some((IteratorKind::Enumerate, target, source)),
         S::RangeMove { target, source } => Some((IteratorKind::Range, target, source)),
         S::ChunkMove { target, source } => Some((IteratorKind::Chunk, target, source)),
+        S::Move { target, source, .. } => Some((IteratorKind::Record, target, source)),
         _ => None,
     }
 }
@@ -1231,7 +1349,8 @@ fn iterator_move(statement: &S) -> Option<(IteratorKind, &String, &String)> {
 /// A move from a temporary that nothing else names, whose definition comes
 /// just before it, past nothing but storage markers and source sites, takes
 /// that definition's place, and the temporary is gone. The definition may
-/// end a block that only jumps to the move's.
+/// end a block that only jumps to the move's. A crate struct moves the same
+/// way: `t2 = Countdown { n }; t1 = t2; iter = t1` is `iter = Countdown { n }`.
 pub(super) fn collapse_iterator_moves(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
@@ -1299,6 +1418,7 @@ pub(super) fn collapse_iterator_moves(
                     | IteratorKind::Chunk
                     | IteratorKind::SharedArray
                     | IteratorKind::Enumerate
+                    | IteratorKind::Record
             ) || !temporaries.contains(&source)
                 || mentions.get(&source) != Some(&2)
             {
@@ -1628,6 +1748,15 @@ fn successors(terminator: &T) -> Vec<usize> {
 
 /// Whether evaluating `value` has no effect and may move to a later point in
 /// its block with nothing between that changes what it reads.
+/// Whether `value` is an array literal or repeat whose elements are pure.
+fn pure_array(value: &E) -> bool {
+    match value {
+        E::Array { elements } => elements.iter().all(pure),
+        E::Repeat { value, .. } => pure(value),
+        _ => false,
+    }
+}
+
 fn pure(value: &E) -> bool {
     match value {
         E::Integer { .. }
@@ -1770,12 +1899,12 @@ fn terminator_expressions_mut(terminator: &mut T) -> Vec<&mut E> {
         T::Call { arguments, .. } => arguments.iter_mut().collect(),
         T::Switch { scrutinee, .. } => vec![scrutinee],
         T::ReturnValue { value } => vec![value],
+        T::BoxNew { fields, .. } => fields.iter_mut().collect(),
         T::Goto { .. }
         | T::Drop { .. }
         | T::Return
         | T::Unreachable
         | T::Panic { .. }
-        | T::BoxNew { .. }
         | T::BoxFree { .. } => Vec::new(),
     }
 }
@@ -1797,7 +1926,7 @@ fn terminator_named_locals(terminator: &T) -> Vec<&String> {
             source,
             destination,
             ..
-        } => vec![source, destination],
+        } => source.iter().chain([destination]).collect(),
         T::If { .. }
         | T::Switch { .. }
         | T::Goto { .. }
@@ -2847,6 +2976,118 @@ mod tests {
             [S::Assign { value: E::SliceLength { slice }, .. }]
                 if matches!(slice.as_ref(), E::Borrow { place, .. }
                     if matches!(place.as_ref(), E::Local { name } if name == "bytes"))
+        ));
+    }
+
+    #[test]
+    fn an_array_built_for_a_record_field_is_the_field_value() {
+        // `t1 = [x; 4]; r = R { a: 0, w: t1 }` is `r = R { a: 0, w: [x; 4] }`.
+        let repeat = E::Repeat {
+            value: Box::new(local("x")),
+            length: 4,
+        };
+        let (names, block) = substituted(
+            vec![
+                assign("t1", repeat.clone()),
+                S::Initialize {
+                    target: "a".into(),
+                    record: "R".into(),
+                    fields: vec![
+                        E::UnsignedInteger {
+                            value: 0,
+                            value_type: Type::U32,
+                        },
+                        local("t1"),
+                    ],
+                },
+            ],
+            T::Return,
+        );
+        assert_eq!(names, ["a", "b", "x", "t2"]);
+        assert!(matches!(
+            block.statements.as_slice(),
+            [S::Initialize { fields, .. }]
+                if matches!(&fields[1], E::Repeat { length: 4, value } if matches!(value.as_ref(), E::Local { name } if name == "x"))
+        ));
+        // An array read anywhere else stays a temporary.
+        let (names, _) = substituted(
+            vec![assign("t1", repeat), assign("a", local("t1"))],
+            T::Return,
+        );
+        assert!(names.contains(&"t1".to_string()));
+    }
+
+    #[test]
+    fn a_boxed_record_is_built_in_its_allocation() {
+        // `t1 = R { x }; b = Box::new(t1)` writes `x` into the box itself.
+        let mut locals = ["x", "b", "t1"].map(place).to_vec();
+        let mut blocks = vec![block(
+            vec![
+                S::BeginStorage { local: "t1".into() },
+                S::Initialize {
+                    target: "t1".into(),
+                    record: "R".into(),
+                    fields: vec![local("x")],
+                },
+            ],
+            T::BoxNew {
+                source: Some("t1".into()),
+                fields: Vec::new(),
+                record: "R".into(),
+                destination: "b".into(),
+                target: 1,
+            },
+        )];
+        blocks.push(block(vec![S::EndStorage { local: "t1".into() }], T::Return));
+        super::box_initializers(&mut locals, &mut blocks, &BTreeSet::from(["t1".into()]));
+        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        assert_eq!(names, ["x", "b"]);
+        assert!(blocks[0].statements.is_empty() && blocks[1].statements.is_empty());
+        assert!(matches!(
+            &blocks[0].terminator,
+            T::BoxNew { source: None, fields, .. }
+                if matches!(fields.as_slice(), [E::Local { name }] if name == "x")
+        ));
+    }
+
+    #[test]
+    fn a_record_moved_into_its_local_is_built_there() {
+        // `t2 = R { x }; t1 = t2; goto; it = t1` is `it = R { x }`, at the
+        // last move, after `it`'s storage starts.
+        let mut locals = ["x", "it", "t1", "t2"].map(place).to_vec();
+        let moved = |target: &str, source: &str| S::Move {
+            target: target.into(),
+            source: source.into(),
+            record: "R".into(),
+        };
+        let mut blocks = vec![
+            block(
+                vec![
+                    S::Initialize {
+                        target: "t2".into(),
+                        record: "R".into(),
+                        fields: vec![local("x")],
+                    },
+                    moved("t1", "t2"),
+                ],
+                T::Goto { target: 1 },
+            ),
+            block(
+                vec![S::BeginStorage { local: "it".into() }, moved("it", "t1")],
+                T::Return,
+            ),
+        ];
+        super::collapse_iterator_moves(
+            &mut locals,
+            &mut blocks,
+            &BTreeSet::from(["t1".into(), "t2".into()]),
+        );
+        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        assert_eq!(names, ["x", "it"]);
+        assert!(blocks[0].statements.is_empty());
+        assert!(matches!(
+            blocks[1].statements.as_slice(),
+            [S::BeginStorage { .. }, S::Initialize { target, .. }] if target == "it"
         ));
     }
 

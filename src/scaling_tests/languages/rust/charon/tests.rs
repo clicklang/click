@@ -96,6 +96,14 @@ fn charon_owned_array_construction_and_moves_have_bounded_work_at_large_lengths(
             {
                 *n = u64::from(length);
             }
+            // `Packet { words: [v; 4], .. }` builds its array in the field.
+            if let S::Initialize { fields, .. } = statement {
+                for field in fields {
+                    if let E::Repeat { length: n, .. } = field {
+                        *n = u64::from(length);
+                    }
+                }
+            }
             if let S::Assign {
                 value:
                     E::Borrow {
@@ -181,6 +189,14 @@ fn charon_nonuniform_sparse_states_have_bounded_work_at_large_lengths() {
             } = statement
             {
                 *n = u64::from(length);
+            }
+            // `Packet { words: [v; 4], .. }` builds its array in the field.
+            if let S::Initialize { fields, .. } = statement {
+                for field in fields {
+                    if let E::Repeat { length: n, .. } = field {
+                        *n = u64::from(length);
+                    }
+                }
             }
             if let S::Assign {
                 value:

@@ -1649,7 +1649,8 @@ cargo run --bin click -- verify examples/rust-field-borrow/guard.click
 
 A `Box<R>` of a crate struct `R` with no drop glue is the address of an
 allocation it owns: `Box::new(r)` allocates `size_of::<R>()` bytes, moves the record local
-`r` into them, and gives the box their address; `b.field` reads and writes
+`r` into them, and gives the box their address; `Box::new(R { a, b })` writes
+the field values into the allocation, with no record local; `b.field` reads and writes
 through it; the box's drop frees the allocation. Allocation failure aborts the
 process, so the body continues only on success and the proof sees a non-null,
 owned allocation. The compiler places the drop; the free is the kernel's

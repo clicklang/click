@@ -57,14 +57,14 @@ impl box_fields::Holder {
                 have separate(memory(*self.slot), memory(self.slot));
                 mark before_put;
                 step_until(function.exit);
-                have at(statement(1).region(15).exit, self.slot) != 0 by solve();
-                have at(region(40).exit, self.slot) == at(statement(1).region(15).exit, self.slot) by solve();
-                have at(region(40).exit, self.slot) != 0 by solve();
-                have separate(region(43).footprint, memory(self.slot)) by { normalize() using {
+                have at(statement(1).region(13).exit, self.slot) != 0 by solve();
+                have at(region(36).exit, self.slot) == at(statement(1).region(13).exit, self.slot) by solve();
+                have at(region(36).exit, self.slot) != 0 by solve();
+                have separate(region(39).footprint, memory(self.slot)) by { normalize() using {
                     at(before_put, separate(memory(*self.slot), memory(self.slot)));
                 }; }
-                have at(region(43).exit, self.slot) == at(region(43).entry, self.slot) by {
-                    preserve(memory(self.slot), region(43));
+                have at(region(39).exit, self.slot) == at(region(39).entry, self.slot) by {
+                    preserve(memory(self.slot), region(39));
                 }
                 let after = fold(slot(self.slot), { value: Option<u32>::Some(x) }, {});
             }

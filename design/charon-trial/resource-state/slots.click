@@ -53,14 +53,14 @@ impl resource_state::Store<u32> for resource_state::Slot {
                 have separate(memory(*self.item), memory(self.item));
                 mark before_put;
                 step_until(function.exit);
-                have at(statement(1).region(15).exit, self.item) != 0 by solve();
-                have at(region(40).exit, self.item) == at(statement(1).region(15).exit, self.item) by solve();
-                have at(region(40).exit, self.item) != 0 by solve();
-                have separate(region(43).footprint, memory(self.item)) by { normalize() using {
+                have at(statement(1).region(13).exit, self.item) != 0 by solve();
+                have at(region(36).exit, self.item) == at(statement(1).region(13).exit, self.item) by solve();
+                have at(region(36).exit, self.item) != 0 by solve();
+                have separate(region(39).footprint, memory(self.item)) by { normalize() using {
                     at(before_put, separate(memory(*self.item), memory(self.item)));
                 }; }
-                have at(region(43).exit, self.item) == at(region(43).entry, self.item) by {
-                    preserve(memory(self.item), region(43));
+                have at(region(39).exit, self.item) == at(region(39).entry, self.item) by {
+                    preserve(memory(self.item), region(39));
                 }
                 let state = fold(boxed(self.item), { value: Option<u32>::Some(x) }, {});
             }
