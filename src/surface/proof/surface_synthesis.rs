@@ -4806,6 +4806,62 @@ fn synthesis_states_share_program_point(entry: &ExecutionState, state: &Executio
             .is_some_and(|point| state.program_point().id() == Some(point))
 }
 
+/// Spell a read whose version is indexed by its program point. A matching
+/// current or entry state can name it; otherwise use the version's selector.
+fn synthesize_indexed_int32_read(
+    version: &crate::kernel::ProgramPoint,
+    pointer: &Address,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<ContractExpression> {
+    let expression = |state: &ExecutionState| {
+        let address = synthesize_surface_pointer_expression(
+            pointer,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?;
+        Some(ContractExpression::CUnary {
+            operand: Box::new(address),
+            lowered: ProgramExpression::TypedLoad {
+                pointer: Box::new(ProgramExpression::Value(int32(0))),
+                value_type: ProgramType::Int32,
+                volatile: false,
+                pointee_constant: false,
+                access_class: None,
+                source: Default::default(),
+            },
+        })
+    };
+    let selects_version = |state: &ExecutionState| {
+        state
+            .program_point()
+            .indexed_local_int32_version(pointer)
+            .as_ref()
+            == Some(version)
+    };
+    if selects_version(state) {
+        return expression(state);
+    }
+    if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
+        && selects_version(&entry)
+    {
+        return Some(ContractExpression::Old(Box::new(expression(&entry)?)));
+    }
+    SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let points = slot.borrow();
+        let points = points.as_ref()?;
+        let selector = points.point_name(version.read_version_id()?)?;
+        let recorded = points.get_exact(selector)?;
+        selects_version(recorded).then_some(())?;
+        Some(ContractExpression::At {
+            selector: selector.clone(),
+            expression: Box::new(expression(recorded)?),
+        })
+    })
+}
+
 fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<MachineTerm> {
     let MachineTerm::MemoryLoad(_, pointer, kind) = read else {
         return None;
@@ -5306,6 +5362,15 @@ fn synthesize_surface_bitvector(
             ))
         }
         MachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
+            if memory.read_version_id().is_some() {
+                return synthesize_indexed_int32_read(
+                    memory,
+                    kernel_pointer,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                );
+            }
             let read = crate::kernel::canonical_form_of_load(
                 memory.shared_memory().clone(),
                 kernel_pointer.as_ref().clone(),
@@ -7622,11 +7687,18 @@ fn synthesize_surface_algebraic(
                             bound_variables,
                         )
                     }
+                    crate::kernel::AlgebraicValue::Program(
+                        value @ ProgramValue::UInt8(MachineTerm::Constant {
+                            format: MachineIntegerType::UInt8,
+                            ..
+                        }),
+                    ) => Some(ContractExpression::ProgramExpression(
+                        ProgramExpression::Value(value.clone()),
+                    )),
                     // A field of another scalar width that a binder names is
                     // spelled by that binder, which carries its own type;
                     // otherwise by the local, parameter or `result` holding
-                    // it, which carry theirs. A constant of such a width
-                    // would need its literal suffix and is not spelled.
+                    // it, which carry theirs.
                     crate::kernel::AlgebraicValue::Program(
                         ProgramValue::Bool(value @ MachineTerm::Variable(variable))
                         | ProgramValue::Int8(value @ MachineTerm::Variable(variable))

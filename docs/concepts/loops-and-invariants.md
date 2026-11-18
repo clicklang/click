@@ -343,7 +343,7 @@ does not prove that such an iteration is eventually reached. The loop's
 `initialize` and `preserve` proofs, so an invariant can state a local over it
 instead of over another counter:
 
-<!-- verified-example: mdtests/a_loop_states_a_running_total_over_its_pass_count.md -->
+<!-- verified-example: mdtests/a_loop_pass_count_names_the_passes_after_the_loop.md -->
 ```click
 loop {
     decreases n - i;

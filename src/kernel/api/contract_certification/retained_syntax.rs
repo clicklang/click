@@ -298,7 +298,8 @@ impl Comparison {
                     ]);
                 }
                 (MachineTerm::MemoryLoad(am, ap, ak), MachineTerm::MemoryLoad(bm, bp, bk)) => {
-                    if am.shared_memory().arena_id() != bm.shared_memory().arena_id()
+                    if am.read_version_id() != bm.read_version_id()
+                        || am.shared_memory().arena_id() != bm.shared_memory().arena_id()
                         || ak != bk
                         || !self.pointer(ap, bp)
                     {

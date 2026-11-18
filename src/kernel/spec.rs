@@ -1,7 +1,7 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
-use crate::kernel::CompareRelation;
 use crate::kernel::eval::SpecDivision;
+use crate::kernel::{CompareRelation, ProgramPoint};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 mod existential;
@@ -7834,6 +7834,26 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 }
                 // `exact(place)` names the read by the selected state itself;
                 // an ordinary read names its version point.
+                if !*exact
+                    && *value_type == ProgramType::Int32
+                    && ProgramPoint::supports_indexed_local_int32_version(&pointer)
+                {
+                    let selected_point = match memory {
+                        SpecPoint::At(point) => point.clone(),
+                        _ => selected_state.expect("selected read state").program_point(),
+                    };
+                    if let Some(version) = selected_point.indexed_local_int32_version(&pointer) {
+                        let read = crate::kernel::eval::evaluate_indexed_int32_read(
+                            memory_view,
+                            version,
+                            pointer,
+                            pointer_path.facts,
+                            obligations,
+                        );
+                        paths.extend(spec_value_paths_in(vec![read], budget));
+                        continue;
+                    }
+                }
                 let read_paths = if *exact {
                     crate::kernel::eval::evaluate_exact_logical_memory_load_paths(
                         memory_view,

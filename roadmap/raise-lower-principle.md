@@ -612,7 +612,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Complete: 10p1–10p6 landed, with every pushed commit verified upstream. |
-| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1–10q3 landed; 10q4a landed in PR #3305. The 10q4b1/10q4b2a preparations landed in PR #3322 and observations in PR #3334; logical/Integer conditional rewriting is locally validated. The full 10q4b2 Term schema/retained visitors and 10q4c producer handoffs remain required. |
+| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1–10q3 landed; 10q4a landed in PR #3305. The 10q4b1/10q4b2a preparations landed in PR #3322 and observations in PR #3334; logical/Integer conditional rewriting landed in PR #3337; scalar Boolean preparation is locally validated. The full 10q4b2 Term schema/retained visitors and 10q4c producer handoffs remain required. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
 | 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
 | 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
@@ -1619,8 +1619,9 @@ equality and predicate `Term` payloads remain assigned to 10q4.
 | 10q4b2 | Term schema and retained visitors | Retain roots in the five expression-bearing Term fields; extend selected-root dispatch and source/binder reservation, preserving exact native identity, scope, refusals and substitution. |
 | 10q4b2a | Raw retained Integer arithmetic (preparation) | Landed with 10q4b1 in PR #3322. Literal/variable/six-operator substitution is prepared; exact-source mode, other node families and the Term dispatch switch remain required. |
 | 10q4b2b | Retained machine observations (preparation) | PR #3334 merged as `0a11ab053`; all three pushed commits were verified upstream. Numeric child rewriting and observation/retain/rekey policy preserve literal readings, width, read scope and nonliteral no-op roots. |
-| 10q4b2c | Retained Boolean value connectives (preparation) | Reuse the active rewrite scope for literal/variable leaves and shared BoolIf/BoolEqual reconstruction; preserve native checking/raw constructor, scope and refusal rules. |
-| 10q4b2d | Retained Integer conditionals (preparation) | Reserve both arms, rewrite the guard in the active scope, visit the selected arm and preserve native equal-arm/refusal rules; memoized guard prefixes keep mixed DAG work bounded. |
+| 10q4b2c | Retained Boolean value connectives (preparation) | PR #3337 merged as `813835029`; all seven pushed commits were verified upstream. Reuse the active rewrite scope for literal/variable leaves and shared BoolIf/BoolEqual reconstruction; preserve native checking/raw constructor, scope and refusal rules. |
+| 10q4b2d | Retained Integer conditionals (preparation) | Landed with 10q4b2c in PR #3337. Reserve both arms, rewrite the guard in the active scope, visit the selected arm and preserve native equal-arm/refusal rules; memoized guard prefixes keep mixed DAG work bounded. |
+| 10q4b2e | Retained scalar Boolean predicates (preparation) | Rewrite machine comparison/overflow and Integer comparison operands in the active scope; preserve raw values, conditional-only folding and native truth-word replacement. |
 | 10q4c | Equality and predicate producers | Forward actual evaluated roots into the carriers, close the producer inventory, and verify proof/refusal, fact stability and scaling parity. |
 
 Sequence and pointer-offset descriptors retain the operands migrated in their
@@ -1696,10 +1697,9 @@ changed/no-op DAG retention passed all five focused checks. Compatibility
 reads follow the retention assertions. After integration with upstream
 `989ad800d`, all five focused checks, 366 affected checks, all 1,954 regular
 scaling checks and quality passed; nightly was excluded. Native UInt8 Boolean
-constants are admitted, while ordinary Int32
-zero/one truth-word replacements remain explicit non-admission cases alongside
-symbolic scalar replacements. Scalar predicate/application/read leaves,
-compound exact/cited/collected guard lookup, remaining Integer families, the
+constants are admitted in this initial profile; subsequent 10q4b2e admits the
+ordinary Int32 zero/one and symbolic truth-word replacements. Application/read,
+float/pointer leaves, contextual guard lookup, remaining Integer families, the
 full Term schema and actual 10q4c producer handoffs remain required. No whole common
 guard is exported to substitute for a missing retained dispatch.
 
@@ -1719,9 +1719,31 @@ scope and DTO parity, distinct left-producer retention, unreachable large
 literal work/refusal, callback replay and mixed guard/Integer DAG work passed.
 After integration with upstream `0a11ab053`, all 23 focused checks, 373 affected
 checks, all 1,959 regular scaling checks and quality passed; nightly was
-excluded. Exact-source Integer matching, scalar/whole-guard logical modes,
+excluded. Exact-source Integer matching, contextual scalar/whole-guard modes,
 remaining node families, the actual Term schema and producer handoffs remain
 required.
+
+10q4b2e admits raw machine comparison/overflow and Integer comparison leaves
+through the existing typed machine and retained Integer walkers. Rebuilding a
+32-bit comparison preserves the native word-literal convention; wide equality
+and overflow values retain raw syntax. Conditional-only folding reuses the
+existing restricted guard helper. Contextual guard results stay separate from
+standalone predicate memo entries, with both warm query orders tested. Native
+truth-word replacement is imported once without recursively substituting it;
+admission inspects its native connective/scalar profile before constructing a
+root. Unsupported replacement families remain explicit. Source reservation
+shares selected numeric/Integer prefixes without exporting them. Native DTO,
+changed/refusal, active-scope and storage-key parity, selected-arm literal work,
+and growing predicate DAG tests passed all 24 focused checks. All 378 affected
+checks, all 1,961 regular scaling checks and quality passed; nightly was
+excluded. Existing selected conversion/Fold/Match/opaque compatibility adapters
+remain assigned to 10r–10t. Contextual scalar/whole-guard lookup, read,
+application, float, pointer and algebraic-equality leaves, remaining Integer
+families, the five actual Term fields and q4c producer handoffs remain required.
+After integrating upstream `813835029`, all 662 bounded scalar, composite
+borrowing, diagnostic and synthesis checks and quality passed. The delta had no
+shared walker, Boolean/Integer or exporter changes; the complete regular scaler
+verdict above applies to the unchanged migration code. Nightly was excluded.
 
 The required 10q4b2 integration checklist is:
 

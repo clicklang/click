@@ -27,13 +27,27 @@ radix prefixes, underscore separators, and the suffixes described under
 [Rust integer literals](../rust.md#integer-literals).
 Character literals use single quotes, including
 the ordinary C escapes accepted by the parser. String literals occur in source
-locations and other explicitly documented string positions; Click doesn't
-have a first-class string type.
+locations and other explicitly documented string positions. The
+[byte string syntax](#byte-string-literals) is available in specifications.
 
 Call-style proof tactics require parentheses, including the no-argument
 call `solve()`. A single tactic call can follow `by` directly; braces enclose
 a sequence and may also enclose one call. An omitted proof runs the whole
 proof by automation.
+
+## Byte string literals
+
+`b"..."` denotes a `List<uint8>` in a Click expression. Printable ASCII
+characters supply their byte values. The escapes `\0`, `\n`, `\r`, `\t`,
+`\"`, `\'`, and `\\` supply individual bytes, and `\xNN` takes exactly
+two hexadecimal digits. The list contains exactly those bytes, in order.
+For example, `b"a\0b"` has three elements, and `b""` is
+`List<uint8>::Nil`. A literal may contain up to 64 bytes after decoding.
+
+The spelling has the same meaning in a C, C++, or Rust sidecar. The source
+language supplies the encoding and terminator rules for its own literals.
+
+<!-- verified-example: mdtests/byte_string_literals.md -->
 
 ## Exact float bit literals
 

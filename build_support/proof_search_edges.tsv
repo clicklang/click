@@ -9,8 +9,6 @@ src/kernel/loans.rs	legacy-caller	LoanLedger::memory_access_refusal	permits_memo
 src/kernel/loans.rs	legacy-caller	LoanLedger::permits_memory_access	permits_memory_access_with_assumptions	1
 src/kernel/loans.rs	legacy-caller	StableViewTransferPlan::lend_local_views_with_worker_shares	permits_memory_access_with_assumptions	2
 src/kernel/loans/legacy_search.rs	search	ProofSearch::loan_access	memory_range_aliases	1
-src/kernel/loops.rs	legacy-caller	::abstract_loop_exit_memory	permits_memory_access_with_assumptions	1
-src/kernel/loops.rs	legacy-caller	::validate_loop_havoc_stable_loans	permits_memory_access_with_assumptions	1
 src/kernel/mutexes.rs	legacy-caller	MutexLedger::havoc_protected_for_call	call_kept_ownership	1
 src/kernel/mutexes/assumed_protocol.rs	legacy-caller	::forget_released_protected_memory	call_kept_ownership	1
 src/kernel/primitives/memory_state.rs	legacy-caller	ExecutionState::checked_population_member_exchange	permits_memory_access_with_assumptions	1
@@ -111,7 +109,8 @@ src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_branch_wit
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_if_within	driver	2
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_steps_within	driver	2
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_focused_expanded_execution_arm	driver	1
-src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_bare_statement_step	driver	1
+src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_bare_statement_step	driver	2
+src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_bare_statement_step	selected_call_supplier_unfold	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_close_invariants_body	driver	2
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_execution_statement_step	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_step_with_obligation_proofs	driver	1
@@ -716,7 +715,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_equality_from
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_equality_from_opposite_bounds	try_restricted_solve_closure	1
 src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::apply_integer_composition	driver	7
 src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::apply_integer_composition	try_direct_logical_closure	1
-src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	driver	17
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	driver	20
 src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	driver	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	try_solve_closure	2
@@ -820,3 +819,4 @@ src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::try_nat
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_native_integer_bound	try_native_integer_bound	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	try_native_integer_bound	1
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	try_native_integer_bound	1
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	try_int32_add_sub_using	1

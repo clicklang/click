@@ -116,15 +116,7 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
                 } else { KernelTerm::boolean_equal_raw([children[0].clone(), children[1].clone()]) }
             ),
             KernelTermNode::BoolIf { .. } => {
-                let mut guard = children[0].clone();
-                if let KernelTermNode::BoolCompare { format, relation, arguments } = guard.node()
-                    && (*format == MachineIntegerType::Int32
-                        || (*format == MachineIntegerType::UInt32 && *relation == CompareRelation::Equal))
-                {
-                    guard = KernelTerm::boolean_comparison(*format, *relation, arguments.clone());
-                } else if let Some(native) = B::Shared(&guard).native_leaf() {
-                    guard = KernelTermImport::default().condition(&folded_machine_condition(native.clone()));
-                }
+                let guard = folded_shared_machine_condition(children[0].clone());
                 let yes = B::Shared(&children[1]);
                 let no = B::Shared(&children[2]);
                 Ok(match B::Shared(&guard).constant() {
@@ -366,4 +358,23 @@ impl TermRewrite<'_> {
             .ok()
             .filter(|_| self.refusal().is_none())
     }
+}
+
+/// Existing native scalar folding at a conditional guard, after substitution.
+/// Standalone predicate values retain their raw constructor spelling.
+pub(super) fn folded_shared_machine_condition(guard: KernelTerm) -> KernelTerm {
+    let mut guard = guard;
+    if let KernelTermNode::BoolCompare {
+        format,
+        relation,
+        arguments,
+    } = guard.node()
+        && (*format == MachineIntegerType::Int32
+            || (*format == MachineIntegerType::UInt32 && *relation == CompareRelation::Equal))
+    {
+        guard = KernelTerm::boolean_comparison(*format, *relation, arguments.clone());
+    } else if let Some(native) = B::Shared(&guard).native_leaf() {
+        guard = KernelTermImport::default().condition(&folded_machine_condition(native.clone()));
+    }
+    guard
 }

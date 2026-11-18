@@ -35,6 +35,7 @@ void mark_all(struct arena* arena) {
 } by {
     step();
     step();
+    have separate(memory(arena->data[0..arena->capacity]), memory(*arena)) by { solve(); }
     loop {
         decreases (arena->capacity - i);
         owns arena->data[0..arena->capacity];

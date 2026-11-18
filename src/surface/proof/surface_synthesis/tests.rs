@@ -4148,6 +4148,188 @@ fn unified_certificate_terms_raise_and_lower_by_identity() {
     }
 }
 
+fn local_read_test_address(name: &str) -> Address {
+    Address {
+        base: AddressBase::Concrete(format!("local:{name}")),
+        offset: AddressOffset::Constant(0),
+    }
+}
+
+fn local_read_test_store(state: &ExecutionState, pointer: &Address, bits: u32) -> ExecutionState {
+    state.clone().with_memory(state.memory().clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(bits)),
+    ))
+}
+
+fn local_read_test_claim() -> ClickProposition {
+    ClickProposition::Comparison {
+        left: ContractExpression::CUnary {
+            operand: Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable("p".into()),
+            )),
+            lowered: ProgramExpression::TypedLoad {
+                pointer: Box::new(ProgramExpression::Value(int32(0))),
+                value_type: ProgramType::Int32,
+                volatile: false,
+                pointee_constant: false,
+                access_class: None,
+                source: Default::default(),
+            },
+        },
+        operator: ComparisonOperator::LessEqual,
+        right: ContractExpression::IntegerLiteral("20".into()),
+    }
+}
+
+#[test]
+fn ordinary_int32_reads_select_the_write_on_their_own_path() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = local_read_test_address("slot");
+    let other = local_read_test_address("other");
+    let start = ExecutionState::new()
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block("local:slot", 4)
+                .with_block("local:other", 4),
+        )
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(slot.clone(), ProgramType::Int32Pointer),
+        );
+    let left_write = local_read_test_store(&start, &slot, 7);
+    let right_write = local_read_test_store(&start, &slot, 7);
+    let left = local_read_test_store(&left_write, &other, 1);
+    let right = local_read_test_store(&right_write, &other, 1);
+    assert_eq!(left.memory(), right.memory());
+    assert_ne!(
+        left_write.program_point_id(),
+        right_write.program_point_id()
+    );
+
+    let claim = local_read_test_claim();
+    let selectors = [
+        ProgramPointSelector::Mark("left_write".into()),
+        ProgramPointSelector::Mark("right_write".into()),
+    ];
+    let mut points = RecordedStates::new();
+    points.insert(selectors[0].clone(), left_write.clone());
+    points.insert(selectors[1].clone(), right_write.clone());
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+
+    let mut roots = Vec::new();
+    for (reader, write, other_path, selector) in [
+        (&left, &left_write, &right, &selectors[0]),
+        (&right, &right_write, &left, &selectors[1]),
+    ] {
+        let lowered = relower_written_proposition(&claim, reader).unwrap();
+        let Some((ConditionTerm::Compare { left, .. }, true)) = lowered.condition_native() else {
+            panic!("read comparison");
+        };
+        let MachineTerm::MemoryLoad(point, _, kind) = left.as_ref() else {
+            panic!("ordinary int32 read: {left:?}");
+        };
+        assert_eq!(*kind, crate::kernel::LoadKind::Int32);
+        assert_eq!(point.id(), write.program_point_id());
+        let root =
+            crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, left);
+        assert!(
+            matches!(root.node(), crate::kernel::KernelTermNode::MemoryLoad { point, .. }
+            if point.id() == write.program_point_id())
+        );
+        let raised = raise_kernel_term(
+            &root,
+            ParameterBinding::default(),
+            other_path,
+            &BTreeMap::new(),
+        )
+        .expect("a named version has an ordinary read spelling");
+        assert!(matches!(&raised, ContractExpression::At { selector: at, .. } if at == selector));
+        let replay = ClickProposition::Comparison {
+            left: raised,
+            operator: ComparisonOperator::LessEqual,
+            right: ContractExpression::IntegerLiteral("20".into()),
+        };
+        assert_eq!(
+            relower_written_proposition_with_states(&replay, other_path, other_path, &points),
+            Ok(lowered)
+        );
+        roots.push(root);
+    }
+    assert_ne!(roots[0], roots[1]);
+
+    let repeated = local_read_test_store(&left, &slot, 7);
+    assert_eq!(left.memory(), repeated.memory());
+    assert_eq!(
+        repeated
+            .program_point()
+            .indexed_local_int32_version(&slot)
+            .unwrap()
+            .id(),
+        repeated.program_point_id()
+    );
+    let possibly_aliasing = local_read_test_store(&left, &Address::symbolic(Variable(981_640)), 9);
+    assert!(
+        possibly_aliasing
+            .program_point()
+            .indexed_local_int32_version(&slot)
+            .is_none(),
+        "an unclassified store cannot keep an indexed version"
+    );
+}
+
+#[test]
+fn ordinary_int32_read_work_is_independent_of_unrelated_path_length() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = local_read_test_address("slot");
+    let other = local_read_test_address("other");
+    let start = ExecutionState::new()
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block("local:slot", 4)
+                .with_block("local:other", 4),
+        )
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(slot.clone(), ProgramType::Int32Pointer),
+        );
+    let claim = local_read_test_claim();
+    let mut work = Vec::new();
+    for (earlier, later) in [(4, 4), (64, 4), (1024, 4), (4, 64), (4, 1024)] {
+        // Grow the history of overwritten values and the disjoint suffix
+        // independently. Every sample names a new version on its own path.
+        let mut before = start.clone();
+        for i in 0..earlier {
+            before = local_read_test_store(&before, &slot, i);
+        }
+        let write = local_read_test_store(&before, &slot, earlier);
+        let mut reader = write.clone();
+        for i in 0..later {
+            reader = local_read_test_store(&reader, &other, i);
+        }
+        let ((lowered, map_work), proof_work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                crate::persistent::measure_persistent_work(|| {
+                    relower_written_proposition(&claim, &reader).unwrap()
+                })
+            });
+        let Some((ConditionTerm::Compare { left, .. }, true)) = lowered.condition_native() else {
+            panic!("read comparison");
+        };
+        assert!(matches!(left.as_ref(), MachineTerm::MemoryLoad(point, _, _)
+            if point.id() == write.program_point_id()));
+        work.push((proof_work, map_work));
+    }
+    let (first_proof_work, first_map_work) = work[0];
+    // The first lowering can also pay for setting up the shared literal and
+    // pointer terms. Later samples may reuse them, but still select a new read.
+    assert!(
+        work.iter()
+            .all(|&(proof, map)| proof <= first_proof_work && map == first_map_work),
+        "lowering grew with the execution history: {work:?}"
+    );
+}
+
 #[test]
 fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
     let _session = crate::kernel::VerificationSession::enter();
