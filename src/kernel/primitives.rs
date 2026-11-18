@@ -13312,8 +13312,11 @@ pub enum Proposition {
         wide: bool,
     },
     /// A typed read is valid in this state, including initialization.
-    /// This is a pure fact; it grants no resource access permission.
+    /// The point records where the observation was made. Memory provides
+    /// its initialization and lifetime information. Synthetic memory
+    /// queries can have no recorded point.
     MemoryReadDefined {
+        at: Option<program_point::ProgramPointId>,
         memory: SymbolicMemory,
         pointer: Address,
         value_type: ProgramType,
@@ -13562,10 +13565,12 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             wide.hash(state);
         }
         Proposition::MemoryReadDefined {
+            at,
             memory,
             pointer,
             value_type,
         } => {
+            at.hash(state);
             memory.hash(state);
             pointer.hash(state);
             value_type.hash(state);
@@ -13843,10 +13848,12 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             wide: *wide,
         },
         Proposition::MemoryReadDefined {
+            at,
             memory,
             pointer,
             value_type,
         } => Proposition::MemoryReadDefined {
+            at: *at,
             memory: memory.clone(),
             pointer: pointer.clone(),
             value_type: *value_type,
@@ -14757,9 +14764,14 @@ pub struct PureFactContext {
     /// separation by ownership reads the compositions that can answer rather
     /// than every one the path stated.
     pub(super) composition_members: composition_member_index::CompositionMemberIndex,
+    /// Memory-view keys for validity checking, with the original point-bound
+    /// propositions retained as sources for explicit proof construction.
     pub(super) memory_read_defined_facts: crate::persistent::PersistentMap<
         (Address, ProgramType),
-        crate::persistent::PersistentSet<Proposition>,
+        crate::persistent::PersistentMap<
+            Proposition,
+            crate::persistent::PersistentSet<Proposition>,
+        >,
     >,
     pub(super) memory_loadable_facts: crate::persistent::PersistentMap<
         AddressBase,

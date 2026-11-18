@@ -759,6 +759,7 @@ mod tests {
             }
         }
         let state = Rejected(Proposition::MemoryReadDefined {
+            at: None,
             memory: SymbolicMemory::new(),
             pointer: Address::symbolic(Variable(987_001)),
             value_type: ProgramType::Int32,
@@ -800,6 +801,7 @@ mod tests {
             }
         }
         let read = |memory| Proposition::MemoryReadDefined {
+            at: None,
             memory,
             pointer: Address::symbolic(Variable(987_002)),
             value_type: ProgramType::Int32,
@@ -1145,9 +1147,7 @@ mod tests {
 
     #[test]
     fn unspelled_premises_keep_entry_names_after_the_session_unwinds() {
-        use crate::kernel::{
-            MachineTerm, ProgramExpression, ProgramValue, SymbolicMemory, Variable,
-        };
+        use crate::kernel::{MachineTerm, ProgramExpression, ProgramValue, Variable};
         use crate::languages::interface::{ImportedParameter, InterfaceType};
 
         let variable = Variable(786_901);
@@ -1161,7 +1161,7 @@ mod tests {
         ))];
         render::enter_ambient_naming(
             crate::surface::ParameterBinding::new(&parameters, &arguments),
-            &SymbolicMemory::new(),
+            &crate::kernel::ExecutionState::new(),
         );
         let failure = unspelled_test_failure(&[unspelled_test_fact(variable)]);
         render::clear_ambient_naming();

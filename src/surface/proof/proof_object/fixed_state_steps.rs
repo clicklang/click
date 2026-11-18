@@ -1635,7 +1635,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             view.parameter_binding.parameters,
             &values,
-            view.fixed_state.state.memory(),
+            &view.fixed_state.state.program_point(),
         );
         let (values, array_refs) =
             contract_environment_at_state(&values, &array_refs, view.fixed_state.state);
@@ -2263,7 +2263,7 @@ impl<'a> Proof<'a> {
             let array_refs = array_refs_for_parameters(
                 view.parameter_binding.parameters,
                 &parameter_values,
-                view.fixed_state.state.memory(),
+                &view.fixed_state.state.program_point(),
             );
             let (values, array_refs) = contract_environment_at_state(
                 &parameter_values,
@@ -2344,7 +2344,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             view.parameter_binding.parameters,
             &parameter_values,
-            view.fixed_state.state.memory(),
+            &view.fixed_state.state.program_point(),
         );
         let (values, array_refs) =
             contract_environment_at_state(&parameter_values, &array_refs, view.fixed_state.state);

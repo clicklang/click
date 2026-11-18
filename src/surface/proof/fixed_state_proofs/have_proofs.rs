@@ -1108,21 +1108,20 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
             )
         ));
     };
-    let memory = match expression {
-        ContractExpression::Old(_) => fixed_state.pre_state.memory().clone(),
+    let point = match expression {
+        ContractExpression::Old(_) => fixed_state.pre_state.program_point(),
         ContractExpression::At { selector, .. } => {
             selected_program_state(selector, fixed_state.pre_state, fixed_state.recorded_states)?
-                .memory()
-                .clone()
+                .program_point()
         }
-        _ => fixed_state.state.memory().clone(),
+        _ => fixed_state.state.program_point(),
     };
     let element_type = contract_array_ref_element_type(contract_environment.array_refs, expression)
         .or_else(|| pointer.program_type().pointee_type())
         .ok_or_else(|| "array reference pointer has no modeled element type".to_string())?;
     Ok((
         ClickArrayRef {
-            memory,
+            point,
             pointer: pointer.pointer().clone(),
             element_type,
         },
@@ -1779,5 +1778,60 @@ mod retained_capture_tests {
         include!(
             "../../../scaling_tests/surface/proof/fixed_state_proofs/have_proofs/retained_capture.rs"
         );
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn fixed_array_argument_retains_the_selected_point_with_equal_memory() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = crate::kernel::Address::symbolic(crate::kernel::Variable(995_001));
+    let entry = ExecutionState::new()
+        .with_memory(crate::kernel::SymbolicMemory::new())
+        .with_local(
+            "a",
+            ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
+        );
+    let later = entry.clone().with_memory(entry.memory().clone());
+    assert_eq!(entry.memory(), later.memory());
+    let entry_id = entry.program_point_id().unwrap();
+    let later_id = later.program_point_id().unwrap();
+    assert_ne!(entry_id, later_id);
+
+    let values = BTreeMap::new();
+    let arrays = ClickArrayRefs::new();
+    let selector = ProgramPointSelector::ProgramPoint(ProgramPointRef {
+        region: CodeRegionRef::Region(0),
+        kind: ProgramPointKind::Exit,
+    });
+    let mut recorded = RecordedStates::new();
+    recorded.insert(selector.clone(), later.clone());
+    let binding = || {
+        Box::new(ContractExpression::ProgramExpression(
+            ProgramExpression::Variable("a".into()),
+        ))
+    };
+    for (expression, expected) in [
+        (ContractExpression::Old(binding()), entry_id),
+        (
+            ContractExpression::At {
+                selector,
+                expression: binding(),
+            },
+            later_id,
+        ),
+    ] {
+        let (array, _) = evaluate_fixed_state_array_ref_through_kernel(
+            &expression,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&values, &arrays),
+            FixedStateFrame::new(&entry, &later, None, &recorded),
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            ),
+        )
+        .unwrap();
+        assert_eq!(array.point.id(), Some(expected));
     }
 }

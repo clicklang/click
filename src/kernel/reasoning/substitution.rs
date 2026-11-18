@@ -1329,10 +1329,12 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             outcome: walk_program_expression_outcome(outcome, s),
         },
         Proposition::MemoryReadDefined {
+            at,
             memory,
             pointer,
             value_type,
         } => Proposition::MemoryReadDefined {
+            at: *at,
             memory: s.memory(memory),
             pointer: s.pointer(pointer),
             value_type: *value_type,
@@ -4463,6 +4465,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     walker: &mut crate::kernel::proof::term_rewrite::TermRewrite<'_>,
 ) -> Result<Proposition, IntegerPureSubstitutionError> {
     if let Proposition::MemoryReadDefined {
+        at,
         memory,
         pointer,
         value_type,
@@ -4476,6 +4479,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         };
         integer_substitution_refusal(walker.refusal())?;
         return Ok(Proposition::MemoryReadDefined {
+            at: *at,
             memory: memory.clone(),
             pointer: pointer.pointer().clone(),
             value_type: *value_type,

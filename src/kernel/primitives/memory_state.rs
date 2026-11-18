@@ -10000,6 +10000,16 @@ impl ExecutionState {
         self.point.id()
     }
 
+    /// Point of an observation in this state, including a successor reached
+    /// by pending steps. A settled state already carries the ID.
+    pub(crate) fn observation_point_id(&self) -> Option<super::program_point::ProgramPointId> {
+        if self.memory.pending_steps.is_some() {
+            self.program_point().id()
+        } else {
+            self.program_point_id()
+        }
+    }
+
     /// Replace memory without the resource invalidation of
     /// [`Self::set_memory`], for a transition that has already accounted for
     /// it. It is still a transition, so the state moves to a new point.

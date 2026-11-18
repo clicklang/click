@@ -569,7 +569,7 @@ fn prove_claims_by_checked_tactics(
     // parameters for diagnostics as building it would have.
     crate::surface::proof_diagnostics::render::enter_ambient_naming(
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        state.memory(),
+        &state,
     );
     crate::surface::diagnostics::enter_ambient_object_fields(parsed_function);
     let opened_entry = shared_entry.get_or_open(|| {
@@ -1677,8 +1677,11 @@ fn close_claim_directly_from_outcome<'a>(
             FunctionOutcome::Return { value, state },
         ) => {
             let values = parameter_values(parameter_binding).unwrap_or_default();
-            let array_refs =
-                array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
+            let array_refs = array_refs_for_parameters(
+                parameter_binding.parameters,
+                &values,
+                &state.program_point(),
+            );
             let evaluate = |expression: &ContractExpression| {
                 evaluate_fixed_state_expression_through_kernel(
                     expression,

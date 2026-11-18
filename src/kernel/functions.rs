@@ -11129,6 +11129,7 @@ fn string_literal_fact_value(
             memory,
             pointer,
             value_type,
+            ..
         } => {
             let pointer = string_literal_pointer_with_bindings(pointer, bindings);
             let offset = pointer.offset.as_const()?;

@@ -656,6 +656,23 @@ pub(crate) fn instantiate_composite_resource_facts(
     )
 }
 
+/// Instantiate the definition in a frame at the selected observation point.
+pub(crate) fn instantiate_composite_resource_facts_at(
+    composite: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    at: &ProgramPoint,
+    resources: &ResourceContext,
+    assumptions: &PureFactContext,
+) -> Option<InstantiatedCompositeResourceFacts> {
+    instantiate_composite_resource_facts_in_state(
+        composite,
+        definitions,
+        ExecutionState::at_point(at),
+        resources,
+        assumptions,
+    )
+}
+
 /// Private member invariants may read only their own body, even when the
 /// ambient proof owns other memory. Otherwise opening one member after an
 /// unrelated write could publish a false current invariant.
@@ -698,6 +715,26 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
     assumptions: &PureFactContext,
     population_state: Option<&ExecutionState>,
 ) -> Option<InstantiatedCompositeResourceFacts> {
+    let state = population_state
+        .cloned()
+        .unwrap_or_else(ExecutionState::new)
+        .with_memory(memory.clone());
+    instantiate_composite_resource_facts_in_state(
+        composite,
+        definitions,
+        state,
+        resources,
+        assumptions,
+    )
+}
+
+fn instantiate_composite_resource_facts_in_state(
+    composite: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    state: ExecutionState,
+    resources: &ResourceContext,
+    assumptions: &PureFactContext,
+) -> Option<InstantiatedCompositeResourceFacts> {
     let Resource::Composite { name, arguments } = composite.resource() else {
         return None;
     };
@@ -707,11 +744,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
     if definition.parameters().len() != arguments.len() {
         return None;
     }
-    let mut state = population_state
-        .cloned()
-        .unwrap_or_else(ExecutionState::new)
-        .with_memory(memory.clone())
-        .with_resource_context(resources.clone());
+    let mut state = state.with_resource_context(resources.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
         if parameter.program_type() != argument.program_type() {
@@ -793,7 +826,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
                 };
                 memory_states_proven_equal_at_pointer(
                     obligation_memory,
-                    memory,
+                    state.memory(),
                     base,
                     &fact_assumptions,
                 ) && bytes.as_const().is_some_and(|bytes| {

@@ -527,6 +527,7 @@ fn dynamic_body_fact_dependency(
                 memory,
                 pointer,
                 value_type,
+                ..
             } => {
                 // Definedness is an observation of the same cell as a load.
                 // Retain its access dependency, including loads in its address.
@@ -1892,12 +1893,14 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             describe_resource_clause(resource)
         ))
     })?;
-    let fact_state = observation_pre_state.clone().with_memory(memory.clone());
+    let fact_state = observation_pre_state
+        .clone()
+        .with_memory_continuing(&observation_pre_state, memory.clone());
     let instantiated = if body_projected {
-        Some(crate::kernel::instantiate_composite_resource_facts(
+        Some(crate::kernel::instantiate_composite_resource_facts_at(
             &abstract_resource,
             function.composite_resource_definitions(),
-            &memory,
+            &fact_state.program_point(),
             &contained_resources,
             &assumptions,
         )
@@ -2068,7 +2071,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     }
     Ok((
         state
-            .with_memory(memory)
+            .with_memory_of(&fact_state)
             .with_resource_context_and_loan_dependencies(resources, dependency_bindings),
         abstract_resource,
     ))
@@ -4068,7 +4071,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             let array_refs = array_refs_for_parameters(
                 parameter_binding.parameters,
                 &values,
-                guard_state.memory(),
+                &guard_state.program_point(),
             );
             let retained_states = RecordedStates::new();
             for argument in arguments {
@@ -5771,6 +5774,7 @@ void child_release(struct child* obj) {
                 .is_some()
         );
         let fact = Proposition::MemoryReadDefined {
+            at: None,
             memory: observed.memory().clone(),
             pointer: range.base().offset_by_bytes(4),
             value_type: ProgramType::Int32,
@@ -5895,6 +5899,7 @@ void child_release(struct child* obj) {
             body: Box::new(Proposition::Implies(
                 Box::new(guard),
                 Box::new(Proposition::MemoryReadDefined {
+                    at: None,
                     memory: memory.clone(),
                     pointer: Address {
                         base: AddressBase::ExternalArgument,
@@ -5990,6 +5995,7 @@ void child_release(struct child* obj) {
         };
         let proposition = if definedness {
             Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: pointer.clone(),
                 value_type: crate::kernel::ProgramType::Int32,

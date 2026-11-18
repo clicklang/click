@@ -374,7 +374,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
-            state.memory(),
+            &state.program_point(),
         );
         capture_fixed_state_algebraic_value(
             &expression,
@@ -494,7 +494,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
-            execution.core.state.memory(),
+            &execution.core.state.program_point(),
         );
         // A Rust `match` of a local that is no parameter, such as a call's
         // result, splits the algebraic value the local holds here, the one

@@ -2105,6 +2105,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
 
     let memory = SymbolicMemory::new().with_block("goal", 64);
     let read_defined = |pointer: Address| Proposition::MemoryReadDefined {
+        at: None,
         memory: memory.clone(),
         pointer,
         value_type: ProgramType::Int32,
