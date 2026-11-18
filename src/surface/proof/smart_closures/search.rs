@@ -384,18 +384,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         }
         let kernels = pairs.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
-        if signed_intervals::has_retained_read_source(surface_goal)
-            && crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+        if signed_intervals::has_retained_read_source(surface_goal) {
+            let step = if crate::surface::planning::solve::computes_with_known(goal) {
+                Some(ProofStep::Known)
+            } else if crate::kernel::proof::fact_reasoning::normalize_using_conditions(
                 goal,
                 &kernels,
                 &crate::kernel::proof::PureFactStore::from_ordered(&kernels),
             )
             .is_ok()
-        {
-            return search_input
-                .driver()
-                .apply_step(ProofStep::NormalizeUsing(premises.to_vec()))
-                .map(Some);
+            {
+                Some(ProofStep::NormalizeUsing(premises.to_vec()))
+            } else {
+                None
+            };
+            if let Some(step) = step {
+                return search_input.driver().apply_step(step).map(Some);
+            }
         }
         if let Some(closed) = Self::try_interval_fact_using(search_input, premises)? {
             return Ok(Some(closed));

@@ -3791,24 +3791,39 @@ fn raise_integer_operation(
 
 // A printed comparison operand or conditional arm can reparse arithmetic as
 // Integer. Keep the machine context of the bounded unsigned operation there.
-fn spell_wrapping_uint64_operand(
+fn spell_bounded_uint64_operand(
     term: &crate::kernel::KernelTerm,
     expression: SurfaceTerm,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelTermNode as Node;
     if let Node::MachineBinary {
         format: MachineIntegerType::UInt64,
-        operator: MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply,
+        operator,
         arguments,
     } = term.node()
-        && matches!(
-            arguments.each_ref().map(|child| child.node()),
-            [Node::Variable(_), Node::MachineLiteral(_)]
-                | [Node::MachineLiteral(_), Node::Variable(_)]
-        )
+        && match operator {
+            MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply => {
+                matches!(
+                    arguments.each_ref().map(|child| child.node()),
+                    [Node::Variable(_), Node::MachineLiteral(_)]
+                        | [Node::MachineLiteral(_), Node::Variable(_)]
+                )
+            }
+            MachineBinaryOp::Divide | MachineBinaryOp::Remainder => {
+                matches!(arguments[0].node(), Node::Variable(_))
+                    && crate::kernel::MachineOperandView::Shared(&arguments[1])
+                        .uint64_constant()
+                        .is_some_and(|divisor| divisor != 0)
+            }
+            _ => false,
+        }
         && matches!(
             expression,
-            SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..) | SurfaceTerm::Multiply(..)
+            SurfaceTerm::Add(..)
+                | SurfaceTerm::Subtract(..)
+                | SurfaceTerm::Multiply(..)
+                | SurfaceTerm::Divide(..)
+                | SurfaceTerm::Remainder(..)
         )
     {
         synthesize_observation_operand(expression, ProgramType::UInt64)
@@ -3916,7 +3931,7 @@ fn raise_kernel_term_dispatch(
         }
         Node::BoolLiteral(value) => bool_literal(*value),
         Node::BoolIf { arguments } | Node::MachineIf { arguments } => {
-            let arm = |term| spell_wrapping_uint64_operand(term, recurse(term)?);
+            let arm = |term| spell_bounded_uint64_operand(term, recurse(term)?);
             SurfaceTerm::If {
                 condition: Box::new(bool_truth(recurse(&arguments[0])?)),
                 then_branch: Box::new(arm(&arguments[1])?),
@@ -3981,7 +3996,7 @@ fn raise_kernel_term_dispatch(
                     .copied()
                     .all(|operand| unsigned_widening(operand) || operand.variable().is_some());
             let operand = |term| {
-                let expression = spell_wrapping_uint64_operand(term, recurse(term)?)?;
+                let expression = spell_bounded_uint64_operand(term, recurse(term)?)?;
                 if unsigned_literal || (unsigned_word && unsigned_widening(V::Shared(term))) {
                     Some(expression)
                 } else {

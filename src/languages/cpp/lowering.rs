@@ -1346,6 +1346,7 @@ impl LoweringContext<'_> {
             | CppStatement::ReturnAggregateCall { .. }
             | CppStatement::ReturnRecord { .. }
             | CppStatement::Return { .. }
+            | CppStatement::ReturnVoid { .. }
             | CppStatement::ReturnCall { .. }
             | CppStatement::Throw { .. }
             | CppStatement::ThrowIosFailure { .. }
@@ -1565,6 +1566,13 @@ impl LoweringContext<'_> {
                     result = program_seq(result, self.lower_cleanup(cleanup)?);
                 }
                 Ok(program_seq(result, program_return(address)))
+            }
+            CppStatement::ReturnVoid { .. } => {
+                let cleanups = self.lower_cleanups(&state.exit(0).collect::<Vec<_>>())?;
+                Ok(evaluate_then(
+                    cleanups,
+                    program_return(ProgramExpression::Value(crate::kernel::ProgramValue::Void)),
+                ))
             }
             CppStatement::Return { value, .. } => {
                 let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;

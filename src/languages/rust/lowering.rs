@@ -1331,10 +1331,7 @@ impl Context<'_> {
         if left.name == right.name {
             return Err("split_at results require distinct slice slots".into());
         }
-        let Some(name) = shared_slice_local(slice) else {
-            return Err("split_at requires a shared byte-slice local".into());
-        };
-        if !self.slices.get(name).is_some_and(|(_, constant)| *constant) {
+        if !self.shared_byte_slice(slice) {
             return Err("split_at requires a shared byte-slice local".into());
         }
         let (pointer, length) = self.slice_parts(slice)?;
@@ -2207,6 +2204,17 @@ impl Context<'_> {
             _ => Ok((program_skip(), self.expr(e)?)),
         }
     }
+    /// Whether `slice` is a shared byte slice whose parts never change while
+    /// it is read: a shared slice local, a shared borrow of one, or a shared
+    /// slice of an array.
+    pub(super) fn shared_byte_slice(&self, slice: &E) -> bool {
+        match slice {
+            E::ArrayToSlice { mutable: false, .. } => true,
+            slice => shared_slice_local(slice)
+                .is_some_and(|name| self.slices.get(name).is_some_and(|(_, constant)| *constant)),
+        }
+    }
+
     fn slice_parts(&mut self, e: &E) -> Result<(ProgramExpression, ProgramExpression), String> {
         if let E::ChunkOptionSlice { option } = e {
             if !self.chunk_options.contains(option) {

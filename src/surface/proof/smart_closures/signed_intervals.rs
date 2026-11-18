@@ -343,12 +343,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // An exact type range can be computed even when its operand
                 // is written at a program point. Use the goal-local check
                 // before the history and retained-read compatibility rule.
-                let step = if premises.is_empty()
-                    && scope
-                        .body()
-                        .goal()
-                        .is_some_and(crate::surface::planning::solve::computes_with_known)
-                {
+                let body = scope.body();
+                let step = if body
+                    .goal()
+                    .is_some_and(crate::surface::planning::solve::computes_with_known)
+                    && premises.iter().all(|source| {
+                        body.lower_cited_surface_proposition(source, "interval source")
+                            .is_ok_and(|premise| {
+                                body.facts().listed_premise_available(&premise, &[], false)
+                            })
+                    }) {
                     ProofStep::Known
                 } else {
                     ProofStep::NormalizeUsing(premises.to_vec())

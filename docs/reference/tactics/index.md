@@ -1273,9 +1273,9 @@ complete rewritten surface proof through the ordinary entry point.
 
 **Expansion output.** `click expand` writes it; by hand, a conjunction goal is
 normally split by `solve` or the implicit closer. Write `both` when each side
-needs its own explicit proof. Write the `left` arm first for the left child
-of the `and` goal, then the `right` arm for the right child. Each arm has
-its own proof scope.
+needs its own explicit proof. The `left` and `right` labels select the
+respective children of the `and` goal. The arms can appear in either order,
+and each has its own proof scope. Expansion prints `left` before `right`.
 
 **Failure, checking, and tools:**
 

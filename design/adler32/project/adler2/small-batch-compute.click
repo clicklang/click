@@ -1,6 +1,5 @@
 import click::integer;
 import click::rust::slice;
-import click::rust::chunks_exact;
 
 // Original compute bounds for every small-batch length and canonical seeds.
 // Length is at most 22207 bytes; both initial fields are below MOD = 65521.

@@ -141,9 +141,15 @@ impl ProofSourceIndex {
         };
         match self.tokens[range.start].text.as_str() {
             "have" | "open" => result.body = parsed.child_blocks(range).first().copied(),
-            kind @ ("if" | "branch" | "both") => {
+            kind @ ("if" | "branch") => {
                 result.arms = parsed
                     .two_arms(range, kind)
+                    .map(|arms| arms.to_vec())
+                    .unwrap_or_default();
+            }
+            "both" => {
+                result.arms = parsed
+                    .both_arms(&self.tokens, range)
                     .map(|arms| arms.to_vec())
                     .unwrap_or_default();
             }

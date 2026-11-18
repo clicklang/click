@@ -3150,7 +3150,7 @@ fn execute_step_from_frontier_position_selecting_path(
         region: CodeRegionRef::Region(statement_index),
         kind: ProgramPointKind::Exit,
     };
-    let direct_store_source = direct_word_store_source(
+    let word_store_source = word_store_source(
         &step_statement,
         &current_state,
         &transition.outcome,
@@ -3161,16 +3161,16 @@ fn execute_step_from_frontier_position_selecting_path(
         layout.automatic_exits(statement_index, false).is_empty()
             && layout.automatic_exits(statement_index, true).is_empty()
     });
-    for equation in transition
-        .execution_facts
-        .fact_iter()
-        .filter_map(|fact| fact.certified_store_equation())
-    {
-        if let Some((surface, pointer)) = &direct_store_source
+    for fact in transition.execution_facts.fact_iter() {
+        let Some(equation) = fact.certified_store_equation() else {
+            continue;
+        };
+        if let Some(surface) = &word_store_source
+            && let Some(address) = fact.certified_store_source_address()
             && execution
                 .presentation
                 .surface_propositions
-                .record_store_source(equation, surface, pointer)
+                .record_store_source(equation, surface, address)
         {
             continue;
         }
@@ -4628,15 +4628,15 @@ mod refusal_scaling_tests {
     include!("../../scaling_tests/surface/proof/cursor_refusals.rs");
 }
 
-/// A direct word store copies the entry value of its named local. The
-/// exit spelling reads the cell through the same unchanged pointer binding.
-fn direct_word_store_source<'a>(
+/// A word store copies the entry value of its named local. The exit spelling
+/// reads the cell through the same unchanged pointer and index bindings.
+fn word_store_source(
     statement: &ProgramStatement,
-    entry: &'a ExecutionState,
+    entry: &ExecutionState,
     outcome: &StatementOutcome,
     exit_point: &ProgramPointRef,
-) -> Option<(ClickProposition, &'a crate::kernel::ExecutionValue)> {
-    use crate::kernel::ProgramType;
+) -> Option<ClickProposition> {
+    use crate::kernel::{MachineTerm, ProgramType, ProgramValue};
 
     let (pointer, value) = match statement {
         ProgramStatement::Store { pointer, value }
@@ -4649,19 +4649,39 @@ fn direct_word_store_source<'a>(
         } => (pointer, value),
         _ => return None,
     };
-    let (ProgramExpression::Variable(pointer), ProgramExpression::Variable(value)) =
-        (pointer, value)
-    else {
+    let ProgramExpression::Variable(value) = value else {
         return None;
     };
     let StatementOutcome::Normal(exit) = outcome else {
         return None;
     };
-    let pointer_type = ProgramType::UInt32Pointer;
-    let pointer_value = entry.locals().nonvolatile_scalar(pointer, pointer_type)?;
-    if !pointer_value.same_retained_root(exit.locals().nonvolatile_scalar(pointer, pointer_type)?) {
+    let stable = |binding: &crate::kernel::BindingName, ty| {
+        entry
+            .locals()
+            .nonvolatile_scalar(binding, ty)
+            .zip(exit.locals().nonvolatile_scalar(binding, ty))
+            .is_some_and(|(before, after)| before.same_retained_root(after))
+    };
+    let (base, index) = match pointer {
+        ProgramExpression::Add(base, index) => (base.as_ref(), Some(index.as_ref())),
+        pointer => (pointer, None),
+    };
+    let ProgramExpression::Variable(pointer) = base else {
+        return None;
+    };
+    if !stable(pointer, ProgramType::UInt32Pointer) {
         return None;
     }
+    let index = match index {
+        None => ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+        Some(ProgramExpression::Variable(index)) if stable(index, ProgramType::Int32) => {
+            ContractExpression::Binding(index.source_spelling()?.to_owned())
+        }
+        Some(
+            index @ ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Constant { .. })),
+        ) => ContractExpression::ProgramExpression(index.clone()),
+        _ => return None,
+    };
     entry
         .locals()
         .nonvolatile_scalar(value, ProgramType::UInt32)?;
@@ -4678,19 +4698,14 @@ fn direct_word_store_source<'a>(
         Box::new(ContractExpression::Binding(
             pointer.source_spelling()?.to_owned(),
         )),
-        Box::new(ContractExpression::ProgramExpression(
-            ProgramExpression::Value(int32(0)),
-        )),
+        Box::new(index),
     );
-    Some((
-        ClickProposition::Comparison {
-            left: at(exit_point, read),
-            operator: crate::surface::ComparisonOperator::Equal,
-            right: at(
-                &entry_point,
-                ContractExpression::Binding(value.source_spelling()?.to_owned()),
-            ),
-        },
-        pointer_value,
-    ))
+    Some(ClickProposition::Comparison {
+        left: at(exit_point, read),
+        operator: crate::surface::ComparisonOperator::Equal,
+        right: at(
+            &entry_point,
+            ContractExpression::Binding(value.source_spelling()?.to_owned()),
+        ),
+    })
 }
