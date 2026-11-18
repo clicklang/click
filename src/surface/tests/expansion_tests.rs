@@ -17658,6 +17658,44 @@ fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
     .unwrap_or_else(|error| panic!("the expansion should reverify: {error:?}\n{expanded}"));
 }
 
+#[test]
+#[ignore = "nightly: expands and replays an entire loop contract"]
+fn listed_int32_type_bounds_expand_to_known() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "mdtests/a_byte_field_of_a_struct_array_element_in_a_loop_is_bounded_by_its_index.md",
+    );
+    let source = std::fs::read_to_string(&path).unwrap();
+    let mdtest = crate::cli::parse_mdtest(&path, &source).unwrap();
+    let sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let claim = "fill_items.contract";
+    let expanded =
+        expand_c_claim_source_by_label(mdtest.click_source.as_deref().unwrap(), &sources, claim)
+            .unwrap();
+    let mut bounds = expanded
+        .lines()
+        .zip(expanded.lines().skip(1))
+        .filter(|(line, _)| {
+            let line = line.trim_start();
+            (line.starts_with("have -2147483648 <= to_integer((at(")
+                && line.ends_with(", i) as int32)) by {"))
+                || (line.starts_with("have to_integer((at(")
+                    && line.ends_with(", i) as int32)) <= 2147483647 by {"))
+        })
+        .peekable();
+    assert!(bounds.peek().is_some(), "{expanded}");
+    for (bound, tactic) in bounds {
+        assert_eq!(tactic.trim(), "known();", "{bound}\n{tactic}\n{expanded}");
+    }
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| format!("{error:?}"))
+    })
+    .unwrap();
+}
+
 /// Expands every smart site of one claim in an iterated-ownership fixture and
 /// reverifies the result, checking that the indexed `unfold` and `fold` steps
 /// survive expansion as written.
