@@ -72,7 +72,15 @@ fn conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
                     KernelTerm::variable(KernelType::Bool, Variable(999742 + index)),
                 ]);
             }
-            for (guard, expected) in [(flag, true), (compound, false)] {
+            let other_flag = KernelTerm::variable(KernelType::Bool, Variable(999739));
+            let equal_variables = KernelTerm::boolean_equal_raw([flag.clone(), other_flag.clone()]);
+            let compound_equality = KernelTerm::boolean_equal_raw([compound.clone(), other_flag]);
+            for (guard, expected) in [
+                (flag, true),
+                (equal_variables, true),
+                (compound, false),
+                (compound_equality, false),
+            ] {
                 let hit = KernelTerm::machine_if_shared(
                     format,
                     [guard.clone(), variable.clone(), literal(3)],

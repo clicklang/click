@@ -468,6 +468,17 @@ fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
     };
     let condition = match arguments[0].node() {
         N::Variable(variable) => ConditionTerm::Variable(*variable),
+        N::BoolEqual {
+            arguments: [left, right],
+        } => {
+            let (N::Variable(left), N::Variable(right)) = (left.node(), right.node()) else {
+                return None;
+            };
+            ConditionTerm::BoolEqual(
+                Box::new(ConditionTerm::Variable(*left)),
+                Box::new(ConditionTerm::Variable(*right)),
+            )
+        }
         N::BoolCompare {
             format,
             relation,
