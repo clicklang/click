@@ -158,6 +158,8 @@ mod composition_member_index;
 mod memory_equality_index;
 mod sequence_values;
 pub use sequence_values::{SequenceValues, SequenceValuesIter};
+mod descriptor_values;
+pub use descriptor_values::StoredMachineTerm;
 mod resource_fields;
 pub(crate) use resource_fields::StoredResourceField;
 pub use resource_fields::{ResourceFieldValue, ResourceFieldValues};
@@ -5978,8 +5980,8 @@ pub struct MemoryRange {
     /// and [`MemoryRange::end`], which hold only for an `Int32` range, or
     /// through [`MemoryRange::wide_bounds`]: a term carries no width, so a
     /// wide bound read as a signed 32-bit index is a different number.
-    start_bound: MachineTerm,
-    end_bound: MachineTerm,
+    start_bound: StoredMachineTerm,
+    end_bound: StoredMachineTerm,
     /// The size in bytes of one logical element in `start..end`.
     ///
     /// Resource ranges remain expressed in logical element coordinates, but
@@ -6003,8 +6005,8 @@ impl MemoryRange {
         &Address,
         &Address,
         Option<&Address>,
-        &MachineTerm,
-        &MachineTerm,
+        &StoredMachineTerm,
+        &StoredMachineTerm,
         u32,
         RangeIndexKind,
     ) {
@@ -9023,7 +9025,7 @@ pub enum AllocationSizeKind {
 /// `UInt64` size hashes and prints its kind as well.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct AllocationSize {
-    bytes: MachineTerm,
+    bytes: StoredMachineTerm,
     kind: AllocationSizeKind,
 }
 
@@ -9048,8 +9050,29 @@ impl std::fmt::Debug for AllocationSize {
 }
 
 impl AllocationSize {
+    pub(crate) fn from_value(value: crate::kernel::ExecutionValue) -> Option<Self> {
+        let kind = match value.program_type() {
+            ProgramType::Int32 => AllocationSizeKind::Int32,
+            ProgramType::UInt64 => AllocationSizeKind::UInt64,
+            _ => return None,
+        };
+        Some(Self {
+            bytes: StoredMachineTerm::from_value(value)?,
+            kind,
+        })
+    }
+
     pub fn new(bytes: MachineTerm, kind: AllocationSizeKind) -> Self {
-        Self { bytes, kind }
+        Self {
+            bytes: StoredMachineTerm::new(
+                match kind {
+                    AllocationSizeKind::Int32 => MachineIntegerType::Int32,
+                    AllocationSizeKind::UInt64 => MachineIntegerType::UInt64,
+                },
+                bytes,
+            ),
+            kind,
+        }
     }
 
     /// A 32-bit byte count in `0..=INT32_MAX`.
@@ -9058,7 +9081,7 @@ impl AllocationSize {
     }
 
     pub fn bytes(&self) -> &MachineTerm {
-        &self.bytes
+        self.bytes.native_compat()
     }
 
     pub fn kind(&self) -> AllocationSizeKind {
@@ -9067,25 +9090,19 @@ impl AllocationSize {
 
     /// The same kind of size over rewritten bytes.
     pub(crate) fn map_bytes(&self, rewrite: impl FnOnce(&MachineTerm) -> MachineTerm) -> Self {
-        Self::new(rewrite(&self.bytes), self.kind)
+        let bytes = rewrite(self.bytes.native_compat());
+        if &bytes == self.bytes.native_compat() {
+            self.clone()
+        } else {
+            Self::new(bytes, self.kind)
+        }
     }
 
     /// The `allocation` token's byte-count argument: an `int32` or a `uint64`.
     pub(crate) fn token_value(&self) -> ProgramValue {
         match self.kind {
-            AllocationSizeKind::Int32 => ProgramValue::Int32(self.bytes.clone()),
-            AllocationSizeKind::UInt64 => ProgramValue::UInt64(self.bytes.clone()),
-        }
-    }
-
-    /// The size an `allocation` token's byte-count argument states.
-    pub(crate) fn from_token_value(value: &ProgramValue) -> Option<Self> {
-        match value {
-            ProgramValue::Int32(bytes) => Some(Self::int32(bytes.clone())),
-            ProgramValue::UInt64(bytes) => {
-                Some(Self::new(bytes.clone(), AllocationSizeKind::UInt64))
-            }
-            _ => None,
+            AllocationSizeKind::Int32 => ProgramValue::Int32(self.bytes.native_compat().clone()),
+            AllocationSizeKind::UInt64 => ProgramValue::UInt64(self.bytes.native_compat().clone()),
         }
     }
 
@@ -9093,8 +9110,10 @@ impl AllocationSize {
     /// extended (it is nonnegative), a 64-bit one as it is.
     pub(crate) fn uint64_bytes(&self) -> MachineTerm {
         match self.kind {
-            AllocationSizeKind::Int32 => MachineTerm::uint64_from_32(self.bytes.clone()),
-            AllocationSizeKind::UInt64 => self.bytes.clone(),
+            AllocationSizeKind::Int32 => {
+                MachineTerm::uint64_from_32(self.bytes.native_compat().clone())
+            }
+            AllocationSizeKind::UInt64 => self.bytes.native_compat().clone(),
         }
     }
 
@@ -9102,15 +9121,19 @@ impl AllocationSize {
     /// extended, a 64-bit one reinterpreted (it is at most `PTRDIFF_MAX`).
     pub(crate) fn int64_bytes(&self) -> MachineTerm {
         match self.kind {
-            AllocationSizeKind::Int32 => MachineTerm::int64_from_uint32(self.bytes.clone()),
-            AllocationSizeKind::UInt64 => MachineTerm::int64_from_uint64_bits(self.bytes.clone()),
+            AllocationSizeKind::Int32 => {
+                MachineTerm::int64_from_uint32(self.bytes.native_compat().clone())
+            }
+            AllocationSizeKind::UInt64 => {
+                MachineTerm::int64_from_uint64_bits(self.bytes.native_compat().clone())
+            }
         }
     }
 
     /// The byte count as a 32-bit word, for a 32-bit size only. A 32-bit
     /// comparison against a 64-bit size has no meaning.
     pub(crate) fn int32_bytes(&self) -> Option<&MachineTerm> {
-        (self.kind == AllocationSizeKind::Int32).then_some(&self.bytes)
+        (self.kind == AllocationSizeKind::Int32).then(|| self.bytes.native_compat())
     }
 
     /// A constant byte count in this size's format.
@@ -9160,12 +9183,13 @@ impl AllocationSize {
     /// through [`crate::kernel::reasoning::uint64_element_count_from_bytes`].
     pub(crate) fn element_count(&self, element_width: u32) -> Option<MachineTerm> {
         match self.kind {
-            AllocationSizeKind::Int32 => {
-                crate::kernel::reasoning::element_count_from_bytes(&self.bytes, element_width)
-            }
+            AllocationSizeKind::Int32 => crate::kernel::reasoning::element_count_from_bytes(
+                self.bytes.native_compat(),
+                element_width,
+            ),
             AllocationSizeKind::UInt64 => {
                 crate::kernel::reasoning::uint64_element_count_from_bytes(
-                    &self.bytes,
+                    self.bytes.native_compat(),
                     element_width,
                 )
             }
@@ -9174,7 +9198,7 @@ impl AllocationSize {
 
     /// The block's complete byte range, `base[0..bytes]`.
     pub(crate) fn byte_range(&self, base: Address) -> MemoryRange {
-        self.range(base, self.bytes.clone(), 1)
+        self.range(base, self.bytes.native_compat().clone(), 1)
     }
 }
 

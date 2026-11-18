@@ -1066,7 +1066,7 @@ not a change to proof rules or snapshot architecture.
 | --- | --- | --- |
 | 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Published as [PR #3217](https://github.com/clicklang/click/pull/3217), with auto-merge requested; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b covers argument stores. |
-| 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
+| 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Implemented locally; all 524 focused checks, all 1,918 regular scaling cases, selected wide-range/allocation proofs, fact stability and quality passed. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
 | 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
@@ -1127,6 +1127,30 @@ The resource-field proof selection, fact stability (zero changed terms/paths)
 and quality checks passed; validation script exit is zero. PR delivery follows
 10p1. After integrating upstream `3557c0453`, all 413 affected checks and
 quality passed again. Full nightly was not run.
+
+### 10p3 Common range and allocation operands
+
+`MemoryRange` bounds and `AllocationSize` bytes now retain one immutable
+`StoredMachineTerm` carrier: exact native DTO input or an existing common
+program root. The wrapper adds no native cache; selected legacy readers reuse
+the root's existing compatibility slot. Native structural Eq/Ord/Hash/debug
+remain the descriptor contract, including raw versus typed constants. Range
+clone/rebase/spatial-key handoffs preserve roots and carrier metadata.
+
+The specification resource evaluator retains same-format Int32 and UInt64
+bounds directly. Mixed/signed-wide conversion and narrow-constant handling
+keep their existing explicit native boundary. Allocation token creation and
+size recovery retain shared byte-count operands. Source segment expressions,
+addresses, bound provenance and allocation identities remain legitimate inputs
+or metadata; native arithmetic/query/substitution APIs remain selected readers.
+
+The evaluator regression was red with six machine exports; the first fixed
+build passed all 524 focused checks. Native exact-syntax tests and growing-DAG
+range/token/size handoffs passed. Final width-refusal checks ensure a query for
+the wrong format returns before requesting native output. All 1,918 regular
+scaling cases and all 524 focused checks passed on the final tree. Selected
+wide-range/allocation proofs, fact stability (zero changed terms/paths), and
+quality passed. No syntax, proof-rule, search-budget or snapshot change.
 
 ## Chunk 3: machine-valued pure-function results
 
