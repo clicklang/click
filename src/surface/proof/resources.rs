@@ -2505,7 +2505,9 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         // not re-project its invariant at a newer memory/count state.
         return Ok((memory, ResourceContext::new(), false));
     }
-    let mut fact_state = state.clone().with_memory(memory.clone());
+    let mut fact_state = state
+        .clone()
+        .with_materialized_memory_at_current_point(memory.clone());
     if contained_resources
         .facts()
         .iter()
@@ -6167,6 +6169,79 @@ mod wide_range_reader_tests {
 #[cfg(test)]
 mod guarded_unmatched_materialization_tests {
     use super::*;
+
+    #[test]
+    fn implicit_projection_keeps_the_point_of_an_already_named_cell() {
+        check_implicit_projection_point(true);
+    }
+
+    #[test]
+    fn implicit_projection_keeps_the_point_while_naming_a_cell() {
+        check_implicit_projection_point(false);
+    }
+
+    fn check_implicit_projection_point(already_named: bool) {
+        let _session = crate::kernel::VerificationSession::enter();
+        let file = crate::surface::parser::parse_file_items(
+            "resource initialized_cell(p: int32*) { owns *p; fact defined(*p); }",
+        )
+        .unwrap();
+        let resources = ResourceEnvironment::new(&file.resource_definitions);
+        let functions = ClickFunctionEnvironment::new(&[]);
+        let predicates = PredicateEnvironment::new(&[]);
+        let specs = SpecDefinitions::new(&predicates, &functions);
+        let pointer = crate::kernel::Address::symbolic(crate::kernel::Variable(88_021));
+        let held = ResourceFact::own_composite(
+            "initialized_cell".into(),
+            vec![ProgramValue::typed_pointer(
+                pointer.clone(),
+                ProgramType::Int32Pointer,
+            )],
+        );
+        let memory = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
+        let memory = if already_named {
+            memory.store(pointer.clone(), crate::kernel::int32(7))
+        } else {
+            memory
+        };
+        let state = ExecutionState::new()
+            .with_memory(memory)
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(held));
+        let facts = project_initial_resource_facts(
+            &resources,
+            ParameterBinding::new(&[], &[]),
+            &state,
+            &PureFactList::from(vec![]),
+            specs,
+            "implicit_projection",
+        )
+        .unwrap()
+        .into_vec();
+        let defined_reads = facts
+            .iter()
+            .filter_map(|fact| match fact {
+                Proposition::MemoryReadDefined {
+                    at,
+                    memory,
+                    pointer: address,
+                    value_type: ProgramType::Int32,
+                } if address == &pointer => Some((*at, memory)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let [(at, observed_memory)] = defined_reads.as_slice() else {
+            panic!("expected one defined read in {facts:?}");
+        };
+        assert_eq!(
+            matches!(state.memory().load(&pointer), ExpressionOutcome::Value(_)),
+            already_named
+        );
+        assert!(matches!(
+            observed_memory.load(&pointer),
+            ExpressionOutcome::Value(_)
+        ));
+        assert_eq!(*at, state.observation_point_id());
+    }
 
     #[test]
     fn guarded_cells_materialize_only_after_a_proved_active_guard() {
