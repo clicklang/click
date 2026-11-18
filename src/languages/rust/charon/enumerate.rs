@@ -217,7 +217,10 @@ impl BodyAdapter<'_, '_> {
                 }
                 Ok(Some(S::EnumerateNext {
                     iterator: self.iterator_root(operand_place(argument)?)?,
-                    option: destination,
+                    option: Some(destination),
+                    index: None,
+                    element: None,
+                    taken: None,
                 }))
             }
             _ => Err(unsupported("enumerate method source")),
