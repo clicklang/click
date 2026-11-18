@@ -1065,7 +1065,7 @@ not a change to proof rules or snapshot architecture.
 | Subslice | Owning stores | Status |
 | --- | --- | --- |
 | 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Implemented; 437 focused checks, all 1,909 regular scaling cases, selected sequence proofs, fact stability and quality passed. PR follows 10o. |
-| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a implements Integer/algebraic fields (413 focused checks passed; scaling/proof validation running); 10p2b covers argument stores. |
+| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b covers argument stores. |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
@@ -1121,8 +1121,10 @@ A native-child lifetime regression failed before the change and passed after
 it. All 413 focused checks passed, including exact identity/hash/debug, malformed
 native input refusal, direct Integer/algebraic projection, result-mode parity,
 and constant-work handoffs of growing Integer DAGs and algebraic children.
-Full regular scaling and affected proof validation are running; PR delivery
-follows 10p1. Full nightly was not run.
+All 1,915 regular scaling cases passed (two isolated and 1,913 remaining).
+The resource-field proof selection, fact stability (zero changed terms/paths)
+and quality checks passed; validation script exit is zero. PR delivery follows
+10p1. Full nightly was not run.
 
 ## Chunk 3: machine-valued pure-function results
 
