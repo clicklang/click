@@ -138,43 +138,7 @@ fn unique_borrowed_resource_dependency(
     state: &ExecutionState,
     resource: &ResourceFact,
 ) -> Result<Option<crate::kernel::LoanViewBinding>, String> {
-    if !state.loan_bindings_are_consistent() {
-        return Err("resource and loan binding sidecars disagree".into());
-    }
-    let mut selected = None;
-    let mut saw_unbound = false;
-    let mut saw_bound = false;
-    for occurrence in state.resources().occurrences_for_fact(resource) {
-        let Some(binding) = state.resources().loan_dependency(occurrence) else {
-            saw_unbound = true;
-            continue;
-        };
-        saw_bound = true;
-        if selected
-            .as_ref()
-            .is_some_and(|existing| existing != binding)
-        {
-            return Err(
-                "equal viewed resource occurrences carry different loan dependencies".into(),
-            );
-        }
-        selected = Some(binding.clone());
-    }
-    if saw_bound && saw_unbound {
-        return Err("equal viewed resource occurrences mix bound and unbound authorities".into());
-    }
-    if let Some(binding) = &selected {
-        let ledger = state
-            .loan_ledger()
-            .ok_or_else(|| "selected viewed resource has no active loan ledger".to_string())?;
-        let holder = state
-            .loan_participant()
-            .ok_or_else(|| "selected viewed resource has no active loan holder".to_string())?;
-        ledger
-            .validate_view_binding(binding.clone(), holder)
-            .map_err(|error| format!("selected viewed resource loan is not live: {error}"))?;
-    }
-    Ok(selected)
+    state.unique_borrowed_resource_dependency(resource)
 }
 
 /// Record the children a checked rewrite exposed from a viewed composite as
@@ -1844,7 +1808,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             // nonnegative quantity. The population body, however, grants
             // authority only when the held quantity is proved positive.
             return Ok((
-                ResourceObservationSuccessor::Legacy(Box::new(state)),
+                ResourceObservationSuccessor::NamedCells(state.memory().clone()),
                 abstract_resource,
             ));
         }
@@ -1883,8 +1847,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     // A viewed composite is itself a checked loan projection.  Its children
     // are fresh occurrences, so remember the exact bundle before projecting
     // the body; equal resource terms are not sufficient to recover it later.
-    let construct = state.loan_view_bindings().is_empty();
-    let borrowed_parent_binding = if construct {
+    let borrowed_parent_binding = if state.loan_view_bindings().is_empty() {
         None
     } else {
         unique_borrowed_resource_dependency(&state, &abstract_resource)
@@ -2003,107 +1966,8 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             }
         }
     }
-    if construct {
-        return Ok((
-            ResourceObservationSuccessor::NamedCells(memory),
-            abstract_resource,
-        ));
-    }
-    let witness_opening = state
-        .resources()
-        .open_structural_witness(&abstract_resource, &assumptions);
-    let all_viewed_contained_resources = contained_resources
-        .facts()
-        .iter()
-        .filter_map(|fact| fact.core_with_assumptions(available_pure_facts.assumptions()))
-        .map(|fact| ResourceFact::View(fact.resource().clone()))
-        .collect::<Vec<_>>();
-    if let Some(binding) = borrowed_parent_binding.as_ref() {
-        for child in &all_viewed_contained_resources {
-            if !state.resources().contains_exact_representation(child) {
-                continue;
-            }
-            let expected = crate::kernel::LoanViewBinding {
-                viewed: child.clone(),
-                ..binding.clone()
-            };
-            let existing = unique_borrowed_resource_dependency(&state, child).map_err(|message| {
-                ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `observe` refused an existing child dependency: {message}"
-                ))
-            })?;
-            if existing
-                .as_ref()
-                .is_none_or(|candidate| !same_loan_authority(candidate, &expected))
-            {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `observe` cannot reuse an unbound or differently bound child"
-                )));
-            }
-        }
-    }
-    let viewed_contained_resources = all_viewed_contained_resources
-        .into_iter()
-        .filter(|fact| !state.resources().contains_exact_representation(fact))
-        .collect::<Vec<_>>();
-    // Holding the folded composite certifies its instantiated body. Observation
-    // only adds the body's duplicable cores, so it must not revalidate ownership.
-    // Keep the projected views attached to that exact owned support: consuming
-    // or changing the support must invalidate the observation, while unrelated
-    // framed resources remain untouched. A view-only observation has no owned
-    // authority to carry this relation and keeps the legacy explicit view.
-    let (resources, inserted) = if let Some((support_entry, support)) = observation_support {
-        state
-            .resources()
-            .clone()
-            .unchecked_with_supported_facts_from_occurrence_with_memory_and_occurrences(
-                support_entry,
-                support,
-                viewed_contained_resources.clone(),
-                fact_state.memory(),
-            )
-    } else {
-        state
-            .resources()
-            .clone()
-            .unchecked_with_facts_and_occurrences(viewed_contained_resources.clone())
-    };
-    let resources = resources.with_opened_structural_witnesses(
-        witness_opening,
-        contained_resources.facts(),
-        true,
-        &assumptions,
-    );
-    let mut dependency_bindings = Vec::new();
-    let mut state = state;
-    if let Some(binding) = borrowed_parent_binding {
-        for (child, occurrence) in inserted {
-            dependency_bindings.push((
-                occurrence,
-                crate::kernel::LoanViewBinding {
-                    viewed: child,
-                    ..binding.clone()
-                },
-            ));
-        }
-        state = project_children_into_ledger(
-            state,
-            &binding,
-            dependency_bindings
-                .iter()
-                .map(|(_, child)| child.viewed.clone()),
-            &memory,
-            available_pure_facts.assumptions(),
-            function.composite_resource_definitions(),
-            &format!("`{claim_label}` tactic {tactic_index}: `observe`"),
-        )?;
-    }
     Ok((
-        ResourceObservationSuccessor::Legacy(Box::new(
-            state
-                .with_memory_of(&fact_state)
-                .with_resource_context_and_loan_dependencies(resources, dependency_bindings),
-        )),
+        ResourceObservationSuccessor::NamedCells(memory),
         abstract_resource,
     ))
 }
