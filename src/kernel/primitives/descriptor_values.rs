@@ -11,6 +11,11 @@ impl From<MachineTerm> for StoredMachineTerm {
         Self::new(MachineIntegerType::Int32, value)
     }
 }
+impl From<u32> for StoredMachineTerm {
+    fn from(value: u32) -> Self {
+        MachineTerm::constant(value).into()
+    }
+}
 impl StoredMachineTerm {
     pub(crate) fn new(ty: MachineIntegerType, value: MachineTerm) -> Self {
         let value = match ty {
@@ -47,6 +52,9 @@ impl StoredMachineTerm {
             }
         }
         Some(Self(value.into()))
+    }
+    pub(crate) fn as_const(&self) -> Option<u32> {
+        self.native_compat().as_const()
     }
     pub(crate) fn map_native(&self, rewrite: impl FnOnce(&MachineTerm) -> MachineTerm) -> Self {
         Self::new(
@@ -165,6 +173,11 @@ impl From<ExecutionValue> for StoredProgramValue {
                 .into_value()
                 .into(),
         )
+    }
+}
+impl From<StoredProgramValue> for ProgramValue {
+    fn from(value: StoredProgramValue) -> Self {
+        value.native_compat().clone()
     }
 }
 impl StoredProgramValue {
@@ -326,5 +339,62 @@ mod protocol_value_tests {
     mod scaling_tests {
         use super::*;
         include!("../../scaling_tests/kernel/primitives/descriptor_values.rs");
+    }
+}
+
+// Selected native DTO view for existing output assertions. Production stores
+// and value visitors retain their common operands.
+#[cfg(test)]
+impl ExpressionOutcome<StoredProgramValue> {
+    pub(crate) fn native_compat(&self) -> ExpressionOutcome {
+        self.clone().map_value(Into::into)
+    }
+}
+
+#[cfg(test)]
+mod proposition_outcome_tests {
+    use super::*;
+    #[test]
+    fn expression_theorem_output_keeps_the_evaluators_common_root() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(10993661));
+        let state = ExecutionState::new().with_retained_local("result", root.clone().into());
+        let exports = KernelTermExport::machine_export_count();
+        let theorem = crate::kernel::prove_program_expression_evaluation(
+            state,
+            ProgramExpression::Variable("result".into()),
+        )
+        .unwrap();
+        let Proposition::ProgramExpressionEvaluates {
+            outcome: ExpressionOutcome::Value(value),
+            ..
+        } = theorem.proposition()
+        else {
+            panic!("value");
+        };
+        assert_eq!(value.root(), Some(&root));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+    #[test]
+    fn memory_load_theorem_output_keeps_the_cells_common_root() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let root = KernelTerm::variable(
+            KernelType::Program(ProgramType::Float32),
+            Variable(10993662),
+        );
+        let pointer = Address::symbolic(Variable(10993663));
+        let memory = SymbolicMemory::new().store_retained(pointer.clone(), root.clone().into());
+        let exports = KernelTermExport::machine_export_count();
+        let theorem = crate::kernel::prove_memory_load(memory, pointer);
+        let Proposition::MemoryLoads {
+            outcome: ExpressionOutcome::Value(value),
+            ..
+        } = theorem.proposition()
+        else {
+            panic!("value");
+        };
+        assert_eq!(value.root(), Some(&root));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

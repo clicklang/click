@@ -395,11 +395,13 @@ fn walk_algebraic_value<'a, S: VariableSubstitution + ?Sized>(
 }
 
 fn walk_program_expression_outcome<S: VariableSubstitution + ?Sized>(
-    outcome: &ExpressionOutcome,
+    outcome: &ExpressionOutcome<StoredProgramValue>,
     s: &S,
-) -> ExpressionOutcome {
+) -> ExpressionOutcome<StoredProgramValue> {
     match outcome {
-        ExpressionOutcome::Value(value) => ExpressionOutcome::Value(s.program_value(value)),
+        ExpressionOutcome::Value(value) => ExpressionOutcome::Value(StoredProgramValue::from(
+            s.stored_program_value(value.value()),
+        )),
         ExpressionOutcome::UndefinedBehavior(kind) => {
             ExpressionOutcome::UndefinedBehavior(kind.clone())
         }
@@ -1296,7 +1298,7 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
         Proposition::VolatileAccess(event) => {
             Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
                 pointer: s.pointer(&event.pointer),
-                value: s.program_value(&event.value),
+                value: StoredProgramValue::from(s.stored_program_value(event.value.value())),
                 id: event.id,
                 kind: event.kind,
                 value_type: event.value_type,
@@ -1540,9 +1542,14 @@ fn walk_resource_fact<S: VariableSubstitution + ?Sized>(
     s: &S,
 ) -> ResourceFact {
     match resource {
-        ResourceFact::Own(resource, quantity) => {
-            ResourceFact::Own(walk_resource(resource, s), Box::new(s.bitvector(quantity)))
-        }
+        ResourceFact::Own(resource, quantity) => ResourceFact::own_quantity_stored(
+            walk_resource(resource, s),
+            match quantity.value() {
+                ExecutionValue::Native(_) => quantity.map_native(|term| s.bitvector(term)),
+                value => crate::kernel::StoredMachineTerm::from_value(s.expression_value(value))
+                    .expect("substitution preserves quantity type"),
+            },
+        ),
         ResourceFact::View(resource) => ResourceFact::View(walk_resource(resource, s)),
     }
 }
@@ -2401,7 +2408,7 @@ fn collect_proposition_bound_variables_one(
     match proposition {
         Proposition::VolatileAccess(event) => {
             collect_pointer_bound_variables(&event.pointer, variables);
-            collect_program_value_bound_variables(&event.value, variables);
+            collect_expression_value_bound_variables(event.value.value(), variables);
         }
         Proposition::Equal(left, right) => {
             collect_term_bound_variables(left, variables);
@@ -3064,11 +3071,11 @@ fn collect_program_function_specification_bound_variables(
 }
 
 fn collect_expression_outcome_bound_variables(
-    outcome: &ExpressionOutcome,
+    outcome: &ExpressionOutcome<StoredProgramValue>,
     variables: &mut BTreeSet<Variable>,
 ) {
     if let ExpressionOutcome::Value(value) = outcome {
-        collect_program_value_bound_variables(value, variables);
+        collect_expression_value_bound_variables(value.value(), variables);
     }
 }
 

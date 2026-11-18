@@ -74,8 +74,71 @@ fn substitution_reaches_operands_and_preserves_event_identity() {
     assert_eq!(mapped.id, original.id);
     assert_eq!(mapped.kind, original.kind);
     assert_eq!(mapped.pointer, Address::symbolic(Variable(800_003)));
-    assert_eq!(mapped.value, ProgramValue::Int32(MachineTerm::constant(9)));
+    assert_eq!(
+        mapped.value.native_compat(),
+        &ProgramValue::Int32(MachineTerm::constant(9))
+    );
 }
 
 #[path = "../../scaling_tests/kernel/eval/volatile_access_tests.rs"]
 mod scaling_tests;
+
+#[test]
+fn volatile_local_write_retains_the_evaluated_value_root() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let root = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(10993671));
+    let function = crate::kernel::program_function(
+        ProgramType::Int32,
+        "captured_write",
+        vec![crate::kernel::program_parameter("dst", ProgramType::Int32).with_volatile(true)],
+        ProgramStatement::Return(ProgramExpression::Variable("dst".into())),
+    );
+    let state = crate::kernel::functions::bind_program_function_arguments(
+        &ExecutionState::new(),
+        &function,
+        &[ProgramValue::Int32(MachineTerm::constant(0))],
+    )
+    .unwrap()
+    .with_retained_local("src", root.clone().into());
+    let paths = super::statements::execute_program_lvalue_assignment_paths(
+        &state,
+        &ProgramExpression::Variable("dst".into()),
+        &ProgramExpression::Variable("src".into()),
+        &PureFactContext::new(),
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    let event = paths[0]
+        .facts
+        .iter()
+        .find_map(|fact| match fact.proposition() {
+            Proposition::VolatileAccess(event) => Some(event),
+            _ => None,
+        })
+        .expect("volatile write");
+    assert_eq!(event.kind, VolatileAccessKind::Write);
+    assert_eq!(event.value.root(), Some(&root));
+}
+
+#[test]
+fn retained_volatile_read_values_keep_certification_and_nominal_event_identity() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let root = KernelTerm::variable(
+        KernelType::Program(ProgramType::Float32),
+        Variable(10993672),
+    );
+    let event = volatile_access_fact(
+        &mut ExecutionBudget::default(),
+        VolatileAccessKind::Read,
+        Address::symbolic(Variable(10993673)),
+        ProgramType::Float32,
+        crate::kernel::ExecutionValue::Shared(root.clone()),
+    )
+    .unwrap();
+    assert_eq!(
+        event.volatile_read_retained_result().unwrap().shared(),
+        Some(&root)
+    );
+    let untrusted = ExecutionPureFact::new(event.proposition().clone());
+    assert!(untrusted.volatile_read_retained_result().is_none());
+}

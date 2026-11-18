@@ -611,8 +611,8 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four pushed commits verified on upstream. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
-| 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | In progress; family split below is authoritative. 10p1 and 10p2a landed; 10p2b landed in PR #3233; 10p3 landed in PR #3246; 10p4–10p6 remain. |
-| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
+| 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Complete: 10p1–10p6 landed, with every pushed commit verified upstream. |
+| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1 implemented and validating; the sequential family inventory below is authoritative. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
 | 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
 | 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
@@ -1068,8 +1068,8 @@ not a change to proof rules or snapshot architecture.
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b landed in [PR #3233](https://github.com/clicklang/click/pull/3233), with all six pushed commits verified upstream; it implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Landed in [PR #3246](https://github.com/clicklang/click/pull/3246); all eight pushed commits verified upstream; 525 focused checks, all 1,919 regular scaling cases, 14 selected proofs, fact stability and quality passed; isolated upstream baseline limitation below. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Landed in [PR #3261](https://github.com/clicklang/click/pull/3261); all ten pushed commits verified upstream; 590 focused checks, all 1,926 regular scaling cases, indexed/resource-field proofs, fact stability and quality passed; one isolated upstream baseline failure. |
-| 10p5 | `PublicationRight::observed`, `ConditionalMutexGuard::held`, and the matching `MutexEntry::ConditionalLoop` condition. Preserve channel/acquisition identities and protocol rules. | Common carriers and producer handoffs implemented locally; two producer regressions confirmed red; 690 focused checks, all 1,927 regular scaling cases and publication proofs passed; mutex proofs passed 215/216 with one identical parent failure. |
-| 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
+| 10p5 | `PublicationRight::observed`, `ConditionalMutexGuard::held`, and the matching `MutexEntry::ConditionalLoop` condition. Preserve channel/acquisition identities and protocol rules. | Landed in [PR #3266](https://github.com/clicklang/click/pull/3266); all five pushed commits verified upstream; two producer regressions confirmed red; 690 focused checks, all 1,927 regular scaling cases and publication proofs passed; mutex proofs passed 215/216 with one identical parent failure. |
+| 10p6 | `ResourceFact::Own` and deferred worker-exchange quantities. Preserve counting semantics and existing resource identity readers. | Landed in [PR #3268](https://github.com/clicklang/click/pull/3268); all twelve pushed commits verified upstream; 472 final integration checks, all 1,935 regular scaling cases, all 5,621 regular proof fixtures, fact stability and quality passed. |
 
 `MemorySegment` source expressions and declared `ResourceQuantity` expressions
 are source input ASTs, not evaluated term storage to erase. Addresses, allocation
@@ -1269,6 +1269,124 @@ all 400 affected protocol/substitution/collection checks, publication fixtures,
 fact stability and quality passed again. The earlier 690 focused checks,
 1,927 regular scaling cases and 215 passing mutex fixtures remain the full
 slice validation; the identical parent failure above is not counted as a pass.
+
+### 10p6 Owned resource quantities (in progress)
+
+`ResourceFact::Own` retains `StoredMachineTerm` quantities. Native constructors
+preserve their exact machine input; declared-quantity evaluation uses the
+existing retained expression capture with its diagnostic policy unchanged.
+Native count arithmetic and selected proof/raising consumers remain explicit
+readers. Substitution preserves exact native bitvector rewrites and transports
+shared roots through the existing expression rewrite. This changes storage,
+not quantity arithmetic, nonnegativity admission or resource identity.
+
+Producer-root and growing-DAG handoff regressions cover retained quantities.
+All 245 focused checks, all 1,933 regular scaling cases and 38 quantity proofs
+passed. Authority proofs passed 319/320; `authority_pool_control_two_members.md`
+fails identically on the unchanged protocol-storage parent at the same
+`checkout.contract` conjunction and missing defined-read premise. The fixture is explicitly nightly-only in `tests/mdtests.rs`; per the user
+instruction, it does not block this work. No proof or checker change is made
+for that baseline limitation. Fact stability recorded
+89 refusals and no changed terms/paths. Quality passed. The exact input-refusal guard passed the same 245 focused
+checks and 38 quantity fixtures.
+
+`DeferredMemberExchange::quantity` retains the same owned quantity through
+worker completion; join-time ledger checks are explicit native readers.
+Its producer and clone handoffs preserve the root and nominal metadata.
+All 252 affected checks passed before final upstream integration.
+
+After integrating landed upstream `fdf993b90` and rebuilding its changed C++
+exporter, all 460 affected checks, all 1,935 regular scaling cases and all
+5,621 regular proof fixtures passed. Fact stability recorded 121 refusals,
+zero changed terms and zero changed paths; final quality passed. The regular
+suite excludes the three known nightly-only baseline failures above, as the
+user requested. Full nightly was not run.
+
+After PR #3266 merged, all five pushed commits were verified upstream and the
+clean primary advanced through Git. Integration of upstream `7d58f9b6f`
+preserved the additional program-point checks; all 472 affected quantity,
+protocol, substitution and point checks passed, followed by quality.
+
+### 10q Proposition-output inventory and sequential families
+
+| Family | Owning output schema | Required preservation |
+| --- | --- | --- |
+| 10q1 | `ProgramExpressionEvaluates` and `MemoryLoads` outcomes | Retain evaluated program roots; exact native outcome identity, errors and source/state DTOs remain unchanged. |
+| 10q2a | `VolatileAccess::value` | Retain captured value roots; nominal event identity and read/write authority remain unchanged. |
+| 10q2b1 | `MemoryLoadable::bytes` carrier, native constructors and consumers | Preserve exact native count syntax, width metadata and fact identity before switching producers. |
+| 10q2b2 | Range-to-loadability count producers | Retain range operand roots with the existing canonical subtraction/multiplication and wide spelling rules unchanged. |
+| 10q3 | `ConditionIs` logical payloads | Retain produced logical roots; native input syntax and existing comparison/fact/raising readers keep their exact contracts. |
+| 10q4 | Expression-bearing `Term` payloads in equality/predicate outputs | Retain numeric/program/algebraic roots at actual producer handoffs; preserve native term ordering, hashing, capture and proof admission. |
+
+These are sequential representation slices. Source program/specification ASTs,
+opaque state/event/resource identities and existing proof rules are not payloads
+to erase. Selected native checking/rewriting/raising adapters stay explicit and
+are accounted for in 10r–10t; they are not evidence that a store is migrated.
+
+### 10q1 Evaluated proposition outcomes (in progress)
+
+The expression-evaluation and memory-load proposition schemas use
+`ExpressionOutcome<StoredProgramValue>`, preserving exact native value identity
+separately from execution observation equality. Selected native output DTO views
+are explicit; errors keep their original payloads. Value collection and
+substitution use retained execution-value operations; rendering and capture
+checks retain selected native readers. Source expressions and recorded states
+keep their existing identities.
+
+The actual producer regressions were red: 455 existing checks passed and
+exactly two root-retention checks failed. Both theorem factories now retain
+their evaluated values directly, with unchanged single-path/obligation and
+invalid-memory policies. All 458 focused checks, including growing machine-DAG
+and float-chain production/cloning, then passed. The obsolete native one-outcome
+evaluator helper is removed. After parent integration, all 470 selected checks
+passed; all 1,936 regular scaling cases and all 5,621 regular proof fixtures then
+passed. Fact stability recorded 121 refusals and zero changed terms/paths;
+quality passed. Full nightly was not run.
+
+After integrating upstream `9c6b250ee`, including its memory-load changes,
+all 793 affected expression/wide-value/memory/collection checks and quality
+passed again. This landed in [PR #3271](https://github.com/clicklang/click/pull/3271);
+all ten pushed commits were verified upstream. All twelve quantity-parent commits were verified upstream
+before the clean primary advanced through Git.
+
+The native load-result-to-`Term::ProgramValue` reader in surface resource proofs
+is explicit and remains assigned to 10q4. Numeric memory cells retain their
+existing native-input policy; this slice preserves roots the memory already
+holds. Logical conditions and remaining term payloads retain their own slices.
+10q2 is split before implementation into independent volatile-value and
+loadability-count PRs; its original scope and proof rules are unchanged.
+
+### 10q2a Volatile-event values (in progress)
+
+`VolatileAccess::value` uses the exact program-value carrier. Native inputs
+retain their syntax; variable collection and substitution use retained values.
+Read-result certification, event identities, pointer/type metadata and access
+rules are unchanged. The existing native read-result getter remains explicit
+and materializes only read values, not writes. Native proof rewriting and
+rendering retain selected compatibility readers.
+
+The already-retained recorded read-event slot now accepts the event's retained
+value directly. Existing naming indices and native merge/replay interfaces
+keep their identity policy; no index or enclosing value cache is added.
+The actual volatile-local write regression was red while 207 other checks
+passed. Evaluator read/write handoffs now forward retained values. Ordinary
+memory writes retain the already-coerced input; bit-field writes preserve the
+actual newly combined native byte rather than substituting the incoming value.
+The local stack-memory compatibility conversion remains unchanged. Event
+capture/cloning is measured separately from that existing memory boundary;
+the actual write regression still checks producer-root retention.
+
+The initial assignment-wide scaler included the existing stack-memory export;
+the event capture/clone operation is now isolated, while the end-to-end write
+root assertion remains. All 209 focused checks passed. After parent integration,
+all 316 selected checks, all 1,937 regular scaling cases and all 5,621 regular
+proof fixtures passed. Fact stability recorded 121 refusals and zero changed
+terms/paths; quality passed. Full nightly was not run.
+
+After integrating upstream `2d5b4c37a` and its Rust frontend changes, all 245
+selected volatile, substitution, collection and frontend checks passed again,
+followed by quality. The outcome parent's ten pushed commits were verified
+upstream before the clean primary advanced through Git.
 
 ## Chunk 3: machine-valued pure-function results
 

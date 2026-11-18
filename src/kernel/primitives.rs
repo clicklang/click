@@ -11587,7 +11587,7 @@ fn compare_support_graph(left: &ResourceContext, right: &ResourceContext) -> std
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ResourceFact {
-    Own(Resource, Box<MachineTerm>),
+    Own(Resource, Box<StoredMachineTerm>),
     View(Resource),
 }
 
@@ -13169,7 +13169,7 @@ mod population_authority_spec_tests {
                 .try_compose_with_fact(
                     ResourceFact::Own(
                         Resource::PopulationAuthority(description.clone()),
-                        Box::new(MachineTerm::constant(2)),
+                        Box::new(MachineTerm::constant(2).into()),
                     ),
                     &assumptions,
                 )
@@ -13320,7 +13320,7 @@ pub struct VolatileAccess {
     pub(crate) kind: VolatileAccessKind,
     pub(crate) pointer: Address,
     pub(crate) value_type: ProgramType,
-    pub(crate) value: ProgramValue,
+    pub(crate) value: StoredProgramValue,
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -13335,7 +13335,7 @@ pub enum Proposition {
     ProgramExpressionEvaluates {
         state: Box<ExecutionState>,
         expression: ProgramExpression,
-        outcome: ExpressionOutcome,
+        outcome: ExpressionOutcome<StoredProgramValue>,
     },
     ProgramConditionEvaluates {
         state: Box<ExecutionState>,
@@ -13368,7 +13368,7 @@ pub enum Proposition {
     MemoryLoads {
         memory: SymbolicMemory,
         pointer: Address,
-        outcome: ExpressionOutcome,
+        outcome: ExpressionOutcome<StoredProgramValue>,
     },
     MemoryCanStore {
         memory: SymbolicMemory,

@@ -1389,7 +1389,7 @@ fn collect_integer_substitution_variables_with_carriers(
         match proposition {
             Proposition::VolatileAccess(event) => {
                 collect_pointer_carriers(&event.pointer, carriers);
-                collect_program_value_carriers(&event.value, carriers);
+                collect_program_value_carriers(event.value.native_compat(), carriers);
             }
             Proposition::Predicate { arguments, .. } => {
                 for argument in arguments {
@@ -3466,12 +3466,12 @@ impl<'a> TermRewrite<'a> {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
                     collect_pointer_carriers(&event.pointer, &mut variables);
-                    collect_program_value_carriers(&event.value, &mut variables);
+                    collect_program_value_carriers(event.value.native_compat(), &mut variables);
                     self.reserve_source_variables(variables);
                 }
                 Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
                     pointer: self.pointer(&event.pointer),
-                    value: self.value(&event.value),
+                    value: self.value(event.value.native_compat()).into(),
                     id: event.id,
                     kind: event.kind,
                     value_type: event.value_type,

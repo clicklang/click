@@ -1336,6 +1336,9 @@ struct BodyAdapter<'a, 'b> {
     body: &'a u::ExprBody,
     plumbing: closures::ClosurePlumbing,
     names: BTreeMap<a::LocalId, String>,
+    /// The locals whose source name is bound more than once: each one's
+    /// storage starts where rustc's does, so its declaration does too.
+    spelled: BTreeSet<a::LocalId>,
     slice_pairs: BTreeMap<a::LocalId, [String; 2]>,
     iterator_refs: BTreeMap<a::LocalId, a::LocalId>,
     iterator_discriminants: BTreeMap<a::LocalId, a::LocalId>,
@@ -2231,7 +2234,8 @@ impl BodyAdapter<'_, '_> {
             }),
             u::StatementKind::StorageLive(id)
                 if (matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Adt(r) if self.adapter.records.contains_key(&r.id) || self.adapter.generic_records.contains_key(&r.id))
-                    || matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Array(..))) =>
+                    || matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Array(..))
+                    || self.spelled.contains(id)) =>
             {
                 Some(S::BeginStorage {
                     local: self.local(*id)?,
@@ -3532,6 +3536,8 @@ pub(super) fn decode_crate(
         let mut return_place = String::from("result");
         // The locals the source does not name, apart from the return slot.
         let mut temporaries = BTreeSet::new();
+        let mut spellings = BTreeMap::new();
+        let mut spelled = BTreeSet::new();
         for local in &body.locals.locals {
             if let Some(name) = &local.name {
                 *occurrences.entry(name).or_default() += 1;
@@ -3567,15 +3573,23 @@ pub(super) fn decode_crate(
                 return_place = name.clone();
                 name
             } else {
-                // rustc gives every nested `for` temporary the name `iter`.
-                // Preserve unique source names; ambiguous/unnamed locals use
-                // their compiler IDs in a namespace disjoint from source names.
+                // A source name bound more than once, as `word` in two
+                // `Some(word)` arms or `iter` in nested `for` loops, is one
+                // declaration per binding, each spelled as the source spells
+                // it (`spellings`), as C's are. Unnamed locals use their
+                // compiler IDs in a namespace disjoint from source names.
                 let mut generated = format!("__rust_mir_{}", local.index.index());
                 while !reserved.insert(generated.clone()) {
                     generated.push('_');
                 }
-                if local.index.index() != 0 {
-                    temporaries.insert(generated.clone());
+                match &local.name {
+                    Some(name) => {
+                        spellings.insert(generated.clone(), name.clone());
+                        spelled.insert(local.index);
+                    }
+                    None => {
+                        temporaries.insert(generated.clone());
+                    }
                 }
                 generated
             };
@@ -3638,6 +3652,7 @@ pub(super) fn decode_crate(
             body,
             plumbing,
             names,
+            spelled,
             slice_pairs,
             iterator_refs,
             iterator_discriminants,
@@ -3800,6 +3815,17 @@ pub(super) fn decode_crate(
             parameters,
             body: vec![],
             mir: Some(out::MirBody {
+                spellings: {
+                    // Only the locals the passes kept.
+                    let kept: BTreeSet<&str> = locals
+                        .iter()
+                        .map(|local: &out::Place| local.name.as_str())
+                        .collect();
+                    spellings
+                        .into_iter()
+                        .filter(|(key, _): &(String, String)| kept.contains(key.as_str()))
+                        .collect()
+                },
                 locals,
                 blocks,
                 return_place,

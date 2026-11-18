@@ -2933,7 +2933,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             pointer, outcome, ..
         } => {
             integer_carrier_in_pointer(pointer, variable)
-                || matches!(outcome, ExpressionOutcome::Value(value) if integer_carrier_in_program_value(value, variable))
+                || matches!(outcome, ExpressionOutcome::Value(value) if integer_carrier_in_program_value(value.native_compat(), variable))
         }
         Proposition::MemoryCanStore { pointer, .. } => {
             integer_carrier_in_pointer(pointer, variable)

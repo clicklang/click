@@ -38,7 +38,7 @@ fn volatile_access_fact(
     kind: VolatileAccessKind,
     pointer: Address,
     value_type: ProgramType,
-    value: ProgramValue,
+    value: impl Into<crate::kernel::StoredProgramValue>,
 ) -> ExecutionResult<ExecutionPureFact> {
     crate::instrumentation::record_deterministic_work(1);
     let id = VolatileEventId(budget.allocate_kernel_variable()?.0);
@@ -48,7 +48,7 @@ fn volatile_access_fact(
             kind,
             pointer,
             value_type,
-            value,
+            value: value.into(),
         }),
     )))
 }

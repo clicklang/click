@@ -38,7 +38,7 @@ impl Renderer<'_> {
                     self.push("owns ");
                     self.resource(resource);
                     self.push(" x ");
-                    self.bitvector(quantity);
+                    self.bitvector(quantity.native_compat());
                 }
                 ResourceFact::View(resource) => {
                     self.push("views ");
@@ -169,7 +169,7 @@ mod tests {
         };
         let context = ResourceContext::new().unchecked_with_fact(ResourceFact::Own(
             field.clone(),
-            Box::new(MachineTerm::constant(1)),
+            Box::new(MachineTerm::constant(1).into()),
         ));
         let facts = [
             (
@@ -248,7 +248,7 @@ mod tests {
                     kind: crate::kernel::VolatileAccessKind::Write,
                     pointer: Address::symbolic(Variable(986_703)),
                     value_type: crate::kernel::ProgramType::UInt64,
-                    value: ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
+                    value: ProgramValue::UInt64(MachineTerm::uint64_constant(1)).into(),
                 })),
                 "volatile-write-event#123(",
             ),

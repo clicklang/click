@@ -49,14 +49,21 @@ impl Context<'_> {
             }
             result = program_seq(
                 result,
-                program_declare_with_all_qualifiers(field, *ty, false, false, false, *constant),
+                program_declare_with_all_qualifiers(
+                    self.binding(&field),
+                    *ty,
+                    false,
+                    false,
+                    false,
+                    *constant,
+                ),
             );
         }
         if option {
             result = program_seq(
                 result,
                 program_assign(
-                    format!("{name}_some"),
+                    self.binding(&format!("{name}_some")),
                     crate::kernel::program_expression::int32_literal(0),
                 ),
             );
@@ -89,18 +96,27 @@ impl Context<'_> {
         let field = |suffix: &str| format!("{iterator}_{suffix}");
         let mut result = size_prefix;
         for statement in [
-            program_assign(field("chunk_size"), size),
+            program_assign(self.binding(&field("chunk_size")), size),
             program_labeled_assert(
-                not_equal(variable(field("chunk_size")), uint64_literal(0)),
+                not_equal(
+                    variable(self.binding(&field("chunk_size"))),
+                    uint64_literal(0),
+                ),
                 "Rust chunks_exact panic check",
             ),
             program_assign(
-                field("rem_len"),
-                remainder(length.clone(), variable(field("chunk_size"))),
+                self.binding(&field("rem_len")),
+                remainder(length.clone(), variable(self.binding(&field("chunk_size")))),
             ),
-            program_assign(field("v"), pointer.clone()),
-            program_assign(field("v_len"), subtract(length, variable(field("rem_len")))),
-            program_assign(field("rem"), add(pointer, variable(field("v_len")))),
+            program_assign(self.binding(&field("v")), pointer.clone()),
+            program_assign(
+                self.binding(&field("v_len")),
+                subtract(length, variable(self.binding(&field("rem_len")))),
+            ),
+            program_assign(
+                self.binding(&field("rem")),
+                add(pointer, variable(self.binding(&field("v_len")))),
+            ),
         ] {
             result = program_seq(result, statement);
         }
@@ -123,8 +139,10 @@ impl Context<'_> {
             result = program_seq(
                 result,
                 program_assign(
-                    format!("{target}_{suffix}"),
-                    crate::kernel::program_expression::variable(format!("{source}_{suffix}")),
+                    self.binding(&format!("{target}_{suffix}")),
+                    crate::kernel::program_expression::variable(
+                        self.binding(&format!("{source}_{suffix}")),
+                    ),
                 ),
             );
         }
@@ -138,8 +156,10 @@ impl Context<'_> {
             return Err("unknown MIR chunk iterator".into());
         }
         Ok(crate::kernel::program_expression::less_equal(
-            crate::kernel::program_expression::variable(format!("{iterator}_chunk_size")),
-            crate::kernel::program_expression::variable(format!("{iterator}_v_len")),
+            crate::kernel::program_expression::variable(
+                self.binding(&format!("{iterator}_chunk_size")),
+            ),
+            crate::kernel::program_expression::variable(self.binding(&format!("{iterator}_v_len"))),
         ))
     }
 
@@ -172,25 +192,34 @@ impl Context<'_> {
                 };
                 some = program_seq(
                     program_assign(
-                        payload,
+                        self.binding(&payload),
                         reference_view(
-                            variable(field("v")),
+                            variable(self.binding(&field("v"))),
                             ProgramType::UInt8Pointer,
                             false,
                             constant,
                         ),
                     ),
-                    program_assign(length, variable(field("chunk_size"))),
+                    program_assign(
+                        self.binding(&length),
+                        variable(self.binding(&field("chunk_size"))),
+                    ),
                 );
             }
             for statement in [
                 program_assign(
-                    field("v"),
-                    add(variable(field("v")), variable(field("chunk_size"))),
+                    self.binding(&field("v")),
+                    add(
+                        variable(self.binding(&field("v"))),
+                        variable(self.binding(&field("chunk_size"))),
+                    ),
                 ),
                 program_assign(
-                    field("v_len"),
-                    subtract(variable(field("v_len")), variable(field("chunk_size"))),
+                    self.binding(&field("v_len")),
+                    subtract(
+                        variable(self.binding(&field("v_len"))),
+                        variable(self.binding(&field("chunk_size"))),
+                    ),
                 ),
             ] {
                 some = program_seq(some, statement);
@@ -203,17 +232,29 @@ impl Context<'_> {
         if !self.chunk_options.contains(option) {
             return Err("unknown chunk Option".into());
         }
-        let mut some = program_assign(format!("{option}_some"), int32_literal(1));
+        let mut some = program_assign(self.binding(&format!("{option}_some")), int32_literal(1));
         for statement in [
-            program_assign(format!("{option}_pointer"), variable(field("v"))),
-            program_assign(format!("{option}_len"), variable(field("chunk_size"))),
             program_assign(
-                field("v"),
-                add(variable(field("v")), variable(field("chunk_size"))),
+                self.binding(&format!("{option}_pointer")),
+                variable(self.binding(&field("v"))),
             ),
             program_assign(
-                field("v_len"),
-                subtract(variable(field("v_len")), variable(field("chunk_size"))),
+                self.binding(&format!("{option}_len")),
+                variable(self.binding(&field("chunk_size"))),
+            ),
+            program_assign(
+                self.binding(&field("v")),
+                add(
+                    variable(self.binding(&field("v"))),
+                    variable(self.binding(&field("chunk_size"))),
+                ),
+            ),
+            program_assign(
+                self.binding(&field("v_len")),
+                subtract(
+                    variable(self.binding(&field("v_len"))),
+                    variable(self.binding(&field("chunk_size"))),
+                ),
             ),
         ] {
             some = program_seq(some, statement);
@@ -221,7 +262,7 @@ impl Context<'_> {
         Ok(program_if(
             self.chunk_has_next(iterator)?,
             some,
-            program_assign(format!("{option}_some"), int32_literal(0)),
+            program_assign(self.binding(&format!("{option}_some")), int32_literal(0)),
         ))
     }
 
@@ -229,7 +270,9 @@ impl Context<'_> {
         match value {
             E::ChunkOptionSlice { option } if self.chunk_options.contains(option) => {
                 Ok(program_assert(crate::kernel::program_expression::equal(
-                    crate::kernel::program_expression::variable(format!("{option}_some")),
+                    crate::kernel::program_expression::variable(
+                        self.binding(&format!("{option}_some")),
+                    ),
                     crate::kernel::program_expression::int32_literal(1),
                 )))
             }

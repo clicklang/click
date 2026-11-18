@@ -4057,11 +4057,11 @@ impl RecordedStates {
     }
 
     fn record_read_events(&mut self, index: usize, facts: &crate::kernel::ExecutionFacts) {
-        self.record_read_event_values(
+        self.record_read_retained_event_values(
             index,
             facts.iter().filter_map(|fact| {
                 crate::instrumentation::record_deterministic_work(1);
-                fact.volatile_read_result()
+                fact.volatile_read_retained_result().cloned()
             }),
         );
     }
@@ -4070,6 +4070,14 @@ impl RecordedStates {
         &mut self,
         index: usize,
         values: impl Iterator<Item = &'a ProgramValue>,
+    ) {
+        self.record_read_retained_event_values(index, values.map(|value| value.clone().into()));
+    }
+
+    fn record_read_retained_event_values(
+        &mut self,
+        index: usize,
+        values: impl Iterator<Item = crate::kernel::ExecutionValue>,
     ) {
         // Only this completed statement's output is visited, never prior facts.
         for event in 0..self.read_event_counts.get(&index).copied().unwrap_or(0) {
@@ -4097,7 +4105,8 @@ impl RecordedStates {
         for value in values {
             crate::instrumentation::record_deterministic_work(1);
             let key = (index, count);
-            self.read_event_results.insert(key, value.clone().into());
+            let retained = RetainedProgramValue::from(value);
+            let value = retained.native_compat();
             Self::add_read_event_name(&mut self.read_event_names, value, key);
             match value {
                 ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
@@ -4112,6 +4121,7 @@ impl RecordedStates {
                 }
                 _ => {}
             }
+            self.read_event_results.insert(key, retained);
             count += 1;
         }
         if count == 0 {

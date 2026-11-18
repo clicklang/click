@@ -741,7 +741,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                         to_events,
                         &description,
                         false,
-                        quantity,
+                        quantity.native_compat(),
                         assumptions,
                     )
                     .map_err(|refusal| {
@@ -783,7 +783,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                 to_events,
                 &description,
                 authority_fact,
-                quantity,
+                quantity.native_compat(),
                 assumptions,
             )
             .map_err(|refusal| {
@@ -4195,13 +4195,13 @@ fn execute_verified_function_applications_with_suspension(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: quantity.clone(),
+                        left: Box::new(quantity.native_compat().clone()),
                         right: Box::new(MachineTerm::constant(0)),
                     },
                 ) {
                 MachineTerm::constant(0)
             } else {
-                *quantity
+                quantity.native_compat().clone()
             };
             let (spent, _) = match events.checked_member_exchange_quantity(
                 &pointer.address().base,
@@ -4473,7 +4473,7 @@ fn execute_verified_function_applications_with_suspension(
                         block: anchor.base.clone(),
                         description,
                         produce,
-                        quantity: (**quantity).clone(),
+                        quantity: quantity.as_ref().clone(),
                         exclusive,
                     });
                     continue;
@@ -4483,7 +4483,7 @@ fn execute_verified_function_applications_with_suspension(
                         &anchor.base,
                         &description,
                         produce,
-                        quantity,
+                        quantity.native_compat(),
                         &effective_assumptions,
                     )
                 } else {
@@ -4491,7 +4491,7 @@ fn execute_verified_function_applications_with_suspension(
                         &anchor.base,
                         &description,
                         produce,
-                        quantity,
+                        quantity.native_compat(),
                         &effective_assumptions,
                     )
                 };
@@ -16829,7 +16829,7 @@ fn consume_returned_resource_unit(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: quantity.clone(),
+            left: Box::new(quantity.native_compat().clone()),
             right: Box::new(MachineTerm::constant(1)),
         },
     );
@@ -19800,7 +19800,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: Box::new(quantity.clone()),
+                        left: Box::new(quantity.native_compat().clone()),
                         right: Box::new(MachineTerm::constant(0)),
                     },
                 ) {
@@ -19816,7 +19816,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                         "declared resource quantity did not lower to owned authority".to_string(),
                     )));
                 };
-                fact = ResourceFact::own_quantity(inner, quantity);
+                fact = ResourceFact::own_quantity_stored(inner, quantity);
             }
             Ok(Ok(fact))
         }
@@ -19905,10 +19905,10 @@ fn evaluate_declared_quantity(
     quantity: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<MachineTerm, RuntimeError>> {
+) -> ExecutionResult<Result<crate::kernel::StoredMachineTerm, RuntimeError>> {
     let mut diagnostic = None;
     Ok(
-        match super::loops::evaluate_resource_argument_value(
+        match super::loops::evaluate_resource_argument_value_retained(
             state,
             quantity,
             assumptions,
@@ -19916,10 +19916,13 @@ fn evaluate_declared_quantity(
             budget,
             &mut diagnostic,
         )? {
-            Ok(ProgramValue::Int32(quantity)) => Ok(quantity),
-            Ok(_) => Err(RuntimeError::FunctionContract(
-                "declared resource quantity must evaluate to int32".to_string(),
-            )),
+            Ok(value) => crate::kernel::StoredMachineTerm::from_value(value)
+                .filter(|quantity| quantity.value().program_type() == ProgramType::Int32)
+                .ok_or_else(|| {
+                    RuntimeError::FunctionContract(
+                        "declared resource quantity must evaluate to int32".to_string(),
+                    )
+                }),
             Err(message) => Err(match diagnostic {
                 Some(RuntimeError::ContractResourceDiagnostic {
                     reason,
@@ -20013,7 +20016,7 @@ pub(crate) fn quantified_resource_requirement_assumptions(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(quantity),
+                left: Box::new(quantity.native_compat().clone()),
                 right: Box::new(MachineTerm::constant(0)),
             },
             true,

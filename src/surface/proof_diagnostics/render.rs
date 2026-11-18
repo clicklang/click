@@ -1148,7 +1148,7 @@ pub(crate) fn render_resource_fact_labeled(
             renderer.push("owns ");
             renderer.resource(resource);
             renderer.push(" x ");
-            renderer.bitvector(quantity);
+            renderer.bitvector(quantity.native_compat());
         }
         ResourceFact::View(resource) => {
             renderer.push("views ");
@@ -1449,7 +1449,7 @@ impl Renderer<'_> {
                 self.fmt(format_args!("volatile-{operation}-event#{}(", event.id.0));
                 self.pointer(&event.pointer);
                 self.push(", ");
-                self.cvalue(&event.value);
+                self.cvalue(event.value.native_compat());
                 self.push(")");
             }
             Proposition::Equal(left, right) => self.binary_term(left, " = ", right),
@@ -2761,9 +2761,9 @@ impl Renderer<'_> {
             }
         }
     }
-    fn outcome(&mut self, outcome: &ExpressionOutcome) {
+    fn outcome(&mut self, outcome: &ExpressionOutcome<crate::kernel::StoredProgramValue>) {
         match outcome {
-            ExpressionOutcome::Value(value) => self.cvalue(value),
+            ExpressionOutcome::Value(value) => self.cvalue(value.native_compat()),
             ExpressionOutcome::UndefinedBehavior(_) => self.push("undefined-behavior"),
             ExpressionOutcome::RuntimeError(_) => self.push("runtime-error"),
         }
