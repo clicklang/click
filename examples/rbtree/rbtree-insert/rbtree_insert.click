@@ -973,6 +973,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(Color::Black, uncolor);
                                                                     known();
                                                                 }
+                                                                have tmp == at(before_uncle_pointer_changes, tmp) by { known(); }
+                                                                have tmp->rb_left == at(before_uncle_pointer_changes, tmp)->rb_left by {
+                                                                    rewrite(tmp, at(before_uncle_pointer_changes, tmp)); normalize();
+                                                                }
+                                                                have tmp->rb_right == at(before_uncle_pointer_changes, tmp)->rb_right by {
+                                                                    rewrite(tmp, at(before_uncle_pointer_changes, tmp)); normalize();
+                                                                }
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr), left: ul, right: ur });
                                                                 have un.model == usib by {
                                                                     rewrite(usib, RbTree::Node(unid, gparent, Color::Black, unl, unr));
@@ -1065,6 +1072,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                                 rewrite(Color::Red, ncolor); known();
                                                         }
+                                                            have node == at(before_gparent_call, node) by { known(); }
+                                                            have node->rb_left == at(before_gparent_call, node)->rb_left by {
+                                                                rewrite(node, at(before_gparent_call, node)); normalize();
+                                                            }
+                                                            have node->rb_right == at(before_gparent_call, node)->rb_right by {
+                                                                rewrite(node, at(before_gparent_call, node)); normalize();
+                                                            }
                                                             let t = fold(rb_at(node), { model: RbTree::Node(nid, cid, Color::Red, nleft, nright), left: nl_at, right: nr_at });
                                                             let held_uncle_link = fold(insert_right_link(gparent), { link: InsertLink::To(at(before_uncle_pointer_changes, tmp)) });
                                                             let held_focus_link = fold(insert_left_link(parent), { link: InsertLink::To(node) });
@@ -2468,6 +2482,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     known();
                                                                 }
                                                                 have gparent->rb_right == tmp by { known(); }
+                                                                have tmp == at(before_uncle_pointer_changes, tmp) by { known(); }
+                                                                have tmp->rb_left == at(before_uncle_pointer_changes, tmp)->rb_left by {
+                                                                    rewrite(tmp, at(before_uncle_pointer_changes, tmp)); normalize();
+                                                                }
+                                                                have tmp->rb_right == at(before_uncle_pointer_changes, tmp)->rb_right by {
+                                                                    rewrite(tmp, at(before_uncle_pointer_changes, tmp)); normalize();
+                                                                }
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr), left: ul, right: ur });
                                                                 have un.model == usib by {
                                                                     rewrite(usib, RbTree::Node(unid, gparent, Color::Black, unl, unr));
@@ -3373,6 +3394,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                                 rewrite(Color::Red, ncolor); known();
                                                         }
+                                                            have node == at(before_gparent_call, node) by { known(); }
+                                                            have node->rb_left == at(before_gparent_call, node)->rb_left by {
+                                                                rewrite(node, at(before_gparent_call, node)); normalize();
+                                                            }
+                                                            have node->rb_right == at(before_gparent_call, node)->rb_right by {
+                                                                rewrite(node, at(before_gparent_call, node)); normalize();
+                                                            }
                                                             let t = fold(rb_at(node), { model: RbTree::Node(nid, cid, Color::Red, nleft, nright), left: nl_at, right: nr_at });
                                                             let held_uncle_link = fold(insert_left_link(gparent), { link: InsertLink::To(at(before_uncle_pointer_changes, tmp)) });
                                                             let held_focus_link = fold(insert_right_link(parent), { link: InsertLink::To(node) });
