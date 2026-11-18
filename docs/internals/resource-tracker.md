@@ -2017,7 +2017,7 @@ Ordinary returns, exceptional returns and void fallthrough do not call
 shared-root consistency check is constant work; selected output consumption,
 loan recovery and declared resource effects keep their own construction rules.
 
-Entry/exit certification and definition-fact checking use
+Entry/exit certification, definition-fact checking and Surface observation use
 `observable_facts_assuming_valid` on their producer-established partitions.
 They expose the compact observable composition without repeating ownership
 admission. The raw `observable_facts` API still validates an assembled description
@@ -2035,4 +2035,25 @@ remain source pinned. Existing migrated fragment tests provide their own no-disc
 observes registered discovery calls, not arbitrary loops: each future migration
 still needs an operation audit and deterministic scaling checks.
 
-Surface observation retains raw-context validation: entry declarations can still expose contradictory instance bodies. That remaining raw boundary is source-inventoried; only producer-established observations may bypass it. Returned composite requirements consume every written body occurrence, before normalization can collapse duplicate memory clauses.
+Raw entry descriptions enter through `admit_declared_entry_resources`, before
+the entry is published. It elaborates the declared section's known owned memory
+frontier, including folded instance bodies and nested fieldless composites.
+Admission reads the retained written-clause metadata, so normalization cannot
+merge away repeated entry heads. It reuses the section producer's admitted flat
+partition and admits only the newly elaborated body footprint beside it.
+Nonunit ownership propagates through nested bodies and refuses a proven
+nonempty exclusive footprint; empty ranges and readonly bodies remain allowed.
+The returned context retains the original folded storage and occurrence IDs.
+Undecided guards, unselected constructors, existential bodies and recursive
+tails retain their conditional or opaque entry assertions; admission does not
+guess a model or union mutually exclusive arms. It never inspects an unrelated
+caller frame. Plain flat sections retain their existing section admission.
+
+The raw constructor is source-pinned to the two entry producers. Initial,
+outcome and unfold observations consume the resulting persistent composition
+without whole-context validation. The actual Surface-helper regression grows
+related owners, independent owners and aliases at 4/16/64. Legacy raw validation
+visits are metered so an accidental return to that walk fails the growth test.
+The folded-entry source regressions refuse duplicate ownership without an
+explicit unfold and keep an adjacent owner accepted. Returned composite
+requirements likewise consume every written body occurrence before normalization.

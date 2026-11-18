@@ -2,14 +2,9 @@
 
 The negative of `a_store_keeps_a_cell_a_folded_instance_owns.md` when the
 two descriptors are one. The contract requires `s == other`: no caller can
-lend both `*other` and an instance owning `*s` then, but the
-entry check cannot see inside the folded instance, so the kernel must not
-exploit it. A store opens a held instance's body only into a composition
-that passes the check a flat context of the same ranges would, and with
-`s == other` the opened `*s` overlaps the written `*other`, as
-`owns *s; owns *other;` beside `requires s == other` is
-refused. Nothing is opened, the store to `other->at` forgets the cached
-`s->at`, and C's read of `s->at` is not the entry value.
+supply both `*other` and an instance owning `*s`. Raw entry admission sees the
+instance's declared footprint and the stated alias, so it rejects the section
+before the store. The C program and its preservation claim remain unchanged.
 
 ```c filename=a_store_through_an_equal_descriptor_forgets_a_folded_instance_cell.c
 struct slot {
@@ -44,5 +39,5 @@ int32 touch(struct slot* s, struct slot* other) {
 ```
 
 ```expect
-fail: `ensures result == old(s->at)` failed
+fail: overlapping owned memory resource facts
 ```
