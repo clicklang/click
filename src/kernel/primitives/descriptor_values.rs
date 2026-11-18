@@ -388,8 +388,10 @@ mod proposition_outcome_tests {
     #[test]
     fn memory_load_theorem_output_keeps_the_cells_common_root() {
         let _session = crate::kernel::VerificationSession::enter();
-        let root =
-            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(10993662));
+        let root = KernelTerm::variable(
+            KernelType::Program(ProgramType::Float32),
+            Variable(10993662),
+        );
         let pointer = Address::symbolic(Variable(10993663));
         let memory = SymbolicMemory::new().store_retained(pointer.clone(), root.clone().into());
         let exports = KernelTermExport::machine_export_count();
