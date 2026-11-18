@@ -1069,7 +1069,7 @@ not a change to proof rules or snapshot architecture.
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Landed in [PR #3246](https://github.com/clicklang/click/pull/3246); all eight pushed commits verified upstream; 525 focused checks, all 1,919 regular scaling cases, 14 selected proofs, fact stability and quality passed; isolated upstream baseline limitation below. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Landed in [PR #3261](https://github.com/clicklang/click/pull/3261); all ten pushed commits verified upstream; 590 focused checks, all 1,926 regular scaling cases, indexed/resource-field proofs, fact stability and quality passed; one isolated upstream baseline failure. |
 | 10p5 | `PublicationRight::observed`, `ConditionalMutexGuard::held`, and the matching `MutexEntry::ConditionalLoop` condition. Preserve channel/acquisition identities and protocol rules. | Published as [PR #3266](https://github.com/clicklang/click/pull/3266), with auto-merge requested; two producer regressions confirmed red; 690 focused checks, all 1,927 regular scaling cases and publication proofs passed; mutex proofs passed 215/216 with one identical parent failure. |
-| 10p6 | `ResourceFact::Own` and deferred worker-exchange quantities. Preserve counting semantics and existing resource identity readers. | Implemented locally; focused validation pending. |
+| 10p6 | `ResourceFact::Own` and deferred worker-exchange quantities. Preserve counting semantics and existing resource identity readers. | Locally complete; 460 focused checks, all 1,935 regular scaling cases, all 5,621 regular proof fixtures, fact stability and quality passed. |
 
 `MemorySegment` source expressions and declared `ResourceQuantity` expressions
 are source input ASTs, not evaluated term storage to erase. Addresses, allocation
@@ -1294,6 +1294,13 @@ checks and 38 quantity fixtures.
 worker completion; join-time ledger checks are explicit native readers.
 Its producer and clone handoffs preserve the root and nominal metadata.
 All 252 affected checks passed before final upstream integration.
+
+After integrating landed upstream `fdf993b90` and rebuilding its changed C++
+exporter, all 460 affected checks, all 1,935 regular scaling cases and all
+5,621 regular proof fixtures passed. Fact stability recorded 121 refusals,
+zero changed terms and zero changed paths; final quality passed. The regular
+suite excludes the three known nightly-only baseline failures above, as the
+user requested. Full nightly was not run.
 
 ### 10q Proposition-output inventory and sequential families
 
