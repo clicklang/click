@@ -1449,8 +1449,9 @@ native payload and truth marker; no proposition is cloned or reconstructed.
 This prepares the logical-condition carrier switch, without changing matching,
 refusal behavior, theorem rules or the output schema. Temporary owned producer
 results retain a local owner while their payload is inspected. All 675 selected
-condition/proposition/substitution checks and quality passed. Ownership-sensitive
-preservation, rewrite and surface synthesis checks are running.
+condition/proposition/substitution checks passed, followed by 618 selected
+preservation, rewrite, Integer, surface synthesis and smart-closure checks.
+Quality passed. These prepare consumers; the output schema is unchanged.
 
 ## Chunk 3: machine-valued pure-function results
 
