@@ -67,6 +67,7 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
             point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::pointer(slot.clone()))),
             value_type: ProgramType::Int32,
+            exact: false,
         };
         let paths = evaluate(&ordinary);
         assert_eq!(paths.len(), 1);

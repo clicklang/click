@@ -99,13 +99,14 @@ documentation inventory keep the following accepted words synchronized.
 | `prop` | Proposition value: `prop { P }`. |
 | `defined`, `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Definedness, readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
 | `old`, `at`, `program` | Point-reading and program-binding forms: `program::name` names a program binding where a Click name has the same name. |
+| `exact` | `exact(place)` reads `place` named by the state in scope itself, with no version walk ([`exact(...)`](index.md#exact)). |
 | `float32_from_bits`, `float64_from_bits` | Literal-only IEEE bit-pattern expressions; see [exact float bit literals](#exact-float-bit-literals). |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
 | `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source form is available. |
 | `by`, `using` | Proof introduction and exact-premise syntax. |
 | `mark`, `step`, `step_until` | Execution tactics. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
-| Indexed `unfold` and `fold`, `gather`, `scatter` | Expose or restore an iterated ownership slot, or form or dissolve the whole iterated fact. `forall` inside a resource body starts the iterated clause itself. |
+| `unfold` and `fold` with `[i]` or `[..]` | Expose or restore an iterated ownership slot, or form or dissolve the whole iterated fact. `forall` inside a resource body starts the iterated clause itself. |
 | `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `known`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |

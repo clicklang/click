@@ -37,6 +37,7 @@ fn logical_pointer_field_uses_current_pointee_memory() {
             value_type: ProgramType::Int32Pointer,
         }),
         value_type: ProgramType::Int32,
+        exact: false,
     };
     let state = entry.clone().with_memory(
         entry

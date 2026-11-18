@@ -2580,6 +2580,9 @@ fn collect_resource_fact_reads_from_contract_expression(
         ContractExpression::At { .. } => Err(ClickError::new(format!(
             "`at(...)` is not available inside resource `{resource_name}` fact"
         ))),
+        ContractExpression::Exact(_) => Err(ClickError::new(format!(
+            "`exact(...)` is not available inside resource `{resource_name}` fact"
+        ))),
         ContractExpression::Add(left, right)
         | ContractExpression::Subtract(left, right)
         | ContractExpression::Multiply(left, right)

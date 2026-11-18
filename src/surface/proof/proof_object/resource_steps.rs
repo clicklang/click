@@ -341,28 +341,12 @@ impl<'a> Proof<'a> {
         let selected = lower_resource_clause_at_state(
             resource,
             context.parameter_binding(),
-            &execution.core.state,
+            execution.core.reached_state(),
         )?;
-        let (after_state, witness) = execution
+        let after_state = execution
             .core
-            .state
-            .checked_population_authority_exchange(&selected, establish, before_facts.assumptions())
+            .record_population_authority_rewrite(&before_facts, &selected, establish)
             .map_err(|message| self.step_error(message))?;
-        execution
-            .core
-            .record_population_authority_rewrite(
-                &before_facts,
-                &selected,
-                establish,
-                &witness,
-                &after_state,
-                &before_facts,
-            )
-            .map_err(|message| {
-                self.step_error(format!(
-                    "kernel rejected checked population authority `{operation}`: {message}"
-                ))
-            })?;
         execution.core.state = after_state.into();
         let branch = self
             .focused_branch()
@@ -2223,55 +2207,42 @@ impl<'a> Proof<'a> {
             )
             .map_err(|message| self.step_error(format!("`{name}` operand: {message}")))
         };
-        let template = |resource: &ResourceClause| {
-            iterated_template_for_resource(
-                context.resource_environment,
-                resource,
-                name,
-                context.parameter_binding(),
-                state,
-                context.claim_label,
-                context.tactic_index,
-                self.facts().assumptions(),
-            )
+        let (target, unfold) = match tactic {
+            IteratedTactic::Unfold(target) => (target, true),
+            IteratedTactic::Fold(target) => (target, false),
         };
-        let step = match tactic {
-            IteratedTactic::UnfoldSlot(slot) | IteratedTactic::FoldSlot(slot) => {
-                let selected = match &slot.point {
-                    Some(point) => selected_program_state(
-                        point,
-                        context.old_reference_state(&execution.core.frontier, state),
-                        &execution.presentation.recorded_states,
-                    )
-                    .map_err(|message| self.step_error(message))?,
-                    None => state,
-                };
-                let template = iterated_template_for_resource(
-                    context.resource_environment,
-                    &slot.resource,
-                    name,
-                    context.parameter_binding(),
-                    selected,
-                    context.claim_label,
-                    context.tactic_index,
-                    self.facts().assumptions(),
-                )?;
-                let ProgramValue::Int32(index) = evaluate(&slot.index)? else {
-                    return Err(self.step_error(format!("`{name}` slot index must be int32")));
-                };
-                match tactic {
-                    IteratedTactic::UnfoldSlot(_) => {
-                        crate::kernel::IteratedStep::UnfoldSlot { template, index }
-                    }
-                    _ => crate::kernel::IteratedStep::FoldSlot { template, index },
-                }
+        let selected = match &target.point {
+            Some(point) => selected_program_state(
+                point,
+                context.old_reference_state(&execution.core.frontier, state),
+                &execution.presentation.recorded_states,
+            )
+            .map_err(|message| self.step_error(message))?,
+            None => state,
+        };
+        let template = iterated_template_for_resource(
+            context.resource_environment,
+            &target.resource,
+            name,
+            context.parameter_binding(),
+            selected,
+            context.claim_label,
+            context.tactic_index,
+            self.facts().assumptions(),
+        )?;
+        let step = if let Some(index) = &target.index {
+            let ProgramValue::Int32(index) = evaluate(index)? else {
+                return Err(self.step_error(format!("`{name}` slot index must be int32")));
+            };
+            if unfold {
+                crate::kernel::IteratedStep::UnfoldSlot { template, index }
+            } else {
+                crate::kernel::IteratedStep::FoldSlot { template, index }
             }
-            IteratedTactic::Gather(resource) => crate::kernel::IteratedStep::Gather {
-                template: template(resource)?,
-            },
-            IteratedTactic::Scatter(resource) => crate::kernel::IteratedStep::Scatter {
-                template: template(resource)?,
-            },
+        } else if unfold {
+            crate::kernel::IteratedStep::UnfoldClause { template }
+        } else {
+            crate::kernel::IteratedStep::FoldClause { template }
         };
         let after = execution
             .core

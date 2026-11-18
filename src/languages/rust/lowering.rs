@@ -929,7 +929,7 @@ fn lower_function(
         declaration_sites: Vec::new(),
         shared_array_iterators: BTreeMap::new(),
         ranges: BTreeMap::new(),
-        enumerated: BTreeSet::new(),
+        enumerate_fields: BTreeMap::new(),
         shared_array_options: BTreeMap::new(),
         shared_scalar_slices,
         mir_chunk_iterators: BTreeSet::new(),
@@ -958,7 +958,7 @@ fn lower_function(
     };
     let (body, region_sites) = match &f.mir {
         Some(mir) if f.body.is_empty() => {
-            let lowered = moves::lower(&mut cx, f, mir)?;
+            let lowered = moves::lower(&mut cx, f, mir, &owner)?;
             (lowered.statement, Some(lowered.sites))
         }
         Some(_) => return Err("Rust function must select exactly one body representation".into()),
@@ -1017,8 +1017,8 @@ struct Context<'a> {
     shared_array_iterators: BTreeMap<String, ProgramType>,
     /// The range locals, with their element type.
     ranges: BTreeMap<String, (Type, bool)>,
-    /// The enumerated slice iterators and their `Option` locals.
-    enumerated: BTreeSet<String>,
+    /// The count of each enumerated slice iterator and the index of each yielded Option.
+    enumerate_fields: BTreeMap<String, BindingName>,
     shared_array_options: BTreeMap<String, ProgramType>,
     shared_scalar_slices: BTreeMap<String, (String, ProgramType)>,
     mir_chunk_iterators: BTreeSet<String>,

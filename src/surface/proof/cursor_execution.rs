@@ -218,18 +218,15 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                     crate::surface::validation::describe_resource_clause(resource),
                 ))
             })?;
-            exported_resources = exported_resources.unchecked_with_fact(fact);
             let mut projections = Vec::new();
             append_lowered_resource_clause_loadable_fact(
                 resource,
                 parameters,
-                exported_resources
-                    .facts()
-                    .last()
-                    .expect("exported resource was just appended"),
+                &fact,
                 &abstract_state,
                 &mut projections,
             );
+            exported_resources = exported_resources.unchecked_with_fact(fact);
             for fact in projections {
                 if !exported_pure_facts.contains_top_level(&fact) {
                     exported_pure_facts = exported_pure_facts.with_kernel_checked_fact(fact);
@@ -309,15 +306,8 @@ pub(super) fn apply_branch_interface_with_proof_facts(
         }
     }
 
-    let exported_assumptions = exported_pure_facts.assumptions();
-    exported_resources = ResourceContext::new()
-            .try_compose_with_facts(exported_resources.facts().iter().cloned(), exported_assumptions)
-            .map_err(|error| {
-                ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: invalid `branch ensuring` resource interface: {error}"
-                ))
-            })?;
-    abstract_state = abstract_state.with_resource_context(exported_resources);
+    // The checked join constructs the owning successor after consuming the
+    // interface in both arms. This provisional context only supported lowering.
     execution
         .presentation
         .recorded_states

@@ -1416,17 +1416,17 @@ While the fact is unfolded, every operation preserves its denotation:
   after, the element is held outright and the fact claims nothing there.
 - Indexed `fold` requires a hole at the index and its guard known true, consumes the
   element, and removes the hole.
-- `gather` and `scatter` require every guard decided one way by a quantified
+- Whole-clause `fold` and `unfold` require every guard decided one way by a quantified
   fact, which the kernel instantiates once at a reserved arbitrary index under
   the range hypotheses. With every guard true the fact is the covering range;
-  with every guard false it is empty. `gather` also requires the guard cells
+  with every guard false it is empty. Whole-clause `fold` also requires the guard cells
   to be owned, so the formed fact is as stable as a declared one. The guard
   cell at the arbitrary index is read as a C load; a never-written heap cell
   has no value until a fact establishes one, so when that read fails the
   quantified fact is first instantiated at the cell's load and the cell read
   again under the result. The second read still decides initialization; this
-  is what lets an initializer gather over a map it has just allocated and
-  zeroed in a loop (`mdtests/iterated_ownership_gather_fresh_heap_map.md`).
+  is what lets an initializer form the clause over a map it has just allocated and
+  zeroed in a loop (`mdtests/iterated_ownership_fold_fresh_heap_map.md`).
 
 ### The guard-store rule
 
@@ -2055,6 +2055,29 @@ from that partition under the closing entry case. Individual resource
 claim receipts carry the checked clauses for closing and allocation checks.
 They do not replace body occurrences or supply a second source of ownership
 to the deferred boundary.
+
+Allocation escape checking retains the actual exit projection while
+checking the returned resources. A flat partition can answer from its
+owned allocation-token index. Call retirement reads the indexed tokens
+of the input, output and preserved partitions. A retiring call with folded
+resources in the preserved partition still projects that partition for the
+stale-resource check. Input allocations are read in entry memory and output
+allocations in successor memory.
+
+Mutex call transfers install ledger-issued authorities using the exact
+authority index. The publication load and its zero branch update the
+selected subscriber right directly. Releasing a publication's payload
+still crosses a resource boundary.
+
+For a two-arm branch interface, Surface retains the written resource
+descriptions in the provisional lowering state. The checked join
+consumes those resources in both arms and constructs the owning
+successor from their common residual and the selected interface.
+
+Population authority proof steps construct the resource and creation-ledger
+exchange at the reached execution state. Recording publishes that successor.
+Replay checks the predecessor and the ledger transition identity before
+reusing the retained successor.
 
 The source tests in `tests/search_boundary.rs` pin the perimeter, including
 new/hidden references and duplicate caller edges. Runtime probes exercise

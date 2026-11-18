@@ -102,7 +102,7 @@ valid proof within its work budget. Read the report's `goal:` line, then prove
 that goal through explicit intermediate `have` goals, using `click verify
 --trace-proof FUNCTION PATH` to see the facts available, replacing `FUNCTION`
 with the proof name and `PATH` with its sidecar. Follow the
-[tracing procedure](concepts/tracing.md) and
+[proof repair procedure](concepts/tracing.md) and
 [proof-failure triage](concepts/proof-failure-triage.md) before changing the
 program or blaming the verifier.
 

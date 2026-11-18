@@ -5288,6 +5288,7 @@ pub(super) fn contract_expression_mentions_program_local(
         }
         ContractExpression::Field { base, .. }
         | ContractExpression::Old(base)
+        | ContractExpression::Exact(base)
         | ContractExpression::At {
             expression: base, ..
         }

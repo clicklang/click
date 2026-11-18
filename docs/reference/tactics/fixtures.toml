@@ -248,14 +248,14 @@ path = "mdtests/iterated_ownership_release_one.md"
 needle = "fold(arena_cells(data, occupied, capacity)[index]);"
 
 [[form]]
-id = "gather-resource"
-path = "mdtests/iterated_ownership_gather_scatter.md"
-needle = "gather(arena_cells(data, occupied, capacity));"
+id = "fold-iterated-clause"
+path = "mdtests/iterated_ownership_whole_clause.md"
+needle = "fold(arena_cells(data, occupied, capacity)[..]);"
 
 [[form]]
-id = "scatter-resource"
-path = "mdtests/iterated_ownership_gather_scatter.md"
-needle = "scatter(arena_cells(data, occupied, capacity));"
+id = "unfold-iterated-clause"
+path = "mdtests/iterated_ownership_fold_fresh_heap_map.md"
+needle = "unfold(arena_cells(data, occupied, capacity)[..]);"
 
 [[form]]
 id = "step-contract-map"

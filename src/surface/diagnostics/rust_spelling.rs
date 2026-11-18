@@ -2,6 +2,9 @@
 //! written in Rust syntax.
 
 use super::*;
+use crate::languages::interface::RustLoopIterator;
+
+pub(super) type RustLoopIterators = std::sync::Arc<[Option<RustLoopIterator>]>;
 
 thread_local! {
     /// The slice parameters of the function being checked when its
@@ -272,6 +275,21 @@ pub(crate) fn rust_spelling() -> bool {
     rust_slice_parameters().is_some()
 }
 
+/// The iterator metadata of the function whose proof is being printed.
+fn with_rust_loop_iterators<T>(read: impl FnOnce(&[Option<RustLoopIterator>]) -> T) -> T {
+    REFERENCE_CARRIERS.with(|scopes| {
+        let scopes = scopes.borrow();
+        if let Some(iterators) = scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.rust_loop_iterators.as_ref())
+        {
+            return read(iterators);
+        }
+        RUST_LOOP_ITERATORS.with(|slot| read(&slot.borrow()))
+    })
+}
+
 /// The spelling of the program variable `name` where its bare name is not
 /// its own: `bytes.len()` for the length of the Rust slice parameter `bytes`,
 /// and `program::iterations` for a variable named like a loop's pass count,
@@ -282,9 +300,9 @@ pub(crate) fn rust_variable_spelling(name: &str) -> Option<String> {
     if name == crate::surface::LOOP_ITERATIONS_NAME {
         return Some(format!("program::{name}"));
     }
-    if let Some(spelling) = RUST_LOOP_ITERATORS.with(|slot| {
+    if let Some(spelling) = with_rust_loop_iterators(|iterators| {
         crate::surface::rust_iterator_spelling(
-            &slot.borrow(),
+            iterators,
             CURRENT_LOOP.with(std::cell::Cell::get),
             name,
         )
@@ -296,6 +314,35 @@ pub(crate) fn rust_variable_spelling(name: &str) -> Option<String> {
         .iter()
         .any(|known| known == slice)
         .then(|| format!("{slice}.len()"))
+}
+
+/// Render the typed count using the loop that exposes it to proofs.
+pub(super) fn rust_enumerate_count_spelling(name: &crate::kernel::BindingName) -> Option<String> {
+    if !name
+        .local_id()
+        .is_some_and(crate::kernel::LocalBindingId::is_enumerate_count)
+    {
+        return None;
+    }
+    let current = CURRENT_LOOP.with(std::cell::Cell::get);
+    with_rust_loop_iterators(|iterators| {
+        let matches = |iterator: &Option<RustLoopIterator>| {
+            iterator
+                .as_ref()
+                .and_then(|iter| iter.count_binding.as_ref())
+                == Some(name)
+        };
+        if current
+            .and_then(|index| iterators.get(index))
+            .is_some_and(matches)
+        {
+            return Some("iter.count".into());
+        }
+        iterators
+            .iter()
+            .position(matches)
+            .map(|index| format!("loop({index}).iter.count"))
+    })
 }
 
 /// The Rust name of the scalar type `interface_type`, `u32` for `uint32`.
