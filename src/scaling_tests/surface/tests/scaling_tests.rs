@@ -4706,6 +4706,69 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
     assert_near_linear_scaling_with_increment_bound("counter call chain", &totals);
 }
 
+/// The callee sees one by-value argument, even when the caller has built
+/// a long arithmetic expression for that value before the call.
+#[test]
+fn call_ensure_lowering_keeps_the_computed_argument_shared() {
+    use crate::instrumentation::VerificationEvent;
+
+    let mut lowering_work = Vec::new();
+    for depth in [4, 16, 48] {
+        let updates = "    x = x * 3u + 1u;\n".repeat(depth);
+        let steps = "    step();\n".repeat(depth);
+        let c = format!(
+            "extern uint32 echo(uint32 value);\nuint32 caller(uint32 x) {{\n{updates}    return echo(x);\n}}"
+        );
+        let postcondition = format!("r == at(statement({depth}).entry, x)");
+        let click = format!(
+            "verifying \"echo.c\";\n\
+             extern uint32 echo(uint32 value) {{ ensures result == old(value); }}\n\
+             uint32 caller(uint32 x) {{ ensures result == result; }} by {{\n{steps}\
+             let {{ result: r }} = step(echo, {{ }});\n\
+             have {postcondition} by {{ known(); }}\n\
+             step();\n}}"
+        );
+        let sources = [("echo.c", c.as_str())];
+        let (verified, events) =
+            crate::instrumentation::collect(|| verify_c_sources(&click, &sources));
+        verified.unwrap_or_else(|error| panic!("depth {depth}: {}", error.report()));
+
+        let mut final_lowerings = Vec::new();
+        for event in events {
+            if let VerificationEvent::OperationFinished {
+                function,
+                name,
+                work,
+                ..
+            } = event
+                && function == "echo"
+            {
+                assert_ne!(name, "verified call provisional ensure lowering");
+                if name == "verified call ensure lowering" {
+                    final_lowerings.push(work);
+                }
+            }
+        }
+        lowering_work.push(
+            final_lowerings
+                .into_iter()
+                .max()
+                .expect("the call's ensure was lowered"),
+        );
+
+        if depth == 48 {
+            let wrong = click.replace(&postcondition, "r == old(x)");
+            assert!(verify_c_sources(&wrong, &sources).is_err());
+        }
+    }
+    assert!(
+        lowering_work
+            .iter()
+            .all(|work| *work <= lowering_work[0] + 32),
+        "call ensure lowering grew with argument depth: {lowering_work:?}"
+    );
+}
+
 /// One `step()` over a call whose external contract has `N` ensures lowers
 /// them in work linear in `N`.
 ///

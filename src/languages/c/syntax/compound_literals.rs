@@ -1,11 +1,8 @@
-//! Automatic struct compound literals share named local storage and initialization.
+//! Compound literals share named automatic storage and initialization.
 use super::*;
 
 impl Parser {
-    pub(super) fn parse_struct_compound_literal(
-        &mut self,
-        parsed_type: ParsedType,
-    ) -> Result<CExpression, CSyntaxError> {
+    fn require_compound_literal_scope(&self) -> Result<(), CSyntaxError> {
         if self.function_has_goto {
             return Err(
                 self.error_here("compound literals and goto in one function are not supported")
@@ -14,6 +11,115 @@ impl Parser {
         if self.current_function_source_name.is_none() || self.function_block_depth == 0 {
             return Err(self.error_here("compound literals currently require block scope"));
         }
+        Ok(())
+    }
+
+    pub(super) fn parse_array_compound_literal(
+        &mut self,
+        parsed_type: ParsedType,
+        bound: Option<u32>,
+    ) -> Result<CExpression, CSyntaxError> {
+        self.require_compound_literal_scope()?;
+        let element_type = parsed_type.interface_type;
+        if !is_arithmetic_type(element_type)
+            || parsed_type.struct_name.is_some()
+            || parsed_type.union_name.is_some()
+            || parsed_type.enum_name.is_some()
+            || parsed_type.long_double
+            || parsed_type.opaque_builtin
+        {
+            return Err(
+                self.error_here("array compound literals require modeled arithmetic elements")
+            );
+        }
+        if parsed_type.is_constant || parsed_type.is_volatile || parsed_type.aligned_typedef {
+            return Err(self.error_here(
+                "array compound literals require unqualified elements with ordinary alignment",
+            ));
+        }
+        let mut written = Vec::new();
+        let mut next = 0;
+        let written_count = self.parse_array_initializer_elements(
+            "array compound literal",
+            bound,
+            &[],
+            &mut written,
+            &mut next,
+        )?;
+        let length = bound.unwrap_or(written_count);
+        if length == 0 || length.checked_mul(element_type.abi_size_bytes()).is_none() {
+            return Err(
+                self.error_here("array compound literal requires a representable positive bound")
+            );
+        }
+        let interface_type = array_type_for_element(element_type, length)
+            .expect("array declarator has a modeled element type");
+        let name = self.new_automatic_binding(Some(format!(
+            "__click_compound_literal_{}",
+            self.next_local_binding
+        )));
+        let (initializer, initializer_call, initializer_assignment) = if self.unevaluated_operand {
+            (CStatement::Skip, None, None)
+        } else {
+            let (_, mut initializer) = self.finish_local_array_initializer(
+                &name,
+                element_type,
+                written_count,
+                written,
+                false,
+            );
+            let (call, assignment) =
+                self.validate_compound_literal_initializer_order(&initializer)?;
+            if written_count < length {
+                initializer = CStatement::Seq(
+                    Box::new(initializer),
+                    Box::new(CStatement::FillArrayTail {
+                        name: name.clone(),
+                        element_type,
+                        start: written_count,
+                        count: length - written_count,
+                    }),
+                );
+            }
+
+            self.function_has_compound_literals = true;
+            let declared_class = self.local_declared_class(interface_type, None);
+            self.compound_literal_declarations
+                .last_mut()
+                .expect("literal has a block")
+                .push(CStatement::Declare {
+                    name: name.clone().into(),
+                    interface_type,
+                    volatile: false,
+                    pointee_volatile: false,
+                    constant: false,
+                    pointee_constant: false,
+                    initializer: None,
+                    zero_fill: None,
+                    declared_class,
+                    site: CSite::NONE,
+                });
+            (initializer, call, assignment)
+        };
+        Ok(CExpression::StatementExpression {
+            aggregate_lvalue: true,
+            initializer_call,
+            initializer_assignment,
+            scope_lifetimes: Vec::new(),
+            body: Box::new(initializer),
+            value: Box::new(CExpression::Variable(name)),
+            interface_type,
+            struct_name: None,
+            function_pointer_signature: None,
+            pointee_constant: false,
+        })
+    }
+
+    pub(super) fn parse_struct_compound_literal(
+        &mut self,
+        parsed_type: ParsedType,
+    ) -> Result<CExpression, CSyntaxError> {
+        self.require_compound_literal_scope()?;
         let struct_name = parsed_type
             .struct_name
             .as_ref()
@@ -126,7 +232,7 @@ impl Parser {
                     }
                 }
                 CStatement::Skip => {}
-                _ => unreachable!("struct initializer contains field stores"),
+                _ => unreachable!("aggregate initializer contains element stores"),
             }
         }
         if effects > 1 || (effects != 0 && other_reads) {
@@ -208,10 +314,11 @@ impl Parser {
             .iter()
             .map(|declaration| {
                 crate::instrumentation::record_deterministic_work(1);
-                let CStatement::DeclareStructValue { name, .. } = declaration else {
-                    unreachable!("literal storage")
-                };
-                name.binding().clone()
+                match declaration {
+                    CStatement::DeclareStructValue { name, .. }
+                    | CStatement::Declare { name, .. } => name.binding().clone(),
+                    _ => unreachable!("literal storage"),
+                }
             })
             .collect::<Vec<_>>();
         (prepend_statements(declarations, body), names)

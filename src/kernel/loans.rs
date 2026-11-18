@@ -22,8 +22,8 @@ use super::primitives::{
     memory_ranges_proven_overlapping,
 };
 use super::{
-    MachineTerm, MemoryRange, Proposition, PureFactContext, Resource, ResourceContext,
-    ResourceDescription, ResourceFact, ResourceOccurrenceId, ResourceStateSource,
+    ExecutionState, MachineTerm, MemoryRange, Proposition, PureFactContext, Resource,
+    ResourceContext, ResourceDescription, ResourceFact, ResourceOccurrenceId, ResourceStateSource,
     ResourceTransferRole, Variable,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
@@ -165,6 +165,55 @@ pub(crate) struct LoanViewBinding {
     /// body piece it restores when unfolded): the occurrence keeps this
     /// loan's scope open until the hold is released.
     pub(crate) hold: Option<LoanHoldId>,
+}
+
+impl ExecutionState {
+    /// The exact written representation may have several occurrences. A
+    /// projection may use it only if they agree on the dependency bundle.
+    pub(crate) fn unique_borrowed_resource_dependency(
+        &self,
+        resource: &ResourceFact,
+    ) -> Result<Option<LoanViewBinding>, String> {
+        if !self.loan_bindings_are_consistent() {
+            return Err("resource and loan binding sidecars disagree".into());
+        }
+        let mut selected = None;
+        let mut saw_unbound = false;
+        let mut saw_bound = false;
+        for occurrence in self.resources().occurrences_for_fact(resource) {
+            let Some(binding) = self.resources().loan_dependency(occurrence) else {
+                saw_unbound = true;
+                continue;
+            };
+            saw_bound = true;
+            if selected
+                .as_ref()
+                .is_some_and(|existing| existing != binding)
+            {
+                return Err(
+                    "equal viewed resource occurrences carry different loan dependencies".into(),
+                );
+            }
+            selected = Some(binding.clone());
+        }
+        if saw_bound && saw_unbound {
+            return Err(
+                "equal viewed resource occurrences mix bound and unbound authorities".into(),
+            );
+        }
+        if let Some(binding) = &selected {
+            let ledger = self
+                .loan_ledger()
+                .ok_or_else(|| "selected viewed resource has no active loan ledger".to_string())?;
+            let holder = self
+                .loan_participant()
+                .ok_or_else(|| "selected viewed resource has no active loan holder".to_string())?;
+            ledger
+                .validate_view_binding(binding.clone(), holder)
+                .map_err(|error| format!("selected viewed resource loan is not live: {error}"))?;
+        }
+        Ok(selected)
+    }
 }
 
 impl LoanViewBinding {
@@ -3081,6 +3130,15 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         .iter()
         .filter(|requirement| requirement.fact.is_own())
     {
+        // An empty range has no ownership to reserve or restore. As with
+        // an empty view, its endpoints suffice without a backing occurrence.
+        if requirement
+            .fact
+            .memory_own_range()
+            .is_some_and(|range| memory_range_is_proven_empty(range, assumptions))
+        {
+            continue;
+        }
         if let Resource::MutexUse(identity) = requirement.fact.resource()
             && !same_thread_protocol_effect
         {
@@ -5509,6 +5567,46 @@ impl LoanLedger {
         })
     }
 
+    /// Publish the views produced by the kernel's observation of an exact
+    /// loan-bound head. The evidence owns the child list this rule can add.
+    pub(in crate::kernel) fn project_observed_body(
+        &self,
+        holder: LoanParticipantId,
+        binding: &LoanViewBinding,
+        evidence: CompositeProjectionEvidence,
+    ) -> Result<Self, LoanRefusal> {
+        if evidence.head != binding.viewed {
+            return Err(LoanRefusal::InvalidEvidence);
+        }
+        self.validate_view_binding(binding.clone(), holder)?;
+        let record = self
+            .storage
+            .data
+            .loans
+            .get(&binding.loan)
+            .ok_or(LoanRefusal::MissingLoan)?;
+        let mut permitted = record.permitted.clone();
+        for child in evidence.children {
+            if !permitted.contains(&child) {
+                permitted.push(child);
+            }
+        }
+        let mut data = self.storage.data.clone();
+        data.loans = data.loans.with_inserted(
+            binding.loan,
+            LoanRecord {
+                permitted,
+                ..record.clone()
+            },
+        );
+        Ok(Self {
+            storage: Arc::new(LoanLedgerStorage {
+                state: self.storage.state,
+                data,
+            }),
+        })
+    }
+
     /// Places a hold on the scope of the binding's loan for a folded
     /// borrowing composite. While the hold exists, End refuses, so the owner
     /// behind the loan cannot be recovered and written while the composite
@@ -5781,11 +5879,12 @@ impl LoanLedger {
         // Binding identity is checked without importing ambient equality facts.
         let assumptions = &PureFactContext::default();
         if !binding.viewed.is_view()
-            || !loan.permitted.iter().any(|permitted| {
-                ResourceContext::new_with_equalities(assumptions)
-                    .unchecked_with_fact(permitted.clone())
-                    .satisfies_fact(&binding.viewed, assumptions)
-            })
+            || (!loan.permitted.contains(&binding.viewed)
+                && !loan.permitted.iter().any(|permitted| {
+                    ResourceContext::new_with_equalities(assumptions)
+                        .unchecked_with_fact(permitted.clone())
+                        .satisfies_fact(&binding.viewed, assumptions)
+                }))
         {
             return Err(LoanRefusal::MissingLoanBinding);
         }

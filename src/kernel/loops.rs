@@ -9165,16 +9165,21 @@ fn for_each_statement_expression<'a>(
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::HeapAllocate { .. } => {}
         ProgramStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            for expression in initializer
+                .iter()
+                .chain(zero_fill.iter().flat_map(ZeroFill::expressions))
+            {
+                visit(expression);
+            }
         }
-        | ProgramStatement::Assign { expression, .. }
+        ProgramStatement::Assign { expression, .. }
         | ProgramStatement::HeapFree {
             pointer: expression,
         }
@@ -9281,15 +9286,20 @@ pub(crate) fn collect_address_taken_locals(
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare {
-            initializer: None, ..
-        }
         | ProgramStatement::DeclareAggregate { .. } => {}
         ProgramStatement::Declare {
-            initializer: Some(expression),
+            initializer,
+            zero_fill,
             ..
+        } => {
+            for expression in initializer
+                .iter()
+                .chain(zero_fill.iter().flat_map(ZeroFill::expressions))
+            {
+                collect_address_taken_in_expression(expression, names);
+            }
         }
-        | ProgramStatement::Assign { expression, .. } => {
+        ProgramStatement::Assign { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
         }
         ProgramStatement::CallConstruct { arguments, .. } => {

@@ -2026,14 +2026,15 @@ exceptional and fallthrough completion, reject overlapping raw observations,
 and grow owners, related ranges, tokens, aliases and private slots at 4/16/64.
 Existing observable-projection tests cover private filtering and invalidation.
 
-For an explicit folded composite observation on a state with no loan bindings,
-the kernel takes the selected resource and the memory naming input. It
-constructs the successor from the reached state, inserts the checked body's
-views with the selected occurrence as support, and publishes the structural
-witnesses of that body. There is no proposed resource context to compare
-against the whole retained partition. Loan-bound observations still use the
-ledger projection route. The introduced pure facts still need their ordinary
-checked definition and derivation evidence.
+For an explicit folded composite observation, the kernel takes the selected
+resource and the memory naming input. It constructs the successor from the
+reached state and publishes the checked body's views and structural
+witnesses. An owned head supports its views through the selected occurrence.
+A borrowed head publishes the new child descriptions to its live loan and binds
+the emitted occurrences to that loan. An already-present exact child must
+carry the same live loan authority before it can be reused. The kernel
+checks the introduced pure facts against the definition and checked
+derivations.
 
 Exact contract certification shares its original closing entry with the
 single unconditional finite entry case. Guarded and recursive cases retain
